@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "spacebridge"
 version = "0.1.0"
 description = "Model Context Protocol server for issue tracker management"
-authors = [{name = "Spacecode", email = "info@spacecode.com"}]
+authors = [{name = "Dimitris Moraitis", email = "dimitris@spacecode.ai"}, {name = "Yannis Chatzikonstantinou", email = "yannis@spacecode.ai"}]
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.103.0",

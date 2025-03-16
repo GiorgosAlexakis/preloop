@@ -4,7 +4,9 @@ from spacebridge.tools.base import MCPTool, MCPToolMetadata
 from spacebridge.tools.registry import get_tool, list_tools, register_tool
 
 # Import tool modules to register them
+from spacebridge.tools.issue import CreateIssueTool, SearchIssuesTool
 from spacebridge.tools.organization import GetOrganizationTool
+from spacebridge.tools.project import TestConnectionTool
 
 __all__ = [
     "MCPTool", 
@@ -13,5 +15,8 @@ __all__ = [
     "list_tools", 
     "register_tool",
     # Tool implementations
+    "CreateIssueTool",
     "GetOrganizationTool",
+    "SearchIssuesTool",
+    "TestConnectionTool",
 ]
