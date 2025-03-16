@@ -89,4 +89,4 @@ class MCPTool(ABC):
         model = self.parameter_model()
 
         # Validate and return the parameters
-        return model(**parameters).dict()
+        return model(**parameters).model_dump()

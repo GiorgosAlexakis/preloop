@@ -1,5 +1,7 @@
 # SpaceBridge
 
+![SpaceBridge Logo](assets/logo.webp)
+
 ## Overview
 
 SpaceBridge is a Model Context Protocol (MCP) server that serves as a unified interface between Spacecode's infrastructure and multiple issue tracking systems. It enables seamless searching, creation, and updating of issues across different platforms through a standardized protocol.

@@ -2,10 +2,11 @@
 
 from typing import Dict, List, Optional
 
-from sqlalchemy import Column, ForeignKey, JSON, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import ForeignKey, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spacebridge.db.base import Base
+from spacebridge.models.organization import Organization
 
 
 class Project(Base):
@@ -15,20 +16,20 @@ class Project(Base):
     """
 
     # Primary key
-    id = Column(String(36), primary_key=True, index=True)  # UUID
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)  # UUID
 
     # Project details
-    name = Column(String(255), nullable=False)
-    identifier = Column(String(100), nullable=False, index=True)
-    description = Column(String(1000), nullable=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    identifier: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
     # Foreign keys
-    organization_id = Column(
+    organization_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("organization.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Project settings stored as JSON
-    settings = Column(JSON, nullable=True, default=dict)
+    settings: Mapped[Optional[Dict]] = mapped_column(JSON, nullable=True, default=dict)
 
     # Issue tracker configurations stored as JSON
     # Structure:
@@ -44,10 +45,10 @@ class Project(Base):
     #         "credentials": "encrypted_credentials_string"
     #     }
     # }
-    tracker_configurations = Column(JSON, nullable=True, default=dict)
+    tracker_configurations: Mapped[Optional[Dict]] = mapped_column(JSON, nullable=True, default=dict)
 
     # Relationships
-    organization = relationship("Organization", back_populates="projects")
+    organization: Mapped[Organization] = relationship("Organization", back_populates="projects")
 
     def __repr__(self) -> str:
         """String representation of the project."""
