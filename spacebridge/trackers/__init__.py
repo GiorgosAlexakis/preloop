@@ -16,6 +16,7 @@ from spacebridge.trackers.base import (
 )
 from spacebridge.trackers.factory import TrackerFactory
 from spacebridge.trackers.github import GitHubClient
+from spacebridge.trackers.gitlab import GitLabClient
 
 __all__ = [
     "Issue",
@@ -32,4 +33,5 @@ __all__ = [
     "TrackerInterface",
     "TrackerFactory",
     "GitHubClient",
+    "GitLabClient",
 ]
