@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spacebridge"
+version = "0.1.0"
+description = "Model Context Protocol server for issue tracker management"
+authors = [{name = "Spacecode", email = "info@spacecode.com"}]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.103.0",
+    "uvicorn>=0.23.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg>=3.1.12",
+    "pgvector>=0.2.0",
+    "pydantic>=2.4.0",
+    "python-jose>=3.3.0",
+    "passlib>=1.7.4",
+    "python-multipart>=0.0.6",
+    "httpx>=0.24.1",
+    "tenacity>=8.2.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.7.0",
+    "isort>=5.12.0",
+    "mypy>=1.5.1",
+    "ruff>=0.0.287",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+select = ["E", "F", "B", "I", "N", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"

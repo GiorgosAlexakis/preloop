@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: ankane/pgvector:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: spacebridge
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  spacebridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/spacebridge
+      HOST: 0.0.0.0
+      PORT: 8000
+      DEBUG: 'true'
+      SECRET_KEY: development_secret_key_do_not_use_in_production
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    command: python -m spacebridge.server
+
+volumes:
+  postgres-data:
