@@ -2,13 +2,17 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install dependencies
+# Copy requirements first to leverage Docker cache
 COPY pyproject.toml .
-RUN pip install --no-cache-dir build && \
-    pip install --no-cache-dir -e .
+
+# Install build dependencies
+RUN pip install --no-cache-dir build setuptools wheel
 
 # Copy application code
 COPY . .
+
+# Install the application
+RUN pip install --no-cache-dir -e .
 
 # Expose the port
 EXPOSE 8000
