@@ -1,6 +1,8 @@
 """Registry for MCP tools in SpaceBridge."""
 
+import importlib
 import logging
+import pkgutil
 from typing import Any, Dict, List, Optional, Set, Type
 
 from spacebridge.tools.base import MCPTool
@@ -56,7 +58,33 @@ class ToolRegistry:
         Returns:
             A list of tool names.
         """
-        return list(self._tools.keys())
+        return sorted(list(self._tools.keys()))
+
+    def discover_tools(self, package_name: str = "spacebridge.tools") -> None:
+        """Discover and register tools from a package.
+
+        This method will recursively import all modules in the package and register
+        any tool classes that use the @register_tool decorator.
+
+        Args:
+            package_name: The name of the package to discover tools in.
+        """
+        try:
+            package = importlib.import_module(package_name)
+            for _, name, is_pkg in pkgutil.iter_modules(package.__path__, f"{package_name}."):
+                try:
+                    # Import the module or package
+                    importlib.import_module(name)
+                    
+                    # If it's a package, recursively discover tools in it
+                    if is_pkg and not name.endswith("__pycache__"):
+                        self.discover_tools(name)
+                except Exception as e:
+                    logger.error(f"Error importing module {name}: {e}")
+            
+            logger.info(f"Discovered {len(self._tools)} tools")
+        except Exception as e:
+            logger.error(f"Error discovering tools in {package_name}: {e}")
 
 
 # Create a singleton registry
@@ -95,3 +123,15 @@ def list_tools() -> List[str]:
         A list of tool names.
     """
     return registry.list_tools()
+
+
+def discover_tools(package_name: str = "spacebridge.tools") -> None:
+    """Discover and register tools from a package.
+
+    This method will recursively import all modules in the package and register
+    any tool classes that use the @register_tool decorator.
+
+    Args:
+        package_name: The name of the package to discover tools in.
+    """
+    registry.discover_tools(package_name)

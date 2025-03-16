@@ -3,10 +3,12 @@
 import logging
 from typing import Dict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
 
 from spacebridge import __version__
+from spacebridge.api.auth import auth_router, get_current_active_user
 from spacebridge.api.endpoints import health, organizations, projects
 from spacebridge.api.mcp import mcp_router
 
@@ -24,6 +26,9 @@ def create_app() -> FastAPI:
         title="SpaceBridge",
         description="Model Context Protocol server for issue tracker management",
         version=__version__,
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+        openapi_url="/api/openapi.json",
     )
 
     # Configure CORS
@@ -37,9 +42,25 @@ def create_app() -> FastAPI:
 
     # Add routers
     app.include_router(health.router, prefix="/api/v1", tags=["Health"])
-    app.include_router(organizations.router, prefix="/api/v1", tags=["Organizations"])
-    app.include_router(projects.router, prefix="/api/v1", tags=["Projects"])
-    app.include_router(mcp_router, prefix="/mcp", tags=["MCP"])
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+    app.include_router(
+        organizations.router, 
+        prefix="/api/v1", 
+        tags=["Organizations"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        projects.router, 
+        prefix="/api/v1", 
+        tags=["Projects"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        mcp_router, 
+        prefix="/mcp",
+        tags=["MCP"],
+        dependencies=[Depends(get_current_active_user)],
+    )
 
     # Root endpoint
     @app.get("/", tags=["Root"])
