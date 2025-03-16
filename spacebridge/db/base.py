@@ -32,7 +32,7 @@ class Base(DeclarativeBase):
     def dict(self) -> Dict[str, Any]:
         """Convert model to dictionary (maintained for compatibility)."""
         return self.to_dict()
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert model to dictionary."""
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}

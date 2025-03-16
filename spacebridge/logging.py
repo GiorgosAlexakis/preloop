@@ -53,7 +53,7 @@ def configure_logging() -> None:
     # Try to use JSON formatter if available
     try:
         import pythonjsonlogger.jsonlogger  # noqa
-        
+
         # Use JSON formatter if the module is available
         handlers = logging_config["handlers"]
         handlers["console"]["formatter"] = "json"

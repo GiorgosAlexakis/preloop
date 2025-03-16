@@ -15,5 +15,5 @@ def health_check(db: Session = Depends(get_db)) -> Dict[str, str]:
     """Health check endpoint."""
     # Verify database connection
     db.execute("SELECT 1")
-    
+
     return {"status": "healthy"}

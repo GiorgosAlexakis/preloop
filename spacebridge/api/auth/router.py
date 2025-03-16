@@ -33,7 +33,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()) -> Dict[str, s
     """
     # This is a simplified auth system for development
     # In a real application, you would check the credentials against a database
-    
+
     # For now, hardcode a single user for development
     if form_data.username != "admin" or form_data.password != "admin":
         raise HTTPException(

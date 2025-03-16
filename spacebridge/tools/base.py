@@ -58,7 +58,9 @@ class MCPTool(ABC):
 
         # Create and return the model
         return create_model(
-            f"{meta.name.title()}Parameters", **fields, __doc__=f"Parameters for {meta.name}"
+            f"{meta.name.title()}Parameters",
+            **fields,
+            __doc__=f"Parameters for {meta.name}",
         )
 
     @abstractmethod

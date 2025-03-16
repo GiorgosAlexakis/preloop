@@ -44,19 +44,19 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api/v1", tags=["Health"])
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
     app.include_router(
-        organizations.router, 
-        prefix="/api/v1", 
+        organizations.router,
+        prefix="/api/v1",
         tags=["Organizations"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        projects.router, 
-        prefix="/api/v1", 
+        projects.router,
+        prefix="/api/v1",
         tags=["Projects"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        mcp_router, 
+        mcp_router,
         prefix="/mcp",
         tags=["MCP"],
         dependencies=[Depends(get_current_active_user)],

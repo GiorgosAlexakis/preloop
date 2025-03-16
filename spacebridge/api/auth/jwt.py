@@ -90,14 +90,14 @@ def create_access_token(
         JWT access token.
     """
     to_encode = data.copy()
-    
+
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+
     to_encode.update({"exp": expire})
-    
+
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -122,10 +122,10 @@ def decode_token(token: str) -> TokenData:
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         scopes = payload.get("scopes", [])
         exp = payload.get("exp")
-        
+
         return TokenData(sub=sub, scopes=scopes, exp=exp)
     except JWTError:
         raise HTTPException(
@@ -148,7 +148,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         HTTPException: If the token is invalid or the user doesn't exist.
     """
     token_data = decode_token(token)
-    
+
     # In a real application, you would query the database for the user
     # For now, we'll just return a hardcoded user for development
     if token_data.sub != "admin":
@@ -157,7 +157,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
             detail="Invalid user",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     return User(
         username="admin",
         email="admin@example.com",
@@ -166,7 +166,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     )
 
 
-async def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
+async def get_current_active_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
     """Get the current active user.
 
     Args:

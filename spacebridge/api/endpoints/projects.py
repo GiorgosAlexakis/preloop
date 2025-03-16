@@ -60,7 +60,9 @@ def create_project(project: ProjectCreate, db: Session = Depends(get_db)) -> Pro
     """Create a new project."""
     # Check if organization exists
     organization = (
-        db.query(Organization).filter(Organization.id == project.organization_id).first()
+        db.query(Organization)
+        .filter(Organization.id == project.organization_id)
+        .first()
     )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -114,7 +116,9 @@ def list_projects(
     return projects
 
 
-@router.get("/organizations/{organization_id}/projects", response_model=List[ProjectResponse])
+@router.get(
+    "/organizations/{organization_id}/projects", response_model=List[ProjectResponse]
+)
 def list_organization_projects(
     organization_id: str,
     limit: int = Query(100, ge=1, le=1000),

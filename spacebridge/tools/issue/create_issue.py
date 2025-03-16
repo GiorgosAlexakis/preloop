@@ -135,18 +135,18 @@ class CreateIssueTool(MCPTool):
             try:
                 # Get the tracker configuration
                 tracker_config = project.tracker_configurations[tracker_to_use]
-                
+
                 # Create a tracker client
                 tracker_client = run_async(
                     TrackerFactory.create_client(tracker_to_use, tracker_config)
                 )
-                
+
                 if not tracker_client:
                     return {
                         "error": "client_creation_failed",
                         "message": f"Failed to create client for tracker '{tracker_to_use}'",
                     }
-                
+
                 # Create the issue
                 issue = run_async(
                     tracker_client.create_issue(
@@ -154,10 +154,10 @@ class CreateIssueTool(MCPTool):
                         issue_data=issue_data,
                     )
                 )
-                
+
                 # Convert issue to dictionary
                 issue_dict = issue.dict()
-                
+
                 # Add a source field to indicate which tracker this came from
                 issue_dict["source"] = tracker_to_use
 
@@ -175,13 +175,13 @@ class CreateIssueTool(MCPTool):
                         "identifier": organization.identifier,
                     },
                 }
-            
+
             except Exception as e:
                 logger.exception(f"Error creating issue in {tracker_to_use}: {e}")
                 return {
                     "error": "creation_failed",
                     "message": f"Error creating issue: {str(e)}",
                 }
-        
+
         finally:
             db.close()

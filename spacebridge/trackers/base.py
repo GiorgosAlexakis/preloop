@@ -15,7 +15,9 @@ class IssueStatus(BaseModel):
 
     id: str = Field(..., description="Status identifier in the tracker")
     name: str = Field(..., description="User-friendly status name")
-    category: str = Field(..., description="Status category (e.g., 'todo', 'in_progress', 'done')")
+    category: str = Field(
+        ..., description="Status category (e.g., 'todo', 'in_progress', 'done')"
+    )
 
 
 class IssuePriority(BaseModel):
@@ -23,7 +25,9 @@ class IssuePriority(BaseModel):
 
     id: str = Field(..., description="Priority identifier in the tracker")
     name: str = Field(..., description="User-friendly priority name")
-    level: int = Field(..., description="Numeric priority level (higher = more important)")
+    level: int = Field(
+        ..., description="Numeric priority level (higher = more important)"
+    )
 
 
 class IssueUser(BaseModel):
@@ -48,7 +52,9 @@ class IssueComment(BaseModel):
 class IssueRelation(BaseModel):
     """Relationship between issues."""
 
-    relation_type: str = Field(..., description="Relationship type (e.g., 'blocks', 'relates_to')")
+    relation_type: str = Field(
+        ..., description="Relationship type (e.g., 'blocks', 'relates_to')"
+    )
     issue_id: str = Field(..., description="ID of the related issue")
     issue_key: str = Field(..., description="Key of the related issue")
     summary: Optional[str] = Field(None, description="Summary of the related issue")
@@ -64,37 +70,51 @@ class Issue(BaseModel):
     description: Optional[str] = Field(None, description="Issue description/body")
     status: IssueStatus = Field(..., description="Current issue status")
     priority: Optional[IssuePriority] = Field(None, description="Issue priority")
-    
+
     # Timeline data
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
     resolved_at: Optional[datetime] = Field(None, description="Resolution timestamp")
-    
+
     # People
-    reporter: Optional[IssueUser] = Field(None, description="User who reported the issue")
-    assignee: Optional[IssueUser] = Field(None, description="User assigned to the issue")
-    
+    reporter: Optional[IssueUser] = Field(
+        None, description="User who reported the issue"
+    )
+    assignee: Optional[IssueUser] = Field(
+        None, description="User assigned to the issue"
+    )
+
     # Classification
     labels: List[str] = Field(default_factory=list, description="Issue labels/tags")
     components: List[str] = Field(default_factory=list, description="Issue components")
-    
+
     # Relations
-    parent: Optional[IssueRelation] = Field(None, description="Parent issue if applicable")
-    relations: List[IssueRelation] = Field(default_factory=list, description="Related issues")
-    
+    parent: Optional[IssueRelation] = Field(
+        None, description="Parent issue if applicable"
+    )
+    relations: List[IssueRelation] = Field(
+        default_factory=list, description="Related issues"
+    )
+
     # Comments
-    comments: List[IssueComment] = Field(default_factory=list, description="Issue comments")
-    
+    comments: List[IssueComment] = Field(
+        default_factory=list, description="Issue comments"
+    )
+
     # URLs
     url: str = Field(..., description="URL to the issue in the tracker's web UI")
-    api_url: Optional[str] = Field(None, description="URL to the issue in the tracker's API")
-    
+    api_url: Optional[str] = Field(
+        None, description="URL to the issue in the tracker's API"
+    )
+
     # Tracker metadata
     tracker_type: str = Field(..., description="Tracker type (e.g., 'jira', 'github')")
     project_key: str = Field(..., description="Project key in the tracker")
-    
+
     # Custom fields
-    custom_fields: Dict[str, Any] = Field(default_factory=dict, description="Tracker-specific custom fields")
+    custom_fields: Dict[str, Any] = Field(
+        default_factory=dict, description="Tracker-specific custom fields"
+    )
 
 
 class IssueFilter(BaseModel):
@@ -104,9 +124,13 @@ class IssueFilter(BaseModel):
     status: Optional[List[str]] = Field(None, description="Status filter")
     labels: Optional[List[str]] = Field(None, description="Labels filter")
     created_after: Optional[datetime] = Field(None, description="Created after filter")
-    created_before: Optional[datetime] = Field(None, description="Created before filter")
+    created_before: Optional[datetime] = Field(
+        None, description="Created before filter"
+    )
     updated_after: Optional[datetime] = Field(None, description="Updated after filter")
-    updated_before: Optional[datetime] = Field(None, description="Updated before filter")
+    updated_before: Optional[datetime] = Field(
+        None, description="Updated before filter"
+    )
     assigned_to: Optional[str] = Field(None, description="Assignee filter")
     reported_by: Optional[str] = Field(None, description="Reporter filter")
     sort_by: Optional[str] = Field(None, description="Field to sort by")
@@ -124,7 +148,9 @@ class IssueCreate(BaseModel):
     labels: Optional[List[str]] = Field(None, description="Issue labels/tags")
     components: Optional[List[str]] = Field(None, description="Issue components")
     parent: Optional[str] = Field(None, description="Parent issue ID")
-    custom_fields: Optional[Dict[str, Any]] = Field(None, description="Tracker-specific custom fields")
+    custom_fields: Optional[Dict[str, Any]] = Field(
+        None, description="Tracker-specific custom fields"
+    )
 
 
 class IssueUpdate(BaseModel):
@@ -137,7 +163,9 @@ class IssueUpdate(BaseModel):
     assignee: Optional[str] = Field(None, description="New assignee username or ID")
     labels: Optional[List[str]] = Field(None, description="New issue labels/tags")
     components: Optional[List[str]] = Field(None, description="New issue components")
-    custom_fields: Optional[Dict[str, Any]] = Field(None, description="New tracker-specific custom fields")
+    custom_fields: Optional[Dict[str, Any]] = Field(
+        None, description="New tracker-specific custom fields"
+    )
 
 
 class ProjectMetadata(BaseModel):
@@ -146,11 +174,15 @@ class ProjectMetadata(BaseModel):
     key: str = Field(..., description="Project key in the tracker")
     name: str = Field(..., description="Project name")
     description: Optional[str] = Field(None, description="Project description")
-    
+
     # Available values for issue fields
-    statuses: List[IssueStatus] = Field(default_factory=list, description="Available statuses")
-    priorities: List[IssuePriority] = Field(default_factory=list, description="Available priorities")
-    
+    statuses: List[IssueStatus] = Field(
+        default_factory=list, description="Available statuses"
+    )
+    priorities: List[IssuePriority] = Field(
+        default_factory=list, description="Available priorities"
+    )
+
     # URL to the project in the tracker's web UI
     url: str = Field(..., description="URL to the project in the tracker's web UI")
 
@@ -160,8 +192,12 @@ class TrackerConnection(BaseModel):
 
     connected: bool = Field(..., description="Whether the connection was successful")
     message: str = Field(..., description="Status message")
-    rate_limit: Optional[Dict[str, Any]] = Field(None, description="Rate limit information if available")
-    server_info: Optional[Dict[str, Any]] = Field(None, description="Server information if available")
+    rate_limit: Optional[Dict[str, Any]] = Field(
+        None, description="Rate limit information if available"
+    )
+    server_info: Optional[Dict[str, Any]] = Field(
+        None, description="Server information if available"
+    )
 
 
 class TrackerInterface(ABC):
@@ -170,103 +206,107 @@ class TrackerInterface(ABC):
     @abstractmethod
     async def test_connection(self) -> TrackerConnection:
         """Test the connection to the tracker.
-        
+
         Returns:
             Connection status.
         """
         pass
-    
+
     @abstractmethod
     async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
         """Get metadata about a project.
-        
+
         Args:
             project_key: Project key in the tracker.
-            
+
         Returns:
             Project metadata.
         """
         pass
-    
+
     @abstractmethod
     async def search_issues(
-        self, project_key: str, filter_params: IssueFilter, limit: int = 10, offset: int = 0
+        self,
+        project_key: str,
+        filter_params: IssueFilter,
+        limit: int = 10,
+        offset: int = 0,
     ) -> Tuple[List[Issue], int]:
         """Search for issues in a project.
-        
+
         Args:
             project_key: Project key in the tracker.
             filter_params: Filter parameters.
             limit: Maximum number of issues to return.
             offset: Pagination offset.
-            
+
         Returns:
             Tuple of (list of issues, total count).
         """
         pass
-    
+
     @abstractmethod
     async def get_issue(self, issue_id: str) -> Issue:
         """Get a specific issue by ID.
-        
+
         Args:
             issue_id: Issue ID in the tracker.
-            
+
         Returns:
             Issue details.
         """
         pass
-    
+
     @abstractmethod
     async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
         """Create a new issue.
-        
+
         Args:
             project_key: Project key in the tracker.
             issue_data: Issue data.
-            
+
         Returns:
             Created issue.
         """
         pass
-    
+
     @abstractmethod
     async def update_issue(self, issue_id: str, issue_data: IssueUpdate) -> Issue:
         """Update an existing issue.
-        
+
         Args:
             issue_id: Issue ID in the tracker.
             issue_data: Updated issue data.
-            
+
         Returns:
             Updated issue.
         """
         pass
-    
+
     @abstractmethod
     async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
         """Add a comment to an issue.
-        
+
         Args:
             issue_id: Issue ID in the tracker.
             comment: Comment text.
-            
+
         Returns:
             Created comment.
         """
         pass
-    
+
     @abstractmethod
     async def add_relation(
         self, issue_id: str, related_issue_id: str, relation_type: str
     ) -> bool:
         """Add a relation between issues.
-        
+
         Args:
             issue_id: Source issue ID.
             related_issue_id: Target issue ID.
             relation_type: Relation type.
-            
+
         Returns:
             Whether the operation was successful.
         """

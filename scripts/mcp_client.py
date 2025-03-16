@@ -74,7 +74,9 @@ class MCPClient:
             response.raise_for_status()
             return response.json()
 
-    async def invoke_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def invoke_tool(
+        self, tool_name: str, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Invoke an MCP tool.
 
         Args:
@@ -98,10 +100,18 @@ async def main() -> None:
     """Run the MCP client."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="MCP client for SpaceBridge")
-    parser.add_argument("--url", default="http://localhost:8000", help="SpaceBridge server URL")
-    parser.add_argument("--username", default="admin", help="Username for authentication")
-    parser.add_argument("--password", default="admin", help="Password for authentication")
-    parser.add_argument("command", choices=["list", "metadata", "invoke"], help="Command to run")
+    parser.add_argument(
+        "--url", default="http://localhost:8000", help="SpaceBridge server URL"
+    )
+    parser.add_argument(
+        "--username", default="admin", help="Username for authentication"
+    )
+    parser.add_argument(
+        "--password", default="admin", help="Password for authentication"
+    )
+    parser.add_argument(
+        "command", choices=["list", "metadata", "invoke"], help="Command to run"
+    )
     parser.add_argument("--tool", help="Tool name for metadata or invoke commands")
     parser.add_argument("--params", help="Tool parameters for invoke command (JSON)")
     args = parser.parse_args()

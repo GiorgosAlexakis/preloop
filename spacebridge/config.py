@@ -24,7 +24,9 @@ class SecuritySettings(BaseModel):
     """Security configuration."""
 
     secret_key: str = Field(..., description="Secret key for JWT tokens")
-    token_expire_minutes: int = Field(30, description="Token expiration time in minutes")
+    token_expire_minutes: int = Field(
+        30, description="Token expiration time in minutes"
+    )
     algorithm: str = Field("HS256", description="JWT algorithm")
 
 
@@ -41,9 +43,11 @@ class Settings(BaseSettings):
     """Application settings."""
 
     app_name: str = Field("SpaceBridge", description="Application name")
-    environment: str = Field("development", description="Environment (development, production)")
+    environment: str = Field(
+        "development", description="Environment (development, production)"
+    )
     log_level: str = Field("INFO", description="Log level")
-    
+
     database: DatabaseSettings
     security: SecuritySettings
     server: ServerSettings
@@ -64,9 +68,11 @@ class Settings(BaseSettings):
         # Load required settings
         database_url = os.getenv("DATABASE_URL")
         if not database_url:
-            database_url = "postgresql+psycopg://postgres:postgres@localhost/spacebridge"
+            database_url = (
+                "postgresql+psycopg://postgres:postgres@localhost/spacebridge"
+            )
             logger.warning(f"DATABASE_URL not set, using default: {database_url}")
-        
+
         secret_key = os.getenv("SECRET_KEY")
         if not secret_key:
             secret_key = "development_secret_key_do_not_use_in_production"

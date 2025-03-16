@@ -38,13 +38,13 @@ async def test_jira_test_connection_success(jira_client):
     )
 
     result = await jira_client.test_connection()
-    
+
     # Verify the result
     assert isinstance(result, TrackerConnection)
     assert result.connected is True
     assert "Successfully connected to Jira" in result.message
     assert result.server_info["version"] == "8.20.0"
-    
+
     # Verify the make_request call
     jira_client._make_request.assert_called_once_with("GET", "serverInfo")
 
@@ -56,7 +56,7 @@ async def test_jira_test_connection_failure(jira_client):
     jira_client._make_request = AsyncMock(side_effect=ValueError("Connection failed"))
 
     result = await jira_client.test_connection()
-    
+
     # Verify the result
     assert isinstance(result, TrackerConnection)
     assert result.connected is False
@@ -138,7 +138,7 @@ async def test_jira_search_issues(jira_client):
     # Verify the result
     assert total == 1
     assert len(issues) == 1
-    
+
     issue = issues[0]
     assert issue.id == "10001"
     assert issue.key == "TEST-1"
@@ -156,7 +156,7 @@ async def test_jira_search_issues(jira_client):
     assert issue.comments[0].body == "Test comment"
     assert issue.tracker_type == "jira"
     assert issue.project_key == "TEST"
-    
+
     # Verify the make_request call - check JQL query construction
     jira_client._make_request.assert_called_once()
     call_args = jira_client._make_request.call_args[1]
@@ -172,7 +172,7 @@ async def test_jira_create_issue(jira_client):
     """Test creating a Jira issue."""
     # Mock responses
     creation_response = {"id": "10001", "key": "TEST-1"}
-    
+
     # Mock the issue details that will be returned after creation
     issue_response = {
         "id": "10001",
@@ -180,14 +180,18 @@ async def test_jira_create_issue(jira_client):
         "fields": {
             "summary": "New issue",
             "description": "Issue description",
-            "status": {"id": "10000", "name": "To Do", "statusCategory": {"key": "new"}},
+            "status": {
+                "id": "10000",
+                "name": "To Do",
+                "statusCategory": {"key": "new"},
+            },
             "priority": {"id": "3", "name": "Medium"},
             "created": "2023-01-01T00:00:00.000Z",
             "updated": "2023-01-01T00:00:00.000Z",
             "project": {"key": "TEST"},
         },
     }
-    
+
     # Setup the mock to return different responses for different calls
     async def mock_make_request(method, endpoint, **kwargs):
         if method == "POST" and endpoint == "issue":
@@ -195,9 +199,9 @@ async def test_jira_create_issue(jira_client):
         elif method == "GET" and endpoint.startswith("issue/"):
             return issue_response
         return {}
-    
+
     jira_client._make_request = AsyncMock(side_effect=mock_make_request)
-    
+
     # Create issue data
     issue_data = IssueCreate(
         title="New issue",
@@ -205,10 +209,10 @@ async def test_jira_create_issue(jira_client):
         priority="Medium",
         labels=["enhancement"],
     )
-    
+
     # Call the method
     issue = await jira_client.create_issue(project_key="TEST", issue_data=issue_data)
-    
+
     # Verify the result
     assert isinstance(issue, Issue)
     assert issue.id == "10001"
@@ -216,17 +220,17 @@ async def test_jira_create_issue(jira_client):
     assert issue.title == "New issue"
     assert issue.description == "Issue description"
     assert issue.priority.name == "Medium"
-    
+
     # Verify the make_request calls
     assert jira_client._make_request.call_count == 2
-    
+
     # First call should be to create the issue
     create_call = jira_client._make_request.call_args_list[0]
     assert create_call[0][0] == "POST"
     assert create_call[0][1] == "issue"
     assert create_call[1]["json_data"]["fields"]["summary"] == "New issue"
     assert create_call[1]["json_data"]["fields"]["project"]["key"] == "TEST"
-    
+
     # Second call should be to get the created issue
     get_call = jira_client._make_request.call_args_list[1]
     assert get_call[0][0] == "GET"
@@ -247,17 +251,17 @@ async def test_jira_add_comment(jira_client):
             "emailAddress": "test@example.com",
         },
     }
-    
+
     # Mock the _make_request method
     jira_client._make_request = AsyncMock(return_value=comment_response)
-    
+
     # Call the method
     comment = await jira_client.add_comment(issue_id="TEST-1", comment="Test comment")
-    
+
     # Verify the result
     assert comment.id == "10001"
     assert comment.author.name == "Test User"
-    
+
     # Verify the make_request call
     jira_client._make_request.assert_called_once()
     call_args = jira_client._make_request.call_args

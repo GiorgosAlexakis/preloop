@@ -1,112 +1,81 @@
-image: python:3.10-slim
+image: alpine:3.15
 
 variables:
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
-  POSTGRES_DB: postgres
-  POSTGRES_USER: postgres
-  POSTGRES_PASSWORD: postgres
-  POSTGRES_HOST: postgres
-  POSTGRES_PORT: 5432
-  # Disable PGVector in tests
-  SPACEBRIDGE_DISABLE_PGVECTOR: "true"
-
-stages:
-  - lint
-  - test
-  - build
-  - deploy
+  CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/spacebridge
 
 cache:
   paths:
     - .pip-cache/
 
-# Install dependencies before each job
-.install-deps: &install-deps
-  before_script:
-    - pip install --upgrade pip
-    - pip install -e ".[dev]"
+stages:
+  - build
+  - deploy
+  - test
 
-# Lint jobs
-black:
-  <<: *install-deps
-  stage: lint
-  script:
-    - black --check .
-
-isort:
-  <<: *install-deps
-  stage: lint
-  script:
-    - isort --check .
-
-ruff:
-  <<: *install-deps
-  stage: lint
-  script:
-    - ruff check .
-
-mypy:
-  <<: *install-deps
-  stage: lint
-  script:
-    - mypy spacebridge tests
-
-# Test jobs
-test:
-  <<: *install-deps
-  stage: test
-  services:
-    - name: postgres:14-alpine
-      alias: postgres
-  script:
-    - pytest --cov=spacebridge tests/
-    - python -m pytest --cov-report term --cov-report xml:coverage.xml
-  coverage: '/(?i)total.*? (100(?:\.0+)?|[1-9]?\d(?:\.\d+)?)%/'
-  artifacts:
-    reports:
-      coverage_report:
-        coverage_format: cobertura
-        path: coverage.xml
-
-# Build job
 build:
   stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
   script:
-    - pip install build
-    - python -m build
-  artifacts:
-    paths:
-      - dist/
-  rules:
-    - if: $CI_COMMIT_TAG
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64)\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor 
+      --context $CI_PROJECT_DIR 
+      --dockerfile $CI_PROJECT_DIR/Dockerfile 
+      --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA 
+      --destination $CI_REGISTRY_IMAGE:latest
+      --registry-mirror registry.spacecode.ai
+      --registry-mirror $CI_REGISTRY
 
-# Deploy jobs
-deploy-staging:
-  stage: deploy
-  image: docker:latest
-  services:
-    - docker:dind
-  variables:
-    DOCKER_TLS_CERTDIR: "/certs"
+pre-commit:
+  stage: test
+  needs: []
+  image: python:3.11-slim
+  before_script:
+    - apt-get update && apt-get install -y git
+    - pip install pre-commit
   script:
-    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG .
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - pre-commit install
+    - pre-commit run --all-files
 
-deploy-production:
-  stage: deploy
-  image: docker:latest
+pytest:
+  stage: test
+  needs: []
+  image: python:3.11-slim
   services:
-    - docker:dind
+    - postgres:13
   variables:
-    DOCKER_TLS_CERTDIR: "/certs"
+    POSTGRES_DB: test_db
+    POSTGRES_USER: test_user
+    POSTGRES_PASSWORD: test_password
+    DATABASE_URL: postgresql://test_user:test_password@postgres:5432/test_db
+  before_script:
+    - pip install --upgrade pip
+    - pip install pytest pytest-cov
+    - pip install -e ".[dev]"
   script:
-    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG .
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG
-    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG $CI_REGISTRY_IMAGE:latest
-    - docker push $CI_REGISTRY_IMAGE:latest
-  rules:
-    - if: $CI_COMMIT_TAG
+    - export ANTHROPIC_API_KEY="mock_openai_key"
+    - pytest -v
+
+deploy:
+  stage: deploy
+  image: alpine/helm:3.13.2
+  when: manual
+  # only:
+  #   - main
+  #   # only for references that match a version string (v1.2.3)
+  #   - /^v\d+\.\d+\.\d+$/
+  environment:
+    name: production
+  script:
+    - helm upgrade --install spacebridge ./helm/spacebridge
+      --namespace spacebridge 
+      --set image.tag=${CI_COMMIT_SHA}
+      --set config.openai.apiKey=${OPENAI_API_KEY}
+      --set config.gitlab.apiKey=${GITLAB_API_KEY}
+      --set config.gitlab.apiUrl=${GITLAB_API_URL}
+      --set config.jira.apiKey=${JIRA_API_KEY}
+      --set config.jira.apiUrl=${JIRA_API_URL}
+      --set config.github.apiKey=${GITHUB_API_KEY}
+      --set config.github.apiUrl=${GITHUB_API_URL}

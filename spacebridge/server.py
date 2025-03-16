@@ -28,7 +28,9 @@ def start_server(
     # Set server parameters from environment or defaults
     host = host or os.getenv("HOST", "0.0.0.0")
     port = port or int(os.getenv("PORT", "8000"))
-    debug = debug if debug is not None else os.getenv("DEBUG", "false").lower() == "true"
+    debug = (
+        debug if debug is not None else os.getenv("DEBUG", "false").lower() == "true"
+    )
 
     # Log server startup
     logger.info(f"Starting SpaceBridge server on {host}:{port} (debug={debug})")

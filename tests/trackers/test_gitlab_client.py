@@ -28,9 +28,11 @@ class TestGitLabClient:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"id": 1, "name": "test"}
-        
+
         # Set up the mock
-        with patch("httpx.AsyncClient.request", return_value=mock_response) as mock_request:
+        with patch(
+            "httpx.AsyncClient.request", return_value=mock_response
+        ) as mock_request:
             # Make request
             result = await self.client._request("GET", "/test")
 
@@ -48,9 +50,11 @@ class TestGitLabClient:
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Rate limit exceeded", request=MagicMock(), response=mock_response
         )
-        
+
         # Set up the mock
-        with patch("httpx.AsyncClient.request", return_value=mock_response) as mock_request:
+        with patch(
+            "httpx.AsyncClient.request", return_value=mock_response
+        ) as mock_request:
             # Make request and check exception
             with pytest.raises(httpx.HTTPStatusError):
                 await self.client._request("GET", "/test")
@@ -63,10 +67,12 @@ class TestGitLabClient:
             {"id": 1, "name": "test-project", "path_with_namespace": "group/project"},
             {"version": "15.4.0"},
         ]
-        
+
         # Set up the mock
-        with patch("spacebridge.trackers.gitlab.client.GitLabClient._request", 
-                 side_effect=mock_responses) as mock_request:
+        with patch(
+            "spacebridge.trackers.gitlab.client.GitLabClient._request",
+            side_effect=mock_responses,
+        ) as mock_request:
             # Test connection
             result = await self.client.test_connection()
 
@@ -78,8 +84,10 @@ class TestGitLabClient:
     async def test_test_connection_failure(self):
         """Test connection testing failure."""
         # Set up the mock to raise an exception
-        with patch("spacebridge.trackers.gitlab.client.GitLabClient._request",
-                 side_effect=Exception("Connection failed")) as mock_request:
+        with patch(
+            "spacebridge.trackers.gitlab.client.GitLabClient._request",
+            side_effect=Exception("Connection failed"),
+        ) as mock_request:
             # Test connection
             result = await self.client.test_connection()
 
@@ -104,10 +112,12 @@ class TestGitLabClient:
                 {"name": "priority::high", "color": "#0000ff"},
             ],
         ]
-        
+
         # Set up the mock
-        with patch("spacebridge.trackers.gitlab.client.GitLabClient._request",
-                 side_effect=mock_responses) as mock_request:
+        with patch(
+            "spacebridge.trackers.gitlab.client.GitLabClient._request",
+            side_effect=mock_responses,
+        ) as mock_request:
             # Get metadata
             result = await self.client.get_project_metadata("ignored")
 
@@ -143,30 +153,36 @@ class TestGitLabClient:
                 "_links": {"self": "https://gitlab.com/api/v4/projects/1/issues/1"},
             }
         ]
-        
+
         # Set up the request mock
-        with patch("spacebridge.trackers.gitlab.client.GitLabClient._request", 
-                 return_value=issues_data) as mock_request:
+        with patch(
+            "spacebridge.trackers.gitlab.client.GitLabClient._request",
+            return_value=issues_data,
+        ) as mock_request:
             # Set up the get_issue_comments mock
-            with patch.object(self.client, "_get_issue_comments", 
-                           return_value=AsyncMock(return_value=[])) as mock_comments:
+            with patch.object(
+                self.client,
+                "_get_issue_comments",
+                return_value=AsyncMock(return_value=[]),
+            ) as mock_comments:
                 # Create a mock httpx response for the count headers
                 mock_response = MagicMock()
                 mock_response.headers = {"X-Total": "1"}
-                
+
                 # Set up the AsyncClient mock
                 mock_client = MagicMock()
                 mock_client.request = AsyncMock(return_value=mock_response)
-                
+
                 # Set up the AsyncClient context manager
                 mock_cm = MagicMock()
                 mock_cm.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_cm.__aexit__ = AsyncMock()
-                
+
                 # Patch the AsyncClient constructor
                 with patch("httpx.AsyncClient", return_value=mock_cm):
                     # Search issues
                     from spacebridge.trackers.base import IssueFilter
+
                     issues, count = await self.client.search_issues(
                         "ignored",
                         IssueFilter(query="test"),
@@ -205,12 +221,15 @@ class TestGitLabClient:
             "web_url": "https://gitlab.com/group/project/-/issues/1",
             "_links": {"self": "https://gitlab.com/api/v4/projects/1/issues/1"},
         }
-        
+
         # Set up the mock
-        with patch("spacebridge.trackers.gitlab.client.GitLabClient._request",
-                 return_value=issue_data) as mock_request:
+        with patch(
+            "spacebridge.trackers.gitlab.client.GitLabClient._request",
+            return_value=issue_data,
+        ) as mock_request:
             # Create issue
             from spacebridge.trackers.base import IssueCreate
+
             issue = await self.client.create_issue(
                 "ignored",
                 IssueCreate(

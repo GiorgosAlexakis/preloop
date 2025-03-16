@@ -25,7 +25,10 @@ class Project(Base):
 
     # Foreign keys
     organization_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("organization.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("organization.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Project settings stored as JSON
@@ -45,10 +48,14 @@ class Project(Base):
     #         "credentials": "encrypted_credentials_string"
     #     }
     # }
-    tracker_configurations: Mapped[Optional[Dict]] = mapped_column(JSON, nullable=True, default=dict)
+    tracker_configurations: Mapped[Optional[Dict]] = mapped_column(
+        JSON, nullable=True, default=dict
+    )
 
     # Relationships
-    organization: Mapped[Organization] = relationship("Organization", back_populates="projects")
+    organization: Mapped[Organization] = relationship(
+        "Organization", back_populates="projects"
+    )
 
     def __repr__(self) -> str:
         """String representation of the project."""

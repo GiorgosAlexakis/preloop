@@ -105,23 +105,23 @@ class TestConnectionTool(MCPTool):
                 try:
                     # Get the tracker configuration
                     tracker_config = project.tracker_configurations[tracker]
-                    
+
                     # Create a tracker client based on tracker type
                     # Handles all supported trackers: github, gitlab, jira
                     tracker_client = run_async(
                         TrackerFactory.create_client(tracker, tracker_config)
                     )
-                    
+
                     if not tracker_client:
                         results[tracker] = {
                             "connected": False,
                             "message": f"Failed to create client for tracker '{tracker}'",
                         }
                         continue
-                    
+
                     # Test the connection
                     connection_result = run_async(tracker_client.test_connection())
-                    
+
                     # Store the result
                     results[tracker] = {
                         "connected": connection_result.connected,
@@ -129,7 +129,7 @@ class TestConnectionTool(MCPTool):
                         "rate_limit": connection_result.rate_limit,
                         "server_info": connection_result.server_info,
                     }
-                
+
                 except Exception as e:
                     logger.exception(f"Error testing connection to {tracker}: {e}")
                     results[tracker] = {
@@ -145,6 +145,6 @@ class TestConnectionTool(MCPTool):
                 },
                 "connection_results": results,
             }
-        
+
         finally:
             db.close()

@@ -31,68 +31,79 @@ class TrackerFactory:
         try:
             if tracker_type == "github":
                 if "credentials" not in config or "token" not in config["credentials"]:
-                    raise ValueError("GitHub configuration must include credentials.token")
-                
+                    raise ValueError(
+                        "GitHub configuration must include credentials.token"
+                    )
+
                 if "owner" not in config or "repo" not in config:
                     raise ValueError("GitHub configuration must include owner and repo")
-                
+
                 credentials = GitHubCredentials(
                     token=config["credentials"]["token"],
                     username=config["credentials"].get("username"),
                 )
-                
+
                 return GitHubClient(
                     credentials=credentials,
                     owner=config["owner"],
                     repo=config["repo"],
                     timeout=config.get("timeout", 10),
                 )
-            
+
             elif tracker_type == "gitlab":
                 if "credentials" not in config or "token" not in config["credentials"]:
-                    raise ValueError("GitLab configuration must include credentials.token")
-                
+                    raise ValueError(
+                        "GitLab configuration must include credentials.token"
+                    )
+
                 if "project_id" not in config:
                     raise ValueError("GitLab configuration must include project_id")
-                
+
                 credentials = GitLabCredentials(
                     token=config["credentials"]["token"],
                     username=config["credentials"].get("username"),
                 )
-                
+
                 return GitLabClient(
                     credentials=credentials,
                     project_id=config["project_id"],
                     timeout=config.get("timeout", 10),
                 )
-            
+
             elif tracker_type == "jira":
                 if "credentials" not in config or "token" not in config["credentials"]:
-                    raise ValueError("Jira configuration must include credentials.token")
-                
-                if "credentials" not in config or "username" not in config["credentials"]:
-                    raise ValueError("Jira configuration must include credentials.username")
-                    
+                    raise ValueError(
+                        "Jira configuration must include credentials.token"
+                    )
+
+                if (
+                    "credentials" not in config
+                    or "username" not in config["credentials"]
+                ):
+                    raise ValueError(
+                        "Jira configuration must include credentials.username"
+                    )
+
                 if "credentials" not in config or "url" not in config["credentials"]:
                     raise ValueError("Jira configuration must include credentials.url")
-                
+
                 from spacebridge.trackers.jira.client import JiraCredentials, JiraClient
-                
+
                 credentials = JiraCredentials(
                     token=config["credentials"]["token"],
                     username=config["credentials"]["username"],
                     url=config["credentials"]["url"],
                 )
-                
+
                 return JiraClient(
                     credentials=credentials,
                     timeout=config.get("timeout", 10),
                 )
-            
+
             else:
                 logger.warning(f"Unsupported tracker type: {tracker_type}")
                 return None
-        
+
         except Exception as e:
             logger.exception(f"Failed to create tracker client: {e}")
             return None

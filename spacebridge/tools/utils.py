@@ -36,7 +36,9 @@ def async_to_sync(func: Callable) -> Callable:
     Returns:
         A sync function that runs the async function in an event loop.
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         return run_async(func(*args, **kwargs))
+
     return wrapper

@@ -9,10 +9,10 @@ from spacebridge.tools.organization import GetOrganizationTool
 from spacebridge.tools.project import TestConnectionTool
 
 __all__ = [
-    "MCPTool", 
-    "MCPToolMetadata", 
-    "get_tool", 
-    "list_tools", 
+    "MCPTool",
+    "MCPToolMetadata",
+    "get_tool",
+    "list_tools",
     "register_tool",
     # Tool implementations
     "CreateIssueTool",

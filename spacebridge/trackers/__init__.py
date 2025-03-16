@@ -25,7 +25,7 @@ __all__ = [
     "IssueFilter",
     "IssuePriority",
     "IssueRelation",
-    "IssueStatus", 
+    "IssueStatus",
     "IssueUpdate",
     "IssueUser",
     "ProjectMetadata",

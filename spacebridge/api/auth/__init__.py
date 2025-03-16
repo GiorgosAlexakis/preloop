@@ -7,4 +7,9 @@ from spacebridge.api.auth.jwt import (
 )
 from spacebridge.api.auth.router import router as auth_router
 
-__all__ = ["auth_router", "get_current_user", "get_current_active_user", "oauth2_scheme"]
+__all__ = [
+    "auth_router",
+    "get_current_user",
+    "get_current_active_user",
+    "oauth2_scheme",
+]

@@ -17,7 +17,9 @@ class MCPToolRequest(BaseModel):
     """Request model for invoking an MCP tool."""
 
     tool_name: str = Field(..., description="Name of the tool to invoke")
-    parameters: Dict[str, Any] = Field(default_factory=dict, description="Parameters for the tool")
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict, description="Parameters for the tool"
+    )
 
 
 class MCPToolMetadataResponse(BaseModel):
@@ -25,8 +27,12 @@ class MCPToolMetadataResponse(BaseModel):
 
     name: str = Field(..., description="Name of the tool")
     description: str = Field(..., description="Description of the tool")
-    required_parameters: List[str] = Field(..., description="Required parameters for the tool")
-    optional_parameters: Dict[str, Any] = Field(..., description="Optional parameters with default values")
+    required_parameters: List[str] = Field(
+        ..., description="Required parameters for the tool"
+    )
+    optional_parameters: Dict[str, Any] = Field(
+        ..., description="Optional parameters with default values"
+    )
 
 
 class MCPToolResponse(BaseModel):
@@ -59,29 +65,32 @@ async def invoke_tool(request: MCPToolRequest, req: Request) -> Dict[str, Any]:
         HTTPException: If the tool is not found or if the invocation fails.
     """
     logger.info(f"Invoking tool: {request.tool_name}")
-    
+
     # Get the tool class from the registry
     tool_class = get_tool(request.tool_name)
     if not tool_class:
         logger.error(f"Tool not found: {request.tool_name}")
-        raise HTTPException(status_code=404, detail=f"Tool '{request.tool_name}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Tool '{request.tool_name}' not found"
+        )
 
     try:
         # Create an instance of the tool
         tool = tool_class()
-        
+
         # Log the parameters (excluding sensitive data)
-        safe_params = {k: v for k, v in request.parameters.items() if not k.lower() in ["password", "token", "secret", "key", "credential"]}
+        safe_params = {
+            k: v
+            for k, v in request.parameters.items()
+            if not k.lower() in ["password", "token", "secret", "key", "credential"]
+        }
         logger.debug(f"Tool parameters: {safe_params}")
-        
+
         # Execute the tool with the parameters
         result = tool.execute(request.parameters)
-        
+
         # Return the result
-        return {
-            "tool_name": request.tool_name,
-            "result": result
-        }
+        return {"tool_name": request.tool_name, "result": result}
     except ValueError as e:
         # Parameter validation error
         logger.warning(f"Parameter validation error: {e}")
@@ -90,8 +99,8 @@ async def invoke_tool(request: MCPToolRequest, req: Request) -> Dict[str, Any]:
         # Other errors
         logger.exception(f"Error executing tool '{request.tool_name}': {e}")
         raise HTTPException(
-            status_code=500, 
-            detail=f"Error executing tool '{request.tool_name}': {str(e)}"
+            status_code=500,
+            detail=f"Error executing tool '{request.tool_name}': {str(e)}",
         )
 
 

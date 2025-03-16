@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 # Try to import FastAPI, but don't fail if it's not available
 try:
     from fastapi.testclient import TestClient
+
     HAS_FASTAPI = True
 except ImportError:
     HAS_FASTAPI = False
@@ -32,7 +33,7 @@ def db_session_factory(db_engine):
     """Create a database session factory for testing."""
     # Create tables in the test database
     # Base.metadata.create_all(db_engine)
-    
+
     return sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
 
 

@@ -141,19 +141,19 @@ class SearchIssuesTool(MCPTool):
                 try:
                     # Get the tracker configuration
                     tracker_config = project.tracker_configurations[tracker]
-                    
+
                     # Create a tracker client
                     tracker_client = run_async(
                         TrackerFactory.create_client(tracker, tracker_config)
                     )
-                    
+
                     if not tracker_client:
                         results[tracker] = {
                             "error": "client_creation_failed",
                             "message": f"Failed to create client for tracker '{tracker}'",
                         }
                         continue
-                    
+
                     # Search for issues
                     issues, total_count = run_async(
                         tracker_client.search_issues(
@@ -163,7 +163,7 @@ class SearchIssuesTool(MCPTool):
                             offset=0,
                         )
                     )
-                    
+
                     # Convert issues to dictionaries
                     issue_dicts = []
                     for issue in issues:
@@ -172,13 +172,13 @@ class SearchIssuesTool(MCPTool):
                         issue_dict["source"] = tracker
                         issue_dicts.append(issue_dict)
                         all_issues.append(issue_dict)
-                    
+
                     # Store the results
                     results[tracker] = {
                         "issues": issue_dicts,
                         "total_count": total_count,
                     }
-                
+
                 except Exception as e:
                     logger.exception(f"Error searching {tracker}: {e}")
                     results[tracker] = {
@@ -189,7 +189,7 @@ class SearchIssuesTool(MCPTool):
             # Sort all issues by relevance or date
             # For now, we just sort by updated_at
             all_issues.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
-            
+
             # Limit the number of results
             all_issues = all_issues[:limit]
 
@@ -204,6 +204,6 @@ class SearchIssuesTool(MCPTool):
                 "combined_results": all_issues,
                 "total_results": len(all_issues),
             }
-        
+
         finally:
             db.close()

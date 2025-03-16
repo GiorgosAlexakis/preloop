@@ -19,7 +19,9 @@ class Organization(Base):
 
     # Organization details
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    identifier: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    identifier: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
     description: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
     # Organization settings stored as JSON

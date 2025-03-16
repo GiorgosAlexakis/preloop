@@ -71,17 +71,19 @@ class ToolRegistry:
         """
         try:
             package = importlib.import_module(package_name)
-            for _, name, is_pkg in pkgutil.iter_modules(package.__path__, f"{package_name}."):
+            for _, name, is_pkg in pkgutil.iter_modules(
+                package.__path__, f"{package_name}."
+            ):
                 try:
                     # Import the module or package
                     importlib.import_module(name)
-                    
+
                     # If it's a package, recursively discover tools in it
                     if is_pkg and not name.endswith("__pycache__"):
                         self.discover_tools(name)
                 except Exception as e:
                     logger.error(f"Error importing module {name}: {e}")
-            
+
             logger.info(f"Discovered {len(self._tools)} tools")
         except Exception as e:
             logger.error(f"Error discovering tools in {package_name}: {e}")

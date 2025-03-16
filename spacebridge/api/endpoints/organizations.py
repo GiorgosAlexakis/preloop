@@ -60,7 +60,8 @@ def create_organization(
     )
     if existing_org:
         raise HTTPException(
-            status_code=400, detail=f"Organization with identifier '{organization.identifier}' already exists"
+            status_code=400,
+            detail=f"Organization with identifier '{organization.identifier}' already exists",
         )
 
     # Create new organization
@@ -91,16 +92,24 @@ def list_organizations(
 
 
 @router.get("/organizations/{organization_id}", response_model=OrganizationResponse)
-def get_organization(organization_id: str, db: Session = Depends(get_db)) -> Organization:
+def get_organization(
+    organization_id: str, db: Session = Depends(get_db)
+) -> Organization:
     """Get an organization by ID."""
-    organization = db.query(Organization).filter(Organization.id == organization_id).first()
+    organization = (
+        db.query(Organization).filter(Organization.id == organization_id).first()
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
     return organization
 
 
-@router.get("/organizations/by-identifier/{identifier}", response_model=OrganizationResponse)
-def get_organization_by_identifier(identifier: str, db: Session = Depends(get_db)) -> Organization:
+@router.get(
+    "/organizations/by-identifier/{identifier}", response_model=OrganizationResponse
+)
+def get_organization_by_identifier(
+    identifier: str, db: Session = Depends(get_db)
+) -> Organization:
     """Get an organization by identifier."""
     organization = (
         db.query(Organization).filter(Organization.identifier == identifier).first()
@@ -117,7 +126,9 @@ def update_organization(
     db: Session = Depends(get_db),
 ) -> Organization:
     """Update an organization."""
-    organization = db.query(Organization).filter(Organization.id == organization_id).first()
+    organization = (
+        db.query(Organization).filter(Organization.id == organization_id).first()
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
 
@@ -135,7 +146,9 @@ def update_organization(
 @router.delete("/organizations/{organization_id}", status_code=204)
 def delete_organization(organization_id: str, db: Session = Depends(get_db)) -> None:
     """Delete an organization."""
-    organization = db.query(Organization).filter(Organization.id == organization_id).first()
+    organization = (
+        db.query(Organization).filter(Organization.id == organization_id).first()
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
 
