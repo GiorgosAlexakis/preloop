@@ -1,6 +1,5 @@
 """Pytest configuration file for SpaceBridge tests."""
 
-import os
 from typing import Generator
 
 import pytest
@@ -9,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 # Try to import FastAPI, but don't fail if it's not available
 try:
-    from fastapi.testclient import TestClient
+    import fastapi  # noqa: F401
 
     HAS_FASTAPI = True
 except ImportError:

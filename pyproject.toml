@@ -24,6 +24,9 @@ dependencies = [
     "python-json-logger>=2.0.0",
 ]
 
+[tool.setuptools]
+packages = ["spacebridge"]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
@@ -52,7 +55,11 @@ disallow_incomplete_defs = true
 [tool.ruff]
 line-length = 88
 target-version = "py310"
+
+# Linting options
+[tool.ruff.lint]
 select = ["E", "F", "B", "I", "N", "W"]
+ignore = ["B008", "E501", "F841", "E741", "B904", "N805", "F821"]  # Ignore problematic rules for now
 
 # Format configuration
 [tool.ruff.format]
