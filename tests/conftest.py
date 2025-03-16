@@ -4,9 +4,15 @@ import os
 from typing import Generator
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+# Try to import FastAPI, but don't fail if it's not available
+try:
+    from fastapi.testclient import TestClient
+    HAS_FASTAPI = True
+except ImportError:
+    HAS_FASTAPI = False
 
 # These will be implemented as the project progresses
 # from spacebridge.api.app import create_app
