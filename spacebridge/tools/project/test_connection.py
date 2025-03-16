@@ -106,7 +106,8 @@ class TestConnectionTool(MCPTool):
                     # Get the tracker configuration
                     tracker_config = project.tracker_configurations[tracker]
                     
-                    # Create a tracker client
+                    # Create a tracker client based on tracker type
+                    # Handles all supported trackers: github, gitlab, jira
                     tracker_client = run_async(
                         TrackerFactory.create_client(tracker, tracker_config)
                     )

@@ -18,10 +18,10 @@ SpaceBridge is a Model Context Protocol (MCP) server that serves as a unified in
 
 ## Supported Issue Trackers
 
-- Jira
+- Jira Cloud and Server
 - GitHub Issues
 - GitLab Issues
-- (More to be added in future releases)
+- (More to be added in future releases, including Azure DevOps and Linear)
 
 ## Installation
 
@@ -70,6 +70,12 @@ from mcp.client import MCPClient
 
 client = MCPClient("http://localhost:8000")
 
+# Test a tracker connection
+connection = client.invoke("test_connection", {
+    "organization": "spacecode",
+    "project": "astrobot"
+})
+
 # Search for issues related to authentication
 results = client.invoke("search_issues", {
     "organization": "spacecode",
@@ -84,9 +90,26 @@ issue = client.invoke("create_issue", {
     "project": "astrobot",
     "title": "Improve login error messages",
     "description": "Current error messages are not clear enough...",
-    "labels": ["enhancement", "authentication"]
+    "labels": ["enhancement", "authentication"],
+    "priority": "High"
+})
+
+# Add a comment to an existing issue
+comment = client.invoke("add_comment", {
+    "organization": "spacecode",
+    "project": "astrobot",
+    "issue_id": "ASTRO-123",
+    "comment": "I've reproduced this on the staging environment as well."
 })
 ```
+
+Jira, GitHub, and GitLab integrations are fully implemented with support for:
+
+- Project connection testing
+- Issue creation and updating
+- Issue searching with filters
+- Comment management
+- Issue relations and linking
 
 ## Contributing
 
