@@ -1,0 +1,41 @@
+apiVersion: v2
+name: spacebridge
+description: A Helm chart for SpaceBridge - A Model Context Protocol (MCP) server for issue tracking systems
+
+# A chart can be either an 'application' or a 'library' chart.
+type: application
+
+# Chart version
+version: 0.1.0
+
+# Application version
+appVersion: "0.1.0"
+
+# Keywords for the chart
+keywords:
+  - spacebridge
+  - mcp
+  - issue-tracking
+  - jira
+  - github
+  - gitlab
+
+# Home URL for the project
+home: https://gitlab.spacecode.ai/spacecode/spacebridge
+
+# Chart maintainers
+maintainers:
+  - name: SpaceCode Team
+    email: support@spacecode.ai
+
+# Icon for the chart (optional)
+# icon: https://spacecode.ai/icons/spacebridge.png
+
+# Dependencies
+dependencies:
+  - name: postgresql
+    version: "12.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: database.enabled
+    tags:
+      - spacebridge-database

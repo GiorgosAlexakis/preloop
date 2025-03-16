@@ -1,0 +1,115 @@
+# Default values for the SpaceBridge Helm chart
+
+# Replica count for the deployment
+replicaCount: 1
+
+# Image configuration
+image:
+  repository: gitlab.spacecode.ai:5000/spacecode/spacebridge
+  pullPolicy: IfNotPresent
+  tag: "latest"  # Overrides the image tag
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext: {}
+
+# Security context
+securityContext: {}
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8000
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: spacebridge.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+# Resource requests and limits
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Autoscaling configuration
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity settings
+affinity: {}
+
+# Environment configuration
+environment:
+  # Server settings
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  # Database settings
+  databaseUrl: "postgresql://postgres:postgres@postgres:5432/spacebridge"
+  # JWT settings
+  jwtSecret: "change-this-in-production"
+  jwtAlgorithm: "HS256"
+  jwtExpireMinutes: 60
+  # Logging
+  logLevel: "INFO"
+  logFormat: "json"
+
+# Database configuration
+database:
+  # If true, deploys a PostgreSQL instance
+  enabled: true
+  # If external is true, uses an external PostgreSQL instance
+  external: false
+  # External database configuration (if external is true)
+  externalDatabase:
+    host: ""
+    port: 5432
+    user: ""
+    password: ""
+    database: ""
+  # Internal database configuration (if enabled is true and external is false)
+  postgresql:
+    auth:
+      username: postgres
+      password: postgres
+      database: spacebridge
+    service:
+      port: 5432
+    persistence:
+      enabled: true
+      size: 1Gi
+    # Install the PGVector extension
+    pgvector:
+      enabled: true

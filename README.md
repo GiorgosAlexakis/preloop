@@ -31,7 +31,7 @@ SpaceBridge is a Model Context Protocol (MCP) server that serves as a unified in
 - PostgreSQL 14+
 - PGVector extension for PostgreSQL
 
-### Setup
+### Local Setup
 
 ```bash
 # Clone the repository
@@ -52,6 +52,35 @@ python -m spacebridge.db.setup
 cp .env.example .env
 # Edit .env with your settings
 ```
+
+### Docker Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/spacecode/spacebridge.git
+cd spacebridge
+
+# Run with Docker Compose
+docker-compose up
+```
+
+### Kubernetes Setup
+
+SpaceBridge can be deployed to Kubernetes using the provided Helm chart:
+
+```bash
+# Add the SpaceCode Helm repository (if available)
+# helm repo add spacecode https://charts.spacecode.ai
+# helm repo update
+
+# Install from the local chart
+helm install spacebridge ./charts/spacebridge
+
+# Or install with custom values
+helm install spacebridge ./charts/spacebridge --values custom-values.yaml
+```
+
+For more details about the Helm chart, see the [chart README](./charts/spacebridge/README.md).
 
 ## Usage
 
