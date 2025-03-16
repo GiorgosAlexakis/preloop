@@ -1,10 +1,10 @@
 """Base SQLAlchemy models for SpaceBridge."""
 
 from datetime import datetime
-from typing import Any, Dict, ClassVar
+from typing import Any, ClassVar, Dict
 
 from sqlalchemy import DateTime, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, declared_attr
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 
 class Base(DeclarativeBase):

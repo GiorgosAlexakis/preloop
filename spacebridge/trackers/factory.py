@@ -87,7 +87,7 @@ class TrackerFactory:
                 if "credentials" not in config or "url" not in config["credentials"]:
                     raise ValueError("Jira configuration must include credentials.url")
 
-                from spacebridge.trackers.jira.client import JiraCredentials, JiraClient
+                from spacebridge.trackers.jira.client import JiraClient, JiraCredentials
 
                 credentials = JiraCredentials(
                     token=config["credentials"]["token"],

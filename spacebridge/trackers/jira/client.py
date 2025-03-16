@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -76,9 +76,10 @@ class JiraClient(TrackerInterface):
         Raises:
             ValueError: If the request fails
         """
-        import aiohttp
         import base64
         import json
+
+        import aiohttp
 
         url = f"{self.api_url}/{endpoint.lstrip('/')}"
         auth_str = f"{self.credentials.username}:{self.credentials.token}"

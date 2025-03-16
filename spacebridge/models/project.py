@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional
 
-from sqlalchemy import ForeignKey, JSON, String
+from sqlalchemy import JSON, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spacebridge.db.base import Base

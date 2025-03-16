@@ -9,8 +9,6 @@ from spacebridge.db.base import Base
 from spacebridge.db.session import engine
 
 # Import models to register them with Base.metadata
-from spacebridge.models.organization import Organization
-from spacebridge.models.project import Project
 
 logger = logging.getLogger(__name__)
 

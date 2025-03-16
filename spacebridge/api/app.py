@@ -3,9 +3,8 @@
 import logging
 from typing import Dict
 
-from fastapi import FastAPI, Depends
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
 
 from spacebridge import __version__
 from spacebridge.api.auth import auth_router, get_current_active_user

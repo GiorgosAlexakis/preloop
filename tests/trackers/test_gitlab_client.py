@@ -1,6 +1,5 @@
 """Tests for the GitLab tracker client."""
 
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx

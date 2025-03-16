@@ -1,7 +1,7 @@
 """Authentication router for the API."""
 
 from datetime import timedelta
-from typing import Any, Dict
+from typing import Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -12,7 +12,6 @@ from spacebridge.api.auth.jwt import (
     User,
     create_access_token,
     get_current_active_user,
-    verify_password,
 )
 
 router = APIRouter()

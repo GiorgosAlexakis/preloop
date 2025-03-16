@@ -1,11 +1,11 @@
 """Tests for the Jira client integration."""
 
-import json
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
-from spacebridge.trackers.jira.client import JiraClient, JiraCredentials
+import pytest
+
 from spacebridge.trackers.base import Issue, IssueCreate, IssueFilter, TrackerConnection
+from spacebridge.trackers.jira.client import JiraClient, JiraCredentials
 
 
 @pytest.fixture

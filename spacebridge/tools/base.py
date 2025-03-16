@@ -1,7 +1,7 @@
 """Base classes for MCP tools in SpaceBridge."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Set, Type, TypeVar
+from typing import Any, Dict, Set, Type, TypeVar
 
 from pydantic import BaseModel, Field, create_model
 

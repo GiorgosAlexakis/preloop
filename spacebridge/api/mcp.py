@@ -1,9 +1,9 @@
 """Model Context Protocol implementation for SpaceBridge."""
 
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from spacebridge.tools.registry import discover_tools, get_tool, list_tools
@@ -82,7 +82,7 @@ async def invoke_tool(request: MCPToolRequest, req: Request) -> Dict[str, Any]:
         safe_params = {
             k: v
             for k, v in request.parameters.items()
-            if not k.lower() in ["password", "token", "secret", "key", "credential"]
+            if k.lower() not in ["password", "token", "secret", "key", "credential"]
         }
         logger.debug(f"Tool parameters: {safe_params}")
 

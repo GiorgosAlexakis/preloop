@@ -3,7 +3,6 @@
 import logging
 import logging.config
 import os
-from typing import Dict, Any
 
 # Get log level from environment
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

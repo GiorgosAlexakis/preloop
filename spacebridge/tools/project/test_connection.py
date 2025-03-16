@@ -1,9 +1,7 @@
 """Test connection to an issue tracker."""
 
 import logging
-from typing import Any, Dict, List, Optional, Set
-
-from sqlalchemy.orm import Session
+from typing import Any, Dict
 
 from spacebridge.db.session import get_db
 from spacebridge.models.organization import Organization

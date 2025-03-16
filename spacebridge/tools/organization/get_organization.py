@@ -1,9 +1,6 @@
 """Get organization tool implementation."""
 
-import uuid
-from typing import Any, Dict, Optional, Set
-
-from sqlalchemy.orm import Session
+from typing import Any, Dict
 
 from spacebridge.db.session import get_db
 from spacebridge.models.organization import Organization

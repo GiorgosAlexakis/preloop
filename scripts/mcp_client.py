@@ -5,7 +5,7 @@ import argparse
 import json
 import logging
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import httpx
 

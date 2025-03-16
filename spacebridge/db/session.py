@@ -1,7 +1,7 @@
 """Database session management for SpaceBridge."""
 
-import os
 import logging
+import os
 from typing import Generator
 
 from sqlalchemy import create_engine

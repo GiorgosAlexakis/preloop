@@ -20,10 +20,10 @@ build:
   script:
     - mkdir -p /kaniko/.docker
     - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64)\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor 
-      --context $CI_PROJECT_DIR 
-      --dockerfile $CI_PROJECT_DIR/Dockerfile 
-      --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA 
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR
+      --dockerfile $CI_PROJECT_DIR/Dockerfile
+      --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
       --destination $CI_REGISTRY_IMAGE:latest
       --registry-mirror registry.spacecode.ai
       --registry-mirror $CI_REGISTRY
@@ -70,7 +70,7 @@ deploy:
     name: production
   script:
     - helm upgrade --install spacebridge ./helm/spacebridge
-      --namespace spacebridge 
+      --namespace spacebridge
       --set image.tag=${CI_COMMIT_SHA}
       --set config.openai.apiKey=${OPENAI_API_KEY}
       --set config.gitlab.apiKey=${GITLAB_API_KEY}
