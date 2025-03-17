@@ -32,10 +32,5 @@ maintainers:
 # icon: https://spacecode.ai/icons/spacebridge.png
 
 # Dependencies
-dependencies:
-  - name: postgresql
-    version: "12.x.x"
-    repository: "https://charts.bitnami.com/bitnami"
-    condition: database.enabled
-    tags:
-      - spacebridge-database
+# CloudNativePG operator should be installed in the cluster
+# https://cloudnative-pg.io/documentation/1.22/

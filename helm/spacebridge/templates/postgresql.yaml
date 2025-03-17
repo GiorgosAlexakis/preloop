@@ -1,0 +1,68 @@
+{{- if and .Values.database.enabled (not .Values.database.external) }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.database.cnpg.name | default (printf "%s-db" (include "spacebridge.fullname" .)) }}
+  labels:
+    {{- include "spacebridge.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.database.cnpg.instances }}
+  primaryUpdateStrategy: unsupervised
+
+  # PostgreSQL configuration
+  postgresql:
+    parameters:
+      shared_buffers: 256MB
+      max_connections: "100"
+
+  # Enable pgvector extension if requested
+  {{- if .Values.database.cnpg.pgvector.enabled }}
+  bootstrap:
+    initdb:
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS vector;
+  {{- end }}
+
+  # User management
+  superuserSecret:
+    name: {{ include "spacebridge.fullname" . }}-db-superuser
+  bootstrap:
+    recovery:
+      database: {{ .Values.database.cnpg.auth.database }}
+      owner: {{ .Values.database.cnpg.auth.username }}
+      secret:
+        name: {{ include "spacebridge.fullname" . }}-db-user
+
+  # Storage configuration
+  storage:
+    size: {{ .Values.database.cnpg.storage.size }}
+    {{- with .Values.database.cnpg.storage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+
+  # Resources
+  resources:
+    {{- toYaml .Values.database.cnpg.resources | nindent 4 }}
+
+---
+# Superuser secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "spacebridge.fullname" . }}-db-superuser
+type: kubernetes.io/basic-auth
+stringData:
+  username: postgres
+  password: {{ .Values.database.cnpg.auth.password }}
+
+---
+# Regular user secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "spacebridge.fullname" . }}-db-user
+type: kubernetes.io/basic-auth
+stringData:
+  username: {{ .Values.database.cnpg.auth.username }}
+  password: {{ .Values.database.cnpg.auth.password }}
+{{- end }}

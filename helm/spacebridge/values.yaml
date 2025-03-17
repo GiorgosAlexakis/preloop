@@ -77,7 +77,7 @@ environment:
   port: 8000
   debug: false
   # Database settings
-  databaseUrl: "postgresql://postgres:postgres@postgres:5432/spacebridge"
+  databaseUrl: "postgresql://postgres:postgres@spacebridge-db-rw:5432/spacebridge"
   # JWT settings
   jwtSecret: "change-this-in-production"
   jwtAlgorithm: "HS256"
@@ -88,7 +88,7 @@ environment:
 
 # Database configuration
 database:
-  # If true, deploys a PostgreSQL instance
+  # If true, deploys a PostgreSQL instance using CloudNativePG
   enabled: true
   # If external is true, uses an external PostgreSQL instance
   external: false
@@ -99,17 +99,24 @@ database:
     user: ""
     password: ""
     database: ""
-  # Internal database configuration (if enabled is true and external is false)
-  postgresql:
+  # CloudNativePG configuration (if enabled is true and external is false)
+  cnpg:
+    name: spacebridge-db
+    instances: 1
     auth:
       username: postgres
       password: postgres
       database: spacebridge
-    service:
-      port: 5432
-    persistence:
-      enabled: true
+    storage:
       size: 1Gi
-    # Install the PGVector extension
+      storageClass: ""
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    # PGVector extension for vector search
     pgvector:
       enabled: true
