@@ -4,7 +4,8 @@ import logging
 import os
 from typing import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 logger = logging.getLogger(__name__)
@@ -17,11 +18,16 @@ DATABASE_URL = os.getenv(
 # Create SQLAlchemy engine, using SQLite in memory for testing if PostgreSQL is not available
 try:
     engine = create_engine(DATABASE_URL)
+    # Test the connection
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+
     # Create session factory
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-except ImportError:
+    logger.info(f"Connected to database using {DATABASE_URL}")
+except (ImportError, SQLAlchemyError) as e:
     logger.warning(
-        "PostgreSQL driver not available. Using SQLite in memory for testing purposes."
+        f"PostgreSQL driver not available or connection failed: {e}. Using SQLite in memory for testing purposes."
     )
     engine = create_engine("sqlite:///:memory:")
     # Create session factory

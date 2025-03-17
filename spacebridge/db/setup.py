@@ -1,6 +1,7 @@
 """Database setup utilities for SpaceBridge."""
 
 import logging
+import os
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,10 +20,16 @@ def setup_database() -> None:
     Creates all tables defined in the models and initializes the PGVector extension.
     """
     try:
-        # Create the pgvector extension if it doesn't exist
-        with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-            conn.commit()
+        # Only create the pgvector extension if using PostgreSQL
+        database_url = os.getenv("DATABASE_URL", "")
+        if database_url and "postgresql" in database_url:
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                    conn.commit()
+                logger.info("PGVector extension created successfully")
+            except Exception as e:
+                logger.warning(f"Failed to create vector extension: {e}")
 
         # Create all tables
         Base.metadata.create_all(engine)
