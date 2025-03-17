@@ -5,7 +5,7 @@ replicaCount: 1
 
 # Image configuration
 image:
-  repository: gitlab.spacecode.ai:5000/spacecode/spacebridge
+  repository: registry.spacecode.ai/spacecode/spacebridge
   pullPolicy: IfNotPresent
   tag: "latest"  # Overrides the image tag
 
@@ -14,9 +14,9 @@ imagePullSecrets: []
 
 # Service account configuration
 serviceAccount:
-  create: true
+  create: false
   annotations: {}
-  name: ""
+  name: "default"
 
 # Pod annotations
 podAnnotations: {}
@@ -34,7 +34,7 @@ service:
 
 # Ingress configuration
 ingress:
-  enabled: false
+  enabled: true
   className: ""
   annotations: {}
   hosts:
@@ -114,10 +114,17 @@ database:
   cnpg:
     name: spacebridge-db
     instances: 1
+    imageName: registry.spacecode.ai/spacecode/pgvector:16
     auth:
       username: postgres
       password: postgres
       database: spacebridge
+    bootstrap:
+      initdb:
+        database: spacebridge
+        owner: postgres
+        postInitApplicationSQL:
+          - CREATE EXTENSION vector;
     storage:
       size: 1Gi
       storageClass: ""

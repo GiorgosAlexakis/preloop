@@ -7,14 +7,9 @@ metadata:
     {{- include "spacebridge.labels" . | nindent 4 }}
 spec:
   instances: {{ .Values.database.cnpg.instances }}
+  imageName: {{ .Values.database.cnpg.imageName }}
   primaryUpdateStrategy: unsupervised
-
-  # PostgreSQL configuration
-  postgresql:
-    parameters:
-      shared_buffers: 256MB
-      max_connections: "100"
-
+  parameters: {{ .Values.database.cnpg.parameters }}
   # Enable pgvector extension if requested
   {{- if .Values.database.cnpg.pgvector.enabled }}
   bootstrap:
@@ -27,11 +22,17 @@ spec:
   superuserSecret:
     name: {{ include "spacebridge.fullname" . }}-db-superuser
   bootstrap:
-    recovery:
-      database: {{ .Values.database.cnpg.auth.database }}
-      owner: {{ .Values.database.cnpg.auth.username }}
+    initdb:
+      postInitTemplateSQL: {{ .Values.database.cnpg.bootstrap.initdb.postInitTemplateSQL }}
+      database: {{ .Values.database.cnpg.bootstrap.initdb.database }}
+      owner: {{ .Values.database.cnpg.bootstrap.initdb.owner }}
       secret:
-        name: {{ include "spacebridge.fullname" . }}-db-user
+        name: {{ .Release.Name }}-db-user
+    # recovery:
+    #   database: {{ .Values.database.cnpg.auth.database }}
+    #   owner: {{ .Values.database.cnpg.auth.username }}
+    #   secret:
+    #     name: {{ include "spacebridge.fullname" . }}-db-user
 
   # Storage configuration
   storage:
