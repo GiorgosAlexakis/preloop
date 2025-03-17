@@ -82,9 +82,20 @@ environment:
   jwtSecret: "change-this-in-production"
   jwtAlgorithm: "HS256"
   jwtExpireMinutes: 60
-  # Logging
-  logLevel: "INFO"
-  logFormat: "json"
+
+# Configuration for external APIs
+config:
+  openai:
+    apiKey: ""
+  gitlab:
+    apiKey: ""
+    apiUrl: "https://gitlab.com/api/v4"
+  github:
+    apiKey: ""
+    apiUrl: "https://api.github.com"
+  jira:
+    apiKey: ""
+    apiUrl: "https://your-jira-instance.atlassian.net"
 
 # Database configuration
 database:

@@ -30,10 +30,10 @@
 {{- if .Values.database.external }}
    - Using external database at {{ .Values.database.externalDatabase.host }}:{{ .Values.database.externalDatabase.port }}
 {{- else }}
-   - Using internal PostgreSQL database
-   - Database: {{ .Values.database.postgresql.auth.database }}
-   - Username: {{ .Values.database.postgresql.auth.username }}
-   - Password: {{ .Values.database.postgresql.auth.password }}
+   - Using internal CloudNativePG database
+   - Database: {{ .Values.database.cnpg.auth.database }}
+   - Username: {{ .Values.database.cnpg.auth.username }}
+   - Password: {{ .Values.database.cnpg.auth.password }}
 {{- end }}
 {{- else }}
    - Using custom database configuration
