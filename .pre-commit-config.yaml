@@ -5,7 +5,7 @@ repos:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
     -   id: check-yaml
-        exclude: ^charts/
+        exclude: ^(charts|helm)/
     -   id: check-added-large-files
     -   id: debug-statements
     -   id: check-toml
