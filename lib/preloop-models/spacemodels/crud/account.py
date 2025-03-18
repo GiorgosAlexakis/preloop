@@ -1,0 +1,114 @@
+"""CRUD operations for Account model."""
+
+from typing import Dict, List, Optional
+
+from sqlalchemy.orm import Session
+
+from ..models.account import Account, AccountOrganization
+from .base import CRUDBase
+
+
+class CRUDAccount(CRUDBase[Account]):
+    """CRUD operations for Account model."""
+
+    def get_by_email(self, db: Session, *, email: str) -> Optional[Account]:
+        """Get account by email."""
+        return db.query(Account).filter(Account.email == email).first()
+
+    def get_by_username(self, db: Session, *, username: str) -> Optional[Account]:
+        """Get account by username."""
+        return db.query(Account).filter(Account.username == username).first()
+
+    def get_active(
+        self, db: Session, *, skip: int = 0, limit: int = 100
+    ) -> List[Account]:
+        """Get active accounts."""
+        return (
+            db.query(Account)
+            .filter(Account.is_active == True)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def get_by_oauth(
+        self, db: Session, *, provider: str, oauth_id: str
+    ) -> Optional[Account]:
+        """Get account by OAuth provider and ID."""
+        return (
+            db.query(Account)
+            .filter(Account.oauth_provider == provider, Account.oauth_id == oauth_id)
+            .first()
+        )
+
+    def add_to_organization(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        organization_id: str,
+        role: str = "member",
+    ) -> None:
+        """Add account to organization with role."""
+        # Import here to avoid circular imports
+        from sqlalchemy import text
+
+        # Use direct SQL to avoid issues with SQLAlchemy ORM and composite keys
+        db.execute(
+            text("""
+                INSERT INTO accountorganization (account_id, organization_id, role, created_at, updated_at)
+                VALUES (:account_id, :organization_id, :role, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """),
+            {
+                "account_id": account_id,
+                "organization_id": organization_id,
+                "role": role,
+            },
+        )
+        db.commit()
+
+    def remove_from_organization(
+        self, db: Session, *, account_id: str, organization_id: str
+    ) -> None:
+        """Remove account from organization."""
+        # Import here to avoid circular imports
+        from sqlalchemy import text
+
+        # Use direct SQL to avoid issues with SQLAlchemy ORM and composite keys
+        db.execute(
+            text("""
+                DELETE FROM accountorganization 
+                WHERE account_id = :account_id AND organization_id = :organization_id
+            """),
+            {"account_id": account_id, "organization_id": organization_id},
+        )
+        db.commit()
+
+    def update_organization_role(
+        self, db: Session, *, account_id: str, organization_id: str, role: str
+    ) -> None:
+        """Update account's role in organization."""
+        # Import here to avoid circular imports
+        from sqlalchemy import text
+
+        # Use direct SQL to avoid issues with SQLAlchemy ORM and composite keys
+        db.execute(
+            text("""
+                UPDATE accountorganization 
+                SET role = :role, updated_at = CURRENT_TIMESTAMP
+                WHERE account_id = :account_id AND organization_id = :organization_id
+            """),
+            {
+                "account_id": account_id,
+                "organization_id": organization_id,
+                "role": role,
+            },
+        )
+        db.commit()
+
+    def get_organizations(self, db: Session, *, account_id: str) -> Dict[str, str]:
+        """Get all organizations and roles for an account."""
+        account = self.get(db, id=account_id)
+        if not account:
+            return {}
+        return {obj.organization_id: obj.role for obj in account.organizations}

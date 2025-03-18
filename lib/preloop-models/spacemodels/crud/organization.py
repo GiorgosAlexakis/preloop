@@ -1,0 +1,67 @@
+"""CRUD operations for Organization model."""
+
+from typing import List, Optional
+
+from sqlalchemy.orm import Session
+
+from ..models.organization import Organization
+from .base import CRUDBase
+
+
+class CRUDOrganization(CRUDBase[Organization]):
+    """CRUD operations for Organization model."""
+
+    def get_by_identifier(
+        self, db: Session, *, identifier: str
+    ) -> Optional[Organization]:
+        """Get organization by unique identifier."""
+        return (
+            db.query(Organization).filter(Organization.identifier == identifier).first()
+        )
+
+    def get_for_tracker(
+        self, db: Session, *, tracker_id: str, skip: int = 0, limit: int = 100
+    ) -> List[Organization]:
+        """Get organizations for a tracker."""
+        return (
+            db.query(Organization)
+            .filter(Organization.tracker_id == tracker_id)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def get_active(
+        self, db: Session, *, skip: int = 0, limit: int = 100
+    ) -> List[Organization]:
+        """Get active organizations."""
+        return (
+            db.query(Organization)
+            .filter(Organization.is_active == True)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def get_for_account(
+        self, db: Session, *, account_id: str, skip: int = 0, limit: int = 100
+    ) -> List[Organization]:
+        """Get organizations for an account."""
+        return (
+            db.query(Organization)
+            .join(Organization.accounts)
+            .filter(Organization.accounts.any(account_id == account_id))
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def deactivate(self, db: Session, *, id: str) -> Optional[Organization]:
+        """Deactivate an organization."""
+        organization = self.get(db, id=id)
+        if organization:
+            organization.is_active = False
+            db.add(organization)
+            db.commit()
+            db.refresh(organization)
+        return organization

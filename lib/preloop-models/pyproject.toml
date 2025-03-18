@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spacemodels"
+version = "0.1.0"
+authors = [
+  {name = "Dimitris Moraitis", email = "dimo@spacecode.ai"},
+  {name = "Yannis Chatzikonstantinou", email = "yannis@spacecode.ai"},
+]
+description = "SQLAlchemy ORM models for SpaceBridge ecosystem"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://gitlab.spacecode.ai/spacecode/spacemodels"
+"Bug Tracker" = "https://gitlab.spacecode.ai/spacecode/spacemodels/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 88
+target-version = ['py39']

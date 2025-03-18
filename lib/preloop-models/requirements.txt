@@ -1,0 +1,8 @@
+sqlalchemy>=2.0.0
+psycopg>=3.0.0
+pydantic>=2.0.0
+typing-extensions>=4.0.0
+python-dotenv>=1.0.0
+loguru>=0.6.0
+passlib>=1.7.4
+uuid>=0.0.1
