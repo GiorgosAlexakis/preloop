@@ -9,8 +9,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from .base import Base
-from .tracker import Tracker
-from .organization import Organization
+
+# Use TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .tracker import Tracker
+    from .organization import Organization
 
 
 class Account(Base):

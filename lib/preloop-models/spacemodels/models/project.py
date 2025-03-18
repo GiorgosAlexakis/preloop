@@ -7,8 +7,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from .base import Base
-from .organization import Organization
-from .issue import Issue
+
+# Use TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .organization import Organization
+    from .issue import Issue
 
 
 class Project(Base):
