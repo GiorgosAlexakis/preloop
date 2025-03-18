@@ -180,7 +180,8 @@ for issue in project_issues:
     crud_issue_embedding.create_embeddings(
         db,
         issue_id=issue.id,
-        force_update=False  # Won't update existing embeddings
+        force_update=False,  # Won't update existing embeddings
+        api_key=None  # For testing, uses random vectors
     )
 
 # Perform similarity search for similar issues
@@ -189,13 +190,74 @@ similar_issues = crud_issue_embedding.similarity_search(
     db,
     model_id=openai_model.id,
     query_vector=query_vector,
-    limit=5
+    limit=5,
+    distance_type="cosine"  # Or "euclidean"
 )
 
 # Process search results
 for issue, similarity_score in similar_issues:
     print(f"Issue: {issue.title} - Similarity: {similarity_score:.2f}")
 ```
+
+## Using pgvector with PostgreSQL
+
+For production use with PostgreSQL and pgvector:
+
+```python
+import os
+import openai
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+
+# Set up database with pgvector extension
+os.environ["DATABASE_URL"] = "postgresql://postgres:postgres@localhost/spacemodels"
+
+# Initialize OpenAI client
+openai_client = openai.OpenAI(api_key="your_openai_api_key")
+
+# Create engine and ensure pgvector extension is installed
+from spacemodels.db.session import get_engine
+from spacemodels.db.vector_types import install_pgvector_extension
+
+engine = get_engine()
+install_pgvector_extension(engine)  # Automatically installs pgvector if needed
+
+# Create session
+from spacemodels.db.session import get_session_factory
+SessionLocal = get_session_factory(engine)
+db = SessionLocal()
+
+# Generate real embeddings for a search query
+from spacemodels.crud import crud_embedding_model, crud_issue_embedding
+
+# Get the embedding model
+model = crud_embedding_model.get_by_name(db, name="text-embedding-3-large")
+
+# Generate embedding for search query using the OpenAI API
+response = openai_client.embeddings.create(
+    model="text-embedding-3-large",
+    input="How do I fix login issues?"
+)
+query_vector = response.data[0].embedding
+
+# Search for similar issues using pgvector's native vector operations
+similar_issues = crud_issue_embedding.similarity_search(
+    db,
+    model_id=model.id,
+    query_vector=query_vector,
+    limit=5,
+    distance_type="cosine"  # pgvector supports both cosine and euclidean
+)
+
+# Process results
+for issue, similarity in similar_issues:
+    print(f"{issue.title} - {issue.status} - Similarity: {similarity:.4f}")
+
+db.close()
+```
+
+The pgvector extension provides optimized vector similarity search operations in PostgreSQL,
+making large-scale semantic search much more efficient than in-memory calculations.
 
 ## Error Handling
 

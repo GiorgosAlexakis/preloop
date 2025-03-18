@@ -47,8 +47,14 @@ def db_session(db_engine):
 def create_account(db_session):
     """Create a test account."""
     from spacemodels.crud import crud_account
+    import uuid
 
-    def _create_account(username="testuser", email="test@example.com", **kwargs):
+    def _create_account(username=None, email=None, **kwargs):
+        # Generate unique username and email if not provided
+        unique_id = str(uuid.uuid4())[:8]
+        username = username or f"testuser_{unique_id}"
+        email = email or f"test_{unique_id}@example.com"
+
         account_data = {
             "username": username,
             "email": email,
@@ -90,10 +96,14 @@ def create_tracker(db_session, create_account):
 def create_organization(db_session, create_tracker):
     """Create a test organization."""
     from spacemodels.crud import crud_organization
+    import uuid
 
-    def _create_organization(
-        tracker=None, name="Test Organization", identifier="test-org", **kwargs
-    ):
+    def _create_organization(tracker=None, name=None, identifier=None, **kwargs):
+        # Generate unique values if not provided
+        unique_id = str(uuid.uuid4())[:8]
+        name = name or f"Test Organization {unique_id}"
+        identifier = identifier or f"test-org-{unique_id}"
+
         if tracker is None:
             tracker = create_tracker()
 
@@ -114,11 +124,9 @@ def create_project(db_session, create_organization):
     """Create a test project."""
     from spacemodels.crud import crud_project
 
-    def _create_project(
-        organization=None, name="Test Project", identifier="test-project", **kwargs
-    ):
-        if organization is None:
-            organization = create_organization()
+    def _create_project(name="Test Project", identifier="test-project", **kwargs):
+        # Create organization first if not provided
+        organization = kwargs.pop("organization", create_organization())
 
         project_data = {
             "name": name,
@@ -137,15 +145,14 @@ def create_issue(db_session, create_project, create_tracker):
     """Create a test issue."""
     from spacemodels.crud import crud_issue
 
-    def _create_issue(project=None, tracker=None, title="Test Issue", **kwargs):
-        if project is None:
-            project = create_project()
-        if tracker is None:
-            tracker = create_tracker()
+    def _create_issue(title="Test Issue", description="Test description", **kwargs):
+        # Create project and tracker first if not provided
+        project = kwargs.pop("project", create_project())
+        tracker = kwargs.pop("tracker", create_tracker())
 
         issue_data = {
             "title": title,
-            "description": "Test issue description",
+            "description": description,
             "status": "open",
             "issue_type": "task",
             "project_id": project.id,
@@ -163,7 +170,11 @@ def create_embedding_model(db_session):
     from spacemodels.crud import crud_embedding_model
 
     def _create_embedding_model(
-        name="test-model", provider="openai", version="v1", dimensions=1536, **kwargs
+        name="test-embedding",
+        provider="openai",
+        version="text-embedding-ada-002",
+        dimensions=1536,
+        **kwargs,
     ):
         model_data = {
             "name": name,
@@ -171,6 +182,7 @@ def create_embedding_model(db_session):
             "version": version,
             "dimensions": dimensions,
             "is_active": True,
+            "meta_data": {"test_mode": True},
             **kwargs,
         }
         return crud_embedding_model.create(db_session, obj_in=model_data)

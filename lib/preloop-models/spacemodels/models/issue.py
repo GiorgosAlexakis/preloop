@@ -7,6 +7,14 @@ from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime, JSON
 
+# Check if our vector type module is available
+try:
+    from ..db.vector_types import VectorType  # noqa: F401
+
+    VECTOR_TYPE_AVAILABLE = True
+except ImportError:
+    VECTOR_TYPE_AVAILABLE = False
+
 from .base import Base
 
 # Use TYPE_CHECKING to avoid circular imports
@@ -115,13 +123,9 @@ class IssueEmbedding(Base):
     )
 
     # The actual embedding vector (PostgreSQL vector type)
-    # We define it as a JSON field here to accommodate SQLAlchemy's type system,
-    # but at the database level, use an appropriate vector type with JSONB fallback
-    # For PostgreSQL, use the pgvector extension's vector type
+    # Use JSON type for now to ensure compatibility
     embedding: Mapped[Dict] = mapped_column(
-        JSON,  # Will be mapped to vector type in PostgreSQL with pgvector
-        nullable=False,
-        comment="Embedding vector, stored as JSON array in SQLite, vector in PostgreSQL",
+        JSON, nullable=False, comment="Embedding vector, stored as JSON array"
     )
 
     # Metadata about how this embedding was created
@@ -144,3 +148,16 @@ class IssueEmbedding(Base):
             "issue_id", "embedding_model_id", name="uix_issue_embedding_model"
         ),
     )
+
+
+# Event listener to set the embedding column type - commented out for now
+# @event.listens_for(IssueEmbedding, 'instrument_class')
+# def set_embedding_type(mapper, cls):
+#     """Set the correct type for the embedding column based on environment."""
+#     if VECTOR_TYPE_AVAILABLE:
+#         # Query the embedding model to get dimensions - default to 1536 if not found
+#         default_dimensions = 1536
+#         embedding_column = cls.__table__.c.embedding
+#
+#         # Use our custom VectorType
+#         embedding_column.type = VectorType(dimensions=default_dimensions)

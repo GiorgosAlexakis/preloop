@@ -8,6 +8,21 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+# Import pgvector helpers but handle case where it's not installed
+try:
+    from .vector_types import check_pgvector_extension, install_pgvector_extension
+
+    PGVECTOR_AVAILABLE = True
+except ImportError:
+    PGVECTOR_AVAILABLE = False
+
+    # Create stubs for the imported functions
+    def check_pgvector_extension(engine):
+        return False
+
+    def install_pgvector_extension(engine):
+        return False
+
 
 def get_engine(database_url: Optional[str] = None):
     """Create SQLAlchemy engine with fallback for testing."""
@@ -15,11 +30,26 @@ def get_engine(database_url: Optional[str] = None):
         "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost/spacemodels"
     )
 
+    is_postgresql = "postgresql" in url
+
     try:
         engine = create_engine(url)
         # Test the connection
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+
+        # If PostgreSQL, check for pgvector extension
+        if is_postgresql and PGVECTOR_AVAILABLE:
+            if not check_pgvector_extension(engine):
+                try:
+                    logger.info("Installing pgvector extension")
+                    install_pgvector_extension(engine)
+                    logger.info("pgvector extension installed successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to install pgvector extension: {e}")
+            else:
+                logger.info("pgvector extension already installed")
+
         logger.info(f"Connected to database using {url}")
         return engine
     except (ImportError, SQLAlchemyError) as e:
