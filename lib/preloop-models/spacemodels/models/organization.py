@@ -7,6 +7,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from .base import Base
+from .account import AccountOrganization
+from .tracker import Tracker
+
+# Import at the end to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .project import Project
 
 
 class Organization(Base):

@@ -9,6 +9,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import JSON, DateTime
 
 from .base import Base
+from .account import Account
+from .organization import Organization
+from .issue import Issue
 
 
 class TrackerType(enum.Enum):

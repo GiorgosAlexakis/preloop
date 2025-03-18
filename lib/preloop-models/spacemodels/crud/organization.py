@@ -37,7 +37,7 @@ class CRUDOrganization(CRUDBase[Organization]):
         """Get active organizations."""
         return (
             db.query(Organization)
-            .filter(Organization.is_active == True)
+            .filter(Organization.is_active.is_(True))
             .offset(skip)
             .limit(limit)
             .all()

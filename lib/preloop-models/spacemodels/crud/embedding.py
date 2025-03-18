@@ -31,7 +31,7 @@ class CRUDEmbeddingModel(CRUDBase[EmbeddingModel]):
 
     def get_active(self, db: Session) -> List[EmbeddingModel]:
         """Get all active embedding models."""
-        return db.query(EmbeddingModel).filter(EmbeddingModel.is_active == True).all()
+        return db.query(EmbeddingModel).filter(EmbeddingModel.is_active.is_(True)).all()
 
 
 class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
@@ -70,7 +70,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
 
         # Get active embedding models
         embedding_models = (
-            db.query(EmbeddingModel).filter(EmbeddingModel.is_active == True).all()
+            db.query(EmbeddingModel).filter(EmbeddingModel.is_active.is_(True)).all()
         )
 
         results = {}

@@ -2,9 +2,8 @@
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
-from spacemodels.db.session import get_engine
 from spacemodels.models.base import Base
 
 
@@ -48,7 +47,6 @@ def db_session(db_engine):
 def create_account(db_session):
     """Create a test account."""
     from spacemodels.crud import crud_account
-    from spacemodels.models import Account
 
     def _create_account(username="testuser", email="test@example.com", **kwargs):
         account_data = {

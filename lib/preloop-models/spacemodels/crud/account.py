@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from ..models.account import Account, AccountOrganization
+from ..models.account import Account
 from .base import CRUDBase
 
 
@@ -25,7 +25,7 @@ class CRUDAccount(CRUDBase[Account]):
         """Get active accounts."""
         return (
             db.query(Account)
-            .filter(Account.is_active == True)
+            .filter(Account.is_active.is_(True))
             .offset(skip)
             .limit(limit)
             .all()
@@ -55,10 +55,12 @@ class CRUDAccount(CRUDBase[Account]):
 
         # Use direct SQL to avoid issues with SQLAlchemy ORM and composite keys
         db.execute(
-            text("""
+            text(
+                """
                 INSERT INTO accountorganization (account_id, organization_id, role, created_at, updated_at)
                 VALUES (:account_id, :organization_id, :role, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """),
+            """
+            ),
             {
                 "account_id": account_id,
                 "organization_id": organization_id,
@@ -76,10 +78,12 @@ class CRUDAccount(CRUDBase[Account]):
 
         # Use direct SQL to avoid issues with SQLAlchemy ORM and composite keys
         db.execute(
-            text("""
+            text(
+                """
                 DELETE FROM accountorganization 
                 WHERE account_id = :account_id AND organization_id = :organization_id
-            """),
+            """
+            ),
             {"account_id": account_id, "organization_id": organization_id},
         )
         db.commit()
@@ -93,11 +97,13 @@ class CRUDAccount(CRUDBase[Account]):
 
         # Use direct SQL to avoid issues with SQLAlchemy ORM and composite keys
         db.execute(
-            text("""
+            text(
+                """
                 UPDATE accountorganization 
                 SET role = :role, updated_at = CURRENT_TIMESTAMP
                 WHERE account_id = :account_id AND organization_id = :organization_id
-            """),
+            """
+            ),
             {
                 "account_id": account_id,
                 "organization_id": organization_id,

@@ -33,7 +33,7 @@ class CRUDTracker(CRUDBase[Tracker]):
         limit: int = 100,
     ) -> List[Tracker]:
         """Get active trackers, optionally filtered by account."""
-        query = db.query(Tracker).filter(Tracker.is_active == True)
+        query = db.query(Tracker).filter(Tracker.is_active.is_(True))
         if account_id:
             query = query.filter(Tracker.account_id == account_id)
         return query.offset(skip).limit(limit).all()

@@ -8,6 +8,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime, JSON
 
 from .base import Base
+from .project import Project
+from .tracker import Tracker
 
 
 class Issue(Base):

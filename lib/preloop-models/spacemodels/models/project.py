@@ -7,6 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from .base import Base
+from .organization import Organization
+from .issue import Issue
 
 
 class Project(Base):

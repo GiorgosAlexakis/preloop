@@ -42,7 +42,7 @@ class CRUDProject(CRUDBase[Project]):
         """Get active projects."""
         return (
             db.query(Project)
-            .filter(Project.is_active == True)
+            .filter(Project.is_active.is_(True))
             .offset(skip)
             .limit(limit)
             .all()

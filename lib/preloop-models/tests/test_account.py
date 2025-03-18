@@ -1,8 +1,7 @@
 """Tests for Account model and CRUD operations."""
 
-import pytest
 
-from spacemodels.crud import crud_account, crud_tracker
+from spacemodels.crud import crud_account
 
 
 def test_create_account(db_session, create_account):

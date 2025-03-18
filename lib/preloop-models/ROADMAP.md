@@ -29,7 +29,7 @@
 - [x] Create test fixtures
 - [x] Write unit tests for models
 - [x] Write unit tests for CRUD operations
-- [ ] Set up CI/CD pipeline
+- [x] Set up CI/CD pipeline
 
 ## Documentation
 - [x] Write API documentation
