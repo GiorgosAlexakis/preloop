@@ -4,9 +4,11 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..models.api_usage import ApiUsage
+from ..models.account import Account
 from .base import CRUDBase
 
 
@@ -17,13 +19,14 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         self,
         db: Session,
         *,
-        username: str,
+        username: Optional[str] = None,
         endpoint: str,
         method: str,
         status_code: int,
         duration: float,
         action_type: Optional[str] = None,
-    ) -> ApiUsage:
+        create_user_if_missing: bool = False,
+    ) -> Optional[ApiUsage]:
         """Log an API request.
 
         Args:
@@ -34,24 +37,50 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             status_code: HTTP status code of the response
             duration: Time taken to process the request in seconds
             action_type: Type of action (create_issue, update_issue, etc.)
+            create_user_if_missing: Whether to create a user account if it doesn't exist
 
         Returns:
-            Created API usage record
+            Created API usage record, or None if the user doesn't exist and create_user_if_missing is False
         """
-        db_obj = ApiUsage(
-            username=username,
-            endpoint=endpoint,
-            method=method,
-            status_code=status_code,
-            duration=duration,
-            action_type=action_type,
-            timestamp=datetime.utcnow(),
-        )
+        # Only check for user existence if a username is provided
+        if username:
+            user = db.query(Account).filter(Account.username == username).first()
 
-        db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
-        return db_obj
+            if not user:
+                if create_user_if_missing:
+                    # Create a placeholder user account
+                    user = Account(
+                        username=username,
+                        email=f"{username}@example.com",  # Placeholder email
+                        hashed_password="",  # Empty password since this is just for logging
+                        is_active=True,
+                    )
+                    db.add(user)
+                    db.commit()
+                else:
+                    # Set username to None for non-existent users to avoid foreign key constraint
+                    username = None
+
+        try:
+            # Create the API usage record
+            db_obj = ApiUsage(
+                username=username,
+                endpoint=endpoint,
+                method=method,
+                status_code=status_code,
+                duration=duration,
+                action_type=action_type,
+                timestamp=datetime.utcnow(),
+            )
+
+            db.add(db_obj)
+            db.commit()
+            db.refresh(db_obj)
+            return db_obj
+        except IntegrityError:
+            # If there's still an integrity error, roll back and return None
+            db.rollback()
+            return None
 
     def get_user_usage(
         self, db: Session, *, username: str, days: int = 30

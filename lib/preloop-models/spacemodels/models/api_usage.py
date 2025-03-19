@@ -24,7 +24,7 @@ class ApiUsage(Base):
 
     Attributes:
         id: The unique identifier for the usage record.
-        username: The username of the user making the request.
+        username: The username of the user making the request (nullable for anonymous requests).
         endpoint: The API endpoint being accessed.
         method: The HTTP method used (GET, POST, etc.).
         status_code: The HTTP status code of the response.
@@ -42,7 +42,10 @@ class ApiUsage(Base):
 
     # Request details
     username: Mapped[str] = mapped_column(
-        String(50), ForeignKey("account.username"), nullable=False, index=True
+        String(50),
+        ForeignKey("account.username", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
     method: Mapped[str] = mapped_column(String(10), nullable=False)
