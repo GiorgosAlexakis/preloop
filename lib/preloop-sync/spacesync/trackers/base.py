@@ -95,9 +95,8 @@ class BaseTracker(ABC):
             Transformed organization data ready for database storage.
         """
         return {
-            "external_id": org_data["id"],
+            "identifier": org_data["id"],
             "name": org_data["name"],
-            "url": org_data.get("url", ""),
             "tracker_id": self.tracker_id,
         }
 
@@ -116,11 +115,9 @@ class BaseTracker(ABC):
         """
         return {
             "organization_id": organization_id,
-            "external_id": proj_data["id"],
+            "identifier": proj_data["id"],
             "name": proj_data["name"],
             "description": proj_data.get("description", ""),
-            "url": proj_data.get("url", ""),
-            "tracker_id": self.tracker_id,
         }
 
     def transform_issue(self, issue_data: Dict[str, Any], project_id: int) -> Dict[str, Any]:
@@ -139,7 +136,6 @@ class BaseTracker(ABC):
             "external_id": issue_data["id"],
             "title": issue_data["title"],
             "description": issue_data.get("description", ""),
-            "state": issue_data["state"],
             "created_at": issue_data["created_at"],
             "updated_at": issue_data["updated_at"],
             "metadata": {

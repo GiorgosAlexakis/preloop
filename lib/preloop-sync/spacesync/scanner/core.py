@@ -81,12 +81,10 @@ class TrackerClient:
         for org_data in org_data_list:
             # Transform data for database
             org_create_data = self.client.transform_organization(org_data)
-            
             # Find existing organization or create new one
-            org = crud_organization.get_by_external_id(
+            org = crud_organization.get_by_identifier(
                 db, 
-                external_id=org_create_data["external_id"],
-                tracker_id=self.tracker.id
+                identifier=org_create_data["identifier"]
             )
             
             if org:
@@ -116,7 +114,7 @@ class TrackerClient:
         logger.info(f"Scanning projects for organization {organization.id} ({organization.name})")
         
         # Get projects from tracker
-        proj_data_list = self.client.get_projects(organization.external_id)
+        proj_data_list = self.client.get_projects(organization.identifier)
         logger.info(f"Found {len(proj_data_list)} projects in organization {organization.id}")
         
         # Process each project
@@ -126,9 +124,9 @@ class TrackerClient:
             proj_create_data = self.client.transform_project(proj_data, organization.id)
             
             # Find existing project or create new one
-            project = crud_project.get_by_external_id(
+            project = crud_project.get_by_identifier(
                 db,
-                external_id=proj_create_data["external_id"],
+                identifier=proj_create_data["identifier"],
                 organization_id=organization.id
             )
             
@@ -168,8 +166,8 @@ class TrackerClient:
         
         # Get issues from tracker
         issue_data_list = self.client.get_issues(
-            organization.external_id, 
-            project.external_id,
+            organization.identifier, 
+            project.identifier,
             since
         )
         logger.info(f"Found {len(issue_data_list)} issues in project {project.id}")
@@ -182,12 +180,16 @@ class TrackerClient:
             # Transform data for database
             issue_create_data = self.client.transform_issue(issue_data, project.id)
             
-            # Find existing issue or create new one
-            issue = crud_issue.get_by_external_id(
+            # Find existing issues for this project
+            existing_issues = crud_issue.get_for_project(
                 db,
-                external_id=issue_create_data["external_id"],
-                project_id=project.id
+                project_id=project.id,
+                skip=0,
+                limit=1000  # Assume we won't have more than 1000 issues per project
             )
+            
+            # Find the matching issue by external_id
+            issue = next((i for i in existing_issues if i.external_id == issue_create_data["external_id"]), None)
             
             content_changed = False
             
@@ -212,8 +214,8 @@ class TrackerClient:
             if content_changed:
                 embedding_updates += 1
                 # Create or update embeddings
-                crud_issue.create_embeddings(db, issue_id=issue.id)
-                logger.debug(f"Updated embeddings for issue {issue.id}")
+                crud_issue_embedding.create_embeddings(db, issue_id=issue.id)
+                logger.info(f"Generated embeddings for issue {issue.id} - '{issue.title}'")
         
         return issues, embedding_updates
 

@@ -108,7 +108,7 @@ def create_account(
         "tracker_type": tracker_type,
         "account_id": account.id,
         "api_key": tracker_token,
-        "connection_details": {}
+        "connection_details": {"gitlab_url": tracker_url}
     }
     
     tracker = crud_tracker.create(db, obj_in=tracker_data)

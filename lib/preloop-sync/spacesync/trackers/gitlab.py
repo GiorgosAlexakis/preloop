@@ -1,21 +1,18 @@
 """
-GitLab tracker implementation for SpaceSync.
+GitLab tracker implementation for SpaceSync using python-gitlab library.
 """
 
-import requests
+import gitlab
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
-from ..config import logger
 from ..exceptions import TrackerAuthenticationError, TrackerConnectionError, TrackerResponseError
 from ..utils import retry
 from .base import BaseTracker
 
 
 class GitLabTracker(BaseTracker):
-    """GitLab tracker implementation."""
-
-    API_BASE_URL = "https://gitlab.com/api/v4"
+    """GitLab tracker implementation using python-gitlab."""
 
     def __init__(self, tracker_id: int, api_key: str, connection_details: Dict[str, Any]):
         """
@@ -28,25 +25,29 @@ class GitLabTracker(BaseTracker):
         """
         super().__init__(tracker_id, api_key, connection_details)
         
-        # Allow custom GitLab instance URL
-        if "gitlab_url" in connection_details:
-            self.api_base_url = f"{connection_details['gitlab_url'].rstrip('/')}/api/v4"
-        else:
-            self.api_base_url = self.API_BASE_URL
+        gitlab_url = connection_details['gitlab_url'].rstrip('/')
             
-        self.headers = {"Private-Token": api_key}
+        try:
+            self.gl = gitlab.Gitlab(gitlab_url, private_token=api_key)
+            # Test connection and authentication
+            self.gl.auth()
+        except gitlab.exceptions.GitlabAuthenticationError:
+            raise TrackerAuthenticationError("GitLab authentication failed")
+        except gitlab.exceptions.GitlabHttpError as e:
+            raise TrackerConnectionError(f"GitLab connection error: {str(e)}")
 
     @retry(max_attempts=3, exceptions=(TrackerConnectionError, TrackerResponseError))
-    def _make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    def _make_request(self, method, *args, **kwargs):
         """
-        Make a request to the GitLab API.
+        Execute a GitLab API request with error handling.
 
         Args:
-            endpoint: API endpoint to request.
-            params: Query parameters.
+            method: The python-gitlab method to call
+            *args: Positional arguments for the method
+            **kwargs: Keyword arguments for the method
 
         Returns:
-            JSON response data.
+            Result from the GitLab API call
 
         Raises:
             TrackerAuthenticationError: If authentication fails.
@@ -54,19 +55,18 @@ class GitLabTracker(BaseTracker):
             TrackerResponseError: If response is invalid.
         """
         try:
-            url = f"{self.api_base_url}/{endpoint.lstrip('/')}"
-            response = requests.get(url, headers=self.headers, params=params)
-            
-            if response.status_code == 401:
+            return method(*args, **kwargs)
+        except gitlab.exceptions.GitlabAuthenticationError:
+            raise TrackerAuthenticationError("GitLab authentication failed")
+        except gitlab.exceptions.GitlabHttpError as e:
+            if e.response_code == 401:
                 raise TrackerAuthenticationError("GitLab authentication failed")
-            elif response.status_code >= 400:
-                raise TrackerResponseError(
-                    f"GitLab API error: {response.status_code} - {response.text}"
-                )
-                
-            return response.json()
-        except requests.RequestException as e:
+            else:
+                raise TrackerResponseError(f"GitLab API error: {e.response_code} - {e}")
+        except gitlab.exceptions.GitlabConnectionError as e:
             raise TrackerConnectionError(f"GitLab connection error: {str(e)}")
+        except Exception as e:
+            raise TrackerResponseError(f"GitLab API error: {str(e)}")
 
     def get_organizations(self) -> List[Dict[str, Any]]:
         """
@@ -76,14 +76,14 @@ class GitLabTracker(BaseTracker):
             List of organization data dictionaries.
         """
         # For GitLab, organizations are groups
-        groups_data = self._make_request("groups", {"per_page": 100})
+        groups = self._make_request(self.gl.groups.list, all=True)
         
         organizations = []
-        for group in groups_data:
+        for group in groups:
             organizations.append({
-                "id": str(group["id"]),
-                "name": group["name"],
-                "url": group["web_url"]
+                "id": str(group.id),
+                "name": group.name,
+                "url": group.web_url
             })
             
         return organizations
@@ -98,19 +98,22 @@ class GitLabTracker(BaseTracker):
         Returns:
             List of project data dictionaries.
         """
-        # Get projects for the specified group
-        projects_data = self._make_request(f"groups/{organization_id}/projects", {"per_page": 100})
+        # Get the group object first
+        group = self._make_request(self.gl.groups.get, organization_id)
         
-        projects = []
-        for project in projects_data:
-            projects.append({
-                "id": str(project["id"]),
-                "name": project["name"],
-                "description": project["description"] or "",
-                "url": project["web_url"]
+        # Get projects for the specified group
+        projects = self._make_request(group.projects.list, all=True)
+        
+        project_list = []
+        for project in projects:
+            project_list.append({
+                "id": str(project.id),
+                "name": project.name,
+                "description": project.description or "",
+                "url": project.web_url
             })
             
-        return projects
+        return project_list
 
     def get_issues(
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
@@ -126,25 +129,29 @@ class GitLabTracker(BaseTracker):
         Returns:
             List of issue data dictionaries.
         """
-        # Query parameters for the issues API
-        params = {"scope": "all", "per_page": 100}
-        if since:
-            params["updated_after"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
-            
-        issues_data = self._make_request(f"projects/{project_id}/issues", params)
+        # Get the project object
+        project = self._make_request(self.gl.projects.get, project_id)
         
-        issues = []
-        for issue in issues_data:
-            issues.append({
-                "id": str(issue["iid"]),  # Use iid which is project-specific ID
-                "title": issue["title"],
-                "description": issue["description"] or "",
-                "state": issue["state"],
-                "created_at": datetime.strptime(issue["created_at"], "%Y-%m-%dT%H:%M:%S.%fZ"),
-                "updated_at": datetime.strptime(issue["updated_at"], "%Y-%m-%dT%H:%M:%S.%fZ"),
-                "labels": issue.get("labels", []),
-                "assignees": [assignee["username"] for assignee in issue.get("assignees", [])],
-                "url": issue["web_url"]
+        # Prepare query parameters
+        kwargs = {'all': True}
+        if since:
+            kwargs['updated_after'] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+        
+        # Get issues for the project    
+        issues = self._make_request(project.issues.list, **kwargs)
+        
+        issue_list = []
+        for issue in issues:
+            issue_list.append({
+                "id": str(issue.iid),  # Use iid which is project-specific ID
+                "title": issue.title,
+                "description": issue.description or "",
+                "state": issue.state,
+                "created_at": datetime.strptime(issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"),
+                "updated_at": datetime.strptime(issue.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"),
+                "labels": issue.labels if hasattr(issue, 'labels') else [],
+                "assignees": [assignee['username'] for assignee in issue.assignees] if hasattr(issue, 'assignees') else [],
+                "url": issue.web_url
             })
             
-        return issues
+        return issue_list
