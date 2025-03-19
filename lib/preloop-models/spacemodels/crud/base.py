@@ -17,7 +17,7 @@ class CRUDBase(Generic[ModelType]):
         """Initialize with a model class."""
         self.model = model
 
-    def get(self, db: Session, id: str) -> Optional[ModelType]:
+    def get(self, db: Session, id: Any) -> Optional[ModelType]:
         """Get entity by ID."""
         return db.query(self.model).filter(self.model.id == id).first()
 
@@ -33,10 +33,10 @@ class CRUDBase(Generic[ModelType]):
 
     def create(self, db: Session, *, obj_in: Dict[str, Any]) -> ModelType:
         """Create new entity."""
-        if "id" not in obj_in:
-            obj_in["id"] = self.model.generate_id()
+        # Don't add an ID unless it's missing - let the model handle it with default=uuid.uuid4
+        obj_data = dict(obj_in)
 
-        db_obj = self.model(**obj_in)
+        db_obj = self.model(**obj_data)
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
@@ -57,9 +57,9 @@ class CRUDBase(Generic[ModelType]):
         db.refresh(db_obj)
         return db_obj
 
-    def delete(self, db: Session, *, id: str) -> Optional[ModelType]:
+    def delete(self, db: Session, *, id: Any) -> Optional[ModelType]:
         """Delete an entity by ID."""
-        obj = db.query(self.model).get(id)
+        obj = db.query(self.model).filter(self.model.id == id).first()
         if obj:
             db.delete(obj)
             db.commit()

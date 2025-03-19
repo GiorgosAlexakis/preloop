@@ -72,7 +72,6 @@ def test_similarity_search(db_session, create_issue, create_embedding_model):
     # Manually create embeddings
     for issue, emb in zip([issue1, issue2, issue3], embeddings):
         embedding = IssueEmbedding(
-            id=IssueEmbedding.generate_id(),
             issue_id=issue.id,
             embedding_model_id=model.id,
             embedding=emb,

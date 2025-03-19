@@ -1,11 +1,13 @@
 """Issue, EmbeddingModel, and IssueEmbedding models."""
 
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime, JSON
+
 
 # Check if our vector type module is available
 try:
@@ -74,7 +76,9 @@ class EmbeddingModel(Base):
     """Model to track different embedding models used in the system."""
 
     # Primary key
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4())
+    )
 
     # Embedding model details
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
@@ -106,7 +110,9 @@ class IssueEmbedding(Base):
     """
 
     # Primary key
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4())
+    )
 
     # Foreign keys
     issue_id: Mapped[str] = mapped_column(

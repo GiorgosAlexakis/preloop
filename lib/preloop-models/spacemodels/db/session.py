@@ -54,9 +54,10 @@ def get_engine(database_url: Optional[str] = None):
         return engine
     except (ImportError, SQLAlchemyError) as e:
         logger.warning(
-            f"Database connection failed: {e}. Using SQLite in memory for testing purposes."
+            f"Database connection failed: {e}. Using SQLite file database for testing purposes."
         )
-        return create_engine("sqlite:///:memory:")
+        # Use a file-based SQLite database instead of in-memory for persistence
+        return create_engine("sqlite:///spacemodels.db")
 
 
 def get_session_factory(engine=None):

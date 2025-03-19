@@ -1,11 +1,12 @@
-"""SQLAlchemy types for vector storage."""
+"""SQLAlchemy types for vector storage and UUID handling."""
 
 import json
+import uuid
 from typing import Any, List, Optional, cast
 
 import numpy as np
-from sqlalchemy import TypeDecorator
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import TypeDecorator, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
 from sqlalchemy.engine.interfaces import Dialect
 
 try:
@@ -120,3 +121,41 @@ def install_pgvector_extension(engine: Any) -> bool:
             return True
     except Exception:
         return False
+
+
+class SQLiteUUID(TypeDecorator):
+    """SQLAlchemy type for UUIDs that works with SQLite.
+
+    PostgreSQL has a native UUID type, but SQLite does not.
+    This type uses PostgreSQL's UUID type when using PostgreSQL
+    and falls back to String for other databases like SQLite.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Dialect) -> Any:
+        """Load dialect-specific implementation."""
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PostgresUUID())
+        else:
+            return dialect.type_descriptor(String(36))
+
+    def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
+        """Process the value when binding to SQL."""
+        if value is None:
+            return None
+
+        if dialect.name == "postgresql":
+            return value
+        else:
+            return str(value)
+
+    def process_result_value(self, value: Any, dialect: Dialect) -> Any:
+        """Process the value when retrieving from SQL."""
+        if value is None:
+            return None
+
+        if dialect.name != "postgresql" and isinstance(value, str):
+            return uuid.UUID(value)
+        return value

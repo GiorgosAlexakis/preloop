@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .tracker import Tracker
     from .organization import Organization
+    from .api_key import ApiKey
+    from .api_usage import ApiUsage
 
 
 class Account(Base):
@@ -24,6 +26,7 @@ class Account(Base):
     # Account details
     username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    email_verified: Mapped[bool] = mapped_column(default=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Authentication
@@ -44,6 +47,12 @@ class Account(Base):
     )
     organizations: Mapped[List["AccountOrganization"]] = relationship(
         "AccountOrganization", back_populates="account", cascade="all, delete-orphan"
+    )
+    api_keys: Mapped[List["ApiKey"]] = relationship(
+        "ApiKey", back_populates="creator", cascade="all, delete-orphan"
+    )
+    api_usages: Mapped[List["ApiUsage"]] = relationship(
+        "ApiUsage", back_populates="user", cascade="all, delete-orphan"
     )
 
     # Many-to-many relationship helper

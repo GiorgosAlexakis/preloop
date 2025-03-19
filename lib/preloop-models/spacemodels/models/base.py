@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, func, String
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -25,7 +25,9 @@ class Base(DeclarativeBase):
         return cls.__name__.lower()
 
     # Common columns for all models
-    id: Mapped[str] = mapped_column(primary_key=True, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4())
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
