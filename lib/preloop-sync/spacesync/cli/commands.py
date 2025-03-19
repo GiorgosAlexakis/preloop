@@ -37,45 +37,38 @@ def version() -> None:
 @click.option('--verbose', '-v', is_flag=True, help='Increase verbosity')
 def status(verbose: bool) -> None:
     """Display system status including database connection and accounts."""
-    try:
-        # Get database session
-        db = next(get_db_session())
-        
-        # Check database connection
-        click.echo("✅ Database connection: OK")
-        
-        # Count accounts
-        accounts_count = len(crud_account.get_active(db))
-        click.echo(f"📊 Total accounts: {accounts_count}")
-        
-        # Count trackers
-        trackers_count = len(crud_tracker.get_active(db))
-        click.echo(f"📊 Total trackers: {trackers_count}")
-        
-        if verbose and accounts_count > 0:
-            click.echo("\nAccounts:")
-            accounts = crud_account.get_active(db)
-            for account in accounts:
-                click.echo(f"  - {account.username} (ID: {account.id})")
-                account_trackers = crud_tracker.get_for_account(db, account_id=account.id)
-                if account_trackers:
-                    for tracker in account_trackers:
-                        click.echo(f"    - {tracker.tracker_type}: {tracker.connection_details}")
-                else:
-                    click.echo("    No trackers configured")
-        
-        db.close()
-    except Exception as e:
-        logger.error(f"Error checking status: {str(e)}")
-        safe_exit(1, f"Failed to check status: {str(e)}")
+    # Get database session
+    db = next(get_db_session())
+    
+    # Check database connection
+    click.echo("✅ Database connection: OK")
+    
+    # Count accounts
+    accounts_count = len(crud_account.get_active(db))
+    click.echo(f"📊 Total accounts: {accounts_count}")
+    
+    # Count trackers
+    trackers_count = len(crud_tracker.get_active(db))
+    click.echo(f"📊 Total trackers: {trackers_count}")
+    
+    if verbose and accounts_count > 0:
+        click.echo("\nAccounts:")
+        accounts = crud_account.get_active(db)
+        for account in accounts:
+            click.echo(f"  - {account.username} (ID: {account.id})")
+            account_trackers = crud_tracker.get_for_account(db, account_id=account.id)
+            if account_trackers:
+                for tracker in account_trackers:
+                    click.echo(f"    - {tracker.tracker_type}: {tracker.connection_details}")
+            else:
+                click.echo("    No trackers configured")
+    
+    db.close()
+
 
 def run() -> None:
     """Run the CLI application."""
-    try:
-        cli()
-    except Exception as e:
-        logger.error(f"Unhandled exception: {str(e)}")
-        safe_exit(1, f"Error: {str(e)}")
+    cli()
 
 if __name__ == "__main__":
     run()

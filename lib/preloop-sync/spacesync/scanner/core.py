@@ -211,12 +211,9 @@ class TrackerClient:
             # Update embeddings if content changed
             if content_changed:
                 embedding_updates += 1
-                try:
-                    # Create or update embeddings
-                    crud_issue.create_embeddings(db, issue_id=issue.id)
-                    logger.debug(f"Updated embeddings for issue {issue.id}")
-                except Exception as e:
-                    logger.error(f"Failed to create embeddings for issue {issue.id}: {str(e)}")
+                # Create or update embeddings
+                crud_issue.create_embeddings(db, issue_id=issue.id)
+                logger.debug(f"Updated embeddings for issue {issue.id}")
         
         return issues, embedding_updates
 
@@ -242,55 +239,43 @@ def scan_tracker(db: Session, tracker: Tracker, verbose: bool = False) -> Dict[s
         "errors": 0,
     }
     
+    # Create tracker client
+    client = TrackerClient(tracker)
+    
+    # Determine the last 30 days as a default scan period
+    # This can be adjusted as needed based on usage patterns
+    since = datetime.datetime.now() - datetime.timedelta(days=30)
+    
+    # Scan organizations
+    orgs = client.scan_organizations(db)
+    stats["organizations"] = len(orgs)
+    
+    # Scan projects for each organization
+    all_projects = []
+    for org in orgs:
+        projects = client.scan_projects(db, org)
+        all_projects.extend(projects)
+    
+    stats["projects"] = len(all_projects)
+    
+    # Scan issues for each project
+    for project in all_projects:
+        org = next(org for org in orgs if org.id == project.organization_id)
+        issues, embedding_updates = client.scan_issues(db, org, project, since)
+        stats["issues"] += len(issues)
+        stats["embeddings_updated"] += embedding_updates
+    
+    # Try to store the current time as the last scan time
+    # This is optional and we continue even if it fails (field might not exist)
     try:
-        # Create tracker client
-        client = TrackerClient(tracker)
-        
-        # Determine the last 30 days as a default scan period
-        # This can be adjusted as needed based on usage patterns
-        since = datetime.datetime.now() - datetime.timedelta(days=30)
-        
-        # Scan organizations
-        orgs = client.scan_organizations(db)
-        stats["organizations"] = len(orgs)
-        
-        # Scan projects for each organization
-        all_projects = []
-        for org in orgs:
-            try:
-                projects = client.scan_projects(db, org)
-                all_projects.extend(projects)
-            except TrackerError as e:
-                logger.error(f"Error scanning projects for org {org.id}: {str(e)}")
-                stats["errors"] += 1
-        
-        stats["projects"] = len(all_projects)
-        
-        # Scan issues for each project
-        for project in all_projects:
-            try:
-                org = next(org for org in orgs if org.id == project.organization_id)
-                issues, embedding_updates = client.scan_issues(db, org, project, since)
-                stats["issues"] += len(issues)
-                stats["embeddings_updated"] += embedding_updates
-            except TrackerError as e:
-                logger.error(f"Error scanning issues for project {project.id}: {str(e)}")
-                stats["errors"] += 1
-        
-        # Store the current time as the last scan time, if the field exists
-        try:
-            crud_tracker.update(
-                db, 
-                db_obj=tracker, 
-                obj_in={"last_scan_time": datetime.datetime.now()}
-            )
-        except Exception as e:
-            # If last_scan_time doesn't exist, we can ignore this error
-            logger.debug(f"Could not update last_scan_time for tracker {tracker.id}: {str(e)}")
-        
+        crud_tracker.update(
+            db, 
+            db_obj=tracker, 
+            obj_in={"last_scan_time": datetime.datetime.now()}
+        )
     except Exception as e:
-        logger.error(f"Error scanning tracker {tracker.id}: {str(e)}")
-        stats["errors"] += 1
+        # If last_scan_time doesn't exist, we can ignore this error
+        logger.debug(f"Could not update last_scan_time for tracker {tracker.id}: {str(e)}")
         
     stats["duration_seconds"] = time.time() - start_time
     
@@ -340,20 +325,16 @@ def scan_account(db: Session, account_id: str, verbose: bool = False) -> Dict[st
     
     # Scan each tracker
     for tracker in trackers:
-        try:
-            stats = scan_tracker(db, tracker, verbose)
-            
-            # Aggregate statistics
-            account_stats["trackers_scanned"] += 1
-            if stats["errors"] > 0:
-                account_stats["trackers_with_errors"] += 1
-            account_stats["organizations"] += stats["organizations"]
-            account_stats["projects"] += stats["projects"]
-            account_stats["issues"] += stats["issues"]
-            account_stats["embeddings_updated"] += stats["embeddings_updated"]
-        except Exception as e:
-            logger.error(f"Error scanning tracker {tracker.id}: {str(e)}")
+        stats = scan_tracker(db, tracker, verbose)
+        
+        # Aggregate statistics
+        account_stats["trackers_scanned"] += 1
+        if stats["errors"] > 0:
             account_stats["trackers_with_errors"] += 1
+        account_stats["organizations"] += stats["organizations"]
+        account_stats["projects"] += stats["projects"]
+        account_stats["issues"] += stats["issues"]
+        account_stats["embeddings_updated"] += stats["embeddings_updated"]
     
     account_stats["duration_seconds"] = time.time() - start_time
     
@@ -408,22 +389,18 @@ def scan_all_accounts(db: Session, verbose: bool = False) -> Dict[str, Any]:
         if verbose:
             print(f"\nScanning account: {account.username} (ID: {account.id})")
             
-        try:
-            account_stats = scan_account(db, account.id, verbose)
-            
-            # Aggregate statistics
-            overall_stats["accounts_scanned"] += 1
-            if account_stats["trackers_with_errors"] > 0:
-                overall_stats["accounts_with_errors"] += 1
-            overall_stats["trackers_scanned"] += account_stats["trackers_scanned"]
-            overall_stats["trackers_with_errors"] += account_stats["trackers_with_errors"]
-            overall_stats["organizations"] += account_stats["organizations"]
-            overall_stats["projects"] += account_stats["projects"]
-            overall_stats["issues"] += account_stats["issues"]
-            overall_stats["embeddings_updated"] += account_stats["embeddings_updated"]
-        except Exception as e:
-            logger.error(f"Error scanning account {account.id}: {str(e)}")
+        account_stats = scan_account(db, account.id, verbose)
+        
+        # Aggregate statistics
+        overall_stats["accounts_scanned"] += 1
+        if account_stats["trackers_with_errors"] > 0:
             overall_stats["accounts_with_errors"] += 1
+        overall_stats["trackers_scanned"] += account_stats["trackers_scanned"]
+        overall_stats["trackers_with_errors"] += account_stats["trackers_with_errors"]
+        overall_stats["organizations"] += account_stats["organizations"]
+        overall_stats["projects"] += account_stats["projects"]
+        overall_stats["issues"] += account_stats["issues"]
+        overall_stats["embeddings_updated"] += account_stats["embeddings_updated"]
     
     overall_stats["duration_seconds"] = time.time() - start_time
     
