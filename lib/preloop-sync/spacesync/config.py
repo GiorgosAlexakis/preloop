@@ -18,6 +18,12 @@ LOG_FILE = os.getenv("LOG_FILE")
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/spacesync")
 
+# Service configuration
+SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
+SERVICE_PORT = int(os.getenv("SERVICE_PORT", "5000"))
+SERVICE_POLL_INTERVAL = int(os.getenv("SERVICE_POLL_INTERVAL", "300"))
+SERVICE_WEBHOOK_ENABLED = os.getenv("SERVICE_WEBHOOK_ENABLED", "true").lower() in ("true", "1", "yes")
+
 # Define base directory
 BASE_DIR = Path(__file__).parent.parent
 

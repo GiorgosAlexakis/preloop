@@ -12,6 +12,7 @@ from ..db.session import get_db_session
 from spacemodels.crud import crud_account, crud_tracker
 from ..utils import safe_exit
 from .scan_commands import scan
+from .service_commands import service
 
 @click.group()
 @click.version_option(version=__version__)
@@ -25,8 +26,9 @@ def cli() -> None:
     """
     pass
 
-# Add scan commands group
+# Add command groups
 cli.add_command(scan)
+cli.add_command(service)
 
 @cli.command()
 def version() -> None:

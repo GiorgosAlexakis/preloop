@@ -111,6 +111,46 @@ Scan all accounts and their trackers:
 spacesync scan all
 ```
 
+### Continuous Update Service
+
+SpaceSync includes a service that continuously updates the database with changes from trackers. The service uses webhooks for supported trackers (e.g., GitLab) and falls back to polling for other trackers.
+
+**Starting the service:**
+
+```bash
+spacesync service start --foreground
+```
+
+This starts the service in the foreground. Remove the `--foreground` flag to run it in the background.
+
+**Using the standalone script:**
+
+You can also run the service using the standalone script:
+
+```bash
+python scripts/run_service.py --foreground
+```
+
+Service options:
+
+```
+--foreground         Run in foreground (don't daemonize)
+--reload-interval N  Interval (in seconds) to reload tracker list
+--log-level LEVEL    Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+```
+
+**Service Configuration:**
+
+Configure the service in your `.env` file:
+
+```
+# Service configuration
+SERVICE_HOST=0.0.0.0           # Host for webhook server
+SERVICE_PORT=5000              # Port for webhook server
+SERVICE_POLL_INTERVAL=300      # Poll interval in seconds for non-webhook trackers
+SERVICE_WEBHOOK_ENABLED=true   # Enable webhook services where supported
+```
+
 ## Development
 
 ### Project Structure
