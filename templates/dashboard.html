@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - SpaceBridge</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sidebar {
+            background-color: #343a40;
+            min-height: 100vh;
+            color: #fff;
+            padding-top: 20px;
+            position: fixed;
+            width: 16.666667%;
+            z-index: 100;
+        }
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.75);
+            padding: 12px 20px;
+            margin: 4px 0;
+            border-radius: 5px;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: white;
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .sidebar .nav-link i {
+            margin-right: 10px;
+            font-size: 1.1rem;
+        }
+        .main-content {
+            padding: 30px;
+        }
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .card-header {
+            background-color: rgba(0,0,0,0.03);
+            border-bottom: 1px solid rgba(0,0,0,0.125);
+            font-weight: 600;
+            padding: 15px 20px;
+        }
+        .tracker-card {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            transition: transform 0.2s;
+        }
+        .tracker-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .tracker-icon {
+            width: 32px;
+            height: 32px;
+            margin-right: 10px;
+        }
+        .github-color { color: #24292e; }
+        .gitlab-color { color: #fc6d26; }
+        .jira-color { color: #0052CC; }
+        .stat-card {
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .stat-card h3 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 10px 0;
+            color: #4a86e8;
+        }
+        .stat-card p {
+            color: #6c757d;
+            margin-bottom: 0;
+        }
+        .token-table th, .token-table td {
+            vertical-align: middle;
+        }
+        .nav-tabs {
+            border-bottom: 2px solid #dee2e6;
+            margin-bottom: 20px;
+        }
+        .nav-tabs .nav-link {
+            border: none;
+            color: #495057;
+            font-weight: 500;
+            padding: 12px 20px;
+        }
+        .nav-tabs .nav-link.active {
+            color: #4a86e8;
+            border-bottom: 2px solid #4a86e8;
+        }
+        .btn-primary {
+            background-color: #4a86e8;
+            border-color: #4a86e8;
+        }
+        .btn-primary:hover {
+            background-color: #3a76d8;
+            border-color: #3a76d8;
+        }
+        .btn-outline-danger {
+            color: #dc3545;
+            border-color: #dc3545;
+        }
+        .btn-outline-danger:hover {
+            background-color: #dc3545;
+            border-color: #dc3545;
+            color: white;
+        }
+        .token-creation-form {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .modal-content {
+            border-radius: 10px;
+            border: none;
+        }
+        .modal-header {
+            border-bottom: 1px solid #dee2e6;
+            background-color: #f8f9fa;
+        }
+        .modal-footer {
+            border-top: 1px solid #dee2e6;
+            background-color: #f8f9fa;
+        }
+        .token-display {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+            word-break: break-all;
+            font-family: monospace;
+        }
+        .badge-github {
+            background-color: #24292e;
+            color: white;
+        }
+        .badge-gitlab {
+            background-color: #fc6d26;
+            color: white;
+        }
+        .badge-jira {
+            background-color: #0052CC;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-2 sidebar">
+                <h4 class="text-center mb-4">SpaceBridge</h4>
+                <div class="d-flex flex-column">
+                    <button class="nav-link active" id="dashboard-tab-btn" data-bs-target="#dashboard-tab" data-bs-toggle="tab">
+                        <i class="bi bi-speedometer2"></i> Dashboard
+                    </button>
+                    <button class="nav-link" id="trackers-tab-btn" data-bs-target="#trackers-tab" data-bs-toggle="tab">
+                        <i class="bi bi-hdd-network"></i> Trackers
+                    </button>
+                    <button class="nav-link" id="api-usage-tab-btn" data-bs-target="#api-usage-tab" data-bs-toggle="tab">
+                        <i class="bi bi-graph-up"></i> API Usage
+                    </button>
+                    <button class="nav-link" id="api-keys-tab-btn" data-bs-target="#api-keys-tab" data-bs-toggle="tab">
+                        <i class="bi bi-key"></i> API Keys
+                    </button>
+                    <button class="nav-link" id="settings-tab-btn" data-bs-target="#settings-tab" data-bs-toggle="tab">
+                        <i class="bi bi-gear"></i> Settings
+                    </button>
+                </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-10 offset-md-2 main-content">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 id="currentPageTitle">Dashboard</h2>
+                    <div class="user-info d-flex align-items-center">
+                        <span id="username" class="me-2"></span>
+                        <span class="text-muted me-2">|</span>
+                        <span id="email" class="text-muted me-3"></span>
+                        <a href="/logout" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content" id="dashboardTabContent">
+                    <!-- Dashboard Tab -->
+                    <div class="tab-pane fade show active" id="dashboard-tab" role="tabpanel" aria-labelledby="dashboard-tab-btn">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="stat-card">
+                                    <i class="bi bi-hdd-network fs-1 text-primary"></i>
+                                    <h3 id="totalTrackers">0</h3>
+                                    <p>Connected Trackers</p>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="stat-card">
+                                    <i class="bi bi-graph-up fs-1 text-success"></i>
+                                    <h3 id="totalRequests">0</h3>
+                                    <p>Total API Requests</p>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="stat-card">
+                                    <i class="bi bi-check2-circle fs-1 text-info"></i>
+                                    <h3 id="totalIssues">0</h3>
+                                    <p>Issues Processed</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-4">
+                            <div class="col-md-7">
+                                <div class="card">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>API Usage - Last 7 Days</span>
+                                    </div>
+                                    <div class="card-body">
+                                        <canvas id="apiUsageChart" width="100%" height="300"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-5">
+                                <div class="card">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>Connected Trackers</span>
+                                        <button type="button" class="btn btn-sm btn-primary" id="dashboardAddTrackerBtn">
+                                            <i class="bi bi-plus"></i> Add Tracker
+                                        </button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="trackersList">
+                                            <!-- Trackers will be loaded here -->
+                                            <div class="text-center text-muted py-5">
+                                                <i class="bi bi-hdd-network fs-1 mb-3"></i>
+                                                <p>No trackers connected yet</p>
+                                                <button type="button" class="btn btn-sm btn-outline-primary dashboardAddTrackerBtn">
+                                                    Connect Your First Tracker
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trackers Tab -->
+                    <div class="tab-pane fade" id="trackers-tab" role="tabpanel" aria-labelledby="trackers-tab-btn">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Your Trackers</span>
+                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">
+                                    <i class="bi bi-plus"></i> Add Tracker
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div id="trackersListFull">
+                                    <!-- Trackers will be loaded here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- API Usage Tab -->
+                    <div class="tab-pane fade" id="api-usage-tab" role="tabpanel" aria-labelledby="api-usage-tab-btn">
+                        <div class="card">
+                            <div class="card-header">API Usage Statistics</div>
+                            <div class="card-body">
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <div class="form-group">
+                                            <label for="dateRangeSelector">Date Range</label>
+                                            <select id="dateRangeSelector" class="form-select">
+                                                <option value="7days">Last 7 Days</option>
+                                                <option value="30days">Last 30 Days</option>
+                                                <option value="90days">Last 90 Days</option>
+                                                <option value="custom">Custom Range</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 custom-date-range d-none">
+                                        <div class="form-group">
+                                            <label for="startDate">Start Date</label>
+                                            <input type="date" id="startDate" class="form-control">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 custom-date-range d-none">
+                                        <div class="form-group">
+                                            <label for="endDate">End Date</label>
+                                            <input type="date" id="endDate" class="form-control">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <canvas id="apiUsageDetailChart" width="100%" height="300"></canvas>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card">
+                                            <div class="card-header">Issue Actions</div>
+                                            <div class="card-body">
+                                                <canvas id="issueActionsChart" width="100%" height="200"></canvas>
+                                            </div>
+                                        </div>
+
+                                        <div class="card mt-3">
+                                            <div class="card-header">Endpoints Usage</div>
+                                            <div class="card-body">
+                                                <div id="endpointsList">
+                                                    <!-- Endpoint usage data will be loaded here -->
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- API Keys Tab -->
+                    <div class="tab-pane fade" id="api-keys-tab" role="tabpanel" aria-labelledby="api-keys-tab-btn">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>API Keys</span>
+                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createKeyModal">
+                                    <i class="bi bi-plus"></i> Create New API Key
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle"></i>
+                                    API keys allow you to authenticate requests to the SpaceBridge API.
+                                    Keep your API keys secure and never share them publicly.
+                                </div>
+
+                                <table class="table api-key-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Created</th>
+                                            <th>Last Used</th>
+                                            <th>Expires</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="apiKeysList">
+                                        <!-- API keys will be loaded here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Settings Tab -->
+                    <div class="tab-pane fade" id="settings-tab" role="tabpanel" aria-labelledby="settings-tab-btn">
+                        <div class="card">
+                            <div class="card-header">Account Settings</div>
+                            <div class="card-body">
+                                <form id="updateProfileForm">
+                                    <div class="mb-3 row">
+                                        <label for="userUsername" class="col-sm-3 col-form-label">Username</label>
+                                        <div class="col-sm-9">
+                                            <input type="text" class="form-control" id="userUsername" readonly>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3 row">
+                                        <label for="userEmail" class="col-sm-3 col-form-label">Email</label>
+                                        <div class="col-sm-9">
+                                            <input type="email" class="form-control" id="userEmail" readonly>
+                                            <div class="form-text" id="emailVerificationStatus"></div>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3 row">
+                                        <label for="userFullName" class="col-sm-3 col-form-label">Full Name</label>
+                                        <div class="col-sm-9">
+                                            <input type="text" class="form-control" id="userFullName">
+                                        </div>
+                                    </div>
+                                    <div class="mb-3 row">
+                                        <div class="col-sm-9 offset-sm-3">
+                                            <button type="submit" class="btn btn-primary">Update Profile</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="card mt-4">
+                            <div class="card-header">Change Password</div>
+                            <div class="card-body">
+                                <form id="changePasswordForm">
+                                    <div class="mb-3 row">
+                                        <label for="currentPassword" class="col-sm-3 col-form-label">Current Password</label>
+                                        <div class="col-sm-9">
+                                            <input type="password" class="form-control" id="currentPassword" required>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3 row">
+                                        <label for="newPassword" class="col-sm-3 col-form-label">New Password</label>
+                                        <div class="col-sm-9">
+                                            <input type="password" class="form-control" id="newPassword" required minlength="8">
+                                            <div class="form-text">Password must be at least 8 characters long.</div>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3 row">
+                                        <label for="confirmNewPassword" class="col-sm-3 col-form-label">Confirm New Password</label>
+                                        <div class="col-sm-9">
+                                            <input type="password" class="form-control" id="confirmNewPassword" required>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3 row">
+                                        <div class="col-sm-9 offset-sm-3">
+                                            <button type="submit" class="btn btn-primary">Change Password</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Tracker Modal -->
+    <div class="modal fade" id="addTrackerModal" tabindex="-1" aria-labelledby="addTrackerModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addTrackerModalLabel">Add New Tracker</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addTrackerForm">
+                        <div class="mb-3">
+                            <label for="trackerName" class="form-label">Tracker Name</label>
+                            <input type="text" class="form-control" id="trackerName" required>
+                            <div class="form-text">A friendly name to identify this tracker.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="trackerType" class="form-label">Tracker Type</label>
+                            <select class="form-select" id="trackerType" required>
+                                <option value="" selected disabled>Select tracker type</option>
+                                <option value="github">GitHub</option>
+                                <option value="gitlab">GitLab</option>
+                                <option value="jira">Jira</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="trackerUrl" class="form-label">Tracker URL</label>
+                            <input type="url" class="form-control" id="trackerUrl" required>
+                            <div class="form-text" id="urlHelp">
+                                The base URL of your tracker instance.
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="trackerToken" class="form-label">Access Token</label>
+                            <input type="password" class="form-control" id="trackerToken" required>
+                            <div class="form-text">
+                                Your personal access token with appropriate permissions.
+                                <a href="#" target="_blank" id="tokenHelpLink">How to generate a token?</a>
+                            </div>
+                        </div>
+
+                        <div id="jiraConfigSection" class="d-none">
+                            <div class="mb-3">
+                                <label for="jiraUsername" class="form-label">Jira Username</label>
+                                <input type="text" class="form-control" id="jiraUsername">
+                                <div class="form-text">Your Jira account username (email address).</div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="addTrackerBtn">Add Tracker</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create API Key Modal -->
+    <div class="modal fade" id="createKeyModal" tabindex="-1" aria-labelledby="createKeyModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createKeyModalLabel">Create API Key</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createKeyForm">
+                        <div class="mb-3">
+                            <label for="keyName" class="form-label">Key Name</label>
+                            <input type="text" class="form-control" id="keyName" required>
+                            <div class="form-text">Give your API key a descriptive name to remember what it's for.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="keyExpiry" class="form-label">Expiration</label>
+                            <select class="form-select" id="keyExpiry">
+                                <option value="never">Never</option>
+                                <option value="7days">7 Days</option>
+                                <option value="30days">30 Days</option>
+                                <option value="90days">90 Days</option>
+                                <option value="1year">1 Year</option>
+                                <option value="custom">Custom Date</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3 custom-expiry-date d-none">
+                            <label for="customExpiryDate" class="form-label">Custom Expiry Date</label>
+                            <input type="date" class="form-control" id="customExpiryDate">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="createKeyBtn">Create API Key</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Key Created Modal -->
+    <div class="modal fade" id="keyCreatedModal" tabindex="-1" aria-labelledby="keyCreatedModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title" id="keyCreatedModalLabel">API Key Created</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <strong>Important:</strong> Copy your API key now. You won't be able to see it again!
+                    </div>
+
+                    <p>Your new API key:</p>
+                    <div class="key-display" id="newKeyValue"></div>
+
+                    <button class="btn btn-sm btn-outline-primary mb-3" id="copyKeyBtn">
+                        <i class="bi bi-clipboard"></i> Copy to Clipboard
+                    </button>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">I've Copied My API Key</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete API Key Confirmation Modal -->
+    <div class="modal fade" id="deleteKeyModal" tabindex="-1" aria-labelledby="deleteKeyModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title" id="deleteKeyModalLabel">Confirm Delete</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the API key <strong id="deleteKeyName"></strong>?</p>
+                    <p>This action cannot be undone. Applications using this API key will no longer be able to access the API.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteKeyBtn">Delete API Key</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Tracker Confirmation Modal -->
+    <div class="modal fade" id="deleteTrackerModal" tabindex="-1" aria-labelledby="deleteTrackerModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title" id="deleteTrackerModalLabel">Confirm Delete</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the tracker <strong id="deleteTrackerName"></strong>?</p>
+                    <p>This action cannot be undone. All connections to this tracker will be removed.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteTrackerBtn">Delete Tracker</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Use full version of Bootstrap 5.3 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
+    <script>
+        // Global variables
+        let currentUser = null;
+        let trackers = [];
+        let apiKeys = [];
+        let apiUsage = null;
+        let activeKeyId = null;
+        let activeTrackerId = null;
+
+        // Check auth status on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthStatus();
+            setupEventListeners();
+        });
+
+        // Check if user is authenticated
+        function checkAuthStatus() {
+            const token = localStorage.getItem('accessToken');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+
+            fetchUserProfile();
+        }
+
+        // Set up event listeners
+        function setupEventListeners() {
+
+            // Tab switching
+            // Remove event listener setup since we're handling clicks directly
+
+            // Custom date range toggle
+            document.getElementById('dateRangeSelector').addEventListener('change', function() {
+                if (this.value === 'custom') {
+                    document.querySelectorAll('.custom-date-range').forEach(el => el.classList.remove('d-none'));
+                } else {
+                    document.querySelectorAll('.custom-date-range').forEach(el => el.classList.add('d-none'));
+                }
+            });
+
+            // API key expiry toggle
+            document.getElementById('keyExpiry').addEventListener('change', function() {
+                if (this.value === 'custom') {
+                    document.querySelector('.custom-expiry-date').classList.remove('d-none');
+                } else {
+                    document.querySelector('.custom-expiry-date').classList.add('d-none');
+                }
+            });
+
+            // Add handlers for the dashboard "Add Tracker" buttons
+            document.getElementById('dashboardAddTrackerBtn').addEventListener('click', function() {
+                // Show trackers tab
+                document.querySelectorAll('.tab-pane').forEach(tab => {
+                    tab.classList.remove('show', 'active');
+                });
+                document.getElementById('trackers-tab').classList.add('show', 'active');
+
+                // Update active tab button
+                document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.getElementById('trackers-tab-btn').classList.add('active');
+
+                // Update page title
+                document.getElementById('currentPageTitle').textContent = 'Trackers';
+
+                // Open the add tracker modal
+                const modal = new bootstrap.Modal(document.getElementById('addTrackerModal'));
+                modal.show();
+            });
+
+            // Add handlers for the "Connect Your First Tracker" button
+            document.querySelectorAll('.dashboardAddTrackerBtn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    // Show trackers tab
+                    document.querySelectorAll('.tab-pane').forEach(tab => {
+                        tab.classList.remove('show', 'active');
+                    });
+                    document.getElementById('trackers-tab').classList.add('show', 'active');
+
+                    // Update active tab button
+                    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    document.getElementById('trackers-tab-btn').classList.add('active');
+
+                    // Update page title
+                    document.getElementById('currentPageTitle').textContent = 'Trackers';
+
+                    // Open the add tracker modal
+                    const modal = new bootstrap.Modal(document.getElementById('addTrackerModal'));
+                    modal.show();
+                });
+            });
+
+            // Tracker type toggle for Jira config
+            document.getElementById('trackerType').addEventListener('change', function() {
+                if (this.value === 'jira') {
+                    document.getElementById('jiraConfigSection').classList.remove('d-none');
+                    document.getElementById('jiraUsername').setAttribute('required', 'required');
+                } else {
+                    document.getElementById('jiraConfigSection').classList.add('d-none');
+                    document.getElementById('jiraUsername').removeAttribute('required');
+                }
+
+                // Update help text based on tracker type
+                const urlHelpText = document.getElementById('urlHelp');
+                const tokenHelpLink = document.getElementById('tokenHelpLink');
+
+                switch(this.value) {
+                    case 'github':
+                        urlHelpText.textContent = 'For GitHub, use: https://api.github.com';
+                        tokenHelpLink.href = 'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token';
+                        break;
+                    case 'gitlab':
+                        urlHelpText.textContent = 'For GitLab.com, use: https://gitlab.com/api/v4 or your self-hosted instance URL';
+                        tokenHelpLink.href = 'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html';
+                        break;
+                    case 'jira':
+                        urlHelpText.textContent = 'Your Jira instance URL, e.g., https://yourcompany.atlassian.net';
+                        tokenHelpLink.href = 'https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/';
+                        break;
+                    default:
+                        urlHelpText.textContent = 'The base URL of your tracker instance.';
+                        tokenHelpLink.href = '#';
+                }
+            });
+
+            // Add tracker
+            document.getElementById('addTrackerBtn').addEventListener('click', function() {
+                addTracker();
+            });
+
+            // Create API key
+            document.getElementById('createKeyBtn').addEventListener('click', function() {
+                createApiKey();
+            });
+
+            // Copy API key
+            document.getElementById('copyKeyBtn').addEventListener('click', function() {
+                const keyValue = document.getElementById('newKeyValue').textContent;
+                navigator.clipboard.writeText(keyValue)
+                    .then(() => {
+                        this.innerHTML = '<i class="bi bi-check"></i> Copied!';
+                        setTimeout(() => {
+                            this.innerHTML = '<i class="bi bi-clipboard"></i> Copy to Clipboard';
+                        }, 2000);
+                    })
+                    .catch(err => {
+                        console.error('Could not copy text: ', err);
+                    });
+            });
+
+            // Confirm delete API key
+            document.getElementById('confirmDeleteKeyBtn').addEventListener('click', function() {
+                if (activeKeyId) {
+                    deleteApiKey(activeKeyId);
+                }
+            });
+
+            // Confirm delete tracker
+            document.getElementById('confirmDeleteTrackerBtn').addEventListener('click', function() {
+                if (activeTrackerId) {
+                    deleteTracker(activeTrackerId);
+                }
+            });
+
+            // Update profile form
+            document.getElementById('updateProfileForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                updateProfile();
+            });
+
+            // Change password form
+            document.getElementById('changePasswordForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                changePassword();
+            });
+
+            // Password confirmation validation
+            document.getElementById('confirmNewPassword').addEventListener('input', function() {
+                const newPassword = document.getElementById('newPassword').value;
+                if (this.value !== newPassword) {
+                    this.setCustomValidity('Passwords do not match');
+                } else {
+                    this.setCustomValidity('');
+                }
+            });
+
+            // Update API usage when date range changes
+            document.getElementById('dateRangeSelector').addEventListener('change', fetchApiUsage);
+            document.getElementById('startDate').addEventListener('change', fetchApiUsage);
+            document.getElementById('endDate').addEventListener('change', fetchApiUsage);
+        }
+
+        // Fetch user profile
+        function fetchUserProfile() {
+            fetch('/api/v1/auth/users/me', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status === 401) {
+                    // Try to refresh the token
+                    return refreshToken().then(() => fetchUserProfile());
+                } else {
+                    throw new Error('Failed to fetch user profile');
+                }
+            })
+            .then(data => {
+                currentUser = data;
+
+                // Update UI with user info
+                document.getElementById('username').textContent = data.username;
+                document.getElementById('email').textContent = data.email;
+                document.getElementById('userUsername').value = data.username;
+                document.getElementById('userEmail').value = data.email;
+                document.getElementById('userFullName').value = data.full_name || '';
+
+                const emailVerifiedStatus = document.getElementById('emailVerificationStatus');
+                if (data.email_verified) {
+                    emailVerifiedStatus.textContent = 'Email verified';
+                    emailVerifiedStatus.classList.add('text-success');
+                } else {
+                    emailVerifiedStatus.innerHTML = 'Email not verified. <a href="#" id="resendVerificationLink">Resend verification email</a>';
+                    emailVerifiedStatus.classList.add('text-danger');
+
+                    // Add event listener for resend link
+                    document.getElementById('resendVerificationLink').addEventListener('click', function(e) {
+                        e.preventDefault();
+                        resendVerificationEmail();
+                    });
+                }
+
+                // Load data for dashboard
+                loadDashboardData();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                logout();
+            });
+        }
+
+        // Refresh token
+        function refreshToken() {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) {
+                logout();
+                return Promise.reject('No refresh token available');
+            }
+
+            return fetch('/api/v1/auth/refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    throw new Error('Failed to refresh token');
+                }
+            })
+            .then(data => {
+                localStorage.setItem('accessToken', data.access_token);
+                localStorage.setItem('refreshToken', data.refresh_token);
+                localStorage.setItem('tokenExpires', Date.now() + (data.expires_in * 1000));
+                return data;
+            })
+            .catch(error => {
+                console.error('Error refreshing token:', error);
+                logout();
+                return Promise.reject(error);
+            });
+        }
+
+        // Logout
+        function logout() {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('tokenExpires');
+            window.location.href = '/login';
+        }
+
+        // Load all dashboard data
+        function loadDashboardData() {
+            // Initialize tabs
+            // For now we'll use direct link activation instead of Bootstrap's tab system
+            document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    // Get target tab
+                    const targetId = this.getAttribute('data-bs-target');
+
+                    // Update page title
+                    document.getElementById('currentPageTitle').textContent = this.textContent.trim();
+
+                    // Hide all tabs
+                    document.querySelectorAll('.tab-pane').forEach(tab => {
+                        tab.classList.remove('show', 'active');
+                    });
+
+                    // Show target tab
+                    document.querySelector(targetId).classList.add('show', 'active');
+
+                    // Update active state
+                    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    this.classList.add('active');
+                });
+            });
+
+            // Fetch trackers
+            fetchTrackers();
+
+            // Fetch API tokens
+            fetchApiKeys();
+
+            // Fetch API usage statistics
+            fetchApiUsage();
+        }
+
+        // Fetch trackers
+        function fetchTrackers() {
+            fetch('/api/v1/trackers', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status === 401) {
+                    return refreshToken().then(() => fetchTrackers());
+                } else {
+                    throw new Error('Failed to fetch trackers');
+                }
+            })
+            .then(data => {
+                trackers = data;
+                renderTrackers();
+                updateDashboardStats();
+            })
+            .catch(error => {
+                console.error('Error fetching trackers:', error);
+            });
+        }
+
+        // Render trackers
+        function renderTrackers() {
+            const trackersList = document.getElementById('trackersList');
+            const trackersListFull = document.getElementById('trackersListFull');
+
+            if (trackers.length === 0) {
+                trackersList.innerHTML = `
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-hdd-network fs-1 mb-3"></i>
+                        <p>No trackers connected yet</p>
+                        <a href="#trackers-tab" class="btn btn-sm btn-outline-primary" data-bs-toggle="tab">
+                            Connect Your First Tracker
+                        </a>
+                    </div>
+                `;
+                trackersListFull.innerHTML = `
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-hdd-network fs-1 mb-3"></i>
+                        <p>No trackers connected yet</p>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">
+                            <i class="bi bi-plus"></i> Add Your First Tracker
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            // Render summary list for dashboard
+            let trackerItems = '';
+            trackers.slice(0, 3).forEach(tracker => {
+                let iconClass = '';
+                let badgeClass = '';
+
+                switch(tracker.type) {
+                    case 'github':
+                        iconClass = 'github-color';
+                        badgeClass = 'badge-github';
+                        break;
+                    case 'gitlab':
+                        iconClass = 'gitlab-color';
+                        badgeClass = 'badge-gitlab';
+                        break;
+                    case 'jira':
+                        iconClass = 'jira-color';
+                        badgeClass = 'badge-jira';
+                        break;
+                    default:
+                        // Fallback for undefined
+                        iconClass = 'text-secondary';
+                        badgeClass = 'badge-secondary';
+                }
+
+                trackerItems += `
+                    <div class="d-flex align-items-center p-3 border-bottom">
+                        <i class="bi bi-${tracker.type === 'jira' ? 'kanban' : 'git'} fs-4 ${iconClass} me-3"></i>
+                        <div>
+                            <h6 class="mb-0">${tracker.name}</h6>
+                            <span class="badge ${badgeClass}">${tracker.type || 'unknown'}</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            if (trackers.length > 3) {
+                trackerItems += `
+                    <div class="text-center p-2">
+                        <a href="#trackers-tab" class="btn btn-sm btn-link" data-bs-toggle="tab">
+                            View all ${trackers.length} trackers
+                        </a>
+                    </div>
+                `;
+            }
+
+            trackersList.innerHTML = trackerItems;
+
+            // Render full list for trackers tab
+            let trackerCards = '<div class="row">';
+            trackers.forEach(tracker => {
+                let iconClass = '';
+                let iconName = '';
+
+                switch(tracker.type) {
+                    case 'github':
+                        iconClass = 'github-color';
+                        iconName = 'github';
+                        break;
+                    case 'gitlab':
+                        iconClass = 'gitlab-color';
+                        iconName = 'gitlab';
+                        break;
+                    case 'jira':
+                        iconClass = 'jira-color';
+                        iconName = 'kanban';
+                        break;
+                    default:
+                        // Fallback for undefined
+                        iconClass = 'text-secondary';
+                        iconName = 'gear';
+                }
+
+                trackerCards += `
+                    <div class="col-md-4 mb-4">
+                        <div class="tracker-card p-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-${iconName} fs-2 ${iconClass} me-2"></i>
+                                    <h5 class="mb-0">${tracker.name}</h5>
+                                </div>
+                                <span class="badge bg-${tracker.type === 'github' ? 'dark' : tracker.type === 'gitlab' ? 'danger' : 'primary'}">${tracker.type || 'unknown'}</span>
+                            </div>
+                            <p class="text-muted mb-3 small">${tracker.url}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">Created: ${new Date(tracker.created_at).toLocaleDateString()}</small>
+                                <button class="btn btn-sm btn-outline-danger delete-tracker-btn" data-tracker-id="${tracker.id}" data-tracker-name="${tracker.name}">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            trackerCards += '</div>';
+
+            trackersListFull.innerHTML = trackerCards;
+
+            // Add event listeners to delete buttons
+            document.querySelectorAll('.delete-tracker-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    activeTrackerId = this.getAttribute('data-tracker-id');
+                    const trackerName = this.getAttribute('data-tracker-name');
+                    document.getElementById('deleteTrackerName').textContent = trackerName;
+                    const deleteModal = new bootstrap.Modal(document.getElementById('deleteTrackerModal'));
+                    deleteModal.show();
+                });
+            });
+        }
+
+        // Fetch API keys
+        function fetchApiKeys() {
+            fetch('/api/v1/auth/api-keys', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status === 401) {
+                    return refreshToken().then(() => fetchApiKeys());
+                } else {
+                    throw new Error('Failed to fetch API keys');
+                }
+            })
+            .then(data => {
+                apiKeys = data;
+                renderApiKeys();
+            })
+            .catch(error => {
+                console.error('Error fetching API keys:', error);
+            });
+        }
+
+        // Render API keys
+        function renderApiKeys() {
+            const keysList = document.getElementById('apiKeysList');
+
+            if (apiKeys.length === 0) {
+                keysList.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center py-4">
+                            <p class="text-muted mb-0">No API keys created yet</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            let keyRows = '';
+            apiKeys.forEach(key => {
+                const createdDate = new Date(key.created_at).toLocaleDateString();
+                const lastUsed = key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never used';
+                const expires = key.expires_at ? new Date(key.expires_at).toLocaleDateString() : 'Never';
+
+                keyRows += `
+                    <tr>
+                        <td>${key.name}</td>
+                        <td>${createdDate}</td>
+                        <td>${lastUsed}</td>
+                        <td>${expires}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-danger delete-key-btn" data-key-id="${key.id}" data-key-name="${key.name}">
+                                <i class="bi bi-trash"></i> Revoke
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            keysList.innerHTML = keyRows;
+
+            // Add event listeners to delete buttons
+            document.querySelectorAll('.delete-key-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    activeKeyId = this.getAttribute('data-key-id');
+                    const keyName = this.getAttribute('data-key-name');
+                    document.getElementById('deleteKeyName').textContent = keyName;
+                    const deleteModal = new bootstrap.Modal(document.getElementById('deleteKeyModal'));
+                    deleteModal.show();
+                });
+            });
+        }
+
+        // Fetch API usage statistics
+        function fetchApiUsage() {
+            // Get date range parameters
+            let params = new URLSearchParams();
+            const dateRange = document.getElementById('dateRangeSelector').value;
+
+            if (dateRange === 'custom') {
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+
+                if (startDate) {
+                    params.append('start_date', new Date(startDate).toISOString());
+                }
+                if (endDate) {
+                    params.append('end_date', new Date(endDate + 'T23:59:59').toISOString());
+                }
+            } else {
+                // Calculate start date based on selected range
+                const now = new Date();
+                let startDate = new Date();
+
+                switch(dateRange) {
+                    case '7days':
+                        startDate.setDate(now.getDate() - 7);
+                        break;
+                    case '30days':
+                        startDate.setDate(now.getDate() - 30);
+                        break;
+                    case '90days':
+                        startDate.setDate(now.getDate() - 90);
+                        break;
+                }
+
+                params.append('start_date', startDate.toISOString());
+                params.append('end_date', now.toISOString());
+            }
+
+            fetch(`/api/v1/auth/api-usage?${params.toString()}`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status === 401) {
+                    return refreshToken().then(() => fetchApiUsage());
+                } else {
+                    throw new Error('Failed to fetch API usage');
+                }
+            })
+            .then(data => {
+                apiUsage = data;
+                renderApiUsageStats();
+                updateDashboardStats();
+            })
+            .catch(error => {
+                console.error('Error fetching API usage:', error);
+            });
+        }
+
+        // Render API usage statistics
+        function renderApiUsageStats() {
+            if (!apiUsage) return;
+
+            // Render endpoints list
+            const endpointsList = document.getElementById('endpointsList');
+            const endpoints = Object.entries(apiUsage.requests_by_endpoint)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+
+            if (endpoints.length === 0) {
+                endpointsList.innerHTML = '<p class="text-muted text-center">No API usage data available</p>';
+                return;
+            }
+
+            let endpointsHtml = '';
+            endpoints.forEach(([endpoint, count]) => {
+                // Simplify endpoint path
+                const simplifiedEndpoint = endpoint.split('/').slice(-2).join('/');
+
+                endpointsHtml += `
+                    <div class="d-flex justify-content-between mb-2">
+                        <small title="${endpoint}">${simplifiedEndpoint}</small>
+                        <span class="badge bg-primary">${count}</span>
+                    </div>
+                `;
+            });
+
+            endpointsList.innerHTML = endpointsHtml;
+
+            // Render usage chart
+            renderUsageCharts();
+        }
+
+        // Render usage charts
+        function renderUsageCharts() {
+            if (!apiUsage) return;
+
+            // Main dashboard chart
+            const dashboardChartCtx = document.getElementById('apiUsageChart').getContext('2d');
+
+            // Sort dates
+            const sortedDates = Object.keys(apiUsage.requests_by_date).sort();
+            const data = sortedDates.map(date => apiUsage.requests_by_date[date]);
+
+            // Dashboard chart
+            if (window.dashboardChart) {
+                window.dashboardChart.destroy();
+            }
+
+            window.dashboardChart = new Chart(dashboardChartCtx, {
+                type: 'line',
+                data: {
+                    labels: sortedDates,
+                    datasets: [{
+                        label: 'API Requests',
+                        data: data,
+                        borderColor: '#4a86e8',
+                        backgroundColor: 'rgba(74, 134, 232, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Detailed usage chart
+            const detailChartCtx = document.getElementById('apiUsageDetailChart').getContext('2d');
+
+            if (window.detailChart) {
+                window.detailChart.destroy();
+            }
+
+            window.detailChart = new Chart(detailChartCtx, {
+                type: 'bar',
+                data: {
+                    labels: sortedDates,
+                    datasets: [{
+                        label: 'API Requests',
+                        data: data,
+                        backgroundColor: '#4a86e8'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'API Requests by Date'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Issue actions chart
+            const issueActionsCtx = document.getElementById('issueActionsChart').getContext('2d');
+
+            if (window.issueActionsChart && typeof window.issueActionsChart.destroy === 'function') {
+                window.issueActionsChart.destroy();
+            }
+
+            window.issueActionsChart = new Chart(issueActionsCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Created', 'Updated', 'Closed'],
+                    datasets: [{
+                        data: [
+                            apiUsage.issues_created,
+                            apiUsage.issues_updated,
+                            apiUsage.issues_closed
+                        ],
+                        backgroundColor: [
+                            '#4CAF50',
+                            '#2196F3',
+                            '#F44336'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update dashboard statistics
+        function updateDashboardStats() {
+            document.getElementById('totalTrackers').textContent = trackers.length;
+
+            if (apiUsage) {
+                document.getElementById('totalRequests').textContent = apiUsage.total_requests;
+                const totalIssues = apiUsage.issues_created + apiUsage.issues_updated + apiUsage.issues_closed;
+                document.getElementById('totalIssues').textContent = totalIssues;
+            }
+        }
+
+        // Add a new tracker
+        function addTracker() {
+            const name = document.getElementById('trackerName').value;
+            const type = document.getElementById('trackerType').value;
+            const url = document.getElementById('trackerUrl').value;
+            const token = document.getElementById('trackerToken').value;
+
+            // For Jira, include username in config
+            let config = null;
+            if (type === 'jira') {
+                const username = document.getElementById('jiraUsername').value;
+                if (!username) {
+                    alert('Jira username is required');
+                    return;
+                }
+                config = { username };
+            }
+
+            fetch('/api/v1/trackers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                },
+                body: JSON.stringify({
+                    name,
+                    type,
+                    url,
+                    token,
+                    config
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status === 401) {
+                    return refreshToken().then(() => addTracker());
+                } else {
+                    return response.json().then(err => {
+                        throw new Error(err.detail || 'Failed to add tracker');
+                    });
+                }
+            })
+            .then(data => {
+                // Close modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addTrackerModal'));
+                modal.hide();
+
+                // Reset form
+                document.getElementById('addTrackerForm').reset();
+
+                // Refresh trackers list
+                fetchTrackers();
+
+                // Show success message
+                alert('Tracker added successfully!');
+            })
+            .catch(error => {
+                console.error('Error adding tracker:', error);
+                alert(error.message);
+            });
+        }
+
+        // Delete a tracker
+        function deleteTracker(trackerId) {
+            fetch(`/api/v1/trackers/${trackerId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteTrackerModal'));
+                    modal.hide();
+
+                    // Refresh trackers list
+                    fetchTrackers();
+
+                    // Reset active tracker ID
+                    activeTrackerId = null;
+                } else if (response.status === 401) {
+                    return refreshToken().then(() => deleteTracker(trackerId));
+                } else {
+                    return response.json().then(err => {
+                        throw new Error(err.detail || 'Failed to delete tracker');
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting tracker:', error);
+                alert(error.message);
+            });
+        }
+
+        // Create a new API key
+        function createApiKey() {
+            const name = document.getElementById('keyName').value;
+            const expiryType = document.getElementById('keyExpiry').value;
+
+            let expiresAt = null;
+            if (expiryType !== 'never') {
+                const now = new Date();
+
+                switch(expiryType) {
+                    case '7days':
+                        expiresAt = new Date(now.setDate(now.getDate() + 7));
+                        break;
+                    case '30days':
+                        expiresAt = new Date(now.setDate(now.getDate() + 30));
+                        break;
+                    case '90days':
+                        expiresAt = new Date(now.setDate(now.getDate() + 90));
+                        break;
+                    case '1year':
+                        expiresAt = new Date(now.setFullYear(now.getFullYear() + 1));
+                        break;
+                    case 'custom':
+                        const customDate = document.getElementById('customExpiryDate').value;
+                        if (customDate) {
+                            expiresAt = new Date(customDate + 'T23:59:59');
+                        }
+                        break;
+                }
+            }
+
+            fetch('/api/v1/auth/api-keys', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                },
+                body: JSON.stringify({
+                    name,
+                    expires_at: expiresAt ? expiresAt.toISOString() : null,
+                    scopes: []
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status === 401) {
+                    return refreshToken().then(() => createApiKey());
+                } else {
+                    return response.json().then(err => {
+                        throw new Error(err.detail || 'Failed to create API key');
+                    });
+                }
+            })
+            .then(data => {
+                // Close create modal
+                const createModal = bootstrap.Modal.getInstance(document.getElementById('createKeyModal'));
+                createModal.hide();
+
+                // Reset form
+                document.getElementById('createKeyForm').reset();
+
+                // Show API key in modal
+                document.getElementById('newKeyValue').textContent = data.key;
+                const keyCreatedModal = new bootstrap.Modal(document.getElementById('keyCreatedModal'));
+                keyCreatedModal.show();
+
+                // Refresh API keys list
+                fetchApiKeys();
+            })
+            .catch(error => {
+                console.error('Error creating API key:', error);
+                alert(error.message);
+            });
+        }
+
+        // Delete an API key
+        function deleteApiKey(keyId) {
+            fetch(`/api/v1/auth/api-keys/${keyId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteKeyModal'));
+                    modal.hide();
+
+                    // Refresh API keys list
+                    fetchApiKeys();
+
+                    // Reset active key ID
+                    activeKeyId = null;
+                } else if (response.status === 401) {
+                    return refreshToken().then(() => deleteApiKey(keyId));
+                } else {
+                    return response.json().then(err => {
+                        throw new Error(err.detail || 'Failed to delete API key');
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting API key:', error);
+                alert(error.message);
+            });
+        }
+
+        // Update user profile
+        function updateProfile() {
+            const fullName = document.getElementById('userFullName').value;
+
+            // This endpoint doesn't exist yet, but would be implemented
+            alert('Profile update functionality not implemented yet.');
+        }
+
+        // Change password
+        function changePassword() {
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+
+            // This endpoint doesn't exist yet, but would be implemented
+            alert('Password change functionality not implemented yet.');
+        }
+
+        // Resend verification email
+        function resendVerificationEmail() {
+            // This endpoint doesn't exist yet, but would be implemented
+            alert('Verification email has been resent. Please check your inbox.');
+        }
+    </script>
+</body>
+</html>

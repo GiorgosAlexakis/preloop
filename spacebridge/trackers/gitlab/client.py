@@ -36,19 +36,30 @@ class GitLabClient(TrackerInterface):
     """GitLab API client for issue tracking."""
 
     def __init__(
-        self, credentials: GitLabCredentials, project_id: str, timeout: int = 10
+        self,
+        credentials: GitLabCredentials,
+        project_id: str = None,
+        timeout: int = 10,
+        base_url: str = None,
     ):
         """Initialize the GitLab client.
 
         Args:
             credentials: GitLab API credentials.
-            project_id: GitLab project ID or path (e.g., "group/project").
+            project_id: Optional GitLab project ID or path (e.g., "group/project").
+                        If not provided, the client will operate at the global level.
             timeout: Request timeout in seconds.
+            base_url: Optional custom GitLab API URL. Defaults to gitlab.com.
         """
         self.credentials = credentials
         self.project_id = project_id
         self.timeout = timeout
-        self.base_url = "https://gitlab.com/api/v4"
+        self.base_url = base_url if base_url else "https://gitlab.com/api/v4"
+
+        # Ensure the URL ends with /api/v4
+        if not self.base_url.endswith("/api/v4"):
+            self.base_url = f"{self.base_url.rstrip('/')}/api/v4"
+
         self.headers = {
             "PRIVATE-TOKEN": credentials.token,
             "User-Agent": "SpaceBridge-GitLab-Client",
@@ -105,19 +116,34 @@ class GitLabClient(TrackerInterface):
             Connection status.
         """
         try:
-            # Get project info to test the connection
-            project_path = f"/projects/{self.project_id.replace('/', '%2F')}"
-            project_data = await self._request("GET", project_path)
+            # Get GitLab version info to test the API connection
+            version_path = "/version"
+            version_data = await self._request("GET", version_path)
 
-            # Get rate limit info from headers by making a lightweight request
-            rate_info_path = "/version"
-            await self._request("GET", rate_info_path)
+            # Get user info to verify token permissions
+            user_path = "/user"
+            user_data = await self._request("GET", user_path)
+
+            # If project_id is provided, check that project as well
+            project_info = ""
+            if self.project_id:
+                try:
+                    project_path = f"/projects/{self.project_id.replace('/', '%2F')}"
+                    project_data = await self._request("GET", project_path)
+                    project_info = f" and project: {project_data['name']}"
+                except Exception as project_err:
+                    logger.warning(
+                        f"Connected to GitLab API but could not access project: {str(project_err)}"
+                    )
+                    project_info = " but could not access specified project"
 
             return TrackerConnection(
                 connected=True,
-                message=f"Successfully connected to GitLab project: {project_data['name']}",
+                message=f"Successfully connected to GitLab API{project_info} as user: {user_data['username']}",
                 rate_limit=None,  # GitLab doesn't provide comprehensive rate limit info in API
-                server_info={"version": "GitLab API v4"},
+                server_info={
+                    "version": f"GitLab {version_data.get('version', 'API v4')}"
+                },
             )
         except Exception as e:
             logger.exception("Failed to connect to GitLab")
@@ -129,20 +155,29 @@ class GitLabClient(TrackerInterface):
     async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
         """Get metadata about a GitLab project.
 
-        Note: For GitLab, project_key is ignored since we already have project_id.
+        Note: For GitLab, if project_key is provided it will be used,
+        otherwise the instance project_id will be used if available.
 
         Args:
-            project_key: Project key (ignored for GitLab).
+            project_key: Project key (namespace/project path).
 
         Returns:
             Project metadata.
         """
+        # Use project_key if provided, otherwise fall back to instance project_id
+        actual_project_id = project_key if project_key else self.project_id
+
+        if not actual_project_id:
+            raise ValueError(
+                "No project specified. Provide project_key or initialize with project_id."
+            )
+
         # Get project info
-        project_path = f"/projects/{self.project_id.replace('/', '%2F')}"
+        project_path = f"/projects/{actual_project_id.replace('/', '%2F')}"
         project_data = await self._request("GET", project_path)
 
         # Get labels for the project
-        labels_path = f"/projects/{self.project_id.replace('/', '%2F')}/labels"
+        labels_path = f"/projects/{actual_project_id.replace('/', '%2F')}/labels"
         labels_data = await self._request("GET", labels_path)
 
         # GitLab has prioritized labels, map them to our priority model

@@ -61,10 +61,14 @@ class TestGitLabClient:
     @pytest.mark.asyncio
     async def test_test_connection_success(self):
         """Test successful connection testing."""
-        # Mock responses
+        # Mock responses in the order they are requested
         mock_responses = [
-            {"id": 1, "name": "test-project", "path_with_namespace": "group/project"},
+            # First call: version
             {"version": "15.4.0"},
+            # Second call: user info
+            {"id": 123, "username": "testuser", "name": "Test User"},
+            # Third call: project info
+            {"id": 1, "name": "test-project", "path_with_namespace": "group/project"},
         ]
 
         # Set up the mock
