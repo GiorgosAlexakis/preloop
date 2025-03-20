@@ -27,6 +27,7 @@ build:
       --destination $CI_REGISTRY_IMAGE:latest
       --registry-mirror registry.spacecode.ai
       --registry-mirror $CI_REGISTRY
+      --build-arg GITLAB_TOKEN=$GITLAB_TOKEN
 
 pre-commit:
   stage: test
@@ -79,3 +80,8 @@ deploy:
       --set config.jira.apiUrl=${JIRA_API_URL}
       --set config.github.apiKey=${GITHUB_API_KEY}
       --set config.github.apiUrl=${GITHUB_API_URL}
+      --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
+      --set ingress.enabled=true
+      --set ingress.hosts[0].name=bridge.spacecode.ai
+      --set ingress.tls[0].secretName=spacebridge-tls
+

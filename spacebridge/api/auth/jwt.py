@@ -9,12 +9,12 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-
-from spacebridge.schemas.auth import Token, TokenData, User, UserInDB, UserResponse
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.api_key import ApiKey
 from sqlalchemy.future import select
+
+from spacebridge.schemas.auth import TokenData, UserResponse
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")

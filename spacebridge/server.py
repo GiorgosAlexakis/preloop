@@ -1,29 +1,31 @@
-"""Server entry point for SpaceBridge."""
+"""Server entry point for SpaceBridge REST API."""
 
+import argparse
 import logging
 import os
 from typing import Optional
 
 import uvicorn
 
-from spacebridge.logging import configure_logging
+from spacebridge.api.app import create_app
 
 logger = logging.getLogger(__name__)
 
 
 def start_server(
-    host: Optional[str] = None, port: Optional[int] = None, debug: Optional[bool] = None
+    host: Optional[str] = None,
+    port: Optional[int] = None,
+    debug: Optional[bool] = None,
+    init_test_data: Optional[bool] = None,
 ) -> None:
-    """Start the SpaceBridge server.
+    """Start the SpaceBridge REST API server.
 
     Args:
         host: Host to bind to, defaults to HOST env var or 0.0.0.0
         port: Port to bind to, defaults to PORT env var or 8000
         debug: Whether to run in debug mode, defaults to DEBUG env var or False
+        init_test_data: Whether to initialize test data, defaults to INIT_TEST_DATA env var or False
     """
-    # Configure logging
-    configure_logging()
-
     # Set server parameters from environment or defaults
     host = host or os.getenv("HOST", "0.0.0.0")
     port = port or int(os.getenv("PORT", "8000"))
@@ -31,18 +33,49 @@ def start_server(
         debug if debug is not None else os.getenv("DEBUG", "false").lower() == "true"
     )
 
-    # Log server startup
-    logger.info(f"Starting SpaceBridge server on {host}:{port} (debug={debug})")
+    # Set up test data initialization flag
+    init_test_data = (
+        init_test_data
+        if init_test_data is not None
+        else os.getenv("INIT_TEST_DATA", "false").lower() == "true"
+    )
 
-    # Start the server
+    # Set environment variable for the app to use
+    if init_test_data:
+        os.environ["INIT_TEST_DATA"] = "true"
+        logger.info("Test data initialization enabled")
+
+    # Start the Uvicorn server with FastAPI
+    logger.info(
+        f"Starting SpaceBridge REST API server on {host}:{port} (debug={debug})"
+    )
+
     uvicorn.run(
         "spacebridge.api.app:create_app",
         host=host,
         port=port,
         reload=debug,
         factory=True,
+        log_level="debug" if debug else "info",
     )
 
 
 if __name__ == "__main__":
-    start_server()
+    parser = argparse.ArgumentParser(
+        description="Start the SpaceBridge REST API server"
+    )
+    parser.add_argument("--host", help="Host to bind to (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, help="Port to bind to (default: 8000)")
+    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
+    parser.add_argument(
+        "--init-test-data", action="store_true", help="Initialize test data"
+    )
+
+    args = parser.parse_args()
+
+    start_server(
+        host=args.host,
+        port=args.port,
+        debug=args.debug,
+        init_test_data=args.init_test_data,
+    )

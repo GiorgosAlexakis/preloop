@@ -1,185 +1,217 @@
 """Create an issue in an issue tracker."""
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
-from spacebridge.db.session import get_db
-from spacebridge.models.organization import Organization
-from spacebridge.models.project import Project
-from spacebridge.tools.base import MCPTool, MCPToolMetadata
-from spacebridge.tools.registry import register_tool
-from spacebridge.tools.utils import run_async
+from pydantic import BaseModel, Field
+
+from mcp.server.fastmcp import Context
+from spacemodels.models.organization import Organization
+from spacemodels.models.project import Project
+from spacemodels.crud.organization import CRUDOrganization
+from spacemodels.crud.project import CRUDProject
+
+from spacemodels.db.session import get_db_session as get_db
 from spacebridge.trackers.base import IssueCreate
 from spacebridge.trackers.factory import TrackerFactory
 
 logger = logging.getLogger(__name__)
 
 
-@register_tool
-class CreateIssueTool(MCPTool):
-    """Tool for creating issues in trackers."""
+class OrganizationInfo(BaseModel):
+    """Organization information."""
 
-    @classmethod
-    def metadata(cls) -> MCPToolMetadata:
-        """Get tool metadata."""
-        return MCPToolMetadata(
-            name="create_issue",
-            description="Creates a new issue in the specified tracker",
-            required_parameters={"organization", "project", "title", "description"},
-            optional_parameters={
-                "tracker": None,
-                "status": None,
-                "priority": None,
-                "labels": None,
-                "assignee": None,
-                "custom_fields": None,
-                "check_duplicates": True,
-            },
+    id: int
+    name: str
+    identifier: str
+
+
+class ProjectInfo(BaseModel):
+    """Project information."""
+
+    id: int
+    name: str
+    identifier: str
+
+
+class IssueInfo(BaseModel):
+    """Issue information."""
+
+    id: str
+    key: Optional[str] = None
+    title: str
+    description: str
+    url: Optional[str] = None
+    source: str
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    assignee: Optional[str] = None
+    labels: Optional[List[str]] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    custom_fields: Optional[Dict[str, Any]] = None
+
+
+class CreateIssueResponse(BaseModel):
+    """Response model for create_issue tool."""
+
+    issue: IssueInfo
+    tracker: str
+    project: ProjectInfo
+    organization: OrganizationInfo
+
+
+class ErrorResponse(BaseModel):
+    """Error response model."""
+
+    error: str
+    message: str
+
+
+async def create_issue(
+    organization: str,
+    project: str,
+    title: str,
+    description: str,
+    tracker: Optional[str] = None,
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    labels: Optional[List[str]] = None,
+    assignee: Optional[str] = None,
+    custom_fields: Optional[Dict[str, Any]] = None,
+    check_duplicates: bool = True,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Create a new issue in the specified tracker.
+
+    Args:
+        organization: Organization identifier
+        project: Project identifier
+        title: Issue title
+        description: Issue description
+        tracker: Optional specific tracker to create the issue in
+        status: Optional initial issue status
+        priority: Optional issue priority
+        labels: Optional issue labels
+        assignee: Optional initial assignee
+        custom_fields: Optional tracker-specific custom fields
+        check_duplicates: Whether to check for potential duplicates
+        ctx: Optional MCP context
+
+    Returns:
+        Information about the created issue
+    """
+    # Get database session
+    db = next(get_db())
+
+    try:
+        # Log operation if context is available
+        if ctx:
+            await ctx.info(
+                f"Creating issue '{title}' in project {project}, organization {organization}"
+            )
+
+        # Initialize CRUD objects
+        crud_organization = CRUDOrganization(Organization)
+        crud_project = CRUDProject(Project)
+
+        # Get organization using CRUD operations
+        org = crud_organization.get_by_identifier(db, identifier=organization)
+        if not org or not org.is_active:
+            return ErrorResponse(
+                error="not_found", message=f"Organization '{organization}' not found"
+            ).model_dump()
+
+        # Get project using CRUD operations
+        proj = crud_project.get_by_identifier(
+            db, organization_id=org.id, identifier=project
+        )
+        if not proj or not proj.is_active:
+            return ErrorResponse(
+                error="not_found",
+                message=f"Project '{project}' not found in organization '{organization}'",
+            ).model_dump()
+
+        # In SpaceModels, we use tracker_settings instead of tracker_configurations
+        tracker_settings = proj.tracker_settings or {}
+
+        # If no tracker settings, return an error
+        if not tracker_settings:
+            return ErrorResponse(
+                error="no_trackers",
+                message=f"Project '{project}' has no configured trackers",
+            ).model_dump()
+
+        # Determine which tracker to use
+        if tracker:
+            # Use the specified tracker
+            if tracker not in tracker_settings:
+                return ErrorResponse(
+                    error="tracker_not_found",
+                    message=f"Tracker '{tracker}' is not configured for this project",
+                ).model_dump()
+            tracker_to_use = tracker
+        else:
+            # Use the first available tracker
+            tracker_to_use = list(tracker_settings.keys())[0]
+
+        # Log the tracker being used
+        if ctx:
+            await ctx.info(f"Using tracker: {tracker_to_use}")
+
+        # Create issue data
+        issue_data = IssueCreate(
+            title=title,
+            description=description,
+            status=status,
+            priority=priority,
+            assignee=assignee,
+            labels=labels,
+            custom_fields=custom_fields,
         )
 
-    def execute(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the tool.
-
-        Args:
-            parameters: Tool parameters.
-                - organization: String - Organization identifier
-                - project: String - Project identifier
-                - title: String - Issue title
-                - description: String - Issue description
-                - tracker: Optional[String] - Specific tracker to create the issue in
-                - status: Optional[String] - Initial issue status
-                - priority: Optional[String] - Issue priority
-                - labels: Optional[List[String]] - Issue labels
-                - assignee: Optional[String] - Initial assignee
-                - custom_fields: Optional[Dict] - Tracker-specific custom fields
-                - check_duplicates: Optional[Bool] - Whether to check for potential duplicates
-
-        Returns:
-            The created issue.
-        """
-        # Validate parameters
-        validated_params = self.validate_parameters(parameters)
-        organization_identifier = validated_params["organization"]
-        project_identifier = validated_params["project"]
-        title = validated_params["title"]
-        description = validated_params["description"]
-        tracker_type = validated_params.get("tracker")
-        check_duplicates = validated_params.get("check_duplicates", True)
-
-        # Get database session
-        db = next(get_db())
-
         try:
-            # Get organization
-            organization = (
-                db.query(Organization)
-                .filter(Organization.identifier == organization_identifier)
-                .first()
+            # Get the tracker configuration from tracker_settings
+            tracker_config = tracker_settings[tracker_to_use]
+
+            # Create a tracker client
+            tracker_client = await TrackerFactory.create_client(
+                tracker_to_use, tracker_config
             )
 
-            if not organization:
-                return {
-                    "error": "not_found",
-                    "message": f"Organization '{organization_identifier}' not found",
-                }
+            if not tracker_client:
+                return ErrorResponse(
+                    error="client_creation_failed",
+                    message=f"Failed to create client for tracker '{tracker_to_use}'",
+                ).model_dump()
 
-            # Get project
-            project = (
-                db.query(Project)
-                .filter(
-                    Project.organization_id == organization.id,
-                    Project.identifier == project_identifier,
-                )
-                .first()
+            # Create the issue
+            issue = await tracker_client.create_issue(
+                project_key=proj.identifier,
+                issue_data=issue_data,
             )
 
-            if not project:
-                return {
-                    "error": "not_found",
-                    "message": f"Project '{project_identifier}' not found in organization '{organization_identifier}'",
-                }
+            # Convert issue to dictionary and add source
+            issue_dict = issue.dict()
+            issue_dict["source"] = tracker_to_use
 
-            # If no tracker configurations, return an error
-            if not project.tracker_configurations:
-                return {
-                    "error": "no_trackers",
-                    "message": f"Project '{project_identifier}' has no configured trackers",
-                }
+            # Return using the response model
+            return CreateIssueResponse(
+                issue=IssueInfo(**issue_dict),
+                tracker=tracker_to_use,
+                project=ProjectInfo(
+                    id=proj.id, name=proj.name, identifier=proj.identifier
+                ),
+                organization=OrganizationInfo(
+                    id=org.id, name=org.name, identifier=org.identifier
+                ),
+            ).model_dump()
 
-            # Determine which tracker to use
-            if tracker_type:
-                # Use the specified tracker
-                if tracker_type not in project.tracker_configurations:
-                    return {
-                        "error": "tracker_not_found",
-                        "message": f"Tracker '{tracker_type}' is not configured for this project",
-                    }
-                tracker_to_use = tracker_type
-            else:
-                # Use the first available tracker
-                tracker_to_use = project.trackers[0]
+        except Exception as e:
+            logger.exception(f"Error creating issue in {tracker_to_use}: {e}")
+            return ErrorResponse(
+                error="creation_failed", message=f"Error creating issue: {str(e)}"
+            ).model_dump()
 
-            # Create issue data
-            issue_data = IssueCreate(
-                title=title,
-                description=description,
-                status=validated_params.get("status"),
-                priority=validated_params.get("priority"),
-                assignee=validated_params.get("assignee"),
-                labels=validated_params.get("labels"),
-                custom_fields=validated_params.get("custom_fields"),
-            )
-
-            try:
-                # Get the tracker configuration
-                tracker_config = project.tracker_configurations[tracker_to_use]
-
-                # Create a tracker client
-                tracker_client = run_async(
-                    TrackerFactory.create_client(tracker_to_use, tracker_config)
-                )
-
-                if not tracker_client:
-                    return {
-                        "error": "client_creation_failed",
-                        "message": f"Failed to create client for tracker '{tracker_to_use}'",
-                    }
-
-                # Create the issue
-                issue = run_async(
-                    tracker_client.create_issue(
-                        project_key=project.identifier,
-                        issue_data=issue_data,
-                    )
-                )
-
-                # Convert issue to dictionary
-                issue_dict = issue.dict()
-
-                # Add a source field to indicate which tracker this came from
-                issue_dict["source"] = tracker_to_use
-
-                return {
-                    "issue": issue_dict,
-                    "tracker": tracker_to_use,
-                    "project": {
-                        "id": project.id,
-                        "name": project.name,
-                        "identifier": project.identifier,
-                    },
-                    "organization": {
-                        "id": organization.id,
-                        "name": organization.name,
-                        "identifier": organization.identifier,
-                    },
-                }
-
-            except Exception as e:
-                logger.exception(f"Error creating issue in {tracker_to_use}: {e}")
-                return {
-                    "error": "creation_failed",
-                    "message": f"Error creating issue: {str(e)}",
-                }
-
-        finally:
-            db.close()
+    finally:
+        db.close()

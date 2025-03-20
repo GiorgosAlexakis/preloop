@@ -5,7 +5,7 @@ from typing import Dict
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from spacebridge.db.session import get_db
+from spacemodels.db.session import get_db_session as get_db
 
 router = APIRouter()
 

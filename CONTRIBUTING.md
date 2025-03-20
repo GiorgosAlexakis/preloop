@@ -24,7 +24,7 @@ All contributors are expected to adhere to the project's code of conduct. Please
 1. Install PostgreSQL 14+ and the PGVector extension
 2. Create a database for development
 3. Copy `.env.example` to `.env` and update the database connection string
-4. Run `python -m spacebridge.db.setup` to initialize the database schema
+4. Run `python -m spacemodels.db.setup` to initialize the database schema
 
 ## Development Workflow
 

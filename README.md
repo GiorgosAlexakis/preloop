@@ -4,16 +4,15 @@
 
 ## Overview
 
-SpaceBridge is a Model Context Protocol (MCP) server that serves as a unified interface between Spacecode's infrastructure and multiple issue tracking systems. It enables seamless searching, creation, and updating of issues across different platforms through a standardized protocol.
+SpaceBridge is a RESTful API server that serves as a unified interface between Spacecode's infrastructure and multiple issue tracking systems. It enables seamless searching, creation, and updating of issues across different platforms through a standardized HTTP API.
 
 ## Key Features
 
-- Unified API for interacting with multiple issue tracking systems
+- RESTful API for interacting with multiple issue tracking systems
 - Vector-based semantic search across all integrated issue trackers
 - Intelligent duplicate detection and issue management
 - Automated assignment suggestions and effort estimation
-- Cross-tracker issue dependency management
-- Self-service organization and project configuration via MCP tools
+- Self-service organization and project configuration
 - AI-friendly interfaces for both human and agent interaction
 
 ## Supported Issue Trackers
@@ -23,13 +22,28 @@ SpaceBridge is a Model Context Protocol (MCP) server that serves as a unified in
 - GitLab Issues
 - (More to be added in future releases, including Azure DevOps and Linear)
 
+## Architecture
+
+SpaceBridge is designed with a separation of concerns:
+
+1. **SpaceBridge** (this repository): A RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
+
+2. **SpaceSync** (separate repository): A service that polls configured issue trackers added and indexes issues, projects and organizations in our DB. Also updates the issue embeddings.
+
+3. **SpaceBridgeCrosser** (separate repository): A Model Context Protocol (MCP) server that uses stdio transport and serves as a bridge between MCP clients (like Claude Code) and the SpaceBridge API.
+
+This separation allows:
+- Maximum compatibility with MCP clients like Claude Code (which currently don't support SSE transport)
+- Clean separation between database access (SpaceBridge) and MCP protocol handling (SpaceBridgeCrosser)
+- Direct HTTP API access for applications that don't need MCP
+
 ## Installation
 
 ### Prerequisites
 
 - Python 3.10+
 - PostgreSQL 14+
-- PGVector extension for PostgreSQL
+- PGVector extension for PostgreSQL (for vector search capabilities)
 
 ### Local Setup
 
@@ -43,10 +57,10 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
-pip install -e .
+pip install -e ".[dev]"
 
 # Set up the database
-python -m spacebridge.db.setup
+# For development, it will fall back to SQLite automatically
 
 # Configure your environment
 cp .env.example .env
@@ -74,71 +88,151 @@ SpaceBridge can be deployed to Kubernetes using the provided Helm chart:
 # helm repo update
 
 # Install from the local chart
-helm install spacebridge ./charts/spacebridge
+helm install spacebridge ./helm/spacebridge
 
 # Or install with custom values
-helm install spacebridge ./charts/spacebridge --values custom-values.yaml
+helm install spacebridge ./helm/spacebridge --values custom-values.yaml
 ```
 
-For more details about the Helm chart, see the [chart README](./charts/spacebridge/README.md).
+For more details about the Helm chart, see the [chart README](./helm/spacebridge/README.md).
 
 ## Usage
 
 ### Starting the Server
 
 ```bash
+# Start the SpaceBridge API server
 python -m spacebridge.server
+
+# With custom options
+python -m spacebridge.server --host 0.0.0.0 --port 8000 --debug
 ```
 
-### Using MCP Tools
+### API Documentation
 
-SpaceBridge implements the Model Context Protocol, allowing for standardized interaction:
+When running, the API documentation is available at:
+
+```
+http://localhost:8000/docs
+```
+
+The OpenAPI specification is also available at:
+
+```
+http://localhost:8000/openapi.json
+```
+
+### Using the REST API
+
+SpaceBridge provides a RESTful HTTP API for interacting with issue tracking systems:
 
 ```python
-from mcp.client import MCPClient
+import requests
+import json
 
-client = MCPClient("http://localhost:8000")
+# Base URL for the SpaceBridge API
+base_url = "http://localhost:8000/api/v1"
+
+# Authenticate and get a token
+auth_response = requests.post(
+    f"{base_url}/auth/token",
+    json={"username": "your-username", "password": "your-password"}
+)
+token = auth_response.json()["access_token"]
+headers = {"Authorization": f"Bearer {token}"}
 
 # Test a tracker connection
-connection = client.invoke("test_connection", {
-    "organization": "spacecode",
-    "project": "astrobot"
-})
+connection = requests.post(
+    f"{base_url}/projects/test-connection",
+    headers=headers,
+    json={
+        "organization": "spacecode",
+        "project": "astrobot"
+    }
+)
+print(json.dumps(connection.json(), indent=2))
 
 # Search for issues related to authentication
-results = client.invoke("search_issues", {
-    "organization": "spacecode",
-    "project": "astrobot",
-    "query": "authentication problems",
-    "limit": 5
-})
+results = requests.get(
+    f"{base_url}/issues/search",
+    headers=headers,
+    params={
+        "organization": "spacecode",
+        "project": "astrobot",
+        "query": "authentication problems",
+        "limit": 5
+    }
+)
+print(json.dumps(results.json(), indent=2))
 
 # Create a new issue
-issue = client.invoke("create_issue", {
-    "organization": "spacecode",
-    "project": "astrobot",
-    "title": "Improve login error messages",
-    "description": "Current error messages are not clear enough...",
-    "labels": ["enhancement", "authentication"],
-    "priority": "High"
-})
-
-# Add a comment to an existing issue
-comment = client.invoke("add_comment", {
-    "organization": "spacecode",
-    "project": "astrobot",
-    "issue_id": "ASTRO-123",
-    "comment": "I've reproduced this on the staging environment as well."
-})
+issue = requests.post(
+    f"{base_url}/issues",
+    headers=headers,
+    json={
+        "organization": "spacecode",
+        "project": "astrobot",
+        "title": "Improve login error messages",
+        "description": "Current error messages are not clear enough...",
+        "labels": ["enhancement", "authentication"],
+        "priority": "High"
+    }
+)
+print(json.dumps(issue.json(), indent=2))
 ```
 
-Jira, GitHub, and GitLab integrations are fully implemented with support for:
+### For MCP Clients (Claude Code)
 
-- Project connection testing
-- Issue creation and updating
-- Issue searching with filters
-- Comment management
-- Issue relations and linking
+For MCP clients like Claude Code, use the companion [SpaceBridgeCrosser](https://github.com/spacecode-ai/spacebridgecrosser) project, which provides MCP tools that communicate with SpaceBridge.
+
+```bash
+# Install SpaceBridgeCrosser
+pip install spacebridgecrosser
+
+# Configure Claude Code to use SpaceBridgeCrosser
+claude mcp add spacebridgecrosser "python -m spacebridgecrosser.server"
+
+# Set environment variables for SpaceBridgeCrosser
+export SPACEBRIDGE_URL="http://localhost:8000/api/v1"
+export SPACEBRIDGE_API_KEY="your-api-key"
+
+# List available tools in Claude Code
+claude tools list
+
+# Use SpaceBridge tools via Claude
+claude "Search for issues related to authentication in the Astrobot project"
+```
+
+## API Endpoints
+
+SpaceBridge provides a RESTful API with the following key endpoints:
+
+### Authentication
+- `POST /api/v1/auth/token` - Get authentication token
+- `POST /api/v1/auth/refresh` - Refresh authentication token
+
+### Organizations
+- `GET /api/v1/organizations` - List organizations
+- `GET /api/v1/organizations/{org_id}` - Get organization details
+- `POST /api/v1/organizations` - Create organization
+- `PUT /api/v1/organizations/{org_id}` - Update organization
+- `DELETE /api/v1/organizations/{org_id}` - Delete organization
+
+### Projects
+- `GET /api/v1/organizations/{org_id}/projects` - List projects
+- `GET /api/v1/projects/{project_id}` - Get project details
+- `POST /api/v1/projects` - Create project
+- `PUT /api/v1/projects/{project_id}` - Update project
+- `DELETE /api/v1/projects/{project_id}` - Delete project
+- `POST /api/v1/projects/test-connection` - Test project connection
+
+### Issues
+- `GET /api/v1/issues/search` - Search issues
+- `POST /api/v1/issues` - Create issue
+- `GET /api/v1/issues/{issue_id}` - Get issue details
+- `PUT /api/v1/issues/{issue_id}` - Update issue
+- `DELETE /api/v1/issues/{issue_id}` - Delete issue
+- `POST /api/v1/issues/{issue_id}/comments` - Add comment to issue
 
 ## Contributing
 

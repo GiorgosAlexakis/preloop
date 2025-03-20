@@ -43,3 +43,9 @@ htmlcov/
 
 # Local development
 .DS_Store
+
+*.db
+
+# SpaceModels
+SpaceModels
+spacesync

@@ -1,80 +1,96 @@
 """Get organization tool implementation."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from spacebridge.db.session import get_db
-from spacebridge.models.organization import Organization
-from spacebridge.tools.base import MCPTool, MCPToolMetadata
-from spacebridge.tools.registry import register_tool
+from pydantic import BaseModel
+
+from mcp.server.fastmcp import Context
+from spacemodels.models.organization import Organization
+from spacemodels.crud.organization import CRUDOrganization
+
+from spacemodels.db.session import get_db_session as get_db
 
 
-@register_tool
-class GetOrganizationTool(MCPTool):
-    """Tool for retrieving organization details."""
+class ProjectResponse(BaseModel):
+    """Project information in organization response."""
 
-    @classmethod
-    def metadata(cls) -> MCPToolMetadata:
-        """Get tool metadata."""
-        return MCPToolMetadata(
-            name="get_organization",
-            description="Retrieves organization details and configuration",
-            required_parameters={"organization"},
-            optional_parameters={},
-        )
+    id: int
+    name: str
+    identifier: str
+    description: str = ""
+    trackers: List[str] = []
+    is_active: bool = True
 
-    def execute(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the tool.
 
-        Args:
-            parameters: Tool parameters.
-                - organization: String - Organization identifier
+class OrganizationResponse(BaseModel):
+    """Organization response model."""
 
-        Returns:
-            Organization details including name, description, etc.
-        """
-        # Validate parameters
-        validated_params = self.validate_parameters(parameters)
-        organization_identifier = validated_params["organization"]
+    id: int
+    name: str
+    identifier: str
+    description: str = ""
+    settings: Dict[str, Any] = {}
+    projects: List[ProjectResponse] = []
+    created_at: str
+    updated_at: str
 
-        # Get database session
-        db = next(get_db())
 
-        try:
-            # Get organization by identifier
-            organization = (
-                db.query(Organization)
-                .filter(Organization.identifier == organization_identifier)
-                .first()
-            )
+async def get_organization(organization: str, ctx: Context = None) -> Dict[str, Any]:
+    """Get organization details.
 
-            if not organization:
-                return {
-                    "error": "not_found",
-                    "message": f"Organization '{organization_identifier}' not found",
-                }
+    Args:
+        organization: Organization identifier
+        ctx: Optional MCP context
 
-            # Get projects for the organization
-            projects = [
-                {
-                    "id": project.id,
-                    "name": project.name,
-                    "identifier": project.identifier,
-                    "description": project.description or "",
-                    "trackers": project.trackers,
-                }
-                for project in organization.projects
-            ]
+    Returns:
+        Organization details including name, description, and projects
+    """
+    # Get database session
+    db = next(get_db())
 
-            # Return organization details
+    crud_organization = CRUDOrganization(Organization)
+
+    try:
+        # Log operation if context is available
+        if ctx:
+            await ctx.info(f"Looking up organization: {organization}")
+
+        # Get organization by identifier using CRUD operation
+        org = crud_organization.get_by_identifier(db, identifier=organization)
+
+        if not org or not org.is_active:
             return {
-                "id": organization.id,
-                "name": organization.name,
-                "identifier": organization.identifier,
-                "description": organization.description or "",
-                "settings": organization.settings or {},
-                "projects": projects,
-                "created_at": organization.created_at.isoformat(),
-                "updated_at": organization.updated_at.isoformat(),
+                "error": "not_found",
+                "message": f"Organization '{organization}' not found",
             }
-        finally:
-            db.close()
+
+        # Get projects for the organization
+        projects = [
+            ProjectResponse(
+                id=project.id,
+                name=project.name,
+                identifier=project.identifier,
+                description=project.description or "",
+                # In SpaceModels the trackers are in tracker_settings
+                trackers=list(project.tracker_settings.keys())
+                if project.tracker_settings
+                else [],
+                is_active=project.is_active,
+            )
+            for project in org.projects
+            if project.is_active  # Only include active projects
+        ]
+
+        # Return organization details
+        return OrganizationResponse(
+            id=org.id,
+            name=org.name,
+            identifier=org.identifier,
+            description=org.description or "",
+            settings=org.settings or {},
+            projects=projects,
+            created_at=org.created_at.isoformat(),
+            updated_at=org.updated_at.isoformat(),
+        ).model_dump()
+    finally:
+        db.close()

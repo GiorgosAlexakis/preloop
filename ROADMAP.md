@@ -6,7 +6,7 @@
 - [x] Project setup and configuration
 - [x] Database schema design and implementation
 - [ ] PGVector integration
-- [x] Basic MCP server implementation
+- [ ] RESTful API server implementation with FastAPI
 - [x] Authentication and authorization framework
 - [x] Logging and monitoring setup
 
@@ -23,6 +23,14 @@
 
 ## Phase 2: Core Functionality (Q2 2025)
 
+### REST API Development
+- [ ] Complete OpenAPI specification
+- [ ] Endpoint implementation for organizations, projects, and issues
+- [ ] JWT authentication integration
+- [ ] Request validation with Pydantic models
+- [ ] Comprehensive error handling
+- [ ] API versioning strategy
+
 ### Issue Management
 - [ ] Basic issue search (direct API queries)
 - [ ] Issue creation across platforms
@@ -35,9 +43,12 @@
 - [ ] Hybrid search combining vector and metadata
 - [ ] Batch indexing mechanism
 
-### Additional Integration
-- [x] GitLab Issues integration
-- [ ] Complete Jira, GitHub, and GitLab implementations with extended features
+### SpaceBridgeCrosser (Companion MCP Server)
+- [ ] Minimal MCP server implementation with stdio transport
+- [ ] HTTP client for connecting to SpaceBridge REST API
+- [ ] Tool registration and discovery
+- [ ] Parameter validation and transformation
+- [ ] Error handling and reporting
 
 ## Phase 3: Advanced Features (Q3 2025)
 
@@ -90,13 +101,13 @@
 - [ ] Natural language understanding for complex queries
 
 ### Developer Experience
-- [ ] SDK for custom tool development
+- [ ] SDK for custom API integrations
 - [ ] Interactive documentation
 - [ ] Integration testing framework
 - [ ] Developer portal
 
 ### Community and Ecosystem
-- [ ] Open source tool plugins
+- [ ] API client libraries in multiple languages
 - [ ] Integration marketplace
 - [ ] Contributing guidelines and governance
 - [ ] Community engagement program

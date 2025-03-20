@@ -1,50 +1,23 @@
 """Endpoints for managing organizations."""
 
 import uuid
-from typing import Dict, List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from spacemodels.models.organization import Organization
+from spacemodels.models.tracker import Tracker
 
-from spacebridge.db.session import get_db
-from spacebridge.models.organization import Organization
+from spacemodels.db.session import get_db_session as get_db
+from spacemodels.crud.organization import CRUDOrganization
+from spacebridge.schemas.organization import (
+    OrganizationCreate,
+    OrganizationResponse,
+    OrganizationUpdate,
+)
 
 router = APIRouter()
-
-
-class OrganizationBase(BaseModel):
-    """Base model for organization data."""
-
-    name: str = Field(..., description="Organization name")
-    identifier: str = Field(..., description="Unique identifier for the organization")
-    description: Optional[str] = Field(None, description="Organization description")
-    settings: Optional[Dict] = Field(None, description="Organization-wide settings")
-
-
-class OrganizationCreate(OrganizationBase):
-    """Model for creating a new organization."""
-
-    pass
-
-
-class OrganizationUpdate(BaseModel):
-    """Model for updating an organization."""
-
-    name: Optional[str] = Field(None, description="New organization name")
-    description: Optional[str] = Field(None, description="New organization description")
-    settings: Optional[Dict] = Field(None, description="Updated organization settings")
-
-
-class OrganizationResponse(OrganizationBase):
-    """Response model for organization data."""
-
-    id: str = Field(..., description="Organization ID")
-    created_at: str = Field(..., description="Creation timestamp")
-    updated_at: str = Field(..., description="Last update timestamp")
-
-    class Config:
-        orm_mode = True
+crud_organization = CRUDOrganization(Organization)
 
 
 @router.post("/organizations", response_model=OrganizationResponse, status_code=201)
@@ -53,10 +26,8 @@ def create_organization(
 ) -> Organization:
     """Create a new organization."""
     # Check if organization with this identifier already exists
-    existing_org = (
-        db.query(Organization)
-        .filter(Organization.identifier == organization.identifier)
-        .first()
+    existing_org = crud_organization.get_by_identifier(
+        db, identifier=organization.identifier
     )
     if existing_org:
         raise HTTPException(
@@ -64,19 +35,32 @@ def create_organization(
             detail=f"Organization with identifier '{organization.identifier}' already exists",
         )
 
-    # Create new organization
-    db_organization = Organization(
-        id=str(uuid.uuid4()),
-        name=organization.name,
-        identifier=organization.identifier,
-        description=organization.description,
-        settings=organization.settings or {},
-    )
+    # Note: In a real implementation, you would need to get the tracker_id from somewhere.
+    # For now, let's use a placeholder that would need to be properly integrated
+    # with your authentication and tracker selection flow.
 
-    db.add(db_organization)
-    db.commit()
-    db.refresh(db_organization)
+    # TODO: Get the tracker_id from the authenticated user's default tracker
+    # or from the request parameters.
+    # For testing purposes, we'll get the first tracker:
+    trackers = db.query(Tracker).limit(1).all()
+    if not trackers:
+        raise HTTPException(
+            status_code=400,
+            detail="No trackers found. Please create a tracker first.",
+        )
 
+    # Create new organization with CRUD operation
+    org_data = {
+        "id": str(uuid.uuid4()),
+        "name": organization.name,
+        "identifier": organization.identifier,
+        "description": organization.description,
+        "settings": organization.settings or {},
+        "tracker_id": trackers[0].id,
+        "meta_data": {},
+    }
+
+    db_organization = crud_organization.create(db, obj_in=org_data)
     return db_organization
 
 
@@ -87,7 +71,9 @@ def list_organizations(
     db: Session = Depends(get_db),
 ) -> List[Organization]:
     """List all organizations."""
-    organizations = db.query(Organization).offset(offset).limit(limit).all()
+    # Use CRUD operation without filtering for active organizations
+    # Removed is_active=True filter because the column doesn't exist in the database
+    organizations = crud_organization.get_multi(db, skip=offset, limit=limit)
     return organizations
 
 
@@ -96,9 +82,7 @@ def get_organization(
     organization_id: str, db: Session = Depends(get_db)
 ) -> Organization:
     """Get an organization by ID."""
-    organization = (
-        db.query(Organization).filter(Organization.id == organization_id).first()
-    )
+    organization = crud_organization.get(db, id=organization_id)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
     return organization
@@ -111,9 +95,7 @@ def get_organization_by_identifier(
     identifier: str, db: Session = Depends(get_db)
 ) -> Organization:
     """Get an organization by identifier."""
-    organization = (
-        db.query(Organization).filter(Organization.identifier == identifier).first()
-    )
+    organization = crud_organization.get_by_identifier(db, identifier=identifier)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
     return organization
@@ -126,31 +108,25 @@ def update_organization(
     db: Session = Depends(get_db),
 ) -> Organization:
     """Update an organization."""
-    organization = (
-        db.query(Organization).filter(Organization.id == organization_id).first()
-    )
+    organization = crud_organization.get(db, id=organization_id)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    # Update organization fields
+    # Update organization using CRUD operation
     update_data = organization_update.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(organization, field, value)
+    updated_organization = crud_organization.update(
+        db, db_obj=organization, obj_in=update_data
+    )
 
-    db.commit()
-    db.refresh(organization)
-
-    return organization
+    return updated_organization
 
 
 @router.delete("/organizations/{organization_id}", status_code=204)
 def delete_organization(organization_id: str, db: Session = Depends(get_db)) -> None:
     """Delete an organization."""
-    organization = (
-        db.query(Organization).filter(Organization.id == organization_id).first()
-    )
+    organization = crud_organization.get(db, id=organization_id)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    db.delete(organization)
-    db.commit()
+    # Delete the organization
+    crud_organization.delete(db, id=organization_id)

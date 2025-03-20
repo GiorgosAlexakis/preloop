@@ -1,22 +1,22 @@
 """Trackers router for registering and managing issue trackers."""
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import UUID4
-
-from spacebridge.api.auth.jwt import get_current_active_user
-from spacebridge.schemas.auth import UserResponse, TrackerRegisterRequest
-from spacebridge.trackers.factory import create_tracker_client
-from spacebridge.utils.email import send_tracker_registered_email
 from spacemodels.db.session import get_db_session
+from spacemodels.models.account import Account
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
-from spacemodels.models.account import Account
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
+
+from spacebridge.api.auth.jwt import get_current_active_user
+from spacebridge.schemas.auth import TrackerRegisterRequest, UserResponse
+from spacebridge.trackers.factory import create_tracker_client
+from spacebridge.utils.email import send_tracker_registered_email
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

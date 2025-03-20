@@ -1,0 +1,1244 @@
+openapi: 3.0.3
+info:
+  title: SpaceBridge API
+  description: |
+    SpaceBridge API provides a unified interface for interacting with multiple issue tracking systems.
+    It enables seamless searching, creation, and updating of issues across different platforms through
+    a standardized REST API.
+  version: 0.1.0
+  contact:
+    name: Spacecode Team
+    url: https://spacecode.ai
+    email: hello@spacecode.ai
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+  - url: https://bridge.spacecode.ai/api/v1
+    description: Production server
+
+tags:
+  - name: auth
+    description: Authentication operations
+  - name: organizations
+    description: Organization management
+  - name: projects
+    description: Project configuration and management
+  - name: issues
+    description: Issue tracking operations
+  - name: comments
+    description: Issue comment operations
+  - name: search
+    description: Search operations across issue trackers
+
+paths:
+  /auth/token:
+    post:
+      summary: Obtain an access token
+      description: Exchange credentials for an access token using JWT
+      operationId: getToken
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Successfully authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      description: Obtain a new access token using a refresh token
+      operationId: refreshToken
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /organizations:
+    get:
+      summary: List organizations
+      description: Get a list of all organizations accessible to the authenticated user
+      operationId: listOrganizations
+      tags:
+        - organizations
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of organizations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Organization'
+                  total:
+                    type: integer
+                    description: Total number of organizations available
+                  limit:
+                    type: integer
+                    description: Limit used for pagination
+                  offset:
+                    type: integer
+                    description: Offset used for pagination
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    
+    post:
+      summary: Create organization
+      description: Create a new organization
+      operationId: createOrganization
+      tags:
+        - organizations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreate'
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Organization created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /organizations/{organization_id}:
+    parameters:
+      - $ref: '#/components/parameters/organization_id'
+    
+    get:
+      summary: Get organization details
+      description: Get details of a specific organization
+      operationId: getOrganization
+      tags:
+        - organizations
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    put:
+      summary: Update organization
+      description: Update an existing organization
+      operationId: updateOrganization
+      tags:
+        - organizations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpdate'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    
+    delete:
+      summary: Delete organization
+      description: Delete an organization
+      operationId: deleteOrganization
+      tags:
+        - organizations
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Organization deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /organizations/{organization_id}/projects:
+    parameters:
+      - $ref: '#/components/parameters/organization_id'
+    
+    get:
+      summary: List projects in organization
+      description: Get a list of all projects within an organization
+      operationId: listOrganizationProjects
+      tags:
+        - projects
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+                  total:
+                    type: integer
+                    description: Total number of projects available
+                  limit:
+                    type: integer
+                    description: Limit used for pagination
+                  offset:
+                    type: integer
+                    description: Offset used for pagination
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects:
+    post:
+      summary: Create project
+      description: Create a new project within an organization
+      operationId: createProject
+      tags:
+        - projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Project created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /projects/{project_id}:
+    parameters:
+      - $ref: '#/components/parameters/project_id'
+    
+    get:
+      summary: Get project details
+      description: Get details of a specific project
+      operationId: getProject
+      tags:
+        - projects
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    put:
+      summary: Update project
+      description: Update an existing project
+      operationId: updateProject
+      tags:
+        - projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdate'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Project updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    
+    delete:
+      summary: Delete project
+      description: Delete a project
+      operationId: deleteProject
+      tags:
+        - projects
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Project deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/test-connection:
+    post:
+      summary: Test project connection
+      description: Test the connection to an issue tracker for a project
+      operationId: testProjectConnection
+      tags:
+        - projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestConnectionRequest'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Connection test result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestConnectionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /issues/search:
+    get:
+      summary: Search issues
+      description: Search for issues across configured trackers with optional semantic search
+      operationId: searchIssues
+      tags:
+        - issues
+        - search
+      parameters:
+        - name: organization
+          in: query
+          description: Organization identifier
+          required: true
+          schema:
+            type: string
+        - name: project
+          in: query
+          description: Project identifier
+          required: true
+          schema:
+            type: string
+        - name: query
+          in: query
+          description: Search query text
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of issues to return
+          required: false
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - name: semantic
+          in: query
+          description: Whether to use semantic search with vector embeddings
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: status
+          in: query
+          description: Filter by issue status
+          required: false
+          schema:
+            type: string
+        - name: labels
+          in: query
+          description: Filter by issue labels (comma-separated)
+          required: false
+          schema:
+            type: string
+        - name: assignee
+          in: query
+          description: Filter by issue assignee
+          required: false
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueSearchResults'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /issues:
+    post:
+      summary: Create issue
+      description: Create a new issue in a specified project
+      operationId: createIssue
+      tags:
+        - issues
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueCreate'
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Issue created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /issues/{issue_id}:
+    parameters:
+      - $ref: '#/components/parameters/issue_id'
+    
+    get:
+      summary: Get issue details
+      description: Get details of a specific issue
+      operationId: getIssue
+      tags:
+        - issues
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Issue details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    put:
+      summary: Update issue
+      description: Update an existing issue
+      operationId: updateIssue
+      tags:
+        - issues
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueUpdate'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Issue updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    
+    delete:
+      summary: Delete issue
+      description: Delete an issue (if supported by the issue tracker)
+      operationId: deleteIssue
+      tags:
+        - issues
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Issue deleted successfully
+        '400':
+          description: Operation not supported by this issue tracker
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /issues/{issue_id}/comments:
+    parameters:
+      - $ref: '#/components/parameters/issue_id'
+    
+    get:
+      summary: List issue comments
+      description: Get a list of comments for a specific issue
+      operationId: listIssueComments
+      tags:
+        - comments
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of comments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Comment'
+                  total:
+                    type: integer
+                    description: Total number of comments available
+                  limit:
+                    type: integer
+                    description: Limit used for pagination
+                  offset:
+                    type: integer
+                    description: Offset used for pagination
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    post:
+      summary: Add comment to issue
+      description: Add a new comment to a specific issue
+      operationId: addIssueComment
+      tags:
+        - comments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreate'
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Comment added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for authentication
+
+  parameters:
+    organization_id:
+      name: organization_id
+      in: path
+      description: Organization identifier
+      required: true
+      schema:
+        type: string
+    
+    project_id:
+      name: project_id
+      in: path
+      description: Project identifier
+      required: true
+      schema:
+        type: string
+    
+    issue_id:
+      name: issue_id
+      in: path
+      description: Issue identifier
+      required: true
+      schema:
+        type: string
+    
+    limit:
+      name: limit
+      in: query
+      description: Maximum number of items to return
+      required: false
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+    
+    offset:
+      name: offset
+      in: query
+      description: Number of items to skip for pagination
+      required: false
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    Unauthorized:
+      description: Unauthorized, authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    Forbidden:
+      description: Forbidden, insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+  schemas:
+    TokenRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: Username or email
+        password:
+          type: string
+          description: User password
+    
+    RefreshRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          description: Refresh token received during authentication
+    
+    TokenResponse:
+      type: object
+      required:
+        - access_token
+        - refresh_token
+        - token_type
+        - expires_in
+      properties:
+        access_token:
+          type: string
+          description: JWT access token
+        refresh_token:
+          type: string
+          description: JWT refresh token
+        token_type:
+          type: string
+          enum: [bearer]
+          default: bearer
+        expires_in:
+          type: integer
+          description: Token expiration time in seconds
+
+    Error:
+      type: object
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: integer
+          description: HTTP status code
+        message:
+          type: string
+          description: Error message
+        details:
+          type: object
+          description: Additional error details
+
+    ValidationError:
+      type: object
+      required:
+        - status
+        - message
+        - errors
+      properties:
+        status:
+          type: integer
+          description: HTTP status code
+        message:
+          type: string
+          description: Error message
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                description: Location of the error
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+              msg:
+                type: string
+                description: Error message
+              type:
+                type: string
+                description: Error type
+
+    Organization:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Organization unique identifier
+        name:
+          type: string
+          description: Organization name
+        slug:
+          type: string
+          description: Organization slug for URLs
+        description:
+          type: string
+          nullable: true
+          description: Organization description
+        metadata:
+          type: object
+          description: Additional organization metadata
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+    
+    OrganizationCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Organization name
+        slug:
+          type: string
+          description: Organization slug for URLs (generated from name if not provided)
+        description:
+          type: string
+          nullable: true
+          description: Organization description
+        metadata:
+          type: object
+          description: Additional organization metadata
+    
+    OrganizationUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Organization name
+        description:
+          type: string
+          nullable: true
+          description: Organization description
+        metadata:
+          type: object
+          description: Additional organization metadata
+
+    Project:
+      type: object
+      required:
+        - id
+        - organization_id
+        - name
+        - slug
+        - tracker_type
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Project unique identifier
+        organization_id:
+          type: string
+          format: uuid
+          description: Organization ID this project belongs to
+        name:
+          type: string
+          description: Project name
+        slug:
+          type: string
+          description: Project slug for URLs
+        description:
+          type: string
+          nullable: true
+          description: Project description
+        tracker_type:
+          type: string
+          enum: [jira, github, gitlab]
+          description: Issue tracker type
+        tracker_config:
+          type: object
+          description: Issue tracker configuration
+        metadata:
+          type: object
+          description: Additional project metadata
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+    
+    ProjectCreate:
+      type: object
+      required:
+        - organization_id
+        - name
+        - tracker_type
+        - tracker_config
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+          description: Organization ID this project belongs to
+        name:
+          type: string
+          description: Project name
+        slug:
+          type: string
+          description: Project slug for URLs (generated from name if not provided)
+        description:
+          type: string
+          nullable: true
+          description: Project description
+        tracker_type:
+          type: string
+          enum: [jira, github, gitlab]
+          description: Issue tracker type
+        tracker_config:
+          type: object
+          description: Issue tracker configuration
+        metadata:
+          type: object
+          description: Additional project metadata
+    
+    ProjectUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Project name
+        description:
+          type: string
+          nullable: true
+          description: Project description
+        tracker_config:
+          type: object
+          description: Issue tracker configuration
+        metadata:
+          type: object
+          description: Additional project metadata
+
+    TestConnectionRequest:
+      type: object
+      required:
+        - organization
+        - project
+      properties:
+        organization:
+          type: string
+          description: Organization identifier (name or ID)
+        project:
+          type: string
+          description: Project identifier (name or ID)
+    
+    TestConnectionResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Whether the connection test was successful
+        message:
+          type: string
+          description: Connection test result message
+        details:
+          type: object
+          description: Additional details about the connection
+
+    Issue:
+      type: object
+      required:
+        - id
+        - tracker_id
+        - organization
+        - project
+        - title
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          description: Issue unique identifier
+        tracker_id:
+          type: string
+          description: Issue ID in the original tracker
+        organization:
+          type: string
+          description: Organization identifier
+        project:
+          type: string
+          description: Project identifier
+        title:
+          type: string
+          description: Issue title
+        description:
+          type: string
+          nullable: true
+          description: Issue description
+        status:
+          type: string
+          description: Issue status
+        priority:
+          type: string
+          nullable: true
+          description: Issue priority
+        assignee:
+          type: string
+          nullable: true
+          description: Issue assignee
+        labels:
+          type: array
+          items:
+            type: string
+          description: Issue labels
+        url:
+          type: string
+          description: URL to the issue in the original tracker
+        metadata:
+          type: object
+          description: Additional issue metadata
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+    
+    IssueCreate:
+      type: object
+      required:
+        - organization
+        - project
+        - title
+      properties:
+        organization:
+          type: string
+          description: Organization identifier
+        project:
+          type: string
+          description: Project identifier
+        title:
+          type: string
+          description: Issue title
+        description:
+          type: string
+          nullable: true
+          description: Issue description
+        priority:
+          type: string
+          nullable: true
+          description: Issue priority
+        assignee:
+          type: string
+          nullable: true
+          description: Issue assignee
+        labels:
+          type: array
+          items:
+            type: string
+          description: Issue labels
+        metadata:
+          type: object
+          description: Additional issue metadata
+    
+    IssueUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Issue title
+        description:
+          type: string
+          nullable: true
+          description: Issue description
+        status:
+          type: string
+          description: Issue status
+        priority:
+          type: string
+          nullable: true
+          description: Issue priority
+        assignee:
+          type: string
+          nullable: true
+          description: Issue assignee
+        labels:
+          type: array
+          items:
+            type: string
+          description: Issue labels
+        metadata:
+          type: object
+          description: Additional issue metadata
+
+    IssueSearchResults:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+          description: Search result items
+        total:
+          type: integer
+          description: Total number of matching issues
+        query:
+          type: string
+          description: Search query used
+
+    Comment:
+      type: object
+      required:
+        - id
+        - issue_id
+        - author
+        - body
+        - created_at
+      properties:
+        id:
+          type: string
+          description: Comment unique identifier
+        issue_id:
+          type: string
+          description: Issue ID this comment belongs to
+        author:
+          type: string
+          description: Comment author
+        body:
+          type: string
+          description: Comment text
+        metadata:
+          type: object
+          description: Additional comment metadata
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last update timestamp
+    
+    CommentCreate:
+      type: object
+      required:
+        - body
+      properties:
+        body:
+          type: string
+          description: Comment text
+        metadata:
+          type: object
+          description: Additional comment metadata

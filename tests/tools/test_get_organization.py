@@ -1,7 +1,7 @@
 """Tests for the get_organization tool."""
 
-import unittest
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from spacebridge.tools.organization.get_organization import get_organization

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - SpaceBridge</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .register-container {
+            max-width: 500px;
+            margin: 40px auto;
+            padding: 30px;
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .register-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .register-header h1 {
+            color: #4a86e8;
+            font-weight: bold;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-control {
+            padding: 12px;
+            border-radius: 5px;
+        }
+        .btn-primary {
+            background-color: #4a86e8;
+            border-color: #4a86e8;
+            padding: 12px;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn-primary:hover {
+            background-color: #3a76d8;
+            border-color: #3a76d8;
+        }
+        .register-footer {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .register-footer a {
+            color: #4a86e8;
+            text-decoration: none;
+        }
+        .register-footer a:hover {
+            text-decoration: underline;
+        }
+        .alert {
+            margin-bottom: 20px;
+        }
+        .password-requirements {
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="register-container">
+            <div class="register-header">
+                <h1>SpaceBridge</h1>
+                <p>Create your account</p>
+            </div>
+            
+            <div id="errorAlert" class="alert alert-danger d-none" role="alert">
+                Registration failed. Please check your information.
+            </div>
+            
+            <div id="successAlert" class="alert alert-success d-none" role="alert">
+                Registration successful! Please check your email to verify your account.
+            </div>
+            
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="username" class="form-label">Username</label>
+                    <input type="text" class="form-control" id="username" name="username" placeholder="Choose a username" required minlength="3" maxlength="50">
+                    <div class="form-text">Username must be alphanumeric and between 3-50 characters.</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="email" class="form-label">Email</label>
+                    <input type="email" class="form-control" id="email" name="email" placeholder="Enter your email" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="fullName" class="form-label">Full Name (Optional)</label>
+                    <input type="text" class="form-control" id="fullName" name="fullName" placeholder="Enter your full name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password" class="form-label">Password</label>
+                    <input type="password" class="form-control" id="password" name="password" placeholder="Create a password" required minlength="8">
+                    <div class="password-requirements">
+                        Password must be at least 8 characters long.
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="confirmPassword" class="form-label">Confirm Password</label>
+                    <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" placeholder="Confirm your password" required>
+                </div>
+                
+                <div class="form-group">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="agree" required>
+                        <label class="form-check-label" for="agree">
+                            I agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a>
+                        </label>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Create Account</button>
+            </form>
+            
+            <div class="register-footer">
+                <p>Already have an account? <a href="/login">Sign In</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Password confirmation validation
+        document.getElementById('confirmPassword').addEventListener('input', function() {
+            const password = document.getElementById('password').value;
+            const confirmPassword = this.value;
+            
+            if (password !== confirmPassword) {
+                this.setCustomValidity('Passwords do not match');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+        
+        // Handle registration form submission
+        document.getElementById('registerForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
+            const fullName = document.getElementById('fullName').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const response = await fetch('/api/v1/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        email: email,
+                        full_name: fullName || null,
+                        password: password
+                    })
+                });
+                
+                if (response.ok) {
+                    // Show success message
+                    document.getElementById('successAlert').classList.remove('d-none');
+                    document.getElementById('errorAlert').classList.add('d-none');
+                    
+                    // Reset form
+                    document.getElementById('registerForm').reset();
+                    
+                    // Redirect to login after 3 seconds
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 3000);
+                } else {
+                    // Show error message
+                    const errorData = await response.json();
+                    const errorAlert = document.getElementById('errorAlert');
+                    errorAlert.textContent = errorData.detail || 'Registration failed. Please check your information.';
+                    errorAlert.classList.remove('d-none');
+                    document.getElementById('successAlert').classList.add('d-none');
+                }
+            } catch (error) {
+                console.error('Registration error:', error);
+                const errorAlert = document.getElementById('errorAlert');
+                errorAlert.textContent = 'Registration failed. Please try again later.';
+                errorAlert.classList.remove('d-none');
+                document.getElementById('successAlert').classList.add('d-none');
+            }
+        });
+    </script>
+</body>
+</html>

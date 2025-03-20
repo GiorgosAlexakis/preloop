@@ -1,148 +1,164 @@
 """Test connection to an issue tracker."""
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
-from spacebridge.db.session import get_db
-from spacebridge.models.organization import Organization
-from spacebridge.models.project import Project
-from spacebridge.tools.base import MCPTool, MCPToolMetadata
-from spacebridge.tools.registry import register_tool
-from spacebridge.tools.utils import run_async
+from pydantic import BaseModel, Field
+
+from mcp.server.fastmcp import Context
+from spacemodels.models.organization import Organization
+from spacemodels.models.project import Project
+from spacemodels.crud.organization import CRUDOrganization
+from spacemodels.crud.project import CRUDProject
+
+from spacemodels.db.session import get_db_session as get_db
 from spacebridge.trackers.factory import TrackerFactory
 
 logger = logging.getLogger(__name__)
 
 
-@register_tool
-class TestConnectionTool(MCPTool):
-    """Tool for testing connectivity to a project's issue trackers."""
+class ProjectInfo(BaseModel):
+    """Project information."""
 
-    @classmethod
-    def metadata(cls) -> MCPToolMetadata:
-        """Get tool metadata."""
-        return MCPToolMetadata(
-            name="test_connection",
-            description="Tests connectivity to configured issue trackers",
-            required_parameters={"organization", "project"},
-            optional_parameters={"tracker": None},
+    id: int
+    name: str
+    identifier: str
+
+
+class ConnectionResult(BaseModel):
+    """Tracker connection test result."""
+
+    connected: bool
+    message: str
+    rate_limit: Optional[Dict[str, Any]] = None
+    server_info: Optional[Dict[str, Any]] = None
+
+
+class TestConnectionResponse(BaseModel):
+    """Response model for test_connection tool."""
+
+    project: ProjectInfo
+    connection_results: Dict[str, ConnectionResult]
+
+
+class ErrorResponse(BaseModel):
+    """Error response model."""
+
+    error: str
+    message: str
+
+
+async def test_connection(
+    organization: str, project: str, tracker: Optional[str] = None, ctx: Context = None
+) -> Dict[str, Any]:
+    """Test connectivity to configured issue trackers.
+
+    Args:
+        organization: Organization identifier
+        project: Project identifier
+        tracker: Optional specific tracker to test (tests all if not specified)
+        ctx: Optional MCP context
+
+    Returns:
+        Connection status for each tracker
+    """
+    # Get database session
+    db = next(get_db())
+
+    try:
+        # Log operation if context is available
+        if ctx:
+            await ctx.info(
+                f"Testing connection for project {project} in organization {organization}"
+            )
+
+        # Initialize CRUD objects
+        crud_organization = CRUDOrganization(Organization)
+        crud_project = CRUDProject(Project)
+
+        # Get organization using CRUD operations
+        org = crud_organization.get_by_identifier(db, identifier=organization)
+        if not org or not org.is_active:
+            return ErrorResponse(
+                error="not_found", message=f"Organization '{organization}' not found"
+            ).model_dump()
+
+        # Get project using CRUD operations
+        proj = crud_project.get_by_identifier(
+            db, organization_id=org.id, identifier=project
         )
+        if not proj or not proj.is_active:
+            return ErrorResponse(
+                error="not_found",
+                message=f"Project '{project}' not found in organization '{organization}'",
+            ).model_dump()
 
-    def execute(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the tool.
+        # In SpaceModels, we use tracker_settings instead of tracker_configurations
+        tracker_settings = proj.tracker_settings or {}
 
-        Args:
-            parameters: Tool parameters.
-                - organization: String - Organization identifier
-                - project: String - Project identifier
-                - tracker: Optional[String] - Specific tracker to test (tests all if not specified)
+        # If no tracker settings, return an error
+        if not tracker_settings:
+            return ErrorResponse(
+                error="no_trackers",
+                message=f"Project '{project}' has no configured trackers",
+            ).model_dump()
 
-        Returns:
-            Connection status for each tracker.
-        """
-        # Validate parameters
-        validated_params = self.validate_parameters(parameters)
-        organization_identifier = validated_params["organization"]
-        project_identifier = validated_params["project"]
-        tracker_type = validated_params.get("tracker")
+        # Test connection to each tracker
+        results = {}
+        trackers_to_test = [tracker] if tracker else list(tracker_settings.keys())
 
-        # Get database session
-        db = next(get_db())
-
-        try:
-            # Get organization
-            organization = (
-                db.query(Organization)
-                .filter(Organization.identifier == organization_identifier)
-                .first()
-            )
-
-            if not organization:
-                return {
-                    "error": "not_found",
-                    "message": f"Organization '{organization_identifier}' not found",
-                }
-
-            # Get project
-            project = (
-                db.query(Project)
-                .filter(
-                    Project.organization_id == organization.id,
-                    Project.identifier == project_identifier,
+        # For each tracker configuration
+        for tracker_name in trackers_to_test:
+            # If the tracker is not configured, skip it
+            if tracker_name not in tracker_settings:
+                results[tracker_name] = ConnectionResult(
+                    connected=False,
+                    message=f"Tracker '{tracker_name}' is not configured for this project",
                 )
-                .first()
-            )
+                continue
 
-            if not project:
-                return {
-                    "error": "not_found",
-                    "message": f"Project '{project_identifier}' not found in organization '{organization_identifier}'",
-                }
+            try:
+                if ctx:
+                    await ctx.info(f"Testing connection to {tracker_name}")
 
-            # If no tracker configurations, return an error
-            if not project.tracker_configurations:
-                return {
-                    "error": "no_trackers",
-                    "message": f"Project '{project_identifier}' has no configured trackers",
-                }
+                # Get the tracker configuration from tracker_settings
+                tracker_config = tracker_settings[tracker_name]
 
-            # Test connection to each tracker
-            results = {}
-            trackers_to_test = [tracker_type] if tracker_type else project.trackers
+                # Create a tracker client based on tracker type
+                # Handles all supported trackers: github, gitlab, jira
+                tracker_client = await TrackerFactory.create_client(
+                    tracker_name, tracker_config
+                )
 
-            # For each tracker configuration
-            for tracker in trackers_to_test:
-                # If the tracker is not configured, skip it
-                if tracker not in project.tracker_configurations:
-                    results[tracker] = {
-                        "connected": False,
-                        "message": f"Tracker '{tracker}' is not configured for this project",
-                    }
+                if not tracker_client:
+                    results[tracker_name] = ConnectionResult(
+                        connected=False,
+                        message=f"Failed to create client for tracker '{tracker_name}'",
+                    )
                     continue
 
-                try:
-                    # Get the tracker configuration
-                    tracker_config = project.tracker_configurations[tracker]
+                # Test the connection
+                connection_result = await tracker_client.test_connection()
 
-                    # Create a tracker client based on tracker type
-                    # Handles all supported trackers: github, gitlab, jira
-                    tracker_client = run_async(
-                        TrackerFactory.create_client(tracker, tracker_config)
-                    )
+                # Store the result
+                results[tracker_name] = ConnectionResult(
+                    connected=connection_result.connected,
+                    message=connection_result.message,
+                    rate_limit=connection_result.rate_limit,
+                    server_info=connection_result.server_info,
+                )
 
-                    if not tracker_client:
-                        results[tracker] = {
-                            "connected": False,
-                            "message": f"Failed to create client for tracker '{tracker}'",
-                        }
-                        continue
+            except Exception as e:
+                logger.exception(f"Error testing connection to {tracker_name}: {e}")
+                results[tracker_name] = ConnectionResult(
+                    connected=False, message=f"Error testing connection: {str(e)}"
+                )
 
-                    # Test the connection
-                    connection_result = run_async(tracker_client.test_connection())
+        # Return the result
+        return TestConnectionResponse(
+            project=ProjectInfo(id=proj.id, name=proj.name, identifier=proj.identifier),
+            connection_results=results,
+        ).model_dump()
 
-                    # Store the result
-                    results[tracker] = {
-                        "connected": connection_result.connected,
-                        "message": connection_result.message,
-                        "rate_limit": connection_result.rate_limit,
-                        "server_info": connection_result.server_info,
-                    }
-
-                except Exception as e:
-                    logger.exception(f"Error testing connection to {tracker}: {e}")
-                    results[tracker] = {
-                        "connected": False,
-                        "message": f"Error testing connection: {str(e)}",
-                    }
-
-            return {
-                "project": {
-                    "id": project.id,
-                    "name": project.name,
-                    "identifier": project.identifier,
-                },
-                "connection_results": results,
-            }
-
-        finally:
-            db.close()
+    finally:
+        db.close()

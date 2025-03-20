@@ -1,5 +1,9 @@
 # SpaceBridge Development Guide
 
+Only use the DB models defined in SpaceModels package `from spacemodels import models`
+
+Use the Lit.dev framework for frontend code. If you create new web components ensure that the landing page content is not hidden in their shadow DOM. 
+
 ## Commands
 - **Install**: `pip install -e ".[dev]"`
 - **Run server**: `python -m spacebridge.server`

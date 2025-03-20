@@ -16,7 +16,8 @@ services:
   spacebridge:
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
+    image: registry.spacecode.ai/spacecode/spacebridge:latest
     restart: unless-stopped
     depends_on:
       - postgres
@@ -29,10 +30,12 @@ services:
       JWT_ALGORITHM: HS256
       JWT_EXPIRE_MINUTES: 60
       LOG_LEVEL: DEBUG
+      INIT_TEST_DATA: 'true'
     ports:
       - "8000:8000"
     volumes:
       - .:/app
+    command: ./start.sh
 
 volumes:
   postgres-data:
