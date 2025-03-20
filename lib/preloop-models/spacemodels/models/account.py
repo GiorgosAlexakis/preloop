@@ -45,7 +45,8 @@ class Account(Base):
     trackers: Mapped[List["Tracker"]] = relationship(
         "Tracker", back_populates="account", cascade="all, delete-orphan"
     )
-    organizations: Mapped[List["AccountOrganization"]] = relationship(
+    # Organizations this account is a member of (but not necessarily the owner)
+    organization_memberships: Mapped[List["AccountOrganization"]] = relationship(
         "AccountOrganization", back_populates="account", cascade="all, delete-orphan"
     )
     api_keys: Mapped[List["ApiKey"]] = relationship(
@@ -55,16 +56,29 @@ class Account(Base):
         "ApiUsage", back_populates="user", cascade="all, delete-orphan"
     )
 
-    # Many-to-many relationship helper
+    # Many-to-many relationship helper for organizational roles
     organization_roles: Mapped[Dict[str, str]] = association_proxy(
-        "organizations",
+        "organization_memberships",
         "role",
         creator=lambda k, v: AccountOrganization(organization_id=k, role=v),
     )
 
+    # Property to get organizations this account owns through trackers
+    @property
+    def owned_organizations(self) -> List["Organization"]:
+        """Get organizations owned by this account through trackers."""
+        owned_orgs = []
+        for tracker in self.trackers:
+            owned_orgs.extend(tracker.organizations)
+        return owned_orgs
+
 
 class AccountOrganization(Base):
-    """Join table for accounts and organizations with roles."""
+    """Join table for accounts and organizations with roles.
+
+    This represents memberships/collaborations in an organization, separate from
+    ownership which is determined by the tracker relationship.
+    """
 
     __tablename__ = "accountorganization"
 
@@ -88,7 +102,9 @@ class AccountOrganization(Base):
     )
 
     # Relationships
-    account: Mapped["Account"] = relationship("Account", back_populates="organizations")
+    account: Mapped["Account"] = relationship(
+        "Account", back_populates="organization_memberships"
+    )
     organization: Mapped["Organization"] = relationship(
-        "Organization", back_populates="accounts"
+        "Organization", back_populates="members"
     )

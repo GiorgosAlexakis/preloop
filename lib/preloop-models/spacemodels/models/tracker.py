@@ -28,7 +28,16 @@ class TrackerType(enum.Enum):
 
 
 class Tracker(Base):
-    """Tracker model - represents an integration with an issue tracking system."""
+    """Tracker model - represents an integration with an issue tracking system.
+
+    A tracker is owned by a single account and determines ownership of organizations.
+    The account that owns a tracker is considered the owner of all organizations
+    linked to that tracker. This provides a clear ownership hierarchy:
+
+    Account -> Tracker -> Organization -> Projects
+
+    Where each entity is owned by the entity to its left.
+    """
 
     # Tracker details
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -46,6 +55,10 @@ class Tracker(Base):
         comment="Encrypted API key or token for authentication",
     )
     is_active: Mapped[bool] = mapped_column(default=True)
+    is_owner_managed: Mapped[bool] = mapped_column(
+        default=True,
+        comment="If True, the account that owns this tracker also owns all organizations linked to it",
+    )
 
     # Additional connection details stored as JSON
     # Structure examples:

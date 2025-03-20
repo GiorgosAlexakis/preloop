@@ -15,10 +15,16 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .project import Project
+    from .account import Account
 
 
 class Organization(Base):
-    """Organization model - a top-level entity that can contain multiple projects."""
+    """Organization model - a top-level entity that can contain multiple projects.
+
+    An organization is owned by a single account through a tracker. The owner has full
+    administrative access to the organization. Additional accounts can be added as
+    members with different roles through the AccountOrganization relationship.
+    """
 
     # Organization details
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -34,7 +40,7 @@ class Organization(Base):
     # Generic metadata field for extensibility
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
-    # Foreign keys
+    # Foreign keys - the tracker determines the owner account
     tracker_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("tracker.id", ondelete="CASCADE"),
@@ -47,6 +53,13 @@ class Organization(Base):
     projects: Mapped[List["Project"]] = relationship(
         "Project", back_populates="organization", cascade="all, delete-orphan"
     )
-    accounts: Mapped[List["AccountOrganization"]] = relationship(
+    # Members are additional accounts that have access to the organization
+    members: Mapped[List["AccountOrganization"]] = relationship(
         "AccountOrganization", back_populates="organization"
     )
+
+    # Property to get the owner account through the tracker
+    @property
+    def owner(self) -> "Account":
+        """Get the owner account of this organization through the tracker."""
+        return self.tracker.account
