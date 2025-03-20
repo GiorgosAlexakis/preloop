@@ -5,16 +5,16 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from spacemodels.models.organization import Organization
-from spacemodels.models.tracker import Tracker
 
-from spacemodels.db.session import get_db_session as get_db
-from spacemodels.crud.organization import CRUDOrganization
 from spacebridge.schemas.organization import (
     OrganizationCreate,
     OrganizationResponse,
     OrganizationUpdate,
 )
+from spacemodels.crud.organization import CRUDOrganization
+from spacemodels.db.session import get_db_session as get_db
+from spacemodels.models.organization import Organization
+from spacemodels.models.tracker import Tracker
 
 router = APIRouter()
 crud_organization = CRUDOrganization(Organization)

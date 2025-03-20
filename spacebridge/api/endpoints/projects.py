@@ -1,18 +1,12 @@
 """Endpoints for managing projects."""
 
-import uuid
 import logging
+import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from spacemodels.models.organization import Organization
-from spacemodels.models.project import Project
 
-from spacemodels.db.session import get_db_session as get_db
-from spacemodels.crud.organization import CRUDOrganization
-from spacemodels.crud.project import CRUDProject
-from spacebridge.trackers.factory import TrackerFactory
 from spacebridge.schemas.project import (
     ProjectCreate,
     ProjectResponse,
@@ -20,6 +14,12 @@ from spacebridge.schemas.project import (
     TestConnectionRequest,
     TestConnectionResponse,
 )
+from spacebridge.trackers.factory import TrackerFactory
+from spacemodels.crud.organization import CRUDOrganization
+from spacemodels.crud.project import CRUDProject
+from spacemodels.db.session import get_db_session as get_db
+from spacemodels.models.organization import Organization
+from spacemodels.models.project import Project
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

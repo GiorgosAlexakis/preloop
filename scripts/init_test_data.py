@@ -3,20 +3,19 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime
 
 from passlib.context import CryptContext
 from sqlalchemy.exc import SQLAlchemyError
-from spacemodels.models.organization import Organization
-from spacemodels.models.project import Project
-from spacemodels.models.tracker import Tracker, TrackerType
-from spacemodels.models.account import Account
+
+from spacemodels.crud.account import CRUDAccount
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
 from spacemodels.crud.tracker import CRUDTracker
-from spacemodels.crud.account import CRUDAccount
-
 from spacemodels.db.session import get_db_session
+from spacemodels.models.account import Account
+from spacemodels.models.organization import Organization
+from spacemodels.models.project import Project
+from spacemodels.models.tracker import Tracker, TrackerType
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -159,8 +158,9 @@ def main():
     """Main function to create test data."""
     try:
         # First ensure the database tables exist
-        from spacemodels.db.setup import setup_database
         import os
+
+        from spacemodels.db.setup import setup_database
 
         # Get the database URL from environment
         database_url = os.getenv(

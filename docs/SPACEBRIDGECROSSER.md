@@ -67,18 +67,18 @@ HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 )
 async def get_organization(organization_id: str, ctx: ToolContext = None) -> Dict[str, Any]:
     """Get organization details from SpaceBridge.
-    
+
     Args:
         organization_id: Organization ID or identifier
         ctx: MCP context for progress reporting
-        
+
     Returns:
         Organization details
     """
     # Report progress if context is available
     if ctx:
         await ctx.report_progress("Fetching organization details...")
-    
+
     # Make the API call to SpaceBridge
     async with httpx.AsyncClient() as client:
         response = await client.get(
@@ -86,14 +86,14 @@ async def get_organization(organization_id: str, ctx: ToolContext = None) -> Dic
             headers=HEADERS,
             timeout=30.0
         )
-        
+
         # Handle errors
         if response.status_code != 200:
             error_message = f"Error fetching organization: {response.text}"
             if ctx:
                 await ctx.report_error(error_message)
             raise Exception(error_message)
-        
+
         # Return the result
         return response.json()
 ```

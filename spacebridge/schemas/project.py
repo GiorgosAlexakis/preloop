@@ -1,7 +1,5 @@
 """Project schemas for request and response validation."""
 
-import uuid
-from datetime import datetime
 from typing import Dict, Optional
 
 from pydantic import BaseModel, Field

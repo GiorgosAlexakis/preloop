@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
+
 import requests
-import json
 
 # Test JSON auth (new endpoint)
 print("Testing JSON auth (new endpoint)...")

@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Install system dependencies including PostgreSQL client libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     libpq-dev \
     build-essential \
     && apt-get clean \
@@ -19,7 +20,7 @@ RUN pip install --no-cache-dir build setuptools wheel
 COPY . .
 
 RUN git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/spacesync.git && cd spacesync && git checkout service && cd - && \
-    git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/SpaceModels.git 
+    git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/SpaceModels.git
 
 # Install the application
 RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync && pip install --no-cache-dir -e .

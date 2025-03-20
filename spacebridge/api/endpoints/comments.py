@@ -6,13 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from spacebridge.api.endpoints.issues import get_tracker_client
-from spacemodels.db.session import get_db_session as get_db
+from spacebridge.schemas.comment import CommentCreate, CommentList, CommentResponse
 from spacebridge.trackers.base import IssueComment as TrackerComment
-from spacebridge.schemas.comment import (
-    CommentCreate,
-    CommentResponse,
-    CommentList,
-)
+from spacemodels.db.session import get_db_session as get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

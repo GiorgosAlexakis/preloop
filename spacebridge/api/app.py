@@ -6,28 +6,26 @@ of issue tracking systems.
 
 import logging
 import os
-from typing import Dict, Optional
-from pathlib import Path
-import json
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from spacebridge import __version__
 from spacebridge.api.auth import auth_router, get_current_active_user
 from spacebridge.api.endpoints import (
+    comments,
     health,
+    issues,
     organizations,
     projects,
-    issues,
-    comments,
     trackers,
 )
 from spacemodels.db.session import get_db_session
@@ -542,22 +540,22 @@ def create_app() -> FastAPI:
                 <h1>SpaceBridge</h1>
                 <p>Sign in to your account</p>
             </div>
-            
+
             <div id="errorAlert" class="alert alert-danger d-none" role="alert">
                 Incorrect username or password
             </div>
-            
+
             <form id="loginForm">
                 <div class="form-group">
                     <label for="username" class="form-label">Username</label>
                     <input type="text" class="form-control" id="username" name="username" placeholder="Enter your username" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="password" class="form-label">Password</label>
                     <input type="password" class="form-control" id="password" name="password" placeholder="Enter your password" required>
                 </div>
-                
+
                 <div class="form-group d-flex justify-content-between align-items-center">
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="remember">
@@ -565,10 +563,10 @@ def create_app() -> FastAPI:
                     </div>
                     <a href="/forgot-password" class="small">Forgot password?</a>
                 </div>
-                
+
                 <button type="submit" class="btn btn-primary">Sign In</button>
             </form>
-            
+
             <div class="login-footer">
                 <p>Don't have an account? <a href="/register">Register</a></p>
             </div>
@@ -579,10 +577,10 @@ def create_app() -> FastAPI:
         // Handle login form submission
         document.getElementById('loginForm').addEventListener('submit', async function(event) {
             event.preventDefault();
-            
+
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
-            
+
             try {
                 const response = await fetch('/api/v1/auth/token/json', {
                     method: 'POST',
@@ -594,15 +592,15 @@ def create_app() -> FastAPI:
                         password: password
                     })
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
-                    
+
                     // Save tokens to localStorage
                     localStorage.setItem('accessToken', data.access_token);
                     localStorage.setItem('refreshToken', data.refresh_token);
                     localStorage.setItem('tokenExpires', Date.now() + (data.expires_in * 1000));
-                    
+
                     // Redirect to dashboard
                     window.location.href = '/dashboard';
                 } else {
@@ -699,32 +697,32 @@ def create_app() -> FastAPI:
                 <h1>SpaceBridge</h1>
                 <p>Create your account</p>
             </div>
-            
+
             <div id="errorAlert" class="alert alert-danger d-none" role="alert">
                 Registration failed. Please check your information.
             </div>
-            
+
             <div id="successAlert" class="alert alert-success d-none" role="alert">
                 Registration successful! Please check your email to verify your account.
             </div>
-            
+
             <form id="registerForm">
                 <div class="form-group">
                     <label for="username" class="form-label">Username</label>
                     <input type="text" class="form-control" id="username" name="username" placeholder="Choose a username" required minlength="3" maxlength="50">
                     <div class="form-text">Username must be alphanumeric and between 3-50 characters.</div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="email" class="form-label">Email</label>
                     <input type="email" class="form-control" id="email" name="email" placeholder="Enter your email" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="fullName" class="form-label">Full Name (Optional)</label>
                     <input type="text" class="form-control" id="fullName" name="fullName" placeholder="Enter your full name">
                 </div>
-                
+
                 <div class="form-group">
                     <label for="password" class="form-label">Password</label>
                     <input type="password" class="form-control" id="password" name="password" placeholder="Create a password" required minlength="8">
@@ -732,12 +730,12 @@ def create_app() -> FastAPI:
                         Password must be at least 8 characters long.
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="confirmPassword" class="form-label">Confirm Password</label>
                     <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" placeholder="Confirm your password" required>
                 </div>
-                
+
                 <div class="form-group">
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="agree" required>
@@ -746,10 +744,10 @@ def create_app() -> FastAPI:
                         </label>
                     </div>
                 </div>
-                
+
                 <button type="submit" class="btn btn-primary">Create Account</button>
             </form>
-            
+
             <div class="register-footer">
                 <p>Already have an account? <a href="/login">Sign In</a></p>
             </div>
@@ -761,23 +759,23 @@ def create_app() -> FastAPI:
         document.getElementById('confirmPassword').addEventListener('input', function() {
             const password = document.getElementById('password').value;
             const confirmPassword = this.value;
-            
+
             if (password !== confirmPassword) {
                 this.setCustomValidity('Passwords do not match');
             } else {
                 this.setCustomValidity('');
             }
         });
-        
+
         // Handle registration form submission
         document.getElementById('registerForm').addEventListener('submit', async function(event) {
             event.preventDefault();
-            
+
             const username = document.getElementById('username').value;
             const email = document.getElementById('email').value;
             const fullName = document.getElementById('fullName').value;
             const password = document.getElementById('password').value;
-            
+
             try {
                 const response = await fetch('/api/v1/auth/register', {
                     method: 'POST',
@@ -791,15 +789,15 @@ def create_app() -> FastAPI:
                         password: password
                     })
                 });
-                
+
                 if (response.ok) {
                     // Show success message
                     document.getElementById('successAlert').classList.remove('d-none');
                     document.getElementById('errorAlert').classList.add('d-none');
-                    
+
                     // Reset form
                     document.getElementById('registerForm').reset();
-                    
+
                     // Redirect to login after 3 seconds
                     setTimeout(() => {
                         window.location.href = '/login';
@@ -898,6 +896,7 @@ def create_app() -> FastAPI:
             # Initialize test data if needed
             if os.getenv("INIT_TEST_DATA", "false").lower() == "true":
                 import asyncio
+
                 from spacebridge.init_test_data import create_test_data
 
                 asyncio.run(create_test_data())

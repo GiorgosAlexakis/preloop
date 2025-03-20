@@ -6,26 +6,24 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from spacemodels.db.session import get_db_session as get_db
 from spacebridge.schemas.issue import (
     IssueCreate,
     IssueResponse,
-    IssueUpdate,
     IssueSearchResults,
+    IssueUpdate,
 )
-from spacemodels.models.organization import Organization
-from spacemodels.models.project import Project
-
-logger = logging.getLogger(__name__)
-router = APIRouter()
-
-# Initialize CRUD instances
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
+from spacemodels.db.session import get_db_session as get_db
+from spacemodels.models.organization import Organization
+from spacemodels.models.project import Project
 
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
 
 # Helper Functions
 

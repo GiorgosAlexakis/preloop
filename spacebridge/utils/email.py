@@ -5,7 +5,7 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Dict, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -93,13 +93,13 @@ def send_verification_email(user_email: str, token: str) -> None:
     subject = "Verify your SpaceBridge account"
     text_body = f"""
     Welcome to SpaceBridge!
-    
+
     Please verify your email address by clicking the link below:
-    
+
     {verification_link}
-    
+
     If you didn't register for SpaceBridge, please ignore this email.
-    
+
     Thank you,
     The SpaceBridge Team
     """
@@ -131,13 +131,13 @@ def send_password_reset_email(user_email: str, token: str) -> None:
     subject = "Reset your SpaceBridge password"
     text_body = f"""
     You have requested to reset your SpaceBridge password.
-    
+
     Please click the link below to set a new password:
-    
+
     {reset_link}
-    
+
     If you didn't request a password reset, please ignore this email.
-    
+
     Thank you,
     The SpaceBridge Team
     """
@@ -173,13 +173,13 @@ def send_tracker_registered_email(
     subject = f"New {tracker_type.title()} tracker registered: {tracker_name}"
     text_body = f"""
     You have successfully registered a new tracker in SpaceBridge:
-    
+
     Name: {tracker_name}
     Type: {tracker_type.title()}
-    
+
     You can view and manage your trackers at:
     {trackers_link}
-    
+
     Thank you,
     The SpaceBridge Team
     """

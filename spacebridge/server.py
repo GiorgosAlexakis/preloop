@@ -7,8 +7,6 @@ from typing import Optional
 
 import uvicorn
 
-from spacebridge.api.app import create_app
-
 logger = logging.getLogger(__name__)
 
 

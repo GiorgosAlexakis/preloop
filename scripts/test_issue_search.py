@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-import requests
 import json
+
+import requests
 
 # Base URL for the SpaceBridge API
 base_url = "http://localhost:8000/api/v1"

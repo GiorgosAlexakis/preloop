@@ -9,7 +9,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import EmailStr
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.future import select
 
 from spacebridge.api.auth.jwt import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -34,10 +35,7 @@ from spacebridge.schemas.auth import (
     UserCreate,
     UserResponse,
 )
-from spacebridge.utils.email import (
-    send_password_reset_email,
-    send_verification_email,
-)
+from spacebridge.utils.email import send_password_reset_email, send_verification_email
 from spacebridge.utils.tokens import (
     TokenError,
     create_email_verification_token,
@@ -48,9 +46,6 @@ from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.api_key import ApiKey
 from spacemodels.models.api_usage import ApiUsage
-from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.future import select
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

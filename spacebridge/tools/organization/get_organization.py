@@ -4,11 +4,10 @@ from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
-from mcp.server.fastmcp import Context
-from spacemodels.models.organization import Organization
+from spacebridge.tools.base import Context
 from spacemodels.crud.organization import CRUDOrganization
-
 from spacemodels.db.session import get_db_session as get_db
+from spacemodels.models.organization import Organization
 
 
 class ProjectResponse(BaseModel):

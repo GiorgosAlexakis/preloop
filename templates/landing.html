@@ -199,21 +199,21 @@
         document.addEventListener('DOMContentLoaded', function() {
             checkAuthStatus();
         });
-        
+
         // Check if user is authenticated
         function checkAuthStatus() {
             const token = localStorage.getItem('accessToken');
-            
+
             if (token) {
                 // User is logged in
                 document.getElementById('auth-nav-guest').style.display = 'none';
                 document.getElementById('auth-nav-user').style.display = 'block';
-                
+
                 // Change CTA buttons for logged-in users
                 const ctaButtons = document.querySelectorAll('a[href="/register"]');
                 ctaButtons.forEach(button => {
                     button.href = '/dashboard';
-                    button.textContent = button.classList.contains('btn-lg') ? 
+                    button.textContent = button.classList.contains('btn-lg') ?
                         'Go to Dashboard' : 'Dashboard';
                 });
             } else {

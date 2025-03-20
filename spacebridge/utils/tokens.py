@@ -2,9 +2,8 @@
 
 import os
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, Union
 
-from jose import jwt, JWTError
+from jose import JWTError, jwt
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")

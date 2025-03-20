@@ -1,13 +1,38 @@
 """Base classes for MCP tools in SpaceBridge."""
 
-from typing import Any, Dict, Set, Type, TypeVar, Optional
+from typing import Any, Dict, Set, TypeVar
 
-from mcp.server.fastmcp import Context
-from mcp.types import TextContent, ImageContent, EmbeddedResource
 from pydantic import BaseModel, Field
 
-# Some tools might still need these during migration
-from pydantic import create_model
+
+# Stub implementation for removed MCP dependencies
+class Context:
+    """Stub implementation of MCP Context."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+class EmbeddedResource:
+    """Stub implementation of MCP EmbeddedResource."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+class ImageContent:
+    """Stub implementation of MCP ImageContent."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+class TextContent:
+    """Stub implementation of MCP TextContent."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
 
 # Redefine types for back-compatibility during migration
 MCPToolContext = Context

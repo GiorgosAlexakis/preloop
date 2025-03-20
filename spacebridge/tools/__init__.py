@@ -1,16 +1,16 @@
-"""MCP tool implementations for SpaceBridge."""
+"""Tool implementations for SpaceBridge."""
 
 from spacebridge.tools.base import MCPToolContext
-
 
 __all__ = [
     "MCPToolContext",
 ]
 
-# Discover and register tools
-import pkgutil
 import importlib
 
+# Discover and register tools
+import pkgutil
+
 # Importing the tool modules will register them via the decorator
-for _, name, is_pkg in pkgutil.iter_modules(__path__, f"{__name__}."):
+for _, name, _ in pkgutil.iter_modules(__path__, f"{__name__}."):
     importlib.import_module(name)

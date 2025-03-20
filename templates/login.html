@@ -68,22 +68,22 @@
                 <h1>SpaceBridge</h1>
                 <p>Sign in to your account</p>
             </div>
-            
+
             <div id="errorAlert" class="alert alert-danger d-none" role="alert">
                 Incorrect username or password
             </div>
-            
+
             <form id="loginForm">
                 <div class="form-group">
                     <label for="username" class="form-label">Username</label>
                     <input type="text" class="form-control" id="username" name="username" placeholder="Enter your username" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="password" class="form-label">Password</label>
                     <input type="password" class="form-control" id="password" name="password" placeholder="Enter your password" required>
                 </div>
-                
+
                 <div class="form-group d-flex justify-content-between align-items-center">
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="remember">
@@ -91,10 +91,10 @@
                     </div>
                     <a href="/forgot-password" class="small">Forgot password?</a>
                 </div>
-                
+
                 <button type="submit" class="btn btn-primary">Sign In</button>
             </form>
-            
+
             <div class="login-footer">
                 <p>Don't have an account? <a href="/register">Register</a></p>
             </div>
@@ -105,10 +105,10 @@
         // Handle login form submission
         document.getElementById('loginForm').addEventListener('submit', async function(event) {
             event.preventDefault();
-            
+
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
-            
+
             try {
                 const response = await fetch('/api/v1/auth/token/json', {
                     method: 'POST',
@@ -120,15 +120,15 @@
                         password: password
                     })
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
-                    
+
                     // Save tokens to localStorage
                     localStorage.setItem('accessToken', data.access_token);
                     localStorage.setItem('refreshToken', data.refresh_token);
                     localStorage.setItem('tokenExpires', Date.now() + (data.expires_in * 1000));
-                    
+
                     // Redirect to dashboard
                     window.location.href = '/dashboard';
                 } else {

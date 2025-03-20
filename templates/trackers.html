@@ -225,7 +225,7 @@
                             <input type="text" class="form-control" id="trackerName" required>
                             <div class="form-text">A friendly name to identify this tracker.</div>
                         </div>
-                        
+
                         <div class="mb-3">
                             <label for="trackerType" class="form-label">Tracker Type</label>
                             <select class="form-select" id="trackerType" required>
@@ -235,7 +235,7 @@
                                 <option value="jira">Jira</option>
                             </select>
                         </div>
-                        
+
                         <div class="mb-3">
                             <label for="trackerUrl" class="form-label">Tracker URL</label>
                             <input type="url" class="form-control" id="trackerUrl" required>
@@ -243,7 +243,7 @@
                                 The base URL of your tracker instance.
                             </div>
                         </div>
-                        
+
                         <div class="mb-3">
                             <label for="trackerToken" class="form-label">Access Token</label>
                             <input type="password" class="form-control" id="trackerToken" required>
@@ -252,7 +252,7 @@
                                 <a href="#" target="_blank" id="tokenHelpLink">How to generate a token?</a>
                             </div>
                         </div>
-                        
+
                         <div id="jiraConfigSection" class="d-none">
                             <div class="mb-3">
                                 <label for="jiraUsername" class="form-label">Jira Username</label>
@@ -310,7 +310,7 @@
                 window.location.href = '/login';
                 return;
             }
-            
+
             fetchUserProfile();
         }
 
@@ -321,19 +321,19 @@
                 e.preventDefault();
                 logout();
             });
-            
+
             // Add tracker button
             document.getElementById('addTrackerBtn').addEventListener('click', function() {
                 addTracker();
             });
-            
+
             // Confirm delete tracker button
             document.getElementById('confirmDeleteTrackerBtn').addEventListener('click', function() {
                 if (activeTrackerId) {
                     deleteTracker(activeTrackerId);
                 }
             });
-            
+
             // Tracker type dropdown
             document.getElementById('trackerType').addEventListener('change', function() {
                 if (this.value === 'jira') {
@@ -343,17 +343,17 @@
                     document.getElementById('jiraConfigSection').classList.add('d-none');
                     document.getElementById('jiraUsername').removeAttribute('required');
                 }
-                
+
                 // Update help text and links based on tracker type
                 updateHelperText(this.value);
             });
         }
-        
+
         // Update help text based on tracker type
         function updateHelperText(trackerType) {
             const urlHelpText = document.getElementById('urlHelp');
             const tokenHelpLink = document.getElementById('tokenHelpLink');
-            
+
             switch(trackerType) {
                 case 'github':
                     urlHelpText.textContent = 'For GitHub, use: https://api.github.com';
@@ -392,10 +392,10 @@
             })
             .then(data => {
                 currentUser = data;
-                
+
                 // Update UI with user info
                 document.getElementById('username').textContent = data.username;
-                
+
                 // Load trackers
                 fetchTrackers();
             })
@@ -404,7 +404,7 @@
                 logout();
             });
         }
-        
+
         // Refresh token
         function refreshToken() {
             const refreshToken = localStorage.getItem('refreshToken');
@@ -412,7 +412,7 @@
                 logout();
                 return Promise.reject('No refresh token available');
             }
-            
+
             return fetch('/api/v1/auth/refresh', {
                 method: 'POST',
                 headers: {
@@ -439,7 +439,7 @@
                 return Promise.reject(error);
             });
         }
-        
+
         // Logout
         function logout() {
             localStorage.removeItem('accessToken');
@@ -472,26 +472,26 @@
                 console.error('Error fetching trackers:', error);
             });
         }
-        
+
         // Render trackers
         function renderTrackers() {
             const trackersContainer = document.getElementById('trackersContainer');
             const noTrackersMessage = document.getElementById('noTrackersMessage');
-            
+
             if (trackers.length === 0) {
                 noTrackersMessage.style.display = 'block';
                 trackersContainer.innerHTML = '';
                 return;
             }
-            
+
             noTrackersMessage.style.display = 'none';
-            
+
             let trackersHTML = '';
             trackers.forEach(tracker => {
                 let iconClass = '';
                 let iconName = '';
                 let badgeClass = '';
-                
+
                 switch(tracker.tracker_type) {
                     case 'github':
                         iconClass = 'github-color';
@@ -509,7 +509,7 @@
                         badgeClass = 'bg-primary';
                         break;
                 }
-                
+
                 trackersHTML += `
                     <div class="col-md-6 col-lg-4">
                         <div class="tracker-card">
@@ -545,7 +545,7 @@
                     </div>
                 `;
             });
-            
+
             // Add the "Add Tracker" card
             trackersHTML += `
                 <div class="col-md-6 col-lg-4">
@@ -558,9 +558,9 @@
                     </div>
                 </div>
             `;
-            
+
             trackersContainer.innerHTML = trackersHTML;
-            
+
             // Add event listeners
             document.querySelectorAll('.delete-tracker-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
@@ -571,20 +571,20 @@
                     deleteModal.show();
                 });
             });
-            
+
             document.querySelectorAll('.view-tracker-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
                     const trackerId = this.getAttribute('data-tracker-id');
                     fetchTrackerDetails(trackerId);
                 });
             });
-            
+
             // Fetch stats for each tracker
             trackers.forEach(tracker => {
                 fetchTrackerStats(tracker.id);
             });
         }
-        
+
         // Fetch tracker details
         function fetchTrackerDetails(trackerId) {
             fetch(`/api/v1/trackers/${trackerId}`, {
@@ -610,7 +610,7 @@
                 console.error('Error fetching tracker details:', error);
             });
         }
-        
+
         // Fetch tracker stats
         function fetchTrackerStats(trackerId) {
             // In a real app, we would fetch project and issue counts
@@ -618,14 +618,14 @@
             document.getElementById(`projectCount-${trackerId}`).textContent = Math.floor(Math.random() * 10) + 1;
             document.getElementById(`issueCount-${trackerId}`).textContent = Math.floor(Math.random() * 100) + 10;
         }
-        
+
         // Add a new tracker
         function addTracker() {
             const name = document.getElementById('trackerName').value;
             const type = document.getElementById('trackerType').value;
             const url = document.getElementById('trackerUrl').value;
             const token = document.getElementById('trackerToken').value;
-            
+
             // For Jira, include username in config
             let config = null;
             if (type === 'jira') {
@@ -636,7 +636,7 @@
                 }
                 config = { username };
             }
-            
+
             fetch('/api/v1/trackers', {
                 method: 'POST',
                 headers: {
@@ -666,10 +666,10 @@
                 // Close modal
                 const modal = bootstrap.Modal.getInstance(document.getElementById('addTrackerModal'));
                 modal.hide();
-                
+
                 // Reset form
                 document.getElementById('addTrackerForm').reset();
-                
+
                 // Refresh trackers list
                 fetchTrackers();
             })
@@ -678,7 +678,7 @@
                 alert('Error: ' + error.message);
             });
         }
-        
+
         // Delete a tracker
         function deleteTracker(trackerId) {
             fetch(`/api/v1/trackers/${trackerId}`, {
@@ -692,10 +692,10 @@
                     // Close modal
                     const modal = bootstrap.Modal.getInstance(document.getElementById('deleteTrackerModal'));
                     modal.hide();
-                    
+
                     // Refresh trackers list
                     fetchTrackers();
-                    
+
                     // Reset active tracker ID
                     activeTrackerId = null;
                 } else if (response.status === 401) {

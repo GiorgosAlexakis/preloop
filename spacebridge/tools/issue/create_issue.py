@@ -3,17 +3,16 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from mcp.server.fastmcp import Context
-from spacemodels.models.organization import Organization
-from spacemodels.models.project import Project
-from spacemodels.crud.organization import CRUDOrganization
-from spacemodels.crud.project import CRUDProject
-
-from spacemodels.db.session import get_db_session as get_db
+from spacebridge.tools.base import Context
 from spacebridge.trackers.base import IssueCreate
 from spacebridge.trackers.factory import TrackerFactory
+from spacemodels.crud.organization import CRUDOrganization
+from spacemodels.crud.project import CRUDProject
+from spacemodels.db.session import get_db_session as get_db
+from spacemodels.models.organization import Organization
+from spacemodels.models.project import Project
 
 logger = logging.getLogger(__name__)
 

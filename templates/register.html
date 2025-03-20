@@ -73,32 +73,32 @@
                 <h1>SpaceBridge</h1>
                 <p>Create your account</p>
             </div>
-            
+
             <div id="errorAlert" class="alert alert-danger d-none" role="alert">
                 Registration failed. Please check your information.
             </div>
-            
+
             <div id="successAlert" class="alert alert-success d-none" role="alert">
                 Registration successful! Please check your email to verify your account.
             </div>
-            
+
             <form id="registerForm">
                 <div class="form-group">
                     <label for="username" class="form-label">Username</label>
                     <input type="text" class="form-control" id="username" name="username" placeholder="Choose a username" required minlength="3" maxlength="50">
                     <div class="form-text">Username must be alphanumeric and between 3-50 characters.</div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="email" class="form-label">Email</label>
                     <input type="email" class="form-control" id="email" name="email" placeholder="Enter your email" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="fullName" class="form-label">Full Name (Optional)</label>
                     <input type="text" class="form-control" id="fullName" name="fullName" placeholder="Enter your full name">
                 </div>
-                
+
                 <div class="form-group">
                     <label for="password" class="form-label">Password</label>
                     <input type="password" class="form-control" id="password" name="password" placeholder="Create a password" required minlength="8">
@@ -106,12 +106,12 @@
                         Password must be at least 8 characters long.
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="confirmPassword" class="form-label">Confirm Password</label>
                     <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" placeholder="Confirm your password" required>
                 </div>
-                
+
                 <div class="form-group">
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="agree" required>
@@ -120,10 +120,10 @@
                         </label>
                     </div>
                 </div>
-                
+
                 <button type="submit" class="btn btn-primary">Create Account</button>
             </form>
-            
+
             <div class="register-footer">
                 <p>Already have an account? <a href="/login">Sign In</a></p>
             </div>
@@ -135,23 +135,23 @@
         document.getElementById('confirmPassword').addEventListener('input', function() {
             const password = document.getElementById('password').value;
             const confirmPassword = this.value;
-            
+
             if (password !== confirmPassword) {
                 this.setCustomValidity('Passwords do not match');
             } else {
                 this.setCustomValidity('');
             }
         });
-        
+
         // Handle registration form submission
         document.getElementById('registerForm').addEventListener('submit', async function(event) {
             event.preventDefault();
-            
+
             const username = document.getElementById('username').value;
             const email = document.getElementById('email').value;
             const fullName = document.getElementById('fullName').value;
             const password = document.getElementById('password').value;
-            
+
             try {
                 const response = await fetch('/api/v1/auth/register', {
                     method: 'POST',
@@ -165,15 +165,15 @@
                         password: password
                     })
                 });
-                
+
                 if (response.ok) {
                     // Show success message
                     document.getElementById('successAlert').classList.remove('d-none');
                     document.getElementById('errorAlert').classList.add('d-none');
-                    
+
                     // Reset form
                     document.getElementById('registerForm').reset();
-                    
+
                     // Redirect to login after 3 seconds
                     setTimeout(() => {
                         window.location.href = '/login';
