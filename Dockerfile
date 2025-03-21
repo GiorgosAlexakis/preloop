@@ -19,6 +19,8 @@ RUN pip install --no-cache-dir build setuptools wheel
 # Copy application code
 COPY . .
 
+ARG GITLAB_TOKEN=
+
 RUN git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/spacesync.git && cd spacesync && git checkout service && cd - && \
     git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/SpaceModels.git
 
