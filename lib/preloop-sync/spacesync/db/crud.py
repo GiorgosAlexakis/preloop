@@ -5,12 +5,12 @@ Re-export of CRUD operations from spacemodels.
 # Re-export CRUD operations from spacemodels
 from spacemodels.crud import (
     crud_account,
-    crud_tracker,
+    crud_embedding_model,
+    crud_issue,
+    crud_issue_embedding,
     crud_organization,
     crud_project,
-    crud_issue,
-    crud_embedding_model,
-    crud_issue_embedding,
+    crud_tracker,
 )
 
 __all__ = [
@@ -18,7 +18,7 @@ __all__ = [
     "crud_tracker",
     "crud_organization",
     "crud_project",
-    "crud_issue", 
+    "crud_issue",
     "crud_embedding_model",
     "crud_issue_embedding",
 ]

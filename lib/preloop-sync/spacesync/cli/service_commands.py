@@ -2,12 +2,14 @@
 CLI commands for the tracker update service.
 """
 
-import click
 import time
+
+import click
+
+from spacemodels.db.session import get_db_session
 
 from ..config import logger
 from ..services.manager import TrackerUpdateServiceManager
-from spacemodels.db.session import get_db_session
 
 
 @click.group(help="Manage tracker update services")
@@ -22,15 +24,15 @@ def service_start(foreground):
     """Start the tracker update service."""
     # Create database session
     db = next(get_db_session())
-    
+
     try:
         # Create and start service manager
         manager = TrackerUpdateServiceManager(db)
         manager.start()
-        
+
         if foreground:
             logger.info("Tracker update service started in foreground")
-            
+
             # Keep main thread alive
             while manager.running:
                 time.sleep(1)
@@ -39,11 +41,11 @@ def service_start(foreground):
             # In a real daemon, we would detach here, but that requires more code
             # For simplicity, we'll just exit
             return
-    
+
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received, shutting down...")
         manager.stop()
-    
+
     finally:
         # Clean up
         db.close()

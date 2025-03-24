@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -25,6 +25,7 @@ setup(
         "sqlalchemy>=1.4.0",
         "psycopg2-binary>=2.9.0",
         # Assuming spacemodels is installed separately
+        "python-gitlab",
     ],
     entry_points={
         "console_scripts": [
