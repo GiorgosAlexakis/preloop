@@ -9,12 +9,12 @@ from sqlalchemy.dialects.postgresql import dialect as postgresql_dialect
 from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
 
 from spacemodels.db.vector_types import (
+    PGVECTOR_AVAILABLE,
     VectorType,
+    check_pgvector_extension,
     cosine_distance,
     euclidean_distance,
-    check_pgvector_extension,
     install_pgvector_extension,
-    PGVECTOR_AVAILABLE,
 )
 
 

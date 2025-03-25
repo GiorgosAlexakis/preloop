@@ -6,8 +6,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import DateTime, JSON
-
+from sqlalchemy.types import JSON, DateTime
 
 # Check if our vector type module is available
 try:
@@ -17,10 +16,10 @@ try:
 except ImportError:
     VECTOR_TYPE_AVAILABLE = False
 
-from .base import Base
-
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING
+
+from .base import Base
 
 if TYPE_CHECKING:
     from .project import Project

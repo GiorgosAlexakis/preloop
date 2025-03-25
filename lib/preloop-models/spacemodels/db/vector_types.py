@@ -5,8 +5,9 @@ import uuid
 from typing import Any, List, Optional, cast
 
 import numpy as np
-from sqlalchemy import TypeDecorator, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
+from sqlalchemy import String, TypeDecorator
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.engine.interfaces import Dialect
 
 try:

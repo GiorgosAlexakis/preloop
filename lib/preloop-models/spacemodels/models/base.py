@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict
 
-from sqlalchemy import DateTime, func, String
+from sqlalchemy import DateTime, String, func
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 

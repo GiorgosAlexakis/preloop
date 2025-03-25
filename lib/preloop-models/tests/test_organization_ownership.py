@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import Session
 
-from spacemodels.models import Account, Tracker, Organization, AccountOrganization
+from spacemodels.models import Account, AccountOrganization, Organization, Tracker
 
 
 def test_organization_ownership(db_session: Session):

@@ -1,13 +1,13 @@
 """Tests for the database session module."""
 
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from spacemodels.db.session import get_engine, get_session_factory, get_db_session
+from spacemodels.db.session import get_db_session, get_engine, get_session_factory
 
 
 @pytest.fixture

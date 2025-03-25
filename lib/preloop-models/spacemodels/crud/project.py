@@ -36,6 +36,12 @@ class CRUDProject(CRUDBase[Project]):
             .all()
         )
 
+    def count_for_organization(self, db: Session, *, organization_id: str) -> int:
+        """Count total number of projects for an organization."""
+        return (
+            db.query(Project).filter(Project.organization_id == organization_id).count()
+        )
+
     def get_active(
         self, db: Session, *, skip: int = 0, limit: int = 100
     ) -> List[Project]:

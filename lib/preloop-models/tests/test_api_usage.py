@@ -1,6 +1,5 @@
 """Tests for API usage model and CRUD operations."""
 
-
 from spacemodels.crud import crud_api_usage
 
 

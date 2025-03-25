@@ -6,10 +6,9 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from .session import get_engine
-
 # Import all models to ensure they're registered with Base.metadata
 from ..models.base import Base
+from .session import get_engine
 
 # Import models individually to control the order
 

@@ -14,6 +14,7 @@ from .base import CRUDBase
 # Import optional pgvector functionality
 try:
     from pgvector.sqlalchemy import Vector
+
     from ..db.vector_types import cosine_distance, euclidean_distance
 
     PGVECTOR_AVAILABLE = True

@@ -1,11 +1,11 @@
 """Tests for database setup utilities."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
-from spacemodels.db.setup import setup_database, reset_database
+from spacemodels.db.setup import reset_database, setup_database
 from spacemodels.models.base import Base
 
 
@@ -59,9 +59,10 @@ def test_setup_database_error(mock_engine, mock_base_metadata):
 
 def test_reset_database_success(mock_engine, mock_base_metadata):
     """Test successful database reset."""
-    with patch("spacemodels.db.setup.get_engine", return_value=mock_engine), patch(
-        "spacemodels.db.setup.setup_database"
-    ) as mock_setup:
+    with (
+        patch("spacemodels.db.setup.get_engine", return_value=mock_engine),
+        patch("spacemodels.db.setup.setup_database") as mock_setup,
+    ):
         reset_database()
 
         # Verify that drop_all was called

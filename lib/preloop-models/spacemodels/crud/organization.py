@@ -19,6 +19,14 @@ class CRUDOrganization(CRUDBase[Organization]):
             db.query(Organization).filter(Organization.identifier == identifier).first()
         )
 
+    def count(self, db: Session, **filters) -> int:
+        """Count total number of organizations, with optional filtering."""
+        query = db.query(Organization)
+        for key, value in filters.items():
+            if hasattr(Organization, key):
+                query = query.filter(getattr(Organization, key) == value)
+        return query.count()
+
     def get_for_tracker(
         self, db: Session, *, tracker_id: str, skip: int = 0, limit: int = 100
     ) -> List[Organization]:

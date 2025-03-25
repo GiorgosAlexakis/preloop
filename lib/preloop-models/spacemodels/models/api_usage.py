@@ -2,18 +2,16 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+
+# Use TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import String, DateTime, Float, Integer
+from sqlalchemy.types import DateTime, Float, Integer, String
 
 from ..db.vector_types import SQLiteUUID
-
 from .base import Base
-
-# Use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .account import Account

@@ -1,6 +1,5 @@
 """Tests for Account model and CRUD operations."""
 
-
 from spacemodels.crud import crud_account
 
 

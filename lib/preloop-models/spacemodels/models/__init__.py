@@ -1,13 +1,13 @@
 """ORM model definitions."""
 
-from .base import Base
 from .account import Account, AccountOrganization
-from .tracker import Tracker, TrackerType
-from .organization import Organization
-from .project import Project
-from .issue import Issue, EmbeddingModel, IssueEmbedding
 from .api_key import ApiKey
 from .api_usage import ApiUsage
+from .base import Base
+from .issue import EmbeddingModel, Issue, IssueEmbedding
+from .organization import Organization
+from .project import Project
+from .tracker import Tracker, TrackerType
 
 __all__ = [
     "Base",

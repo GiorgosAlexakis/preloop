@@ -1,23 +1,22 @@
 """Account and AccountOrganization models."""
 
 from datetime import datetime
-from typing import Dict, List, Optional
 
-from sqlalchemy import ForeignKey, String, DateTime, func
+# Use TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING, Dict, List, Optional
+
+from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from .base import Base
 
-# Use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
-    from .tracker import Tracker
-    from .organization import Organization
     from .api_key import ApiKey
     from .api_usage import ApiUsage
+    from .organization import Organization
+    from .tracker import Tracker
 
 
 class Account(Base):

@@ -1,6 +1,5 @@
 """Tests for embedding functionality."""
 
-
 from spacemodels.crud import crud_embedding_model, crud_issue_embedding
 from spacemodels.models.issue import IssueEmbedding
 

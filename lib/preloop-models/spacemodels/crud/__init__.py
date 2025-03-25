@@ -1,27 +1,26 @@
 """CRUD operation implementations."""
 
-from .base import CRUDBase
-from .account import CRUDAccount
-from .tracker import CRUDTracker
-from .organization import CRUDOrganization
-from .project import CRUDProject
-from .issue import CRUDIssue
-from .embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
-from .api_key import CRUDApiKey
-from .api_usage import CRUDApiUsage
-
 # Create CRUD instances for each model
 from ..models import (
     Account,
-    Tracker,
-    Organization,
-    Project,
-    Issue,
-    EmbeddingModel,
-    IssueEmbedding,
     ApiKey,
     ApiUsage,
+    EmbeddingModel,
+    Issue,
+    IssueEmbedding,
+    Organization,
+    Project,
+    Tracker,
 )
+from .account import CRUDAccount
+from .api_key import CRUDApiKey
+from .api_usage import CRUDApiUsage
+from .base import CRUDBase
+from .embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
+from .issue import CRUDIssue
+from .organization import CRUDOrganization
+from .project import CRUDProject
+from .tracker import CRUDTracker
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)

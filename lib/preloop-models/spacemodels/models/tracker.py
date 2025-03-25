@@ -2,7 +2,9 @@
 
 import enum
 from datetime import datetime
-from typing import Dict, List, Optional
+
+# Use TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
@@ -10,13 +12,10 @@ from sqlalchemy.types import JSON, DateTime
 
 from .base import Base
 
-# Use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
     from .account import Account
-    from .organization import Organization
     from .issue import Issue
+    from .organization import Organization
 
 
 class TrackerType(enum.Enum):

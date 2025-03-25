@@ -1,6 +1,7 @@
 """Project model."""
 
-from typing import Dict, List, Optional
+# Use TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -8,12 +9,9 @@ from sqlalchemy.types import JSON
 
 from .base import Base
 
-# Use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
-    from .organization import Organization
     from .issue import Issue
+    from .organization import Organization
 
 
 class Project(Base):

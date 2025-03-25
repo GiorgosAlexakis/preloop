@@ -46,8 +46,9 @@ def db_session(db_engine):
 @pytest.fixture
 def create_account(db_session):
     """Create a test account."""
-    from spacemodels.crud import crud_account
     import uuid
+
+    from spacemodels.crud import crud_account
 
     def _create_account(username=None, email=None, **kwargs):
         # Generate unique username and email if not provided
@@ -95,8 +96,9 @@ def create_tracker(db_session, create_account):
 @pytest.fixture
 def create_organization(db_session, create_tracker):
     """Create a test organization."""
-    from spacemodels.crud import crud_organization
     import uuid
+
+    from spacemodels.crud import crud_organization
 
     def _create_organization(tracker=None, name=None, identifier=None, **kwargs):
         # Generate unique values if not provided
