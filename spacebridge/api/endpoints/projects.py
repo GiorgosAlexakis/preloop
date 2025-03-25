@@ -87,15 +87,13 @@ def list_projects(
     return projects
 
 
-@router.get(
-    "/organizations/{organization_id}/projects", response_model=List[ProjectResponse]
-)
+@router.get("/organizations/{organization_id}/projects")
 def list_organization_projects(
     organization_id: str,
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-) -> List[Project]:
+):
     """List all projects for an organization."""
     # Check if organization exists
     organization = crud_organization.get(db, id=organization_id)
@@ -107,7 +105,33 @@ def list_organization_projects(
         db, organization_id=organization_id, skip=offset, limit=limit
     )
 
-    return projects
+    # Count total projects for this organization
+    total = crud_project.count_for_organization(db, organization_id=organization_id)
+
+    # Convert SQLAlchemy model objects to dictionaries
+    project_dicts = []
+    for project in projects:
+        project_dict = {
+            "id": project.id,
+            "name": project.name,
+            "identifier": project.identifier,
+            "description": project.description,
+            "is_active": project.is_active,
+            "organization_id": project.organization_id,
+            "created_at": project.created_at.isoformat()
+            if project.created_at
+            else None,
+            "updated_at": project.updated_at.isoformat()
+            if project.updated_at
+            else None,
+            "settings": project.settings or {},
+            "tracker_settings": project.tracker_settings or {},
+            "meta_data": project.meta_data or {},
+        }
+        project_dicts.append(project_dict)
+
+    # Format the response to match the expected structure
+    return {"items": project_dicts, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)

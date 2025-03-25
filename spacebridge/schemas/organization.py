@@ -32,10 +32,15 @@ class OrganizationResponse(OrganizationBase):
     """Response model for organization data."""
 
     id: str = Field(..., description="Organization ID")
-    created_at: str = Field(..., description="Creation timestamp")
-    updated_at: str = Field(..., description="Last update timestamp")
+    tracker_id: str = Field(..., description="Tracker ID")
+    is_active: bool = Field(True, description="Whether the organization is active")
+    created_at: Optional[str] = Field(None, description="Creation timestamp")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp")
+    meta_data: Dict = Field(default_factory=dict, description="Additional metadata")
 
     class Config:
         """Pydantic model configuration."""
 
         from_attributes = True  # Modern way of saying orm_mode = True
+        # Allow arbitrary types for field validation
+        arbitrary_types_allowed = True

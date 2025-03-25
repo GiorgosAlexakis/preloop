@@ -35,7 +35,7 @@ pre-commit:
   image: python:3.11-slim
   before_script:
     - apt-get update && apt-get install -y git
-    - pip install pre-commit
+    - pip install -U pip pre-commit ruff
   script:
     - pre-commit install
     - pre-commit run --all-files
@@ -52,9 +52,14 @@ pytest:
     POSTGRES_PASSWORD: test_password
     DATABASE_URL: postgresql://test_user:test_password@postgres:5432/test_db
   before_script:
-    - pip install --upgrade pip
+    - apt-get update && apt-get install -y git
+    - pip install -U pip
     - pip install pytest pytest-cov
     - pip install -e ".[dev]"
+    - git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/spacesync.git && cd spacesync && git checkout integrate-bridge && cd -
+    - git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/SpaceModels.git
+    - pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync && pip install --no-cache-dir -e .
+
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - pytest -v

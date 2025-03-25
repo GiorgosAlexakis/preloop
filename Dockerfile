@@ -21,7 +21,7 @@ COPY . .
 
 ARG GITLAB_TOKEN=
 
-RUN git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/spacesync.git && cd spacesync && git checkout service && cd - && \
+RUN git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/spacesync.git && cd spacesync && git checkout integrate-bridge && cd - && \
     git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/SpaceModels.git
 
 # Install the application

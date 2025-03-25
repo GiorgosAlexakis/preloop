@@ -1,7 +1,6 @@
 """Endpoints for managing organizations."""
 
 import uuid
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -64,17 +63,36 @@ def create_organization(
     return db_organization
 
 
-@router.get("/organizations", response_model=List[OrganizationResponse])
+@router.get("/organizations")
 def list_organizations(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-) -> List[Organization]:
+):
     """List all organizations."""
     # Use CRUD operation without filtering for active organizations
-    # Removed is_active=True filter because the column doesn't exist in the database
     organizations = crud_organization.get_multi(db, skip=offset, limit=limit)
-    return organizations
+    total = crud_organization.count(db)
+
+    # Convert SQLAlchemy model objects to dictionaries
+    org_dicts = []
+    for org in organizations:
+        org_dict = {
+            "id": org.id,
+            "name": org.name,
+            "identifier": org.identifier,
+            "description": org.description,
+            "is_active": org.is_active,
+            "tracker_id": org.tracker_id,
+            "created_at": org.created_at.isoformat() if org.created_at else None,
+            "updated_at": org.updated_at.isoformat() if org.updated_at else None,
+            "settings": org.settings or {},
+            "meta_data": org.meta_data or {},
+        }
+        org_dicts.append(org_dict)
+
+    # Format the response to match the expected structure
+    return {"items": org_dicts, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/organizations/{organization_id}", response_model=OrganizationResponse)

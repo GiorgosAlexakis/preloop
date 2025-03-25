@@ -3,6 +3,7 @@
 from typing import Dict
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from spacemodels.db.session import get_db_session as get_db
@@ -14,6 +15,6 @@ router = APIRouter()
 def health_check(db: Session = Depends(get_db)) -> Dict[str, str]:
     """Health check endpoint."""
     # Verify database connection
-    db.execute("SELECT 1")
+    db.execute(text("SELECT 1"))
 
     return {"status": "healthy"}
