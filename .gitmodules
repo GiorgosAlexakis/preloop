@@ -1,0 +1,6 @@
+[submodule "spacesync"]
+	path = spacesync
+	url = ../../spacecode/spacesync.git
+[submodule "SpaceModels"]
+	path = SpaceModels
+	url = ../../spacecode/SpaceModels.git
