@@ -28,6 +28,14 @@ class Account(Base):
     email_verified: Mapped[bool] = mapped_column(default=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+    # Timestamps
+    created: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
     # Authentication
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)

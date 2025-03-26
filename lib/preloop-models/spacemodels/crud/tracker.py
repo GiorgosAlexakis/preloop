@@ -1,7 +1,7 @@
 """CRUD operations for Tracker model."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,26 @@ from .base import CRUDBase
 
 class CRUDTracker(CRUDBase[Tracker]):
     """CRUD operations for Tracker model."""
+
+    def create(self, db: Session, *, obj_in: Dict[str, Any]) -> Tracker:
+        """Create new tracker with initialized timestamp fields."""
+        obj_data = dict(obj_in)
+
+        # Initialize timestamp fields
+        current_time = datetime.utcnow()
+        obj_data.setdefault("created", current_time)
+        obj_data.setdefault("last_updated", current_time)
+
+        return super().create(db=db, obj_in=obj_data)
+
+    def update(
+        self, db: Session, *, db_obj: Tracker, obj_in: Dict[str, Any]
+    ) -> Tracker:
+        """Update tracker and its last_updated timestamp."""
+        # Update last_updated field
+        obj_in["last_updated"] = datetime.utcnow()
+
+        return super().update(db=db, db_obj=db_obj, obj_in=obj_in)
 
     def get_for_account(
         self, db: Session, *, account_id: str, skip: int = 0, limit: int = 100
@@ -60,7 +80,9 @@ class CRUDTracker(CRUDBase[Tracker]):
         tracker = self.get(db, id=id)
         if tracker:
             tracker.is_valid = is_valid
-            tracker.last_validation = datetime.utcnow()
+            current_time = datetime.utcnow()
+            tracker.last_validation = current_time
+            tracker.last_updated = current_time
             tracker.validation_message = message
             db.add(tracker)
             db.commit()
@@ -72,6 +94,7 @@ class CRUDTracker(CRUDBase[Tracker]):
         tracker = self.get(db, id=id)
         if tracker:
             tracker.is_active = False
+            tracker.last_updated = datetime.utcnow()
             db.add(tracker)
             db.commit()
             db.refresh(tracker)

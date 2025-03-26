@@ -1,6 +1,7 @@
 """CRUD operations for Account model."""
 
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,26 @@ from .base import CRUDBase
 
 class CRUDAccount(CRUDBase[Account]):
     """CRUD operations for Account model."""
+
+    def create(self, db: Session, *, obj_in: Dict[str, Any]) -> Account:
+        """Create new account with initialized timestamp fields."""
+        obj_data = dict(obj_in)
+
+        # Initialize timestamp fields
+        current_time = datetime.utcnow()
+        obj_data.setdefault("created", current_time)
+        obj_data.setdefault("last_updated", current_time)
+
+        return super().create(db=db, obj_in=obj_data)
+
+    def update(
+        self, db: Session, *, db_obj: Account, obj_in: Dict[str, Any]
+    ) -> Account:
+        """Update account and its last_updated timestamp."""
+        # Update last_updated field
+        obj_in["last_updated"] = datetime.utcnow()
+
+        return super().update(db=db, db_obj=db_obj, obj_in=obj_in)
 
     def get_by_email(self, db: Session, *, email: str) -> Optional[Account]:
         """Get account by email."""

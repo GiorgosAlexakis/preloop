@@ -6,7 +6,7 @@ from datetime import datetime
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import JSON, DateTime
 
@@ -104,6 +104,14 @@ class Tracker(Base):
     last_validation: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     validation_message: Mapped[Optional[str]] = mapped_column(
         String(1000), nullable=True
+    )
+
+    # Timestamps
+    created: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     @validates("tracker_type")
