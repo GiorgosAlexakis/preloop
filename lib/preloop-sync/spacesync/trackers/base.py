@@ -6,8 +6,6 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from spacemodels.models import Issue, Organization, Project
-
 
 class BaseTracker(ABC):
     """Base class for all tracker implementations."""

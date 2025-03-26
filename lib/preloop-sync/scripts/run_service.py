@@ -9,7 +9,6 @@ in the database.
 
 import argparse
 import logging
-import signal
 import sys
 import time
 from pathlib import Path
@@ -18,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from spacemodels.db.session import get_db_session
-from spacesync.config import SERVICE_POLL_INTERVAL, logger
+from spacesync.config import logger
 from spacesync.services.manager import TrackerUpdateServiceManager
 
 

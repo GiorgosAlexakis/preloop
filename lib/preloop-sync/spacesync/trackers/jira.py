@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ..config import logger
 from ..exceptions import (
     TrackerAuthenticationError,
     TrackerConnectionError,

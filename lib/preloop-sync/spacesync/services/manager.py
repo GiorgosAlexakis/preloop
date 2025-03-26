@@ -78,7 +78,7 @@ class TrackerUpdateServiceManager:
         logger.info("Stopping tracker update service manager")
 
         # Stop all services
-        for tracker_id, service in list(self.services.items()):
+        for tracker_id, _ in list(self.services.items()):
             self._stop_service(tracker_id)
 
         # Wait for reload thread to stop

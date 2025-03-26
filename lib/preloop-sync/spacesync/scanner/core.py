@@ -19,8 +19,6 @@ from spacemodels.crud import (
 from spacemodels.models import Issue, Organization, Project, Tracker
 
 from ..config import logger
-from ..exceptions import TrackerError
-from ..trackers import BaseTracker
 
 
 class TrackerClient:
@@ -288,7 +286,7 @@ def scan_tracker(
     }
 
     # Debug information about the tracker
-    print(f"\nTracker Debug Info:")
+    print("\nTracker Debug Info:")
     print(f"  ID: {tracker.id}")
     print(f"  Type: {tracker.tracker_type}")
     print(f"  URL: {tracker.url if hasattr(tracker, 'url') else 'None'}")

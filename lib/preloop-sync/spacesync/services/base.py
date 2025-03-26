@@ -6,11 +6,9 @@ import abc
 import datetime
 import threading
 import time
-from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud import crud_tracker
 from spacemodels.models import Tracker
 
 from ..config import SERVICE_WEBHOOK_ENABLED, logger

@@ -61,7 +61,7 @@ for repo in repos:
         # Get all issues (including pull requests) updated after the timestamp
         # Note: In GitHub's API, issues include pull requests
         issues = repo.get_issues(state='all', since=datetime.datetime.fromisoformat(updated_after.replace('Z', '+00:00')))
-        
+
         for issue in issues:
             # Check if the issue was updated after our timestamp
             # (since parameter filters by created_at, not updated_at)
@@ -153,4 +153,3 @@ for issue in issues:
 # all_issues = jira.search_issues(jql_query, maxResults=False)  # Set maxResults=False to get all results
 # print(f"Total issues found with automatic pagination: {len(all_issues)}")
 """
-

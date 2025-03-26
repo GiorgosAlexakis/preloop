@@ -2,14 +2,9 @@
 GitLab-specific tracker update service.
 """
 
-import datetime
-import hashlib
-import hmac
-import json
 import secrets
 import threading
-import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import gitlab
 from flask import Flask, jsonify, request
@@ -20,12 +15,10 @@ from spacemodels.crud import (
     crud_issue_embedding,
     crud_organization,
     crud_project,
-    crud_tracker,
 )
-from spacemodels.models import Issue, Organization, Project, Tracker
+from spacemodels.models import Organization, Project, Tracker
 
 from ..config import SERVICE_HOST, SERVICE_PORT, logger
-from ..scanner.core import TrackerClient
 from .base import WebhookTrackerUpdateService
 
 

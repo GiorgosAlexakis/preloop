@@ -2,23 +2,17 @@
 Generic tracker update services.
 """
 
-import datetime
-import time
-from typing import Any, Dict, List, Optional
-
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import (
-    crud_issue,
-    crud_issue_embedding,
     crud_organization,
     crud_project,
     crud_tracker,
 )
-from spacemodels.models import Issue, Organization, Project, Tracker
+from spacemodels.models import Tracker
 
 from ..config import SERVICE_POLL_INTERVAL, logger
-from ..scanner.core import TrackerClient, scan_issues
+from ..scanner.core import scan_issues
 from .base import PollingTrackerUpdateService
 
 

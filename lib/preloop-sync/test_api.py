@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-import requests
 import json
-import uuid
+
+import requests
 
 API_KEY = "ayNItuvWTUyLf1fgGcSLRPOwr74QTJFKALwg9RgM"
 BASE_URL = "http://localhost:8000/api/v1"  # API v1 path
@@ -20,7 +20,7 @@ response = requests.get(f"{BASE_URL}/health", headers=headers)
 print(f"Status: {response.status_code}")
 try:
     print(response.json())
-except:
+except Exception:
     print(f"Raw response: {response.text[:200]}")
 
 # Test organizations endpoint

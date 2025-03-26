@@ -2,17 +2,12 @@
 CLI commands for SpaceSync.
 """
 
-import sys
-from typing import Optional
-
 import click
 
 from spacemodels.crud import crud_account, crud_tracker
 
 from .. import __version__
-from ..config import logger
 from ..db.session import get_db_session
-from ..utils import safe_exit
 from .scan_commands import scan
 from .service_commands import service
 

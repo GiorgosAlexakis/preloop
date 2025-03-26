@@ -2,7 +2,6 @@
 Utility functions for SpaceSync.
 """
 
-import logging
 import sys
 import time
 from functools import wraps

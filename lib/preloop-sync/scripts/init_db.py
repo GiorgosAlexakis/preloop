@@ -4,14 +4,13 @@ Script to initialize the SpaceSync database tables.
 This creates all the necessary tables if they don't exist.
 """
 
-import os
 import sys
 
 import click
 from dotenv import load_dotenv
 
 from spacemodels.db.session import get_engine
-from spacemodels.models import Account, Base, Issue, Organization, Project, Tracker
+from spacemodels.models import Base
 
 
 @click.command()

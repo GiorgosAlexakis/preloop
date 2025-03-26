@@ -45,7 +45,7 @@ class GitLabTracker(BaseTracker):
         self.url = gitlab_url.rstrip("/")
 
         # Log information for debugging
-        print(f"GitLab Tracker Debug Info:")
+        print("GitLab Tracker Debug Info:")
         print(f"  URL: {self.url}")
         print(
             f"  API Key (first 5 chars): {api_key[:5] if len(api_key) > 5 else '***'}"
@@ -56,9 +56,9 @@ class GitLabTracker(BaseTracker):
             print(f"  Attempting to connect to GitLab at {self.url}")
             self.gl = gitlab.Gitlab(self.url, private_token=api_key)
             # Test connection and authentication
-            print(f"  Testing authentication...")
+            print("  Testing authentication...")
             self.gl.auth()
-            print(f"  Authentication successful!")
+            print("  Authentication successful!")
         except gitlab.exceptions.GitlabAuthenticationError as e:
             print(f"  Authentication Error: {str(e)}")
             raise TrackerAuthenticationError(f"GitLab authentication failed: {str(e)}")

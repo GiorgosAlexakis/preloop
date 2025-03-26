@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-import requests
 import json
+
+import requests
 
 API_KEY = "ayNItuvWTUyLf1fgGcSLRPOwr74QTJFKALwg9RgM"
 BASE_URL = "http://localhost:8000/api/v1"  # API v1 path

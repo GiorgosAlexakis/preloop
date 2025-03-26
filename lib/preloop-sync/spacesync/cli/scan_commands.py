@@ -2,14 +2,11 @@
 Scan commands for SpaceSync CLI.
 """
 
-from typing import Optional
-
 import click
 
 from spacemodels.crud import crud_account, crud_tracker
-
-from ..config import logger
 from spacemodels.db.session import get_db_session
+
 from ..scanner import scan_account, scan_all_accounts
 from ..scanner import scan_tracker as scan_tracker_func
 from ..utils import safe_exit
