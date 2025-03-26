@@ -6,8 +6,7 @@ from typing import Any, List, Optional, cast
 
 import numpy as np
 from sqlalchemy import String, TypeDecorator
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.engine.interfaces import Dialect
 
 try:
@@ -138,7 +137,7 @@ class SQLiteUUID(TypeDecorator):
     def load_dialect_impl(self, dialect: Dialect) -> Any:
         """Load dialect-specific implementation."""
         if dialect.name == "postgresql":
-            return dialect.type_descriptor(PostgresUUID())
+            return dialect.type_descriptor(UUID())
         else:
             return dialect.type_descriptor(String(36))
 

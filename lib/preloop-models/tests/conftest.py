@@ -30,10 +30,8 @@ def db_session(db_engine):
     transaction = connection.begin()
 
     # Create session factory bound to the connection
-    TestingSessionLocal = sessionmaker(
-        autocommit=False, autoflush=False, bind=connection
-    )
-    session = TestingSessionLocal()
+    session_factory = sessionmaker(autocommit=False, autoflush=False, bind=connection)
+    session = session_factory()
 
     yield session
 

@@ -101,7 +101,7 @@ class CRUDAccount(CRUDBase[Account]):
         db.execute(
             text(
                 """
-                DELETE FROM accountorganization 
+                DELETE FROM accountorganization
                 WHERE account_id = :account_id AND organization_id = :organization_id
             """
             ),
@@ -120,7 +120,7 @@ class CRUDAccount(CRUDBase[Account]):
         db.execute(
             text(
                 """
-                UPDATE accountorganization 
+                UPDATE accountorganization
                 SET role = :role, updated_at = CURRENT_TIMESTAMP
                 WHERE account_id = :account_id AND organization_id = :organization_id
             """

@@ -1,5 +1,6 @@
-import pytest
 from datetime import datetime
+
+import pytest
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import crud_account, crud_tracker

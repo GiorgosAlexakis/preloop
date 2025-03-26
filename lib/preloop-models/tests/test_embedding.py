@@ -69,7 +69,7 @@ def test_similarity_search(db_session, create_issue, create_embedding_model):
     ]
 
     # Manually create embeddings
-    for issue, emb in zip([issue1, issue2, issue3], embeddings):
+    for issue, emb in zip([issue1, issue2, issue3], embeddings, strict=False):
         embedding = IssueEmbedding(
             issue_id=issue.id,
             embedding_model_id=model.id,

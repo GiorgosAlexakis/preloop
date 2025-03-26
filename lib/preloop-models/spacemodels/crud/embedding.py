@@ -328,7 +328,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         # Construct the raw SQL query
         query = text(
             f"""
-            SELECT 
+            SELECT
                 i.id,
                 i.title,
                 i.description,
@@ -342,16 +342,16 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 i.meta_data,
                 i.last_updated_external,
                 i.last_synced,
-                i.created_at, 
+                i.created_at,
                 i.updated_at,
                 1 - (e.embedding {distance_op}) as similarity
-            FROM 
+            FROM
                 issue i
-            JOIN 
+            JOIN
                 issueembedding e ON i.id = e.issue_id
-            WHERE 
+            WHERE
                 e.embedding_model_id = :model_id
-            ORDER BY 
+            ORDER BY
                 similarity DESC
             LIMIT :limit
         """
@@ -366,7 +366,9 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         issues_with_scores = []
         for row in result:
             # Convert row to dictionary
-            issue_dict = {col: val for col, val in zip(result.keys(), row)}
+            issue_dict = {
+                col: val for col, val in zip(result.keys(), row, strict=False)
+            }
 
             # Extract similarity score
             similarity = issue_dict.pop("similarity")

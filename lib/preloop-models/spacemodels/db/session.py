@@ -68,8 +68,8 @@ def get_session_factory(engine=None):
 
 def get_db_session() -> Generator[Session, None, None]:
     """Get a database session."""
-    SessionLocal = get_session_factory()
-    db = SessionLocal()
+    session_factory = get_session_factory()
+    db = session_factory()
     try:
         yield db
     finally:

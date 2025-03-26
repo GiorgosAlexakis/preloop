@@ -134,7 +134,7 @@ def test_get_user_stats(db_session):
     )
 
     # User 1 has more requests
-    for i in range(2):
+    for _i in range(2):
         crud_api_usage.create(
             db_session,
             obj_in={
