@@ -298,46 +298,124 @@
         </div>
     </section>
 
-    <section class="cta-section">
+    <section class="cta-section text-start">
         <div class="container">
-            <h2 class="text-center mb-5">How to Get Started with SpaceBridge</h2>
-            <div class="row justify-content-center mb-5">
-                <div class="col-lg-10">
-                    <div class="row g-4 text-center">
-                        <div class="col-md-3">
-                            <div class="p-4">
-                                <h5 class="mb-3">1. Create Account</h5>
-                                <p class="small">Sign up for your free SpaceBridge account in seconds</p>
+            <h2 class="mb-5">Get Started</h2>
+            
+            <div class="row p-4 rounded mb-5" style="border: 1px solid var(--gray-200); background-color: white; box-shadow: 0 2px 10px rgba(0,0,0,0.03);">
+                <!-- Left sidebar with IDE selection -->
+                <div class="col-md-3" style="border-right: 1px solid var(--gray-200);">
+                    <div class="list-group border-0" id="ide-list" role="tablist" style="border-radius: 0;">
+                        <a class="list-group-item list-group-item-action active border-0" data-bs-toggle="list" href="#claude-code" role="tab" aria-controls="claude-code" style="background-color: rgba(45, 95, 172, 0.07); color: var(--primary);">
+                            <div class="d-flex align-items-center">
+                                <span class="me-2" style="font-size: 1.2rem;">🤖</span> Claude Code
                             </div>
+                        </a>
+                        <a class="list-group-item list-group-item-action border-0" data-bs-toggle="list" href="#cursor" role="tab" aria-controls="cursor">
+                            <div class="d-flex align-items-center">
+                                <span class="me-2" style="font-size: 1.2rem;">📝</span> Cursor
+                            </div>
+                        </a>
+                        <a class="list-group-item list-group-item-action border-0" data-bs-toggle="list" href="#windsurf" role="tab" aria-controls="windsurf">
+                            <div class="d-flex align-items-center">
+                                <span class="me-2" style="font-size: 1.2rem;">🏄</span> Windsurf
+                            </div>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Right side with installation instructions -->
+                <div class="col-md-9 ps-4">
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="claude-code" role="tabpanel" aria-labelledby="claude-code-tab">
+                            <h4 class="mb-3">Install SpaceBridge for Claude Code</h4>
+                            <p>Instantly connect your Claude Code instance to GitHub, GitLab, and Jira with our streamlined setup script. Copy and paste the following command in your terminal:</p>
+                            
+                            <div class="code-container position-relative p-3 bg-light rounded mt-4">
+                                <pre class="mb-0"><code>curl -sSL https://install.spacebridge.io/claude | bash -s -- --auth-key YOUR_AUTH_KEY</code></pre>
+                                <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            
+                            <p class="mt-4">The script will automatically:</p>
+                            <ul>
+                                <li>Install the SpaceBridge MCP server</li>
+                                <li>Set up your tracker integrations with Claude Code</li>
+                                <li>Configure your issue tracking environment</li>
+                            </ul>
                         </div>
-                        <div class="col-md-3">
-                            <div class="p-4">
-                                <h5 class="mb-3">2. Connect Trackers</h5>
-                                <p class="small">Authorize GitHub, GitLab, Jira with OAuth</p>
+                        
+                        <div class="tab-pane fade" id="cursor" role="tabpanel" aria-labelledby="cursor-tab">
+                            <h4 class="mb-3">Install SpaceBridge for Cursor</h4>
+                            <p>Connect your Cursor IDE to GitHub, GitLab, and Jira issue trackers with our one-line installer. Copy and run this command in your terminal:</p>
+                            
+                            <div class="code-container position-relative p-3 bg-light rounded mt-4">
+                                <pre class="mb-0"><code>curl -sSL https://install.spacebridge.io/cursor | bash -s -- --config cursor-default</code></pre>
+                                <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </button>
                             </div>
+                            
+                            <p class="mt-4">This setup provides:</p>
+                            <ul>
+                                <li>Automated issue tracking for Cursor AI</li>
+                                <li>Cross-repository issue search capabilities</li>
+                                <li>Smart duplicate issue detection</li>
+                            </ul>
                         </div>
-                        <div class="col-md-3">
-                            <div class="p-4">
-                                <h5 class="mb-3">3. Select Repositories</h5>
-                                <p class="small">Choose which projects you want to manage</p>
+                        
+                        <div class="tab-pane fade" id="windsurf" role="tabpanel" aria-labelledby="windsurf-tab">
+                            <h4 class="mb-3">Install SpaceBridge for Windsurf</h4>
+                            <p>Supercharge your Windsurf IDE with unified issue tracking across GitHub, GitLab, and Jira. Copy this command to your terminal:</p>
+                            
+                            <div class="code-container position-relative p-3 bg-light rounded mt-4">
+                                <pre class="mb-0"><code>curl -sSL https://install.spacebridge.io/windsurf | bash -s -- --integrate-agentic</code></pre>
+                                <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </button>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="p-4">
-                                <h5 class="mb-3">4. Start Using MCP</h5>
-                                <p class="small">Access your unified MCP system</p>
-                            </div>
+                            
+                            <p class="mt-4">The Windsurf integration includes:</p>
+                            <ul>
+                                <li>Seamless issue tracking for agentic workflows</li>
+                                <li>Automatic context augmentation for your LLMs</li>
+                                <li>Enhanced similarity search across all your trackers</li>
+                            </ul>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <div class="text-center mt-4">
-                <h3 class="mb-4">Ready to unify your issue trackers?</h3>
-                <a href="/register" class="btn btn-primary btn-lg">Get Started Free</a>
-            </div>
         </div>
     </section>
+    
+    <script>
+    function copyCode(button) {
+        const codeBlock = button.parentElement.querySelector('code');
+        const textArea = document.createElement('textarea');
+        textArea.value = codeBlock.innerText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        // Change button text temporarily
+        const originalHTML = button.innerHTML;
+        button.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check" viewBox="0 0 16 16"><path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/></svg>';
+        setTimeout(() => {
+            button.innerHTML = originalHTML;
+        }, 2000);
+    }
+    </script>
 
     <footer class="footer">
         <div class="container">
