@@ -878,6 +878,26 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Error rendering trackers page: {str(e)}")
             return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+            
+    # Add route for privacy policy page
+    @app.get("/privacy", response_class=HTMLResponse, tags=["Pages"])
+    async def privacy_page(request: Request):
+        """Privacy policy page route."""
+        try:
+            return templates.TemplateResponse("privacy.html", {"request": request})
+        except Exception as e:
+            logger.error(f"Error rendering privacy policy page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+            
+    # Add route for terms of service page
+    @app.get("/terms", response_class=HTMLResponse, tags=["Pages"])
+    async def terms_page(request: Request):
+        """Terms of service page route."""
+        try:
+            return templates.TemplateResponse("terms.html", {"request": request})
+        except Exception as e:
+            logger.error(f"Error rendering terms of service page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
 
     # Initialize the database on startup
     @app.on_event("startup")
