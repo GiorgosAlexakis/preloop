@@ -39,13 +39,13 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   hosts:
-    - host: bridge.spacecode.ai
+    - host: spacebridge.io
       paths:
         - path: /
           pathType: ImplementationSpecific
   tls:
     - hosts:
-        - bridge.spacecode.ai
+        - spacebridge.io
       secretName: spacebridge-tls
 
 # Resource requests and limits
