@@ -301,7 +301,7 @@
     <section class="cta-section text-start">
         <div class="container">
             <h2 class="mb-5">Get Started</h2>
-            
+
             <div class="row p-4 rounded mb-5" style="border: 1px solid var(--gray-200); background-color: white; box-shadow: 0 2px 10px rgba(0,0,0,0.03);">
                 <!-- Left sidebar with IDE selection -->
                 <div class="col-md-3" style="border-right: 1px solid var(--gray-200);">
@@ -323,14 +323,14 @@
                         </a>
                     </div>
                 </div>
-                
+
                 <!-- Right side with installation instructions -->
                 <div class="col-md-9 ps-4">
                     <div class="tab-content">
                         <div class="tab-pane fade show active" id="claude-code" role="tabpanel" aria-labelledby="claude-code-tab">
                             <h4 class="mb-3">Install SpaceBridge for Claude Code</h4>
                             <p>Instantly connect your Claude Code instance to GitHub, GitLab, and Jira with our streamlined setup script. Copy and paste the following command in your terminal:</p>
-                            
+
                             <div class="code-container position-relative p-3 bg-light rounded mt-4">
                                 <pre class="mb-0"><code>curl -sSL https://install.spacebridge.io/claude | bash -s -- --auth-key YOUR_AUTH_KEY</code></pre>
                                 <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
@@ -340,7 +340,7 @@
                                     </svg>
                                 </button>
                             </div>
-                            
+
                             <p class="mt-4">The script will automatically:</p>
                             <ul>
                                 <li>Install the SpaceBridge MCP server</li>
@@ -348,11 +348,11 @@
                                 <li>Configure your issue tracking environment</li>
                             </ul>
                         </div>
-                        
+
                         <div class="tab-pane fade" id="cursor" role="tabpanel" aria-labelledby="cursor-tab">
                             <h4 class="mb-3">Install SpaceBridge for Cursor</h4>
                             <p>Connect your Cursor IDE to GitHub, GitLab, and Jira issue trackers with our one-line installer. Copy and run this command in your terminal:</p>
-                            
+
                             <div class="code-container position-relative p-3 bg-light rounded mt-4">
                                 <pre class="mb-0"><code>curl -sSL https://install.spacebridge.io/cursor | bash -s -- --config cursor-default</code></pre>
                                 <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
@@ -362,7 +362,7 @@
                                     </svg>
                                 </button>
                             </div>
-                            
+
                             <p class="mt-4">This setup provides:</p>
                             <ul>
                                 <li>Automated issue tracking for Cursor AI</li>
@@ -370,11 +370,11 @@
                                 <li>Smart duplicate issue detection</li>
                             </ul>
                         </div>
-                        
+
                         <div class="tab-pane fade" id="windsurf" role="tabpanel" aria-labelledby="windsurf-tab">
                             <h4 class="mb-3">Install SpaceBridge for Windsurf</h4>
                             <p>Supercharge your Windsurf IDE with unified issue tracking across GitHub, GitLab, and Jira. Copy this command to your terminal:</p>
-                            
+
                             <div class="code-container position-relative p-3 bg-light rounded mt-4">
                                 <pre class="mb-0"><code>curl -sSL https://install.spacebridge.io/windsurf | bash -s -- --integrate-agentic</code></pre>
                                 <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
@@ -384,7 +384,7 @@
                                     </svg>
                                 </button>
                             </div>
-                            
+
                             <p class="mt-4">The Windsurf integration includes:</p>
                             <ul>
                                 <li>Seamless issue tracking for agentic workflows</li>
@@ -397,7 +397,7 @@
             </div>
         </div>
     </section>
-    
+
     <script>
     function copyCode(button) {
         const codeBlock = button.parentElement.querySelector('code');
@@ -407,7 +407,7 @@
         textArea.select();
         document.execCommand('copy');
         document.body.removeChild(textArea);
-        
+
         // Change button text temporarily
         const originalHTML = button.innerHTML;
         button.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check" viewBox="0 0 16 16"><path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/></svg>';
@@ -471,7 +471,7 @@
                 document.getElementById('auth-nav-user').style.display = 'none';
             }
         }
-        
+
         // Typewriter effect for alternating phrases
         function initTypewriterEffect() {
             const typewriterElement = document.getElementById('typewriter');
@@ -479,20 +479,20 @@
                 console.error('Typewriter element not found');
                 return;
             }
-            
+
             const phrases = ['Vibe Coding', 'AI Workflows', 'Agentic Systems'];
             let currentPhraseIndex = 0;
             let isDeleting = true; // Start by deleting the first phrase
             let textIndex = phrases[0].length;
             let typingSpeed = 50;
-            
+
             function typeNextCharacter() {
                 const currentPhrase = phrases[currentPhraseIndex];
-                
+
                 if (isDeleting) {
                     typewriterElement.textContent = currentPhrase.substring(0, textIndex);
                     textIndex--;
-                    
+
                     if (textIndex < 0) {
                         isDeleting = false;
                         currentPhraseIndex = (currentPhraseIndex + 1) % phrases.length;
@@ -503,17 +503,17 @@
                 } else {
                     typewriterElement.textContent = currentPhrase.substring(0, textIndex);
                     textIndex++;
-                    
+
                     if (textIndex > currentPhrase.length) {
                         isDeleting = true;
                         setTimeout(typeNextCharacter, 2000); // Pause at full phrase
                         return;
                     }
                 }
-                
+
                 setTimeout(typeNextCharacter, isDeleting ? 50 : 100);
             }
-            
+
             // Start the animation with initial delay
             setTimeout(typeNextCharacter, 2500);
         }

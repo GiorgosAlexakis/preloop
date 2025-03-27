@@ -35,7 +35,7 @@ service:
 # Ingress configuration
 ingress:
   enabled: true
-  className: ""
+  className: "nginx"
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   hosts:
@@ -44,9 +44,7 @@ ingress:
         - path: /
           pathType: ImplementationSpecific
   tls:
-    - hosts:
-        - spacebridge.io
-      secretName: spacebridge-tls
+    secretName: spacebridge-tls
 
 # Resource requests and limits
 resources:
