@@ -6,4 +6,4 @@
 	url = ../../spacecode/SpaceModels.git
 [submodule "mcp"]
 	path = mcp
-	url = ./mcp
+	url = ../../spacecode/spacebridge-mcp.git

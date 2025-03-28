@@ -1,8 +1,8 @@
-# SpaceBridgeCrosser
+# SpaceBridge-MCP
 
 ## Overview
 
-SpaceBridgeCrosser is a companion project to SpaceBridge, designed to bridge the gap between Model Context Protocol (MCP) clients like Claude Code and the SpaceBridge REST API. It implements an MCP server using the stdio transport, which is compatible with most MCP client tools.
+SpaceBridge-MCP is a companion project to SpaceBridge, designed to bridge the gap between Model Context Protocol (MCP) clients like Claude Code and the SpaceBridge REST API. It implements an MCP server using the stdio transport, which is compatible with most MCP client tools.
 
 ## Architecture
 
@@ -10,12 +10,12 @@ SpaceBridgeCrosser is a companion project to SpaceBridge, designed to bridge the
 ┌────────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │                │     │                  │     │                  │     │                 │
 │  MCP Clients   ├─────┤  SpaceBridge     ├─────┤  SpaceBridge     ├─────┤  Issue Trackers │
-│  (Claude Code) │     │  Crosser        │     │  REST API        │     │  (Jira/GitHub/  │
-│                │     │  (MCP Server)    │     │                  │     │   GitLab/etc)   │
-└────────────────┘     └──────────────────┘     └────────┬─────────┘     └─────────────────┘
+│  (Claude Code) │     │  MCP Server      │     │  REST API        │     │  (Jira/GitHub/  │
+│                │     │                  │     │                  │     │   GitLab/etc)   │
+└────────────────┘     └──────────────────┘     └──────────────────┘     └─────────────────┘
 ```
 
-SpaceBridgeCrosser acts as a bridge between MCP clients and the SpaceBridge REST API. When an MCP client invokes a tool, SpaceBridgeCrosser:
+SpaceBridge-MCP acts as a bridge between MCP clients and the SpaceBridge REST API. When an MCP client invokes a tool, SpaceBridge-MCP:
 
 1. Receives the tool invocation via stdio
 2. Validates the parameters
@@ -24,7 +24,7 @@ SpaceBridgeCrosser acts as a bridge between MCP clients and the SpaceBridge REST
 
 ## Implementation Guidelines
 
-The SpaceBridgeCrosser project should be implemented as follows:
+The SpaceBridge-MCP project should be implemented as follows:
 
 1. **Base Structure**
    - Create a Python package with MCP server implementation
@@ -100,16 +100,16 @@ async def get_organization(organization_id: str, ctx: ToolContext = None) -> Dic
 
 ## Setup for MCP Clients
 
-MCP clients like Claude Code can be configured to use SpaceBridgeCrosser as follows:
+MCP clients like Claude Code can be configured to use SpaceBridge-MCP as follows:
 
 ```bash
-# Install SpaceBridgeCrosser
-pip install spacebridgecrosser
+# Install SpaceBridge-MCP
+pip install SpaceBridge-MCP
 
-# Configure Claude Code to use SpaceBridgeCrosser
-claude mcp add spacebridgecrosser "python -m spacebridgecrosser.server"
+# Configure Claude Code to use SpaceBridge-MCP
+claude mcp add SpaceBridge-MCP "python -m SpaceBridge-MCP.server"
 
-# Set environment variables for SpaceBridgeCrosser
+# Set environment variables for SpaceBridge-MCP
 export SPACEBRIDGE_URL="http://localhost:8000/api/v1"
 export SPACEBRIDGE_API_KEY="your-api-key"
 
@@ -122,7 +122,7 @@ claude "Search for issues related to authentication in the Astrobot project"
 
 ## Next Steps
 
-1. Create a new repository for SpaceBridgeCrosser
+1. Create a new repository for SpaceBridge-MCP
 2. Implement the base MCP server with stdio transport
 3. Create HTTP client for communicating with SpaceBridge
 4. Implement all tools defined in the SpaceBridge API

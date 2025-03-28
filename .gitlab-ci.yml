@@ -88,4 +88,3 @@ deploy:
       --set config.github.apiUrl=${GITHUB_API_URL}
       --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
       --set ingress.enabled=true
-      --set ingress.tls[0].secretName=spacebridge-tls

@@ -44,7 +44,9 @@ ingress:
         - path: /
           pathType: ImplementationSpecific
   tls:
-    secretName: spacebridge-tls
+    - secretName: spacebridge-tls
+      hosts:
+        - spacebridge.io
 
 # Resource requests and limits
 resources:

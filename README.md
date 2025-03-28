@@ -30,11 +30,11 @@ SpaceBridge is designed with a separation of concerns:
 
 2. **SpaceSync** (separate repository): A service that polls configured issue trackers added and indexes issues, projects and organizations in our DB. Also updates the issue embeddings.
 
-3. **SpaceBridgeCrosser** (separate repository): A Model Context Protocol (MCP) server that uses stdio transport and serves as a bridge between MCP clients (like Claude Code) and the SpaceBridge API.
+3. **SpaceBridge-MCP** (separate repository): A Model Context Protocol (MCP) server that uses stdio transport and serves as a bridge between MCP clients (like Claude Code) and the SpaceBridge API.
 
 This separation allows:
 - Maximum compatibility with MCP clients like Claude Code (which currently don't support SSE transport)
-- Clean separation between database access (SpaceBridge) and MCP protocol handling (SpaceBridgeCrosser)
+- Clean separation between database access (SpaceBridge) and MCP protocol handling (SpaceBridge-MCP)
 - Direct HTTP API access for applications that don't need MCP
 
 ## Installation
@@ -183,16 +183,16 @@ print(json.dumps(issue.json(), indent=2))
 
 ### For MCP Clients (Claude Code)
 
-For MCP clients like Claude Code, use the companion [SpaceBridgeCrosser](https://github.com/spacecode-ai/spacebridgecrosser) project, which provides MCP tools that communicate with SpaceBridge.
+For MCP clients like Claude Code, use the companion [SpaceBridge-MCP](https://github.com/spacecode-ai/SpaceBridge-MCP) project, which provides MCP tools that communicate with SpaceBridge.
 
 ```bash
-# Install SpaceBridgeCrosser
-pip install spacebridgecrosser
+# Install SpaceBridge-MCP
+pip install SpaceBridge-MCP
 
-# Configure Claude Code to use SpaceBridgeCrosser
-claude mcp add spacebridgecrosser "python -m spacebridgecrosser.server"
+# Configure Claude Code to use SpaceBridge-MCP
+claude mcp add SpaceBridge-MCP "python -m SpaceBridge-MCP.server"
 
-# Set environment variables for SpaceBridgeCrosser
+# Set environment variables for SpaceBridge-MCP
 export SPACEBRIDGE_URL="http://localhost:8000/api/v1"
 export SPACEBRIDGE_API_KEY="your-api-key"
 
