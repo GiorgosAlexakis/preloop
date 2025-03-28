@@ -47,6 +47,9 @@ ingress:
     - secretName: spacebridge-tls
       hosts:
         - spacebridge.io
+        - www.spacebridge.io
+        - api.spacebridge.io
+        - install.spacebridge.io
 
 # Resource requests and limits
 resources:
@@ -93,6 +96,13 @@ config:
     apiKey: ""
   anthropic:
     apiKey: ""
+  smtp:
+    host: ""
+    port: 587
+    username: ""
+    password: ""
+    from: ""
+    fromName: "SpaceBridge"
 
 # Database configuration
 database:
