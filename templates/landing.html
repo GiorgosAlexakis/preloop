@@ -6,236 +6,7 @@
     <title>SpaceBridge - MCP Server for Issue Trackers</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
-    <style>
-        :root {
-            --primary: #2d5fac;
-            --primary-light: #f0f5fc;
-            --secondary: #404b5a;
-            --light: #fcfcfc;
-            --dark: #1f2937;
-            --gray-100: #f3f4f6;
-            --gray-200: #e5e7eb;
-            --gray-700: #374151;
-            --gray-900: #111827;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            line-height: 1.7;
-            color: var(--gray-700);
-            background-color: white;
-            font-weight: 400;
-        }
-
-        h1, h2, h3, h4, h5, h6 {
-            font-weight: 600;
-            color: var(--dark);
-            letter-spacing: -0.025em;
-        }
-
-        .navbar {
-            padding: 1.8rem 0;
-            box-shadow: none;
-            background-color: white !important;
-            border-bottom: 1px solid rgba(0,0,0,0.03);
-        }
-
-        .navbar-brand {
-            font-weight: 700;
-            color: var(--dark) !important;
-            letter-spacing: -0.5px;
-            margin-right: 2rem;
-        }
-
-        .navbar-dark .navbar-nav .nav-link {
-            color: var(--secondary) !important;
-            font-weight: 500;
-            font-size: 0.95rem;
-            padding: 0.5rem 1.2rem;
-            transition: color 0.2s ease;
-        }
-
-        .navbar-dark .navbar-nav .nav-link:hover {
-            color: var(--primary) !important;
-        }
-
-        .hero {
-            background-color: white;
-            color: var(--gray-900);
-            padding: 120px 0 100px;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .hero::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle at 90% 50%, var(--primary-light) 0%, transparent 80%);
-            z-index: 0;
-        }
-
-        .hero .container {
-            position: relative;
-            z-index: 1;
-        }
-
-        .hero h1 {
-            font-size: 3.6rem;
-            line-height: 1.1;
-            margin-bottom: 1.8rem;
-            text-align: left;
-        }
-
-        .hero .lead {
-            font-size: 1.4rem;
-            font-weight: 400;
-            color: var(--secondary);
-            max-width: 540px;
-            margin: 0 0 2.8rem;
-            text-align: left;
-        }
-
-        .feature-section {
-            padding: 80px 0;
-            background-color: white;
-        }
-
-        .feature-box {
-            background: white;
-            border-radius: 8px;
-            padding: 32px 30px;
-            box-shadow: none;
-            margin-bottom: 20px;
-            border: none;
-            /* transition removed */
-            height: 100%;
-        }
-
-        .feature-box:hover {
-            /* Hover effect removed as requested */
-            box-shadow: none;
-        }
-
-        .feature-icon {
-            font-size: 42px;
-            margin-bottom: 20px;
-            display: inline-block;
-        }
-
-        .feature-box h3 {
-            font-size: 1.2rem;
-            margin-bottom: 16px;
-            font-weight: 600;
-        }
-
-        .feature-box p {
-            color: var(--secondary);
-            margin-bottom: 0;
-            font-size: 0.95rem;
-            line-height: 1.7;
-        }
-
-        .cta-section {
-            padding: 100px 0;
-            background-color: var(--primary-light);
-            text-align: center;
-        }
-
-        .btn-primary {
-            background-color: var(--primary);
-            border: none;
-            padding: 14px 48px;
-            font-weight: 500;
-            font-size: 1rem;
-            border-radius: 6px;
-            transition: background-color 0.2s ease; /* transform transition removed */
-        }
-
-        .btn-primary:hover {
-            background-color: #2456a0;
-            /* Transform effect removed as requested */
-            box-shadow: none;
-        }
-
-        .btn-light {
-            background-color: white;
-            color: var(--primary);
-            border: none;
-            padding: 12px 30px;
-            font-weight: 500;
-            font-size: 1rem;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .btn-light:hover {
-            background-color: white;
-            color: var(--primary);
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            /* Transform effect removed as requested */
-        }
-
-        .footer {
-            background-color: var(--gray-900);
-            color: var(--gray-200);
-            padding: 60px 0 30px;
-            margin-top: 0;
-        }
-
-        .footer h5 {
-            color: white;
-            font-size: 1.1rem;
-            margin-bottom: 20px;
-            font-weight: 600;
-        }
-
-        .footer p, .footer li {
-            color: var(--gray-200);
-            font-size: 0.9rem;
-            margin-bottom: 10px;
-        }
-
-        .footer a {
-            color: var(--gray-200);
-            text-decoration: none;
-            transition: color 0.2s ease;
-        }
-
-        .footer a:hover {
-            color: white;
-        }
-
-        .footer hr {
-            margin: 30px 0;
-            opacity: 0.1;
-        }
-
-        .footer .copyright {
-            font-size: 0.85rem;
-            color: var(--gray-200);
-            opacity: 0.8;
-        }
-    </style>
-    <!-- Custom styling for IDE selection tabs -->
-    <style>
-        /* Override Bootstrap's default styling for IDE list */
-        #ide-list .list-group-item {
-            padding: 0;
-            margin: 0;
-            border-radius: 0;
-        }
-
-        /* Override Bootstrap's default blue active state with light gray */
-        #ide-list .list-group-item.active {
-            background-color: #f5f5f5 !important;
-            color: #333 !important;
-            border-color: transparent !important;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/css/spacebridge.css">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
@@ -265,7 +36,6 @@
                     </div>
                 </ul>
             </div>
-            </div>
         </div>
     </nav>
 
@@ -276,7 +46,7 @@
                     <h1 class="fw-bold">Turbocharge your<br>
                         <span id="typewriter" style="display: inline-block; min-width: 220px; background: linear-gradient(to right, #ff7e5f, #feb47b, #d76d77, #9370DB); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700;">Vibe Coding</span><br>
                         with Automated Issue Tracking</h1>
-                    <p class="lead">SpaceBridge provides an open source MCP server and a free REST API that can keep your issue tracker updated while you focus on coding. </p>
+                    <p class="lead">SpaceBridge provides an open source MCP server that can keep your issue tracker updated while you focus on coding. </p>
                     <a href="/register" class="btn btn-primary btn-lg">Get Started</a>
                 </div>
                 <div class="col-lg-6 text-center">
@@ -293,21 +63,21 @@
                     <div class="feature-box">
                         <div class="feature-icon"><img src="/static/images/similarity.png" alt="Similarity Icon" width="48" height="48"></div>
                         <h3>Smart Duplicate Detection</h3>
-                        <p>Intelligent similarity search finds and prevents duplicate issues, even when terminology varies. </p>
+                        <p>Intelligent similarity search finds duplicate issues across different trackers, even when terminology varies</p>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="feature-box">
                         <div class="feature-icon"><img src="/static/images/context.png" alt="Context Icon" width="48" height="48"></div>
-                        <h3>Augment your LLM context</h3>
-                        <p>Seamless issue data access that supercharges your AI tools' effectiveness</p>
+                        <h3>Enhanced LLM Capabilities</h3>
+                        <p>Seamless issue data access plus intelligent context augmentation that supercharges your AI tools' effectiveness</p>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="feature-box">
                         <div class="feature-icon"><img src="/static/images/ide.png" alt="IDE Icon" width="48" height="48"></div>
-                        <h3>Cursor, Windsurf, Claude Code Ready</h3>
-                        <p>Streamlined setup process. Use with any agentic system that supports MCP.</p>
+                        <h3>Claude Code, Cursor and Windsurf Ready</h3>
+                        <p>Streamlined setup process for Claude Code, Cursor and Windsurf with easy setup steps that get you up and running in minutes</p>
                     </div>
                 </div>
             </div>
@@ -316,6 +86,8 @@
 
     <section class="cta-section text-start">
         <div class="container">
+            <h2 class="mb-5">Get Started</h2>
+
             <div class="row p-4 rounded" style="border: 1px solid var(--gray-200); background-color: white; box-shadow: 0 2px 10px rgba(0,0,0,0.03);">
                 <!-- Left sidebar with IDE selection -->
                 <div class="col-md-3" style="border-right: 1px solid var(--gray-200);">
@@ -380,7 +152,7 @@
                             <p class="mt-4">This setup provides:</p>
                             <ul>
                                 <li>Automated issue tracking for Cursor AI</li>
-                                <li>Cross-repository issue search capabilities</li>
+                                <li>Cross-platform issue management</li>
                                 <li>Smart duplicate issue detection</li>
                             </ul>
                         </div>
@@ -402,8 +174,8 @@
                             <p class="mt-4">The Windsurf integration includes:</p>
                             <ul>
                                 <li>Seamless issue tracking for agentic workflows</li>
-                                <li>Automatic context augmentation for your LLMs</li>
-                                <li>Enhanced similarity search across all your trackers</li>
+                                <li>Unified tracker command interface</li>
+                                <li>Intelligent issue summarization</li>
                             </ul>
                         </div>
                     </div>
@@ -466,22 +238,14 @@
         // Check if user is authenticated
         function checkAuthStatus() {
             const token = localStorage.getItem('accessToken');
-
+            
             if (token) {
                 // User is logged in
                 document.getElementById('auth-nav-guest').style.display = 'none';
                 document.getElementById('auth-nav-user').style.display = 'block';
-
-                // Change CTA buttons for logged-in users
-                const ctaButtons = document.querySelectorAll('a[href="/register"]');
-                ctaButtons.forEach(button => {
-                    button.href = '/dashboard';
-                    button.textContent = button.classList.contains('btn-lg') ?
-                        'Go to Dashboard' : 'Dashboard';
-                });
             } else {
                 // User is not logged in
-                document.getElementById('auth-nav-guest').style.display = 'block';
+                document.getElementById('auth-nav-guest').style.display = 'flex';
                 document.getElementById('auth-nav-user').style.display = 'none';
             }
         }
@@ -498,7 +262,6 @@
             let currentPhraseIndex = 0;
             let isDeleting = true; // Start by deleting the first phrase
             let textIndex = phrases[0].length;
-            let typingSpeed = 50;
 
             function typeNextCharacter() {
                 const currentPhrase = phrases[currentPhraseIndex];
@@ -511,7 +274,7 @@
                         isDeleting = false;
                         currentPhraseIndex = (currentPhraseIndex + 1) % phrases.length;
                         textIndex = 0;
-                        setTimeout(typeNextCharacter, 500); // Pause before typing next phrase
+                        setTimeout(typeNextCharacter, 500); // Pause before typing the next phrase
                         return;
                     }
                 } else {

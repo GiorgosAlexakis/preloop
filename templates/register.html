@@ -6,171 +6,7 @@
     <title>Register - SpaceBridge</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
-    <style>
-        :root {
-            --primary: #2d5fac;
-            --primary-light: #f0f5fc;
-            --secondary: #404b5a;
-            --light: #fcfcfc;
-            --dark: #1f2937;
-            --gray-100: #f3f4f6;
-            --gray-200: #e5e7eb;
-            --gray-700: #374151;
-            --gray-900: #111827;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            line-height: 1.7;
-            color: var(--gray-700);
-            background-color: var(--gray-100);
-            font-weight: 400;
-        }
-
-        h1, h2, h3, h4, h5, h6 {
-            font-weight: 600;
-            color: var(--dark);
-            letter-spacing: -0.025em;
-        }
-
-        .navbar {
-            padding: 1.8rem 0;
-            box-shadow: none;
-            background-color: white !important;
-            border-bottom: 1px solid rgba(0,0,0,0.03);
-        }
-
-        .navbar-brand {
-            font-weight: 700;
-            color: var(--dark) !important;
-            letter-spacing: -0.5px;
-            margin-right: 2rem;
-        }
-
-        .navbar-dark .navbar-nav .nav-link {
-            color: var(--secondary) !important;
-            font-weight: 500;
-            font-size: 0.95rem;
-            padding: 0.5rem 1.2rem;
-            transition: color 0.2s ease;
-        }
-
-        .navbar-dark .navbar-nav .nav-link:hover {
-            color: var(--primary) !important;
-        }
-
-        .register-container {
-            max-width: 550px;
-            margin: 60px auto;
-            padding: 40px;
-            background-color: white;
-            border-radius: 8px;
-            border: 1px solid var(--gray-200);
-            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
-        }
-
-        .register-header {
-            text-align: center;
-            margin-bottom: 2.5rem;
-        }
-
-        .register-header h1 {
-            font-size: 2.2rem;
-            color: var(--dark);
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .register-header p {
-            color: var(--secondary);
-            font-size: 1.1rem;
-            font-weight: 400;
-        }
-
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .form-label {
-            font-weight: 500;
-            margin-bottom: 0.5rem;
-            color: var(--dark);
-        }
-
-        .form-control {
-            padding: 0.75rem 1rem;
-            border-radius: 6px;
-            border: 1px solid var(--gray-200);
-            font-size: 0.95rem;
-        }
-
-        .form-control:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(45, 95, 172, 0.1);
-        }
-
-        .btn-primary {
-            background-color: var(--primary);
-            border: none;
-            padding: 14px 48px;
-            font-weight: 500;
-            font-size: 1rem;
-            border-radius: 6px;
-            transition: background-color 0.2s ease;
-            width: 100%;
-            margin-top: 0.5rem;
-        }
-
-        .btn-primary:hover {
-            background-color: #2456a0;
-            box-shadow: none;
-        }
-
-        .register-footer {
-            text-align: center;
-            margin-top: 2rem;
-            color: var(--secondary);
-        }
-
-        .register-footer a {
-            color: var(--primary);
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        .register-footer a:hover {
-            text-decoration: underline;
-        }
-
-        .form-text, .password-requirements {
-            font-size: 0.85rem;
-            color: var(--secondary);
-            margin-top: 0.4rem;
-        }
-
-        .footer {
-            background-color: var(--gray-900);
-            color: var(--gray-200);
-            padding: 60px 0 30px;
-            margin-top: 3rem;
-        }
-
-        .footer a {
-            color: var(--gray-200);
-            text-decoration: none;
-            transition: color 0.2s ease;
-        }
-
-        .footer a:hover {
-            color: white;
-        }
-
-        .footer .copyright {
-            font-size: 0.85rem;
-            color: var(--gray-200);
-            opacity: 0.8;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/css/spacebridge.css">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
@@ -191,68 +27,69 @@
             </div>
         </div>
     </nav>
-
-    <div class="container">
-        <div class="register-container">
-            <div class="register-header">
-                <h1>Create Account</h1>
-            </div>
-
-            <div id="errorAlert" class="alert alert-danger d-none" role="alert">
-                Registration failed. Please check your information.
-            </div>
-
-            <div id="successAlert" class="alert alert-success d-none" role="alert">
-                Registration successful! Please check your email to verify your account.
-            </div>
-
-            <form id="registerForm">
-                <div class="form-group">
-                    <label for="username" class="form-label">Username</label>
-                    <input type="text" class="form-control" id="username" name="username" placeholder="Choose a username" required minlength="3" maxlength="50">
-                    <div class="form-text">Username must be alphanumeric and between 3-50 characters.</div>
+    <section class="register-section text-start">
+        <div class="container">
+            <div class="register-container">
+                <div class="register-header">
+                    <h1>Create Account</h1>
                 </div>
 
-                <div class="form-group">
-                    <label for="email" class="form-label">Email</label>
-                    <input type="email" class="form-control" id="email" name="email" placeholder="Enter your email" required>
+                <div id="errorAlert" class="alert alert-danger d-none" role="alert">
+                    Registration failed. Please check your information.
                 </div>
 
-                <div class="form-group">
-                    <label for="fullName" class="form-label">Full Name (Optional)</label>
-                    <input type="text" class="form-control" id="fullName" name="fullName" placeholder="Enter your full name">
+                <div id="successAlert" class="alert alert-success d-none" role="alert">
+                    Registration successful! Please check your email to verify your account.
                 </div>
 
-                <div class="form-group">
-                    <label for="password" class="form-label">Password</label>
-                    <input type="password" class="form-control" id="password" name="password" placeholder="Create a password" required minlength="8">
-                    <div class="password-requirements">
-                        Password must be at least 8 characters long.
+                <form id="registerForm">
+                    <div class="form-group">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" name="username" placeholder="Choose a username" required minlength="3" maxlength="50">
+                        <div class="form-text">Username must be alphanumeric and between 3-50 characters.</div>
                     </div>
-                </div>
 
-                <div class="form-group">
-                    <label for="confirmPassword" class="form-label">Confirm Password</label>
-                    <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" placeholder="Confirm your password" required>
-                </div>
-
-                <div class="form-group">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="agree" required>
-                        <label class="form-check-label" for="agree">
-                            I agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a>
-                        </label>
+                    <div class="form-group">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" placeholder="Enter your email" required>
                     </div>
+
+                    <div class="form-group">
+                        <label for="fullName" class="form-label">Full Name (Optional)</label>
+                        <input type="text" class="form-control" id="fullName" name="fullName" placeholder="Enter your full name">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" placeholder="Create a password" required minlength="8">
+                        <div class="password-requirements">
+                            Password must be at least 8 characters long.
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirmPassword" class="form-label">Confirm Password</label>
+                        <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" placeholder="Confirm your password" required>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="agree" required>
+                            <label class="form-check-label" for="agree">
+                                I agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Create Account</button>
+                </form>
+
+                <div class="register-footer">
+                    <p>Already have an account? <a href="/login">Sign In</a></p>
                 </div>
-
-                <button type="submit" class="btn btn-primary">Create Account</button>
-            </form>
-
-            <div class="register-footer">
-                <p>Already have an account? <a href="/login">Sign In</a></p>
             </div>
         </div>
-    </div>
+    </section>
 
     <footer class="footer">
         <div class="container">
