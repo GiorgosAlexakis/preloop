@@ -146,7 +146,7 @@ h1, h2, h3, h4, h5, h6 {
 .btn-primary {
     background-color: var(--primary);
     border: none;
-    padding: 14px 48px;
+    padding: 10px 24px;
     font-weight: 500;
     font-size: 1rem;
     border-radius: 6px;
