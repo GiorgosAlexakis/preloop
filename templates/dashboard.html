@@ -24,7 +24,6 @@
         
         .sidebar h4 {
             color: white;
-            font-weight: 600;
             letter-spacing: -0.5px;
         }
         
@@ -33,7 +32,6 @@
             padding: 12px 20px;
             margin: 6px 0;
             border-radius: 6px;
-            font-weight: 500;
             display: flex;
             align-items: center;
             transition: all 0.2s ease;
@@ -55,23 +53,13 @@
             background-color: var(--light);
         }
         
-        .card {
-            border: none;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            margin-bottom: 30px;
-            border: 1px solid var(--gray-200);
-        }
-        
+        /* Card header with fixed height */
         .card-header {
             height: 75px;
             background-color: white;
-            border-bottom: 1px solid var(--gray-200);
-            font-weight: 600;
-            padding: 16px 20px;
-            color: var(--dark);
         }
         
+        /* Tracker cards */
         .tracker-card {
             background-color: white;
             border-radius: 8px;
@@ -93,14 +81,15 @@
             margin-right: 12px;
         }
         
+        /* Tracker colors */
         .github-color { color: #24292e; }
         .gitlab-color { color: #fc6d26; }
         .jira-color { color: #0052CC; }
         
+        /* Stat cards */
         .stat-card {
             background-color: white;
             border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
             padding: 24px;
             margin-bottom: 24px;
             text-align: center;
@@ -109,27 +98,17 @@
         
         .stat-card h3 {
             font-size: 2rem;
-            font-weight: 700;
             margin: 10px 0;
             color: var(--primary);
         }
         
-        .stat-card p {
-            color: var(--secondary);
-            margin-bottom: 0;
-            font-weight: 500;
-        }
-        
+        /* Token table */
         .token-table th, .token-table td {
             vertical-align: middle;
             padding: 12px 16px;
         }
         
-        .token-table th {
-            font-weight: 600;
-            color: var(--dark);
-        }
-        
+        /* Navigation tabs */
         .nav-tabs {
             border-bottom: 2px solid var(--gray-200);
             margin-bottom: 24px;
@@ -137,8 +116,6 @@
         
         .nav-tabs .nav-link {
             border: none;
-            color: var(--secondary);
-            font-weight: 500;
             padding: 12px 20px;
             margin-right: 8px;
         }
@@ -148,33 +125,7 @@
             border-bottom: 2px solid var(--primary);
         }
         
-        /* Override the default button styles with our design */
-        .btn-primary {
-            background-color: var(--primary);
-            border: none;
-            padding: 10px 20px;
-            font-weight: 500;
-            font-size: 0.95rem;
-            border-radius: 6px;
-        }
-        
-        .btn-outline-primary {
-            color: var(--primary);
-            border-color: var(--primary);
-            font-weight: 500;
-        }
-        
-        .btn-outline-primary:hover {
-            background-color: var(--primary);
-            color: white;
-        }
-        
-        .btn-outline-danger {
-            color: #dc3545;
-            border-color: #dc3545;
-            font-weight: 500;
-        }
-        
+        /* Token creation form */
         .token-creation-form {
             background-color: var(--gray-100);
             border-radius: 8px;
@@ -183,6 +134,7 @@
             border: 1px solid var(--gray-200);
         }
         
+        /* Modal styling */
         .modal-content {
             border-radius: 8px;
             border: none;
@@ -191,16 +143,15 @@
         
         .modal-header {
             border-bottom: 1px solid var(--gray-200);
-            background-color: white;
             padding: 16px 24px;
         }
         
         .modal-footer {
             border-top: 1px solid var(--gray-200);
-            background-color: white;
             padding: 16px 24px;
         }
         
+        /* Token display */
         .token-display {
             background-color: var(--gray-100);
             border-radius: 6px;
@@ -212,6 +163,7 @@
             font-size: 0.9rem;
         }
         
+        /* Badge styling */
         .badge-github, .badge-gitlab, .badge-jira {
             font-weight: 500;
             padding: 5px 10px;
