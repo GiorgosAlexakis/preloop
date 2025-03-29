@@ -6,159 +6,244 @@
     <title>Dashboard - SpaceBridge</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="/static/css/spacebridge.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
+        /* Dashboard specific styles */
         .sidebar {
-            background-color: #343a40;
+            background-color: var(--dark);
             min-height: 100vh;
-            color: #fff;
+            color: var(--light);
             padding-top: 20px;
             position: fixed;
             width: 16.666667%;
             z-index: 100;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
         }
+        
+        .sidebar h4 {
+            color: white;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+        
         .sidebar .nav-link {
             color: rgba(255, 255, 255, 0.75);
             padding: 12px 20px;
-            margin: 4px 0;
-            border-radius: 5px;
+            margin: 6px 0;
+            border-radius: 6px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            transition: all 0.2s ease;
         }
+        
         .sidebar .nav-link:hover,
         .sidebar .nav-link.active {
             color: white;
             background-color: rgba(255, 255, 255, 0.1);
         }
+        
         .sidebar .nav-link i {
             margin-right: 10px;
             font-size: 1.1rem;
         }
+        
         .main-content {
-            padding: 30px;
+            padding: 40px;
+            background-color: var(--light);
         }
+        
         .card {
             border: none;
-            border-radius: 10px;
-            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
-        }
-        .card-header {
-            background-color: rgba(0,0,0,0.03);
-            border-bottom: 1px solid rgba(0,0,0,0.125);
-            font-weight: 600;
-            padding: 15px 20px;
-        }
-        .tracker-card {
-            background-color: #fff;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+            border: 1px solid var(--gray-200);
+        }
+        
+        .card-header {
+            height: 75px;
+            background-color: white;
+            border-bottom: 1px solid var(--gray-200);
+            font-weight: 600;
+            padding: 16px 20px;
+            color: var(--dark);
+        }
+        
+        .tracker-card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
             margin-bottom: 20px;
-            transition: transform 0.2s;
+            padding: 20px;
+            transition: all 0.3s ease;
+            border: 1px solid var(--gray-200);
         }
+        
         .tracker-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transform: translateY(-3px);
+            box-shadow: 0 3px 10px rgba(0,0,0,0.08);
         }
+        
         .tracker-icon {
             width: 32px;
             height: 32px;
-            margin-right: 10px;
+            margin-right: 12px;
         }
+        
         .github-color { color: #24292e; }
         .gitlab-color { color: #fc6d26; }
         .jira-color { color: #0052CC; }
+        
         .stat-card {
-            background-color: #fff;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            padding: 20px;
-            margin-bottom: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            padding: 24px;
+            margin-bottom: 24px;
             text-align: center;
+            border: 1px solid var(--gray-200);
         }
+        
         .stat-card h3 {
             font-size: 2rem;
             font-weight: 700;
             margin: 10px 0;
-            color: #4a86e8;
+            color: var(--primary);
         }
+        
         .stat-card p {
-            color: #6c757d;
+            color: var(--secondary);
             margin-bottom: 0;
+            font-weight: 500;
         }
+        
         .token-table th, .token-table td {
             vertical-align: middle;
+            padding: 12px 16px;
         }
+        
+        .token-table th {
+            font-weight: 600;
+            color: var(--dark);
+        }
+        
         .nav-tabs {
-            border-bottom: 2px solid #dee2e6;
-            margin-bottom: 20px;
+            border-bottom: 2px solid var(--gray-200);
+            margin-bottom: 24px;
         }
+        
         .nav-tabs .nav-link {
             border: none;
-            color: #495057;
+            color: var(--secondary);
             font-weight: 500;
             padding: 12px 20px;
+            margin-right: 8px;
         }
+        
         .nav-tabs .nav-link.active {
-            color: #4a86e8;
-            border-bottom: 2px solid #4a86e8;
+            color: var(--primary);
+            border-bottom: 2px solid var(--primary);
         }
+        
+        /* Override the default button styles with our design */
         .btn-primary {
-            background-color: #4a86e8;
-            border-color: #4a86e8;
+            background-color: var(--primary);
+            border: none;
+            padding: 10px 20px;
+            font-weight: 500;
+            font-size: 0.95rem;
+            border-radius: 6px;
         }
-        .btn-primary:hover {
-            background-color: #3a76d8;
-            border-color: #3a76d8;
+        
+        .btn-outline-primary {
+            color: var(--primary);
+            border-color: var(--primary);
+            font-weight: 500;
         }
+        
+        .btn-outline-primary:hover {
+            background-color: var(--primary);
+            color: white;
+        }
+        
         .btn-outline-danger {
             color: #dc3545;
             border-color: #dc3545;
+            font-weight: 500;
         }
-        .btn-outline-danger:hover {
-            background-color: #dc3545;
-            border-color: #dc3545;
-            color: white;
-        }
+        
         .token-creation-form {
-            background-color: #f8f9fa;
+            background-color: var(--gray-100);
             border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--gray-200);
         }
+        
         .modal-content {
-            border-radius: 10px;
+            border-radius: 8px;
             border: none;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
+        
         .modal-header {
-            border-bottom: 1px solid #dee2e6;
-            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--gray-200);
+            background-color: white;
+            padding: 16px 24px;
         }
+        
         .modal-footer {
-            border-top: 1px solid #dee2e6;
-            background-color: #f8f9fa;
+            border-top: 1px solid var(--gray-200);
+            background-color: white;
+            padding: 16px 24px;
         }
+        
         .token-display {
-            background-color: #f8f9fa;
-            border-radius: 5px;
-            padding: 15px;
-            margin: 15px 0;
+            background-color: var(--gray-100);
+            border-radius: 6px;
+            padding: 16px;
+            margin: 16px 0;
             word-break: break-all;
-            font-family: monospace;
+            font-family: 'Inter', monospace;
+            border: 1px solid var(--gray-200);
+            font-size: 0.9rem;
         }
+        
+        .badge-github, .badge-gitlab, .badge-jira {
+            font-weight: 500;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+        
         .badge-github {
             background-color: #24292e;
             color: white;
         }
+        
         .badge-gitlab {
             background-color: #fc6d26;
             color: white;
         }
+        
         .badge-jira {
             background-color: #0052CC;
             color: white;
+        }
+        
+        /* User info styling */
+        .user-info {
+            font-weight: 500;
+        }
+        
+        .user-info #username {
+            color: var(--dark);
+        }
+        
+        .user-info #email {
+            color: var(--secondary);
         }
     </style>
 </head>
@@ -167,7 +252,9 @@
         <div class="row">
             <!-- Sidebar -->
             <div class="col-md-2 sidebar">
-                <h4 class="text-center mb-4">SpaceBridge</h4>
+                <h4 class="text-center mb-4">
+                    <img src="/static/images/logo_dark.png" alt="SpaceBridge MCP" height="32" class="mb-1">
+                </h4>
                 <div class="d-flex flex-column">
                     <button class="nav-link active" id="dashboard-tab-btn" data-bs-target="#dashboard-tab" data-bs-toggle="tab">
                         <i class="bi bi-speedometer2"></i> Dashboard
@@ -184,7 +271,6 @@
                     <button class="nav-link" id="settings-tab-btn" data-bs-target="#settings-tab" data-bs-toggle="tab">
                         <i class="bi bi-gear"></i> Settings
                     </button>
-                </div>
                 </div>
             </div>
 
@@ -286,7 +372,7 @@
                     <!-- API Usage Tab -->
                     <div class="tab-pane fade" id="api-usage-tab" role="tabpanel" aria-labelledby="api-usage-tab-btn">
                         <div class="card">
-                            <div class="card-header">API Usage Statistics</div>
+                            <div class="card-header d-flex align-items-center">API Usage Statistics</div>
                             <div class="card-body">
                                 <div class="row mb-3">
                                     <div class="col-md-4">
@@ -320,14 +406,14 @@
                                     </div>
                                     <div class="col-md-4">
                                         <div class="card">
-                                            <div class="card-header">Issue Actions</div>
+                                            <div class="card-header d-flex align-items-center">Issue Actions</div>
                                             <div class="card-body">
                                                 <canvas id="issueActionsChart" width="100%" height="200"></canvas>
                                             </div>
                                         </div>
 
                                         <div class="card mt-3">
-                                            <div class="card-header">Endpoints Usage</div>
+                                            <div class="card-header d-flex align-items-center">Endpoints Usage</div>
                                             <div class="card-body">
                                                 <div id="endpointsList">
                                                     <!-- Endpoint usage data will be loaded here -->
@@ -377,7 +463,7 @@
                     <!-- Settings Tab -->
                     <div class="tab-pane fade" id="settings-tab" role="tabpanel" aria-labelledby="settings-tab-btn">
                         <div class="card">
-                            <div class="card-header">Account Settings</div>
+                            <div class="card-header d-flex align-items-center">Account Settings</div>
                             <div class="card-body">
                                 <form id="updateProfileForm">
                                     <div class="mb-3 row">
@@ -409,7 +495,7 @@
                         </div>
 
                         <div class="card mt-4">
-                            <div class="card-header">Change Password</div>
+                            <div class="card-header d-flex align-items-center">Change Password</div>
                             <div class="card-body">
                                 <form id="changePasswordForm">
                                     <div class="mb-3 row">
@@ -1643,5 +1729,13 @@
             alert('Verification email has been resent. Please check your inbox.');
         }
     </script>
+    <!-- Modified footer to match landing page but simplified for dashboard -->
+    <footer class="footer d-none d-md-block">
+        <div class="container">
+            <div class="text-center">
+                <p class="copyright">&copy; 2025 Spacecode.AI. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
 </body>
 </html>
