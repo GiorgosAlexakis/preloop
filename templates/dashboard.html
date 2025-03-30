@@ -15,11 +15,14 @@
             background-color: var(--dark);
             min-height: 100vh;
             color: var(--light);
-            padding-top: 20px;
+            padding: 20px 0;
             position: fixed;
             width: 16.666667%;
             z-index: 100;
             box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
         }
         
         .sidebar h4 {
@@ -197,6 +200,15 @@
         .user-info #email {
             color: var(--secondary);
         }
+        
+        /* Sidebar copyright styling */
+        .sidebar-copyright {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.5);
+            padding-bottom: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin: 0 15px;
+        }
     </style>
 </head>
 <body>
@@ -207,7 +219,7 @@
                 <h4 class="text-center mb-4">
                     <img src="/static/images/logo_dark.png" alt="SpaceBridge MCP" height="32" class="mb-1">
                 </h4>
-                <div class="d-flex flex-column">
+                <div class="d-flex flex-column flex-grow-1">
                     <button class="nav-link active" id="dashboard-tab-btn" data-bs-target="#dashboard-tab" data-bs-toggle="tab">
                         <i class="bi bi-speedometer2"></i> Dashboard
                     </button>
@@ -223,6 +235,9 @@
                     <button class="nav-link" id="settings-tab-btn" data-bs-target="#settings-tab" data-bs-toggle="tab">
                         <i class="bi bi-gear"></i> Settings
                     </button>
+                </div>
+                <div class="sidebar-copyright text-center mt-auto pt-3">
+                    <small>&copy; 2025 Spacecode.AI</small>
                 </div>
             </div>
 
@@ -274,8 +289,8 @@
                                     <div class="card-header d-flex justify-content-between align-items-center">
                                         <span>API Usage - Last 7 Days</span>
                                     </div>
-                                    <div class="card-body">
-                                        <canvas id="apiUsageChart" width="100%" height="300"></canvas>
+                                    <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                                        <canvas id="apiUsageChart"></canvas>
                                     </div>
                                 </div>
                             </div>
@@ -1681,13 +1696,6 @@
             alert('Verification email has been resent. Please check your inbox.');
         }
     </script>
-    <!-- Modified footer to match landing page but simplified for dashboard -->
-    <footer class="footer d-none d-md-block">
-        <div class="container">
-            <div class="text-center">
-                <p class="copyright">&copy; 2025 Spacecode.AI. All rights reserved.</p>
-            </div>
-        </div>
-    </footer>
+    <!-- Footer removed and moved to sidebar -->
 </body>
 </html>
