@@ -60,7 +60,21 @@ def create_project(project: ProjectCreate, db: Session = Depends(get_db)) -> Pro
     }
 
     db_project = crud_project.create(db, obj_in=project_data)
-    return db_project
+    
+    # Convert datetime fields to match ProjectResponse schema
+    result = {
+        "id": db_project.id,
+        "name": db_project.name,
+        "identifier": db_project.identifier,
+        "description": db_project.description,
+        "organization_id": db_project.organization_id,
+        "settings": db_project.settings or {},
+        "tracker_configurations": db_project.tracker_settings or {},
+        "created_at": db_project.created_at.isoformat() if db_project.created_at else None,
+        "updated_at": db_project.updated_at.isoformat() if db_project.updated_at else None,
+    }
+    
+    return result
 
 
 @router.get("/projects", response_model=List[ProjectResponse])
@@ -69,7 +83,7 @@ def list_projects(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-) -> List[Project]:
+) -> List[dict]:
     """List all projects, optionally filtered by organization."""
     if organization_id:
         # If organization_id is provided, use the CRUD method with filter
@@ -84,7 +98,23 @@ def list_projects(
         # Otherwise, get all active projects
         projects = crud_project.get_active(db, skip=offset, limit=limit)
 
-    return projects
+    # Convert the SQLAlchemy model objects to dictionaries with string timestamps
+    serialized_projects = []
+    for project in projects:
+        serialized_project = {
+            "id": project.id,
+            "name": project.name,
+            "identifier": project.identifier,
+            "description": project.description,
+            "organization_id": project.organization_id,
+            "settings": project.settings or {},
+            "tracker_configurations": project.tracker_settings or {},
+            "created_at": project.created_at.isoformat() if project.created_at else None,
+            "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        }
+        serialized_projects.append(serialized_project)
+
+    return serialized_projects
 
 
 @router.get("/organizations/{organization_id}/projects")
@@ -178,7 +208,20 @@ def update_project(
 
     updated_project = crud_project.update(db, db_obj=project, obj_in=update_data)
 
-    return updated_project
+    # Convert datetime fields to match ProjectResponse schema
+    result = {
+        "id": updated_project.id,
+        "name": updated_project.name,
+        "identifier": updated_project.identifier,
+        "description": updated_project.description,
+        "organization_id": updated_project.organization_id,
+        "settings": updated_project.settings or {},
+        "tracker_configurations": updated_project.tracker_settings or {},
+        "created_at": updated_project.created_at.isoformat() if updated_project.created_at else None,
+        "updated_at": updated_project.updated_at.isoformat() if updated_project.updated_at else None,
+    }
+    
+    return result
 
 
 @router.delete("/projects/{project_id}", status_code=204)
