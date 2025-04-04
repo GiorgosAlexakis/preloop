@@ -28,7 +28,7 @@ crud_organization = CRUDOrganization(Organization)
 
 
 @router.post("/projects", response_model=ProjectResponse, status_code=201)
-def create_project(project: ProjectCreate, db: Session = Depends(get_db)) -> Project:
+def create_project(project: ProjectCreate, db: Session = Depends(get_db)) -> dict:
     """Create a new project."""
     # Check if organization exists
     organization = crud_organization.get(db, id=project.organization_id)
@@ -60,7 +60,23 @@ def create_project(project: ProjectCreate, db: Session = Depends(get_db)) -> Pro
     }
 
     db_project = crud_project.create(db, obj_in=project_data)
-    return db_project
+
+    # Convert datetime objects to ISO format strings
+    return {
+        "id": db_project.id,
+        "name": db_project.name,
+        "identifier": db_project.identifier,
+        "description": db_project.description,
+        "organization_id": db_project.organization_id,
+        "settings": db_project.settings,
+        "tracker_configurations": db_project.tracker_settings,
+        "created_at": db_project.created_at.isoformat()
+        if db_project.created_at
+        else None,
+        "updated_at": db_project.updated_at.isoformat()
+        if db_project.updated_at
+        else None,
+    }
 
 
 @router.get("/projects", response_model=List[ProjectResponse])
@@ -69,7 +85,7 @@ def list_projects(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-) -> List[Project]:
+) -> List[dict]:
     """List all projects, optionally filtered by organization."""
     if organization_id:
         # If organization_id is provided, use the CRUD method with filter
@@ -84,7 +100,28 @@ def list_projects(
         # Otherwise, get all active projects
         projects = crud_project.get_active(db, skip=offset, limit=limit)
 
-    return projects
+    # Convert datetime objects to ISO format strings
+    result = []
+    for project in projects:
+        result.append(
+            {
+                "id": project.id,
+                "name": project.name,
+                "identifier": project.identifier,
+                "description": project.description,
+                "organization_id": project.organization_id,
+                "settings": project.settings,
+                "tracker_configurations": project.tracker_settings,
+                "created_at": project.created_at.isoformat()
+                if project.created_at
+                else None,
+                "updated_at": project.updated_at.isoformat()
+                if project.updated_at
+                else None,
+            }
+        )
+
+    return result
 
 
 @router.get("/organizations/{organization_id}/projects")
@@ -135,12 +172,24 @@ def list_organization_projects(
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
-def get_project(project_id: str, db: Session = Depends(get_db)) -> Project:
+def get_project(project_id: str, db: Session = Depends(get_db)) -> dict:
     """Get a project by ID."""
     project = crud_project.get(db, id=project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project
+
+    # Convert datetime objects to ISO format strings
+    return {
+        "id": project.id,
+        "name": project.name,
+        "identifier": project.identifier,
+        "description": project.description,
+        "organization_id": project.organization_id,
+        "settings": project.settings,
+        "tracker_configurations": project.tracker_settings,
+        "created_at": project.created_at.isoformat() if project.created_at else None,
+        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+    }
 
 
 @router.get(
@@ -149,20 +198,32 @@ def get_project(project_id: str, db: Session = Depends(get_db)) -> Project:
 )
 def get_project_by_identifier(
     organization_id: str, identifier: str, db: Session = Depends(get_db)
-) -> Project:
+) -> dict:
     """Get a project by organization ID and project identifier."""
     project = crud_project.get_by_identifier(
         db, organization_id=organization_id, identifier=identifier
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project
+
+    # Convert datetime objects to ISO format strings
+    return {
+        "id": project.id,
+        "name": project.name,
+        "identifier": project.identifier,
+        "description": project.description,
+        "organization_id": project.organization_id,
+        "settings": project.settings,
+        "tracker_configurations": project.tracker_settings,
+        "created_at": project.created_at.isoformat() if project.created_at else None,
+        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+    }
 
 
 @router.put("/projects/{project_id}", response_model=ProjectResponse)
 def update_project(
     project_id: str, project_update: ProjectUpdate, db: Session = Depends(get_db)
-) -> Project:
+) -> dict:
     """Update a project."""
     project = crud_project.get(db, id=project_id)
     if not project:
@@ -178,7 +239,22 @@ def update_project(
 
     updated_project = crud_project.update(db, db_obj=project, obj_in=update_data)
 
-    return updated_project
+    # Convert datetime objects to ISO format strings
+    return {
+        "id": updated_project.id,
+        "name": updated_project.name,
+        "identifier": updated_project.identifier,
+        "description": updated_project.description,
+        "organization_id": updated_project.organization_id,
+        "settings": updated_project.settings,
+        "tracker_configurations": updated_project.tracker_settings,
+        "created_at": updated_project.created_at.isoformat()
+        if updated_project.created_at
+        else None,
+        "updated_at": updated_project.updated_at.isoformat()
+        if updated_project.updated_at
+        else None,
+    }
 
 
 @router.delete("/projects/{project_id}", status_code=204)

@@ -212,6 +212,8 @@ def create_app() -> FastAPI:
             "/static",
             "/register",
             "/verify-email",
+            "/forgot-password",
+            "/reset-password",
             "/api/v1/health",
         ]
         for path in openapi_schema["paths"]:
@@ -847,6 +849,30 @@ def create_app() -> FastAPI:
             return templates.TemplateResponse("login.html", {"request": request})
         except Exception as e:
             logger.error(f"Error rendering login page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+
+    # Add route for forgot-password page
+    @app.get("/forgot-password", response_class=HTMLResponse, tags=["Pages"])
+    async def forgot_password_page(request: Request):
+        """Forgot password page route."""
+        try:
+            return templates.TemplateResponse(
+                "forgot-password.html", {"request": request}
+            )
+        except Exception as e:
+            logger.error(f"Error rendering forgot password page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+
+    # Add route for reset-password page
+    @app.get("/reset-password", response_class=HTMLResponse, tags=["Pages"])
+    async def reset_password_page(request: Request):
+        """Reset password page route."""
+        try:
+            return templates.TemplateResponse(
+                "reset-password.html", {"request": request}
+            )
+        except Exception as e:
+            logger.error(f"Error rendering reset password page: {str(e)}")
             return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
 
     # Add route for register page

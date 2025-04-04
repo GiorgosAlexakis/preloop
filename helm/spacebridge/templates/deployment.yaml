@@ -69,6 +69,20 @@ spec:
                   name: {{ include "spacebridge.fullname" . }}
                   key: anthropic-api-key
             {{- end }}
+            {{- if .Values.config.smtp.host }}
+            - name: SMTP_HOST
+              value: {{ .Values.config.smtp.host | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.config.smtp.port | quote }}
+            - name: SMTP_USERNAME
+              value: {{ .Values.config.smtp.username | quote }}
+            - name: SMTP_PASSWORD
+              value: {{ .Values.config.smtp.password | quote }}
+            - name: SMTP_FROM
+              value: {{ .Values.config.smtp.from | quote }}
+            - name: SMTP_FROM_NAME
+              value: {{ .Values.config.smtp.fromName | quote }}
+            {{- end }}
         - name: spacesync
           command:
             - /bin/sh
