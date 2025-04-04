@@ -1,7 +1,7 @@
 """API key model for storing API access keys."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, List, Optional
@@ -78,7 +78,8 @@ class ApiKey(Base):
         """
         if self.expires_at is None:
             return False
-        return self.expires_at < datetime.utcnow()
+        # Make expires_at timezone-aware (assuming UTC) before comparing
+        return self.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
 
     def is_valid(self) -> bool:
         """Check if the key is valid.
@@ -90,4 +91,5 @@ class ApiKey(Base):
 
     def update_last_used(self) -> None:
         """Update the last_used_at timestamp to now."""
-        self.last_used_at = datetime.utcnow()
+        # Ensure last_used_at is also timezone-aware UTC
+        self.last_used_at = datetime.now(timezone.utc)

@@ -128,9 +128,9 @@ class IssueEmbedding(Base):
     )
 
     # The actual embedding vector (PostgreSQL vector type)
-    # Use JSON type for now to ensure compatibility
-    embedding: Mapped[Dict] = mapped_column(
-        JSON, nullable=False, comment="Embedding vector, stored as JSON array"
+    # The actual embedding vector, using VectorType which adapts to pgvector or JSONB.
+    embedding: Mapped[List[float]] = mapped_column(
+        VectorType(1536), nullable=False, comment="Embedding vector"
     )
 
     # Metadata about how this embedding was created
@@ -153,16 +153,3 @@ class IssueEmbedding(Base):
             "issue_id", "embedding_model_id", name="uix_issue_embedding_model"
         ),
     )
-
-
-# Event listener to set the embedding column type - commented out for now
-# @event.listens_for(IssueEmbedding, 'instrument_class')
-# def set_embedding_type(mapper, cls):
-#     """Set the correct type for the embedding column based on environment."""
-#     if VECTOR_TYPE_AVAILABLE:
-#         # Query the embedding model to get dimensions - default to 1536 if not found
-#         default_dimensions = 1536
-#         embedding_column = cls.__table__.c.embedding
-#
-#         # Use our custom VectorType
-#         embedding_column.type = VectorType(dimensions=default_dimensions)

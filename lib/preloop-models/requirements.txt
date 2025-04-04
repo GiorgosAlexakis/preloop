@@ -10,3 +10,4 @@ ruff>=0.11.0
 pre-commit>=4.1.0
 pgvector>=0.2.1
 numpy>=1.24.0
+alembic>=1.10.0 # Added for database migrations
