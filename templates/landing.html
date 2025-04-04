@@ -238,7 +238,7 @@
         // Check if user is authenticated
         function checkAuthStatus() {
             const token = localStorage.getItem('accessToken');
-            
+
             if (token) {
                 // User is logged in
                 document.getElementById('auth-nav-guest').style.display = 'none';

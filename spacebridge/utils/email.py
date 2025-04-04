@@ -14,7 +14,8 @@ SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-EMAIL_FROM = os.getenv("EMAIL_FROM", "hello@spacecode.ai")
+SMTP_FROM = os.getenv("SMTP_FROM", "hello@spacecode.ai")
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "SpaceBridge")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://spacebridge.io")
 
 
@@ -38,13 +39,13 @@ def send_email(
         subject: Email subject.
         body_text: Plain text email body.
         body_html: HTML email body (optional).
-        from_email: Sender email address (defaults to EMAIL_FROM).
+        from_email: Sender email address (defaults to SMTP_FROM).
 
     Raises:
         EmailError: If email sending fails.
     """
     if not from_email:
-        from_email = EMAIL_FROM
+        from_email = SMTP_FROM
 
     # Create message container
     msg = MIMEMultipart("alternative")

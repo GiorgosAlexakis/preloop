@@ -87,4 +87,10 @@ deploy:
       --set config.github.apiKey=${GITHUB_API_KEY}
       --set config.github.apiUrl=${GITHUB_API_URL}
       --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
+      --set config.smtp.host=${SMTP_HOST}
+      --set config.smtp.port=${SMTP_PORT}
+      --set config.smtp.username=${SMTP_USERNAME}
+      --set config.smtp.password=${SMTP_PASSWORD}
+      --set config.smtp.from=${SMTP_FROM}
+      --set config.smtp.fromName=${SMTP_FROM_NAME}
       --set ingress.enabled=true
