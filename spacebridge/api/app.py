@@ -165,6 +165,7 @@ def create_app() -> FastAPI:
 
     # Patch FastAPI's jsonable_encoder
     import fastapi.encoders
+
     original_jsonable_encoder = fastapi.encoders.jsonable_encoder
     fastapi.encoders.jsonable_encoder = custom_jsonable_encoder
 
