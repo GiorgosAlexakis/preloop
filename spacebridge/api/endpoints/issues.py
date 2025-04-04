@@ -7,9 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from spacebridge.schemas.issue import IssueCreate, IssueResponse, IssueUpdate
-from spacemodels.crud.issue import CRUDIssue
-from spacemodels.crud.organization import CRUDOrganization
-from spacemodels.crud.project import CRUDProject
+from spacemodels.crud import CRUDIssue, CRUDOrganization, CRUDProject, crud_embedding_model, crud_issue_embedding
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
@@ -70,7 +68,7 @@ async def get_tracker_client(organization_id: str, project_id: str, db: Session)
         project = crud_project.get_by_identifier(
             db, organization_id=organization.id, identifier=project_id
         )
-
+    
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -109,248 +107,100 @@ def search_issues(
     ),
     status: Optional[str] = Query(None, description="Filter by issue status"),
     labels: Optional[str] = Query(
-        None, description="Filter by issue labels (comma-separated)"
+        None, description="Filter by comma-separated list of labels"
     ),
-    assignee: Optional[str] = Query(None, description="Filter by issue assignee"),
+    assignee: Optional[str] = Query(None, description="Filter by assignee"),
     db: Session = Depends(get_db),
 ):
-    """Search for issues across configured trackers with optional semantic search."""
+    """
+    Search for issues within a project using text query and optional semantic search.
+    
+    Args:
+        organization: Organization identifier
+        project: Project identifier
+        query: Search query text
+        limit: Maximum number of issues to return
+        semantic: Whether to use semantic search with vector embeddings
+        status: Filter by issue status
+        labels: Filter by comma-separated list of labels
+        assignee: Filter by assignee
+        db: Database session
+        
+    Returns:
+        List of matching issues
+    """
     try:
-        # Get organization
-        if len(organization) == 36:  # Simple UUID check
-            org = crud_organization.get(db, id=organization)
-        else:
-            org = crud_organization.get_by_identifier(db, identifier=organization)
-
-        if not org:
-            raise HTTPException(status_code=404, detail="Organization not found")
-
-        # Get project
-        if len(project) == 36:  # Simple UUID check
-            proj = crud_project.get(db, id=project)
-        else:
-            proj = crud_project.get_by_identifier(
-                db, organization_id=org.id, identifier=project
-            )
-
+        import ipdb; ipdb.set_trace()
+        # Validate organization and project
+        proj = crud_project.get_by_identifier(db, organization_id=organization, identifier=project)
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
-
-        # Get issues for the project with basic filtering
-        issues = crud_issue.get_for_project(
-            db, project_id=proj.id, skip=0, limit=1000
-        )  # Get more issues for better search
-
-        # Debug: Log the project ID we're searching for
-        logger.info(f"Searching for issues in project {proj.id} ({proj.name})")
-        logger.info(f"Found {len(issues)} issues for the specified project")
-
-        # Always try the special project ID we know has issues
-        if not issues:
-            logger.info(
-                f"No issues found for project {proj.id}, trying direct lookup for special project"
-            )
-            # Try looking up a specific project UUID that we know has issues
-            special_project_id = "fd690dd8-a670-48c8-9ce6-b04f29b90a33"
-            special_proj_issues = crud_issue.get_for_project(
-                db, project_id=special_project_id, skip=0, limit=1000
-            )
-
-            if special_proj_issues:
-                logger.info(
-                    f"Found {len(special_proj_issues)} issues in special project {special_project_id}"
-                )
-                issues = special_proj_issues
-            else:
-                logger.info(
-                    f"No issues found in special project {special_project_id} either"
-                )
-
-                # If still no issues found, check all projects in this organization
-                all_org_projects = crud_project.get_for_organization(
-                    db, organization_id=org.id
-                )
-                logger.info(
-                    f"Looking for issues in all projects for org {org.id}, found {len(all_org_projects)} projects"
-                )
-
-                # For each project, try to get some issues
-                for other_proj in all_org_projects:
-                    proj_issues = crud_issue.get_for_project(
-                        db, project_id=other_proj.id, skip=0, limit=20
-                    )
-                    if proj_issues:
-                        logger.info(
-                            f"Found {len(proj_issues)} issues in project {other_proj.id} ({other_proj.name})"
-                        )
-                        issues.extend(proj_issues)
-                        if len(issues) >= 1000:  # Don't get too many
-                            break
-
-                # Debug the results
-                logger.info(f"Total issues found across all projects: {len(issues)}")
-
-        # Try semantic search if available and requested
-        if semantic:
-            try:
-                from spacemodels.crud.embedding import CRUDIssueEmbedding
-                from spacemodels.models.issue import EmbeddingModel, IssueEmbedding
-
-                # Initialize the CRUD for embeddings
-                crud_embedding = CRUDIssueEmbedding(IssueEmbedding)
-
-                # Get a model to use for search
-                embedding_model = (
-                    db.query(EmbeddingModel)
-                    .filter(EmbeddingModel.is_active.is_(True))
-                    .first()
-                )
-
-                if embedding_model:
-                    logger.info(f"Using embedding model: {embedding_model.name}")
-
-                    # Generate a test vector for the query (since we don't have API keys in test)
-                    # In a real implementation, we would generate the actual embedding for the query
-                    import random
-
-                    query_vector = [
-                        random.random() for _ in range(embedding_model.dimensions)
-                    ]
-
-                    # Perform similarity search
-                    results = crud_embedding.similarity_search(
-                        db,
-                        model_id=embedding_model.id,
-                        query_vector=query_vector,
-                        limit=limit,
-                        distance_type="cosine",
-                    )
-
-                    # If we have results from semantic search, use those
-                    if results:
-                        logger.info(
-                            f"Found {len(results)} results from semantic search"
-                        )
-
-                        # Get the issues and their scores
-                        filtered_issues = [issue for issue, score in results]
-
-                        # Check if these results belong to our project
-                        filtered_issues = [
-                            issue
-                            for issue in filtered_issues
-                            if issue.project_id == proj.id
-                        ]
-
-                        if filtered_issues:
-                            logger.info(
-                                f"Found {len(filtered_issues)} semantic results for project {proj.id}"
-                            )
-                        else:
-                            logger.info(
-                                f"No semantic results for project {proj.id}, falling back to text search"
-                            )
-                    else:
-                        logger.info(
-                            "No semantic search results, falling back to text search"
-                        )
-                        filtered_issues = []
-                else:
-                    logger.info(
-                        "No active embedding model found, falling back to text search"
-                    )
-                    filtered_issues = []
-            except Exception as e:
-                logger.warning(
-                    f"Error in semantic search, falling back to text search: {e}"
-                )
-                filtered_issues = []
-        else:
-            filtered_issues = []
-
-        # If we don't have semantic results, fall back to basic text search
-        if not filtered_issues:
-            logger.info(f"Performing text search for '{query}' in {len(issues)} issues")
-
-            # Apply simple text-based search
-            for issue in issues:
-                # Simple text matching (case-insensitive)
-                issue_text = f"{issue.title} {issue.description or ''}"
-                if query.lower() in issue_text.lower():
-                    if status and issue.status != status:
-                        continue
-                    filtered_issues.append(issue)
-
-            logger.info(f"Found {len(filtered_issues)} issues matching text search")
-
-        # Apply additional filters if needed
+        
+        # Create filter object for traditional search
+        filter_obj = IssueFilter(query=query, limit=limit)
+        if status:
+            filter_obj.status = status
         if labels:
-            labels_to_match = [label.strip().lower() for label in labels.split(",")]
-            filtered_issues = [
-                issue
-                for issue in filtered_issues
-                if any(
-                    label.lower() in labels_to_match
-                    for label in (
-                        issue.meta_data.get("labels", [])
-                        if isinstance(issue.meta_data, dict)
-                        else []
-                    )
-                )
-            ]
-
+            filter_obj.labels = labels.split(",")
         if assignee:
-            filtered_issues = [
-                issue
-                for issue in filtered_issues
-                if assignee.lower()
-                in [
-                    a.lower()
-                    for a in (
-                        issue.meta_data.get("assignees", [])
-                        if isinstance(issue.meta_data, dict)
-                        else []
-                    )
+            filter_obj.assignee = assignee
+        
+        if semantic and query:
+            # Get a client to generate embeddings for the query
+            tracker_client = get_tracker_client(organization, project, db)
+            
+            # 1. Generate embedding for the query
+            # Get the active embedding model
+            active_models = crud_embedding_model.get_active(db)
+            if not active_models:
+                # Fall back to text search if no embedding models are available
+                logger.warning("No active embedding models found, falling back to text search")
+                return crud_issue.search(db, project_id=proj.id, filter_obj=filter_obj)
+            
+            model_id = active_models[0].id
+            
+            # Generate query vector
+            query_vector = crud_issue_embedding._generate_embedding_vector(
+                query, active_models[0]
+            )
+            
+            # 2. Find similar issues using similarity search
+            similar_issues = crud_issue_embedding.similarity_search(
+                db,
+                model_id=model_id,
+                query_vector=query_vector,
+                limit=limit
+            )
+            
+            # 3. Extract issues and return them
+            results = [issue for issue, _ in similar_issues if issue.project_id == proj.id]
+            
+            # Apply additional filters if specified
+            if status:
+                results = [issue for issue in results if issue.status == status]
+            if labels and isinstance(filter_obj.labels, list):
+                results = [
+                    issue for issue in results 
+                    if issue.meta_data and "labels" in issue.meta_data and 
+                    all(label in issue.meta_data["labels"] for label in filter_obj.labels)
                 ]
-            ]
-
-        # Convert models to dictionaries
-        issue_dicts = []
-        for issue in filtered_issues[:limit]:  # Apply limit
-            # Extract data from JSON fields if available
-            meta_data = issue.meta_data or {}
-            labels_list = (
-                meta_data.get("labels", []) if isinstance(meta_data, dict) else []
-            )
-            assignees_list = (
-                meta_data.get("assignees", []) if isinstance(meta_data, dict) else []
-            )
-
-            issue_dict = {
-                "id": issue.id,
-                "tracker_id": issue.external_id or "",
-                "organization": org.name,
-                "project": proj.name,
-                "title": issue.title,
-                "description": issue.description or "",
-                "status": issue.status,
-                "priority": issue.priority or "",
-                "assignee": assignees_list[0] if assignees_list else "",
-                "labels": labels_list,
-                "url": issue.external_url or meta_data.get("url", ""),
-                "created_at": issue.created_at.isoformat() if issue.created_at else "",
-                "updated_at": issue.updated_at.isoformat() if issue.updated_at else "",
-                "metadata": meta_data,
-            }
-            issue_dicts.append(issue_dict)
-
-        # Return the results
-        return {"items": issue_dicts, "total": len(issue_dicts), "query": query}
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
+            if assignee:
+                results = [
+                    issue for issue in results 
+                    if issue.meta_data and "assignee" in issue.meta_data and 
+                    issue.meta_data["assignee"] == assignee
+                ]
+            
+            # Limit results to requested count
+            results = results[:limit]
+            
+            return [IssueResponse.from_orm(issue) for issue in results]
+        else:
+            # Use regular text search
+            issues = crud_issue.search(db, project_id=proj.id, filter_obj=filter_obj)
+            return [IssueResponse.from_orm(issue) for issue in issues]
     except Exception as e:
-        logger.error(f"Error searching issues: {e}", exc_info=True)
+        logger.error(f"Error searching issues: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error searching issues: {str(e)}")
 
 
