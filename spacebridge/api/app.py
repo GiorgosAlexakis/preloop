@@ -214,6 +214,7 @@ def create_app() -> FastAPI:
             "/verify-email",
             "/forgot-password",
             "/reset-password",
+            "/logout",
             "/api/v1/health",
         ]
         for path in openapi_schema["paths"]:
@@ -883,6 +884,16 @@ def create_app() -> FastAPI:
             return templates.TemplateResponse("verify-email.html", {"request": request})
         except Exception as e:
             logger.error(f"Error rendering email verification page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+
+    # Add route for logout page
+    @app.get("/logout", response_class=HTMLResponse, tags=["Pages"])
+    async def logout_page(request: Request):
+        """Logout page route."""
+        try:
+            return templates.TemplateResponse("logout.html", {"request": request})
+        except Exception as e:
+            logger.error(f"Error rendering logout page: {str(e)}")
             return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
 
     # Add route for register page
