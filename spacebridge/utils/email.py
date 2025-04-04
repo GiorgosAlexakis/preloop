@@ -10,12 +10,13 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Email configuration
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.example.com")
+SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-EMAIL_FROM = os.getenv("EMAIL_FROM", "hello@spacecode.ai")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8000")
+SMTP_FROM = os.getenv("SMTP_FROM", "hello@spacecode.ai")
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "SpaceBridge")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://spacebridge.io")
 
 
 class EmailError(Exception):
@@ -38,13 +39,13 @@ def send_email(
         subject: Email subject.
         body_text: Plain text email body.
         body_html: HTML email body (optional).
-        from_email: Sender email address (defaults to EMAIL_FROM).
+        from_email: Sender email address (defaults to SMTP_FROM).
 
     Raises:
         EmailError: If email sending fails.
     """
     if not from_email:
-        from_email = EMAIL_FROM
+        from_email = SMTP_FROM
 
     # Create message container
     msg = MIMEMultipart("alternative")
@@ -71,7 +72,7 @@ def send_email(
 
     try:
         # Send the message via SMTP server
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             server.starttls()  # Secure the connection
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
             server.sendmail(from_email, to_email, msg.as_string())

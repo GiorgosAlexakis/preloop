@@ -45,7 +45,3 @@ htmlcov/
 .DS_Store
 
 *.db
-
-# SpaceModels
-SpaceModels
-spacesync

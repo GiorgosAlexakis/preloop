@@ -2,6 +2,9 @@ image: alpine:3.15
 
 variables:
   CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/spacebridge
+  GIT_SUBMODULE_STRATEGY: "recursive"
+  GITLAB_TOKEN: $GITLAB_TOKEN
+
 
 cache:
   paths:
@@ -38,6 +41,7 @@ pre-commit:
     - pip install -U pip pre-commit ruff
   script:
     - pre-commit install
+    - ruff check
     - pre-commit run --all-files
 
 pytest:
@@ -52,13 +56,10 @@ pytest:
     POSTGRES_PASSWORD: test_password
     DATABASE_URL: postgresql://test_user:test_password@postgres:5432/test_db
   before_script:
-    - apt-get update && apt-get install -y git
     - pip install -U pip
-    - pip install pytest pytest-cov
+    - pip install pytest pytest-cov loguru
+    - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
     - pip install -e ".[dev]"
-    - git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/spacesync.git && cd spacesync && git checkout integrate-bridge && cd -
-    - git clone https://spacebridge:${GITLAB_TOKEN}@gitlab.spacecode.ai/spacecode/SpaceModels.git
-    - pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync && pip install --no-cache-dir -e .
 
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
@@ -86,6 +87,10 @@ deploy:
       --set config.github.apiKey=${GITHUB_API_KEY}
       --set config.github.apiUrl=${GITHUB_API_URL}
       --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
+      --set config.smtp.host=${SMTP_HOST}
+      --set config.smtp.port=${SMTP_PORT}
+      --set config.smtp.username=${SMTP_USERNAME}
+      --set config.smtp.password=${SMTP_PASSWORD}
+      --set config.smtp.from=${SMTP_FROM}
+      --set config.smtp.fromName=${SMTP_FROM_NAME}
       --set ingress.enabled=true
-      --set ingress.hosts[0].name=bridge.spacecode.ai
-      --set ingress.tls[0].secretName=spacebridge-tls

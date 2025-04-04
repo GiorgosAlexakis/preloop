@@ -13,7 +13,7 @@ info:
 servers:
   - url: http://localhost:8000/api/v1
     description: Local development server
-  - url: https://bridge.spacecode.ai/api/v1
+  - url: https://spacebridge.io/api/v1
     description: Production server
 
 tags:

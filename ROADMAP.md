@@ -43,7 +43,7 @@
 - [ ] Hybrid search combining vector and metadata
 - [ ] Batch indexing mechanism
 
-### SpaceBridgeCrosser (Companion MCP Server)
+### SpaceBridge-MCP (Companion MCP Server)
 - [ ] Minimal MCP server implementation with stdio transport
 - [ ] HTTP client for connecting to SpaceBridge REST API
 - [ ] Tool registration and discovery

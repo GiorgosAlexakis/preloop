@@ -25,6 +25,7 @@ dependencies = [
     "python-json-logger>=2.0.0",
     "jinja2>=3.1.2",
     "aiosmtplib>=2.0.2",
+    "loguru>=0.7.3",
     # Using SpaceModels for database models and operations
     # "spacemodels @ file://${PROJECT_ROOT}/SpaceModels",
     # "spacesync @ file://${PROJECT_ROOT}/spacesync",
@@ -66,6 +67,7 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "B", "I", "N", "W"]
 ignore = ["B008", "E501", "F841", "E741", "B904", "N805", "F821"]  # Ignore problematic rules for now
+extend-ignore = ["I001"]
 
 # Format configuration
 [tool.ruff.format]

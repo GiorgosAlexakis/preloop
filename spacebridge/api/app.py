@@ -212,6 +212,8 @@ def create_app() -> FastAPI:
             "/static",
             "/register",
             "/verify-email",
+            "/forgot-password",
+            "/reset-password",
             "/api/v1/health",
         ]
         for path in openapi_schema["paths"]:
@@ -849,6 +851,30 @@ def create_app() -> FastAPI:
             logger.error(f"Error rendering login page: {str(e)}")
             return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
 
+    # Add route for forgot-password page
+    @app.get("/forgot-password", response_class=HTMLResponse, tags=["Pages"])
+    async def forgot_password_page(request: Request):
+        """Forgot password page route."""
+        try:
+            return templates.TemplateResponse(
+                "forgot-password.html", {"request": request}
+            )
+        except Exception as e:
+            logger.error(f"Error rendering forgot password page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+
+    # Add route for reset-password page
+    @app.get("/reset-password", response_class=HTMLResponse, tags=["Pages"])
+    async def reset_password_page(request: Request):
+        """Reset password page route."""
+        try:
+            return templates.TemplateResponse(
+                "reset-password.html", {"request": request}
+            )
+        except Exception as e:
+            logger.error(f"Error rendering reset password page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+
     # Add route for register page
     @app.get("/register", response_class=HTMLResponse, tags=["Pages"])
     async def register_page(request: Request):
@@ -877,6 +903,26 @@ def create_app() -> FastAPI:
             return templates.TemplateResponse("trackers.html", {"request": request})
         except Exception as e:
             logger.error(f"Error rendering trackers page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+
+    # Add route for privacy policy page
+    @app.get("/privacy", response_class=HTMLResponse, tags=["Pages"])
+    async def privacy_page(request: Request):
+        """Privacy policy page route."""
+        try:
+            return templates.TemplateResponse("privacy.html", {"request": request})
+        except Exception as e:
+            logger.error(f"Error rendering privacy policy page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+
+    # Add route for terms of service page
+    @app.get("/terms", response_class=HTMLResponse, tags=["Pages"])
+    async def terms_page(request: Request):
+        """Terms of service page route."""
+        try:
+            return templates.TemplateResponse("terms.html", {"request": request})
+        except Exception as e:
+            logger.error(f"Error rendering terms of service page: {str(e)}")
             return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
 
     # Initialize the database on startup

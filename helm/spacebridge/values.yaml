@@ -35,18 +35,21 @@ service:
 # Ingress configuration
 ingress:
   enabled: true
-  className: ""
+  className: "nginx"
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   hosts:
-    - host: bridge.spacecode.ai
+    - host: spacebridge.io
       paths:
         - path: /
           pathType: ImplementationSpecific
   tls:
-    - hosts:
-        - bridge.spacecode.ai
-      secretName: spacebridge-tls
+    - secretName: spacebridge-tls
+      hosts:
+        - spacebridge.io
+        - www.spacebridge.io
+        - api.spacebridge.io
+        - install.spacebridge.io
 
 # Resource requests and limits
 resources:
@@ -83,7 +86,7 @@ environment:
   # Database settings
   databaseUrl: "postgresql://postgres:postgres@spacebridge-db-rw:5432/spacebridge"
   # JWT settings
-  jwtSecret: "change-this-in-production"
+  jwtSecret: "b6fe6fa9-cf7c-4798-8328-f778712062df"
   jwtAlgorithm: "HS256"
   jwtExpireMinutes: 60
 
@@ -91,15 +94,15 @@ environment:
 config:
   openai:
     apiKey: ""
-  gitlab:
+  anthropic:
     apiKey: ""
-    apiUrl: "https://gitlab.com/api/v4"
-  github:
-    apiKey: ""
-    apiUrl: "https://api.github.com"
-  jira:
-    apiKey: ""
-    apiUrl: "https://your-jira-instance.atlassian.net"
+  smtp:
+    host: ""
+    port: 587
+    username: ""
+    password: ""
+    from: ""
+    fromName: "SpaceBridge"
 
 # Database configuration
 database:
