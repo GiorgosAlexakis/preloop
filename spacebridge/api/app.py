@@ -875,6 +875,16 @@ def create_app() -> FastAPI:
             logger.error(f"Error rendering reset password page: {str(e)}")
             return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
 
+    # Add route for verify-email page
+    @app.get("/verify-email", response_class=HTMLResponse, tags=["Pages"])
+    async def verify_email_page(request: Request):
+        """Email verification page route."""
+        try:
+            return templates.TemplateResponse("verify-email.html", {"request": request})
+        except Exception as e:
+            logger.error(f"Error rendering email verification page: {str(e)}")
+            return HTMLResponse(content=f"<h1>Error rendering template: {str(e)}</h1>")
+
     # Add route for register page
     @app.get("/register", response_class=HTMLResponse, tags=["Pages"])
     async def register_page(request: Request):
