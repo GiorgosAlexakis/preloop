@@ -311,19 +311,19 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         distance_type: str = "cosine",
     ) -> List[Tuple[Issue, float]]:
         """Perform vector similarity search using pgvector."""
-        # Convert query vector to pgvector format if needed
-        vector_query = query_vector
+        # Cast query vector to pgvector format using SQL cast
+        # Need explicit casting to vector type for PostgreSQL operators
 
-        # Select the right distance operator
+        # Select the right distance operator with explicit vector casting
         if distance_type == "cosine":
             # Cosine distance: <=>
-            distance_op = "<=> :query_vector"
+            distance_op = "<=> CAST(:query_vector AS vector)"
         elif distance_type == "euclidean":
             # Euclidean distance: <->
-            distance_op = "<-> :query_vector"
+            distance_op = "<-> CAST(:query_vector AS vector)"
         else:
             # Default to cosine distance
-            distance_op = "<=> :query_vector"
+            distance_op = "<=> CAST(:query_vector AS vector)"
 
         # Construct the raw SQL query
         query = text(
@@ -359,7 +359,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
 
         # Execute the query
         result = db.execute(
-            query, {"model_id": model_id, "query_vector": vector_query, "limit": limit}
+            query, {"model_id": model_id, "query_vector": query_vector, "limit": limit}
         )
 
         # Convert results to Issue objects with similarity scores
