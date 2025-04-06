@@ -153,19 +153,8 @@ def search_issues(
             filter_obj.assignee = assignee
 
         if semantic and query:
-            # Get a client to generate embeddings for the query
-            tracker_client = get_tracker_client(organization, project, db)
-
-            # 1. Generate embedding for the query
             # Get the active embedding model
             active_models = crud_embedding_model.get_active(db)
-            if not active_models:
-                # Fall back to text search if no embedding models are available
-                logger.warning(
-                    "No active embedding models found, falling back to text search"
-                )
-                return crud_issue.search(db, project_id=proj.id, filter_obj=filter_obj)
-
             model_id = active_models[0].id
 
             # Generate query vector
