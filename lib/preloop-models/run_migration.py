@@ -73,14 +73,15 @@ def parse_args():
         description="Run a SQL migration file against a PostgreSQL database.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    
+
     parser.add_argument(
-        "--file", "-f",
+        "--file",
+        "-f",
         required=True,
         help="Path to the SQL migration file to execute",
-        dest="migration_file_path"
+        dest="migration_file_path",
     )
-    
+
     return parser.parse_args()
 
 
@@ -88,7 +89,7 @@ def main():
     """Main entry point for the script."""
     # Parse command line arguments
     args = parse_args()
-    
+
     # Check if the DATABASE_URL environment variable is set
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
@@ -100,7 +101,7 @@ def main():
 
     # Run the migration
     success = run_migration(database_url, args.migration_file_path)
-    
+
     # Exit with appropriate status code
     sys.exit(0 if success else 1)
 
