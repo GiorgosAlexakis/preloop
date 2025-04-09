@@ -22,7 +22,8 @@ def scan():
 
 @scan.command(name="all")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
-def scan_all(verbose: bool):
+@click.option("--force-update", "-f", is_flag=True, help="Force update of all embeddings even if content hasn't changed")
+def scan_all(verbose: bool, force_update: bool):
     """
     Scan all accounts, trackers, projects, and issues.
 
@@ -30,6 +31,8 @@ def scan_all(verbose: bool):
     and scan all projects and issues from those trackers. For each issue, it will
     extract information and store it in the database, and generate a vector embedding
     if the issue content has changed.
+
+    Using --force-update will regenerate all embeddings even if content hasn't changed.
     """
     # Get database session
     db = next(get_db_session())
@@ -37,7 +40,7 @@ def scan_all(verbose: bool):
     click.echo("Starting scan of all accounts...")
 
     # Scan all accounts
-    stats = scan_all_accounts(db, verbose)
+    stats = scan_all_accounts(db, verbose, force_update)
 
     if not verbose:
         # If not verbose mode, print a summary

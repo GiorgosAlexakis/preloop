@@ -182,6 +182,7 @@ class TrackerClient:
         organization: Organization,
         project: Project,
         since: Optional[datetime.datetime] = None,
+        force_update: bool = False,
     ) -> Tuple[List[Issue], int]:
         """
         Scan and update issues for a project.
@@ -191,6 +192,7 @@ class TrackerClient:
             organization: Organization model
             project: Project model
             since: Only update issues modified since this datetime
+            force_update: Whether to force update all embeddings even if content hasn't changed
 
         Returns:
             Tuple of (list of issue models, count of issues with updated embeddings)
@@ -250,8 +252,8 @@ class TrackerClient:
 
             issues.append(issue)
 
-            # Update embeddings if content changed
-            if content_changed:
+            # Update embeddings if content changed or force_update is True
+            if content_changed or force_update:
                 embedding_updates += 1
                 # Create or update embeddings
                 crud_issue_embedding.create_embeddings(db, issue_id=issue.id)
@@ -263,7 +265,7 @@ class TrackerClient:
 
 
 def scan_tracker(
-    db: Session, tracker: Tracker, verbose: bool = False
+    db: Session, tracker: Tracker, verbose: bool = False, force_update: bool = False
 ) -> Dict[str, Any]:
     """
     Scan a single tracker and update the database.
@@ -272,6 +274,7 @@ def scan_tracker(
         db: Database session
         tracker: Tracker model to scan
         verbose: Whether to print verbose output
+        force_update: Whether to force update all embeddings even if content hasn't changed
 
     Returns:
         Dictionary containing scan statistics
@@ -317,7 +320,9 @@ def scan_tracker(
     # Scan issues for each project
     for project in all_projects:
         org = next(org for org in orgs if org.id == project.organization_id)
-        issues, embedding_updates = client.scan_issues(db, org, project, since)
+        issues, embedding_updates = client.scan_issues(
+            db, org, project, since, force_update
+        )
         stats["issues"] += len(issues)
         stats["embeddings_updated"] += embedding_updates
 
@@ -347,7 +352,9 @@ def scan_tracker(
     return stats
 
 
-def scan_account(db: Session, account_id: str, verbose: bool = False) -> Dict[str, Any]:
+def scan_account(
+    db: Session, account_id: str, verbose: bool = False, force_update: bool = False
+) -> Dict[str, Any]:
     """
     Scan all trackers for a single account and update the database.
 
@@ -355,6 +362,7 @@ def scan_account(db: Session, account_id: str, verbose: bool = False) -> Dict[st
         db: Database session
         account_id: ID of the account to scan (UUID string)
         verbose: Whether to print verbose output
+        force_update: Whether to force update all embeddings even if content hasn't changed
 
     Returns:
         Dictionary containing scan statistics
@@ -380,7 +388,7 @@ def scan_account(db: Session, account_id: str, verbose: bool = False) -> Dict[st
 
     # Scan each tracker
     for tracker in trackers:
-        stats = scan_tracker(db, tracker, verbose)
+        stats = scan_tracker(db, tracker, verbose, force_update)
 
         # Aggregate statistics
         account_stats["trackers_scanned"] += 1
@@ -406,13 +414,16 @@ def scan_account(db: Session, account_id: str, verbose: bool = False) -> Dict[st
     return account_stats
 
 
-def scan_all_accounts(db: Session, verbose: bool = False) -> Dict[str, Any]:
+def scan_all_accounts(
+    db: Session, verbose: bool = False, force_update: bool = False
+) -> Dict[str, Any]:
     """
     Scan all accounts and their trackers and update the database.
 
     Args:
         db: Database session
         verbose: Whether to print verbose output
+        force_update: Whether to force update all embeddings even if content hasn't changed
 
     Returns:
         Dictionary containing scan statistics
@@ -444,7 +455,7 @@ def scan_all_accounts(db: Session, verbose: bool = False) -> Dict[str, Any]:
         if verbose:
             print(f"\nScanning account: {account.username} (ID: {account.id})")
 
-        account_stats = scan_account(db, account.id, verbose)
+        account_stats = scan_account(db, account.id, verbose, force_update)
 
         # Aggregate statistics
         overall_stats["accounts_scanned"] += 1
