@@ -198,7 +198,45 @@ def search_issues(
             # Limit results to requested count
             results = results[:limit]
 
-            return [IssueResponse.from_orm(issue) for issue in results]
+            # Convert database Issue models to IssueResponse objects
+            # Need to handle datetime conversion and add required fields
+            response_items = []
+            for issue in results:
+                # Format datetime fields as ISO strings
+                created_at_str = (
+                    issue.created_at.isoformat() if issue.created_at else None
+                )
+                updated_at_str = (
+                    issue.updated_at.isoformat() if issue.updated_at else None
+                )
+
+                # Convert metadata to dictionary if it's not already
+                metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
+
+                # Create response object with all required fields
+                response_item = IssueResponse(
+                    id=issue.id,
+                    title=issue.title,
+                    description=issue.description,
+                    status=issue.status,
+                    priority=issue.priority,
+                    tracker_id=issue.external_id,
+                    organization=organization,  # Use the organization ID from the request
+                    project=project,  # Use the project ID from the request
+                    url=issue.external_url
+                    or f"https://spacebridge.ai/issues/{issue.id}",  # Provide fallback URL
+                    created_at=created_at_str,
+                    updated_at=updated_at_str,
+                    metadata=metadata_dict,
+                    # Include other fields from the issue as needed
+                    labels=metadata_dict.get("labels", [])
+                    if isinstance(metadata_dict.get("labels"), list)
+                    else [],
+                    assignee=metadata_dict.get("assignee"),
+                )
+                response_items.append(response_item)
+
+            return response_items
         else:
             # Use regular text search
             issues = crud_issue.search(db, project_id=proj.id, filter_obj=filter_obj)
