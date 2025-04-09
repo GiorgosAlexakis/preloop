@@ -102,14 +102,14 @@ async def get_tracker_client(organization_id: str, project_id: str, db: Session)
 
 @router.get("/issues/search")
 def search_issues(
-    organization: str = Query(..., description="Organization identifier"),
-    project: str = Query(..., description="Project identifier"),
+    organization: Optional[str] = Query(None, description="Organization identifier"),
+    project: Optional[str] = Query(None, description="Project identifier"),
     query: Optional[str] = Query("", description="Search query text"),
     limit: int = Query(
         10, ge=1, le=100, description="Maximum number of issues to return"
     ),
     semantic: bool = Query(
-        False, description="Whether to use semantic search with vector embeddings"
+        True, description="Whether to use semantic search with vector embeddings"
     ),
     status: Optional[str] = Query(None, description="Filter by issue status"),
     labels: Optional[str] = Query(
@@ -137,11 +137,13 @@ def search_issues(
     """
     try:
         # Validate organization and project
-        proj = crud_project.get_by_identifier(
-            db, organization_id=organization, identifier=project
-        )
-        if not proj:
-            raise HTTPException(status_code=404, detail="Project not found")
+        proj = None
+        if project and organization:
+            proj = crud_project.get_by_identifier(
+                db, organization_id=organization, identifier=project
+            )
+            if not proj:
+                raise HTTPException(status_code=404, detail="Project not found")
 
         # Create filter object for traditional search
         filter_obj = IssueFilter(query=query, limit=limit)
@@ -168,9 +170,12 @@ def search_issues(
             )
 
             # 3. Extract issues and return them
-            results = [
-                issue for issue, _ in similar_issues if issue.project_id == proj.id
-            ]
+            if proj:
+                results = [
+                    issue for issue, _ in similar_issues if issue.project_id == proj.id
+                ]
+            else:
+                results = [issue for issue, _ in similar_issues]
 
             # Apply additional filters if specified
             if status:
@@ -213,6 +218,12 @@ def search_issues(
                 # Convert metadata to dictionary if it's not already
                 metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
 
+                # Find the organization ID by looking up the project
+                issue_project = crud_project.get(db, id=issue.project_id)
+                organization_id = (
+                    issue_project.organization_id if issue_project else "None"
+                )
+
                 # Create response object with all required fields
                 response_item = IssueResponse(
                     id=issue.id,
@@ -221,8 +232,8 @@ def search_issues(
                     status=issue.status,
                     priority=issue.priority,
                     tracker_id=issue.external_id,
-                    organization=organization,  # Use the organization ID from the request
-                    project=project,  # Use the project ID from the request
+                    organization=organization_id,  # Use the actual organization ID from the project
+                    project=issue.project_id,  # Use the project ID from the request
                     url=issue.external_url
                     or f"https://spacebridge.ai/issues/{issue.id}",  # Provide fallback URL
                     created_at=created_at_str,
