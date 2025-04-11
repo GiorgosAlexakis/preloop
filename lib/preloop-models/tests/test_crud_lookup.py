@@ -58,14 +58,18 @@ def test_organization_get_by_name(db_session: Session):
     assert org.name == "Test Organization"
 
     # Test get_by_name with tracker1 filter
-    org = crud_organization.get_by_name(db_session, name="Test Organization", tracker_id=tracker1.id)
+    org = crud_organization.get_by_name(
+        db_session, name="Test Organization", tracker_id=tracker1.id
+    )
     assert org is not None
     assert org.name == "Test Organization"
     assert org.tracker_id == tracker1.id
     assert org.identifier == "test-org-1"
 
     # Test get_by_name with tracker2 filter
-    org = crud_organization.get_by_name(db_session, name="Test Organization", tracker_id=tracker2.id)
+    org = crud_organization.get_by_name(
+        db_session, name="Test Organization", tracker_id=tracker2.id
+    )
     assert org is not None
     assert org.name == "Test Organization"
     assert org.tracker_id == tracker2.id
@@ -76,7 +80,9 @@ def test_organization_get_by_name(db_session: Session):
     assert org is None
 
     # Test get_by_name with non-existent tracker
-    org = crud_organization.get_by_name(db_session, name="Test Organization", tracker_id=str(uuid.uuid4()))
+    org = crud_organization.get_by_name(
+        db_session, name="Test Organization", tracker_id=str(uuid.uuid4())
+    )
     assert org is None
 
 
@@ -139,14 +145,18 @@ def test_project_get_by_name(db_session: Session):
     assert project.name == "Test Project"
 
     # Test get_by_name with organization filter
-    project = crud_project.get_by_name(db_session, name="Test Project", organization_id=org1.id)
+    project = crud_project.get_by_name(
+        db_session, name="Test Project", organization_id=org1.id
+    )
     assert project is not None
     assert project.name == "Test Project"
     assert project.organization_id == org1.id
     assert project.identifier == "test-project-1"
 
     # Test get_by_name with tracker filter - should still work through organization's tracker
-    project = crud_project.get_by_name(db_session, name="Test Project", tracker_id=tracker.id)
+    project = crud_project.get_by_name(
+        db_session, name="Test Project", tracker_id=tracker.id
+    )
     assert project is not None
     assert project.name == "Test Project"
 
@@ -246,14 +256,18 @@ def test_issue_get_by_title(db_session: Session):
     assert issue.title == "Test Issue"
 
     # Test get_by_title with project filter
-    issue = crud_issue.get_by_title(db_session, title="Test Issue", project_id=project1.id)
+    issue = crud_issue.get_by_title(
+        db_session, title="Test Issue", project_id=project1.id
+    )
     assert issue is not None
     assert issue.title == "Test Issue"
     assert issue.project_id == project1.id
     assert issue.external_id == "ext-1"
 
     # Test get_by_title with organization filter
-    issue = crud_issue.get_by_title(db_session, title="Test Issue", organization_id=org.id)
+    issue = crud_issue.get_by_title(
+        db_session, title="Test Issue", organization_id=org.id
+    )
     assert issue is not None
     assert issue.title == "Test Issue"
     # Issues don't have organization_id directly - verify through project relationship
@@ -261,18 +275,20 @@ def test_issue_get_by_title(db_session: Session):
     assert project.organization_id == org.id
 
     # Test get_by_title with tracker filter
-    issue = crud_issue.get_by_title(db_session, title="Test Issue", tracker_id=tracker.id)
+    issue = crud_issue.get_by_title(
+        db_session, title="Test Issue", tracker_id=tracker.id
+    )
     assert issue is not None
     assert issue.title == "Test Issue"
     assert issue.tracker_id == tracker.id
 
     # Test get_by_title with project, organization, and tracker filters
     issue = crud_issue.get_by_title(
-        db_session, 
-        title="Test Issue", 
+        db_session,
+        title="Test Issue",
         project_id=project2.id,
         organization_id=org.id,
-        tracker_id=tracker.id
+        tracker_id=tracker.id,
     )
     assert issue is not None
     assert issue.title == "Test Issue"
