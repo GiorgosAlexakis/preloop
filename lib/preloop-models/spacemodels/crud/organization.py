@@ -19,6 +19,27 @@ class CRUDOrganization(CRUDBase[Organization]):
             db.query(Organization).filter(Organization.identifier == identifier).first()
         )
 
+    def get_by_name(
+        self, db: Session, *, name: str, tracker_id: Optional[str] = None
+    ) -> Optional[Organization]:
+        """
+        Get organization by name with optional tracker filter.
+
+        Args:
+            db: Database session
+            name: Organization name to search for
+            tracker_id: Optional tracker ID to filter by
+
+        Returns:
+            Organization object if found, otherwise None
+        """
+        query = db.query(Organization).filter(Organization.name == name)
+
+        if tracker_id:
+            query = query.filter(Organization.tracker_id == tracker_id)
+
+        return query.first()
+
     def count(self, db: Session, **filters) -> int:
         """Count total number of organizations, with optional filtering."""
         query = db.query(Organization)
