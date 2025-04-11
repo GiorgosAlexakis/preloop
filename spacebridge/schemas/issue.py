@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, root_validator
 
 
 class IssueBase(BaseModel):
@@ -24,8 +24,43 @@ class IssueBase(BaseModel):
 class IssueCreate(IssueBase):
     """Model for creating a new issue."""
 
-    organization: str = Field(..., description="Organization identifier")
-    project: str = Field(..., description="Project identifier")
+    # Support multiple ways to specify organization
+    organization_id: Optional[str] = Field(None, description="Organization ID (UUID)")
+    organization_name: Optional[str] = Field(None, description="Organization name")
+    organization: Optional[str] = Field(
+        None, description="Organization identifier (deprecated)"
+    )
+
+    # Support multiple ways to specify project
+    project_id: Optional[str] = Field(None, description="Project ID (UUID)")
+    project_name: Optional[str] = Field(None, description="Project name")
+    project: Optional[str] = Field(None, description="Project identifier (deprecated)")
+
+    # Add validation to ensure at least one org and project parameter is provided
+    @root_validator(pre=True)
+    def check_org_project_provided(cls, values):
+        """Validate that at least one organization and project parameter is provided."""
+        # Check organization params
+        has_org = (
+            values.get("organization_id") is not None
+            or values.get("organization_name") is not None
+            or values.get("organization") is not None
+        )
+
+        # Check project params
+        has_project = (
+            values.get("project_id") is not None
+            or values.get("project_name") is not None
+            or values.get("project") is not None
+        )
+
+        if not has_org:
+            raise ValueError("At least one organization parameter must be provided")
+
+        if not has_project:
+            raise ValueError("At least one project parameter must be provided")
+
+        return values
 
 
 class IssueUpdate(BaseModel):

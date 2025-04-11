@@ -307,10 +307,64 @@ async def create_issue(
     issue: IssueCreate,
     db: Session = Depends(get_db),
 ) -> IssueResponse:
-    """Create a new issue in a specified project."""
+    """Create a new issue in a specified project.
+
+    Supports specifying organization/project by:
+    - ID (organization_id/project_id)
+    - Name (organization_name/project_name)
+    - Identifier (organization/project - deprecated)
+    """
     try:
-        # Get the tracker client
-        tracker_client = await get_tracker_client(issue.organization, issue.project, db)
+        # Resolve organization and project using either ID, name, or identifier
+        from spacemodels.crud import crud_organization, crud_project
+
+        # Process organization parameters (prioritize new parameters over deprecated ones)
+        org = None
+        org_id = None
+
+        if issue.organization_id:
+            org = crud_organization.get(db, id=issue.organization_id)
+            if org:
+                org_id = org.id
+        elif issue.organization_name:
+            org = crud_organization.get_by_name(db, name=issue.organization_name)
+            if org:
+                org_id = org.id
+        elif issue.organization:
+            # For backward compatibility
+            org_id = issue.organization
+
+        if not org_id:
+            raise HTTPException(status_code=400, detail="Organization not found")
+
+        # Process project parameters
+        proj = None
+        proj_id = None
+
+        if issue.project_id:
+            proj = crud_project.get(db, id=issue.project_id)
+            if proj:
+                proj_id = proj.id
+        elif issue.project_name:
+            # If we have an organization, use it to narrow down the project search
+            proj = crud_project.get_by_name(
+                db, name=issue.project_name, organization_id=org_id
+            )
+            if proj:
+                proj_id = proj.id
+        elif issue.project:
+            # For backward compatibility with identifier
+            proj = crud_project.get_by_identifier(
+                db, organization_id=org_id, identifier=issue.project
+            )
+            if proj:
+                proj_id = proj.id
+
+        if not proj_id:
+            raise HTTPException(status_code=400, detail="Project not found")
+
+        # Get the tracker client using the resolved IDs
+        tracker_client = await get_tracker_client(org_id, proj_id, db)
 
         # Prepare the issue create model
         tracker_issue = TrackerIssueCreate(
@@ -325,12 +379,12 @@ async def create_issue(
         # Create the issue
         created_issue = await tracker_client.create_issue(tracker_issue)
 
-        # Convert tracker issue to API response model
+        # For the response, use the IDs we found (which might be different from what was passed in)
         return IssueResponse(
             id=created_issue.id,
             tracker_id=created_issue.tracker_id,
-            organization=issue.organization,
-            project=issue.project,
+            organization=org_id,
+            project=proj_id,
             title=created_issue.title,
             description=created_issue.description,
             status=created_issue.status,
