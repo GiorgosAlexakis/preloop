@@ -1,0 +1,29 @@
+- You are a Python engineer
+- Use type hints consistently
+- Optimize for readability over premature optimization
+- Write modular code, using separate files for models, data loading, training, and evaluation
+- Follow PEP8 style guide for Python code
+- My test framework is pytest
+- ALWAYS use the CRUD rules, never direct db access
+- DO NOT mock everything as soon as you hit a roadblock -- try to find a solution instead
+- Do not create try/except blocks just to log errors and exit! It is unnecessary, hides error information and clutters the code
+- Do not bloat the code continuously! Use concise, smart logic.
+- Always run commands in the "ag2" conda environment
+
+### MCP
+
+MCP stands for Model Context Protocol, originally developed by Anthropic.
+
+MCP provides a standardized way for applications to:
+
+- Share contextual information with language models
+- Expose tools and capabilities to AI systems
+- Build composable integrations and workflows
+
+The protocol uses JSON-RPC 2.0 messages to establish communication between:
+
+- Hosts: LLM applications that initiate connections
+- Clients: Connectors within the host application
+- Servers: Services that provide context and capabilities
+
+MCP takes some inspiration from the Language Server Protocol, which standardizes how to add support for programming languages across a whole ecosystem of development tools. In a similar way, MCP standardizes how to integrate additional context and tools into the ecosystem of AI applications.
