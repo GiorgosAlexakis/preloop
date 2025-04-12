@@ -279,9 +279,15 @@ async def search_issues(
             # Use regular text search
             issues = crud_issue.search(db, project_id=proj.id, filter_obj=filter_obj)
             return [IssueResponse.from_orm(issue) for issue in issues]
+    except HTTPException:
+        # Re-raise specific HTTP exceptions (like the 404 for project not found)
+        raise
     except Exception as e:
-        logger.error(f"Error searching issues: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error searching issues: {str(e)}")
+        # Catch any other unexpected errors
+        logger.error(f"Unexpected error searching issues: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Internal server error during issue search."
+        )
 
 
 @router.post("/issues", response_model=IssueResponse, status_code=201)
