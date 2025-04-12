@@ -29,6 +29,7 @@ from spacebridge.api.endpoints import (
     organizations,
     projects,
     trackers,
+    version,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -297,6 +298,9 @@ def create_app() -> FastAPI:
         tags=["Trackers"],
         dependencies=[Depends(get_current_active_user)],
     )
+    app.include_router(
+        version.router, prefix="/api/v1", tags=["Version"]
+    )  # No auth dependency for version check
 
     # Create HTML landing page template
 

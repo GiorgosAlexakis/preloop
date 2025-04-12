@@ -1,0 +1,81 @@
+import logging
+from typing import Annotated, Optional
+
+from fastapi import APIRouter, Depends, Header, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from spacebridge.config import (
+    SERVER_VERSION,
+    MIN_CLIENT_VERSION,
+    MAX_CLIENT_VERSION,
+)  # Import constants directly
+from spacebridge.api.auth import (
+    get_current_user,
+    oauth2_scheme,
+)  # Import from auth package level
+from spacebridge.schemas.version import VersionInfo
+from SpaceModels.spacemodels.db.session import get_db_session  # Correct function name
+
+# Account model is returned by get_current_user
+from SpaceModels.spacemodels.models.client_version_log import ClientVersionLog
+from fastapi import HTTPException  # To catch auth errors
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+@router.get("/version", response_model=VersionInfo)
+async def get_version_info(
+    request: Request,
+    x_client_version: Annotated[Optional[str], Header()] = None,
+    db: AsyncSession = Depends(get_db_session),  # Correct function name
+    token: Optional[str] = Depends(oauth2_scheme),  # Depend directly on the scheme
+):
+    """
+    Returns the server version information and logs the client version.
+
+    Accepts an optional `X-Client-Version` header from the client.
+    If an `Authorization: Bearer <token>` header is provided and valid,
+    the associated account ID will also be logged.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    account_id: Optional[int] = None
+    current_user = None
+    if token:
+        try:
+            # Manually attempt to get user if token exists
+            current_user = await get_current_user(token=token)
+            account_id = current_user.id
+        except HTTPException:
+            # Ignore auth errors (invalid token, inactive user, etc.)
+            logger.debug("Optional authentication failed for /version endpoint.")
+            pass  # Keep account_id as None
+        except Exception as e:
+            # Log unexpected errors but don't fail the request
+            logger.error(
+                f"Unexpected error during optional auth in /version: {e}", exc_info=True
+            )
+            pass  # Keep account_id as None
+
+    # Log the client version information
+    log_entry = ClientVersionLog(
+        ip_address=client_ip,
+        client_version=x_client_version if x_client_version else "unknown",
+        account_id=account_id,
+    )
+    db.add(log_entry)
+    try:
+        await db.commit()
+        logger.info(
+            f"Logged client version: IP={client_ip}, Version={x_client_version}, AccountID={account_id}"
+        )
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to log client version: {e}", exc_info=True)
+        # Continue even if logging fails, returning version info is primary goal
+
+    return VersionInfo(
+        server_version=SERVER_VERSION,
+        min_client_version=MIN_CLIENT_VERSION,
+        max_client_version=MAX_CLIENT_VERSION,
+    )

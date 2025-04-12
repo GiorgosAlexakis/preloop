@@ -46,3 +46,6 @@ htmlcov/
 
 *.db
 .aider*
+
+# Generated files
+repomix-output.xml

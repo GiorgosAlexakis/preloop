@@ -8,6 +8,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
+# Versioning
+SERVER_VERSION = "0.1.0"  # Current server version
+MIN_CLIENT_VERSION = "0.1.0"  # Minimum compatible client version
+MAX_CLIENT_VERSION = "0.1.0"  # Maximum recommended client version
+
 
 class DatabaseSettings(BaseModel):
     """Database configuration."""
