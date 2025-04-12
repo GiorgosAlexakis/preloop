@@ -22,7 +22,12 @@ def scan():
 
 @scan.command(name="all")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
-@click.option("--force-update", "-f", is_flag=True, help="Force update of all embeddings even if content hasn't changed")
+@click.option(
+    "--force-update",
+    "-f",
+    is_flag=True,
+    help="Force update of all embeddings even if content hasn't changed",
+)
 def scan_all(verbose: bool, force_update: bool):
     """
     Scan all accounts, trackers, projects, and issues.

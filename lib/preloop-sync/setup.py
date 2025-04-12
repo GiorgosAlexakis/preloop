@@ -26,6 +26,7 @@ setup(
         "psycopg2-binary>=2.9.0",
         # Assuming spacemodels is installed separately
         "python-gitlab",
+        "flask>=2.0.0",
     ],
     entry_points={
         "console_scripts": [

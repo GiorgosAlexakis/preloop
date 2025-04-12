@@ -1,8 +1,14 @@
 """Tests for the config module."""
+
 import unittest
 from unittest.mock import patch
 
-from spacesync.config import DATABASE_URL, LOG_LEVEL, SERVICE_PORT, SERVICE_WEBHOOK_ENABLED
+from spacesync.config import (
+    DATABASE_URL,
+    LOG_LEVEL,
+    SERVICE_PORT,
+    SERVICE_WEBHOOK_ENABLED,
+)
 
 
 class TestConfig(unittest.TestCase):
@@ -15,20 +21,20 @@ class TestConfig(unittest.TestCase):
         self.assertIsNotNone(LOG_LEVEL)
         self.assertIsInstance(SERVICE_PORT, int)  # Should be converted to int
         self.assertIsInstance(SERVICE_WEBHOOK_ENABLED, bool)
-        
+
     @patch("spacesync.config.logging")
     def test_logger_setup(self, mock_logging):
         """Test logger setup configuration."""
         # Import inside the test to use the mocked logging
         from spacesync.config import setup_logging
-        
+
         # Call the function directly
         logger = setup_logging()
-        
+
         # Verify that logging.getLogger was called
         mock_logging.getLogger.assert_called()
         # Verify that logger.setLevel was called
         mock_logging.getLogger.return_value.setLevel.assert_called()
-        
+
         # Verify that a logger is returned
         self.assertEqual(logger, mock_logging.getLogger.return_value)
