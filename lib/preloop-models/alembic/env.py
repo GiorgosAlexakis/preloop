@@ -1,10 +1,16 @@
+import os
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
+# Import Base from your models
+from spacemodels.models.base import Base
+
+# Load .env file from the parent directory (project root)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -18,12 +24,28 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = None
+target_metadata = Base.metadata  # Set target metadata for autogenerate
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
+
+# Get database URL from environment variable
+database_url = os.getenv("DATABASE_URL")
+if not database_url:
+    # Fallback or raise error if DATABASE_URL is crucial for migrations
+    # For now, let's use the default from config.py as a fallback
+    # but ideally, migrations should fail if the URL isn't explicitly set.
+    print(
+        "Warning: DATABASE_URL not found in environment. "
+        "Using default postgresql+psycopg://postgres:postgres@localhost/spacebridge. "
+        "Ensure DATABASE_URL is set in your .env file or environment."
+    )
+    database_url = "postgresql+psycopg://postgres:postgres@localhost/spacebridge"
+
+# Set the database URL in the Alembic config object
+config.set_main_option("sqlalchemy.url", database_url)
 
 
 def run_migrations_offline() -> None:

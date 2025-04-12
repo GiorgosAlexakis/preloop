@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from .api_usage import ApiUsage
     from .organization import Organization
     from .tracker import Tracker
+    from .client_version_log import ClientVersionLog
 
 
 class Account(Base):
@@ -61,6 +62,9 @@ class Account(Base):
     )
     api_usages: Mapped[List["ApiUsage"]] = relationship(
         "ApiUsage", back_populates="user", cascade="all, delete-orphan"
+    )
+    client_version_logs: Mapped[List["ClientVersionLog"]] = relationship(
+        "ClientVersionLog", back_populates="account", cascade="all, delete-orphan"
     )
 
     # Many-to-many relationship helper for organizational roles
