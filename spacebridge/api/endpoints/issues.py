@@ -1,7 +1,7 @@
 """Endpoints for managing issues across trackers."""
 
 import logging
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -100,20 +100,12 @@ async def get_tracker_client(organization_id: str, project_id: str, db: Session)
 # API Endpoints
 
 
-@router.get("/issues/search")
-def search_issues(
+@router.get("/issues/search", response_model=List[IssueResponse])
+async def search_issues(
     organization_id: Optional[str] = Query(None, description="Organization ID (UUID)"),
-    organization_name: Optional[str] = Query(None, description="Organization name"),
+    organization: Optional[str] = Query(None, description="Organization name"),
     project_id: Optional[str] = Query(None, description="Project ID (UUID)"),
-    project_name: Optional[str] = Query(None, description="Project name"),
-    organization: Optional[str] = Query(
-        None,
-        description="Organization identifier (deprecated, use organization_id or organization_name)",
-    ),
-    project: Optional[str] = Query(
-        None,
-        description="Project identifier (deprecated, use project_id or project_name)",
-    ),
+    project: Optional[str] = Query(None, description="Project name"),
     query: Optional[str] = Query("", description="Search query text"),
     limit: int = Query(
         10, ge=1, le=100, description="Maximum number of issues to return"
@@ -133,11 +125,9 @@ def search_issues(
 
     Args:
         organization_id: Organization ID (UUID)
-        organization_name: Organization name
+        organization: Organization name
         project_id: Project ID (UUID)
-        project_name: Project name
-        organization: Organization identifier (deprecated)
-        project: Project identifier (deprecated)
+        project: Project name
         query: Search query text
         limit: Maximum number of issues to return
         semantic: Whether to use semantic search with vector embeddings
@@ -153,41 +143,33 @@ def search_issues(
         # Resolve organization and project using either ID, name, or identifier
         from spacemodels.crud import crud_organization, crud_project
 
-        # Process organization parameters (prioritize new parameters over deprecated ones)
+        # Process organization parameters
         org = None
         org_id = None
         if organization_id:
             org = crud_organization.get(db, id=organization_id)
             if org:
                 org_id = org.id
-        elif organization_name:
-            org = crud_organization.get_by_name(db, name=organization_name)
+        elif organization:
+            org = crud_organization.get_by_name(db, name=organization)
             if org:
                 org_id = org.id
-        elif organization:
-            # For backward compatibility
-            org_id = organization
 
         # Process project parameters
         proj = None
         if project_id:
             proj = crud_project.get(db, id=project_id)
-        elif project_name:
+        elif project:
             # If we have an organization, use it to narrow down the project search
             if org_id:
                 proj = crud_project.get_by_name(
-                    db, name=project_name, organization_id=org_id
+                    db, name=project, organization_id=org_id
                 )
             else:
-                proj = crud_project.get_by_name(db, name=project_name)
-        elif project and org_id:
-            # For backward compatibility with identifier
-            proj = crud_project.get_by_identifier(
-                db, organization_id=org_id, identifier=project
-            )
+                proj = crud_project.get_by_name(db, name=project)
 
         # Validate project (if project is specified but not found)
-        if (project_id or project_name or project) and not proj:
+        if (project_id or project) and not proj:
             raise HTTPException(status_code=404, detail="Project not found")
 
         # Create filter object for traditional search
