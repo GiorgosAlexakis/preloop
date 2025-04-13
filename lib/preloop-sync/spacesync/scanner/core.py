@@ -301,9 +301,8 @@ def scan_tracker(
     # Create tracker client
     client = TrackerClient(tracker)
 
-    # Determine the last 30 days as a default scan period
-    # This can be adjusted as needed based on usage patterns
-    since = datetime.datetime.now() - datetime.timedelta(days=30)
+    # Use epoch time (Jan 1, 1970) to effectively scan all issues
+    since = datetime.datetime(1970, 1, 1)
 
     # Scan organizations
     orgs = client.scan_organizations(db)

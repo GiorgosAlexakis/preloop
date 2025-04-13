@@ -5,6 +5,12 @@ Base tracker interface for SpaceSync.
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import logging
+
+# Import the configurable max length from the Issue model
+from spacemodels.models.issue import DESCRIPTION_MAX_LENGTH
+
+logger = logging.getLogger(__name__)
 
 
 class BaseTracker(ABC):
@@ -163,11 +169,23 @@ class BaseTracker(ABC):
         if isinstance(created_at, datetime):
             created_at = created_at.isoformat()
 
+        # Get description and truncate if necessary to avoid DB errors
+        description = issue_data.get("description", "")
+        original_length = len(description) if description else 0
+
+        if description and len(description) > DESCRIPTION_MAX_LENGTH:
+            # Truncate to the max length, with an indicator
+            description = description[:DESCRIPTION_MAX_LENGTH - 25] + "... [content truncated]"
+            logger.info(
+                f"Truncated issue description from {original_length} to {len(description)} characters. "
+                f"Set ISSUE_DESCRIPTION_MAX_LENGTH env var to increase (current: {DESCRIPTION_MAX_LENGTH})"
+            )
+
         return {
             "project_id": project_id,
             "external_id": issue_data["id"],
             "title": issue_data["title"],
-            "description": issue_data.get("description", ""),
+            "description": description,
             "status": status,
             "issue_type": issue_type,
             "priority": issue_data.get("priority", None),

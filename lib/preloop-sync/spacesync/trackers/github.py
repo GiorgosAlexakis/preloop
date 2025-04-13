@@ -80,10 +80,21 @@ class GitHubTracker(BaseTracker):
         Returns:
             List of organization data dictionaries.
         """
-        # For GitHub, we get the user's organizations
+        # First, add a "Personal" organization for the user's repositories
+        # Get authenticated user info
+        user_data = self._make_request("user")
+
+        organizations = [
+            {
+                "id": "personal",  # Use "personal" as a special ID for personal repositories
+                "name": f"{user_data['login']}'s Repositories",
+                "url": user_data["html_url"],
+            }
+        ]
+
+        # Then get the user's organizations
         orgs_data = self._make_request("user/orgs")
 
-        organizations = []
         for org in orgs_data:
             # Get detailed information for each organization
             org_detail = self._make_request(f"orgs/{org['login']}")
@@ -102,15 +113,20 @@ class GitHubTracker(BaseTracker):
         Get repositories (projects) for an organization from GitHub.
 
         Args:
-            organization_id: GitHub organization login name.
+            organization_id: GitHub organization login name or "personal" for user repos.
 
         Returns:
             List of project data dictionaries.
         """
         # For GitHub, projects are repositories
-        repos_data = self._make_request(
-            f"orgs/{organization_id}/repos", {"per_page": 100}
-        )
+        if organization_id == "personal":
+            # Get user's repositories
+            repos_data = self._make_request("user/repos", {"per_page": 100})
+        else:
+            # Get organization's repositories
+            repos_data = self._make_request(
+                f"orgs/{organization_id}/repos", {"per_page": 100}
+            )
 
         projects = []
         for repo in repos_data:
@@ -132,22 +148,28 @@ class GitHubTracker(BaseTracker):
         Get issues for a repository from GitHub.
 
         Args:
-            organization_id: GitHub organization login name.
+            organization_id: GitHub organization login name or "personal" for user repos.
             project_id: GitHub repository ID.
             since: Only return issues updated since this datetime.
 
         Returns:
             List of issue data dictionaries.
         """
-        # First, need to get the repo name from the ID
-        repos_data = self._make_request(
-            f"orgs/{organization_id}/repos", {"per_page": 100}
-        )
-
+        # First, we need to get the repo full name (owner/repo) using the repo ID
         repo_name = None
+
+        if organization_id == "personal":
+            # Search user's repos
+            repos_data = self._make_request("user/repos", {"per_page": 100})
+        else:
+            # Search organization's repos
+            repos_data = self._make_request(
+                f"orgs/{organization_id}/repos", {"per_page": 100}
+            )
+
         for repo in repos_data:
             if str(repo["id"]) == project_id:
-                repo_name = repo["name"]
+                repo_name = repo["full_name"]  # This includes the owner/repo format
                 break
 
         if not repo_name:
@@ -158,13 +180,15 @@ class GitHubTracker(BaseTracker):
 
         # Query parameters for the issues API
         params = {"state": "all", "per_page": 100}
-        if since:
-            params["since"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Removing these lines below correctly gets the issues, otherwise, no issues are received
+        # if since:
+        #     params["since"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        issues_data = self._make_request(
-            f"repos/{organization_id}/{repo_name}/issues", params
-        )
+        # Make the request
+        issues_endpoint = f"repos/{repo_name}/issues"
+        issues_data = self._make_request(issues_endpoint, params)
 
+        # Process issues as before, filtering out PRs
         issues = []
         for issue in issues_data:
             # Skip pull requests

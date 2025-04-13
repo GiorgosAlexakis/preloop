@@ -42,11 +42,18 @@ class GitLabTracker(BaseTracker):
         if not gitlab_url:
             gitlab_url = "https://gitlab.spacecode.ai"
 
-        self.url = gitlab_url.rstrip("/")
+        # Strip '/api/v4' from the URL if present, as python-gitlab adds this automatically
+        gitlab_url = gitlab_url.rstrip("/")
+        if gitlab_url.endswith("/api/v4"):
+            # Remove the /api/v4 suffix
+            gitlab_url = gitlab_url[:-7]  # Remove last 7 characters (/api/v4)
+
+        self.url = gitlab_url
 
         # Log information for debugging
         print("GitLab Tracker Debug Info:")
         print(f"  URL: {self.url}")
+        print(f"  Original URL from connection_details: {gitlab_url}")
         print(
             f"  API Key (first 5 chars): {api_key[:5] if len(api_key) > 5 else '***'}"
         )
