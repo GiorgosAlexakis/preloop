@@ -1,5 +1,6 @@
 """Issue, EmbeddingModel, and IssueEmbedding models."""
 
+import os
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -7,6 +8,14 @@ from typing import Dict, List, Optional
 from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, DateTime
+
+from .base import Base
+
+from .project import Project
+from .tracker import Tracker
+
+# Get description max length from environment or use default 5000
+DESCRIPTION_MAX_LENGTH = int(os.environ.get("ISSUE_DESCRIPTION_MAX_LENGTH", "5000"))
 
 # Check if our vector type module is available
 try:
@@ -16,22 +25,15 @@ try:
 except ImportError:
     VECTOR_TYPE_AVAILABLE = False
 
-# Use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
-
-from .base import Base
-
-if TYPE_CHECKING:
-    from .project import Project
-    from .tracker import Tracker
-
 
 class Issue(Base):
     """Issue model - represents a task, bug, or feature in a project."""
 
     # Issue details
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(String(5000), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(
+        String(DESCRIPTION_MAX_LENGTH), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="open")
     priority: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     issue_type: Mapped[str] = mapped_column(String(50), nullable=False, default="task")
