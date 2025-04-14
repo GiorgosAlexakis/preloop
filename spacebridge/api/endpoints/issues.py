@@ -1,12 +1,16 @@
 """Endpoints for managing issues across trackers."""
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from spacebridge.schemas.issue import IssueCreate, IssueResponse, IssueUpdate
+from spacebridge.schemas.issue import (
+    IssueCreate as ApiIssueCreate,
+    IssueResponse,
+    IssueUpdate as ApiIssueUpdate,
+)  # Renamed to avoid conflict
 from spacemodels.crud import (
     CRUDIssue,
     CRUDOrganization,
@@ -18,6 +22,11 @@ from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
+from spacebridge.trackers.factory import TrackerFactory  # Import TrackerFactory
+from spacebridge.trackers.base import (
+    IssueCreate,
+    IssueUpdate,
+)  # Import base tracker schemas
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
@@ -78,20 +87,88 @@ async def get_tracker_client(organization_id: str, project_id: str, db: Session)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Determine the tracker type from the organization's tracker_id
-    # For now, we'll hardcode GitHub for testing purposes
-    # In a real implementation, you'd retrieve this from the organization or project settings
-    tracker_type = "github"  # This should come from the organization or project
-    tracker_config = project.tracker_settings or {}
+    # Get tracker details from the organization
+    tracker = organization.tracker
+    if not tracker:
+        raise HTTPException(
+            status_code=500, detail="Organization has no associated tracker."
+        )
+
+    tracker_type = tracker.tracker_type
+
+    # --- Assemble the full configuration ---
+    # Start with project-specific tracker settings
+    full_config: Dict[str, Any] = project.tracker_settings or {}
+
+    # Add credentials from the Tracker model, structured as the factory expects
+    full_config["credentials"] = {
+        "token": tracker.api_key,
+        "url": tracker.url,
+        # Add username if available in connection_details (needed for Jira)
+        "username": (tracker.connection_details or {}).get("username"),
+    }
+    # Merge any other connection details from the tracker model
+    if tracker.connection_details:
+        # Prioritize credentials already set, don't overwrite with connection_details
+        for key, value in tracker.connection_details.items():
+            if key not in full_config:
+                full_config[key] = value
+            elif key == "credentials" and isinstance(value, dict):
+                # Merge credentials dict carefully
+                for cred_key, cred_value in value.items():
+                    if cred_key not in full_config["credentials"]:
+                        full_config["credentials"][cred_key] = cred_value
+
+    # Ensure project-specific identifiers are included, checking settings/metadata/identifier
+    if tracker_type == "gitlab":
+        if "project_id" not in full_config:
+            # Check tracker_settings, then meta_data, then use project.identifier
+            full_config["project_id"] = (
+                (project.tracker_settings or {}).get("project_id")
+                or (project.meta_data or {}).get("project_id")
+                or project.identifier
+            )
+    elif tracker_type == "github":
+        if "owner" not in full_config:
+            full_config["owner"] = (project.tracker_settings or {}).get("owner") or (
+                project.meta_data or {}
+            ).get("owner")
+        if "repo" not in full_config:
+            full_config["repo"] = (
+                (project.tracker_settings or {}).get("repo")
+                or (project.meta_data or {}).get("repo")
+                or project.identifier
+            )  # Use identifier as repo fallback if owner exists
+    elif tracker_type == "jira":
+        # Jira might need project_key in config for some operations, add if available
+        if "project_key" not in full_config:
+            full_config["project_key"] = (
+                (project.tracker_settings or {}).get("project_key")
+                or (project.meta_data or {}).get("project_key")
+                or project.identifier
+            )
+
+    logger.debug(
+        f"Creating tracker client of type '{tracker_type}' with config: {full_config}"
+    )
 
     try:
-        # Create the tracker client
-        tracker_client = await TrackerFactory.create_client(
-            tracker_type, tracker_config
-        )
+        # Create the tracker client using the combined config
+        tracker_client = await TrackerFactory.create_client(tracker_type, full_config)
+        if not tracker_client:
+            # Raise specific error if factory returns None (e.g., unsupported type or config error)
+            raise ValueError(
+                f"Failed to create tracker client for type '{tracker_type}'. Check configuration: {full_config}"
+            )
+
         return tracker_client
+    except ValueError as ve:  # Catch config errors from factory
+        logger.error(f"Configuration error creating tracker client: {ve}")
+        raise HTTPException(
+            status_code=500, detail=f"Configuration error for tracker: {str(ve)}"
+        )
     except Exception as e:
-        logger.error(f"Error creating tracker client: {e}")
+        logger.error(f"Error creating tracker client: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Error creating tracker client: {str(e)}"
         )
@@ -122,22 +199,7 @@ async def search_issues(
 ):
     """
     Search for issues within a project using text query and optional semantic search.
-
-    Args:
-        organization_id: Organization ID (UUID)
-        organization: Organization name
-        project_id: Project ID (UUID)
-        project: Project name
-        query: Search query text
-        limit: Maximum number of issues to return
-        semantic: Whether to use semantic search with vector embeddings
-        status: Filter by issue status
-        labels: Filter by comma-separated list of labels
-        assignee: Filter by assignee
-        db: Database session
-
-    Returns:
-        List of matching issues
+    (Code unchanged from previous version)
     """
     try:
         # Resolve organization and project using either ID, name, or identifier
@@ -258,15 +320,14 @@ async def search_issues(
                     description=issue.description,
                     status=issue.status,
                     priority=issue.priority,
-                    tracker_id=issue.external_id,
-                    organization=organization_id,  # Use the actual organization ID from the project
-                    project=issue.project_id,  # Use the project ID from the request
+                    tracker_id=issue.external_id,  # This field exists on DB Issue model
+                    organization=organization_id,
+                    project=issue.project_id,
                     url=issue.external_url
-                    or f"https://spacebridge.ai/issues/{issue.id}",  # Provide fallback URL
+                    or f"https://spacebridge.ai/issues/{issue.id}",
                     created_at=created_at_str,
                     updated_at=updated_at_str,
                     metadata=metadata_dict,
-                    # Include other fields from the issue as needed
                     labels=metadata_dict.get("labels", [])
                     if isinstance(metadata_dict.get("labels"), list)
                     else [],
@@ -292,7 +353,7 @@ async def search_issues(
 
 @router.post("/issues", response_model=IssueResponse, status_code=201)
 async def create_issue(
-    issue: IssueCreate,
+    issue: ApiIssueCreate,  # Use the renamed API schema
     db: Session = Depends(get_db),
 ) -> IssueResponse:
     """Create a new issue in a specified project.
@@ -314,13 +375,10 @@ async def create_issue(
             org = crud_organization.get(db, id=issue.organization_id)
             if org:
                 org_id = org.id
-        elif issue.organization_name:
-            org = crud_organization.get_by_name(db, name=issue.organization_name)
+        elif issue.organization:
+            org = crud_organization.get_by_name(db, name=issue.organization)
             if org:
                 org_id = org.id
-        elif issue.organization:
-            # For backward compatibility
-            org_id = issue.organization
 
         if not org_id:
             raise HTTPException(status_code=400, detail="Organization not found")
@@ -333,62 +391,73 @@ async def create_issue(
             proj = crud_project.get(db, id=issue.project_id)
             if proj:
                 proj_id = proj.id
-        elif issue.project_name:
+        elif issue.project:
             # If we have an organization, use it to narrow down the project search
             proj = crud_project.get_by_name(
-                db, name=issue.project_name, organization_id=org_id
-            )
-            if proj:
-                proj_id = proj.id
-        elif issue.project:
-            # For backward compatibility with identifier
-            proj = crud_project.get_by_identifier(
-                db, organization_id=org_id, identifier=issue.project
+                db, name=issue.project, organization_id=org_id
             )
             if proj:
                 proj_id = proj.id
 
-        if not proj_id:
+        if not proj_id or not proj:  # Ensure proj object is available
             raise HTTPException(status_code=400, detail="Project not found")
 
         # Get the tracker client using the resolved IDs
         tracker_client = await get_tracker_client(org_id, proj_id, db)
 
-        # Prepare the issue create model
-        tracker_issue = TrackerIssueCreate(
+        # Prepare the issue create model using the correct base class
+        tracker_issue = IssueCreate(  # Use IssueCreate from base.py
             title=issue.title,
             description=issue.description,
             priority=issue.priority,
             assignee=issue.assignee,
             labels=issue.labels,
-            metadata=issue.metadata,
+            # Map API metadata to custom_fields if needed by the tracker base model
+            custom_fields=issue.metadata or None,
         )
 
-        # Create the issue
-        created_issue = await tracker_client.create_issue(tracker_issue)
+        # Create the issue - Pass the project identifier expected by the tracker client
+        # Use project.identifier as the most likely candidate for project_key
+        project_key_for_tracker = proj.identifier
+        if not project_key_for_tracker:
+            # Fallback or specific logic might be needed if identifier isn't the key
+            # For now, raise error if identifier is missing
+            raise HTTPException(
+                status_code=500,
+                detail="Project identifier is missing for tracker interaction.",
+            )
+
+        created_issue = await tracker_client.create_issue(
+            project_key_for_tracker, tracker_issue
+        )
 
         # For the response, use the IDs we found (which might be different from what was passed in)
+        # Map the returned tracker Issue object to the API IssueResponse
         return IssueResponse(
-            id=created_issue.id,
-            tracker_id=created_issue.tracker_id,
+            id=created_issue.id,  # Use the ID from the tracker response
+            tracker_id=created_issue.key,  # Use the key from the tracker response
             organization=org_id,
             project=proj_id,
             title=created_issue.title,
             description=created_issue.description,
-            status=created_issue.status,
-            priority=created_issue.priority,
-            assignee=created_issue.assignee,
+            status=created_issue.status.name,  # Extract name from status object
+            priority=created_issue.priority.name
+            if created_issue.priority
+            else None,  # Extract name
+            assignee=created_issue.assignee.name
+            if created_issue.assignee
+            else None,  # Extract name
             labels=created_issue.labels,
             url=created_issue.url,
-            created_at=created_issue.created_at,
-            updated_at=created_issue.updated_at,
-            metadata=created_issue.metadata,
+            created_at=created_issue.created_at.isoformat(),
+            updated_at=created_issue.updated_at.isoformat(),
+            metadata=created_issue.custom_fields,  # Map custom fields to metadata
         )
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Error creating issue: {e}")
+        logger.error(f"Error creating issue: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error creating issue: {str(e)}")
 
 
@@ -423,7 +492,8 @@ def get_issue(
         # Convert to dictionary
         issue_dict = {
             "id": issue.id,
-            "tracker_id": issue.external_id or "",
+            "tracker_id": issue.external_id
+            or "",  # This field exists on DB Issue model
             "organization": organization.name,
             "project": project.name,
             "title": issue.title,
@@ -450,22 +520,43 @@ def get_issue(
 @router.put("/issues/{issue_id}", response_model=IssueResponse)
 async def update_issue(
     issue_id: str,
-    issue_update: IssueUpdate,
+    issue_update: ApiIssueUpdate,  # Use the renamed API schema
     organization: str = Query(..., description="Organization identifier"),
     project: str = Query(..., description="Project identifier"),
     db: Session = Depends(get_db),
 ) -> IssueResponse:
     """Update an existing issue."""
     try:
-        # Get the tracker client
-        tracker_client = await get_tracker_client(organization, project, db)
+        # Resolve org/proj IDs first to pass to get_tracker_client
+        org_obj = crud_organization.get_by_identifier(db, identifier=organization)
+        if not org_obj:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        proj_obj = crud_project.get_by_identifier(
+            db, organization_id=org_obj.id, identifier=project
+        )
+        if not proj_obj:
+            raise HTTPException(status_code=404, detail="Project not found")
 
-        # Prepare the issue update model
+        # Get the tracker client using resolved IDs
+        tracker_client = await get_tracker_client(org_obj.id, proj_obj.id, db)
+
+        # Prepare the issue update model using the correct base class
         # Only include fields that are not None
-        update_data = {k: v for k, v in issue_update.dict().items() if v is not None}
-        tracker_issue_update = TrackerIssueUpdate(**update_data)
+        update_data = {
+            k: v
+            for k, v in issue_update.dict(exclude_unset=True).items()
+            if v is not None
+        }
+        # Map API metadata to custom_fields if present in update_data
+        if "metadata" in update_data:
+            update_data["custom_fields"] = update_data.pop("metadata")
 
-        # Update the issue
+        tracker_issue_update = IssueUpdate(
+            **update_data
+        )  # Use IssueUpdate from base.py
+
+        # Update the issue - Use the correct issue identifier (external_id or key)
+        # Assuming issue_id passed to the API is the tracker's ID/key
         updated_issue = await tracker_client.update_issue(
             issue_id, tracker_issue_update
         )
@@ -473,25 +564,29 @@ async def update_issue(
         # Convert tracker issue to API response model
         return IssueResponse(
             id=updated_issue.id,
-            tracker_id=updated_issue.tracker_id,
-            organization=organization,
-            project=project,
+            tracker_id=updated_issue.key,  # Use key
+            organization=org_obj.id,  # Use resolved org ID
+            project=proj_obj.id,  # Use resolved proj ID
             title=updated_issue.title,
             description=updated_issue.description,
-            status=updated_issue.status,
-            priority=updated_issue.priority,
-            assignee=updated_issue.assignee,
+            status=updated_issue.status.name,  # Extract name
+            priority=updated_issue.priority.name
+            if updated_issue.priority
+            else None,  # Extract name
+            assignee=updated_issue.assignee.name
+            if updated_issue.assignee
+            else None,  # Extract name
             labels=updated_issue.labels,
             url=updated_issue.url,
-            created_at=updated_issue.created_at,
-            updated_at=updated_issue.updated_at,
-            metadata=updated_issue.metadata,
+            created_at=updated_issue.created_at.isoformat(),
+            updated_at=updated_issue.updated_at.isoformat(),
+            metadata=updated_issue.custom_fields,  # Map custom fields
         )
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Error updating issue: {e}")
+        logger.error(f"Error updating issue: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error updating issue: {str(e)}")
 
 
@@ -504,20 +599,30 @@ async def delete_issue(
 ) -> None:
     """Delete an issue (if supported by the issue tracker)."""
     try:
+        # Resolve org/proj IDs first
+        org_obj = crud_organization.get_by_identifier(db, identifier=organization)
+        if not org_obj:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        proj_obj = crud_project.get_by_identifier(
+            db, organization_id=org_obj.id, identifier=project
+        )
+        if not proj_obj:
+            raise HTTPException(status_code=404, detail="Project not found")
+
         # Get the tracker client
-        tracker_client = await get_tracker_client(organization, project, db)
+        tracker_client = await get_tracker_client(org_obj.id, proj_obj.id, db)
 
-        # Check if the issue exists
-        issue = await tracker_client.get_issue(issue_id)
-        if not issue:
-            raise HTTPException(status_code=404, detail="Issue not found")
-
-        # Delete the issue
-        # Note: Not all trackers support deletion, so this might raise an exception
-        await tracker_client.delete_issue(issue_id)
+        # Check if the tracker supports deletion (optional)
+        if hasattr(tracker_client, "delete_issue"):
+            # Assuming issue_id passed to the API is the tracker's ID/key
+            await tracker_client.delete_issue(issue_id)
+        else:
+            raise HTTPException(
+                status_code=405, detail="Issue deletion not supported by this tracker"
+            )
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Error deleting issue: {e}")
+        logger.error(f"Error deleting issue: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error deleting issue: {str(e)}")
