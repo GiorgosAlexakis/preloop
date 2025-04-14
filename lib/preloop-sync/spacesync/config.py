@@ -2,10 +2,10 @@
 Configuration management for SpaceSync.
 """
 
-import os
 import logging
-from typing import Optional
+import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file if it exists
@@ -16,35 +16,49 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = os.getenv("LOG_FILE")
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/spacesync")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/spacesync"
+)
+
+# Service configuration
+SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
+SERVICE_PORT = int(os.getenv("SERVICE_PORT", "5000"))
+SERVICE_POLL_INTERVAL = int(os.getenv("SERVICE_POLL_INTERVAL", "300"))
+SERVICE_WEBHOOK_ENABLED = os.getenv("SERVICE_WEBHOOK_ENABLED", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 # Define base directory
 BASE_DIR = Path(__file__).parent.parent
+
 
 def setup_logging() -> None:
     """
     Set up logging configuration based on environment variables.
     """
     log_level = getattr(logging, LOG_LEVEL.upper())
-    
+
     log_config = {
         "level": log_level,
         "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     }
-    
+
     if LOG_FILE:
         log_file_path = Path(LOG_FILE)
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
         log_config["filename"] = LOG_FILE
-    
+
     logging.basicConfig(**log_config)
-    
+
     # Silence some verbose loggers
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-    
+
     # Create a logger for the application
     logger = logging.getLogger("spacesync")
     return logger
+
 
 # Create application logger
 logger = setup_logging()

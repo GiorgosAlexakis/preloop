@@ -78,7 +78,7 @@ db = next(get_db_session())
 
 # Create a new account
 new_account = crud_account.create(
-    db, 
+    db,
     obj_in={
         "username": "johndoe",
         "email": "john@example.com",

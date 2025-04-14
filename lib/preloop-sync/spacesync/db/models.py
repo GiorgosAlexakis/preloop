@@ -5,13 +5,13 @@ Re-export of database models from spacemodels.
 # Re-export models from spacemodels
 from spacemodels.models import (
     Account,
-    Tracker,
+    AccountOrganization,
+    EmbeddingModel,
+    Issue,
+    IssueEmbedding,
     Organization,
     Project,
-    Issue,
-    EmbeddingModel,
-    IssueEmbedding,
-    AccountOrganization,
+    Tracker,
 )
 
 __all__ = [

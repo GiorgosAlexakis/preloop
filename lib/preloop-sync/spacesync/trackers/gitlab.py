@@ -2,11 +2,16 @@
 GitLab tracker implementation for SpaceSync using python-gitlab library.
 """
 
-import gitlab
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
-from ..exceptions import TrackerAuthenticationError, TrackerConnectionError, TrackerResponseError
+import gitlab
+
+from ..exceptions import (
+    TrackerAuthenticationError,
+    TrackerConnectionError,
+    TrackerResponseError,
+)
 from ..utils import retry
 from .base import BaseTracker
 
@@ -14,26 +19,58 @@ from .base import BaseTracker
 class GitLabTracker(BaseTracker):
     """GitLab tracker implementation using python-gitlab."""
 
-    def __init__(self, tracker_id: int, api_key: str, connection_details: Dict[str, Any]):
+    def __init__(
+        self, tracker_id: str, api_key: str, connection_details: Dict[str, Any]
+    ):
         """
         Initialize the GitLab tracker.
 
         Args:
-            tracker_id: ID of the tracker in the database.
+            tracker_id: ID of the tracker in the database (UUID string).
             api_key: GitLab API token.
             connection_details: Connection details including GitLab instance URL (optional).
         """
         super().__init__(tracker_id, api_key, connection_details)
-        
-        gitlab_url = connection_details['gitlab_url'].rstrip('/')
-            
+
+        # The tracker object should be set on this instance by TrackerClient
+        # but it's missing at this point
+
+        # Use URL from connection_details if available
+        gitlab_url = connection_details.get("url")
+
+        # If there's no URL, use https://gitlab.com/
+        if not gitlab_url:
+            gitlab_url = "https://gitlab.com"
+
+        # Strip '/api/v4' from the URL if present, as python-gitlab adds this automatically
+        gitlab_url = gitlab_url.rstrip("/")
+        if gitlab_url.endswith("/api/v4"):
+            # Remove the /api/v4 suffix
+            gitlab_url = gitlab_url[:-7]  # Remove last 7 characters (/api/v4)
+
+        self.url = gitlab_url
+
+        # Log information for debugging
+        print("GitLab Tracker Debug Info:")
+        print(f"  URL: {self.url}")
+        print(f"  Original URL from connection_details: {gitlab_url}")
+        print(
+            f"  API Key (first 5 chars): {api_key[:5] if len(api_key) > 5 else '***'}"
+        )
+        print(f"  Tracker ID: {tracker_id}")
+
         try:
-            self.gl = gitlab.Gitlab(gitlab_url, private_token=api_key)
+            print(f"  Attempting to connect to GitLab at {self.url}")
+            self.gl = gitlab.Gitlab(self.url, private_token=api_key)
             # Test connection and authentication
+            print("  Testing authentication...")
             self.gl.auth()
-        except gitlab.exceptions.GitlabAuthenticationError:
-            raise TrackerAuthenticationError("GitLab authentication failed")
+            print("  Authentication successful!")
+        except gitlab.exceptions.GitlabAuthenticationError as e:
+            print(f"  Authentication Error: {str(e)}")
+            raise TrackerAuthenticationError(f"GitLab authentication failed: {str(e)}")
         except gitlab.exceptions.GitlabHttpError as e:
+            print(f"  HTTP Error: {str(e)}")
             raise TrackerConnectionError(f"GitLab connection error: {str(e)}")
 
     @retry(max_attempts=3, exceptions=(TrackerConnectionError, TrackerResponseError))
@@ -77,15 +114,13 @@ class GitLabTracker(BaseTracker):
         """
         # For GitLab, organizations are groups
         groups = self._make_request(self.gl.groups.list, all=True)
-        
+
         organizations = []
         for group in groups:
-            organizations.append({
-                "id": str(group.id),
-                "name": group.name,
-                "url": group.web_url
-            })
-            
+            organizations.append(
+                {"id": str(group.id), "name": group.name, "url": group.web_url}
+            )
+
         return organizations
 
     def get_projects(self, organization_id: str) -> List[Dict[str, Any]]:
@@ -100,19 +135,21 @@ class GitLabTracker(BaseTracker):
         """
         # Get the group object first
         group = self._make_request(self.gl.groups.get, organization_id)
-        
+
         # Get projects for the specified group
         projects = self._make_request(group.projects.list, all=True)
-        
+
         project_list = []
         for project in projects:
-            project_list.append({
-                "id": str(project.id),
-                "name": project.name,
-                "description": project.description or "",
-                "url": project.web_url
-            })
-            
+            project_list.append(
+                {
+                    "id": str(project.id),
+                    "name": project.name,
+                    "description": project.description or "",
+                    "url": project.web_url,
+                }
+            )
+
         return project_list
 
     def get_issues(
@@ -131,27 +168,35 @@ class GitLabTracker(BaseTracker):
         """
         # Get the project object
         project = self._make_request(self.gl.projects.get, project_id)
-        
+
         # Prepare query parameters
-        kwargs = {'all': True}
+        kwargs = {"all": True}
         if since:
-            kwargs['updated_after'] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
-        
-        # Get issues for the project    
+            kwargs["updated_after"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Get issues for the project
         issues = self._make_request(project.issues.list, **kwargs)
-        
+
         issue_list = []
         for issue in issues:
-            issue_list.append({
-                "id": str(issue.iid),  # Use iid which is project-specific ID
-                "title": issue.title,
-                "description": issue.description or "",
-                "state": issue.state,
-                "created_at": datetime.strptime(issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"),
-                "updated_at": datetime.strptime(issue.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"),
-                "labels": issue.labels if hasattr(issue, 'labels') else [],
-                "assignees": [assignee['username'] for assignee in issue.assignees] if hasattr(issue, 'assignees') else [],
-                "url": issue.web_url
-            })
-            
+            issue_list.append(
+                {
+                    "id": str(issue.iid),  # Use iid which is project-specific ID
+                    "title": issue.title,
+                    "description": issue.description or "",
+                    "state": issue.state,
+                    "created_at": datetime.strptime(
+                        issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    "updated_at": datetime.strptime(
+                        issue.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    "labels": issue.labels if hasattr(issue, "labels") else [],
+                    "assignees": [assignee["username"] for assignee in issue.assignees]
+                    if hasattr(issue, "assignees")
+                    else [],
+                    "url": issue.web_url,
+                }
+            )
+
         return issue_list

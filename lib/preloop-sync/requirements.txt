@@ -7,3 +7,5 @@ pytest-cov>=3.0.0
 black>=22.0.0
 isort>=5.10.0
 mypy>=0.950
+python-gitlab
+flask>=2.0.0
