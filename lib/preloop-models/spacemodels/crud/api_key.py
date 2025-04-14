@@ -1,7 +1,7 @@
 """CRUD operations for ApiKey model."""
 
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -39,7 +39,7 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         # Set expiration date if specified
         expires_at = None
         if expires_days is not None:
-            expires_at = datetime.utcnow() + timedelta(days=expires_days)
+            expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
 
         db_obj = ApiKey(
             name=obj_in_data.get("name", "API Key"),
@@ -101,7 +101,7 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         """
         key_obj = db.query(ApiKey).filter(ApiKey.id == key_id).first()
         if key_obj:
-            key_obj.last_used_at = datetime.utcnow()
+            key_obj.last_used_at = datetime.now(timezone.utc)
             db.add(key_obj)
             db.commit()
             db.refresh(key_obj)

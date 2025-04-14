@@ -8,6 +8,7 @@ from .issue import EmbeddingModel, Issue, IssueEmbedding
 from .organization import Organization
 from .project import Project
 from .tracker import Tracker, TrackerType
+from .client_version_log import ClientVersionLog
 
 __all__ = [
     "Base",
@@ -22,4 +23,5 @@ __all__ = [
     "IssueEmbedding",
     "ApiKey",
     "ApiUsage",
+    "ClientVersionLog",
 ]

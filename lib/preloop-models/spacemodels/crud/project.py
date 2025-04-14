@@ -3,8 +3,10 @@
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func  # Import func for lower()
 
 from ..models.project import Project
+from ..models.organization import Organization
 from .base import CRUDBase
 
 
@@ -23,6 +25,39 @@ class CRUDProject(CRUDBase[Project]):
             )
             .first()
         )
+
+    def get_by_name(
+        self,
+        db: Session,
+        *,
+        name: str,
+        organization_id: Optional[str] = None,
+        tracker_id: Optional[str] = None,
+    ) -> Optional[Project]:
+        """
+        Get project by name with optional organization and tracker filters.
+
+        Args:
+            db: Database session
+            name: Project name to search for
+            organization_id: Optional organization ID to filter by
+            tracker_id: Optional tracker ID to filter by
+
+        Returns:
+            Project object if found, otherwise None
+        """
+        # Use case-insensitive comparison for name
+        query = db.query(Project).filter(func.lower(Project.name) == func.lower(name))
+
+        if organization_id:
+            query = query.filter(Project.organization_id == organization_id)
+
+        if tracker_id:
+            # Projects don't have tracker_id directly - need to join with Organization
+            query = query.join(Organization, Project.organization_id == Organization.id)
+            query = query.filter(Organization.tracker_id == tracker_id)
+
+        return query.first()
 
     def get_for_organization(
         self, db: Session, *, organization_id: str, skip: int = 0, limit: int = 100

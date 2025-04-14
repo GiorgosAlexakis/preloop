@@ -3,6 +3,7 @@
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func  # Import func for lower()
 
 from ..models.organization import Organization
 from .base import CRUDBase
@@ -18,6 +19,29 @@ class CRUDOrganization(CRUDBase[Organization]):
         return (
             db.query(Organization).filter(Organization.identifier == identifier).first()
         )
+
+    def get_by_name(
+        self, db: Session, *, name: str, tracker_id: Optional[str] = None
+    ) -> Optional[Organization]:
+        """
+        Get organization by name with optional tracker filter.
+
+        Args:
+            db: Database session
+            name: Organization name to search for
+            tracker_id: Optional tracker ID to filter by
+
+        Returns:
+            Organization object if found, otherwise None
+        """
+        query = db.query(Organization).filter(
+            func.lower(Organization.name) == func.lower(name)
+        )
+
+        if tracker_id:
+            query = query.filter(Organization.tracker_id == tracker_id)
+
+        return query.first()
 
     def count(self, db: Session, **filters) -> int:
         """Count total number of organizations, with optional filtering."""

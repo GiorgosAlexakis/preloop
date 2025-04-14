@@ -1,6 +1,6 @@
 """CRUD operations for ApiUsage model."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func
@@ -70,7 +70,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
                 status_code=status_code,
                 duration=duration,
                 action_type=action_type,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
             )
 
             db.add(db_obj)
@@ -95,7 +95,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         Returns:
             List of API usage records
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         return (
             db.query(ApiUsage)
@@ -116,7 +116,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         Returns:
             List of dictionaries with endpoint statistics
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         result = (
             db.query(
@@ -159,7 +159,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         Returns:
             List of dictionaries with user statistics
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         result = (
             db.query(

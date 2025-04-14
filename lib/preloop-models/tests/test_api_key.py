@@ -1,6 +1,6 @@
 """Tests for API key model and CRUD operations."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from spacemodels.crud import crud_api_key
 from spacemodels.models import ApiKey
@@ -23,8 +23,11 @@ def test_create_api_key(db_session, create_account):
     assert key.is_active is True
     assert key.scopes == ["read:issues", "write:issues"]
     assert key.expires_at is not None
-    assert key.expires_at > datetime.utcnow()
-    assert key.expires_at < datetime.utcnow() + timedelta(days=31)
+    # Make key.expires_at timezone-aware (assuming UTC) before comparing
+    assert key.expires_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
+    assert key.expires_at.replace(tzinfo=timezone.utc) < datetime.now(
+        timezone.utc
+    ) + timedelta(days=31)
 
 
 def test_get_by_key(db_session, create_account):
@@ -78,7 +81,7 @@ def test_key_expiration(db_session, create_account):
     account = create_account()
 
     # Create an expired key (expires 1 day ago)
-    expires_at = datetime.utcnow() - timedelta(days=1)
+    expires_at = datetime.now(timezone.utc) - timedelta(days=1)
     key = ApiKey(
         name="Expired key",
         key="test-expired-key",

@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from ..models.issue import Issue
+from ..models.project import Project
 from .base import CRUDBase
 
 
@@ -24,6 +25,43 @@ class CRUDIssue(CRUDBase[Issue]):
             pass
 
         return issue
+
+    def get_by_title(
+        self,
+        db: Session,
+        *,
+        title: str,
+        project_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
+        tracker_id: Optional[str] = None,
+    ) -> Optional[Issue]:
+        """
+        Get issue by title with optional project, organization, and tracker filters.
+
+        Args:
+            db: Database session
+            title: Issue title to search for
+            project_id: Optional project ID to filter by
+            organization_id: Optional organization ID to filter by
+            tracker_id: Optional tracker ID to filter by
+
+        Returns:
+            Issue object if found, otherwise None
+        """
+        query = db.query(Issue).filter(Issue.title == title)
+
+        if project_id:
+            query = query.filter(Issue.project_id == project_id)
+
+        if organization_id:
+            # Issues don't have organization_id directly - need to join with Project
+            query = query.join(Project, Issue.project_id == Project.id)
+            query = query.filter(Project.organization_id == organization_id)
+
+        if tracker_id:
+            query = query.filter(Issue.tracker_id == tracker_id)
+
+        return query.first()
 
     def get_for_project(
         self,

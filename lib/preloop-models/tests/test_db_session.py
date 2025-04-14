@@ -4,7 +4,6 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from spacemodels.db.session import get_db_session, get_engine, get_session_factory
@@ -13,73 +12,64 @@ from spacemodels.db.session import get_db_session, get_engine, get_session_facto
 @pytest.fixture
 def mock_create_engine():
     """Mock SQLAlchemy create_engine function."""
-    with patch("spacemodels.db.session.create_engine") as mock:
+    # Also mock the connection and execute methods for detailed checks
+    with patch("spacemodels.db.session.create_engine") as mock_create_engine:
         engine_mock = MagicMock()
-        mock.return_value = engine_mock
-        yield mock
+        conn_mock = MagicMock()
+        engine_mock.connect.return_value.__enter__.return_value = conn_mock
+        mock_create_engine.return_value = engine_mock
+        yield mock_create_engine, engine_mock, conn_mock  # Yield all mocks
 
 
-def test_get_engine_default(mock_create_engine):
-    """Test get_engine with default URL."""
-    engine = get_engine()
-
-    # Verify create_engine was called with default URL
-    mock_create_engine.assert_called_once()
-    assert "postgresql" in mock_create_engine.call_args[0][0]
-
-    # Verify connection was tested
-    engine.connect.return_value.__enter__.return_value.execute.assert_called_once()
-
-    # Verify the engine was returned
-    assert engine == mock_create_engine.return_value
-
-
-def test_get_engine_custom_url(mock_create_engine):
+# Mock check_pgvector_extension as well
+@patch("spacemodels.db.session.check_pgvector_extension", return_value=True)
+def test_get_engine_custom_url(
+    mock_check_pgvector, mock_create_engine
+):  # Add mock_check_pgvector
     """Test get_engine with a custom URL."""
+    mock_creator, mock_engine_instance, mock_conn = mock_create_engine  # Unpack mocks
     custom_url = "postgresql://user:pass@custom-host/db"
+
     engine = get_engine(custom_url)
 
     # Verify create_engine was called with the custom URL
-    mock_create_engine.assert_called_once_with(custom_url)
+    mock_creator.assert_called_once_with(custom_url)  # Check create_engine call
 
-    # Verify connection was tested
-    engine.connect.return_value.__enter__.return_value.execute.assert_called_once()
+    # Verify connection was tested via execute on the mocked connection
+    mock_conn.execute.assert_called_once()
+    assert "SELECT 1" in str(mock_conn.execute.call_args[0][0])  # Check the query
+
+    # Verify check_pgvector_extension was called
+    mock_check_pgvector.assert_called_once_with(mock_engine_instance)
+
+    # Verify the engine was returned
+    assert engine == mock_engine_instance
 
 
-def test_get_engine_from_env(mock_create_engine):
+# Mock check_pgvector_extension as well
+@patch("spacemodels.db.session.check_pgvector_extension", return_value=True)
+def test_get_engine_from_env(
+    mock_check_pgvector, mock_create_engine
+):  # Add mock_check_pgvector
     """Test get_engine uses DATABASE_URL environment variable."""
-    with patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:pass@env-host/db"}):
-        # Call get_engine but we don't need to use the result
-        _ = get_engine()
+    mock_creator, mock_engine_instance, mock_conn = mock_create_engine  # Unpack mocks
+    env_url = "postgresql://user:pass@env-host/db"
+
+    with patch.dict(os.environ, {"DATABASE_URL": env_url}):
+        engine = get_engine()
 
         # Verify create_engine was called with the URL from environment
-        mock_create_engine.assert_called_once()
-        assert "env-host" in mock_create_engine.call_args[0][0]
+        mock_creator.assert_called_once_with(env_url)  # Check create_engine call
 
+        # Verify connection was tested via execute
+        mock_conn.execute.assert_called_once()
+        assert "SELECT 1" in str(mock_conn.execute.call_args[0][0])
 
-def test_get_engine_error_fallback(mock_create_engine):
-    """Test get_engine falls back to SQLite on error."""
-    # Make the first engine connection raise an error
-    engine_mock = mock_create_engine.return_value
-    engine_mock.connect.side_effect = SQLAlchemyError("Test error")
+        # Verify check_pgvector_extension was called
+        mock_check_pgvector.assert_called_once_with(mock_engine_instance)
 
-    # Second engine (SQLite fallback) should work
-    sqlite_engine_mock = MagicMock()
-    mock_create_engine.side_effect = [engine_mock, sqlite_engine_mock]
-
-    engine = get_engine()
-
-    # Verify create_engine was called twice
-    assert mock_create_engine.call_count == 2
-
-    # First call should be to PostgreSQL
-    assert "postgresql" in mock_create_engine.call_args_list[0][0][0]
-
-    # Second call should be to SQLite
-    assert "sqlite" in mock_create_engine.call_args_list[1][0][0]
-
-    # Verify the sqlite engine was returned
-    assert engine == sqlite_engine_mock
+        # Verify the engine was returned
+        assert engine == mock_engine_instance
 
 
 def test_get_session_factory():

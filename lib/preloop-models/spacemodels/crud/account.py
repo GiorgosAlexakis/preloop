@@ -1,6 +1,6 @@
 """CRUD operations for Account model."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -17,7 +17,7 @@ class CRUDAccount(CRUDBase[Account]):
         obj_data = dict(obj_in)
 
         # Initialize timestamp fields
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         obj_data.setdefault("created", current_time)
         obj_data.setdefault("last_updated", current_time)
 
@@ -28,7 +28,7 @@ class CRUDAccount(CRUDBase[Account]):
     ) -> Account:
         """Update account and its last_updated timestamp."""
         # Update last_updated field
-        obj_in["last_updated"] = datetime.utcnow()
+        obj_in["last_updated"] = datetime.now(timezone.utc)
 
         return super().update(db=db, db_obj=db_obj, obj_in=obj_in)
 

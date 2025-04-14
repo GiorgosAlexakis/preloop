@@ -25,12 +25,17 @@ except ImportError:
 
 
 def get_engine(database_url: Optional[str] = None):
-    """Create SQLAlchemy engine with fallback for testing."""
-    url = database_url or os.getenv(
-        "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost/spacemodels"
-    )
+    """Create SQLAlchemy engine for PostgreSQL with pgvector."""
+    url = database_url or os.getenv("DATABASE_URL")
 
+    if not url:
+        raise Exception("DATABASE_URL not in env")
     is_postgresql = "postgresql" in url
+
+    if not is_postgresql:
+        raise Exception(
+            "Only PostgreSQL is supported. SQLite fallback has been removed."
+        )
 
     try:
         engine = create_engine(url)
@@ -39,7 +44,7 @@ def get_engine(database_url: Optional[str] = None):
             conn.execute(text("SELECT 1"))
 
         # If PostgreSQL, check for pgvector extension
-        if is_postgresql and PGVECTOR_AVAILABLE:
+        if PGVECTOR_AVAILABLE:
             if not check_pgvector_extension(engine):
                 try:
                     logger.info("Installing pgvector extension")
@@ -47,17 +52,15 @@ def get_engine(database_url: Optional[str] = None):
                     logger.info("pgvector extension installed successfully")
                 except Exception as e:
                     logger.warning(f"Failed to install pgvector extension: {e}")
+                    raise Exception(f"Failed to install pgvector extension: {e}")
             else:
                 logger.info("pgvector extension already installed")
 
         logger.info(f"Connected to database using {url}")
         return engine
     except (ImportError, SQLAlchemyError) as e:
-        logger.warning(
-            f"Database connection failed: {e}. Using SQLite file database for testing purposes."
-        )
-        # Use a file-based SQLite database instead of in-memory for persistence
-        return create_engine("sqlite:///spacemodels.db")
+        logger.error(f"Database connection failed: {e}")
+        raise Exception(f"Database connection failed: {e}")
 
 
 def get_session_factory(engine=None):

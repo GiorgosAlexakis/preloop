@@ -311,23 +311,11 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         distance_type: str = "cosine",
     ) -> List[Tuple[Issue, float]]:
         """Perform vector similarity search using pgvector."""
-        # Convert query vector to pgvector format if needed
-        vector_query = query_vector
-
-        # Select the right distance operator
-        if distance_type == "cosine":
-            # Cosine distance: <=>
-            distance_op = "<=> :query_vector"
-        elif distance_type == "euclidean":
-            # Euclidean distance: <->
-            distance_op = "<-> :query_vector"
-        else:
-            # Default to cosine distance
-            distance_op = "<=> :query_vector"
 
         # Construct the raw SQL query
         query = text(
-            f"""
+            """
+            WITH results AS (
             SELECT
                 i.id,
                 i.title,
@@ -344,26 +332,26 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 i.last_synced,
                 i.created_at,
                 i.updated_at,
-                1 - (e.embedding {distance_op}) as similarity
+                (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
             FROM
                 issue i
             JOIN
                 issueembedding e ON i.id = e.issue_id
-            WHERE
-                e.embedding_model_id = :model_id
-            ORDER BY
-                similarity DESC
+            )
+            SELECT * FROM results
+            ORDER BY sim DESC
             LIMIT :limit
         """
         )
 
         # Execute the query
         result = db.execute(
-            query, {"model_id": model_id, "query_vector": vector_query, "limit": limit}
+            query, {"model_id": model_id, "query_vector": query_vector, "limit": limit}
         )
 
         # Convert results to Issue objects with similarity scores
         issues_with_scores = []
+
         for row in result:
             # Convert row to dictionary
             issue_dict = {
@@ -371,10 +359,10 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             }
 
             # Extract similarity score
-            similarity = issue_dict.pop("similarity")
+            similarity = issue_dict.pop("sim")
 
             # Create Issue object from dictionary
-            issue = Issue(**{k: v for k, v in issue_dict.items() if k != "similarity"})
+            issue = Issue(**{k: v for k, v in issue_dict.items() if k != "sim"})
 
             # Add to results
             issues_with_scores.append((issue, float(similarity)))

@@ -63,12 +63,13 @@ def test_vector_type_postgresql_dialect():
     vector_type = VectorType(dimensions=512)
     dialect = postgresql_dialect()
 
-    # Should use pgvector.sqlalchemy.Vector for PostgreSQL
-    with patch("pgvector.sqlalchemy.Vector") as mock_vector:
+    # Should use pgvector.sqlalchemy.Vector (imported as Vector) for PostgreSQL
+    # Patch the imported name within the module under test
+    with patch("spacemodels.db.vector_types.Vector") as mock_vector:
         # Call the method but we don't need to use the result
         _ = vector_type.load_dialect_impl(dialect)
 
-        # Verify Vector constructor was called with dimensions
+        # Verify the mock (representing the imported Vector class) was called
         mock_vector.assert_called_once_with(512)
 
 
