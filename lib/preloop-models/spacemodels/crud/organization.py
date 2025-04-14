@@ -3,6 +3,7 @@
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func  # Import func for lower()
 
 from ..models.organization import Organization
 from .base import CRUDBase
@@ -33,7 +34,9 @@ class CRUDOrganization(CRUDBase[Organization]):
         Returns:
             Organization object if found, otherwise None
         """
-        query = db.query(Organization).filter(Organization.name == name)
+        query = db.query(Organization).filter(
+            func.lower(Organization.name) == func.lower(name)
+        )
 
         if tracker_id:
             query = query.filter(Organization.tracker_id == tracker_id)
