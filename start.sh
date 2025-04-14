@@ -66,9 +66,21 @@ if [ "$INIT_TEST_DATA" = "true" ]; then
   test_data_flag="--init-test-data"
 fi
 
+# Build MkDocs documentation if mkdocs is available
+if command -v mkdocs &> /dev/null; then
+    echo "Building documentation with MkDocs..."
+    mkdocs build
+    echo "Documentation build complete."
+else
+    echo "Warning: 'mkdocs' command not found. Skipping documentation build."
+    echo "         Install docs dependencies with: pip install -e '.[dev]'"
+fi
+
+echo ""
 echo "Starting SpaceBridge REST API with configuration:"
 echo " - API Server: http://localhost:$API_PORT"
-echo " - API Documentation: http://localhost:$API_PORT/docs"
+echo " - API Documentation (Swagger): http://localhost:$API_PORT/docs/api"
+echo " - User Documentation: http://localhost:$API_PORT/docs"
 echo " - Debug mode: $DEBUG"
 echo " - Init test data: $INIT_TEST_DATA"
 
