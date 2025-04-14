@@ -2,17 +2,14 @@ import logging
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Header, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session  # Import synchronous Session
 
 from spacebridge.config import (
     SERVER_VERSION,
     MIN_CLIENT_VERSION,
     MAX_CLIENT_VERSION,
 )  # Import constants directly
-from spacebridge.api.auth import (
-    get_current_user,
-    oauth2_scheme,
-)  # Import from auth package level
+from spacebridge.api.auth import get_current_user  # Remove oauth2_scheme import
 from spacebridge.schemas.version import VersionInfo
 from SpaceModels.spacemodels.db.session import get_db_session  # Correct function name
 
@@ -28,8 +25,8 @@ router = APIRouter()
 async def get_version_info(
     request: Request,
     x_client_version: Annotated[Optional[str], Header()] = None,
-    db: AsyncSession = Depends(get_db_session),  # Correct function name
-    token: Optional[str] = Depends(oauth2_scheme),  # Depend directly on the scheme
+    db: Session = Depends(get_db_session),  # Use synchronous Session type hint
+    # Removed token dependency: token: Optional[str] = Depends(oauth2_scheme),
 ):
     """
     Returns the server version information and logs the client version.
@@ -41,14 +38,19 @@ async def get_version_info(
     client_ip = request.client.host if request.client else "unknown"
     account_id: Optional[int] = None
     current_user = None
-    if token:
+    # Explicitly check header for optional authentication
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.replace("Bearer ", "")
         try:
             # Manually attempt to get user if token exists
             current_user = await get_current_user(token=token)
             account_id = current_user.id
         except HTTPException:
             # Ignore auth errors (invalid token, inactive user, etc.)
-            logger.debug("Optional authentication failed for /version endpoint.")
+            logger.debug(
+                "Optional authentication failed for /version endpoint (token provided but invalid/inactive)."
+            )
             pass  # Keep account_id as None
         except Exception as e:
             # Log unexpected errors but don't fail the request
@@ -65,12 +67,12 @@ async def get_version_info(
     )
     db.add(log_entry)
     try:
-        await db.commit()
+        db.commit()  # Remove await for synchronous commit
         logger.info(
             f"Logged client version: IP={client_ip}, Version={x_client_version}, AccountID={account_id}"
         )
     except Exception as e:
-        await db.rollback()
+        db.rollback()  # Remove await for synchronous rollback
         logger.error(f"Failed to log client version: {e}", exc_info=True)
         # Continue even if logging fails, returning version info is primary goal
 
