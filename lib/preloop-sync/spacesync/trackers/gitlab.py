@@ -38,9 +38,9 @@ class GitLabTracker(BaseTracker):
         # Use URL from connection_details if available
         gitlab_url = connection_details.get("url")
 
-        # If there's no URL, use https://gitlab.spacecode.ai/ from the log
+        # If there's no URL, use https://gitlab.com/
         if not gitlab_url:
-            gitlab_url = "https://gitlab.spacecode.ai"
+            gitlab_url = "https://gitlab.com"
 
         # Strip '/api/v4' from the URL if present, as python-gitlab adds this automatically
         gitlab_url = gitlab_url.rstrip("/")

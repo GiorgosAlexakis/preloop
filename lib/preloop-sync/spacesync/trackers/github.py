@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ..config import logger
 from ..exceptions import (
     TrackerAuthenticationError,
     TrackerConnectionError,
@@ -80,31 +79,30 @@ class GitHubTracker(BaseTracker):
         Returns:
             List of organization data dictionaries.
         """
-        # First, add a "Personal" organization for the user's repositories
-        # Get authenticated user info
+        organizations = []
+
+        # Get user data and organization data in parallel
+        # This single request gets the authenticated user info
         user_data = self._make_request("user")
 
-        organizations = [
-            {
-                "id": "personal",  # Use "personal" as a special ID for personal repositories
-                "name": f"{user_data['login']}'s Repositories",
-                "url": user_data["html_url"],
-            }
-        ]
+        # Create a virtual "Personal" organization for consistency with GitLab
+        organizations.append({
+            "id": "personal",  # Use "personal" as a special ID for personal repositories
+            "name": f"{user_data['login']}'s Repositories",
+            "url": user_data["html_url"],
+        })
 
-        # Then get the user's organizations
-        orgs_data = self._make_request("user/orgs")
+        # Get all organizations at once - this gives us enough info without individual calls
+        # GitHub API already returns detailed organization info with this call
+        orgs_data = self._make_request("user/orgs", {"per_page": 100})
 
+        # Process each organization without making additional API calls
         for org in orgs_data:
-            # Get detailed information for each organization
-            org_detail = self._make_request(f"orgs/{org['login']}")
-            organizations.append(
-                {
-                    "id": org_detail["login"],
-                    "name": org_detail["name"] or org_detail["login"],
-                    "url": org_detail["html_url"],
-                }
-            )
+            organizations.append({
+                "id": org["login"],
+                "name": org["login"],  # Use login name as display name
+                "url": org["url"].replace("api.github.com", "github.com").replace("/orgs/", "/"),
+            })
 
         return organizations
 
@@ -118,26 +116,35 @@ class GitHubTracker(BaseTracker):
         Returns:
             List of project data dictionaries.
         """
+        # Set up parameters for the API request with proper pagination and sorting
+        params = {"per_page": 100, "sort": "updated", "direction": "desc"}
+
         # For GitHub, projects are repositories
         if organization_id == "personal":
             # Get user's repositories
-            repos_data = self._make_request("user/repos", {"per_page": 100})
+            repos_data = self._make_request("user/repos", params)
         else:
             # Get organization's repositories
-            repos_data = self._make_request(
-                f"orgs/{organization_id}/repos", {"per_page": 100}
-            )
+            repos_data = self._make_request(f"orgs/{organization_id}/repos", params)
 
+        # Process repository data
         projects = []
         for repo in repos_data:
-            projects.append(
-                {
-                    "id": str(repo["id"]),
-                    "name": repo["name"],
-                    "description": repo["description"] or "",
-                    "url": repo["html_url"],
+            projects.append({
+                "id": str(repo["id"]),
+                "name": repo["name"],
+                "description": repo["description"] or "",
+                "url": repo["html_url"],
+                # Add additional metadata that might be useful for filtering and display
+                "meta_data": {
+                    "full_name": repo["full_name"],
+                    "default_branch": repo["default_branch"],
+                    "language": repo.get("language"),
+                    "created_at": repo["created_at"],
+                    "updated_at": repo["updated_at"],
+                    "stars": repo["stargazers_count"]
                 }
-            )
+            })
 
         return projects
 
@@ -155,36 +162,19 @@ class GitHubTracker(BaseTracker):
         Returns:
             List of issue data dictionaries.
         """
-        # First, we need to get the repo full name (owner/repo) using the repo ID
-        repo_name = None
 
-        if organization_id == "personal":
-            # Search user's repos
-            repos_data = self._make_request("user/repos", {"per_page": 100})
+        # If project_id looks like a full repo name (contains a slash), use it directly
+        if "/" in project_id:
+            repo_name = project_id
         else:
-            # Search organization's repos
-            repos_data = self._make_request(
-                f"orgs/{organization_id}/repos", {"per_page": 100}
-            )
-
-        for repo in repos_data:
-            if str(repo["id"]) == project_id:
-                repo_name = repo["full_name"]  # This includes the owner/repo format
-                break
-
-        if not repo_name:
-            logger.warning(
-                f"Repository with ID {project_id} not found in organization {organization_id}"
-            )
-            return []
+            # Make one API call to get the repository details
+            repo_details = self._make_request(f"repositories/{project_id}")
+            repo_name = repo_details["full_name"]
 
         # Query parameters for the issues API
         params = {"state": "all", "per_page": 100}
-        # Removing these lines below correctly gets the issues, otherwise, no issues are received
-        # if since:
-        #     params["since"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        # Make the request
+        # Use the repo_name to directly access the issues
         issues_endpoint = f"repos/{repo_name}/issues"
         issues_data = self._make_request(issues_endpoint, params)
 
