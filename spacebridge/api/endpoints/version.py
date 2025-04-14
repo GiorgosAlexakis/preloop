@@ -24,7 +24,11 @@ router = APIRouter()
 @router.get("/version", response_model=VersionInfo)
 async def get_version_info(
     request: Request,
-    x_client_version: Annotated[Optional[str], Header()] = None,
+    x_client_version: Annotated[Optional[str], Header(alias="X-Client-Version")] = None,
+    x_client_organization: Annotated[
+        Optional[str], Header(alias="X-Client-Organization")
+    ] = None,
+    x_client_project: Annotated[Optional[str], Header(alias="X-Client-Project")] = None,
     db: Session = Depends(get_db_session),  # Use synchronous Session type hint
     # Removed token dependency: token: Optional[str] = Depends(oauth2_scheme),
 ):
@@ -64,12 +68,14 @@ async def get_version_info(
         ip_address=client_ip,
         client_version=x_client_version if x_client_version else "unknown",
         account_id=account_id,
+        organization_identifier=x_client_organization,
+        project_identifier=x_client_project,
     )
     db.add(log_entry)
     try:
         db.commit()  # Remove await for synchronous commit
         logger.info(
-            f"Logged client version: IP={client_ip}, Version={x_client_version}, AccountID={account_id}"
+            f"Logged client version: IP={client_ip}, Version={x_client_version}, Org={x_client_organization}, Proj={x_client_project}, AccountID={account_id}"
         )
     except Exception as e:
         db.rollback()  # Remove await for synchronous rollback
