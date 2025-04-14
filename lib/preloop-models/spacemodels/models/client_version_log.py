@@ -27,6 +27,12 @@ class ClientVersionLog(Base):
         nullable=True,
         index=True,  # Changed type to String(36)
     )
+    organization_identifier: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, index=True
+    )
+    project_identifier: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, index=True
+    )
 
     # Relationship to Account (optional)
     account = relationship("Account", back_populates="client_version_logs")
