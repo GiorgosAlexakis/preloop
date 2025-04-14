@@ -1,0 +1,60 @@
+# mkdocs.yml
+site_name: SpaceBridge Documentation
+site_url: https://spacebridge.io/docs/ # Adjust if needed for actual deployment
+repo_url: https://gitlab.spacecode.ai/spacecode/spacebridge # Adjust if needed
+repo_name: spacecode/spacebridge # Adjust if needed
+edit_uri: "" # Optional: Link to edit pages in GitLab, e.g., -/blob/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.annotate
+    - content.tabs.link
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/gitlab
+
+# Source directory for Markdown files
+docs_dir: docs
+
+# Extensions
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences: # Needed for Mermaid diagrams
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: "pymdownx.superfences.fence_code_format" # Use string format for YAML lint compatibility
+  - pymdownx.details # For collapsible blocks
+  - pymdownx.tabbed: # For tabbed content
+      alternate_style: true
+  - admonition # For call-out blocks
+  - toc:
+      permalink: true # Add anchors to headings
+
+plugins:
+  - search # Built-in search plugin
+
+# Navigation (Optional: MkDocs can auto-detect from docs/ structure)
+# Uncomment and customize if needed:
+# nav:
+#   - Home: index.md
+#   - Getting Started: getting-started.md
+#   - API Reference: api.md # Example - link to where Swagger will be
+#   - ... other sections based on your docs/ folder ...
