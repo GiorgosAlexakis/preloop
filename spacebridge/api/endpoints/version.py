@@ -74,7 +74,7 @@ async def get_version_info(
     db.add(log_entry)
     try:
         db.commit()  # Remove await for synchronous commit
-        logger.info(
+        logger.warning(
             f"Logged client version: IP={client_ip}, Version={x_client_version}, Org={x_client_organization}, Proj={x_client_project}, AccountID={account_id}"
         )
     except Exception as e:
