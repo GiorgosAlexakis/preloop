@@ -6,6 +6,7 @@ of issue tracking systems.
 
 import logging
 import os
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.encoders import jsonable_encoder
 
 from spacebridge import __version__
 from spacebridge.api.auth import auth_router, get_current_active_user
@@ -27,6 +29,7 @@ from spacebridge.api.endpoints import (
     organizations,
     projects,
     trackers,
+    version,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -134,6 +137,38 @@ def create_app() -> FastAPI:
         redoc_url=None,  # Disable the automatic redoc at /redoc
         openapi_url="/api/v1/openapi.json",
     )
+
+    # Override the default JSON encoder to handle datetime objects
+    class CustomJSONEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            return super().default(obj)
+
+    # Replace the default jsonable_encoder function with our custom one
+    def custom_jsonable_encoder(obj, *args, **kwargs):
+        # First let FastAPI's encoder prepare the object
+        encoded = jsonable_encoder(obj, *args, **kwargs)
+        # Then manually process any datetime objects that might have been missed
+        if isinstance(encoded, dict):
+            for key, value in encoded.items():
+                if isinstance(value, datetime):
+                    encoded[key] = value.isoformat()
+        elif isinstance(encoded, list):
+            for i, item in enumerate(encoded):
+                if isinstance(item, datetime):
+                    encoded[i] = item.isoformat()
+                elif isinstance(item, dict):
+                    for key, value in item.items():
+                        if isinstance(value, datetime):
+                            item[key] = value.isoformat()
+        return encoded
+
+    # Patch FastAPI's jsonable_encoder
+    import fastapi.encoders
+
+    original_jsonable_encoder = fastapi.encoders.jsonable_encoder
+    fastapi.encoders.jsonable_encoder = custom_jsonable_encoder
 
     # Configure CORS
     app.add_middleware(
@@ -263,6 +298,9 @@ def create_app() -> FastAPI:
         tags=["Trackers"],
         dependencies=[Depends(get_current_active_user)],
     )
+    app.include_router(
+        version.router, prefix="/api/v1", tags=["Version"]
+    )  # No auth dependency for version check
 
     # Create HTML landing page template
 

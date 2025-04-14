@@ -11,7 +11,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.future import select
 
-from spacebridge.schemas.auth import TokenData, UserResponse
+from spacebridge.schemas.auth import TokenData
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.api_key import ApiKey
@@ -123,7 +123,7 @@ def decode_token(token: str) -> Union[TokenData, Dict[str, Any]]:
         )
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
     """Get the current user from a JWT token or API key.
 
     Args:
@@ -201,12 +201,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
                     logger.info(
                         f"API key authentication successful for user: {user.username}"
                     )
-                    return UserResponse(
-                        username=user.username,
-                        email=user.email,
-                        full_name=user.full_name,
-                        email_verified=user.email_verified,
-                    )
+                    return user  # Return the full Account object
             finally:
                 session.close()
                 try:
@@ -271,12 +266,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
                         headers={"WWW-Authenticate": "Bearer"},
                     )
 
-                return UserResponse(
-                    username=user.username,
-                    email=user.email,
-                    full_name=user.full_name,
-                    email_verified=user.email_verified,
-                )
+                return user  # Return the full Account object
             finally:
                 session.close()
                 try:
@@ -357,12 +347,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
                     logger.info(
                         f"API key authentication successful for user: {user.username}"
                     )
-                    return UserResponse(
-                        username=user.username,
-                        email=user.email,
-                        full_name=user.full_name,
-                        email_verified=user.email_verified,
-                    )
+                    return user  # Return the full Account object
                 finally:
                     session.close()
                     try:
@@ -391,8 +376,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
 
 
 async def get_current_active_user(
-    current_user: UserResponse = Depends(get_current_user),
-) -> UserResponse:
+    current_user: Account = Depends(get_current_user),
+) -> Account:
     """Get the current active user.
 
     Args:
@@ -406,3 +391,38 @@ async def get_current_active_user(
     """
     # Disabled check is now handled in get_current_user
     return current_user
+
+
+async def get_current_active_user_optional(
+    token: Optional[str] = Depends(oauth2_scheme),
+) -> Optional[Account]:
+    """Get the current active user if a valid token is provided, otherwise return None.
+
+    This is useful for endpoints that can optionally use authentication.
+
+    Args:
+        token: Optional JWT token or API key from the Authorization header.
+
+    Returns:
+        The current active user if authentication is successful, otherwise None.
+    """
+    if token is None:
+        # No token provided in the header
+        return None
+    try:
+        # Reuse the existing logic, which handles JWT/API key and active status
+        # get_current_user already depends on the token via oauth2_scheme
+        # We pass the token explicitly here to avoid double dependency resolution
+        # and handle the case where the header might be present but empty.
+        user = await get_current_user(token=token)
+        return user
+    except HTTPException as e:
+        # If authentication fails for any reason (invalid token, expired, inactive user), return None
+        logger.debug(f"Optional authentication failed: {e.detail}")
+        return None
+    except Exception as e:
+        # Catch any other unexpected errors during authentication attempt
+        logger.error(
+            f"Unexpected error during optional authentication: {e}", exc_info=True
+        )
+        return None

@@ -45,3 +45,7 @@ htmlcov/
 .DS_Store
 
 *.db
+.aider*
+
+# Generated files
+repomix-output.xml

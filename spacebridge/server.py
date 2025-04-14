@@ -3,9 +3,18 @@
 import argparse
 import logging
 import os
+import sys  # Import sys
+import uvicorn
+
 from typing import Optional
 
-import uvicorn
+from spacebridge.logging import configure_logging  # Import configure_logging
+
+# Add project root to sys.path to ensure SpaceModels can be imported
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +33,9 @@ def start_server(
         debug: Whether to run in debug mode, defaults to DEBUG env var or False
         init_test_data: Whether to initialize test data, defaults to INIT_TEST_DATA env var or False
     """
+    # Configure logging first
+    configure_logging()
+
     # Set server parameters from environment or defaults
     host = host or os.getenv("HOST", "0.0.0.0")
     port = port or int(os.getenv("PORT", "8000"))
@@ -54,7 +66,7 @@ def start_server(
         port=port,
         reload=debug,
         factory=True,
-        log_level="debug" if debug else "info",
+        # log_level="debug" if debug else "info", # Let configure_logging handle this
     )
 
 

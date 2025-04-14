@@ -49,15 +49,17 @@ async def register_tracker(
             detail=f"Invalid tracker type. Must be one of: {', '.join(valid_types)}",
         )
 
+    # For Jira, ensure username is present in config
+    if tracker_data.type.lower() == "jira" and (
+        not tracker_data.config or "username" not in tracker_data.config
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Jira tracker requires 'username' in config",
+        )
+
     # Create a tracker client to test the connection
     try:
-        # For Jira, ensure username is present in config
-        if tracker_data.type.lower() == "jira" and not tracker_data.config:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Jira tracker requires 'username' in config",
-            )
-
         # Create the client
         client = await create_tracker_client(
             tracker_type=tracker_data.type,
@@ -101,6 +103,32 @@ async def register_tracker(
                 detail="User account not found",
             )
 
+        # Check if a tracker with the same name already exists for this account
+        existing_tracker = (
+            session.execute(
+                select(Tracker).where(
+                    Tracker.name == tracker_data.name, Tracker.account_id == account.id
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+        if existing_tracker:
+            logger.warning(
+                f"Tracker with name '{tracker_data.name}' already exists for account {account.id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"A tracker with name '{tracker_data.name}' already exists for your account",
+            )
+
+        # Log information before attempting to create the tracker
+        logger.info(
+            f"Creating new tracker: name='{tracker_data.name}', "
+            f"type={tracker_data.type.lower()}, account_id={account.id}"
+        )
+
         # First create the tracker with the account reference
         new_tracker = Tracker(
             name=tracker_data.name,
@@ -113,7 +141,14 @@ async def register_tracker(
         )
 
         session.add(new_tracker)
-        session.flush()  # Save to get the tracker ID
+
+        try:
+            session.flush()  # Save to get the tracker ID
+        except Exception as flush_error:
+            logger.error(
+                f"Error during session.flush() for new tracker: {str(flush_error)}"
+            )
+            raise
 
         # Then create or find organization for this tracker
         org_result = session.execute(
@@ -122,15 +157,62 @@ async def register_tracker(
         org = org_result.scalars().first()
 
         if not org:
-            # Create a default organization for the user if one doesn't exist
+            # Create a default organization for the user with a unique identifier
+            # that includes the tracker type and a timestamp to ensure uniqueness
+            import uuid
+            import re
+
+            # Create a safe version of the tracker name for use in the identifier
+            safe_tracker_name = re.sub(r"[^a-zA-Z0-9]", "-", tracker_data.name.lower())
+            safe_tracker_name = re.sub(
+                r"-+", "-", safe_tracker_name
+            )  # Replace multiple dashes with a single one
+            safe_tracker_name = safe_tracker_name[:20]  # Limit length
+
+            # Create a unique identifier by combining username, tracker type, and a unique part
+            org_identifier = f"{current_user.username.lower()}-{tracker_data.type.lower()}-{safe_tracker_name}"
+
+            # Check if this identifier already exists
+            existing_org = (
+                session.execute(
+                    select(Organization).where(
+                        Organization.identifier == org_identifier
+                    )
+                )
+                .scalars()
+                .first()
+            )
+
+            # If it exists, make it truly unique by adding a short UUID
+            if existing_org:
+                short_uuid = str(uuid.uuid4())[:8]
+                org_identifier = f"{org_identifier}-{short_uuid}"
+
+            logger.info(f"Creating organization with identifier: {org_identifier}")
+
             org = Organization(
-                name=f"{current_user.username}'s Organization",
-                identifier=f"{current_user.username.lower()}-org",
+                name=f"{tracker_data.name} Organization",
+                identifier=org_identifier,
                 tracker_id=new_tracker.id,
                 is_active=True,
             )
             session.add(org)
-            session.flush()
+            try:
+                session.commit()
+            except IntegrityError as e:
+                session.rollback()
+                logger.error(f"Error creating organization: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to create organization due to database constraint",
+                )
+            except Exception as e:
+                session.rollback()
+                logger.error(f"Error creating organization: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Error creating organization",
+                )
 
         session.add(new_tracker)
         session.commit()
@@ -149,18 +231,35 @@ async def register_tracker(
             "id": str(new_tracker.id),
             "message": f"Tracker '{new_tracker.name}' registered successfully",
         }
-    except IntegrityError:
+    except IntegrityError as e:
         session.rollback()
+        # Log the detailed error message for debugging
+        error_msg = str(e)
+        constraint_info = ""
+
+        # Try to provide more specific information based on the error
+        if "unique constraint" in error_msg.lower():
+            if "name" in error_msg.lower():
+                constraint_info = "A tracker with this name already exists."
+            elif "url" in error_msg.lower():
+                constraint_info = "A tracker with this URL already exists."
+            else:
+                constraint_info = "A duplicate entry exists in the database."
+
+        logger.error(f"IntegrityError during tracker registration: {error_msg}")
+
+        # Provide a more helpful error message
+        detail_msg = f"Database constraint violation: {constraint_info or error_msg}"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Error registering tracker - name may already be taken",
+            detail=detail_msg,
         )
     except Exception as e:
         session.rollback()
         logger.error(f"Error registering tracker: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error registering tracker",
+            detail=f"Error registering tracker: {str(e)}",
         )
     finally:
         session.close()

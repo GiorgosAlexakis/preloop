@@ -42,24 +42,28 @@ async def create_tracker_client(
             username=config.get("username"),
         )
 
-        # Extract owner and repo from base_url if not provided in config
-        if "owner" not in config or "repo" not in config:
-            # GitHub URL format: https://github.com/owner/repo
+        # Owner and repo are now optional for GitHub client
+        # Extract them from base_url if provided in a repo URL format
+        if (
+            base_url
+            and "github.com" in base_url
+            and not base_url.startswith("https://api.github.com")
+        ):
+            # Only try to extract if this looks like a repository URL
             parts = base_url.rstrip("/").split("/")
             if len(parts) >= 5:  # https:, "", github.com, owner, repo
                 owner = parts[-2]
                 repo = parts[-1]
                 config["owner"] = owner
                 config["repo"] = repo
-            else:
-                raise ValueError(
-                    "Cannot extract owner/repo from GitHub URL. Please provide them in config."
-                )
+
+        # Always set base_url to the API URL
+        base_url = "https://api.github.com"
 
         return GitHubClient(
             credentials=credentials,
-            owner=config["owner"],
-            repo=config["repo"],
+            owner=config.get("owner"),
+            repo=config.get("repo"),
             timeout=config.get("timeout", 10),
         )
 

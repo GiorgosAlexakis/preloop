@@ -35,14 +35,18 @@ class GitHubClient(TrackerInterface):
     """GitHub API client for issue tracking."""
 
     def __init__(
-        self, credentials: GitHubCredentials, owner: str, repo: str, timeout: int = 10
+        self,
+        credentials: GitHubCredentials,
+        owner: str = None,
+        repo: str = None,
+        timeout: int = 10,
     ):
         """Initialize the GitHub client.
 
         Args:
             credentials: GitHub API credentials.
-            owner: Repository owner/organization.
-            repo: Repository name.
+            owner: Repository owner/organization (optional).
+            repo: Repository name (optional).
             timeout: Request timeout in seconds.
         """
         self.credentials = credentials
@@ -113,15 +117,19 @@ class GitHubClient(TrackerInterface):
         """
         try:
             # Get repository info to test the connection
-            repo_path = f"/repos/{self.owner}/{self.repo}"
-            repo_data = await self._request("GET", repo_path)
+            if self.repo:
+                repo_path = f"/repos/{self.owner}/{self.repo}"
+                repo_data = await self._request("GET", repo_path)
+            else:
+                user_path = "/user/repos"
+                repo_data = await self._request("GET", user_path)
 
             # Get rate limit info
             rate_limit_data = await self._request("GET", "/rate_limit")
 
             return TrackerConnection(
                 connected=True,
-                message=f"Successfully connected to GitHub repository: {repo_data['full_name']}",
+                message=f"Successfully connected to GitHub repository: {repo_data['full_name'] if self.repo else 'User Repositories'}",
                 rate_limit=rate_limit_data["resources"],
                 server_info={"version": "GitHub API v3"},
             )
@@ -144,12 +152,23 @@ class GitHubClient(TrackerInterface):
             Project metadata.
         """
         # Get repository info
-        repo_path = f"/repos/{self.owner}/{self.repo}"
-        repo_data = await self._request("GET", repo_path)
+        if self.repo:
+            repo_path = f"/repos/{self.owner}/{self.repo}"
+            repo_data = await self._request("GET", repo_path)
+        else:
+            user_path = "/user/repos"
+            repo_data = await self._request("GET", user_path)
+            repo_data = repo_data[0]
 
         # Get labels for the repository
-        labels_path = f"/repos/{self.owner}/{self.repo}/labels"
-        labels_data = await self._request("GET", labels_path)
+        if self.repo:
+            labels_path = f"/repos/{self.owner}/{self.repo}/labels"
+            labels_data = await self._request("GET", labels_path)
+        else:
+            labels_path = (
+                f"/repos/{repo_data['owner']['login']}/{repo_data['name']}/labels"
+            )
+            labels_data = await self._request("GET", labels_path)
 
         # GitHub doesn't have built-in priorities, so we simulate them
         priorities = [
@@ -165,7 +184,7 @@ class GitHubClient(TrackerInterface):
         ]
 
         return ProjectMetadata(
-            key=f"{self.owner}/{self.repo}",
+            key=f"{self.owner}/{self.repo}" if self.repo else repo_data["full_name"],
             name=repo_data["name"],
             description=repo_data["description"],
             statuses=statuses,
@@ -230,7 +249,9 @@ class GitHubClient(TrackerInterface):
         # Create the issue
         return Issue(
             id=str(issue_data["id"]),
-            key=f"{self.owner}/{self.repo}#{issue_data['number']}",
+            key=f"{self.owner}/{self.repo}#{issue_data['number']}"
+            if self.repo
+            else f"{issue_data['repository_url'].split('/')[-2]}/{issue_data['repository_url'].split('/')[-1]}#{issue_data['number']}",
             title=issue_data["title"],
             description=issue_data["body"],
             status=status,
@@ -256,7 +277,9 @@ class GitHubClient(TrackerInterface):
             url=issue_data["html_url"],
             api_url=issue_data["url"],
             tracker_type="github",
-            project_key=f"{self.owner}/{self.repo}",
+            project_key=f"{self.owner}/{self.repo}"
+            if self.repo
+            else issue_data["repository_url"].split("/")[-2],
             custom_fields={},
         )
 
@@ -279,7 +302,12 @@ class GitHubClient(TrackerInterface):
             Tuple of (list of issues, total count).
         """
         # Build the search query
-        query_parts = [f"repo:{self.owner}/{self.repo}"]
+        query_parts = []
+
+        if self.repo:
+            query_parts.append(f"repo:{self.owner}/{self.repo}")
+        else:
+            query_parts.append(f"user:{self.owner}")
 
         if filter_params.query:
             query_parts.append(filter_params.query)
@@ -373,14 +401,23 @@ class GitHubClient(TrackerInterface):
             issue_number = issue_number.split("#")[-1]
 
         # Get the issue
-        issue_path = f"/repos/{self.owner}/{self.repo}/issues/{issue_number}"
-        issue_data = await self._request("GET", issue_path)
+        if self.repo:
+            issue_path = f"/repos/{self.owner}/{self.repo}/issues/{issue_number}"
+            issue_data = await self._request("GET", issue_path)
+        else:
+            issues_path = f"/search/issues?q=repo:{self.owner}+#{issue_number}"
+            issues_data = await self._request("GET", issues_path)
+            issue_data = issues_data["items"][0]
 
         # Get comments
-        comments_path = (
-            f"/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments"
-        )
-        comments_data = await self._request("GET", comments_path)
+        if self.repo:
+            comments_path = (
+                f"/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments"
+            )
+            comments_data = await self._request("GET", comments_path)
+        else:
+            comments_path = f"/repos/{issue_data['repository_url'].split('/')[-2]}/{issue_data['repository_url'].split('/')[-1]}/issues/{issue_number}/comments"
+            comments_data = await self._request("GET", comments_path)
 
         # Parse the issue
         issue = self._parse_github_issue(issue_data)
@@ -435,8 +472,12 @@ class GitHubClient(TrackerInterface):
             body["labels"] = issue_data.labels
 
         # Create the issue
-        issues_path = f"/repos/{self.owner}/{self.repo}/issues"
-        issue_data = await self._request("POST", issues_path, data=body)
+        if self.repo:
+            issues_path = f"/repos/{self.owner}/{self.repo}/issues"
+            issue_data = await self._request("POST", issues_path, data=body)
+        else:
+            issues_path = f"/repos/{self.owner}/{issue_data.repository}/issues"
+            issue_data = await self._request("POST", issues_path, data=body)
 
         # Parse and return the issue
         return self._parse_github_issue(issue_data)
@@ -478,8 +519,14 @@ class GitHubClient(TrackerInterface):
             body["labels"] = issue_data.labels
 
         # Update the issue
-        issue_path = f"/repos/{self.owner}/{self.repo}/issues/{issue_number}"
-        issue_data = await self._request("PATCH", issue_path, data=body)
+        if self.repo:
+            issue_path = f"/repos/{self.owner}/{self.repo}/issues/{issue_number}"
+            issue_data = await self._request("PATCH", issue_path, data=body)
+        else:
+            issues_path = (
+                f"/repos/{self.owner}/{issue_data.repository}/issues/{issue_number}"
+            )
+            issue_data = await self._request("PATCH", issues_path, data=body)
 
         # Parse and return the issue
         return self._parse_github_issue(issue_data)
@@ -508,10 +555,14 @@ class GitHubClient(TrackerInterface):
         }
 
         # Add the comment
-        comments_path = (
-            f"/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments"
-        )
-        comment_data = await self._request("POST", comments_path, data=body)
+        if self.repo:
+            comments_path = (
+                f"/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments"
+            )
+            comment_data = await self._request("POST", comments_path, data=body)
+        else:
+            comments_path = f"/repos/{self.owner}/{issue_data.repository}/issues/{issue_number}/comments"
+            comment_data = await self._request("POST", comments_path, data=body)
 
         # Parse and return the comment
         return IssueComment(
