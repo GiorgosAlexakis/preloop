@@ -324,7 +324,7 @@ async def search_issues(
                     organization=organization_id,
                     project=issue.project_id,
                     url=issue.external_url
-                    or f"https://spacebridge.ai/issues/{issue.id}",
+                    or f"https://spacebridge.io/issues/{issue.id}",
                     created_at=created_at_str,
                     updated_at=updated_at_str,
                     metadata=metadata_dict,
