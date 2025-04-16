@@ -194,6 +194,48 @@ Example prompts:
 - "Create a new issue for this login page crash"
 - "Link this function to issue #123"
 
+### Configuring Windsurf with SpaceBridge
+
+Windsurf uses a JSON configuration file to manage MCP servers. Here's how to set up SpaceBridge with Windsurf:
+
+#### Editing the Configuration File
+
+1. Create or edit the Windsurf MCP configuration file at `~/.codeium/windsurf/mcp_config.json` with the following content:
+
+   ```json
+   {
+     "mcpServers": {
+       "spacebridge": {
+         "command": "/Users/yanconst/anaconda3/envs/ag2/bin/spacebridge-mcp-server",
+         "args": [],
+         "env": {
+           "SPACEBRIDGE_API_URL": "https://spacebridge.io/api/v1",
+           "SPACEBRIDGE_API_KEY": "zFh7zcQ1Wp6IQQVHn3iK9fssreuFx2VxLCfFaVip",
+           "OPENAI_API_KEY": "sk-8gk0ZB93PDkna3QkziKz_sPPypTKBgOAMybBrpjjknT3BlbkFJHhaRXBDg0N9oh0JlSY6CBxEP2-RgZEX80lNw1fnWwA"
+         }
+       }
+     }
+   }
+   ```
+
+   The configuration file specifies:
+   - The path to the `spacebridge-mcp-server` executable in your Anaconda `ag2` environment
+   - Your SpaceBridge API URL and API key
+   - Your OpenAI API key for similarity search and duplicate detection
+
+### Using SpaceBridge in Windsurf
+
+After configuration, you can use SpaceBridge features directly within Windsurf:
+
+1. **Search for Issues**: Ask Windsurf to search for issues related to your current task
+2. **Create Issues**: Tell Windsurf to create a new issue for a bug or feature request
+3. **Link Code to Issues**: Ask Windsurf to link your current code to relevant issues
+
+Example prompts:
+- "Find issues related to authentication bugs"
+- "Create a new issue for this login page crash"
+- "Link this function to issue #123"
+
 ### Architecture
 
 ```mermaid
