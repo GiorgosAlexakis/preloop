@@ -54,6 +54,9 @@ class Tracker(Base):
         comment="Encrypted API key or token for authentication",
     )
     is_active: Mapped[bool] = mapped_column(default=True)
+    is_deleted: Mapped[bool] = mapped_column(
+        default=False, index=True, comment="Flag for soft deletion"
+    )
     is_owner_managed: Mapped[bool] = mapped_column(
         default=True,
         comment="If True, the account that owns this tracker also owns all organizations linked to it",
