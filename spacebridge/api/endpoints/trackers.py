@@ -296,9 +296,11 @@ async def list_trackers(
         if not account:
             return []
 
-        # Get all trackers for the account
+        # Get all non-deleted trackers for the account
         tracker_result = session.execute(
-            select(Tracker).where(Tracker.account_id == account.id)
+            select(Tracker)
+            .where(Tracker.account_id == account.id)
+            .where(Tracker.is_deleted.is_(False))  # Filter out soft-deleted
         )
         trackers = tracker_result.scalars().all()
 
@@ -356,11 +358,12 @@ async def get_tracker(
                 detail="Tracker not found",
             )
 
-        # Get the tracker
+        # Get the non-deleted tracker
         tracker_result = session.execute(
             select(Tracker)
-            .where(Tracker.id == tracker_id)
+            .where(Tracker.id == str(tracker_id))  # Compare as strings
             .where(Tracker.account_id == account.id)
+            .where(Tracker.is_deleted.is_(False))  # Filter out soft-deleted
         )
         tracker = tracker_result.scalars().first()
 
@@ -406,15 +409,17 @@ async def get_tracker(
 async def delete_tracker(
     tracker_id: UUID4,
     current_user: UserResponse = Depends(get_current_active_user),
+    hard_delete: bool = False,  # Add query parameter for hard delete
 ) -> Dict[str, str]:
-    """Delete a tracker by ID.
+    """Delete a tracker by ID (soft delete by default, hard delete if specified).
 
     Args:
         tracker_id: The tracker ID.
         current_user: The current authenticated user.
+        hard_delete: If True, perform a hard delete (remove from DB). Defaults to False (soft delete).
 
     Returns:
-        Success message.
+        Success message indicating soft or hard delete.
 
     Raises:
         HTTPException: If the tracker does not exist or the user does not have access.
@@ -439,7 +444,7 @@ async def delete_tracker(
         # Get the tracker
         tracker_result = session.execute(
             select(Tracker)
-            .where(Tracker.id == tracker_id)
+            .where(Tracker.id == str(tracker_id))  # Compare as strings
             .where(Tracker.account_id == account.id)
         )
         tracker = tracker_result.scalars().first()
@@ -450,21 +455,26 @@ async def delete_tracker(
                 detail="Tracker not found",
             )
 
-        # Check if any projects are using this tracker
-        projects_result = session.execute(
-            select(Project).where(Project.tracker_id == tracker.id)
-        )
-        if projects_result.scalars().first():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete tracker with associated projects",
+        if hard_delete:
+            # Perform hard delete - cascades should handle related entities
+            logger.warning(
+                f"Performing hard delete for tracker ID: {tracker.id} for user: {current_user.username}"
             )
+            session.delete(tracker)
+            session.commit()
+            message = "Tracker hard deleted successfully"
+        else:
+            # Perform soft delete (default)
+            logger.info(
+                f"Performing soft delete for tracker ID: {tracker.id} for user: {current_user.username}"
+            )
+            tracker.is_deleted = True
+            tracker.is_active = False  # Also mark as inactive
+            session.add(tracker)
+            session.commit()
+            message = "Tracker soft deleted successfully"
 
-        # Delete the tracker
-        session.delete(tracker)
-        session.commit()
-
-        return {"message": "Tracker deleted successfully"}
+        return {"message": message}
     finally:
         session.close()
         try:
