@@ -206,12 +206,12 @@ Windsurf uses a JSON configuration file to manage MCP servers. Here's how to set
    {
      "mcpServers": {
        "spacebridge": {
-         "command": "/Users/yanconst/anaconda3/envs/ag2/bin/spacebridge-mcp-server",
+         "command": "/full/path/to/spacebridge-mcp-server",
          "args": [],
          "env": {
-           "SPACEBRIDGE_API_URL": "https://spacebridge.io/api/v1",
-           "SPACEBRIDGE_API_KEY": "zFh7zcQ1Wp6IQQVHn3iK9fssreuFx2VxLCfFaVip",
-           "OPENAI_API_KEY": "sk-8gk0ZB93PDkna3QkziKz_sPPypTKBgOAMybBrpjjknT3BlbkFJHhaRXBDg0N9oh0JlSY6CBxEP2-RgZEX80lNw1fnWwA"
+           "SPACEBRIDGE_API_URL": "https://spacebridge.io/api",
+           "SPACEBRIDGE_API_KEY": "your-spacebridge-api-key",
+           "OPENAI_API_KEY": "your-openai-api-key"
          }
        }
      }
