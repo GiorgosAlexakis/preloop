@@ -1,21 +1,15 @@
 # SpaceBridge Documentation
 
-![SpaceBridge Logo](../assets/logo.webp)
+## Overview
 
-## Turbocharge Your Coding with Automated Issue Tracking
+SpaceBridge is an open-source Model Context Protocol (MCP) server that provides a unified API for interacting with multiple issue tracking systems (GitHub, GitLab, Jira) from AI assistants. It functions as a bridge between AI agents and issue trackers by:
 
-SpaceBridge is a RESTful API server that serves as a unified interface between Spacecode's infrastructure and multiple issue tracking systems. It enables seamless searching, creation, and updating of issues across different platforms through a standardized HTTP API.
+1. **Standardizing issue data across platforms** - converting between different trackers' schemas
+2. **Providing semantic search and similarity matching** - finding related issues through vector embedding
+3. **Exposing a consistent interface** - through both direct REST API and MCP-compliant stdio transport
 
-SpaceBridge provides an open source MCP server and a REST API that can keep your issue tracker updated while you focus on coding.
+Developed specifically for AI agent integration, SpaceBridge lets AI assistants create, update, and search for issues across multiple tracking systems without requiring separate integrations for each platform.
 
-## Key Features
-
-- **Smart Duplicate Detection**: Intelligent similarity search finds and prevents duplicate issues, even when terminology varies
-- **Augment your LLM Context**: Seamless issue data access that supercharges your AI tools' effectiveness
-- **AI Assistant Ready**: Streamlined setup process for Cursor, Windsurf, Claude Code, and any agentic system that supports MCP
-- **Vector-based Semantic Search**: Find relevant issues across all integrated trackers based on meaning, not just keywords
-- **Automated Management**: Intelligent duplicate detection and streamlined issue management
-- **Self-service Configuration**: Easily connect to your existing trackers and teams
 
 ## Supported Issue Trackers
 
@@ -24,14 +18,42 @@ SpaceBridge provides an open source MCP server and a REST API that can keep your
 - Jira Cloud and Server (coming soon)
 - Linear (coming soon)
 
+## Architecture
+
+```mermaid
+graph LR
+    MCP Clients (Claude Code) --> SpaceBridge MCP Server
+    SpaceBridge MCP Server --> SpaceBridge REST API
+    SpaceBridge REST API --> Issue Trackers (Jira/GitHub/GitLab)
+```
+
+### SpaceBridge-MCP
+
+SpaceBridge-MCP acts as a bridge between MCP clients and the SpaceBridge REST API. When an MCP client invokes a tool, SpaceBridge-MCP:
+
+- Receives the tool invocation via stdio
+- Validates the parameters
+- Translates the request to an HTTP call to the SpaceBridge REST API
+- Returns the result back to the MCP client
+
+### SpaceBridge REST API
+
+The SpaceBridge REST API provides a set of endpoints for interacting with issue trackers. It supports operations such as:
+
+- Creating new issues
+- Updating existing issues
+- Searching for issues
+- Managing issue assignments
+- Adding comments to issues
+
 ## Getting Started
 
 ### Prerequisites
 
-*   Python 3.9+
-*   pip (Python package installer)
-*   Access to a SpaceBridge instance and API key.
-*   OpenAI API Key (for the `create_issue` tool's duplicate check).
+- Python 3.9+
+- pip (Python package installer)
+- Access to a SpaceBridge instance and API key.
+- OpenAI API Key (for the `create_issue` tool's duplicate check).
 
 ### Installation using pip
 
@@ -113,15 +135,9 @@ The server will start listening for MCP connections via standard input/output (s
 
 ## Connecting MCP Clients
 
-This server uses standard input/output (stdio) for communication. You need to configure your MCP client (e.g., Claude code, Windsurf, Cursor) to launch the `spacebridge-mcp-server` command and pass the required environment variables.
+This server uses standard input/output (stdio) for communication. You need to configure your MCP client (e.g., Claude code, Windsurf, Cursor) to launch the `spacebridge-mcp-server` command and pass the required environment variables. The `spacebridge-mcp-server` command should be available in your environment's path.
 
-**Configuration Steps:**
-
-1.  **Install:** Ensure `spacebridge-mcp` is installed (see Installation section). The `spacebridge-mcp-server` command should be available in your environment's path (e.g., inside your virtual environment's `bin` directory if installed from source, or globally if installed via `pip install spacebridge-mcp`).
-2.  **Find Server Path:** Determine the full path to the `spacebridge-mcp-server` executable. If you installed in a virtual environment `.venv`, it might be `/path/to/your/project/.venv/bin/spacebridge-mcp-server`. If installed globally, you can often find it with `which spacebridge-mcp-server` (Linux/macOS) or `where spacebridge-mcp-server` (Windows).
-3.  **Add Server to Client:** Use your MCP client's command for adding a new server.
-
-**Example using `claude mcp add` (Claude code):**
+### Configuring Claude Code with SpaceBridge
 
 ```bash
 claude mcp add spacebridge \
@@ -132,13 +148,9 @@ claude mcp add spacebridge \
   --env OPENAI_API_KEY="your-openai-api-key"
 ```
 
-*   Replace `/full/path/to/your/spacebridge-mcp-server` with the actual path found in step 2.
-*   Replace the placeholder API URL and keys with your actual credentials.
-*   `--scope user` makes the server available across all your projects in Claude code. Use `--scope project` to limit it to the current project.
+`--scope user` makes the server available across all your projects in Claude code. Use `--scope project` to limit it to the current project.
 
 ### Configuring Cursor with SpaceBridge
-
-Cursor has its own approach for configuring MCP servers. Here's how to set up SpaceBridge with Cursor:
 
 #### Method 1: Using the Cursor UI
 
@@ -154,8 +166,6 @@ Cursor has its own approach for configuring MCP servers. Here's how to set up Sp
      - `OPENAI_API_KEY`: Your OpenAI API key for similarity search
 
 #### Method 2: Editing the Configuration File
-
-Cursor uses JSON configuration files to manage MCP servers. You can set up SpaceBridge:
 
 1. **Project-specific configuration** (only available in this project):
    Create a file at `.cursor/mcp.json` in your project directory with:
@@ -181,19 +191,6 @@ Cursor uses JSON configuration files to manage MCP servers. You can set up Space
 
 Once configured, Cursor's AI assistant will automatically detect and use available SpaceBridge tools when relevant to your task. You can also explicitly tell the assistant to use SpaceBridge tools by mentioning them in your prompts.
 
-### Using SpaceBridge in Cursor
-
-After configuration, you can use SpaceBridge features directly within Cursor:
-
-1. **Search for Issues**: Ask Cursor to search for issues related to your current task
-2. **Create Issues**: Tell Cursor to create a new issue for a bug or feature request
-3. **Link Code to Issues**: Ask Cursor to link your current code to relevant issues
-
-Example prompts:
-- "Find issues related to authentication bugs"
-- "Create a new issue for this login page crash"
-- "Link this function to issue #123"
-
 ### Configuring Windsurf with SpaceBridge
 
 Windsurf uses a JSON configuration file to manage MCP servers. Here's how to set up SpaceBridge with Windsurf:
@@ -218,38 +215,23 @@ Windsurf uses a JSON configuration file to manage MCP servers. Here's how to set
    }
    ```
 
-   The configuration file specifies:
-   - The path to the `spacebridge-mcp-server` executable in your Anaconda `ag2` environment
-   - Your SpaceBridge API URL and API key
-   - Your OpenAI API key for similarity search and duplicate detection
+The configuration file specifies:
+- The path to the `spacebridge-mcp-server` executable
+- Your SpaceBridge API URL and API key
+- Your OpenAI API key for similarity search and duplicate detection
 
-### Using SpaceBridge in Windsurf
+Once configured, Windsurf's AI assistant will automatically detect and use available SpaceBridge tools when relevant to your task. You can also explicitly tell the assistant to use SpaceBridge tools by mentioning them in your prompts.
 
-After configuration, you can use SpaceBridge features directly within Windsurf:
+### Using SpaceBridge
 
-1. **Search for Issues**: Ask Windsurf to search for issues related to your current task
-2. **Create Issues**: Tell Windsurf to create a new issue for a bug or feature request
-3. **Link Code to Issues**: Ask Windsurf to link your current code to relevant issues
+After configuration, you can use SpaceBridge features directly within your MCP-enabled IDE:
 
-Example prompts:
+1. **Search for Issues**: Ask your IDE to search for issues related to your current task
+2. **Create Issues**: Tell your IDE to create a new issue for a bug or feature request
+3. **Link Code to Issues**: Ask your IDE to link your current code to relevant issues
+
+### Usage Examples
+
 - "Find issues related to authentication bugs"
 - "Create a new issue for this login page crash"
 - "Link this function to issue #123"
-
-### Architecture
-
-```mermaid
-graph TD
-    A[Client] --> B{SpaceBridge API};
-    B --> C(Issue Search Tool);
-    C --> D[GitHub Tracker];
-    C --> E[Jira Tracker];
-    C --> F[GitLab Tracker];
-    D --> G{GitHub API};
-    E --> H{Jira API};
-    F --> I{GitLab API};
-    G --> C;
-    H --> C;
-    I --> C;
-    C --> B;
-```
