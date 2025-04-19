@@ -29,6 +29,9 @@ async def get_version_info(
         Optional[str], Header(alias="X-Client-Organization")
     ] = None,
     x_client_project: Annotated[Optional[str], Header(alias="X-Client-Project")] = None,
+    x_additional_info: Annotated[
+        Optional[str], Header(alias="X-Additional-Info")
+    ] = None,
     db: Session = Depends(get_db_session),  # Use synchronous Session type hint
     # Removed token dependency: token: Optional[str] = Depends(oauth2_scheme),
 ):
@@ -74,8 +77,8 @@ async def get_version_info(
     db.add(log_entry)
     try:
         db.commit()  # Remove await for synchronous commit
-        logger.warning(
-            f"Logged client version: IP={client_ip}, Version={x_client_version}, Org={x_client_organization}, Proj={x_client_project}, AccountID={account_id}"
+        logger.info(
+            f"Logged client version: IP={client_ip}, Version={x_client_version}, Org={x_client_organization}, Proj={x_client_project}, AccountID={account_id}, AdditionalInfo={x_additional_info}"
         )
     except Exception as e:
         db.rollback()  # Remove await for synchronous rollback

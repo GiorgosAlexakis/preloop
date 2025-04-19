@@ -80,10 +80,9 @@ class IssueUpdate(BaseModel):
 class IssueResponse(IssueBase):
     """Response model for issue data."""
 
-    id: str = Field(..., description="Issue ID")
-    tracker_id: str = Field(..., description="Issue ID in the original tracker")
-    organization: str = Field(..., description="Organization identifier")
-    project: str = Field(..., description="Project identifier")
+    id: str = Field(..., description="Issue ID in the original tracker (external ID)")
+    organization: str = Field(..., description="Organization name")
+    project: str = Field(..., description="Project name")
     url: str = Field(..., description="URL to the issue in the original tracker")
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
