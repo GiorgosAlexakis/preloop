@@ -15,6 +15,11 @@ Use the Lit.dev framework for frontend code. If you create new web components en
 - **Docker development**: `docker-compose up`
 - **Install pre-commit**: `pre-commit install`
 
+## Commit message Guidelines
+
+- All commit messages should include references to relevant issues in the tracker. Use the SpaceBridge-MCP tools to find or create issues for every change. Include the issue ID's in the commit message footer. Ensure issue title and description are clear and concise, always in present tense.
+
+
 ## Code Style
 - **Formatting**: Ruff format with 88 character line length
 - **Imports**: Use isort with black profile, group stdlib/third-party/local

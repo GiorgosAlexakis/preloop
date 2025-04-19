@@ -345,16 +345,128 @@ async def search_issues(
 
             return response_items
         else:
-            # Use regular text search (Needs similar update if used)
-            # TODO: Update this part if regular search is still needed and should return IssueResponse
-            issues = crud_issue.search(db, project_id=proj.id, filter_obj=filter_obj)
-            # This part needs updating to fetch names and use external_id like above
-            # For now, returning raw issues might be safer until fully implemented
-            # return [IssueResponse.from_orm(issue) for issue in issues] # Old way
-            # Placeholder: Return raw issues or implement full conversion
-            logger.warning("Regular issue search response format needs updating.")
-            # Returning empty list for now to avoid errors with mismatched schema
-            return []
+            # Implement regular text search using SQLAlchemy filtering
+            from sqlalchemy import or_
+
+            query_builder = db.query(Issue)
+
+            # Filter by project if specified
+            if proj:
+                query_builder = query_builder.filter(Issue.project_id == proj.id)
+            # If no project specified but organization is, filter by all projects in that org
+            elif org:
+                project_ids = [p.id for p in org.projects]
+                if project_ids:
+                    query_builder = query_builder.filter(
+                        Issue.project_id.in_(project_ids)
+                    )
+                else:
+                    # Org has no projects, so no issues
+                    return []
+
+            # Apply text query filter (case-insensitive search in title and description)
+            if query:
+                search_term = f"%{query}%"
+                query_builder = query_builder.filter(
+                    or_(
+                        Issue.title.ilike(search_term),
+                        Issue.description.ilike(search_term),
+                    )
+                )
+
+            # Apply status filter
+            if status:
+                query_builder = query_builder.filter(Issue.status == status)
+
+            # Apply labels filter (assuming labels are stored in meta_data JSON)
+            if labels and isinstance(filter_obj.labels, list):
+                # This requires JSONB specific query or careful string matching
+                # For simplicity, let's filter in Python for now, or adjust if DB supports JSON query
+                # This might be inefficient for large datasets
+                pass  # Filtering done after fetching for now
+
+            # Apply assignee filter (assuming assignee is stored in meta_data JSON)
+            if assignee:
+                # Similar to labels, requires JSON query or post-fetch filtering
+                pass  # Filtering done after fetching for now
+
+            # Get total count before applying limit/offset
+            total_count = query_builder.count()
+
+            # Apply limit and offset (offset not directly supported by IssueFilter, assuming 0)
+            issues = query_builder.order_by(Issue.updated_at.desc()).limit(limit).all()
+
+            # Post-fetch filtering for labels and assignee (if needed)
+            if labels and isinstance(filter_obj.labels, list):
+                issues = [
+                    issue
+                    for issue in issues
+                    if issue.meta_data
+                    and "labels" in issue.meta_data
+                    and all(
+                        label in issue.meta_data["labels"]
+                        for label in filter_obj.labels
+                    )
+                ]
+            if assignee:
+                issues = [
+                    issue
+                    for issue in issues
+                    if issue.meta_data
+                    and "assignee" in issue.meta_data
+                    and issue.meta_data["assignee"] == assignee
+                ]
+
+            # Convert database Issue models to IssueResponse objects
+            response_items = []
+            for issue in issues:
+                # Find the project and organization names (needed for response)
+                issue_project = crud_project.get(db, id=issue.project_id)
+                project_name = (
+                    issue_project.name if issue_project else "Unknown Project"
+                )
+                organization_name = "Unknown Org"
+                if issue_project:
+                    issue_org = crud_organization.get(
+                        db, id=issue_project.organization_id
+                    )
+                    if issue_org:
+                        organization_name = issue_org.name
+
+                # Format datetime fields as ISO strings
+                created_at_str = (
+                    issue.created_at.isoformat() if issue.created_at else None
+                )
+                updated_at_str = (
+                    issue.updated_at.isoformat() if issue.updated_at else None
+                )
+                metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
+                external_url = metadata_dict.get("url") or issue.external_url
+
+                response_item = IssueResponse(
+                    id=issue.external_id or issue.id,
+                    title=issue.title,
+                    description=issue.description,
+                    status=issue.status,
+                    priority=issue.priority,
+                    organization=organization_name,
+                    project=project_name,
+                    url=external_url
+                    or f"https://spacebridge.io/issues/{issue.id}",  # Fallback URL
+                    created_at=created_at_str,
+                    updated_at=updated_at_str,
+                    metadata=metadata_dict,
+                    labels=metadata_dict.get("labels", [])
+                    if isinstance(metadata_dict.get("labels"), list)
+                    else [],
+                    assignee=metadata_dict.get("assignee"),
+                )
+                response_items.append(response_item)
+
+            # Note: The 'total' count here reflects the count *before* post-fetch filtering.
+            # A more accurate count would require implementing label/assignee filters in the DB query.
+            # For now, we return the limited list based on DB query + post-filtering.
+            return response_items
     except HTTPException:
         # Re-raise specific HTTP exceptions (like the 404 for project not found)
         raise
