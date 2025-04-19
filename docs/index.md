@@ -232,6 +232,70 @@ After configuration, you can use SpaceBridge features directly within your MCP-e
 
 ### Usage Examples
 
-- "Find issues related to authentication bugs"
-- "Create a new issue for this login page crash"
-- "Link this function to issue #123"
+Below are examples of how to interact with your AI assistant using SpaceBridge tools. Each example includes a description of what the prompt does and how the underlying MCP tools are utilized.
+
+#### Searching for Issues
+
+These prompts use the `search_issues` tool to find relevant issues across your connected trackers:
+
+- **"Find issues related to authentication bugs"**
+  *Performs a full-text search across all trackers for issues containing terms related to authentication problems. The search results will include issue titles, descriptions, and statuses from GitHub, GitLab, and other configured trackers.*
+
+- **"Show me all open issues assigned to me in the frontend project"**
+  *Searches for issues with specific filters applied (status: open, assignee: current user, project: frontend). Results are pulled from all connected trackers and normalized into a consistent format.*
+
+- **"Find similar issues to the current error I'm seeing with the API timeout"**
+  *Performs a semantic similarity search to find conceptually related issues, even if they don't share the exact same keywords. This leverages embedding-based search to find issues describing similar problems.*
+
+- **"What's the status of the user profile refactoring task?"**
+  *Searches for issues related to user profile refactoring and returns their current status, including any linked issues or dependencies.*
+
+#### Creating Issues
+
+These prompts use the `create_issue` tool, which includes automatic duplicate detection:
+
+- **"Create a new issue for this login page crash"**
+  *Initiates the issue creation process, prompting for additional details about the login page crash. Before creating the issue, SpaceBridge automatically checks for potential duplicates using similarity search and presents them if found.*
+
+- **"File a bug report: API returns 500 error when processing large file uploads"**
+  *Creates a detailed bug report with a clear title and description containing the error details. SpaceBridge will format this appropriately for the target tracking system and provide an issue ID upon successful creation.*
+
+- **"Create a feature request for dark mode support in the dashboard"**
+  *Creates a new feature request issue with a standardized template. The AI may ask follow-up questions to gather requirements, use cases, and priority information before submitting.*
+
+- **"Track a task: Refactor the authentication module to use the new OAuth flow"**
+  *Creates a task-type issue with appropriate labels and a description that includes the technical scope of the refactoring work.*
+
+#### Updating Issues
+
+These prompts use the `update_issue` tool to modify existing issues:
+
+- **"Update issue #123 to add more details about the browser compatibility problem"**
+  *Modifies an existing issue by appending new information about browser compatibility issues to the description field.*
+
+- **"Mark issue PROJ-456 as completed"**
+  *Updates the status field of the specified issue to "completed" or the equivalent in the target tracking system (e.g., "closed" in GitHub, "done" in Jira).*
+
+- **"Change the priority of the payment processing bug to critical"**
+  *Updates the priority field of an issue focused on payment processing problems.*
+
+- **"Add a comment to issue GL-789 explaining that this is blocked by the database migration"**
+  *Adds a new comment to the specified issue with details about a blocking dependency.*
+
+#### Advanced Usage
+
+These examples showcase more complex workflows that combine multiple operations:
+
+- **"Find all performance-related issues and create a new epic to track them"**
+  *First searches for performance-related issues, then creates a new parent issue (epic) with the found issues linked as children or related issues.*
+
+- **"Analyze code quality issues from the last sprint and summarize them in a new issue"**
+  *Searches for code quality issues from a specific time period, then creates a summary issue with analysis and patterns from the found issues.*
+
+- **"Link this function to issue #123 and add a comment explaining the implementation"**
+  *Associates the current code context with an existing issue and adds detailed implementation notes as a comment.*
+
+- **"Create follow-up tasks for all open bugs in the authentication system"**
+  *Searches for open authentication bugs and creates linked follow-up task issues for each one that requires additional work.*
+
+**Note:** The exact behavior and capabilities may vary depending on your connected trackers and their specific features. SpaceBridge normalizes these differences where possible to provide a consistent experience.
