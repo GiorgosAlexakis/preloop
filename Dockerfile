@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml .
 
 # Install build dependencies
-RUN pip install -U --no-cache-dir build setuptools pip wheel mkdocs mkdocs-material
+RUN pip install -U --no-cache-dir build setuptools pip wheel mkdocs mkdocs-material mkdocs-mermaid2-plugin
 
 # Copy application code
 COPY . .

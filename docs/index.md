@@ -22,9 +22,9 @@ Developed specifically for AI agent integration, SpaceBridge lets AI assistants 
 
 ```mermaid
 graph LR
-    MCP Clients (Claude Code) --> SpaceBridge MCP Server
-    SpaceBridge MCP Server --> SpaceBridge REST API
-    SpaceBridge REST API --> Issue Trackers (Jira/GitHub/GitLab)
+    mcp-client(MCP Clients
+     Cursor, Roo, Claude Code) --> SpaceBridge-MCP --> rest-api(SpaceBridge REST API) --> trackers(Issue Trackers
+     Jira, GitHub, GitLab)
 ```
 
 ### SpaceBridge-MCP
