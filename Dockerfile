@@ -14,13 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml .
 
 # Install build dependencies
-RUN pip install --no-cache-dir build setuptools wheel
+RUN pip install -U --no-cache-dir build setuptools pip wheel mkdocs mkdocs-material
 
 # Copy application code
 COPY . .
 
 # Install the application
-RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync && pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync && pip install --no-cache-dir -e . && mkdocs build
 
 # Expose the port
 EXPOSE 8000

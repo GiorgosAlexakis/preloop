@@ -50,7 +50,6 @@ charts/
 # Documentation
 *.md
 LICENSE
-docs/
 
 # Local dev files
 .vscode/
