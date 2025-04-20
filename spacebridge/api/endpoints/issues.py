@@ -494,43 +494,121 @@ async def create_issue(
         # Resolve organization and project using either ID, name, or identifier
         from spacemodels.crud import crud_organization, crud_project
 
-        # Process organization parameters (prioritize new parameters over deprecated ones)
         org = None
+        proj = None
         org_id = None
+        proj_id = None
 
+        # --- Resolve Organization and Project ---
+
+        # Prioritize IDs if provided
         if issue.organization_id:
             org = crud_organization.get(db, id=issue.organization_id)
             if org:
                 org_id = org.id
-        elif issue.organization:
-            org = crud_organization.get_by_name(db, name=issue.organization)
-            if org:
-                org_id = org.id
-
-        if not org_id:
-            raise HTTPException(status_code=400, detail="Organization not found")
-
-        # Process project parameters
-        proj = None
-        proj_id = None
-
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Organization with ID '{issue.organization_id}' not found",
+                )
         if issue.project_id:
             proj = crud_project.get(db, id=issue.project_id)
             if proj:
                 proj_id = proj.id
-        elif issue.project:
-            # If we have an organization, use it to narrow down the project search
-            proj = crud_project.get_by_name(
-                db, name=issue.project, organization_id=org_id
-            )
-            if proj:
-                proj_id = proj.id
+                # If project found by ID, ensure org matches if org was also found by ID
+                if org_id and proj.organization_id != org_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Project does not belong to the specified organization ID",
+                    )
+                # If org wasn't found by ID, infer it from the project
+                if not org_id:
+                    org = crud_organization.get(db, id=proj.organization_id)
+                    if org:
+                        org_id = org.id
+                    else:  # Data inconsistency
+                        raise HTTPException(
+                            status_code=500, detail="Project's organization not found"
+                        )
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Project with ID '{issue.project_id}' not found",
+                )
 
-        if not proj_id or not proj:  # Ensure proj object is available
-            raise HTTPException(status_code=400, detail="Project not found")
+        # If IDs weren't used or didn't resolve both, try names/identifiers
+        if not org or not proj:
+            project_identifier = issue.project or issue.project_name
+            organization_identifier = issue.organization or issue.organization_name
+
+            if not project_identifier:
+                # Schema validation should prevent this, but double-check
+                raise HTTPException(
+                    status_code=400, detail="Project identifier or name is required"
+                )
+
+            if organization_identifier:
+                # Org and Project provided by name/identifier
+                if not org:  # If org wasn't found by ID earlier
+                    org = crud_organization.get_by_identifier(
+                        db, identifier=organization_identifier
+                    ) or crud_organization.get_by_name(db, name=organization_identifier)
+                    if not org:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Organization '{organization_identifier}' not found",
+                        )
+                    org_id = org.id
+
+                if not proj:  # If proj wasn't found by ID earlier
+                    proj = crud_project.get_by_identifier(
+                        db, organization_id=org_id, identifier=project_identifier
+                    ) or crud_project.get_by_name(
+                        db, organization_id=org_id, name=project_identifier
+                    )
+                    if not proj:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Project '{project_identifier}' not found in organization '{organization_identifier}'",
+                        )
+                    proj_id = proj.id
+
+            else:
+                # Only Project provided, infer Organization
+                found_projects = crud_project.get_by_identifier_or_name_across_orgs(
+                    db, identifier_or_name=project_identifier
+                )
+
+                if not found_projects:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Project '{project_identifier}' not found",
+                    )
+                if len(found_projects) > 1:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Project '{project_identifier}' is ambiguous, please specify the organization",
+                    )
+
+                proj = found_projects[0]
+                proj_id = proj.id
+                org = crud_organization.get(db, id=proj.organization_id)
+                if not org:  # Data inconsistency
+                    raise HTTPException(
+                        status_code=500, detail="Project's organization not found"
+                    )
+                org_id = org.id
+
+        # --- End Resolve Organization and Project ---
+
+        # Ensure we have resolved both org and proj by now
+        if not org or not proj:
+            raise HTTPException(
+                status_code=500, detail="Failed to resolve organization or project"
+            )
 
         # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org_id, proj_id, db)
+        tracker_client = await get_tracker_client(org.id, proj.id, db)
 
         # Prepare the issue create model using the correct base class
         tracker_issue = IssueCreate(  # Use IssueCreate from base.py

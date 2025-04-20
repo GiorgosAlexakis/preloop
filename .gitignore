@@ -46,7 +46,8 @@ htmlcov/
 
 *.db
 .aider*
+site/
 
 # Generated files
 repomix-output.xml
-site/
+repomix-output-mcp.xml
