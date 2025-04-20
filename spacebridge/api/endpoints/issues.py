@@ -261,18 +261,22 @@ async def search_issues(
             # 3. Extract issues and return them
             if proj:
                 results = [
-                    issue for issue, _ in similar_issues if issue.project_id == proj.id
+                    (issue, score)
+                    for issue, score in similar_issues
+                    if issue.project_id == proj.id
                 ]
             else:
-                results = [issue for issue, _ in similar_issues]
+                results = [(issue, score) for issue, score in similar_issues]
 
             # Apply additional filters if specified
             if status:
-                results = [issue for issue in results if issue.status == status]
+                results = [
+                    (issue, score) for issue, score in results if issue.status == status
+                ]
             if labels and isinstance(filter_obj.labels, list):
                 results = [
-                    issue
-                    for issue in results
+                    (issue, score)
+                    for issue, score in results
                     if issue.meta_data
                     and "labels" in issue.meta_data
                     and all(
@@ -282,8 +286,8 @@ async def search_issues(
                 ]
             if assignee:
                 results = [
-                    issue
-                    for issue in results
+                    (issue, score)
+                    for issue, score in results
                     if issue.meta_data
                     and "assignee" in issue.meta_data
                     and issue.meta_data["assignee"] == assignee
@@ -295,7 +299,7 @@ async def search_issues(
             # Convert database Issue models to IssueResponse objects
             # Need to handle datetime conversion and add required fields
             response_items = []
-            for issue in results:
+            for issue, score in results:
                 # Format datetime fields as ISO strings
                 created_at_str = (
                     issue.created_at.isoformat() if issue.created_at else None
@@ -340,9 +344,9 @@ async def search_issues(
                     if isinstance(metadata_dict.get("labels"), list)
                     else [],
                     assignee=metadata_dict.get("assignee"),
+                    score=score,  # Include the similarity score in the response
                 )
                 response_items.append(response_item)
-
             return response_items
         else:
             # Implement regular text search using SQLAlchemy filtering

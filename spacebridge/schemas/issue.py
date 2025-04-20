@@ -81,6 +81,9 @@ class IssueResponse(IssueBase):
     url: str = Field(..., description="URL to the issue in the original tracker")
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
+    score: Optional[float] = Field(
+        None, description="Similarity score for search results (if applicable)"
+    )
 
     class Config:
         """Pydantic model configuration."""
