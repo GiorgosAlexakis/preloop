@@ -24,41 +24,36 @@ class IssueBase(BaseModel):
 class IssueCreate(IssueBase):
     """Model for creating a new issue."""
 
-    # Support multiple ways to specify organization
+    # Organization fields (optional if project is provided)
     organization_id: Optional[str] = Field(None, description="Organization ID (UUID)")
     organization_name: Optional[str] = Field(None, description="Organization name")
     organization: Optional[str] = Field(
-        None, description="Organization identifier (deprecated)"
-    )
+        None, description="Organization identifier (name or ID)"
+    )  # Keep for flexibility
 
-    # Support multiple ways to specify project
+    # Project fields (at least one is required)
     project_id: Optional[str] = Field(None, description="Project ID (UUID)")
     project_name: Optional[str] = Field(None, description="Project name")
-    project: Optional[str] = Field(None, description="Project identifier (deprecated)")
+    project: Optional[str] = Field(
+        None, description="Project identifier (name or ID)"
+    )  # Keep for flexibility
 
-    # Add validation to ensure at least one org and project parameter is provided
     @root_validator(pre=True)
-    def check_org_project_provided(cls, values):
-        """Validate that at least one organization and project parameter is provided."""
-        # Check organization params
-        has_org = (
-            values.get("organization_id") is not None
-            or values.get("organization_name") is not None
-            or values.get("organization") is not None
-        )
-
-        # Check project params
+    def check_project_or_org_provided(cls, values):
+        """Validate that project information is provided, organization is optional."""
         has_project = (
-            values.get("project_id") is not None
-            or values.get("project_name") is not None
-            or values.get("project") is not None
+            values.get("project_id")
+            or values.get("project_name")
+            or values.get("project")
         )
-
-        if not has_org:
-            raise ValueError("At least one organization parameter must be provided")
 
         if not has_project:
-            raise ValueError("At least one project parameter must be provided")
+            raise ValueError(
+                "At least one project parameter (project_id, project_name, or project) must be provided"
+            )
+
+        # Organization is optional if project is provided.
+        # The endpoint logic will handle resolving the missing piece or raising errors if ambiguous.
 
         return values
 
