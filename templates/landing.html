@@ -115,10 +115,27 @@
                     <div class="tab-content">
                         <div class="tab-pane fade show active" id="claude-code" role="tabpanel" aria-labelledby="claude-code-tab">
                             <h4 class="mb-3">Install SpaceBridge for Claude Code</h4>
-                            <p>Instantly connect your Claude Code instance to GitHub, GitLab, and Jira with our streamlined setup script. Copy and paste the following command in your terminal:</p>
 
-                            <div class="code-container position-relative p-3 bg-light rounded mt-4">
-                                <pre class="mb-0"><code>curl -sSL https://install.spacebridge.io/claude | bash -s -- --auth-key YOUR_AUTH_KEY</code></pre>
+                            <h5 class="mb-2">Prerequisites</h5>
+                            <ul class="mb-3">
+                                <li>Python 3.9+ installed</li>
+                                <li>SpaceBridge API key (register above)</li>
+                                <li>OpenAI API key for similarity search</li>
+                            </ul>
+
+                            <h5 class="mb-2">Installation</h5>
+                            <p>Install SpaceBridge package and add it to Claude Code:</p>
+
+                            <div class="code-container position-relative p-3 bg-light rounded mt-3 mb-3">
+                                <pre class="mb-0"><code># First install the package
+pip install spacebridge-mcp
+
+# Then add to Claude Code
+claude mcp add spacebridge $(which spacebridge-mcp-server) \
+  --scope user \
+  --env SPACEBRIDGE_API_URL="YOUR_URL" \
+  --env SPACEBRIDGE_API_KEY="YOUR_KEY" \
+  --env OPENAI_API_KEY="YOUR_OPENAI_KEY"</code></pre>
                                 <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
                                         <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
@@ -126,21 +143,22 @@
                                     </svg>
                                 </button>
                             </div>
-
-                            <p class="mt-4">The script will automatically:</p>
-                            <ul>
-                                <li>Install the SpaceBridge MCP server</li>
-                                <li>Set up your tracker integrations with Claude Code</li>
-                                <li>Configure your issue tracking environment</li>
-                            </ul>
                         </div>
 
                         <div class="tab-pane fade" id="cursor" role="tabpanel" aria-labelledby="cursor-tab">
                             <h4 class="mb-3">Install SpaceBridge for Cursor</h4>
-                            <p>Connect your Cursor IDE to GitHub, GitLab, and Jira issue trackers with our one-line installer. Copy and run this command in your terminal:</p>
 
-                            <div class="code-container position-relative p-3 bg-light rounded mt-4">
-                                <pre class="mb-0"><code>curl -sSL https://install.spacebridge.io/cursor | bash -s -- --config cursor-default</code></pre>
+                            <h5 class="mb-2">Prerequisites</h5>
+                            <ul class="mb-3">
+                                <li>Python 3.9+ installed</li>
+                                <li>SpaceBridge API key (register above)</li>
+                                <li>OpenAI API key for similarity search</li>
+                            </ul>
+
+                            <h5 class="mb-2">Installation</h5>
+                            <p class="mb-2">First, install the SpaceBridge package:</p>
+                            <div class="code-container position-relative p-3 bg-light rounded mt-2 mb-3">
+                                <pre class="mb-0"><code>pip install spacebridge-mcp</code></pre>
                                 <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
                                         <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
@@ -149,20 +167,51 @@
                                 </button>
                             </div>
 
-                            <p class="mt-4">This setup provides:</p>
+                            <p class="mb-2">Then configure via JSON file:</p>
+                            <div class="code-container position-relative p-3 bg-light rounded mt-2 mb-3">
+                                <pre class="mb-0"><code># Create or edit ~/.cursor/mcp.json
+{
+  "mcpServers": {
+    "spacebridge": {
+      "command": "$(which spacebridge-mcp-server)",
+      "env": {
+        "SPACEBRIDGE_API_URL": "YOUR_URL",
+        "SPACEBRIDGE_API_KEY": "YOUR_KEY",
+        "OPENAI_API_KEY": "YOUR_OPENAI_KEY"
+      }
+    }
+  }
+}</code></pre>
+                                <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <p class="mb-2">Or via Settings UI:</p>
                             <ul>
-                                <li>Automated issue tracking for Cursor AI</li>
-                                <li>Cross-repository issue search capabilities</li>
-                                <li>Smart duplicate issue detection</li>
+                                <li>Settings > Model Context Protocol > Add MCP Server</li>
+                                <li>Select "Add stdio Server" and enter SpaceBridge details</li>
+                                <li>Add the required environment variables</li>
                             </ul>
                         </div>
 
                         <div class="tab-pane fade" id="windsurf" role="tabpanel" aria-labelledby="windsurf-tab">
                             <h4 class="mb-3">Install SpaceBridge for Windsurf</h4>
-                            <p>Supercharge your Windsurf IDE with unified issue tracking across GitHub, GitLab, and Jira. Copy this command to your terminal:</p>
 
-                            <div class="code-container position-relative p-3 bg-light rounded mt-4">
-                                <pre class="mb-0"><code>curl -sSL https://install.spacebridge.io/windsurf | bash -s -- --integrate-agentic</code></pre>
+                            <h5 class="mb-2">Prerequisites</h5>
+                            <ul class="mb-3">
+                                <li>Python 3.9+ installed</li>
+                                <li>SpaceBridge API key (register above)</li>
+                                <li>OpenAI API key for similarity search</li>
+                            </ul>
+
+                            <h5 class="mb-2">Installation</h5>
+                            <p class="mb-2">First, install the SpaceBridge package:</p>
+                            <div class="code-container position-relative p-3 bg-light rounded mt-2 mb-3">
+                                <pre class="mb-0"><code>pip install spacebridge-mcp</code></pre>
                                 <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
                                         <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
@@ -171,14 +220,42 @@
                                 </button>
                             </div>
 
-                            <p class="mt-4">The Windsurf integration includes:</p>
-                            <ul>
-                                <li>Seamless issue tracking for agentic workflows</li>
-                                <li>Automatic context augmentation for your LLMs</li>
-                                <li>Enhanced similarity search across all your trackers</li>
-                            </ul>
+                            <p class="mb-2">Then configure via JSON configuration file:</p>
+                            <div class="code-container position-relative p-3 bg-light rounded mt-2 mb-3">
+                                <pre class="mb-0"><code>{
+  "mcpServers": {
+    "spacebridge": {
+      "command": "/full/path/to/spacebridge-mcp-server",
+      "args": [],
+      "env": {
+        "SPACEBRIDGE_API_URL": "YOUR_URL",
+        "SPACEBRIDGE_API_KEY": "YOUR_KEY",
+        "OPENAI_API_KEY": "YOUR_OPENAI_KEY"
+      }
+    }
+  }
+}</code></pre>
+                                <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Common usage examples section -->
+                <div class="col-12 mt-4 pt-3" style="border-top: 1px solid var(--gray-200);">
+                    <h5 class="mb-3">Usage Examples</h5>
+                    <p>Once configured, you can use SpaceBridge in any MCP-enabled IDE with prompts like:</p>
+                    <ul>
+                        <li>"Find issues related to authentication bugs"</li>
+                        <li>"Create a new issue for the login page crash I found"</li>
+                        <li>"Link this function to issue #123"</li>
+                        <li>"Search for duplicates of this issue across my repositories"</li>
+                    </ul>
                 </div>
             </div>
         </div>
