@@ -201,19 +201,18 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         if provider == "openai":
             # OpenAI embeddings
             try:
-                import openai
+                from openai import OpenAI
+                
+                client = OpenAI(api_key=api_key)
 
                 # Configure API key
-                openai.api_key = api_key
 
                 # Generate embedding
-                response = openai.Embedding.create(
-                    model=version,  # e.g., "text-embedding-ada-002"
-                    input=text,
-                )
+                response = client.embeddings.create(model=version,  # e.g., "text-embedding-ada-002"
+                input=text)
 
                 # Extract embedding
-                embedding = response["data"][0]["embedding"]
+                embedding = response.data[0].embedding
 
                 return embedding
             except ImportError:
