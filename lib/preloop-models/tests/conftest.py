@@ -182,7 +182,7 @@ def create_embedding_model(db_session):
             "version": version,
             "dimensions": dimensions,
             "is_active": True,
-            "meta_data": {"test_mode": True},
+            "meta_data": {},
             **kwargs,
         }
         return crud_embedding_model.create(db_session, obj_in=model_data)

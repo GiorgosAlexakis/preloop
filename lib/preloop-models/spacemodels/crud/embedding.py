@@ -197,15 +197,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         version = model.version
         dimensions = model.dimensions
 
-        # If no API key, or test mode enabled in metadata
-        is_test_mode = (
-            model.meta_data.get("test_mode", False) if model.meta_data else False
-        )
-
-        if not api_key or is_test_mode:
-            # Generate random vector for testing
-            return [random.random() for _ in range(dimensions)]
-
         # Real embedding generation based on provider
         if provider == "openai":
             # OpenAI embeddings
@@ -251,9 +242,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             except Exception as e:
                 raise ValueError(f"Error generating HuggingFace embedding: {str(e)}")
 
-        else:
-            # Unsupported provider, use random vectors
-            return [random.random() for _ in range(dimensions)]
 
     def similarity_search(
         self,
