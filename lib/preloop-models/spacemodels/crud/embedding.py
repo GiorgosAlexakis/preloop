@@ -194,7 +194,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         """
         provider = model.provider.lower()
         version = model.version
-        dimensions = model.dimensions
 
         # Real embedding generation based on provider
         if provider == "openai":
