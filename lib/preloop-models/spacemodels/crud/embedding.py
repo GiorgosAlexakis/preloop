@@ -199,47 +199,32 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
 
         # Real embedding generation based on provider
         if provider == "openai":
-            # OpenAI embeddings
-            try:
-                from openai import OpenAI
+            from openai import OpenAI
                 
-                client = OpenAI(api_key=api_key)
+            client = OpenAI(api_key=api_key)
 
-                # Configure API key
+            # Generate embedding
+            response = client.embeddings.create(model=version,  # e.g., "text-embedding-ada-002"
+            input=text)
 
-                # Generate embedding
-                response = client.embeddings.create(model=version,  # e.g., "text-embedding-ada-002"
-                input=text)
+            # Extract embedding
+            embedding = response.data[0].embedding
 
-                # Extract embedding
-                embedding = response.data[0].embedding
-
-                return embedding
-            except ImportError:
-                raise ImportError(
-                    "OpenAI package not installed. Run 'pip install openai'"
-                )
-            except Exception as e:
-                raise ValueError(f"Error generating OpenAI embedding: {str(e)}")
+            return embedding
 
         elif provider == "huggingface":
-            # HuggingFace embeddings
-            try:
-                from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer
 
-                # Load model
-                model = SentenceTransformer(version)
+            # Load model
+            model = SentenceTransformer(version)
 
-                # Generate embedding
-                embedding = model.encode(text).tolist()
+            # Generate embedding
+            embedding = model.encode(text).tolist()
 
-                return embedding
-            except ImportError:
-                raise ImportError(
-                    "Sentence Transformers not installed. Run 'pip install sentence-transformers'"
-                )
-            except Exception as e:
-                raise ValueError(f"Error generating HuggingFace embedding: {str(e)}")
+            return embedding
+
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
 
 
     def similarity_search(
