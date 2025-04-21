@@ -12,7 +12,7 @@ def test_create_embedding_model(db_session):
         "version": "text-embedding-ada-002",
         "dimensions": 1536,
         "is_active": True,
-        "meta_data": {"test_mode": True},
+        "meta_data": {},
     }
 
     model = crud_embedding_model.create(db_session, obj_in=model_data)

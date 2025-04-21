@@ -1,6 +1,5 @@
 """CRUD operations for EmbeddingModel and IssueEmbedding models."""
 
-import random
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -195,65 +194,37 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         """
         provider = model.provider.lower()
         version = model.version
-        dimensions = model.dimensions
-
-        # If no API key, or test mode enabled in metadata
-        is_test_mode = (
-            model.meta_data.get("test_mode", False) if model.meta_data else False
-        )
-
-        if not api_key or is_test_mode:
-            # Generate random vector for testing
-            return [random.random() for _ in range(dimensions)]
 
         # Real embedding generation based on provider
         if provider == "openai":
-            # OpenAI embeddings
-            try:
-                import openai
+            from openai import OpenAI
 
-                # Configure API key
-                openai.api_key = api_key
+            client = OpenAI(api_key=api_key)
 
-                # Generate embedding
-                response = openai.Embedding.create(
-                    model=version,  # e.g., "text-embedding-ada-002"
-                    input=text,
-                )
+            # Generate embedding
+            response = client.embeddings.create(
+                model=version,  # e.g., "text-embedding-ada-002"
+                input=text,
+            )
 
-                # Extract embedding
-                embedding = response["data"][0]["embedding"]
+            # Extract embedding
+            embedding = response.data[0].embedding
 
-                return embedding
-            except ImportError:
-                raise ImportError(
-                    "OpenAI package not installed. Run 'pip install openai'"
-                )
-            except Exception as e:
-                raise ValueError(f"Error generating OpenAI embedding: {str(e)}")
+            return embedding
 
         elif provider == "huggingface":
-            # HuggingFace embeddings
-            try:
-                from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer
 
-                # Load model
-                model = SentenceTransformer(version)
+            # Load model
+            model = SentenceTransformer(version)
 
-                # Generate embedding
-                embedding = model.encode(text).tolist()
+            # Generate embedding
+            embedding = model.encode(text).tolist()
 
-                return embedding
-            except ImportError:
-                raise ImportError(
-                    "Sentence Transformers not installed. Run 'pip install sentence-transformers'"
-                )
-            except Exception as e:
-                raise ValueError(f"Error generating HuggingFace embedding: {str(e)}")
+            return embedding
 
         else:
-            # Unsupported provider, use random vectors
-            return [random.random() for _ in range(dimensions)]
+            raise ValueError(f"Unsupported provider: {provider}")
 
     def similarity_search(
         self,
