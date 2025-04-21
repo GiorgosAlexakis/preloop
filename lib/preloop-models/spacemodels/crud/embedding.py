@@ -1,6 +1,5 @@
 """CRUD operations for EmbeddingModel and IssueEmbedding models."""
 
-import random
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -200,12 +199,14 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         # Real embedding generation based on provider
         if provider == "openai":
             from openai import OpenAI
-                
+
             client = OpenAI(api_key=api_key)
 
             # Generate embedding
-            response = client.embeddings.create(model=version,  # e.g., "text-embedding-ada-002"
-            input=text)
+            response = client.embeddings.create(
+                model=version,  # e.g., "text-embedding-ada-002"
+                input=text,
+            )
 
             # Extract embedding
             embedding = response.data[0].embedding
@@ -225,7 +226,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
 
         else:
             raise ValueError(f"Unsupported provider: {provider}")
-
 
     def similarity_search(
         self,
