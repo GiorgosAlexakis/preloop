@@ -27,6 +27,7 @@ setup(
         # Assuming spacemodels is installed separately
         "python-gitlab",
         "flask>=2.0.0",
+        "APScheduler>=3.0.0",
     ],
     entry_points={
         "console_scripts": [

@@ -53,3 +53,5 @@ logs/
 .coverage
 htmlcov/
 .pytest_cache/
+
+repomix-output.xml

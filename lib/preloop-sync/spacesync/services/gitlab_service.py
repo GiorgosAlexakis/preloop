@@ -256,8 +256,13 @@ class GitLabWebhookUpdateService(WebhookTrackerUpdateService):
 
     def register_webhook(self) -> bool:
         """
-        Register webhooks with GitLab.
+        Register webhooks with GitLab. Returns False if host is local or registration fails.
         """
+        # Check if host is likely local and unsuitable for webhooks
+        if self.host in ["0.0.0.0", "127.0.0.1", "localhost"]:
+             logger.warning(f"Host '{self.host}' is local. Skipping GitLab webhook registration for tracker {self.tracker.id}. Polling may be used if enabled.")
+             return False
+
         self._init_gitlab_client()
 
         # Get all projects from GitLab
@@ -295,6 +300,7 @@ class GitLabWebhookUpdateService(WebhookTrackerUpdateService):
 
                 self.webhook_ids.append((project_id, hook.id))
                 logger.info(f"Registered GitLab webhook for project {project_id}")
+        return True # Indicate success if loop completes without error
 
     def unregister_webhook(self) -> bool:
         """
