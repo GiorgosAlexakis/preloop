@@ -187,8 +187,10 @@ async def search_issues(
     limit: int = Query(
         10, ge=1, le=100, description="Maximum number of issues to return"
     ),
-    semantic: bool = Query(
-        True, description="Whether to use semantic search with vector embeddings"
+    search_type: str = Query(
+        "full_text",
+        enum=["full_text", "semantic"],
+        description="Type of search to perform ('full_text' or 'semantic')",
     ),
     status: Optional[str] = Query(None, description="Filter by issue status"),
     labels: Optional[str] = Query(
@@ -243,234 +245,248 @@ async def search_issues(
         if assignee:
             filter_obj.assignee = assignee
 
-        if semantic and query:
-            # Get the active embedding model
-            active_models = crud_embedding_model.get_active(db)
-            model_id = active_models[0].id
-
-            # Generate query vector
-            query_vector = crud_issue_embedding._generate_embedding_vector(
-                query, active_models[0]
-            )
-
-            # 2. Find similar issues using similarity search
-            similar_issues = crud_issue_embedding.similarity_search(
-                db, model_id=model_id, query_vector=query_vector, limit=limit
-            )
-
-            # 3. Extract issues and return them
-            if proj:
-                results = [
-                    (issue, score)
-                    for issue, score in similar_issues
-                    if issue.project_id == proj.id
-                ]
-            else:
-                results = [(issue, score) for issue, score in similar_issues]
-
-            # Apply additional filters if specified
-            if status:
-                results = [
-                    (issue, score) for issue, score in results if issue.status == status
-                ]
-            if labels and isinstance(filter_obj.labels, list):
-                results = [
-                    (issue, score)
-                    for issue, score in results
-                    if issue.meta_data
-                    and "labels" in issue.meta_data
-                    and all(
-                        label in issue.meta_data["labels"]
-                        for label in filter_obj.labels
+        response_items = []
+        if search_type == "semantic" and query:
+            try:
+                # Get the active embedding model
+                active_models = crud_embedding_model.get_active(db)
+                if not active_models:
+                    logger.error(
+                        "Semantic search requested, but no active embedding model found."
                     )
-                ]
-            if assignee:
-                results = [
-                    (issue, score)
-                    for issue, score in results
-                    if issue.meta_data
-                    and "assignee" in issue.meta_data
-                    and issue.meta_data["assignee"] == assignee
-                ]
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Semantic search cannot be performed: No active embedding model configured.",
+                    )
+                model = active_models[0]
+                model_id = model.id
 
-            # Limit results to requested count
-            results = results[:limit]
-
-            # Convert database Issue models to IssueResponse objects
-            # Need to handle datetime conversion and add required fields
-            response_items = []
-            for issue, score in results:
-                # Format datetime fields as ISO strings
-                created_at_str = (
-                    issue.created_at.isoformat() if issue.created_at else None
-                )
-                updated_at_str = (
-                    issue.updated_at.isoformat() if issue.updated_at else None
+                # Generate query vector
+                query_vector = crud_issue_embedding._generate_embedding_vector(
+                    query, model
                 )
 
-                # Convert metadata to dictionary if it's not already
-                metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
-
-                # Find the project and organization names
-                issue_project = crud_project.get(db, id=issue.project_id)
-                project_name = None
-                organization_name = None
-                if issue_project:
-                    project_name = issue_project.name
-                    issue_org = crud_organization.get(
-                        db, id=issue_project.organization_id
-                    )
-                    if issue_org:
-                        organization_name = issue_org.name
-
-                # Determine the URL
-                external_url = metadata_dict.get("url") or issue.external_url
-
-                # Create response object with updated fields
-                response_item = IssueResponse(
-                    id=issue.external_id or issue.id,  # Prioritize external_id
-                    title=issue.title,
-                    description=issue.description,
-                    status=issue.status,
-                    priority=issue.priority,
-                    organization=organization_name,
-                    project=project_name,
-                    url=external_url
-                    or f"https://spacebridge.io/issues/{issue.id}",  # Final fallback
-                    created_at=created_at_str,
-                    updated_at=updated_at_str,
-                    metadata=metadata_dict,
-                    labels=metadata_dict.get("labels", [])
-                    if isinstance(metadata_dict.get("labels"), list)
-                    else [],
-                    assignee=metadata_dict.get("assignee"),
-                    score=score,  # Include the similarity score in the response
+                # Find similar issues using similarity search
+                similar_issues = crud_issue_embedding.similarity_search(
+                    db, model_id=model_id, query_vector=query_vector, limit=limit
                 )
-                response_items.append(response_item)
-            return response_items
-        else:
-            # Implement regular text search using SQLAlchemy filtering
-            from sqlalchemy import or_
 
-            query_builder = db.query(Issue)
-
-            # Filter by project if specified
-            if proj:
-                query_builder = query_builder.filter(Issue.project_id == proj.id)
-            # If no project specified but organization is, filter by all projects in that org
-            elif org:
-                project_ids = [p.id for p in org.projects]
-                if project_ids:
-                    query_builder = query_builder.filter(
-                        Issue.project_id.in_(project_ids)
-                    )
+                # Extract issues and apply filters
+                if proj:
+                    results = [
+                        (issue, score)
+                        for issue, score in similar_issues
+                        if issue.project_id == proj.id
+                    ]
                 else:
-                    # Org has no projects, so no issues
-                    return []
+                    results = [(issue, score) for issue, score in similar_issues]
 
-            # Apply text query filter (case-insensitive search in title and description)
-            if query:
-                search_term = f"%{query}%"
-                query_builder = query_builder.filter(
-                    or_(
-                        Issue.title.ilike(search_term),
-                        Issue.description.ilike(search_term),
+                # Apply additional filters if specified
+                if status:
+                    results = [
+                        (issue, score)
+                        for issue, score in results
+                        if issue.status == status
+                    ]
+                if labels and isinstance(filter_obj.labels, list):
+                    results = [
+                        (issue, score)
+                        for issue, score in results
+                        if issue.meta_data
+                        and "labels" in issue.meta_data
+                        and all(
+                            label in issue.meta_data["labels"]
+                            for label in filter_obj.labels
+                        )
+                    ]
+                if assignee:
+                    results = [
+                        (issue, score)
+                        for issue, score in results
+                        if issue.meta_data
+                        and "assignee" in issue.meta_data
+                        and issue.meta_data["assignee"] == assignee
+                    ]
+
+                # Limit results
+                results = results[:limit]
+
+                # Convert to IssueResponse
+                for issue, score in results:
+                    issue_project = crud_project.get(db, id=issue.project_id)
+                    project_name = issue_project.name if issue_project else None
+                    organization_name = None
+                    if issue_project:
+                        issue_org = crud_organization.get(
+                            db, id=issue_project.organization_id
+                        )
+                        if issue_org:
+                            organization_name = issue_org.name
+                    created_at_str = (
+                        issue.created_at.isoformat() if issue.created_at else None
                     )
-                )
-
-            # Apply status filter
-            if status:
-                query_builder = query_builder.filter(Issue.status == status)
-
-            # Apply labels filter (assuming labels are stored in meta_data JSON)
-            if labels and isinstance(filter_obj.labels, list):
-                # This requires JSONB specific query or careful string matching
-                # For simplicity, let's filter in Python for now, or adjust if DB supports JSON query
-                # This might be inefficient for large datasets
-                pass  # Filtering done after fetching for now
-
-            # Apply assignee filter (assuming assignee is stored in meta_data JSON)
-            if assignee:
-                # Similar to labels, requires JSON query or post-fetch filtering
-                pass  # Filtering done after fetching for now
-
-            # Get total count before applying limit/offset
-            total_count = query_builder.count()
-
-            # Apply limit and offset (offset not directly supported by IssueFilter, assuming 0)
-            issues = query_builder.order_by(Issue.updated_at.desc()).limit(limit).all()
-
-            # Post-fetch filtering for labels and assignee (if needed)
-            if labels and isinstance(filter_obj.labels, list):
-                issues = [
-                    issue
-                    for issue in issues
-                    if issue.meta_data
-                    and "labels" in issue.meta_data
-                    and all(
-                        label in issue.meta_data["labels"]
-                        for label in filter_obj.labels
+                    updated_at_str = (
+                        issue.updated_at.isoformat() if issue.updated_at else None
                     )
-                ]
-            if assignee:
-                issues = [
-                    issue
-                    for issue in issues
-                    if issue.meta_data
-                    and "assignee" in issue.meta_data
-                    and issue.meta_data["assignee"] == assignee
-                ]
-
-            # Convert database Issue models to IssueResponse objects
-            response_items = []
-            for issue in issues:
-                # Find the project and organization names (needed for response)
-                issue_project = crud_project.get(db, id=issue.project_id)
-                project_name = (
-                    issue_project.name if issue_project else "Unknown Project"
-                )
-                organization_name = "Unknown Org"
-                if issue_project:
-                    issue_org = crud_organization.get(
-                        db, id=issue_project.organization_id
+                    metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
+                    external_url = metadata_dict.get("url") or issue.external_url
+                    response_items.append(
+                        IssueResponse(
+                            id=issue.external_id or issue.id,
+                            title=issue.title,
+                            description=issue.description,
+                            status=issue.status,
+                            priority=issue.priority,
+                            organization=organization_name,
+                            project=project_name,
+                            url=external_url
+                            or f"https://spacebridge.io/issues/{issue.id}",
+                            created_at=created_at_str,
+                            updated_at=updated_at_str,
+                            metadata=metadata_dict,
+                            labels=metadata_dict.get("labels", [])
+                            if isinstance(metadata_dict.get("labels"), list)
+                            else [],
+                            assignee=metadata_dict.get("assignee"),
+                            score=score,
+                        )
                     )
-                    if issue_org:
-                        organization_name = issue_org.name
 
-                # Format datetime fields as ISO strings
-                created_at_str = (
-                    issue.created_at.isoformat() if issue.created_at else None
+            except Exception as e:
+                logger.error(f"Error during semantic search: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500, detail="An error occurred during semantic search."
                 )
-                updated_at_str = (
-                    issue.updated_at.isoformat() if issue.updated_at else None
-                )
-                metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
-                external_url = metadata_dict.get("url") or issue.external_url
 
-                response_item = IssueResponse(
-                    id=issue.external_id or issue.id,
-                    title=issue.title,
-                    description=issue.description,
-                    status=issue.status,
-                    priority=issue.priority,
-                    organization=organization_name,
-                    project=project_name,
-                    url=external_url
-                    or f"https://spacebridge.io/issues/{issue.id}",  # Fallback URL
-                    created_at=created_at_str,
-                    updated_at=updated_at_str,
-                    metadata=metadata_dict,
-                    labels=metadata_dict.get("labels", [])
-                    if isinstance(metadata_dict.get("labels"), list)
-                    else [],
-                    assignee=metadata_dict.get("assignee"),
-                )
-                response_items.append(response_item)
+        elif search_type == "full_text":
+            # Perform traditional full-text search
+            try:
+                from sqlalchemy import or_
 
-            # Note: The 'total' count here reflects the count *before* post-fetch filtering.
-            # A more accurate count would require implementing label/assignee filters in the DB query.
-            # For now, we return the limited list based on DB query + post-filtering.
-            return response_items
+                query_builder = db.query(Issue)
+
+                # Filter by project/org
+                if proj:
+                    query_builder = query_builder.filter(Issue.project_id == proj.id)
+                elif org:
+                    project_ids = [p.id for p in org.projects]
+                    if project_ids:
+                        query_builder = query_builder.filter(
+                            Issue.project_id.in_(project_ids)
+                        )
+                    else:
+                        return []  # Org has no projects
+
+                # Apply text query filter
+                if query:
+                    search_term = f"%{query}%"
+                    query_builder = query_builder.filter(
+                        or_(
+                            Issue.title.ilike(search_term),
+                            Issue.description.ilike(search_term),
+                        )
+                    )
+
+                # Apply status filter
+                if status:
+                    query_builder = query_builder.filter(Issue.status == status)
+
+                # Apply labels/assignee filters directly in the query if possible
+                # Note: This example assumes simple JSON structure and might need adjustment
+                # based on actual DB capabilities (e.g., using JSONB operators)
+                if labels and isinstance(filter_obj.labels, list):
+                    # Example for PostgreSQL JSONB containment:
+                    # query_builder = query_builder.filter(Issue.meta_data['labels'].contains(filter_obj.labels))
+                    # For now, we keep post-fetch filtering for broader compatibility
+                    pass
+                if assignee:
+                    # Example for PostgreSQL JSONB:
+                    # query_builder = query_builder.filter(Issue.meta_data['assignee'] == assignee)
+                    pass
+
+                # Fetch issues
+                issues_db = (
+                    query_builder.order_by(Issue.updated_at.desc()).limit(limit).all()
+                )
+
+                # Post-fetch filtering (if DB filtering wasn't possible/implemented)
+                if labels and isinstance(filter_obj.labels, list):
+                    issues_db = [
+                        issue
+                        for issue in issues_db
+                        if issue.meta_data
+                        and "labels" in issue.meta_data
+                        and all(
+                            label in issue.meta_data["labels"]
+                            for label in filter_obj.labels
+                        )
+                    ]
+                if assignee:
+                    issues_db = [
+                        issue
+                        for issue in issues_db
+                        if issue.meta_data
+                        and "assignee" in issue.meta_data
+                        and issue.meta_data["assignee"] == assignee
+                    ]
+
+                # Convert to IssueResponse
+                for issue in issues_db:
+                    issue_project = crud_project.get(db, id=issue.project_id)
+                    project_name = (
+                        issue_project.name if issue_project else "Unknown Project"
+                    )
+                    organization_name = "Unknown Org"
+                    if issue_project:
+                        issue_org = crud_organization.get(
+                            db, id=issue_project.organization_id
+                        )
+                        if issue_org:
+                            organization_name = issue_org.name
+                    created_at_str = (
+                        issue.created_at.isoformat() if issue.created_at else None
+                    )
+                    updated_at_str = (
+                        issue.updated_at.isoformat() if issue.updated_at else None
+                    )
+                    metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
+                    external_url = metadata_dict.get("url") or issue.external_url
+                    response_items.append(
+                        IssueResponse(
+                            id=issue.external_id or issue.id,
+                            title=issue.title,
+                            description=issue.description,
+                            status=issue.status,
+                            priority=issue.priority,
+                            organization=organization_name,
+                            project=project_name,
+                            url=external_url
+                            or f"https://spacebridge.io/issues/{issue.id}",
+                            created_at=created_at_str,
+                            updated_at=updated_at_str,
+                            metadata=metadata_dict,
+                            labels=metadata_dict.get("labels", [])
+                            if isinstance(metadata_dict.get("labels"), list)
+                            else [],
+                            assignee=metadata_dict.get("assignee"),
+                        )
+                    )
+
+            except Exception as e:
+                logger.error(f"Error during full-text search: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500, detail="An error occurred during full-text search."
+                )
+        elif query:  # Handle case where type is invalid but query exists
+            logger.warning(f"Invalid search type specified: {search_type}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid search type: {search_type}. Must be 'full_text' or 'semantic'.",
+            )
+        else:  # No query provided, return empty list or handle as needed
+            pass  # Currently returns empty list by default
+
+        return response_items
     except HTTPException:
         # Re-raise specific HTTP exceptions (like the 404 for project not found)
         raise
