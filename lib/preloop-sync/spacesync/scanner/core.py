@@ -199,11 +199,14 @@ class TrackerClient:
         """
         logger.info(f"Scanning issues for project {project.id} ({project.name})")
 
-        # Get issues from tracker
+        # Get issues from tracker, passing the 'since' parameter
+        logger.debug(f"Calling get_issues for project {project.identifier} since {since}")
         issue_data_list = self.client.get_issues(
-            organization.identifier, project.identifier, since
+            organization_id=organization.identifier, # Pass org_id/identifier
+            project_id=project.identifier,       # Pass proj_id/identifier
+            since=since                          # Pass the since parameter
         )
-        logger.info(f"Found {len(issue_data_list)} issues in project {project.id}")
+        logger.info(f"Found {len(issue_data_list)} issues in project {project.id} since {since}")
 
         # Process each issue
         issues = []

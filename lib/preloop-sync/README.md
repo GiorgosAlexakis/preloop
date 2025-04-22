@@ -6,7 +6,7 @@ SpaceSync is a read-only system that scans multiple issue trackers across differ
 
 - Multi-account support for tracker scanning
 - Integration with various issue trackers (GitHub, GitLab, Jira, Linear)
-- Vector embeddings for semantic search
+- Vector embeddings for similarity search
 - Read-only operation (never modifies trackers)
 - Efficient incremental updates
 

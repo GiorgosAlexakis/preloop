@@ -12,7 +12,7 @@ This document summarizes the changes made to fix the issue search functionality 
 
 1. **Modified Issue Search Endpoint**:
    - Made `query` parameter optional with a default value of "" to allow empty searches
-   - Set `semantic` parameter default to False for reliability
+   - Set `similarity` parameter default to False for reliability
    - Added extensive logging to debug the search process
    - Updated the search logic to handle cross-project searches
 
@@ -28,20 +28,20 @@ This document summarizes the changes made to fix the issue search functionality 
 4. **Created Test Scripts**:
    - Created a comprehensive test script to check issue search functionality
    - Added tests for different search terms
-   - Added tests for semantic search
+   - Added tests for similarity search
    - Added tests for getting issue details
 
 ## Results
 
 - Successfully displaying all 45 issues from the database
 - Text search working for various search terms
-- Semantic search working for related terms
+- similarity search working for related terms
 - Issue detail endpoint working correctly
 
 ## Future Improvements
 
 1. Add proper project mapping between SpaceSync and SpaceBridge to ensure issues are associated with the correct projects
-2. Implement better semantic search with proper embeddings generation
+2. Implement better similarity search with proper embeddings generation
 3. Add pagination support for large result sets
 4. Add more sophisticated filtering options (date range, etc.)
 5. Improve error handling and feedback in the API
