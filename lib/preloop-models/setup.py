@@ -22,6 +22,7 @@ setup(
         "loguru>=0.6.0",
         "passlib>=1.7.4",
         "uuid>=0.0.1",
+        "openai>=1.75.0",
     ],
     extras_require={
         "dev": [
