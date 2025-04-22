@@ -171,24 +171,46 @@ class GitHubTracker(BaseTracker):
             List of issue data dictionaries.
         """
 
-        # If project_id looks like a full repo name (contains a slash), use it directly
-        if "/" in project_id:
-            repo_name = project_id
-        else:
-            # Make one API call to get the repository details
-            repo_details = self._make_request(f"repositories/{project_id}")
-            repo_name = repo_details["full_name"]
+        # Construct the repository name from owner and repo stored during initialization
+        if not self.owner or not self.repo:
+            raise ValueError("GitHub tracker is missing 'owner' or 'repo' configuration.")
+        repo_name = f"{self.owner}/{self.repo}"
 
-        # Query parameters for the issues API
-        params = {"state": "all", "per_page": 100}
+        # 1. Fetch repository details to check if issues are enabled
+        repo_endpoint = f"repos/{repo_name}"
+        try:
+            logger.debug(f"Fetching repository details from: {repo_endpoint}")
+            repo_details = self._make_request(repo_endpoint)
+        except TrackerResponseError as e:
+            # If fetching repo details fails (e.g., repo not found, auth error), re-raise
+            logger.error(f"Failed to fetch repository details for {repo_name}: {e}")
+            raise e # Re-raise the original error
 
-        # Use the repo_name to directly access the issues
+        # 2. Check the 'has_issues' flag
+        if not repo_details.get("has_issues", False):
+            logger.info(f"Issues are disabled for repository {repo_name}. Skipping issue sync.")
+            return [] # Return empty list if issues are disabled
+
+        # 3. Proceed to fetch issues only if enabled
+        logger.debug(f"Issues are enabled for {repo_name}. Fetching issues.")
         issues_endpoint = f"repos/{repo_name}/issues"
-        issues_data = self._make_request(issues_endpoint, params)
+        params = {"state": "all", "per_page": 100}
+        if since:
+            params["since"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        # Process issues as before, filtering out PRs
+        logger.debug(f"Fetching issues from endpoint: {issues_endpoint} with params: {params}")
+        try:
+            issues_data = self._make_request(issues_endpoint, params)
+        except TrackerResponseError as e:
+             # Handle potential errors during issue fetching specifically
+             logger.error(f"Failed to fetch issues for {repo_name} even though issues are enabled: {e}")
+             # Depending on the error (e.g., temporary issue vs permission), might retry or raise
+             raise e # Re-raise for now
+
+
+        # Process issues, filtering out PRs
         issues = []
-        for issue in issues_data:
+        for _issue_data in issues_data: # Changed loop variable name back for consistency in replacement block
             # Skip pull requests
             if "pull_request" in issue:
                 continue
