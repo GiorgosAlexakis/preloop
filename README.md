@@ -9,7 +9,7 @@ SpaceBridge is a RESTful API server that serves as a unified interface between S
 ## Key Features
 
 - RESTful API for interacting with multiple issue tracking systems
-- Vector-based semantic search across all integrated issue trackers
+- Vector-based similarity search across all integrated issue trackers
 - Intelligent duplicate detection and issue management
 - Automated assignment suggestions and effort estimation
 - Self-service organization and project configuration

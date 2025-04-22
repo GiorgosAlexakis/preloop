@@ -409,7 +409,7 @@ paths:
   /issues/search:
     get:
       summary: Search issues
-      description: Search for issues across configured trackers with optional semantic search
+      description: Search for issues across configured trackers with optional similarity search
       operationId: searchIssues
       tags:
         - issues
@@ -442,9 +442,9 @@ paths:
             default: 10
             minimum: 1
             maximum: 100
-        - name: semantic
+        - name: similarity
           in: query
-          description: Whether to use semantic search with vector embeddings
+          description: Whether to use similarity search with vector embeddings
           required: false
           schema:
             type: boolean

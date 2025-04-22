@@ -5,7 +5,7 @@
 SpaceBridge is an open-source Model Context Protocol (MCP) server that provides a unified API for interacting with multiple issue tracking systems (GitHub, GitLab, Jira) from AI assistants. It functions as a bridge between AI agents and issue trackers by:
 
 1. **Standardizing issue data across platforms** - converting between different trackers' schemas
-2. **Providing semantic search and similarity matching** - finding related issues through vector embedding
+2. **Providing similarity search and similarity matching** - finding related issues through vector embedding
 3. **Exposing a consistent interface** - through both direct REST API and MCP-compliant stdio transport
 
 Developed specifically for AI agent integration, SpaceBridge lets AI assistants create, update, and search for issues across multiple tracking systems without requiring separate integrations for each platform.
@@ -245,7 +245,7 @@ These prompts use the `search_issues` tool to find relevant issues across your c
   *Searches for issues with specific filters applied (status: open, assignee: current user, project: frontend). Results are pulled from all connected trackers and normalized into a consistent format.*
 
 - **"Find similar issues to the current error I'm seeing with the API timeout"**
-  *Performs a semantic similarity search to find conceptually related issues, even if they don't share the exact same keywords. This leverages embedding-based search to find issues describing similar problems.*
+  *Performs a similarity similarity search to find conceptually related issues, even if they don't share the exact same keywords. This leverages embedding-based search to find issues describing similar problems.*
 
 - **"What's the status of the user profile refactoring task?"**
   *Searches for issues related to user profile refactoring and returns their current status, including any linked issues or dependencies.*

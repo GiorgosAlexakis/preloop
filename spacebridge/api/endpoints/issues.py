@@ -189,8 +189,8 @@ async def search_issues(
     ),
     search_type: str = Query(
         "full_text",
-        enum=["full_text", "semantic"],
-        description="Type of search to perform ('full_text' or 'semantic')",
+        enum=["full_text", "similarity"],
+        description="Type of search to perform ('full_text' or 'similarity')",
     ),
     status: Optional[str] = Query(None, description="Filter by issue status"),
     labels: Optional[str] = Query(
@@ -200,7 +200,7 @@ async def search_issues(
     db: Session = Depends(get_db),
 ):
     """
-    Search for issues within a project using text query and optional semantic search.
+    Search for issues within a project using text query and optional similarity search.
     (Code unchanged from previous version)
     """
     try:
@@ -246,17 +246,17 @@ async def search_issues(
             filter_obj.assignee = assignee
 
         response_items = []
-        if search_type == "semantic" and query:
+        if search_type == "similarity" and query:
             try:
                 # Get the active embedding model
                 active_models = crud_embedding_model.get_active(db)
                 if not active_models:
                     logger.error(
-                        "Semantic search requested, but no active embedding model found."
+                        "similarity search requested, but no active embedding model found."
                     )
                     raise HTTPException(
                         status_code=500,
-                        detail="Semantic search cannot be performed: No active embedding model configured.",
+                        detail="similarity search cannot be performed: No active embedding model configured.",
                     )
                 model = active_models[0]
                 model_id = model.id
@@ -353,9 +353,10 @@ async def search_issues(
                     )
 
             except Exception as e:
-                logger.error(f"Error during semantic search: {e}", exc_info=True)
+                logger.error(f"Error during similarity search: {e}", exc_info=True)
                 raise HTTPException(
-                    status_code=500, detail="An error occurred during semantic search."
+                    status_code=500,
+                    detail="An error occurred during similarity search.",
                 )
 
         elif search_type == "full_text":
@@ -481,7 +482,7 @@ async def search_issues(
             logger.warning(f"Invalid search type specified: {search_type}")
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid search type: {search_type}. Must be 'full_text' or 'semantic'.",
+                detail=f"Invalid search type: {search_type}. Must be 'full_text' or 'similarity'.",
             )
         else:  # No query provided, return empty list or handle as needed
             pass  # Currently returns empty list by default

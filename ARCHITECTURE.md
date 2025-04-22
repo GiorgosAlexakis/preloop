@@ -10,16 +10,16 @@ SpaceBridge is designed as a modular, scalable RESTful API server that provides 
 ┌────────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │                │     │                  │     │                  │     │                 │
 │  MCP Clients   ├─────┤  SpaceBridge     ├─────┤  SpaceBridge     ├─────┤  Issue Trackers │
-│  (Claude Code) │     │  Crosser        │     │  REST API        │     │  (Jira/GitHub/  │
+│  (Claude Code) │     │  Crosser         │     │  REST API        │     │  (Jira/GitHub/  │
 │                │     │  (MCP Server)    │     │                  │     │   GitLab/etc)   │
-└────────────────┘     └──────────────────┘     └────────┬─────────┘     └─────────────────┘
-                                                        │
-                                                ┌───────┴───────┐
-                                                │               │
-                                                │  PostgreSQL   │
-                                                │  + PGVector   │
-                                                │               │
-                                                └───────────────┘
+└────────────────┘     └──────────────────┘     └────────┬─────────┘     └────────┬────────┘
+                                                         │                        │
+                                                ┌──────-─┴──────┐        ┌────────┴────────┐
+                                                │               │        │                 │
+                                                │  PostgreSQL   │--------│  SpaceSync      │
+                                                │  + PGVector   │        │                 │
+                                                │               │        │                 │
+                                                └───────────────┘        └─────────────────┘
 ```
 
 ## Core Components
@@ -33,7 +33,7 @@ SpaceBridge is designed as a modular, scalable RESTful API server that provides 
 - [ ] Comprehensive error handling
 - [ ] Monitoring and telemetry integration
 
-### SpaceBridgeCrosser (Separate Repository)
+### SpaceBridge-MCP (Separate Repository)
 - [ ] MCP server implementation using stdio transport
 - [ ] Function-based tool registration using decorators
 - [ ] HTTP client for communicating with SpaceBridge REST API
@@ -72,19 +72,19 @@ SpaceBridge is designed as a modular, scalable RESTful API server that provides 
    - Routes to the appropriate handler
 3. Handler processes the request:
    - Interacts with database for metadata
-   - Calls vector store for semantic search (if applicable)
+   - Calls vector store for similarity search (if applicable)
    - Communicates with issue trackers via their respective client APIs
 4. Response is formatted and returned to the client
 
-### MCP Flow (via SpaceBridgeCrosser)
-1. MCP client (like Claude Code) sends a tool invocation request to SpaceBridgeCrosser using stdio transport
-2. SpaceBridgeCrosser:
+### MCP Flow (via SpaceBridge-MCP)
+1. MCP client (like Claude Code) sends a tool invocation request to SpaceBridge-MCP using stdio transport
+2. SpaceBridge-MCP:
    - Receives and parses the request
    - Validates parameters using type annotations
    - Transforms the request into an HTTP call to SpaceBridge REST API
    - Provides context for logging and progress reporting
 3. SpaceBridge REST API processes the request as described above
-4. SpaceBridgeCrosser:
+4. SpaceBridge-MCP:
    - Receives the HTTP response
    - Transforms it into the appropriate MCP response format
    - Returns the result to the MCP client
@@ -103,7 +103,7 @@ SpaceBridge is designed as a modular, scalable RESTful API server that provides 
 - [ ] Field mappings between trackers
 
 ### Issues Vector Store
-- [ ] Issue embeddings for semantic search
+- [ ] Issue embeddings for similarity search
 - [ ] Issue metadata for filtering and ranking
 - [ ] Embedding version tracking for reindexing
 
@@ -125,15 +125,15 @@ SpaceBridge implements a RESTful HTTP API using FastAPI, which provides:
 - Dependency injection system
 - Middleware for authentication, logging, etc.
 
-### SpaceBridgeCrosser Implementation
-The companion SpaceBridgeCrosser project will implement an MCP server using:
+### SpaceBridge-MCP Implementation
+The companion SpaceBridge-MCP project will implement an MCP server using:
 - Official MCP SDK for stdio transport
 - HTTP client for communicating with SpaceBridge REST API
 - Function-based tool registration with decorators
 - Type annotation-based parameter validation
 
 ### Language and Framework
-Python is chosen as the primary language due to its strong ecosystem for machine learning and data processing, which is essential for semantic search and embedding generation. FastAPI is used for the REST API due to its performance, type safety, and automatic OpenAPI documentation generation.
+Python is chosen as the primary language due to its strong ecosystem for machine learning and data processing, which is essential for similarity search and embedding generation. FastAPI is used for the REST API due to its performance, type safety, and automatic OpenAPI documentation generation.
 
 ### Database
 PostgreSQL with the PGVector extension provides a robust solution for storing both traditional relational data and vector embeddings in a single system, simplifying the architecture and reducing operational complexity.
