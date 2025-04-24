@@ -234,6 +234,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         query_vector: List[float],
         limit: int = 10,
         distance_type: str = "cosine",  # or "euclidean"
+        tracker_ids: Optional[List[str]] = None,
     ) -> List[Tuple[Issue, float]]:
         """
         Search for similar issues based on vector similarity.
@@ -251,38 +252,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         Returns:
             List of (issue, similarity_score) tuples
         """
-        dialect_name = db.bind.dialect.name
-
-        # Check if we're using PostgreSQL with pgvector
-        if dialect_name == "postgresql" and PGVECTOR_AVAILABLE:
-            return self._similarity_search_pgvector(
-                db,
-                model_id=model_id,
-                query_vector=query_vector,
-                limit=limit,
-                distance_type=distance_type,
-            )
-        else:
-            # Fallback for SQLite or PostgreSQL without pgvector
-            return self._similarity_search_python(
-                db,
-                model_id=model_id,
-                query_vector=query_vector,
-                limit=limit,
-                distance_type=distance_type,
-            )
-
-    def _similarity_search_pgvector(
-        self,
-        db: Session,
-        *,
-        model_id: str,
-        query_vector: List[float],
-        limit: int = 10,
-        distance_type: str = "cosine",
-    ) -> List[Tuple[Issue, float]]:
-        """Perform vector similarity search using pgvector."""
-
         # Construct the raw SQL query
         query = text(
             """
@@ -306,6 +275,8 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
             FROM
                 issue i
+            WHERE
+                i.tracker_id IN :tracker_ids
             JOIN
                 issueembedding e ON i.id = e.issue_id
             )
@@ -317,7 +288,13 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
 
         # Execute the query
         result = db.execute(
-            query, {"model_id": model_id, "query_vector": query_vector, "limit": limit}
+            query,
+            {
+                "model_id": model_id,
+                "query_vector": query_vector,
+                "limit": limit,
+                "tracker_ids": tracker_ids,
+            },
         )
 
         # Convert results to Issue objects with similarity scores

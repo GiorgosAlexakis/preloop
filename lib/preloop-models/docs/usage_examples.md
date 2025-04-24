@@ -257,7 +257,7 @@ db.close()
 ```
 
 The pgvector extension provides optimized vector similarity search operations in PostgreSQL,
-making large-scale semantic search much more efficient than in-memory calculations.
+making large-scale similarity search much more efficient than in-memory calculations.
 
 ## Error Handling
 

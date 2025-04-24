@@ -74,6 +74,10 @@ class CRUDTracker(CRUDBase[Tracker]):
             query = query.filter(Tracker.account_id == account_id)
         return query.offset(skip).limit(limit).all()
 
+    def get_by_id(self, db: Session, *, id: str) -> Optional[Tracker]:
+        """Get tracker by ID."""
+        return db.query(Tracker).filter(Tracker.id == id).first()
+
     def validate(
         self, db: Session, *, id: str, is_valid: bool, message: Optional[str] = None
     ) -> Optional[Tracker]:

@@ -16,7 +16,7 @@ This document summarizes the implementation of the SpaceModels library.
 - Project model for organizing work
 - Issue model for tracking tasks, bugs, and features
 - EmbeddingModel for vector embedding storage
-- IssueEmbedding for semantic search capabilities
+- IssueEmbedding for similarity search capabilities
 
 ### CRUD Operations
 - Generic base CRUD operations for all models
