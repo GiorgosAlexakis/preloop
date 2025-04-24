@@ -6,7 +6,7 @@ This document summarizes the implementation of the SpaceModels library.
 
 ### Core Infrastructure
 - Project structure and configuration files
-- Database session management with PostgreSQL and SQLite support
+- Database session management with PostgreSQL
 - Base model class with common functionality
 
 ### Data Models

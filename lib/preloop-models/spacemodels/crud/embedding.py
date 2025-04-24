@@ -3,7 +3,6 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-import numpy as np
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -11,28 +10,8 @@ from ..models.issue import EmbeddingModel, Issue, IssueEmbedding
 from .base import CRUDBase
 
 # Import optional pgvector functionality
-try:
-    from pgvector.sqlalchemy import Vector
 
-    from ..db.vector_types import cosine_distance, euclidean_distance
-
-    PGVECTOR_AVAILABLE = True
-except ImportError:
-    Vector = None
-    PGVECTOR_AVAILABLE = False
-
-    # Define fallback functions
-    def cosine_distance(v1, v2):
-        """Calculate cosine distance between two vectors."""
-        a = np.array(v1)
-        b = np.array(v2)
-        return 1 - np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-
-    def euclidean_distance(v1, v2):
-        """Calculate euclidean distance between two vectors."""
-        a = np.array(v1)
-        b = np.array(v2)
-        return np.linalg.norm(a - b)
+from ..db.vector_types import cosine_distance, euclidean_distance
 
 
 class CRUDEmbeddingModel(CRUDBase[EmbeddingModel]):
@@ -275,10 +254,10 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
             FROM
                 issue i
-            WHERE
-                i.tracker_id IN :tracker_ids
             JOIN
                 issueembedding e ON i.id = e.issue_id
+            WHERE
+                i.tracker_id = ANY(:tracker_ids) AND e.embedding_model_id = :model_id
             )
             SELECT * FROM results
             ORDER BY sim DESC

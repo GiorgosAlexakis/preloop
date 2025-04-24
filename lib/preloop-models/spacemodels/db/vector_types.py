@@ -1,59 +1,28 @@
 """SQLAlchemy types for vector storage and UUID handling."""
 
-import json
-import uuid
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional
 
 import numpy as np
-from sqlalchemy import String, TypeDecorator
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import TypeDecorator
 from sqlalchemy.engine.interfaces import Dialect
 
-try:
-    from pgvector.sqlalchemy import Vector
-
-    PGVECTOR_AVAILABLE = True
-except ImportError:
-    Vector = None
-    PGVECTOR_AVAILABLE = False
+from pgvector.sqlalchemy import Vector
 
 
 class VectorType(TypeDecorator):
     """
     SQLAlchemy type for vector embeddings with pgvector support.
 
-    This type automatically uses pgvector's Vector type when available,
-    and falls back to JSONB for SQLite or other databases.
+    This type automatically uses pgvector's Vector type,
     """
 
-    impl = JSONB
+    impl = Vector
     cache_ok = True
 
     def __init__(self, dimensions: int, **kwargs: Any):
         """Initialize the vector type with dimension information."""
         self.dimensions = dimensions
         super().__init__(**kwargs)
-
-    def load_dialect_impl(self, dialect: Dialect) -> Any:
-        """Load the correct implementation based on the dialect."""
-        if dialect.name == "postgresql" and PGVECTOR_AVAILABLE:
-            # Use pgvector for PostgreSQL
-            return dialect.type_descriptor(Vector(self.dimensions))
-
-        # Use JSONB for others (SQLite, MySQL, etc.)
-        return dialect.type_descriptor(JSONB())
-
-    def process_bind_param(self, value: Optional[List[float]], dialect: Dialect) -> Any:
-        """Convert the vector to the correct format for storage."""
-        if value is None:
-            return None
-
-        if dialect.name == "postgresql" and PGVECTOR_AVAILABLE:
-            # For PostgreSQL with pgvector, return as is (will be handled by pgvector)
-            return value
-
-        # For other databases, store as JSON
-        return json.dumps(value)
 
     def process_result_value(
         self, value: Any, dialect: Dialect
@@ -62,17 +31,9 @@ class VectorType(TypeDecorator):
         if value is None:
             return None
 
-        if dialect.name == "postgresql" and PGVECTOR_AVAILABLE:
-            # For PostgreSQL with pgvector, convert to list if needed
-            if isinstance(value, np.ndarray):
-                return value.tolist()
-            return value
-
-        # For other databases, parse JSON
-        if isinstance(value, str):
-            return json.loads(value)
-
-        return cast(List[float], value)
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        return value
 
     @property
     def python_type(self) -> type:
@@ -96,9 +57,6 @@ def euclidean_distance(v1: List[float], v2: List[float]) -> float:
 
 def check_pgvector_extension(engine: Any) -> bool:
     """Check if pgvector extension is installed in PostgreSQL."""
-    if not PGVECTOR_AVAILABLE:
-        return False
-
     try:
         with engine.connect() as conn:
             result = conn.execute(
@@ -111,9 +69,6 @@ def check_pgvector_extension(engine: Any) -> bool:
 
 def install_pgvector_extension(engine: Any) -> bool:
     """Install pgvector extension in PostgreSQL if not already installed."""
-    if not PGVECTOR_AVAILABLE:
-        return False
-
     try:
         with engine.connect() as conn:
             conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
@@ -121,41 +76,3 @@ def install_pgvector_extension(engine: Any) -> bool:
             return True
     except Exception:
         return False
-
-
-class SQLiteUUID(TypeDecorator):
-    """SQLAlchemy type for UUIDs that works with SQLite.
-
-    PostgreSQL has a native UUID type, but SQLite does not.
-    This type uses PostgreSQL's UUID type when using PostgreSQL
-    and falls back to String for other databases like SQLite.
-    """
-
-    impl = String
-    cache_ok = True
-
-    def load_dialect_impl(self, dialect: Dialect) -> Any:
-        """Load dialect-specific implementation."""
-        if dialect.name == "postgresql":
-            return dialect.type_descriptor(UUID())
-        else:
-            return dialect.type_descriptor(String(36))
-
-    def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
-        """Process the value when binding to SQL."""
-        if value is None:
-            return None
-
-        if dialect.name == "postgresql":
-            return value
-        else:
-            return str(value)
-
-    def process_result_value(self, value: Any, dialect: Dialect) -> Any:
-        """Process the value when retrieving from SQL."""
-        if value is None:
-            return None
-
-        if dialect.name != "postgresql" and isinstance(value, str):
-            return uuid.UUID(value)
-        return value

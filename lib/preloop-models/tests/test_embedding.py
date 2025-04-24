@@ -51,15 +51,21 @@ def test_create_issue_embedding(db_session, create_issue, create_embedding_model
     assert len(embedding.embedding) == model.dimensions
 
 
-def test_similarity_search(db_session, create_issue, create_embedding_model):
+def test_similarity_search(
+    db_session, create_issue, create_embedding_model, create_tracker
+):
     """Test similarity search functionality."""
     # Create embedding model
     model = create_embedding_model(dimensions=4)  # Small dimension for testing
 
-    # Create test issues
-    issue1 = create_issue(title="Bug in login feature")
-    issue2 = create_issue(title="Feature request: dashboard")
-    issue3 = create_issue(title="Login page crashes on mobile")
+    # Create a single tracker instance using the injected factory fixture
+    # The `create_tracker` argument in the function signature provides the factory function.
+    tracker = create_tracker()  # Call the factory to create the tracker
+
+    # Create test issues using the *same* tracker instance
+    issue1 = create_issue(title="Bug in login feature", tracker=tracker)
+    issue2 = create_issue(title="Feature request: dashboard", tracker=tracker)
+    issue3 = create_issue(title="Login page crashes on mobile", tracker=tracker)
 
     # Create fixed embeddings for testing similarity
     embeddings = [
@@ -81,8 +87,14 @@ def test_similarity_search(db_session, create_issue, create_embedding_model):
 
     # Search with a vector similar to issue1
     query_vector = [0.9, 0.1, 0.0, 0.0]
+    # Get the tracker_id from one of the created issues
+    tracker_id = tracker.id  # Use the id from the shared tracker created above
     results = crud_issue_embedding.similarity_search(
-        db_session, model_id=model.id, query_vector=query_vector, distance_type="cosine"
+        db_session,
+        model_id=model.id,
+        query_vector=query_vector,
+        distance_type="cosine",
+        tracker_ids=[tracker_id],  # Pass the tracker_id
     )
 
     # Check we got results in the right order (issue1, issue3, issue2)

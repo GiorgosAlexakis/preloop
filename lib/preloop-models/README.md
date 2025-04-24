@@ -27,8 +27,6 @@ pip install -e .  # Install in development mode
 # For PostgreSQL (recommended for production)
 export DATABASE_URL="postgresql+psycopg://user:password@localhost/spacemodels"
 
-# For SQLite (development/testing)
-export DATABASE_URL="sqlite:///./spacemodels.db"
 ```
 
 ## Usage
@@ -424,12 +422,12 @@ class IssueEmbedding(Base):
     
     # The actual embedding vector (PostgreSQL vector type)
     # We define it as a JSON field here to accommodate SQLAlchemy's type system,
-    # but at the database level, use an appropriate vector type with JSONB fallback
+    # but at the database level, use an appropriate vector type.
     # For PostgreSQL, use the pgvector extension's vector type
     embedding: Mapped[Dict] = mapped_column(
         JSON,  # Will be mapped to vector type in PostgreSQL with pgvector
         nullable=False,
-        comment="Embedding vector, stored as JSON array in SQLite, vector in PostgreSQL"
+        comment="Embedding vector"
     )
     
     # Metadata about how this embedding was created
@@ -931,45 +929,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         results.sort(key=lambda x: x[1], reverse=True)
         
         return results
-```
-
-## Database Session Management
-
-```python
-def get_engine(database_url: Optional[str] = None):
-    """Create SQLAlchemy engine with fallback for testing."""
-    url = database_url or os.getenv(
-        "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost/spacemodels"
-    )
-    
-    try:
-        engine = create_engine(url)
-        # Test the connection
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        logger.info(f"Connected to database using {url}")
-        return engine
-    except (ImportError, SQLAlchemyError) as e:
-        logger.warning(
-            f"Database connection failed: {e}. Using SQLite in memory for testing purposes."
-        )
-        return create_engine("sqlite:///:memory:")
-
-
-def get_session_factory(engine=None):
-    """Get session factory for database."""
-    engine = engine or get_engine()
-    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-def get_db_session() -> Generator[Session, None, None]:
-    """Get a database session."""
-    SessionLocal = get_session_factory()
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 ```
 
 ## Usage Example

@@ -130,7 +130,7 @@ class IssueEmbedding(Base):
     )
 
     # The actual embedding vector (PostgreSQL vector type)
-    # The actual embedding vector, using VectorType which adapts to pgvector or JSONB.
+    # The actual embedding vector, using VectorType which adapts to pgvector.
     embedding: Mapped[List[float]] = mapped_column(
         VectorType(1536), nullable=False, comment="Embedding vector"
     )

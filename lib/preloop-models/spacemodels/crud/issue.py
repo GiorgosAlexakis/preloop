@@ -1,6 +1,6 @@
 """CRUD operations for Issue model."""
 
-from datetime import datetime
+from datetime import datetime, timezone  # Import timezone
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -125,7 +125,7 @@ class CRUDIssue(CRUDBase[Issue]):
         """Update last_synced timestamp."""
         issue = self.get(db, id=id)
         if issue:
-            issue.last_synced = datetime.utcnow()
+            issue.last_synced = datetime.now(timezone.utc)
             db.add(issue)
             db.commit()
             db.refresh(issue)

@@ -10,7 +10,8 @@ from sqlalchemy import ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime, Float, Integer, String
 
-from ..db.vector_types import SQLiteUUID
+from sqlalchemy.dialects.postgresql import UUID
+
 from .base import Base
 
 if TYPE_CHECKING:
@@ -34,9 +35,7 @@ class ApiUsage(Base):
     __tablename__ = "api_usage"
 
     # Override id field to use UUID instead of string
-    id: Mapped[uuid.UUID] = mapped_column(
-        SQLiteUUID, primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
 
     # Request details
     username: Mapped[str] = mapped_column(

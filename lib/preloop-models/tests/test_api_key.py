@@ -23,7 +23,7 @@ def test_create_api_key(db_session, create_account):
     assert key.is_active is True
     assert key.scopes == ["read:issues", "write:issues"]
     assert key.expires_at is not None
-    # Make key.expires_at timezone-aware (assuming UTC) before comparing
+    # Compare timezone-aware datetimes
     assert key.expires_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
     assert key.expires_at.replace(tzinfo=timezone.utc) < datetime.now(
         timezone.utc

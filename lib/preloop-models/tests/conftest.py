@@ -1,5 +1,7 @@
 """Test fixtures for SpaceModels."""
 
+import os  # Added import
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -9,17 +11,26 @@ from spacemodels.models.base import Base
 
 @pytest.fixture(scope="session")
 def db_engine():
-    """Create a test database engine."""
-    # Use SQLite in-memory database for testing
-    engine = create_engine("sqlite:///:memory:")
+    """Create a test database engine. Uses TEST_DATABASE_URL if set, otherwise raises error."""
+    # Read database URL from environment variable
+    db_url = os.environ.get("TEST_DATABASE_URL")
+    if not db_url:
+        raise ValueError(
+            "TEST_DATABASE_URL environment variable not set. "
+            "This is required for tests needing PostgreSQL with PGVector."
+        )
+
+    # Use PostgreSQL for tests requiring it (like embedding tests)
+    # Assumes the database specified by TEST_DATABASE_URL exists and has PGVector enabled.
+    engine = create_engine(db_url)
 
     # Create all tables
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(bind=engine)
 
     yield engine
 
-    # Clean up (drop all tables)
-    Base.metadata.drop_all(engine)
+    # Drop all tables after the session
+    Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture(scope="function")

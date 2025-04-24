@@ -108,13 +108,17 @@ def test_get_endpoint_stats(db_session, create_account):
     assert stats[1]["request_count"] == 2
 
 
-def test_get_user_stats(db_session):
+def test_get_user_stats(db_session, create_account):  # Added create_account fixture
     """Test getting user statistics."""
-    # Create two accounts with API usage
+    # Create the accounts first to satisfy foreign key constraint
+    account1 = create_account(username="user1")
+    account2 = create_account(username="user2")
+
+    # Log API usage for the created accounts
     crud_api_usage.create(
         db_session,
         obj_in={
-            "username": "user1",
+            "username": account1.username,  # Use username from created account
             "endpoint": "/api/v1/test",
             "method": "GET",
             "status_code": 200,
@@ -125,7 +129,7 @@ def test_get_user_stats(db_session):
     crud_api_usage.create(
         db_session,
         obj_in={
-            "username": "user2",
+            "username": account2.username,  # Use username from created account
             "endpoint": "/api/v1/test",
             "method": "GET",
             "status_code": 200,
@@ -138,7 +142,7 @@ def test_get_user_stats(db_session):
         crud_api_usage.create(
             db_session,
             obj_in={
-                "username": "user1",
+                "username": account1.username,  # Use username from created account
                 "endpoint": "/api/v1/test",
                 "method": "GET",
                 "status_code": 200,
