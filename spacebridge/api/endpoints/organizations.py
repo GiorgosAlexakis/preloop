@@ -5,25 +5,31 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from spacebridge.api.auth import get_current_active_user  # Import user dependency
 from spacebridge.schemas.organization import (
     OrganizationCreate,
     OrganizationResponse,
     OrganizationUpdate,
 )
 from spacemodels.crud.organization import CRUDOrganization
+from spacemodels.crud.tracker import CRUDTracker  # Import tracker CRUD
 from spacemodels.db.session import get_db_session as get_db
+from spacemodels.models.account import Account  # Import Account model
 from spacemodels.models.organization import Organization
 from spacemodels.models.tracker import Tracker
 
 router = APIRouter()
 crud_organization = CRUDOrganization(Organization)
+crud_tracker = CRUDTracker(Tracker)  # Instantiate tracker CRUD
 
 
 @router.post("/organizations", response_model=OrganizationResponse, status_code=201)
 def create_organization(
-    organization: OrganizationCreate, db: Session = Depends(get_db)
+    organization: OrganizationCreate,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ) -> Organization:
-    """Create a new organization."""
+    """Create a new organization, ensuring it's linked to the current user's tracker."""
     # Check if organization with this identifier already exists
     existing_org = crud_organization.get_by_identifier(
         db, identifier=organization.identifier
@@ -38,15 +44,15 @@ def create_organization(
     # For now, let's use a placeholder that would need to be properly integrated
     # with your authentication and tracker selection flow.
 
-    # TODO: Get the tracker_id from the authenticated user's default tracker
-    # or from the request parameters.
-    # For testing purposes, we'll get the first tracker:
-    trackers = db.query(Tracker).limit(1).all()
-    if not trackers:
+    # Get the first tracker associated with the current user
+    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+    if not user_trackers:
         raise HTTPException(
             status_code=400,
-            detail="No trackers found. Please create a tracker first.",
+            detail="No trackers found for the current user. Please register a tracker first.",
         )
+    # Use the first tracker found for this user
+    tracker_id_to_use = user_trackers[0].id
 
     # Create new organization with CRUD operation
     org_data = {
@@ -55,7 +61,7 @@ def create_organization(
         "identifier": organization.identifier,
         "description": organization.description,
         "settings": organization.settings or {},
-        "tracker_id": trackers[0].id,
+        "tracker_id": tracker_id_to_use,
         "meta_data": {},
     }
 
@@ -68,11 +74,20 @@ def list_organizations(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
-    """List all organizations."""
-    # Use CRUD operation without filtering for active organizations
-    organizations = crud_organization.get_multi(db, skip=offset, limit=limit)
-    total = crud_organization.count(db)
+    """List organizations accessible to the current user."""
+    # Get trackers for the current user
+    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+    tracker_ids = [t.id for t in user_trackers]
+
+    if not tracker_ids:
+        return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+    # Get organizations linked to the user's trackers
+    query = db.query(Organization).filter(Organization.tracker_id.in_(tracker_ids))
+    total = query.count()
+    organizations = query.offset(offset).limit(limit).all()
 
     # Convert SQLAlchemy model objects to dictionaries
     org_dicts = []
@@ -97,12 +112,19 @@ def list_organizations(
 
 @router.get("/organizations/{organization_id}", response_model=OrganizationResponse)
 def get_organization(
-    organization_id: str, db: Session = Depends(get_db)
+    organization_id: str,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ) -> Organization:
-    """Get an organization by ID."""
+    """Get an organization by ID, ensuring user has access."""
     organization = crud_organization.get(db, id=organization_id)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Authorization check
+    if not organization.tracker or organization.tracker.account_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     return organization
 
 
@@ -110,12 +132,19 @@ def get_organization(
     "/organizations/by-identifier/{identifier}", response_model=OrganizationResponse
 )
 def get_organization_by_identifier(
-    identifier: str, db: Session = Depends(get_db)
+    identifier: str,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ) -> Organization:
-    """Get an organization by identifier."""
+    """Get an organization by identifier, ensuring user has access."""
     organization = crud_organization.get_by_identifier(db, identifier=identifier)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Authorization check
+    if not organization.tracker or organization.tracker.account_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     return organization
 
 
@@ -124,11 +153,16 @@ def update_organization(
     organization_id: str,
     organization_update: OrganizationUpdate,
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ) -> Organization:
-    """Update an organization."""
+    """Update an organization, ensuring user has access."""
     organization = crud_organization.get(db, id=organization_id)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Authorization check
+    if not organization.tracker or organization.tracker.account_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     # Update organization using CRUD operation
     update_data = organization_update.dict(exclude_unset=True)
@@ -140,11 +174,19 @@ def update_organization(
 
 
 @router.delete("/organizations/{organization_id}", status_code=204)
-def delete_organization(organization_id: str, db: Session = Depends(get_db)) -> None:
-    """Delete an organization."""
+def delete_organization(
+    organization_id: str,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+) -> None:
+    """Delete an organization, ensuring user has access."""
     organization = crud_organization.get(db, id=organization_id)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Authorization check
+    if not organization.tracker or organization.tracker.account_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete the organization
     crud_organization.delete(db, id=organization_id)

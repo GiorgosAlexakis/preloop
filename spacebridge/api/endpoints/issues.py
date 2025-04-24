@@ -50,20 +50,24 @@ router = APIRouter()
 # Helper Functions
 
 
-async def get_tracker_client(organization_id: str, project_id: str, db: Session):
-    """Get the appropriate tracker client for the given organization and project.
+async def get_tracker_client(
+    organization_id: str, project_id: str, db: Session, current_user: Account
+):
+    """Get the appropriate tracker client for the given organization and project,
+    ensuring the current user has access.
 
     Args:
         organization_id: The organization ID or identifier.
         project_id: The project ID or identifier.
         db: Database session.
+        current_user: The authenticated user account.
 
     Returns:
         A tracker client instance.
 
     Raises:
-        HTTPException: If the organization or project is not found, or if a tracker
-            client cannot be created.
+        HTTPException: If the organization or project is not found, if the user
+            does not have access, or if a tracker client cannot be created.
     """
     # Check if organization_id is a UUID or an identifier
     if len(organization_id) == 36:  # Simple UUID check
@@ -93,6 +97,17 @@ async def get_tracker_client(organization_id: str, project_id: str, db: Session)
         raise HTTPException(
             status_code=500, detail="Organization has no associated tracker."
         )
+
+    # --- Authorization Check ---
+    if tracker.account_id != current_user.id:
+        logger.warning(
+            f"Access denied: User {current_user.username} (Account ID: {current_user.id}) "
+            f"attempted to access tracker {tracker.id} (Account ID: {tracker.account_id})."
+        )
+        raise HTTPException(
+            status_code=403, detail="Forbidden: Access denied to this resource."
+        )
+    # --- End Authorization Check ---
 
     tracker_type = tracker.tracker_type
 
@@ -198,10 +213,11 @@ async def search_issues(
     ),
     assignee: Optional[str] = Query(None, description="Filter by assignee"),
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
     """
     Search for issues within a project using text query and optional similarity search.
-    (Code unchanged from previous version)
+    Requires authentication and checks user access.
     """
     try:
         # Resolve organization and project using either ID, name, or identifier
@@ -503,8 +519,9 @@ async def search_issues(
 async def create_issue(
     issue: ApiIssueCreate,  # Use the renamed API schema
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ) -> IssueResponse:
-    """Create a new issue in a specified project.
+    """Create a new issue in a specified project. Requires authentication and checks user access.
 
     Supports specifying organization/project by:
     - ID (organization_id/project_id)
@@ -628,8 +645,8 @@ async def create_issue(
                 status_code=500, detail="Failed to resolve organization or project"
             )
 
-        # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org.id, proj.id, db)
+        # Get the tracker client using the resolved IDs, passing the current user for auth check
+        tracker_client = await get_tracker_client(org.id, proj.id, db, current_user)
 
         # Prepare the issue create model using the correct base class
         tracker_issue = IssueCreate(  # Use IssueCreate from base.py
@@ -803,7 +820,9 @@ async def update_issue(
             )
 
         # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org_obj.id, proj_obj.id, db)
+        tracker_client = await get_tracker_client(
+            org_obj.id, proj_obj.id, db, current_user
+        )
 
         # Prepare the update data using the base tracker schema
         update_data = {
@@ -854,8 +873,9 @@ async def delete_issue(
     issue_id: str,  # Assume this is the external_id
     # Removed org/project query params, derive from issue_id
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
-    """Delete an issue using its external ID."""
+    """Delete an issue using its external ID. Requires authentication and checks user access."""
     try:
         # Find the issue by external_id to get its context (project/org)
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
@@ -882,7 +902,9 @@ async def delete_issue(
             )
 
         # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org_obj.id, proj_obj.id, db)
+        tracker_client = await get_tracker_client(
+            org_obj.id, proj_obj.id, db, current_user
+        )
 
         # Delete the issue via the tracker client using the external ID (issue_id)
         await tracker_client.delete_issue(issue_id)

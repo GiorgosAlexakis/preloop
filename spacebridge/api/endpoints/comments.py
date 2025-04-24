@@ -5,10 +5,12 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from spacebridge.api.auth import get_current_active_user  # Import user dependency
 from spacebridge.api.endpoints.issues import get_tracker_client
 from spacebridge.schemas.comment import CommentCreate, CommentList, CommentResponse
 from spacebridge.trackers.base import IssueComment as TrackerComment
 from spacemodels.db.session import get_db_session as get_db
+from spacemodels.models.account import Account  # Import Account model for type hint
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -27,11 +29,14 @@ async def list_issue_comments(
     ),
     offset: int = Query(0, ge=0, description="Number of comments to skip"),
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),  # Add user dependency
 ) -> CommentList:
-    """Get a list of comments for a specific issue."""
+    """Get a list of comments for a specific issue. Requires authentication."""
     try:
-        # Get the tracker client
-        tracker_client = await get_tracker_client(organization, project, db)
+        # Get the tracker client, passing current user for auth check
+        tracker_client = await get_tracker_client(
+            organization, project, db, current_user
+        )
 
         # Get the issue to verify it exists
         issue = await tracker_client.get_issue(issue_id)
@@ -83,11 +88,14 @@ async def add_issue_comment(
     organization: str = Query(..., description="Organization identifier"),
     project: str = Query(..., description="Project identifier"),
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),  # Add user dependency
 ) -> CommentResponse:
-    """Add a new comment to a specific issue."""
+    """Add a new comment to a specific issue. Requires authentication."""
     try:
-        # Get the tracker client
-        tracker_client = await get_tracker_client(organization, project, db)
+        # Get the tracker client, passing current user for auth check
+        tracker_client = await get_tracker_client(
+            organization, project, db, current_user
+        )
 
         # Get the issue to verify it exists
         issue = await tracker_client.get_issue(issue_id)
