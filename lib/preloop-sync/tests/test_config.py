@@ -7,7 +7,6 @@ from spacesync.config import (
     DATABASE_URL,
     LOG_LEVEL,
     SERVICE_PORT,
-    SERVICE_WEBHOOK_ENABLED,
 )
 
 
@@ -20,7 +19,6 @@ class TestConfig(unittest.TestCase):
         self.assertIsNotNone(DATABASE_URL)
         self.assertIsNotNone(LOG_LEVEL)
         self.assertIsInstance(SERVICE_PORT, int)  # Should be converted to int
-        self.assertIsInstance(SERVICE_WEBHOOK_ENABLED, bool)
 
     @patch("spacesync.config.logging")
     def test_logger_setup(self, mock_logging):

@@ -24,11 +24,6 @@ DATABASE_URL = os.getenv(
 SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
 SERVICE_PORT = int(os.getenv("SERVICE_PORT", "5000"))
 SERVICE_POLL_INTERVAL = int(os.getenv("SERVICE_POLL_INTERVAL", "90"))
-SERVICE_WEBHOOK_ENABLED = os.getenv("SERVICE_WEBHOOK_ENABLED", "true").lower() in (
-    "true",
-    "1",
-    "yes",
-)
 
 # Define base directory
 BASE_DIR = Path(__file__).parent.parent

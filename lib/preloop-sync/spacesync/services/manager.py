@@ -3,9 +3,10 @@ Tracker update service manager.
 (Refactored for APScheduler integration)
 """
 
-import signal
-from typing import Dict, Optional, Set
+from typing import Optional, Set
 
+import pytz
+from datetime import datetime
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.base import BaseScheduler # Import BaseScheduler for type hinting
 from apscheduler.triggers.interval import IntervalTrigger # Import IntervalTrigger
@@ -13,150 +14,121 @@ from apscheduler.jobstores.base import JobLookupError # Import specific error
 
 from spacemodels.crud import crud_tracker
 from spacemodels.db.session import get_db_session
-from spacemodels.models import Tracker
+from spacemodels.models import Organization
+from spacesync.scanner.core import TrackerClient
+from ..exceptions import TrackerRateLimitError, TrackerError # Import necessary exceptions
 
 from ..config import logger, SERVICE_POLL_INTERVAL # Import default interval
-from .base import BaseTrackerUpdateService, TrackerUpdateServiceFactory
 
 
 # Define a constant for the job ID prefix to easily identify tracker jobs
 TRACKER_JOB_PREFIX = "tracker_update_"
 
-class TrackerUpdateServiceManager:
-    """
-    Manager for tracker update services.
-
-    This class is now primarily responsible for holding references to service
-    instances, but the scheduling and lifecycle management of the update *jobs*
-    are handled by an external APScheduler instance.
-    """
-
-    def __init__(
-        self, db: Session = None, scheduler: Optional[BaseScheduler] = None, reload_interval: int = 90
-    ):
-        """
-        Initialize the tracker update service manager.
-
-        Args:
-            db: Database session (if None, will create one).
-            scheduler: The APScheduler instance managing the jobs.
-            reload_interval: Interval (in seconds) for the external reload job.
-        """
-        self.db = db or next(get_db_session())
-        self.scheduler = scheduler # Store scheduler reference
-        self.services: Dict[str, BaseTrackerUpdateService] = {} # Still holds service instances
-        self.running = False
-        self.reload_interval = reload_interval # Informational
-
-        # Signal handling remains relevant for graceful shutdown of the process
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
-
-    def _signal_handler(self, sig, frame):
-        """Handle signals to gracefully shut down."""
-        logger.info(f"Received signal {sig}, initiating shutdown...")
-        self.stop()
-        # The actual scheduler shutdown is handled by atexit in run_service.py
-
-    def start(self):
-        """Marks the manager as running. Actual job scheduling is external."""
-        if self.running:
-            logger.warning("Tracker update service manager already marked as running")
-            return
-
-        self.running = True
-        logger.info("Tracker update service manager started (scheduling handled by APScheduler).")
-        # No longer starts _init_services or _reload_loop here
-
-    def stop(self):
-        """Marks the manager as stopped and cleans up service instances."""
-        if not self.running:
-            logger.warning("Tracker update service manager already marked as stopped")
-            return
-
-        self.running = False
-        logger.info("Stopping tracker update service manager...")
-
-        # Stop and cleanup all managed service instances
-        # The corresponding scheduler jobs should be removed by the sync_scheduled_jobs function
-        # or by the scheduler shutdown process itself.
-        for tracker_id in list(self.services.keys()):
-            self._stop_service_instance(tracker_id) # Renamed to avoid confusion with job stopping
-
-        # No longer responsible for stopping threads or closing DB session here
-        logger.info("Tracker update service manager stopped.")
 
 
-    # Removed _init_services method
+def update_tracker(tracker_id: str):
+    logger.info(f"Starting update poll for tracker {tracker_id}")
+    total_embedding_updates = 0
+    rate_limited_tracker = False # Flag to stop processing this tracker if rate limited
 
-    def create_and_setup_service(self, tracker: Tracker) -> Optional[BaseTrackerUpdateService]:
-        """
-        Creates and sets up a service instance for a tracker.
-        Does not start execution (scheduling is external).
+    # Each job run gets its own session using the generator pattern
+    db: Optional[Session] = None
+    session_generator = get_db_session()
+    try:
+        db = next(session_generator) # Get the session from the generator
+        tracker = crud_tracker.get_by_id(db, id=tracker_id)
+        if not tracker:
+            logger.error(f"Tracker {tracker_id} not found in database.")
+            return 0
 
-        Args:
-            tracker: Tracker model
+        tracker_client = TrackerClient(tracker)
 
-        Returns:
-            The created and setup service instance, or None if setup failed.
-        """
-        tracker_id = str(tracker.id)
-        if tracker_id in self.services:
-            logger.debug(f"Service instance for tracker {tracker_id} already exists.")
-            # Return the existing instance
-            return self.services[tracker_id]
-
+        # 1. Get organizations for this tracker from the API
         try:
-            # Create service instance
-            # Pass the DB session from the manager
-            service = TrackerUpdateServiceFactory.create_service(self.db, tracker)
-
-            # Set up service (e.g., register webhooks if applicable)
-            if service.setup():
-                self.services[tracker_id] = service
-                logger.info(f"Created and set up service instance for tracker {tracker_id} ({tracker.name})")
-                return service
-            else:
-                logger.error(
-                    f"Failed to set up service instance for tracker {tracker_id} ({tracker.name})"
-                )
-                # Clean up partially created service if setup failed
-                if tracker_id in self.services:
-                    del self.services[tracker_id]
-                return None
+            tracker_organizations: List[Organization] = tracker_client.scan_organizations(db)
+            if not tracker_organizations:
+                logger.info(f"No active organizations found for tracker {tracker_id}. Skipping update cycle.")
+                return 0
         except Exception as e:
-            logger.error(f"Error creating service instance for tracker {tracker_id}: {e}", exc_info=True)
-            return None
+            logger.error(f"Failed to get organizations for tracker {tracker_id}: {e}", exc_info=True)
+            return 0 # Cannot proceed without organizations
 
-    def _stop_service_instance(self, tracker_id: str):
-        """
-        Stops and cleans up a service instance.
-        Does not interact with the scheduler.
+        # Process each organization
+        for org in tracker_organizations:
+            if rate_limited_tracker:
+                logger.warning(f"Skipping remaining organizations for tracker {tracker_id} due to rate limit.")
+                break # Stop processing orgs for this tracker if rate limited
 
-        Args:
-            tracker_id: Tracker ID
-        """
-        if tracker_id not in self.services:
-            logger.warning(f"Service instance for tracker {tracker_id} not found for stopping.")
-            return
+            logger.debug(f"Processing organization {org.identifier} (ID: {org.id}) for tracker {tracker_id}")
 
-        service = self.services[tracker_id]
-        try:
-            service.stop() # Calls cleanup internally
-            logger.info(f"Stopped and cleaned up service instance for tracker {tracker_id}")
-        except Exception as e:
-             logger.error(f"Error stopping service instance for tracker {tracker_id}: {e}", exc_info=True)
-        finally:
-            # Remove from managed services dict
-            if tracker_id in self.services:
-                del self.services[tracker_id]
+            # 2. Scan Projects (fetches from API and reconciles with DB)
+            processed_projects: List[Project] = []
+            try:
+                # Use the existing scan_projects method which handles API fetch and DB sync
+                processed_projects = tracker_client.scan_projects(db=db, organization=org)
+                logger.info(f"Successfully scanned/synchronized {len(processed_projects)} projects for org {org.identifier} (tracker {tracker_id}).")
+            except TrackerRateLimitError as rle:
+                logger.warning(f"Rate limit hit for tracker {tracker_id} during project scan for org {org.identifier}. Pausing updates for this tracker. Details: {rle}")
+                rate_limited_tracker = True
+                continue # Skip to next org (or break due to flag)
+            except (TrackerError, NotImplementedError) as te:
+                # Catch specific tracker errors or if scan_projects/get_projects isn't implemented
+                logger.error(f"Tracker error scanning projects for org {org.identifier} (tracker {tracker_id}): {te}", exc_info=True)
+                continue # Skip this org
+            except Exception as e:
+                logger.error(f"Unexpected error scanning projects for org {org.identifier} (tracker {tracker_id}): {e}", exc_info=True)
+                continue # Skip this org
 
-    # Removed _reload_loop method
+            # 3. Scan Issues for the synchronized projects returned by scan_projects
+            logger.info(f"Scanning issues for {len(processed_projects)} projects in org {org.identifier} (tracker {tracker_id}).")
+            for project in processed_projects:
+                if rate_limited_tracker:
+                    logger.warning(f"Skipping issue scan for project {project.identifier} due to rate limit.")
+                    break # Stop processing projects for this org
 
+                try:
+                    # Scan issues for this synchronized project
+                    # Note: scan_issues might also need error handling refinement
+                    issues, embedding_updates = tracker_client.scan_issues(
+                        db, org, project # Pass DB objects
+                    )
+                    total_embedding_updates += embedding_updates
+
+                    if embedding_updates > 0:
+                        logger.info(
+                            f"Updated {embedding_updates} embeddings for project {project.id} ({project.name}) in tracker {tracker_id}"
+                        )
+                except TrackerRateLimitError as rle:
+                    logger.warning(f"Rate limit hit for tracker {tracker_id} while scanning project {project.id}. Pausing updates for this tracker. Details: {rle}")
+                    rate_limited_tracker = True # Set flag
+                    break # Stop processing projects for this org
+                except TrackerError as te:
+                    logger.error(f"Tracker error scanning issues for project {project.id} (tracker {tracker_id}): {te}", exc_info=True)
+                    continue # Continue with next project
+                except Exception as e:
+                    logger.error(f"Unexpected error scanning issues for project {project.id} (tracker {tracker_id}): {e}", exc_info=True)
+                    continue # Continue with next project
+
+        logger.info(f"Finished update poll for tracker {tracker_id}. Total embedding updates: {total_embedding_updates}. Rate limited: {rate_limited_tracker}")
+        return 0 # Return 0 if tracker not found or other initial issues
+    except StopIteration:
+        logger.error(f"Failed to get database session from generator for tracker {tracker_id}.")
+        return 0 # Failed to get session
+    except Exception as e:
+        logger.error(f"Error during tracker update for {tracker_id}: {e}", exc_info=True)
+        return 0 # General error during update
+    finally:
+        # Ensure the session is closed if it was successfully obtained
+        if db:
+            try:
+                db.close()
+                logger.debug(f"Closed DB session for tracker {tracker_id}")
+            except Exception as close_exc:
+                logger.error(f"Error closing DB session for tracker {tracker_id}: {close_exc}")
 
 # --- APScheduler Job Synchronization Function ---
 
-def sync_scheduled_jobs(scheduler: BaseScheduler, manager: TrackerUpdateServiceManager):
+def sync_scheduled_jobs(scheduler: BaseScheduler, db: Session):
     """
     Synchronizes APScheduler jobs with active trackers in the database.
 
@@ -168,11 +140,8 @@ def sync_scheduled_jobs(scheduler: BaseScheduler, manager: TrackerUpdateServiceM
     """
     logger.info("Starting tracker job synchronization...")
     # Acquire a new DB session specifically for this job run
-    db: Optional[Session] = None
+    db = next(get_db_session())
     try:
-        db = next(get_db_session())
-        logger.debug("Acquired new DB session for job synchronization.")
-
         # 1. Get current tracker job IDs from scheduler
         current_job_ids: Set[str] = set()
         for job in scheduler.get_jobs():
@@ -218,69 +187,17 @@ def sync_scheduled_jobs(scheduler: BaseScheduler, manager: TrackerUpdateServiceM
                 logger.error(f"Could not find tracker object for ID {tracker_id} during job add.")
                 continue
 
-            # Create or get the service instance (handles setup)
-            # Pass the local db session to the factory/service constructor
-            # We need to modify create_and_setup_service or call factory directly
-            # Let's call factory directly for simplicity here
-            service = None # Initialize service to None
-            try:
-                logger.debug(f"Attempting to create service for tracker {tracker_id}...")
-                service = TrackerUpdateServiceFactory.create_service(db, tracker)
-                logger.debug(f"Service created for tracker {tracker_id}. Attempting setup...")
-                if not service.setup():
-                    logger.error(f"Setup failed for service instance for tracker {tracker_id} ({tracker.name})")
-                    service = None # Ensure service is None if setup failed
-                    continue # Skip adding job if setup fails
-                logger.info(f"Service setup successful for tracker {tracker_id}.")
-                # Store the successfully setup service instance in the manager
-                # This allows cleanup later if needed, e.g., for webhooks
-                manager.services[tracker_id] = service
-                logger.info(f"Created and set up service instance for tracker {tracker_id} ({tracker.name})")
-
-            except Exception as e:
-                logger.error(f"Error creating/setting up service instance for tracker {tracker_id}: {e}", exc_info=True)
-                continue # Skip adding job if creation/setup fails
-
-
-            # Since the factory now only returns PollingTrackerUpdateService or raises error,
-            # and setup success is checked, we proceed if service is not None.
-            if service:
-                job_id = f"{TRACKER_JOB_PREFIX}{tracker_id}"
-                # Determine interval: Check tracker metadata first, then service default, then global default
-                interval_seconds = SERVICE_POLL_INTERVAL # Start with global default
-                if tracker.meta_data and isinstance(tracker.meta_data.get('poll_interval_seconds'), int):
-                    interval_seconds = tracker.meta_data['poll_interval_seconds']
-                    logger.debug(f"Using custom interval {interval_seconds}s from metadata for tracker {tracker_id}")
-                elif hasattr(service, 'poll_interval') and service.poll_interval:
-                     interval_seconds = service.poll_interval
-                     logger.debug(f"Using interval {interval_seconds}s from service config for tracker {tracker_id}")
-                else:
-                     logger.debug(f"Using global default interval {interval_seconds}s for tracker {tracker_id}")
-
-                # Ensure interval is reasonable (e.g., not less than 60 seconds)
-                interval_seconds = max(60, interval_seconds)
-
-                trigger = IntervalTrigger(seconds=interval_seconds, jitter=30) # Add jitter
-
-                try:
-                    logger.info(f"Attempting to add job {job_id} to scheduler...")
-                    # Pass the service instance's update method
-                    # The service instance holds its own reference to the DB session created above
-                    scheduler.add_job(
-                        service.update,
-                        trigger=trigger,
-                        args=[], # Pass any required args to service.update here if needed
-                        id=job_id,
-                        name=f"Update_{tracker.name}_{tracker_id[:8]}",
-                        replace_existing=True, # Replace if job somehow exists but wasn't tracked
-                        max_instances=1 # Ensure only one run at a time per tracker (Iteration 3)
-                    )
-                    logger.info(f"Added/Updated job {job_id} for tracker {tracker_id} with interval {interval_seconds}s.")
-                except Exception as e:
-                    logger.error(f"Error adding/updating job {job_id}: {e}")
-            # No need for elif/else here:
-            # - If service is None, it means creation/setup failed and was logged earlier.
-            # - If service exists, it's guaranteed to be PollingTrackerUpdateService by the factory.
+            scheduler.add_job(
+                update_tracker,
+                id=f"{TRACKER_JOB_PREFIX}{tracker_id}",
+                name=f"Update Tracker {tracker_id}",
+                replace_existing=True,
+                misfire_grace_time=60,
+                args=[tracker_id], # Only pass tracker_id, job will get its own session
+                trigger=IntervalTrigger(seconds=SERVICE_POLL_INTERVAL),
+                next_run_time=datetime.now(pytz.utc),
+            )
+            logger.info(f"Added job for tracker {tracker_id} with interval {SERVICE_POLL_INTERVAL} seconds.")
 
         logger.info("Tracker job synchronization complete.")
 
@@ -294,16 +211,3 @@ def sync_scheduled_jobs(scheduler: BaseScheduler, manager: TrackerUpdateServiceM
                 logger.debug("Closed DB session for job synchronization.")
             except Exception as e:
                 logger.error(f"Error closing DB session in job synchronization: {e}")
-
-
-# The run_service_manager function might need adjustment or removal
-# depending on how run_service.py orchestrates things now.
-# Keeping it commented out for now.
-# def run_service_manager():
-#     """Run the tracker update service manager."""
-#     # This function's logic is largely moved to run_service.py's main()
-#     pass
-
-# if __name__ == "__main__":
-#     # This entry point is likely not needed anymore as run_service.py is the main script
-#     pass

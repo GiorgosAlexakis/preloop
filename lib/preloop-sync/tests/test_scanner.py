@@ -84,5 +84,7 @@ class TestTrackerClient(unittest.TestCase):
 
         # Assert client.get_issues was called with correct arguments
         mock_get_issues.assert_called_once_with(
-            mock_org.identifier, mock_project.identifier, None
+            organization_id=mock_org.identifier,
+            project_id=mock_project.identifier,
+            since=None,
         )

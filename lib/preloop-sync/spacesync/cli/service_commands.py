@@ -9,7 +9,6 @@ import click
 from spacemodels.db.session import get_db_session
 
 from ..config import logger
-from ..services.manager import TrackerUpdateServiceManager
 
 
 @click.group(help="Manage tracker update services")
@@ -26,15 +25,12 @@ def service_start(foreground):
     db = next(get_db_session())
 
     try:
-        # Create and start service manager
-        manager = TrackerUpdateServiceManager(db)
-        manager.start()
 
         if foreground:
             logger.info("Tracker update service started in foreground")
 
             # Keep main thread alive
-            while manager.running:
+            while True:
                 time.sleep(1)
         else:
             logger.info("Tracker update service running in background")
@@ -44,7 +40,6 @@ def service_start(foreground):
 
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received, shutting down...")
-        manager.stop()
 
     finally:
         # Clean up

@@ -18,7 +18,7 @@ class BaseTrackerUpdateService(abc.ABC):
     Abstract base class for tracker update services.
 
     This class provides the framework for continuously updating
-    trackers in the database, whether via webhooks or polling.
+    trackers in the database.
     """
 
     def __init__(self, db: Session, tracker: Tracker):
@@ -105,81 +105,3 @@ class PollingTrackerUpdateService(BaseTrackerUpdateService):
         # The actual stopping of scheduled jobs is handled externally.
         super().stop()
         logger.info(f"Polling service for tracker {self.tracker.id} marked as stopped.")
-
-
-class WebhookTrackerUpdateService(BaseTrackerUpdateService):
-    """
-    Base class for tracker update services that use webhooks.
-    """
-
-    def __init__(self, db: Session, tracker: Tracker):
-        """
-        Initialize the webhook tracker update service.
-
-        Args:
-            db: Database session
-            tracker: Tracker model
-        """
-        super().__init__(db, tracker)
-        self.webhook_url = None
-
-    @abc.abstractmethod
-    def register_webhook(self) -> bool:
-        """
-        Register webhook with the tracker service.
-
-        Returns:
-            True if registration was successful, False otherwise
-        """
-        pass
-
-    @abc.abstractmethod
-    def unregister_webhook(self) -> bool:
-        """
-        Unregister webhook from the tracker service.
-
-        Returns:
-            True if unregistration was successful, False otherwise
-        """
-        pass
-
-    def setup(self) -> bool:
-        """
-        Set up the webhook update service.
-
-        Returns:
-            True if setup was successful, False otherwise
-        """
-        return self.register_webhook()
-
-    def cleanup(self) -> None:
-        """Clean up webhook registration."""
-        self.unregister_webhook()
-
-
-class TrackerUpdateServiceFactory:
-    """
-    Factory class for creating tracker update services.
-    """
-
-    @staticmethod
-    def create_service(db: Session, tracker: Tracker) -> BaseTrackerUpdateService:
-        """
-        Create a tracker update service for the given tracker.
-
-        Args:
-            db: Database session
-            tracker: Tracker model
-
-        Returns:
-            Appropriate tracker update service instance
-
-        Raises:
-            ValueError: If tracker type is not supported
-        """
-        tracker_type = tracker.tracker_type.lower() if hasattr(tracker, 'tracker_type') and tracker.tracker_type else 'unknown'
-        logger.info(f"Factory explicitly creating GenericPollingUpdateService for tracker {tracker.id} (type: {tracker_type})")
-
-        # Directly import and return the polling service
-        from .generic_service import GenericPollingUpdateService
-        return GenericPollingUpdateService(db, tracker)

@@ -7,6 +7,8 @@ import time
 import logging
 import atexit
 import signal # Import signal
+import pytz
+from datetime import datetime # Import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -20,7 +22,7 @@ from ..scanner import scan_account
 from ..scanner import scan_tracker as scan_tracker_func
 
 # Import service components for the 'scan all' (now service start) command
-from ..services.manager import TrackerUpdateServiceManager, sync_scheduled_jobs
+from ..services.manager import sync_scheduled_jobs
 from ..config import logger # Use the configured logger
 from ..utils import safe_exit
 
@@ -68,7 +70,7 @@ def scan():
 @click.option(
     "--reload-interval",
     type=int,
-    default=90,
+    default=60,
     help="Interval (in seconds) to reload tracker list and sync jobs.",
     show_default=True,
 )
@@ -121,32 +123,24 @@ def scan_all(reload_interval: int, max_workers: int, log_level: str):
     # Initialize the scheduler
     scheduler = BackgroundScheduler(executors=executors, job_defaults=job_defaults, timezone="UTC")
 
-    # Create service manager instance (needed by sync_scheduled_jobs)
-    manager = TrackerUpdateServiceManager(db=db, scheduler=scheduler, reload_interval=reload_interval)
-    manager.running = True # Mark manager as conceptually running
-
     try:
+        # Start the scheduler
+        scheduler.start()
+        logger.info(f"APScheduler started with max_workers={max_workers}")
+
         # Add the recurring job to sync tracker jobs
         # Run it once immediately, then schedule subsequent runs
         scheduler.add_job(
             sync_scheduled_jobs,
             trigger=IntervalTrigger(seconds=reload_interval),
-            args=[scheduler, manager],
+            args=[scheduler, db],
             id='tracker_reload_job',
             name='Sync Tracker Jobs',
             replace_existing=True,
             misfire_grace_time=60,
-            # next_run_time=datetime.now() # Removed: Will run immediately after start + initial call
+            next_run_time=datetime.now(pytz.utc)
         )
         logger.info(f"Scheduled tracker job synchronization every {reload_interval} seconds.")
-
-        # Start the scheduler
-        scheduler.start()
-        logger.info(f"APScheduler started with max_workers={max_workers}")
-
-        # Manually trigger the first sync immediately after starting scheduler
-        logger.info("Triggering initial tracker job synchronization...")
-        sync_scheduled_jobs(scheduler, manager)
 
         # Keep main thread alive while the scheduler runs in the background.
         # Exit loop when keep_running flag is set by signal handler.
@@ -158,10 +152,10 @@ def scan_all(reload_interval: int, max_workers: int, log_level: str):
         logger.info("Main loop exited.")
 
     finally:
-        # Cleanup manager resources
-        if manager and manager.running:
-             manager.stop()
-        # Close DB session initially created for the manager
+        # Explicitly attempt scheduler shutdown here
+        shutdown_scheduler()
+
+        # Close DB session
         # Use db.is_active check instead of is_closed
         if db and db.is_active:
             try:
