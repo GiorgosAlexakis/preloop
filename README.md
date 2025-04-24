@@ -60,7 +60,6 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
 # Set up the database
-# For development, it will fall back to SQLite automatically
 
 # Configure your environment
 cp .env.example .env
