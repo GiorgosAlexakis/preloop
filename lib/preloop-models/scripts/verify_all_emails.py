@@ -7,13 +7,14 @@ import sys
 import click
 from sqlalchemy.orm import Session
 from spacemodels.models.account import Account  # Corrected import path if needed
-from spacemodels.db.session import get_db_session # Corrected import path if needed
+from spacemodels.db.session import get_db_session  # Corrected import path if needed
 
 # Ensure the project root is in the Python path if running script directly
 # import os
 # project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # if project_root not in sys.path:
 #     sys.path.insert(0, project_root)
+
 
 @click.command()
 @click.option(
@@ -25,7 +26,9 @@ def main(yes: bool):
     """Sets the email_verified flag to True for all accounts."""
 
     if not yes:
-        click.echo("\n⚠️  WARNING: This will set email_verified=True for ALL accounts in the database.")
+        click.echo(
+            "\n⚠️  WARNING: This will set email_verified=True for ALL accounts in the database."
+        )
         if not click.confirm("Do you want to proceed?"):
             click.echo("Operation cancelled.")
             sys.exit(0)
@@ -61,7 +64,7 @@ def main(yes: bool):
 
     except Exception as e:
         if db_session:
-            db_session.rollback() # Rollback in case of error during commit
+            db_session.rollback()  # Rollback in case of error during commit
         click.echo(f"ERROR: An error occurred: {str(e)}", err=True)
         sys.exit(1)
     finally:
