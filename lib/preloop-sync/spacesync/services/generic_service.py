@@ -6,10 +6,8 @@ from sqlalchemy.orm import Session
 
 from spacemodels.crud import (
     crud_organization,
-    crud_project,
 )
 from spacemodels.models import Tracker, Organization, Project
-from spacebridge.schemas.project import ProjectCreate, ProjectUpdate
 from ..exceptions import TrackerRateLimitError, TrackerError # Import necessary exceptions
 from ..config import SERVICE_POLL_INTERVAL, logger
 from .base import PollingTrackerUpdateService
