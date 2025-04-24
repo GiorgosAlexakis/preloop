@@ -11,6 +11,8 @@ from spacebridge.schemas.issue import (
     IssueResponse,
     IssueUpdate as ApiIssueUpdate,
 )  # Renamed to avoid conflict
+from spacemodels.models.account import Account
+
 from spacemodels.crud import (
     CRUDIssue,
     CRUDOrganization,
@@ -27,6 +29,7 @@ from spacebridge.trackers.base import (
     IssueCreate,
     IssueUpdate,
 )  # Import base tracker schemas
+from spacebridge.api.auth import get_current_active_user  # Import user dependency
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
