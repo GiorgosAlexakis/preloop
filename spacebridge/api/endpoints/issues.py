@@ -224,8 +224,16 @@ async def search_issues(
     """
     try:
         # Resolve organization and project using either ID, name, or identifier
-        from spacemodels.crud import crud_organization, crud_project
+        from spacemodels.crud import crud_organization, crud_project, crud_tracker
 
+        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        tracker_ids = [t.id for t in user_trackers]
+
+        if not tracker_ids:
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+        # Get Issues linked to the user's trackers
+        issues = db.query(Issue).filter(Issue.tracker_id.in_(tracker_ids))
         # Process organization parameters
         org = None
         org_id = None
@@ -287,7 +295,11 @@ async def search_issues(
 
                 # Find similar issues using similarity search
                 similar_issues = crud_issue_embedding.similarity_search(
-                    db, model_id=model_id, query_vector=query_vector, limit=limit
+                    db,
+                    model_id=model_id,
+                    query_vector=query_vector,
+                    limit=limit,
+                    tracker_ids=tracker_ids,
                 )
 
                 # Extract issues and apply filters
@@ -383,24 +395,20 @@ async def search_issues(
             try:
                 from sqlalchemy import or_
 
-                query_builder = db.query(Issue)
-
                 # Filter by project/org
                 if proj:
-                    query_builder = query_builder.filter(Issue.project_id == proj.id)
+                    issues = issues.filter(Issue.project_id == proj.id)
                 elif org:
                     project_ids = [p.id for p in org.projects]
                     if project_ids:
-                        query_builder = query_builder.filter(
-                            Issue.project_id.in_(project_ids)
-                        )
+                        issues = issues.filter(Issue.project_id.in_(project_ids))
                     else:
                         return []  # Org has no projects
 
                 # Apply text query filter
                 if query:
                     search_term = f"%{query}%"
-                    query_builder = query_builder.filter(
+                    issues = issues.filter(
                         or_(
                             Issue.title.ilike(search_term),
                             Issue.description.ilike(search_term),
@@ -409,7 +417,7 @@ async def search_issues(
 
                 # Apply status filter
                 if status:
-                    query_builder = query_builder.filter(Issue.status == status)
+                    issues = issues.filter(Issue.status == status)
 
                 # Apply labels/assignee filters directly in the query if possible
                 # Note: This example assumes simple JSON structure and might need adjustment
@@ -425,9 +433,7 @@ async def search_issues(
                     pass
 
                 # Fetch issues
-                issues_db = (
-                    query_builder.order_by(Issue.updated_at.desc()).limit(limit).all()
-                )
+                issues_db = issues.order_by(Issue.updated_at.desc()).limit(limit).all()
 
                 # Post-fetch filtering (if DB filtering wasn't possible/implemented)
                 if labels and isinstance(filter_obj.labels, list):
@@ -718,12 +724,24 @@ async def create_issue(
 def get_issue(
     issue_id: str,  # Assume this is the external_id
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
     """Get details of a specific issue using its external ID."""
+
     try:
+        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        tracker_ids = [t.id for t in user_trackers]
+
+        if not tracker_ids:
+            raise HTTPException(status_code=404, detail="No trackers found for user")
+
         # Find the issue by external_id
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
-        issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
+        issue = (
+            db.query(Issue)
+            .filter(Issue.tracker_id.in_(tracker_ids), Issue.external_id == issue_id)
+            .first()
+        )
         # issue = crud_issue.get_by_external_id(db, external_id=issue_id) # Ideal way
         if not issue:
             # Maybe it was the internal ID? Try that as a fallback.
@@ -803,6 +821,7 @@ async def update_issue(
 ) -> IssueResponse:
     """Update an existing issue using its external ID."""
     try:
+        raise HTTPException(status_code=500, detail="Not implemented")
         # Find the issue by external_id to get its context (project/org)
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
         db_issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
@@ -880,6 +899,7 @@ async def delete_issue(
 ):
     """Delete an issue using its external ID. Requires authentication and checks user access."""
     try:
+        raise HTTPException(status_code=500, detail="Not implemented")
         # Find the issue by external_id to get its context (project/org)
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
         db_issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
