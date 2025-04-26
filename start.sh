@@ -3,6 +3,10 @@
 
 set -e
 
+# Initialize database tables and embedding model idempotently
+echo "Initializing database and embedding model..."
+python -m spacesync.scripts.init_db --force
+
 # Default parameters
 API_PORT=8000
 DEBUG="true"
