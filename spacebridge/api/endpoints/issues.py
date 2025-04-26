@@ -117,7 +117,6 @@ async def get_tracker_client(
     # --- Assemble the full configuration ---
     # Start with project-specific tracker settings
     full_config: Dict[str, Any] = project.tracker_settings or {}
-
     # Add credentials from the Tracker model, structured as the factory expects
     full_config["credentials"] = {
         "token": tracker.api_key,
@@ -147,16 +146,8 @@ async def get_tracker_client(
                 or project.identifier
             )
     elif tracker_type == "github":
-        if "owner" not in full_config:
-            full_config["owner"] = (project.tracker_settings or {}).get("owner") or (
-                project.meta_data or {}
-            ).get("owner")
-        if "repo" not in full_config:
-            full_config["repo"] = (
-                (project.tracker_settings or {}).get("repo")
-                or (project.meta_data or {}).get("repo")
-                or project.identifier
-            )  # Use identifier as repo fallback if owner exists
+        full_config["owner"] = organization.name
+        full_config["repo"] = project.name
     elif tracker_type == "jira":
         # Jira might need project_key in config for some operations, add if available
         if "project_key" not in full_config:
