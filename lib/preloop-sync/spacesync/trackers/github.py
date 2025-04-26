@@ -89,7 +89,7 @@ class GitHubTracker(BaseTracker):
         organizations.append(
             {
                 "id": "personal",  # Use "personal" as a special ID for personal repositories
-                "name": f"{user_data['login']}'s Repositories",
+                "name": f"{user_data['login']}",
                 "url": user_data["html_url"],
             }
         )
