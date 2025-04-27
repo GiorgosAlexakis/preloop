@@ -112,6 +112,36 @@ async def get_tracker_client(
         )
     # --- End Authorization Check ---
 
+    # --- Project Selection Check ---
+    project_identifier = project.identifier  # Use the resolved project's identifier
+    included_list = set(tracker.included_project_identifiers or [])
+    excluded_list = set(tracker.excluded_project_identifiers or [])
+    has_includes = bool(included_list)
+
+    logger.debug(
+        f"Checking project '{project_identifier}' against tracker {tracker.id} rules: "
+        f"includes={included_list}, excludes={excluded_list}"
+    )
+
+    if project_identifier in excluded_list:
+        logger.warning(
+            f"Access denied: Project '{project_identifier}' is explicitly excluded by tracker {tracker.id}."
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: Project '{project.name}' is excluded.",
+        )
+
+    if has_includes and project_identifier not in included_list:
+        logger.warning(
+            f"Access denied: Project '{project_identifier}' is not in the inclusion list for tracker {tracker.id}."
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: Project '{project.name}' is not included for this tracker.",
+        )
+    # --- End Project Selection Check ---
+
     tracker_type = tracker.tracker_type
 
     # --- Assemble the full configuration ---
@@ -253,6 +283,23 @@ async def search_issues(
         # Validate project (if project is specified but not found)
         if (project_id or project) and not proj:
             raise HTTPException(status_code=404, detail="Project not found")
+
+        # Validate access and get tracker client (even if not used directly for DB search)
+        # This enforces the project selection rules before proceeding.
+        try:
+            await get_tracker_client(org.id, proj.id, db, current_user)
+        except HTTPException as e:
+            # If get_tracker_client raises an error (e.g., 403 Forbidden due to project exclusion),
+            # re-raise it to stop the search.
+            raise e
+        except Exception as e:
+            # Catch potential errors during client creation/validation
+            logger.error(
+                f"Error validating tracker access for search: {e}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail="Error validating tracker access."
+            )
 
         # Create filter object for traditional search
         filter_obj = IssueFilter(query=query, limit=limit)

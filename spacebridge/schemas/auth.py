@@ -1,7 +1,7 @@
 """Authentication schemas for request and response validation."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, validator
@@ -95,16 +95,6 @@ class PasswordResetConfirmRequest(BaseModel):
 
     token: str
     new_password: str = Field(..., min_length=8)
-
-
-class TrackerRegisterRequest(BaseModel):
-    """Model for tracker registration."""
-
-    type: str  # 'github', 'gitlab', 'jira'
-    name: str
-    url: str
-    token: str
-    config: Optional[Dict[str, Any]] = None
 
 
 class ApiKeyCreate(BaseModel):
