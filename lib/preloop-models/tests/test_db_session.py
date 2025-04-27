@@ -46,7 +46,9 @@ def test_get_engine_custom_url(mock_engine_dependencies):
     engine = get_engine(custom_url)
 
     # Verify create_engine was called with the custom URL
-    mock_engine_dependencies["create_engine"].assert_called_once_with(custom_url)
+    mock_engine_dependencies["create_engine"].assert_called_once_with(
+        custom_url, isolation_level="AUTOCOMMIT"
+    )
 
     # Verify connection test happened (execute called on connection mock)
     mock_conn = mock_engine_dependencies["connection"]
@@ -72,7 +74,9 @@ def test_get_engine_from_env(mock_engine_dependencies):
         engine = get_engine()
 
         # Verify create_engine was called with the URL from environment
-        mock_engine_dependencies["create_engine"].assert_called_once_with(env_url)
+        mock_engine_dependencies["create_engine"].assert_called_once_with(
+            env_url, isolation_level="AUTOCOMMIT"
+        )
 
         # Verify connection test happened
         mock_conn = mock_engine_dependencies["connection"]
@@ -98,7 +102,9 @@ def test_get_engine_default(mock_engine_dependencies):
         engine = get_engine()  # Call without args
 
         # Verify create_engine was called with the default URL
-        mock_engine_dependencies["create_engine"].assert_called_once_with(default_url)
+        mock_engine_dependencies["create_engine"].assert_called_once_with(
+            default_url, isolation_level="AUTOCOMMIT"
+        )
 
         # Verify connection test happened
         mock_conn = mock_engine_dependencies["connection"]

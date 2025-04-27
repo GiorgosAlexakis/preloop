@@ -38,7 +38,7 @@ def get_engine(database_url: Optional[str] = None):
         )
 
     try:
-        engine = create_engine(url)
+        engine = create_engine(url, isolation_level="AUTOCOMMIT")
         # Test the connection
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
