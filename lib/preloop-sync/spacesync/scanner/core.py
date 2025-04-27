@@ -84,6 +84,22 @@ class TrackerClient:
         else:
             raise ValueError(f"Unsupported tracker type: {self.tracker_type}")
 
+    def _get_project_identifier(self, proj_data: Dict[str, Any]) -> Optional[str]:
+        """Extract a consistent identifier from raw project data."""
+        # Try common fields from different trackers
+        if 'full_name' in proj_data.get('meta_data', {}): # GitHub repo name (owner/repo)
+            return proj_data['meta_data']['full_name']
+        if self.tracker_type == 'gitlab' and 'id' in proj_data: # GitLab project path
+            return proj_data['id']
+        if 'key' in proj_data: # Jira project key
+            return proj_data['key']
+        if 'url' in proj_data: # Generic URL
+            return '/'.join(proj_data['url'].split('/')[-2:])
+
+        # Add more potential fields if needed (e.g., 'id' as a last resort?)
+        logger.warning(f"Could not determine identifier for project data: {proj_data.get('name', 'N/A')}")
+        return None
+
     def scan_organizations(self, db: Session) -> List[Organization]:
         """
         Scan and update organizations for this tracker.
@@ -129,52 +145,108 @@ class TrackerClient:
 
     def scan_projects(self, db: Session, organization: Organization) -> List[Project]:
         """
-        Scan and update projects for an organization.
+        Scan and update projects for an organization, applying inclusion/exclusion rules.
 
         Args:
             db: Database session
             organization: Organization model
 
         Returns:
-            List of project models
+            List of processed (created or updated) project models that match the rules.
         """
         logger.info(
             f"Scanning projects for organization {organization.id} ({organization.name})"
         )
 
-        # Get projects from tracker
-        proj_data_list = self.client.get_projects(organization.identifier)
-        logger.info(
-            f"Found {len(proj_data_list)} projects in organization {organization.id}"
-        )
+        # Get project selection rules from the tracker
+        included_list = set(self.tracker.included_project_identifiers or [])
+        excluded_list = set(self.tracker.excluded_project_identifiers or [])
+        include_future = self.tracker.include_future_projects
+        has_includes = bool(included_list)
 
-        # Process each project
-        projects = []
-        for proj_data in proj_data_list:
-            # Transform data for database
-            proj_create_data = self.client.transform_project(proj_data, organization.id)
+        logger.debug(f"Tracker {self.tracker.id} rules: include_future={include_future}, "
+                     f"includes={included_list}, excludes={excluded_list}")
 
-            # Find existing project or create new one
-            project = crud_project.get_by_identifier(
-                db,
-                identifier=proj_create_data["identifier"],
-                organization_id=organization.id,
+        # Get all projects from the tracker API
+        try:
+            proj_data_list = self.client.get_projects(organization.identifier)
+            logger.info(
+                f"Found {len(proj_data_list)} raw projects in tracker for organization {organization.id}"
             )
+        except Exception as e:
+            logger.error(f"Failed to get projects from tracker for org {organization.identifier}: {e}")
+            return [] # Return empty list if API call fails
 
-            if project:
-                # Update existing
-                project = crud_project.update(
-                    db, db_obj=project, obj_in=proj_create_data
+        # Filter projects based on inclusion/exclusion rules
+        filtered_proj_data_list = []
+        for proj_data in proj_data_list:
+            identifier = self._get_project_identifier(proj_data)
+            if not identifier:
+                logger.warning(f"Skipping project with no identifier: {proj_data.get('name')}")
+                continue
+
+            # Apply exclusion first
+            if identifier in excluded_list:
+                logger.debug(f"Excluding project '{identifier}' based on exclusion list.")
+                continue
+
+
+            # Apply inclusion if an inclusion list exists
+            if has_includes and identifier not in included_list:
+                logger.debug(f"Skipping project '{identifier}' as it's not in the inclusion list.")
+                continue
+
+            # If it passes filters, add to the list to be processed
+            filtered_proj_data_list.append(proj_data)
+
+        logger.info(f"Processing {len(filtered_proj_data_list)} projects after filtering for org {organization.id}")
+
+        # Process the filtered projects
+        processed_projects = []
+        for proj_data in filtered_proj_data_list:
+            try:
+                # Transform data for database
+                proj_create_data = self.client.transform_project(proj_data, organization.id)
+                project_identifier = proj_create_data.get("identifier") # Use identifier from transformed data
+
+                if not project_identifier:
+                     logger.warning(f"Skipping project due to missing identifier after transform: {proj_create_data.get('name')}")
+                     continue
+
+                # Find existing project or create new one
+                existing_project = crud_project.get_by_identifier(
+                    db,
+                    identifier=project_identifier,
+                    organization_id=organization.id,
                 )
-                logger.debug(f"Updated project {project.id} ({project.name})")
-            else:
-                # Create new
-                project = crud_project.create(db, obj_in=proj_create_data)
-                logger.info(f"Created project {project.id} ({project.name})")
 
-            projects.append(project)
+                if existing_project:
+                    # Update existing project
+                    project = crud_project.update(
+                        db, db_obj=existing_project, obj_in=proj_create_data
+                    )
+                    logger.debug(f"Updated project {project.id} ({project.name})")
+                    processed_projects.append(project)
+                else:
+                    # Check include_future logic before creating a new project
+                    create_new = True
+                    if not include_future and has_includes:
+                        # If not including future and there's an include list,
+                        # only create if it was explicitly included.
+                        if project_identifier not in included_list:
+                            create_new = False
+                            logger.debug(f"Skipping creation of new project '{project_identifier}' due to include_future=False and not in inclusion list.")
 
-        return projects
+                    if create_new:
+                        project = crud_project.create(db, obj_in=proj_create_data)
+                        logger.info(f"Created project {project.id} ({project.name})")
+                        processed_projects.append(project)
+
+            except Exception as e:
+                 logger.error(f"Error processing project data {proj_data.get('name', 'N/A')}: {e}", exc_info=True)
+                 # Continue processing other projects
+
+        return processed_projects
 
     def scan_issues(
         self,

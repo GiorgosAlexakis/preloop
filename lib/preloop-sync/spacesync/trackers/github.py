@@ -14,7 +14,7 @@ from ..exceptions import (
 )
 from ..utils import retry
 from .base import BaseTracker
-
+from ..config import logger
 
 class GitHubTracker(BaseTracker):
     """GitHub tracker implementation."""

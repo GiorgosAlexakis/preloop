@@ -11,6 +11,7 @@ import click
 from dotenv import load_dotenv
 
 from spacemodels.db.session import get_engine, get_db_session
+from spacemodels.db.setup import setup_database
 from spacemodels.models import Base
 from spacemodels.crud import crud_embedding_model
 
@@ -23,7 +24,7 @@ def init_db(force: bool):
     """
     # Load environment variables
     load_dotenv()
-
+    setup_database(os.getenv("DATABASE_URL"))
     if not force:
         click.echo("This will create all necessary tables in the database.")
         if not click.confirm("Continue?"):
@@ -41,7 +42,7 @@ def init_db(force: bool):
         # Embedding model setup
         provider = os.getenv("EMBEDDING_PROVIDER", "openai")
         model_name = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
-        api_key = os.getenv("EMBEDDING_API_KEY")
+        api_key = os.getenv("OPENAI_API_KEY")
         dimensions = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
         version = os.getenv("EMBEDDING_VERSION", model_name)
         if api_key:
