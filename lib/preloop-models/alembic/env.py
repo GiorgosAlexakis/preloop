@@ -11,12 +11,6 @@ from spacemodels.models.base import Base
 
 # Import all models here to ensure they are registered with Base.metadata
 # Adjust these imports based on your actual model file structure
-from spacemodels.models import account  # noqa: F401
-from spacemodels.models import api_key  # noqa: F401
-from spacemodels.models import api_usage  # noqa: F401
-from spacemodels.models import client_version_log  # noqa: F401
-from spacemodels.models import comment  # noqa: F401
-from spacemodels.models import embedding  # noqa: F401
 from spacemodels.models import issue  # noqa: F401
 from spacemodels.models import organization  # noqa: F401
 from spacemodels.models import project  # noqa: F401
