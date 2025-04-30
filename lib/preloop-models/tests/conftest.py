@@ -11,17 +11,17 @@ from spacemodels.models.base import Base
 
 @pytest.fixture(scope="session")
 def db_engine():
-    """Create a test database engine. Uses TEST_DATABASE_URL if set, otherwise raises error."""
+    """Create a test database engine. Uses DATABASE_URL if set, otherwise raises error."""
     # Read database URL from environment variable
-    db_url = os.environ.get("TEST_DATABASE_URL")
+    db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         raise ValueError(
-            "TEST_DATABASE_URL environment variable not set. "
+            "DATABASE_URL environment variable not set. "
             "This is required for tests needing PostgreSQL with PGVector."
         )
 
     # Use PostgreSQL for tests requiring it (like embedding tests)
-    # Assumes the database specified by TEST_DATABASE_URL exists and has PGVector enabled.
+    # Assumes the database specified by DATABASE_URL exists and has PGVector enabled.
     engine = create_engine(db_url)
 
     # Create all tables
