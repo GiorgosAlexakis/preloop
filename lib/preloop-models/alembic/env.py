@@ -9,6 +9,14 @@ from alembic import context
 # Import Base from your models
 from spacemodels.models.base import Base
 
+# Import all models here to ensure they are registered with Base.metadata
+# Adjust these imports based on your actual model file structure
+from spacemodels.models import issue  # noqa: F401
+from spacemodels.models import organization  # noqa: F401
+from spacemodels.models import project  # noqa: F401
+from spacemodels.models import tracker  # noqa: F401
+
+
 # Load .env file from the parent directory (project root)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 # this is the Alembic Config object, which provides

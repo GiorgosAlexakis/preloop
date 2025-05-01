@@ -98,3 +98,24 @@ class CRUDProject(CRUDBase[Project]):
             db.commit()
             db.refresh(project)
         return project
+
+    def get_by_identifier_or_name_across_orgs(
+        self, db: Session, *, identifier_or_name: str
+    ) -> List[Project]:
+        """Get projects by identifier or name across all organizations.
+
+        Args:
+            db: Database session
+            identifier_or_name: Project identifier or name to search for
+
+        Returns:
+            List of matching projects
+        """
+        return (
+            db.query(Project)
+            .filter(
+                (Project.identifier == identifier_or_name)
+                | (func.lower(Project.name) == func.lower(identifier_or_name))
+            )
+            .all()
+        )

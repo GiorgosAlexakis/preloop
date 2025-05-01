@@ -31,9 +31,9 @@ pytest:
     POSTGRES_DB_NAME: postgres
     DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
   before_script:
-    - pip install -r requirements.txt
     - pip install -e .
     - pip install pytest pytest-cov pytest-timeout
+    - apt-get update && apt-get install -y postgresql-client
+    - PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB_NAME -c "CREATE EXTENSION IF NOT EXISTS vector;"
   script:
     - pytest -vvv tests/ --cov=spacemodels --cov-report=xml --cov-report=term-missing --timeout=240
-

@@ -82,6 +82,22 @@ class Tracker(Base):
     # }
     connection_details: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
+    # Project selection fields
+    included_project_identifiers: Mapped[Optional[List[str]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="List of project identifiers (e.g., 'org/repo', 'PROJKEY') to include. None means include all by default.",
+    )
+    excluded_project_identifiers: Mapped[Optional[List[str]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="List of project identifiers to explicitly exclude. Takes precedence over inclusions.",
+    )
+    include_future_projects: Mapped[bool] = mapped_column(
+        default=True,
+        comment="Whether to automatically include newly discovered projects when included_project_identifiers is None.",
+    )
+
     # Generic metadata field for extensibility
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
