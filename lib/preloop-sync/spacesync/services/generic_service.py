@@ -6,13 +6,10 @@ from sqlalchemy.orm import Session
 
 from spacemodels.crud import (
     crud_organization,
-    crud_project,
-    crud_tracker,
 )
-from spacemodels.models import Tracker
-
+from spacemodels.models import Tracker, Organization, Project
+from ..exceptions import TrackerRateLimitError, TrackerError # Import necessary exceptions
 from ..config import SERVICE_POLL_INTERVAL, logger
-from ..scanner.core import scan_issues
 from .base import PollingTrackerUpdateService
 
 
@@ -31,64 +28,109 @@ class GenericPollingUpdateService(PollingTrackerUpdateService):
         Args:
             db: Database session
             tracker: Tracker model
-            poll_interval: Poll interval in seconds (default: 300)
+            poll_interval: Poll interval in seconds (default: 90)
         """
         super().__init__(db, tracker, poll_interval)
 
     def setup(self) -> bool:
         """
         Set up the polling update service.
+        Connection is implicitly tested during TrackerClient initialization.
 
         Returns:
-            True if setup was successful, False otherwise
+            Always True for the generic polling service, assuming client init succeeded.
         """
-        # Validate tracker connection
-        try:
-            crud_tracker.validate_connection(self.db, tracker_id=self.tracker.id)
-            return True
-        except Exception as e:
-            logger.error(
-                f"Error setting up polling service for tracker {self.tracker.id}: {str(e)}"
-            )
-            return False
+        # No explicit setup needed here for generic polling after client init.
+        # Connection validation happens implicitly in TrackerClient.__init__
+        logger.debug(f"GenericPollingUpdateService setup complete for tracker {self.tracker.id}")
+        return True
 
     def update(self) -> int:
         """
-        Process updates for the tracker by polling.
+        Process updates for the tracker by polling. Fetches projects from the tracker API
+        via scan_projects, updates the database, and then scans issues.
+        Handles rate limit errors.
 
         Returns:
-            Number of issues updated
+            Number of issue embeddings updated during this run.
         """
-        # Get organizations for this tracker
-        organizations = crud_organization.get_for_tracker(
-            self.db, tracker_id=self.tracker.id
-        )
+        logger.info(f"Starting update poll for tracker {self.tracker.id} ({self.tracker.name})")
+        total_embedding_updates = 0
+        rate_limited_tracker = False # Flag to stop processing this tracker if rate limited
 
-        total_updates = 0
-
-        for org in organizations:
-            # Get projects for this organization
-            projects = crud_project.get_for_organization(
-                self.db, organization_id=org.id
+        # 1. Get organizations for this tracker from DB
+        try:
+            db_organizations: List[Organization] = crud_organization.get_for_tracker(
+                self.db, tracker_id=self.tracker.id
             )
+            if not db_organizations:
+                logger.info(f"No active organizations found for tracker {self.tracker.id}. Skipping update cycle.")
+                return 0
+        except Exception as e:
+            logger.error(f"Failed to get organizations for tracker {self.tracker.id}: {e}", exc_info=True)
+            return 0 # Cannot proceed without organizations
 
-            for project in projects:
-                # Scan issues for this project
-                # We reuse the existing scan_issues method from the scanner core
-                issues, embedding_updates = scan_issues(
-                    self.db, self.client, org, project
-                )
+        # Process each organization
+        for org in db_organizations:
+            if rate_limited_tracker:
+                logger.warning(f"Skipping remaining organizations for tracker {self.tracker.id} due to rate limit.")
+                break # Stop processing orgs for this tracker if rate limited
 
-                total_updates += embedding_updates
+            logger.debug(f"Processing organization {org.identifier} (ID: {org.id}) for tracker {self.tracker.id}")
 
-                if embedding_updates > 0:
-                    logger.info(
-                        f"Updated {embedding_updates} issues for project {project.id} ({project.name})"
+            # 2. Scan Projects (fetches from API and reconciles with DB)
+            processed_projects: List[Project] = []
+            try:
+                # Use the existing scan_projects method which handles API fetch and DB sync
+                processed_projects = self.client.scan_projects(db=self.db, organization=org)
+                logger.info(f"Successfully scanned/synchronized {len(processed_projects)} projects for org {org.identifier} (tracker {self.tracker.id}).")
+            except TrackerRateLimitError as rle:
+                logger.warning(f"Rate limit hit for tracker {self.tracker.id} during project scan for org {org.identifier}. Pausing updates for this tracker. Details: {rle}")
+                rate_limited_tracker = True
+                continue # Skip to next org (or break due to flag)
+            except (TrackerError, NotImplementedError) as te:
+                # Catch specific tracker errors or if scan_projects/get_projects isn't implemented
+                logger.error(f"Tracker error scanning projects for org {org.identifier} (tracker {self.tracker.id}): {te}", exc_info=True)
+                continue # Skip this org
+            except Exception as e:
+                logger.error(f"Unexpected error scanning projects for org {org.identifier} (tracker {self.tracker.id}): {e}", exc_info=True)
+                continue # Skip this org
+
+            # 3. Scan Issues for the synchronized projects returned by scan_projects
+            logger.info(f"Scanning issues for {len(processed_projects)} projects in org {org.identifier} (tracker {self.tracker.id}).")
+            for project in processed_projects:
+                if rate_limited_tracker:
+                    logger.warning(f"Skipping issue scan for project {project.identifier} due to rate limit.")
+                    break # Stop processing projects for this org
+
+                try:
+                    # Scan issues for this synchronized project
+                    # Note: scan_issues might also need error handling refinement
+                    issues, embedding_updates = self.client.scan_issues(
+                        self.db, org, project # Pass DB objects
                     )
+                    total_embedding_updates += embedding_updates
 
-        return total_updates
+                    if embedding_updates > 0:
+                        logger.info(
+                            f"Updated {embedding_updates} embeddings for project {project.id} ({project.name}) in tracker {self.tracker.id}"
+                        )
+                except TrackerRateLimitError as rle:
+                    logger.warning(f"Rate limit hit for tracker {self.tracker.id} while scanning project {project.id}. Pausing updates for this tracker. Details: {rle}")
+                    rate_limited_tracker = True # Set flag
+                    break # Stop processing projects for this org
+                except TrackerError as te:
+                    logger.error(f"Tracker error scanning issues for project {project.id} (tracker {self.tracker.id}): {te}", exc_info=True)
+                    continue # Continue with next project
+                except Exception as e:
+                    logger.error(f"Unexpected error scanning issues for project {project.id} (tracker {self.tracker.id}): {e}", exc_info=True)
+                    continue # Continue with next project
+
+        logger.info(f"Finished update poll for tracker {self.tracker.id}. Total embedding updates: {total_embedding_updates}. Rate limited: {rate_limited_tracker}")
+        return total_embedding_updates
 
     def cleanup(self) -> None:
         """Clean up resources when service is stopped."""
-        # No cleanup needed for generic polling service
+        # No specific cleanup needed for generic polling service unless resources are added
+        logger.info(f"Cleaning up generic polling service for tracker {self.tracker.id}")
         pass

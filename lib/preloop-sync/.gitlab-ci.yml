@@ -1,0 +1,37 @@
+image: alpine:3.15
+
+stages:
+  - test
+
+pre-commit:
+  stage: test
+  needs: []
+  image: python:3.11-slim
+  before_script:
+    - apt-get update && apt-get install -y git
+    - pip install -U pre-commit ruff
+  script:
+    - pre-commit install
+    - pre-commit run --all-files
+
+pytest:
+  stage: test
+  needs: []
+  image: python:3.11-slim
+  services:
+    - name: pgvector/pgvector:pg16
+      alias: postgres
+  variables:
+    POSTGRES_DB: postgres
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_HOST_AUTH_METHOD: trust
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: 5432
+    POSTGRES_DB_NAME: postgres
+    TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+  before_script:
+    - pip install -e .
+    - pip install pytest pytest-cov pytest-timeout
+  script:
+    - pytest -vvv tests/ --cov=spacesync --cov-report=xml --cov-report=term-missing --timeout=240

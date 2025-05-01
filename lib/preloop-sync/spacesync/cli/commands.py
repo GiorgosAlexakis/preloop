@@ -7,7 +7,7 @@ import click
 from spacemodels.crud import crud_account, crud_tracker
 
 from .. import __version__
-from ..db.session import get_db_session
+from spacemodels.db.session import get_db_session
 from .scan_commands import scan
 from .service_commands import service
 

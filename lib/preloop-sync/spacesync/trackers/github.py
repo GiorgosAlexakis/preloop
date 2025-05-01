@@ -14,7 +14,7 @@ from ..exceptions import (
 )
 from ..utils import retry
 from .base import BaseTracker
-
+from ..config import logger
 
 class GitHubTracker(BaseTracker):
     """GitHub tracker implementation."""
@@ -89,7 +89,7 @@ class GitHubTracker(BaseTracker):
         organizations.append(
             {
                 "id": "personal",  # Use "personal" as a special ID for personal repositories
-                "name": f"{user_data['login']}'s Repositories",
+                "name": f"{user_data['login']}",
                 "url": user_data["html_url"],
             }
         )
@@ -160,7 +160,7 @@ class GitHubTracker(BaseTracker):
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get issues for a repository from GitHub.
+        Get issues for a repository from GitHub, optionally filtering by update time.
 
         Args:
             organization_id: GitHub organization login name or "personal" for user repos.
@@ -180,7 +180,12 @@ class GitHubTracker(BaseTracker):
             repo_name = repo_details["full_name"]
 
         # Query parameters for the issues API
-        params = {"state": "all", "per_page": 100}
+        params = {"state": "all", "per_page": 100, "sort": "updated", "direction": "desc"}
+        if since:
+            # GitHub API expects ISO8601 format string for 'since'
+            params["since"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+            logger.debug(f"GitHub get_issues: Filtering issues updated since {params['since']}")
+
 
         # Use the repo_name to directly access the issues
         issues_endpoint = f"repos/{repo_name}/issues"

@@ -6,7 +6,7 @@ SpaceSync is a read-only system that scans multiple issue trackers across differ
 
 - Multi-account support for tracker scanning
 - Integration with various issue trackers (GitHub, GitLab, Jira, Linear)
-- Vector embeddings for semantic search
+- Vector embeddings for similarity search
 - Read-only operation (never modifies trackers)
 - Efficient incremental updates
 
@@ -113,7 +113,7 @@ spacesync scan all
 
 ### Continuous Update Service
 
-SpaceSync includes a service that continuously updates the database with changes from trackers. The service uses webhooks for supported trackers (e.g., GitLab) and falls back to polling for other trackers.
+SpaceSync includes a service that continuously updates the database with changes from trackers. The service uses polling for all trackers.
 
 **Starting the service:**
 
@@ -145,10 +145,7 @@ Configure the service in your `.env` file:
 
 ```
 # Service configuration
-SERVICE_HOST=0.0.0.0           # Host for webhook server
-SERVICE_PORT=5000              # Port for webhook server
-SERVICE_POLL_INTERVAL=300      # Poll interval in seconds for non-webhook trackers
-SERVICE_WEBHOOK_ENABLED=true   # Enable webhook services where supported
+SERVICE_POLL_INTERVAL=90       # Poll interval in seconds for all trackers
 ```
 
 ## Development
