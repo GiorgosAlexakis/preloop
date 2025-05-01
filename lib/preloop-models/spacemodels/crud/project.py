@@ -115,7 +115,7 @@ class CRUDProject(CRUDBase[Project]):
             db.query(Project)
             .filter(
                 (Project.identifier == identifier_or_name)
-                | (Project.name == identifier_or_name)
+                | (func.lower(Project.name) == func.lower(identifier_or_name))
             )
             .all()
         )
