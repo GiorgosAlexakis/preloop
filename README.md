@@ -24,18 +24,17 @@ SpaceBridge is a RESTful API server that serves as a unified interface between S
 
 ## Architecture
 
-SpaceBridge is designed with a separation of concerns:
+SpaceBridge is designed with a modular architecture:
 
-1. **SpaceBridge** (this repository): A RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
+1.  **SpaceBridge** (this repository): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
+2.  **SpaceModels** (submodule `./SpaceModels`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
+3.  **SpaceSync** (submodule `./spacesync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
+4.  **SpaceBridge-MCP** (separate repository): A Model Context Protocol (MCP) server that uses stdio transport and serves as a bridge between MCP clients (like Claude Code) and the SpaceBridge API.
 
-2. **SpaceSync** (separate repository): A service that polls configured issue trackers added and indexes issues, projects and organizations in our DB. Also updates the issue embeddings.
-
-3. **SpaceBridge-MCP** (separate repository): A Model Context Protocol (MCP) server that uses stdio transport and serves as a bridge between MCP clients (like Claude Code) and the SpaceBridge API.
-
-This separation allows:
-- Maximum compatibility with MCP clients like Claude Code (which currently don't support SSE transport)
-- Clean separation between database access (SpaceBridge) and MCP protocol handling (SpaceBridge-MCP)
-- Direct HTTP API access for applications that don't need MCP
+This structure allows:
+- Clear separation of concerns between the API layer, data models, synchronization logic, and MCP integration.
+- Independent development and versioning of the core components.
+- Direct HTTP API access for applications that don't need MCP.
 
 ## Installation
 
@@ -60,7 +59,6 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
 # Set up the database
-# For development, it will fall back to SQLite automatically
 
 # Configure your environment
 cp .env.example .env
@@ -100,13 +98,24 @@ For more details about the Helm chart, see the [chart README](./helm/spacebridge
 
 ### Starting the Server
 
-```bash
-# Start the SpaceBridge API server
-python -m spacebridge.server
+1.  **Set Environment Variables:**
+    Ensure you have a `.env` file configured with the necessary environment variables (see `.env.example`). Key variables include database connection details, API keys, etc.
 
-# With custom options
-python -m spacebridge.server --host 0.0.0.0 --port 8000 --debug
-```
+2.  **Start SpaceBridge API:**
+    Use the provided script to start the main API server:
+    ```bash
+    ./start.sh
+    ```
+    This script typically handles activating the virtual environment and running the server (e.g., `python -m spacebridge.server`).
+
+3.  **Start SpaceSync Service:**
+    In a separate terminal, start the synchronization service to begin indexing data from your configured trackers:
+    ```bash
+    # Activate the virtual environment if not already active
+    # source .venv/bin/activate
+    spacesync scan all
+    ```
+    This command tells SpaceSync to scan all configured trackers and update the database.
 
 ### API Documentation
 

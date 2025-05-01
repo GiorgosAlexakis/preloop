@@ -209,6 +209,183 @@ class GitLabClient(TrackerInterface):
             url=project_data["web_url"],
         )
 
+    async def get_groups_and_projects(self) -> List[Dict[str, Any]]:
+        """Fetch groups and projects the user has access to, structured for UI."""
+        results = []
+        processed_project_ids = set()
+
+        async def _fetch_paginated(
+            path: str, params: Optional[Dict[str, Any]] = None
+        ) -> List[Dict[str, Any]]:
+            """Helper to fetch all pages for a GitLab endpoint."""
+            all_items = []
+            page = 1
+            if params is None:
+                params = {}
+            # Use a reasonable default per_page, GitLab max is 100
+            params["per_page"] = params.get("per_page", 100)
+
+            while True:
+                current_params = params.copy()
+                current_params["page"] = page
+                logger.debug(
+                    f"Fetching page {page} from {path} with params: {current_params}"
+                )
+                try:
+                    # NOTE: Assuming self._request is available as this is now a class method
+                    page_items = await self._request("GET", path, params=current_params)
+                    if not page_items:
+                        logger.debug(f"No more items found on page {page} for {path}.")
+                        break
+                    logger.debug(
+                        f"Found {len(page_items)} items on page {page} for {path}."
+                    )
+                    all_items.extend(page_items)
+                    # Check if this was the last page based on items returned vs per_page requested
+                    if len(page_items) < current_params["per_page"]:
+                        logger.debug(
+                            f"Last page detected for {path} (returned {len(page_items)} < requested {current_params['per_page']})."
+                        )
+                        break
+                    page += 1
+                    # Safety break after a large number of pages to prevent infinite loops
+                    if page > 100:  # Adjust limit as needed
+                        logger.warning(
+                            f"Stopping pagination for {path} after 100 pages."
+                        )
+                        break
+                except httpx.HTTPStatusError as e:
+                    logger.error(
+                        f"HTTP error fetching paginated data from {path} (page {page}): {e.response.status_code} - {e.response.text}"
+                    )
+                    # Stop pagination on error for this path
+                    break
+                except Exception as e:
+                    logger.exception(
+                        f"Unexpected error fetching paginated data from {path} (page {page})"
+                    )
+                    # Stop pagination on unexpected error
+                    break
+            logger.debug(
+                f"Finished fetching paginated data for {path}. Total items: {len(all_items)}"
+            )
+            return all_items
+
+        # 1. Fetch groups the user is a member of (min_access_level=10 -> Guest access)
+        logger.info("Fetching GitLab groups (min_access_level=10)...")
+        groups_params = {"min_access_level": 10}
+        groups = await _fetch_paginated("/groups", params=groups_params)
+        logger.info(f"Found {len(groups)} groups accessible by the user.")
+
+        # 2. Fetch projects for each group
+        for group in groups:
+            group_id = group["id"]
+            group_name = group["name"]
+            group_path = group[
+                "path"
+            ]  # Use 'path' as it's the unique identifier in URLs
+            logger.info(
+                f"Fetching projects for group: '{group_name}' (Path: {group_path}, ID: {group_id})"
+            )
+            # Fetch projects within the group the user can see
+            group_projects_path = f"/groups/{group_id}/projects"
+            # We don't need extra params here, default visibility/membership applies
+            group_projects = await _fetch_paginated(group_projects_path)
+            logger.info(
+                f"Found {len(group_projects)} projects in group '{group_name}'."
+            )
+
+            projects_list = []
+            for proj in group_projects:
+                project_id = proj["id"]
+                projects_list.append(
+                    {
+                        "id": project_id,
+                        "name": proj["name"],
+                        "path_with_namespace": proj["path_with_namespace"],
+                        "identifier": str(
+                            project_id
+                        ),  # Use string ID as identifier for ProjectIdentifier
+                    }
+                )
+                processed_project_ids.add(project_id)  # Track processed projects
+
+            # Only add the group entry if it contains projects
+            if projects_list:
+                results.append(
+                    {
+                        "group_id": group_id,  # Keep original ID for reference if needed
+                        "group_name": group_name,
+                        "group_path": group_path,  # Use path for OrganizationGroup ID
+                        "projects": projects_list,
+                    }
+                )
+            else:
+                logger.info(
+                    f"Skipping group '{group_name}' as no accessible projects were found within it."
+                )
+
+        # 3. Fetch projects owned directly by the user (these might not be in any fetched groups)
+        logger.info("Fetching user-owned GitLab projects...")
+        user_projects_params = {"owned": "true"}
+        user_projects = await _fetch_paginated("/projects", params=user_projects_params)
+        logger.info(f"Found {len(user_projects)} directly owned projects.")
+
+        user_specific_projects = []
+        user_name = "Your Projects"  # Default name
+        user_path = "user"  # Default path/ID
+        try:
+            # Attempt to get user info for better naming
+            # NOTE: Assuming self._request is available
+            user_info = await self._request("GET", "/user")
+            user_name = user_info.get("name", user_name)
+            # Use username as the 'path' for the user's personal namespace group
+            user_path = user_info.get("username", user_path)
+            logger.info(f"Using user info: Name='{user_name}', Path='{user_path}'")
+        except Exception as e:
+            logger.warning(
+                f"Could not fetch user info to name user's project group: {e}"
+            )
+
+        for proj in user_projects:
+            project_id = proj["id"]
+            # Only add projects not already processed via groups
+            if project_id not in processed_project_ids:
+                logger.debug(
+                    f"Adding user-owned project '{proj['name']}' (ID: {project_id}) not found in groups."
+                )
+                user_specific_projects.append(
+                    {
+                        "id": project_id,
+                        "name": proj["name"],
+                        "path_with_namespace": proj["path_with_namespace"],
+                        "identifier": str(project_id),  # Use string ID as identifier
+                    }
+                )
+            else:
+                logger.debug(
+                    f"Skipping user-owned project '{proj['name']}' (ID: {project_id}) as it was already processed in a group."
+                )
+
+        # Add the "User's Projects" group if it contains any projects not listed elsewhere
+        if user_specific_projects:
+            logger.info(
+                f"Adding '{user_name}' group with {len(user_specific_projects)} projects."
+            )
+            results.append(
+                {
+                    "group_id": "user",  # Special identifier for the user's personal space
+                    "group_name": user_name,
+                    "group_path": user_path,  # Use username or 'user' as the ID for OrganizationGroup
+                    "projects": user_specific_projects,
+                }
+            )
+
+        logger.info(
+            f"Finished fetching GitLab groups and projects. Returning {len(results)} group/user entries."
+        )
+        return results
+
     def _parse_gitlab_issue(self, issue_data: Dict[str, Any]) -> Issue:
         """Parse a GitLab issue into our standard format.
 
@@ -498,17 +675,22 @@ class GitLabClient(TrackerInterface):
 
             for related in related_data:
                 link_type = "relates_to"  # GitLab doesn't provide the type in API
+                related_issue_data = related["issue"]
                 relation = IssueRelation(
-                    relation_type=link_type,
-                    issue_id=str(related["id"]),
-                    issue_key=f"{related['references']['full']}",
-                    summary=related["title"],
+                    id=str(related["id"]),
+                    type=link_type,
+                    target_issue_id=str(related_issue_data["id"]),
+                    target_issue_key=f"{self.project_id}#{related_issue_data['iid']}",
                 )
                 relations.append(relation)
-
             issue.relations = relations
-        except Exception as e:
-            logger.warning(f"Failed to get issue links: {e}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.warning(
+                    f"Issue links endpoint not found for issue {issue_iid}. Skipping relations."
+                )
+            else:
+                raise
 
         return issue
 
@@ -516,49 +698,54 @@ class GitLabClient(TrackerInterface):
         """Create a new GitLab issue.
 
         Args:
-            project_key: Project key (ignored for GitLab).
+            project_key: Project key (ignored).
             issue_data: Issue data.
 
         Returns:
             Created issue.
         """
-        # Build the request body
+        # Build API path
+        issues_path = f"/projects/{self.project_id.replace('/', '%2F')}/issues"
+
+        # Build request body
         body = {
             "title": issue_data.title,
-            "description": issue_data.description or "",
+            "description": issue_data.description,
         }
 
-        # Set assignee if provided
-        if issue_data.assignee:
-            body["assignee_ids"] = [
-                issue_data.assignee
-            ]  # GitLab requires user IDs, not usernames
-
-        # Set labels if provided
+        # Add labels if provided
         if issue_data.labels:
             body["labels"] = ",".join(issue_data.labels)
 
-        # Set due date if in custom fields
-        if issue_data.custom_fields and "due_date" in issue_data.custom_fields:
-            body["due_date"] = issue_data.custom_fields["due_date"]
+        # Add assignee if provided (lookup user ID by username)
+        if issue_data.assignee:
+            user_id = await self._get_user_id_by_username(issue_data.assignee)
+            if user_id:
+                body["assignee_ids"] = [user_id]
+            # else: User not found or error occurred, warning logged in helper
 
-        # Set milestone if in custom fields
-        if issue_data.custom_fields and "milestone_id" in issue_data.custom_fields:
-            body["milestone_id"] = issue_data.custom_fields["milestone_id"]
+        # Add priority label if provided
+        if issue_data.priority:  # Use 'priority' instead of 'priority_id'
+            # Assuming priority is a string like 'high', 'medium', 'low' etc.
+            # GitLab uses labels for priority, format: priority::value
+            priority_label = f"priority::{issue_data.priority}"
+            if "labels" in body:
+                body["labels"] += f",{priority_label}"
+            else:
+                body["labels"] = priority_label
 
-        # Create the issue
-        issues_path = f"/projects/{self.project_id.replace('/', '%2F')}/issues"
-        issue_data = await self._request("POST", issues_path, data=body)
+        # Make the request
+        created_issue_data = await self._request("POST", issues_path, data=body)
 
-        # Parse and return the issue
-        return self._parse_gitlab_issue(issue_data)
+        # Parse and return the created issue
+        return self._parse_gitlab_issue(created_issue_data)
 
     async def update_issue(self, issue_id: str, issue_data: IssueUpdate) -> Issue:
         """Update an existing GitLab issue.
 
         Args:
             issue_id: Issue ID or IID.
-            issue_data: Updated issue data.
+            issue_data: Issue update data.
 
         Returns:
             Updated issue.
@@ -567,50 +754,60 @@ class GitLabClient(TrackerInterface):
         issue_iid = issue_id
         if "#" in issue_id:
             issue_iid = issue_id.split("#")[-1]
-        if "/" in issue_iid:
-            issue_iid = issue_iid.split("/")[-1]
 
-        # Build the request body
-        body = {}
-
-        if issue_data.title is not None:
-            body["title"] = issue_data.title
-
-        if issue_data.description is not None:
-            body["description"] = issue_data.description
-
-        if issue_data.status is not None:
-            # GitLab uses state_event instead of state
-            if issue_data.status.lower() == "closed":
-                body["state_event"] = "close"
-            elif issue_data.status.lower() in ["open", "opened"]:
-                body["state_event"] = "reopen"
-
-        if issue_data.assignee is not None:
-            if issue_data.assignee:
-                body["assignee_ids"] = [issue_data.assignee]
-            else:
-                body["assignee_ids"] = []  # Unassign
-
-        if issue_data.labels is not None:
-            body["labels"] = ",".join(issue_data.labels) if issue_data.labels else ""
-
-        # Handle custom fields
-        if issue_data.custom_fields:
-            if "due_date" in issue_data.custom_fields:
-                body["due_date"] = issue_data.custom_fields["due_date"]
-
-            if "milestone_id" in issue_data.custom_fields:
-                body["milestone_id"] = issue_data.custom_fields["milestone_id"]
-
-        # Update the issue
+        # Build API path
         issue_path = (
             f"/projects/{self.project_id.replace('/', '%2F')}/issues/{issue_iid}"
         )
-        issue_data = await self._request("PUT", issue_path, data=body)
 
-        # Parse and return the issue
-        return self._parse_gitlab_issue(issue_data)
+        # Build request body
+        body = {}
+        if issue_data.title is not None:
+            body["title"] = issue_data.title
+        if issue_data.description is not None:
+            body["description"] = issue_data.description
+        if issue_data.status_id is not None:
+            body["state_event"] = (
+                "close" if issue_data.status_id == "closed" else "reopen"
+            )
+        if issue_data.assignee_id is not None:
+            body["assignee_ids"] = [int(issue_data.assignee_id)]
+        if issue_data.labels is not None:
+            body["labels"] = ",".join(issue_data.labels)
+
+        # Handle priority update (add/remove priority labels)
+        if issue_data.priority_id is not None:
+            # Get current labels first
+            current_issue = await self.get_issue(issue_id)
+            current_labels = set(current_issue.labels)
+
+            # Remove existing priority labels
+            priority_prefixes = [
+                "priority::critical",
+                "priority::high",
+                "priority::medium",
+                "priority::low",
+            ]
+            labels_to_remove = {
+                label for label in current_labels if label.lower() in priority_prefixes
+            }
+            current_labels -= labels_to_remove
+
+            # Add new priority label if not None
+            if issue_data.priority_id:
+                new_priority_label = f"priority::{issue_data.priority_id}"
+                current_labels.add(new_priority_label)
+
+            body["labels"] = ",".join(list(current_labels))
+
+        # Make the request only if there are changes
+        if not body:
+            return await self.get_issue(issue_id)
+
+        updated_issue_data = await self._request("PUT", issue_path, data=body)
+
+        # Parse and return the updated issue
+        return self._parse_gitlab_issue(updated_issue_data)
 
     async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
         """Add a comment to a GitLab issue.
@@ -626,82 +823,81 @@ class GitLabClient(TrackerInterface):
         issue_iid = issue_id
         if "#" in issue_id:
             issue_iid = issue_id.split("#")[-1]
-        if "/" in issue_iid:
-            issue_iid = issue_iid.split("/")[-1]
 
-        # Add the comment
+        # Build API path
         notes_path = (
             f"/projects/{self.project_id.replace('/', '%2F')}/issues/{issue_iid}/notes"
         )
-        note_data = await self._request("POST", notes_path, data={"body": comment})
+
+        # Build request body
+        body = {"body": comment}
+
+        # Make the request
+        comment_data = await self._request("POST", notes_path, data=body)
 
         # Parse and return the comment
         return IssueComment(
-            id=str(note_data["id"]),
-            body=note_data["body"],
+            id=str(comment_data["id"]),
+            body=comment_data["body"],
             created_at=datetime.fromisoformat(
-                note_data["created_at"].replace("Z", "+00:00")
+                comment_data["created_at"].replace("Z", "+00:00")
             ),
             updated_at=datetime.fromisoformat(
-                note_data["updated_at"].replace("Z", "+00:00")
+                comment_data["updated_at"].replace("Z", "+00:00")
             ),
             author=IssueUser(
-                id=str(note_data["author"]["id"]),
-                name=note_data["author"]["name"],
+                id=str(comment_data["author"]["id"]),
+                name=comment_data["author"]["name"],
                 email=None,
-                avatar_url=note_data["author"]["avatar_url"],
+                avatar_url=comment_data["author"]["avatar_url"],
             ),
         )
 
     async def add_relation(
-        self, issue_id: str, related_issue_id: str, relation_type: str
-    ) -> bool:
+        self, issue_id: str, target_issue_id: str, relation_type: str
+    ) -> None:
         """Add a relation between GitLab issues.
 
-        GitLab supports issue links but doesn't have relation types.
+        Note: GitLab API for issue links might require specific permissions
+              and might have limitations on relation types.
 
         Args:
-            issue_id: Source issue ID.
-            related_issue_id: Target issue ID.
-            relation_type: Relation type (ignored in GitLab).
-
-        Returns:
-            Whether the operation was successful.
+            issue_id: Source issue ID or IID.
+            target_issue_id: Target issue ID or IID.
+            relation_type: Type of relation (e.g., 'relates_to', 'blocks', 'is_blocked_by').
+                           GitLab API might only support 'relates_to'.
         """
         # Extract issue IIDs
-        issue_iid = issue_id
+        source_iid = issue_id
         if "#" in issue_id:
-            issue_iid = issue_id.split("#")[-1]
-        if "/" in issue_iid:
-            issue_iid = issue_iid.split("/")[-1]
+            source_iid = issue_id.split("#")[-1]
 
-        related_iid = related_issue_id
-        if "#" in related_issue_id:
-            related_iid = related_issue_id.split("#")[-1]
-        if "/" in related_iid:
-            related_iid = related_iid.split("/")[-1]
+        target_iid = target_issue_id
+        if "#" in target_issue_id:
+            target_iid = target_issue_id.split("#")[-1]
 
-        # GitLab issue links work across projects, so we need project path for target issue
-        target_project_id = self.project_id  # Default to same project
-
-        # Check if the related issue contains project info
-        if "/" in related_issue_id and "#" in related_issue_id:
-            parts = related_issue_id.split("#")
-            target_project_id = parts[0]
-            related_iid = parts[1]
-
-        # Add the link
+        # Build API path
         link_path = (
-            f"/projects/{self.project_id.replace('/', '%2F')}/issues/{issue_iid}/links"
+            f"/projects/{self.project_id.replace('/', '%2F')}/issues/{source_iid}/links"
         )
+
+        # Build request body
+        # GitLab API expects the target project ID and target issue IID
+        # Assuming the target issue is in the same project for simplicity
         link_data = {
-            "target_project_id": target_project_id.replace("/", "%2F"),
-            "target_issue_iid": related_iid,
+            "target_project_id": self.project_id,
+            "target_issue_iid": target_iid,
+            # "link_type": relation_type # GitLab API might not support this directly
         }
 
+        # Make the request
         try:
             await self._request("POST", link_path, data=link_data)
-            return True
-        except Exception as e:
-            logger.exception(f"Failed to add issue link: {e}")
-            return False
+            logger.info(
+                f"Successfully added relation from issue {source_iid} to {target_iid}"
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Failed to add relation: {e.response.status_code} - {e.response.text}"
+            )
+            raise

@@ -140,6 +140,87 @@ class GitHubClient(TrackerInterface):
                 message=f"Failed to connect to GitHub: {str(e)}",
             )
 
+    async def get_repositories_grouped_by_owner(self) -> List[Dict[str, Any]]:
+        """Fetch repositories accessible by the authenticated user, grouped by owner.
+
+        Returns:
+            List of dictionaries, each representing an owner and their repositories.
+        """
+        all_repos = []
+        page = 1
+        per_page = 100
+        path = "/user/repos"
+
+        while True:
+            params = {
+                "type": "all",
+                "per_page": per_page,
+                "page": page,
+            }
+            try:
+                logger.debug(f"Fetching page {page} of user repositories from GitHub.")
+                repos_page = await self._request("GET", path, params=params)
+                if not repos_page:
+                    logger.debug(
+                        "No more repositories found, breaking pagination loop."
+                    )
+                    break
+                all_repos.extend(repos_page)
+                if len(repos_page) < per_page:
+                    logger.debug("Last page of repositories reached.")
+                    break
+                page += 1
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Error fetching user repositories from GitHub: {e}")
+                # If it's a 404 or similar, maybe the user has no repos? Break gracefully.
+                if e.response.status_code in [404, 403, 401]:
+                    logger.warning(
+                        f"Received {e.response.status_code} fetching repos, stopping."
+                    )
+                    break
+                raise  # Re-raise other errors
+            except Exception as e:
+                logger.exception("Unexpected error fetching user repositories.")
+                raise
+
+        logger.info(f"Fetched a total of {len(all_repos)} repositories.")
+
+        grouped_repos: Dict[str, Dict[str, Any]] = {}
+        for repo in all_repos:
+            owner_login = repo["owner"]["login"]
+            owner_id = repo["owner"]["id"]
+            owner_type = repo["owner"]["type"]  # "User" or "Organization"
+
+            if owner_login not in grouped_repos:
+                grouped_repos[owner_login] = {
+                    "owner_login": owner_login,
+                    "owner_id": owner_id,
+                    "owner_type": owner_type,
+                    "repositories": [],
+                }
+
+            repo_info = {
+                "id": repo["id"],
+                "name": repo["name"],
+                "full_name": repo["full_name"],
+                "identifier": repo["full_name"],  # Use full_name as identifier
+                "description": repo.get("description"),
+                "url": repo.get("html_url"),
+                "is_private": repo.get("private", False),
+                "updated_at": repo.get("updated_at"),
+            }
+            grouped_repos[owner_login]["repositories"].append(repo_info)
+
+        # Sort repositories within each group by name
+        for owner_data in grouped_repos.values():
+            owner_data["repositories"].sort(key=lambda r: r["name"].lower())
+
+        # Sort groups by owner login name
+        result = sorted(grouped_repos.values(), key=lambda g: g["owner_login"].lower())
+        logger.debug(f"Grouped repositories into {len(result)} owners.")
+
+        return result
+
     async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
         """Get metadata about a GitHub repository.
 

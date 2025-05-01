@@ -3,7 +3,6 @@
 from typing import Generator
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 # Try to import FastAPI, but don't fail if it's not available
@@ -18,13 +17,6 @@ except ImportError:
 # from spacebridge.api.app import create_app
 # from spacebridge.db.base import Base
 # from spacebridge.db.session import get_db
-
-
-@pytest.fixture(scope="session")
-def db_engine():
-    """Create a database engine for testing."""
-    # Use an in-memory SQLite database for tests
-    return create_engine("sqlite:///:memory:")
 
 
 @pytest.fixture(scope="session")

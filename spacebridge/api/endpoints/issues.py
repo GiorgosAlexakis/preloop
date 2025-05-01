@@ -11,6 +11,8 @@ from spacebridge.schemas.issue import (
     IssueResponse,
     IssueUpdate as ApiIssueUpdate,
 )  # Renamed to avoid conflict
+from spacemodels.models.account import Account
+
 from spacemodels.crud import (
     CRUDIssue,
     CRUDOrganization,
@@ -27,6 +29,7 @@ from spacebridge.trackers.base import (
     IssueCreate,
     IssueUpdate,
 )  # Import base tracker schemas
+from spacebridge.api.auth import get_current_active_user  # Import user dependency
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
@@ -50,20 +53,24 @@ router = APIRouter()
 # Helper Functions
 
 
-async def get_tracker_client(organization_id: str, project_id: str, db: Session):
-    """Get the appropriate tracker client for the given organization and project.
+async def get_tracker_client(
+    organization_id: str, project_id: str, db: Session, current_user: Account
+):
+    """Get the appropriate tracker client for the given organization and project,
+    ensuring the current user has access.
 
     Args:
         organization_id: The organization ID or identifier.
         project_id: The project ID or identifier.
         db: Database session.
+        current_user: The authenticated user account.
 
     Returns:
         A tracker client instance.
 
     Raises:
-        HTTPException: If the organization or project is not found, or if a tracker
-            client cannot be created.
+        HTTPException: If the organization or project is not found, if the user
+            does not have access, or if a tracker client cannot be created.
     """
     # Check if organization_id is a UUID or an identifier
     if len(organization_id) == 36:  # Simple UUID check
@@ -94,12 +101,52 @@ async def get_tracker_client(organization_id: str, project_id: str, db: Session)
             status_code=500, detail="Organization has no associated tracker."
         )
 
+    # --- Authorization Check ---
+    if tracker.account_id != current_user.id:
+        logger.warning(
+            f"Access denied: User {current_user.username} (Account ID: {current_user.id}) "
+            f"attempted to access tracker {tracker.id} (Account ID: {tracker.account_id})."
+        )
+        raise HTTPException(
+            status_code=403, detail="Forbidden: Access denied to this resource."
+        )
+    # --- End Authorization Check ---
+
+    # --- Project Selection Check ---
+    project_identifier = project.identifier  # Use the resolved project's identifier
+    included_list = set(tracker.included_project_identifiers or [])
+    excluded_list = set(tracker.excluded_project_identifiers or [])
+    has_includes = bool(included_list)
+
+    logger.debug(
+        f"Checking project '{project_identifier}' against tracker {tracker.id} rules: "
+        f"includes={included_list}, excludes={excluded_list}"
+    )
+
+    if project_identifier in excluded_list:
+        logger.warning(
+            f"Access denied: Project '{project_identifier}' is explicitly excluded by tracker {tracker.id}."
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: Project '{project.name}' is excluded.",
+        )
+
+    if has_includes and project_identifier not in included_list:
+        logger.warning(
+            f"Access denied: Project '{project_identifier}' is not in the inclusion list for tracker {tracker.id}."
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: Project '{project.name}' is not included for this tracker.",
+        )
+    # --- End Project Selection Check ---
+
     tracker_type = tracker.tracker_type
 
     # --- Assemble the full configuration ---
     # Start with project-specific tracker settings
     full_config: Dict[str, Any] = project.tracker_settings or {}
-
     # Add credentials from the Tracker model, structured as the factory expects
     full_config["credentials"] = {
         "token": tracker.api_key,
@@ -129,16 +176,8 @@ async def get_tracker_client(organization_id: str, project_id: str, db: Session)
                 or project.identifier
             )
     elif tracker_type == "github":
-        if "owner" not in full_config:
-            full_config["owner"] = (project.tracker_settings or {}).get("owner") or (
-                project.meta_data or {}
-            ).get("owner")
-        if "repo" not in full_config:
-            full_config["repo"] = (
-                (project.tracker_settings or {}).get("repo")
-                or (project.meta_data or {}).get("repo")
-                or project.identifier
-            )  # Use identifier as repo fallback if owner exists
+        full_config["owner"] = organization.name
+        full_config["repo"] = project.name
     elif tracker_type == "jira":
         # Jira might need project_key in config for some operations, add if available
         if "project_key" not in full_config:
@@ -198,15 +237,24 @@ async def search_issues(
     ),
     assignee: Optional[str] = Query(None, description="Filter by assignee"),
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
     """
     Search for issues within a project using text query and optional similarity search.
-    (Code unchanged from previous version)
+    Requires authentication and checks user access.
     """
     try:
         # Resolve organization and project using either ID, name, or identifier
-        from spacemodels.crud import crud_organization, crud_project
+        from spacemodels.crud import crud_organization, crud_project, crud_tracker
 
+        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        tracker_ids = [t.id for t in user_trackers]
+
+        if not tracker_ids:
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+        # Get Issues linked to the user's trackers
+        issues = db.query(Issue).filter(Issue.tracker_id.in_(tracker_ids))
         # Process organization parameters
         org = None
         org_id = None
@@ -235,6 +283,29 @@ async def search_issues(
         # Validate project (if project is specified but not found)
         if (project_id or project) and not proj:
             raise HTTPException(status_code=404, detail="Project not found")
+
+        if org and proj and org.id != proj.organization_id:
+            raise HTTPException(
+                status_code=404, detail="Project not found for this organization"
+            )
+        if not org and proj:
+            org = proj.organization
+        # Validate access and get tracker client (even if not used directly for DB search)
+        # This enforces the project selection rules before proceeding.
+        try:
+            await get_tracker_client(org.id, proj.id, db, current_user)
+        except HTTPException as e:
+            # If get_tracker_client raises an error (e.g., 403 Forbidden due to project exclusion),
+            # re-raise it to stop the search.
+            raise e
+        except Exception as e:
+            # Catch potential errors during client creation/validation
+            logger.error(
+                f"Error validating tracker access for search: {e}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail="Error validating tracker access."
+            )
 
         # Create filter object for traditional search
         filter_obj = IssueFilter(query=query, limit=limit)
@@ -268,7 +339,11 @@ async def search_issues(
 
                 # Find similar issues using similarity search
                 similar_issues = crud_issue_embedding.similarity_search(
-                    db, model_id=model_id, query_vector=query_vector, limit=limit
+                    db,
+                    model_id=model_id,
+                    query_vector=query_vector,
+                    limit=limit,
+                    tracker_ids=tracker_ids,
                 )
 
                 # Extract issues and apply filters
@@ -364,24 +439,20 @@ async def search_issues(
             try:
                 from sqlalchemy import or_
 
-                query_builder = db.query(Issue)
-
                 # Filter by project/org
                 if proj:
-                    query_builder = query_builder.filter(Issue.project_id == proj.id)
+                    issues = issues.filter(Issue.project_id == proj.id)
                 elif org:
                     project_ids = [p.id for p in org.projects]
                     if project_ids:
-                        query_builder = query_builder.filter(
-                            Issue.project_id.in_(project_ids)
-                        )
+                        issues = issues.filter(Issue.project_id.in_(project_ids))
                     else:
                         return []  # Org has no projects
 
                 # Apply text query filter
                 if query:
                     search_term = f"%{query}%"
-                    query_builder = query_builder.filter(
+                    issues = issues.filter(
                         or_(
                             Issue.title.ilike(search_term),
                             Issue.description.ilike(search_term),
@@ -390,7 +461,7 @@ async def search_issues(
 
                 # Apply status filter
                 if status:
-                    query_builder = query_builder.filter(Issue.status == status)
+                    issues = issues.filter(Issue.status == status)
 
                 # Apply labels/assignee filters directly in the query if possible
                 # Note: This example assumes simple JSON structure and might need adjustment
@@ -406,9 +477,7 @@ async def search_issues(
                     pass
 
                 # Fetch issues
-                issues_db = (
-                    query_builder.order_by(Issue.updated_at.desc()).limit(limit).all()
-                )
+                issues_db = issues.order_by(Issue.updated_at.desc()).limit(limit).all()
 
                 # Post-fetch filtering (if DB filtering wasn't possible/implemented)
                 if labels and isinstance(filter_obj.labels, list):
@@ -503,8 +572,9 @@ async def search_issues(
 async def create_issue(
     issue: ApiIssueCreate,  # Use the renamed API schema
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ) -> IssueResponse:
-    """Create a new issue in a specified project.
+    """Create a new issue in a specified project. Requires authentication and checks user access.
 
     Supports specifying organization/project by:
     - ID (organization_id/project_id)
@@ -628,8 +698,8 @@ async def create_issue(
                 status_code=500, detail="Failed to resolve organization or project"
             )
 
-        # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org.id, proj.id, db)
+        # Get the tracker client using the resolved IDs, passing the current user for auth check
+        tracker_client = await get_tracker_client(org.id, proj.id, db, current_user)
 
         # Prepare the issue create model using the correct base class
         tracker_issue = IssueCreate(  # Use IssueCreate from base.py
@@ -698,12 +768,24 @@ async def create_issue(
 def get_issue(
     issue_id: str,  # Assume this is the external_id
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
     """Get details of a specific issue using its external ID."""
+
     try:
+        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        tracker_ids = [t.id for t in user_trackers]
+
+        if not tracker_ids:
+            raise HTTPException(status_code=404, detail="No trackers found for user")
+
         # Find the issue by external_id
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
-        issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
+        issue = (
+            db.query(Issue)
+            .filter(Issue.tracker_id.in_(tracker_ids), Issue.external_id == issue_id)
+            .first()
+        )
         # issue = crud_issue.get_by_external_id(db, external_id=issue_id) # Ideal way
         if not issue:
             # Maybe it was the internal ID? Try that as a fallback.
@@ -783,6 +865,7 @@ async def update_issue(
 ) -> IssueResponse:
     """Update an existing issue using its external ID."""
     try:
+        raise HTTPException(status_code=500, detail="Not implemented")
         # Find the issue by external_id to get its context (project/org)
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
         db_issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
@@ -803,7 +886,9 @@ async def update_issue(
             )
 
         # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org_obj.id, proj_obj.id, db)
+        tracker_client = await get_tracker_client(
+            org_obj.id, proj_obj.id, db, current_user
+        )
 
         # Prepare the update data using the base tracker schema
         update_data = {
@@ -854,9 +939,11 @@ async def delete_issue(
     issue_id: str,  # Assume this is the external_id
     # Removed org/project query params, derive from issue_id
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
-    """Delete an issue using its external ID."""
+    """Delete an issue using its external ID. Requires authentication and checks user access."""
     try:
+        raise HTTPException(status_code=500, detail="Not implemented")
         # Find the issue by external_id to get its context (project/org)
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
         db_issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
@@ -882,7 +969,9 @@ async def delete_issue(
             )
 
         # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org_obj.id, proj_obj.id, db)
+        tracker_client = await get_tracker_client(
+            org_obj.id, proj_obj.id, db, current_user
+        )
 
         # Delete the issue via the tracker client using the external ID (issue_id)
         await tracker_client.delete_issue(issue_id)
