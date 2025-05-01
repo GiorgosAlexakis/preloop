@@ -1942,23 +1942,36 @@
                 config = { username: usernameInput.value };
             }
 
-            // Project Scope Data
+            // --- Project Scope Data ---
             const includeFutureProjects = document.getElementById('includeFutureProjects').checked;
-            // Always collect the list of *checked* project identifiers
-            const includedProjectIdentifiers = Array.from(document.querySelectorAll('.project-checkbox:checked'))
-                                                  .map(cb => cb.value);
-            // excludedProjectIdentifiers is not used by the current UI
-            const excludedProjectIdentifiers = null;
+            let includedProjectIdentifiers = null; // Initialize as null
+            let excludedProjectIdentifiers = null; // Initialize as null
 
-            // If includeFutureProjects is true, the backend should ignore includedProjectIdentifiers,
-            // but we send it anyway based on the current UI state.
-            // If includeFutureProjects is false, includedProjectIdentifiers MUST be sent (even if empty).
+            // Get all project identifiers currently rendered in the tree
+            const allProjectCheckboxes = document.querySelectorAll('.project-checkbox');
+            const allProjectIdentifiers = Array.from(allProjectCheckboxes).map(cb => cb.value);
+
+            // Get checked project identifiers
+            const checkedProjectCheckboxes = document.querySelectorAll('.project-checkbox:checked');
+            const checkedProjectIdentifiers = Array.from(checkedProjectCheckboxes).map(cb => cb.value);
+
+            if (includeFutureProjects) {
+                // If including future, calculate EXCLUDED identifiers (all minus checked)
+                excludedProjectIdentifiers = allProjectIdentifiers.filter(id => !checkedProjectIdentifiers.includes(id));
+                // includedProjectIdentifiers remains null
+            } else {
+                // If NOT including future, use the INCLUDED (checked) identifiers
+                includedProjectIdentifiers = checkedProjectIdentifiers;
+                // excludedProjectIdentifiers remains null
+            }
+            // --- End Project Scope Data ---
+
 
             const basePayload = {
                 name,
                 include_future_projects: includeFutureProjects,
-                included_project_identifiers: includedProjectIdentifiers,
-                excluded_project_identifiers: excludedProjectIdentifiers
+                included_project_identifiers: includedProjectIdentifiers, // Use calculated value
+                excluded_project_identifiers: excludedProjectIdentifiers  // Use calculated value
             };
 
             // Add fields specific to add or edit

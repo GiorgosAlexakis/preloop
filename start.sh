@@ -3,6 +3,38 @@
 
 set -e
 
+# Load .env file if it exists and variables are not already set
+ENV_FILE=".env"
+if [ -f "$ENV_FILE" ]; then
+  echo "Loading environment variables from $ENV_FILE"
+  # Read line by line, ignore comments and empty lines
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Remove comments and leading/trailing whitespace
+    line=$(echo "$line" | sed 's/#.*//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    # Skip empty lines
+    if [ -z "$line" ]; then
+      continue
+    fi
+    # Remove potential 'export ' prefix
+    line=$(echo "$line" | sed 's/^export //')
+    # Split KEY=VALUE, handle values with '='
+    KEY=$(echo "$line" | cut -d '=' -f 1)
+    VALUE=$(echo "$line" | cut -d '=' -f 2-)
+    # Check if variable is already set in the environment
+    # Using indirect expansion: ${!KEY}
+    # The condition [ -z "${!KEY}" ] checks if the variable named by KEY is unset or empty.
+    if [ -z "${!KEY}" ]; then
+      # Export if not set
+      export "$KEY=$VALUE"
+      # echo "Exported $KEY from $ENV_FILE" # Optional: uncomment for debugging
+    # else
+      # echo "Skipping $KEY, already set in environment" # Optional: uncomment for debugging
+    fi
+  done < "$ENV_FILE"
+else
+  echo "Warning: $ENV_FILE not found. Skipping."
+fi
+echo "" # Add a blank line for separation
 # Initialize database tables and embedding model idempotently
 echo "Initializing database and embedding model..."
 python -m spacesync.scripts.init_db --force

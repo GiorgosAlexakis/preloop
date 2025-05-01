@@ -158,6 +158,7 @@ async def register_tracker(
         existing_tracker = (
             db.query(Tracker)
             .filter(Tracker.name == name, Tracker.account_id == account.id)
+            .filter(Tracker.is_deleted.is_(False))  # Only check non-deleted trackers
             .first()
         )
 

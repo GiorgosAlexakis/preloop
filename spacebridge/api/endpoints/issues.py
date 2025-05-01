@@ -284,6 +284,12 @@ async def search_issues(
         if (project_id or project) and not proj:
             raise HTTPException(status_code=404, detail="Project not found")
 
+        if org and proj and org.id != proj.organization_id:
+            raise HTTPException(
+                status_code=404, detail="Project not found for this organization"
+            )
+        if not org and proj:
+            org = proj.organization
         # Validate access and get tracker client (even if not used directly for DB search)
         # This enforces the project selection rules before proceeding.
         try:
