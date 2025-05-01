@@ -245,7 +245,7 @@ These prompts use the `search_issues` tool to find relevant issues across your c
   *Searches for issues with specific filters applied (status: open, assignee: current user, project: frontend). Results are pulled from all connected trackers and normalized into a consistent format.*
 
 - **"Find similar issues to the current error I'm seeing with the API timeout"**
-  *Performs a similarity similarity search to find conceptually related issues, even if they don't share the exact same keywords. This leverages embedding-based search to find issues describing similar problems.*
+  *Performs a similarity search to find conceptually related issues, even if they don't share the exact same keywords. This leverages embedding-based search to find issues describing similar problems.*
 
 - **"What's the status of the user profile refactoring task?"**
   *Searches for issues related to user profile refactoring and returns their current status, including any linked issues or dependencies.*

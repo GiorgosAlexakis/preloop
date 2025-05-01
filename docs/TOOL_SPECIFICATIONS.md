@@ -27,7 +27,7 @@
 
 ### 2. `find_duplicate`
 
-**Purpose**: Identifies potential duplicate issues using similarity similarity.
+**Purpose**: Identifies potential duplicate issues using similarity.
 
 **Parameters**:
 - `organization`: String (required) - Organization identifier
