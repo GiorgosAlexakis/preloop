@@ -1,0 +1,210 @@
+body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .navbar {
+            background-color: #343a40;
+        }
+        .main-container {
+            max-width: 1200px;
+            margin: 30px auto;
+        }
+        .page-header {
+            margin-bottom: 30px;
+        }
+        .tracker-card {
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+            transition: transform 0.2s;
+            overflow: hidden;
+        }
+        .tracker-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .tracker-card .card-header {
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tracker-icon {
+            width: 32px;
+            height: 32px;
+            margin-right: 10px;
+        }
+        .btn-primary {
+            background-color: #4a86e8;
+            border-color: #4a86e8;
+        }
+        .btn-primary:hover {
+            background-color: #3a76d8;
+            border-color: #3a76d8;
+        }
+        .btn-outline-primary {
+            color: #4a86e8;
+            border-color: #4a86e8;
+        }
+        .btn-outline-primary:hover {
+            background-color: #4a86e8;
+            border-color: #4a86e8;
+        }
+        .btn-outline-danger {
+            color: #dc3545;
+            border-color: #dc3545;
+        }
+        .btn-outline-danger:hover {
+            background-color: #dc3545;
+            border-color: #dc3545;
+            color: white;
+        }
+        .add-tracker-card {
+            border: 2px dashed #dee2e6;
+            border-radius: 10px;
+            background-color: #fff;
+            margin-bottom: 30px;
+            cursor: pointer;
+            transition: all 0.2s;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+        }
+        .add-tracker-card:hover {
+            border-color: #4a86e8;
+            background-color: #f8f9fa;
+        }
+        .add-icon {
+            font-size: 48px;
+            color: #4a86e8;
+            margin-bottom: 15px;
+        }
+        .no-trackers {
+            text-align: center;
+            padding: 50px 0;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .github-color { color: #24292e; }
+        .gitlab-color { color: #fc6d26; }
+        .jira-color { color: #0052CC; }
+        .badge-github {
+            background-color: #24292e;
+            color: white;
+        }
+        .badge-gitlab {
+            background-color: #fc6d26;
+            color: white;
+        }
+        .badge-jira {
+            background-color: #0052CC;
+            color: white;
+        }
+        .project-list {
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .tracker-stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e9ecef;
+        }
+        .tracker-stats .stat-item {
+            text-align: center;
+        }
+        .tracker-stats .stat-item .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #4a86e8;
+        }
+        .tracker-actions {
+            margin-top: 15px;
+        }
+        .empty-state-icon {
+            font-size: 64px;
+            color: #dee2e6;
+            margin-bottom: 20px;
+        }
+/* Project Selection Tree Styles */
+#projectSelectionTreeContainer {
+    background-color: #f8f9fa; /* Light background for the container */
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem; /* Match Bootstrap's default border-radius */
+    padding: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+    transition: background-color 0.3s ease, opacity 0.3s ease; /* Smooth transition for disabled state */
+}
+
+#projectSelectionTree ul {
+    list-style: none;
+    padding-left: 0; /* Remove default padding */
+}
+
+#projectSelectionTree ul ul {
+    padding-left: 1.5rem; /* Indent nested project lists */
+}
+
+#projectSelectionTree li {
+    margin-bottom: 0.25rem; /* Small spacing between items */
+}
+
+#projectSelectionTree .form-check {
+    margin-bottom: 0.1rem; /* Reduce spacing within form-check */
+}
+
+#projectSelectionTree .form-check-label {
+    font-size: 0.9rem; /* Slightly smaller font for tree items */
+    cursor: pointer; /* Indicate labels are clickable */
+}
+
+#projectSelectionTree .form-check-label.fw-bold {
+    font-weight: 600 !important; /* Ensure org names are bold */
+}
+
+/* Style for disabled state (when includeFutureProjects is checked) */
+#projectSelectionTreeContainer[style*="opacity: 0.7"] { /* Target based on inline style added by JS */
+    background-color: #e9ecef;
+}
+
+#projectSelectionTreeContainer[style*="opacity: 0.7"] .form-check-input:checked {
+    background-color: #adb5bd; /* Grey out checkboxes when disabled but checked */
+    border-color: #adb5bd;
+}
+
+#projectSelectionTreeContainer[style*="opacity: 0.7"] .form-check-label {
+    color: #6c757d; /* Mute label text when disabled */
+}
+
+/* Optional: Style for indeterminate checkboxes (requires JS to set) */
+#projectSelectionTree .form-check-input:indeterminate {
+    background-color: #0d6efd; /* Use primary color for indeterminate state */
+    border-color: #0d6efd;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10h8'/%3e%3c/svg%3e"); /* Minus sign */
+}
+/* Styles for Expand/Collapse Icons */
+#projectSelectionTree .expand-icon {
+    cursor: pointer;
+    transition: transform 0.2s ease-in-out;
+    color: #6c757d; /* Bootstrap secondary color */
+    font-size: 0.9rem; /* Slightly smaller than text */
+    vertical-align: middle;
+}
+
+#projectSelectionTree .expand-icon:hover {
+    color: #0d6efd; /* Bootstrap primary color on hover */
+}
+
+/* Rotate icon when expanded */
+#projectSelectionTree .bi-chevron-down {
+    transform: rotate(90deg);
+}

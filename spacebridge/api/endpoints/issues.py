@@ -11,6 +11,8 @@ from spacebridge.schemas.issue import (
     IssueResponse,
     IssueUpdate as ApiIssueUpdate,
 )  # Renamed to avoid conflict
+from spacemodels.models.account import Account
+
 from spacemodels.crud import (
     CRUDIssue,
     CRUDOrganization,
@@ -27,6 +29,7 @@ from spacebridge.trackers.base import (
     IssueCreate,
     IssueUpdate,
 )  # Import base tracker schemas
+from spacebridge.api.auth import get_current_active_user  # Import user dependency
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
@@ -50,20 +53,24 @@ router = APIRouter()
 # Helper Functions
 
 
-async def get_tracker_client(organization_id: str, project_id: str, db: Session):
-    """Get the appropriate tracker client for the given organization and project.
+async def get_tracker_client(
+    organization_id: str, project_id: str, db: Session, current_user: Account
+):
+    """Get the appropriate tracker client for the given organization and project,
+    ensuring the current user has access.
 
     Args:
         organization_id: The organization ID or identifier.
         project_id: The project ID or identifier.
         db: Database session.
+        current_user: The authenticated user account.
 
     Returns:
         A tracker client instance.
 
     Raises:
-        HTTPException: If the organization or project is not found, or if a tracker
-            client cannot be created.
+        HTTPException: If the organization or project is not found, if the user
+            does not have access, or if a tracker client cannot be created.
     """
     # Check if organization_id is a UUID or an identifier
     if len(organization_id) == 36:  # Simple UUID check
@@ -94,12 +101,52 @@ async def get_tracker_client(organization_id: str, project_id: str, db: Session)
             status_code=500, detail="Organization has no associated tracker."
         )
 
+    # --- Authorization Check ---
+    if tracker.account_id != current_user.id:
+        logger.warning(
+            f"Access denied: User {current_user.username} (Account ID: {current_user.id}) "
+            f"attempted to access tracker {tracker.id} (Account ID: {tracker.account_id})."
+        )
+        raise HTTPException(
+            status_code=403, detail="Forbidden: Access denied to this resource."
+        )
+    # --- End Authorization Check ---
+
+    # --- Project Selection Check ---
+    project_identifier = project.identifier  # Use the resolved project's identifier
+    included_list = set(tracker.included_project_identifiers or [])
+    excluded_list = set(tracker.excluded_project_identifiers or [])
+    has_includes = bool(included_list)
+
+    logger.debug(
+        f"Checking project '{project_identifier}' against tracker {tracker.id} rules: "
+        f"includes={included_list}, excludes={excluded_list}"
+    )
+
+    if project_identifier in excluded_list:
+        logger.warning(
+            f"Access denied: Project '{project_identifier}' is explicitly excluded by tracker {tracker.id}."
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: Project '{project.name}' is excluded.",
+        )
+
+    if has_includes and project_identifier not in included_list:
+        logger.warning(
+            f"Access denied: Project '{project_identifier}' is not in the inclusion list for tracker {tracker.id}."
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: Project '{project.name}' is not included for this tracker.",
+        )
+    # --- End Project Selection Check ---
+
     tracker_type = tracker.tracker_type
 
     # --- Assemble the full configuration ---
     # Start with project-specific tracker settings
     full_config: Dict[str, Any] = project.tracker_settings or {}
-
     # Add credentials from the Tracker model, structured as the factory expects
     full_config["credentials"] = {
         "token": tracker.api_key,
@@ -129,16 +176,8 @@ async def get_tracker_client(organization_id: str, project_id: str, db: Session)
                 or project.identifier
             )
     elif tracker_type == "github":
-        if "owner" not in full_config:
-            full_config["owner"] = (project.tracker_settings or {}).get("owner") or (
-                project.meta_data or {}
-            ).get("owner")
-        if "repo" not in full_config:
-            full_config["repo"] = (
-                (project.tracker_settings or {}).get("repo")
-                or (project.meta_data or {}).get("repo")
-                or project.identifier
-            )  # Use identifier as repo fallback if owner exists
+        full_config["owner"] = organization.name
+        full_config["repo"] = project.name
     elif tracker_type == "jira":
         # Jira might need project_key in config for some operations, add if available
         if "project_key" not in full_config:
@@ -187,8 +226,10 @@ async def search_issues(
     limit: int = Query(
         10, ge=1, le=100, description="Maximum number of issues to return"
     ),
-    semantic: bool = Query(
-        True, description="Whether to use semantic search with vector embeddings"
+    search_type: str = Query(
+        "full_text",
+        enum=["full_text", "similarity"],
+        description="Type of search to perform ('full_text' or 'similarity')",
     ),
     status: Optional[str] = Query(None, description="Filter by issue status"),
     labels: Optional[str] = Query(
@@ -196,15 +237,24 @@ async def search_issues(
     ),
     assignee: Optional[str] = Query(None, description="Filter by assignee"),
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
     """
-    Search for issues within a project using text query and optional semantic search.
-    (Code unchanged from previous version)
+    Search for issues within a project using text query and optional similarity search.
+    Requires authentication and checks user access.
     """
     try:
         # Resolve organization and project using either ID, name, or identifier
-        from spacemodels.crud import crud_organization, crud_project
+        from spacemodels.crud import crud_organization, crud_project, crud_tracker
 
+        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        tracker_ids = [t.id for t in user_trackers]
+
+        if not tracker_ids:
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+        # Get Issues linked to the user's trackers
+        issues = db.query(Issue).filter(Issue.tracker_id.in_(tracker_ids))
         # Process organization parameters
         org = None
         org_id = None
@@ -234,6 +284,29 @@ async def search_issues(
         if (project_id or project) and not proj:
             raise HTTPException(status_code=404, detail="Project not found")
 
+        if org and proj and org.id != proj.organization_id:
+            raise HTTPException(
+                status_code=404, detail="Project not found for this organization"
+            )
+        if not org and proj:
+            org = proj.organization
+        # Validate access and get tracker client (even if not used directly for DB search)
+        # This enforces the project selection rules before proceeding.
+        try:
+            await get_tracker_client(org.id, proj.id, db, current_user)
+        except HTTPException as e:
+            # If get_tracker_client raises an error (e.g., 403 Forbidden due to project exclusion),
+            # re-raise it to stop the search.
+            raise e
+        except Exception as e:
+            # Catch potential errors during client creation/validation
+            logger.error(
+                f"Error validating tracker access for search: {e}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail="Error validating tracker access."
+            )
+
         # Create filter object for traditional search
         filter_obj = IssueFilter(query=query, limit=limit)
         if status:
@@ -243,234 +316,247 @@ async def search_issues(
         if assignee:
             filter_obj.assignee = assignee
 
-        if semantic and query:
-            # Get the active embedding model
-            active_models = crud_embedding_model.get_active(db)
-            model_id = active_models[0].id
-
-            # Generate query vector
-            query_vector = crud_issue_embedding._generate_embedding_vector(
-                query, active_models[0]
-            )
-
-            # 2. Find similar issues using similarity search
-            similar_issues = crud_issue_embedding.similarity_search(
-                db, model_id=model_id, query_vector=query_vector, limit=limit
-            )
-
-            # 3. Extract issues and return them
-            if proj:
-                results = [
-                    (issue, score)
-                    for issue, score in similar_issues
-                    if issue.project_id == proj.id
-                ]
-            else:
-                results = [(issue, score) for issue, score in similar_issues]
-
-            # Apply additional filters if specified
-            if status:
-                results = [
-                    (issue, score) for issue, score in results if issue.status == status
-                ]
-            if labels and isinstance(filter_obj.labels, list):
-                results = [
-                    (issue, score)
-                    for issue, score in results
-                    if issue.meta_data
-                    and "labels" in issue.meta_data
-                    and all(
-                        label in issue.meta_data["labels"]
-                        for label in filter_obj.labels
+        response_items = []
+        if search_type == "similarity" and query:
+            try:
+                # Get the active embedding model
+                active_models = crud_embedding_model.get_active(db)
+                if not active_models:
+                    logger.error(
+                        "similarity search requested, but no active embedding model found."
                     )
-                ]
-            if assignee:
-                results = [
-                    (issue, score)
-                    for issue, score in results
-                    if issue.meta_data
-                    and "assignee" in issue.meta_data
-                    and issue.meta_data["assignee"] == assignee
-                ]
+                    raise HTTPException(
+                        status_code=500,
+                        detail="similarity search cannot be performed: No active embedding model configured.",
+                    )
+                model = active_models[0]
+                model_id = model.id
 
-            # Limit results to requested count
-            results = results[:limit]
-
-            # Convert database Issue models to IssueResponse objects
-            # Need to handle datetime conversion and add required fields
-            response_items = []
-            for issue, score in results:
-                # Format datetime fields as ISO strings
-                created_at_str = (
-                    issue.created_at.isoformat() if issue.created_at else None
-                )
-                updated_at_str = (
-                    issue.updated_at.isoformat() if issue.updated_at else None
+                # Generate query vector
+                query_vector = crud_issue_embedding._generate_embedding_vector(
+                    query, model
                 )
 
-                # Convert metadata to dictionary if it's not already
-                metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
-
-                # Find the project and organization names
-                issue_project = crud_project.get(db, id=issue.project_id)
-                project_name = None
-                organization_name = None
-                if issue_project:
-                    project_name = issue_project.name
-                    issue_org = crud_organization.get(
-                        db, id=issue_project.organization_id
-                    )
-                    if issue_org:
-                        organization_name = issue_org.name
-
-                # Determine the URL
-                external_url = metadata_dict.get("url") or issue.external_url
-
-                # Create response object with updated fields
-                response_item = IssueResponse(
-                    id=issue.external_id or issue.id,  # Prioritize external_id
-                    title=issue.title,
-                    description=issue.description,
-                    status=issue.status,
-                    priority=issue.priority,
-                    organization=organization_name,
-                    project=project_name,
-                    url=external_url
-                    or f"https://spacebridge.io/issues/{issue.id}",  # Final fallback
-                    created_at=created_at_str,
-                    updated_at=updated_at_str,
-                    metadata=metadata_dict,
-                    labels=metadata_dict.get("labels", [])
-                    if isinstance(metadata_dict.get("labels"), list)
-                    else [],
-                    assignee=metadata_dict.get("assignee"),
-                    score=score,  # Include the similarity score in the response
+                # Find similar issues using similarity search
+                similar_issues = crud_issue_embedding.similarity_search(
+                    db,
+                    model_id=model_id,
+                    query_vector=query_vector,
+                    limit=limit,
+                    tracker_ids=tracker_ids,
                 )
-                response_items.append(response_item)
-            return response_items
-        else:
-            # Implement regular text search using SQLAlchemy filtering
-            from sqlalchemy import or_
 
-            query_builder = db.query(Issue)
-
-            # Filter by project if specified
-            if proj:
-                query_builder = query_builder.filter(Issue.project_id == proj.id)
-            # If no project specified but organization is, filter by all projects in that org
-            elif org:
-                project_ids = [p.id for p in org.projects]
-                if project_ids:
-                    query_builder = query_builder.filter(
-                        Issue.project_id.in_(project_ids)
-                    )
+                # Extract issues and apply filters
+                if proj:
+                    results = [
+                        (issue, score)
+                        for issue, score in similar_issues
+                        if issue.project_id == proj.id
+                    ]
                 else:
-                    # Org has no projects, so no issues
-                    return []
+                    results = [(issue, score) for issue, score in similar_issues]
 
-            # Apply text query filter (case-insensitive search in title and description)
-            if query:
-                search_term = f"%{query}%"
-                query_builder = query_builder.filter(
-                    or_(
-                        Issue.title.ilike(search_term),
-                        Issue.description.ilike(search_term),
+                # Apply additional filters if specified
+                if status:
+                    results = [
+                        (issue, score)
+                        for issue, score in results
+                        if issue.status == status
+                    ]
+                if labels and isinstance(filter_obj.labels, list):
+                    results = [
+                        (issue, score)
+                        for issue, score in results
+                        if issue.meta_data
+                        and "labels" in issue.meta_data
+                        and all(
+                            label in issue.meta_data["labels"]
+                            for label in filter_obj.labels
+                        )
+                    ]
+                if assignee:
+                    results = [
+                        (issue, score)
+                        for issue, score in results
+                        if issue.meta_data
+                        and "assignee" in issue.meta_data
+                        and issue.meta_data["assignee"] == assignee
+                    ]
+
+                # Limit results
+                results = results[:limit]
+
+                # Convert to IssueResponse
+                for issue, score in results:
+                    issue_project = crud_project.get(db, id=issue.project_id)
+                    project_name = issue_project.name if issue_project else None
+                    organization_name = None
+                    if issue_project:
+                        issue_org = crud_organization.get(
+                            db, id=issue_project.organization_id
+                        )
+                        if issue_org:
+                            organization_name = issue_org.name
+                    created_at_str = (
+                        issue.created_at.isoformat() if issue.created_at else None
                     )
-                )
-
-            # Apply status filter
-            if status:
-                query_builder = query_builder.filter(Issue.status == status)
-
-            # Apply labels filter (assuming labels are stored in meta_data JSON)
-            if labels and isinstance(filter_obj.labels, list):
-                # This requires JSONB specific query or careful string matching
-                # For simplicity, let's filter in Python for now, or adjust if DB supports JSON query
-                # This might be inefficient for large datasets
-                pass  # Filtering done after fetching for now
-
-            # Apply assignee filter (assuming assignee is stored in meta_data JSON)
-            if assignee:
-                # Similar to labels, requires JSON query or post-fetch filtering
-                pass  # Filtering done after fetching for now
-
-            # Get total count before applying limit/offset
-            total_count = query_builder.count()
-
-            # Apply limit and offset (offset not directly supported by IssueFilter, assuming 0)
-            issues = query_builder.order_by(Issue.updated_at.desc()).limit(limit).all()
-
-            # Post-fetch filtering for labels and assignee (if needed)
-            if labels and isinstance(filter_obj.labels, list):
-                issues = [
-                    issue
-                    for issue in issues
-                    if issue.meta_data
-                    and "labels" in issue.meta_data
-                    and all(
-                        label in issue.meta_data["labels"]
-                        for label in filter_obj.labels
+                    updated_at_str = (
+                        issue.updated_at.isoformat() if issue.updated_at else None
                     )
-                ]
-            if assignee:
-                issues = [
-                    issue
-                    for issue in issues
-                    if issue.meta_data
-                    and "assignee" in issue.meta_data
-                    and issue.meta_data["assignee"] == assignee
-                ]
-
-            # Convert database Issue models to IssueResponse objects
-            response_items = []
-            for issue in issues:
-                # Find the project and organization names (needed for response)
-                issue_project = crud_project.get(db, id=issue.project_id)
-                project_name = (
-                    issue_project.name if issue_project else "Unknown Project"
-                )
-                organization_name = "Unknown Org"
-                if issue_project:
-                    issue_org = crud_organization.get(
-                        db, id=issue_project.organization_id
+                    metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
+                    external_url = metadata_dict.get("url") or issue.external_url
+                    response_items.append(
+                        IssueResponse(
+                            id=issue.external_id or issue.id,
+                            title=issue.title,
+                            description=issue.description,
+                            status=issue.status,
+                            priority=issue.priority,
+                            organization=organization_name,
+                            project=project_name,
+                            url=external_url
+                            or f"https://spacebridge.io/issues/{issue.id}",
+                            created_at=created_at_str,
+                            updated_at=updated_at_str,
+                            metadata=metadata_dict,
+                            labels=metadata_dict.get("labels", [])
+                            if isinstance(metadata_dict.get("labels"), list)
+                            else [],
+                            assignee=metadata_dict.get("assignee"),
+                            score=score,
+                        )
                     )
-                    if issue_org:
-                        organization_name = issue_org.name
 
-                # Format datetime fields as ISO strings
-                created_at_str = (
-                    issue.created_at.isoformat() if issue.created_at else None
+            except Exception as e:
+                logger.error(f"Error during similarity search: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail="An error occurred during similarity search.",
                 )
-                updated_at_str = (
-                    issue.updated_at.isoformat() if issue.updated_at else None
-                )
-                metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
-                external_url = metadata_dict.get("url") or issue.external_url
 
-                response_item = IssueResponse(
-                    id=issue.external_id or issue.id,
-                    title=issue.title,
-                    description=issue.description,
-                    status=issue.status,
-                    priority=issue.priority,
-                    organization=organization_name,
-                    project=project_name,
-                    url=external_url
-                    or f"https://spacebridge.io/issues/{issue.id}",  # Fallback URL
-                    created_at=created_at_str,
-                    updated_at=updated_at_str,
-                    metadata=metadata_dict,
-                    labels=metadata_dict.get("labels", [])
-                    if isinstance(metadata_dict.get("labels"), list)
-                    else [],
-                    assignee=metadata_dict.get("assignee"),
-                )
-                response_items.append(response_item)
+        elif search_type == "full_text":
+            # Perform traditional full-text search
+            try:
+                from sqlalchemy import or_
 
-            # Note: The 'total' count here reflects the count *before* post-fetch filtering.
-            # A more accurate count would require implementing label/assignee filters in the DB query.
-            # For now, we return the limited list based on DB query + post-filtering.
-            return response_items
+                # Filter by project/org
+                if proj:
+                    issues = issues.filter(Issue.project_id == proj.id)
+                elif org:
+                    project_ids = [p.id for p in org.projects]
+                    if project_ids:
+                        issues = issues.filter(Issue.project_id.in_(project_ids))
+                    else:
+                        return []  # Org has no projects
+
+                # Apply text query filter
+                if query:
+                    search_term = f"%{query}%"
+                    issues = issues.filter(
+                        or_(
+                            Issue.title.ilike(search_term),
+                            Issue.description.ilike(search_term),
+                        )
+                    )
+
+                # Apply status filter
+                if status:
+                    issues = issues.filter(Issue.status == status)
+
+                # Apply labels/assignee filters directly in the query if possible
+                # Note: This example assumes simple JSON structure and might need adjustment
+                # based on actual DB capabilities (e.g., using JSONB operators)
+                if labels and isinstance(filter_obj.labels, list):
+                    # Example for PostgreSQL JSONB containment:
+                    # query_builder = query_builder.filter(Issue.meta_data['labels'].contains(filter_obj.labels))
+                    # For now, we keep post-fetch filtering for broader compatibility
+                    pass
+                if assignee:
+                    # Example for PostgreSQL JSONB:
+                    # query_builder = query_builder.filter(Issue.meta_data['assignee'] == assignee)
+                    pass
+
+                # Fetch issues
+                issues_db = issues.order_by(Issue.updated_at.desc()).limit(limit).all()
+
+                # Post-fetch filtering (if DB filtering wasn't possible/implemented)
+                if labels and isinstance(filter_obj.labels, list):
+                    issues_db = [
+                        issue
+                        for issue in issues_db
+                        if issue.meta_data
+                        and "labels" in issue.meta_data
+                        and all(
+                            label in issue.meta_data["labels"]
+                            for label in filter_obj.labels
+                        )
+                    ]
+                if assignee:
+                    issues_db = [
+                        issue
+                        for issue in issues_db
+                        if issue.meta_data
+                        and "assignee" in issue.meta_data
+                        and issue.meta_data["assignee"] == assignee
+                    ]
+
+                # Convert to IssueResponse
+                for issue in issues_db:
+                    issue_project = crud_project.get(db, id=issue.project_id)
+                    project_name = (
+                        issue_project.name if issue_project else "Unknown Project"
+                    )
+                    organization_name = "Unknown Org"
+                    if issue_project:
+                        issue_org = crud_organization.get(
+                            db, id=issue_project.organization_id
+                        )
+                        if issue_org:
+                            organization_name = issue_org.name
+                    created_at_str = (
+                        issue.created_at.isoformat() if issue.created_at else None
+                    )
+                    updated_at_str = (
+                        issue.updated_at.isoformat() if issue.updated_at else None
+                    )
+                    metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
+                    external_url = metadata_dict.get("url") or issue.external_url
+                    response_items.append(
+                        IssueResponse(
+                            id=issue.external_id or issue.id,
+                            title=issue.title,
+                            description=issue.description,
+                            status=issue.status,
+                            priority=issue.priority,
+                            organization=organization_name,
+                            project=project_name,
+                            url=external_url
+                            or f"https://spacebridge.io/issues/{issue.id}",
+                            created_at=created_at_str,
+                            updated_at=updated_at_str,
+                            metadata=metadata_dict,
+                            labels=metadata_dict.get("labels", [])
+                            if isinstance(metadata_dict.get("labels"), list)
+                            else [],
+                            assignee=metadata_dict.get("assignee"),
+                        )
+                    )
+
+            except Exception as e:
+                logger.error(f"Error during full-text search: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500, detail="An error occurred during full-text search."
+                )
+        elif query:  # Handle case where type is invalid but query exists
+            logger.warning(f"Invalid search type specified: {search_type}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid search type: {search_type}. Must be 'full_text' or 'similarity'.",
+            )
+        else:  # No query provided, return empty list or handle as needed
+            pass  # Currently returns empty list by default
+
+        return response_items
     except HTTPException:
         # Re-raise specific HTTP exceptions (like the 404 for project not found)
         raise
@@ -486,8 +572,9 @@ async def search_issues(
 async def create_issue(
     issue: ApiIssueCreate,  # Use the renamed API schema
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ) -> IssueResponse:
-    """Create a new issue in a specified project.
+    """Create a new issue in a specified project. Requires authentication and checks user access.
 
     Supports specifying organization/project by:
     - ID (organization_id/project_id)
@@ -611,8 +698,8 @@ async def create_issue(
                 status_code=500, detail="Failed to resolve organization or project"
             )
 
-        # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org.id, proj.id, db)
+        # Get the tracker client using the resolved IDs, passing the current user for auth check
+        tracker_client = await get_tracker_client(org.id, proj.id, db, current_user)
 
         # Prepare the issue create model using the correct base class
         tracker_issue = IssueCreate(  # Use IssueCreate from base.py
@@ -681,12 +768,24 @@ async def create_issue(
 def get_issue(
     issue_id: str,  # Assume this is the external_id
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
     """Get details of a specific issue using its external ID."""
+
     try:
+        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        tracker_ids = [t.id for t in user_trackers]
+
+        if not tracker_ids:
+            raise HTTPException(status_code=404, detail="No trackers found for user")
+
         # Find the issue by external_id
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
-        issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
+        issue = (
+            db.query(Issue)
+            .filter(Issue.tracker_id.in_(tracker_ids), Issue.external_id == issue_id)
+            .first()
+        )
         # issue = crud_issue.get_by_external_id(db, external_id=issue_id) # Ideal way
         if not issue:
             # Maybe it was the internal ID? Try that as a fallback.
@@ -766,6 +865,7 @@ async def update_issue(
 ) -> IssueResponse:
     """Update an existing issue using its external ID."""
     try:
+        raise HTTPException(status_code=500, detail="Not implemented")
         # Find the issue by external_id to get its context (project/org)
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
         db_issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
@@ -786,7 +886,9 @@ async def update_issue(
             )
 
         # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org_obj.id, proj_obj.id, db)
+        tracker_client = await get_tracker_client(
+            org_obj.id, proj_obj.id, db, current_user
+        )
 
         # Prepare the update data using the base tracker schema
         update_data = {
@@ -837,9 +939,11 @@ async def delete_issue(
     issue_id: str,  # Assume this is the external_id
     # Removed org/project query params, derive from issue_id
     db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
 ):
-    """Delete an issue using its external ID."""
+    """Delete an issue using its external ID. Requires authentication and checks user access."""
     try:
+        raise HTTPException(status_code=500, detail="Not implemented")
         # Find the issue by external_id to get its context (project/org)
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
         db_issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
@@ -865,7 +969,9 @@ async def delete_issue(
             )
 
         # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(org_obj.id, proj_obj.id, db)
+        tracker_client = await get_tracker_client(
+            org_obj.id, proj_obj.id, db, current_user
+        )
 
         # Delete the issue via the tracker client using the external ID (issue_id)
         await tracker_client.delete_issue(issue_id)
