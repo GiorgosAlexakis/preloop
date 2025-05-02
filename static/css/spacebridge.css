@@ -131,6 +131,11 @@ h1, h2, h3, h4, h5, h6 {
     display: inline-block;
 }
 
+.feature-icon img {
+    width: 64px;
+    height: 64px;
+}
+
 .feature-box h3 {
     font-size: 1.2rem;
     margin-bottom: 16px;
