@@ -16,24 +16,24 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto d-flex align-items-center">
-                    <li class="nav-item me-3">
+                <ul class="navbar-nav ms-auto align-items-center">
+                    <li class="nav-item me-lg-3">
                         <a class="nav-link" href="/docs">Docs</a>
                     </li>
                     <!-- Auth navigation - shown based on login status -->
-                    <div id="auth-nav-guest" class="d-flex">
-                        <li class="nav-item me-3">
+                    <span id="auth-nav-guest" class="d-contents">
+                        <li class="nav-item me-lg-3">
                             <a class="nav-link" href="/login">Login</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link ms-3" href="/register" style="border: 1px solid var(--primary); border-radius: 4px; color: var(--primary) !important;">Sign Up</a>
+                            <a class="nav-link ms-lg-3" href="/register" style="border: 1px solid var(--primary); border-radius: 4px; color: var(--primary) !important;">Sign Up</a>
                         </li>
-                    </div>
-                    <div id="auth-nav-user" style="display: none;">
+                    </span>
+                    <span id="auth-nav-user" class="d-contents" style="display: none;">
                         <li class="nav-item">
-                            <a class="nav-link ms-3" href="/dashboard" style="border: 1px solid var(--primary); border-radius: 4px; color: var(--primary) !important;">Dashboard</a>
+                            <a class="nav-link ms-lg-3" href="/dashboard" style="border: 1px solid var(--primary); border-radius: 4px; color: var(--primary) !important;">Dashboard</a>
                         </li>
-                    </div>
+                    </span>
                 </ul>
             </div>
         </div>
