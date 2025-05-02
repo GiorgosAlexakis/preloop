@@ -133,7 +133,6 @@ pip install spacebridge-mcp
 # Then add to Claude Code
 claude mcp add spacebridge $(which spacebridge-mcp-server) \
   --scope user \
-  --env SPACEBRIDGE_API_URL="YOUR_URL" \
   --env SPACEBRIDGE_API_KEY="YOUR_KEY" \
   --env OPENAI_API_KEY="YOUR_OPENAI_KEY"</code></pre>
                                 <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
@@ -175,7 +174,6 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \
     "spacebridge": {
       "command": "$(which spacebridge-mcp-server)",
       "env": {
-        "SPACEBRIDGE_API_URL": "YOUR_URL",
         "SPACEBRIDGE_API_KEY": "YOUR_KEY",
         "OPENAI_API_KEY": "YOUR_OPENAI_KEY"
       }
@@ -228,7 +226,6 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \
       "command": "/full/path/to/spacebridge-mcp-server",
       "args": [],
       "env": {
-        "SPACEBRIDGE_API_URL": "YOUR_URL",
         "SPACEBRIDGE_API_KEY": "YOUR_KEY",
         "OPENAI_API_KEY": "YOUR_OPENAI_KEY"
       }
