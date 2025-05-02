@@ -106,6 +106,10 @@ h1, h2, h3, h4, h5, h6 {
     text-align: left;
 }
 
+#main-diagram {
+    margin-top: 20px;
+}
+
 /* Feature Section */
 .feature-section {
     padding: 80px 0;
@@ -379,5 +383,26 @@ main, section:not(.footer) {
   .navbar-collapse.show .navbar-nav .nav-item a[href="/register"],
   .navbar-collapse.show .navbar-nav .nav-item a[href="/dashboard"] {
     margin-left: 0 !important;
+  }
+
+  /* Center hero text and button on mobile */
+  .hero .col-lg-6 {
+    text-align: center;
+  }
+
+  /* Make hero button larger on mobile */
+  .hero .btn {
+      padding: 0.8rem 1.8rem; /* Increase padding */
+      font-size: 1.1rem; /* Slightly larger font */
+      margin-top: 1rem; /* Add some space above the button */
+  }
+
+  /* Reduce padding and center feature boxes on mobile */
+  .feature-section {
+    padding: 40px 0; /* Reduced vertical padding */
+  }
+
+  .feature-box {
+      text-align: center; /* Center icon, heading, and text */
   }
 }
