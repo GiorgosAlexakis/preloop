@@ -60,6 +60,11 @@ h1, h2, h3, h4, h5, h6 {
     color: var(--primary) !important;
 }
 
+/* Ensure navbar toggler icon is visible on white background */
+.navbar-dark .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%280, 0, 0, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
 /* Hero Section */
 .hero {
     background-color: white;
@@ -101,6 +106,10 @@ h1, h2, h3, h4, h5, h6 {
     text-align: left;
 }
 
+#main-diagram {
+    margin-top: 20px;
+}
+
 /* Feature Section */
 .feature-section {
     padding: 80px 0;
@@ -122,6 +131,11 @@ h1, h2, h3, h4, h5, h6 {
     display: inline-block;
 }
 
+.feature-icon img {
+    width: 64px;
+    height: 64px;
+}
+
 .feature-box h3 {
     font-size: 1.2rem;
     margin-bottom: 16px;
@@ -135,9 +149,15 @@ h1, h2, h3, h4, h5, h6 {
     line-height: 1.7;
 }
 
+/* Video Section */
+.video-section {
+    padding: 60px 0;
+    background-color: #fff;
+}
+
 /* CTA Section */
 .cta-section {
-    padding: 100px 0;
+    padding: 60px 0;
     background-color: var(--primary-light);
     text-align: center;
 }
@@ -348,4 +368,52 @@ main, section:not(.footer) {
 
 .copy-btn:hover {
     opacity: 1;
+}
+
+/* Force navbar items into a row in collapsed view */
+@media (max-width: 991.98px) {
+  .navbar-collapse.show .navbar-nav {
+    flex-direction: row !important; /* Override default column layout */
+    flex-wrap: wrap; /* Allow items to wrap if needed */
+    align-items: center; /* Align items vertically */
+    padding-top: 0.5rem; /* Add some space above */
+  }
+
+  /* Adjust spacing for items in collapsed row */
+  .navbar-collapse.show .navbar-nav .nav-item {
+     margin-right: 0.5rem; /* Space between items */
+     margin-bottom: 0.5rem; /* Space below items if they wrap */
+  }
+
+  /* Remove right margin from the very last visible item in the row */
+  .navbar-collapse.show .navbar-nav > *:last-child > .nav-item:last-child {
+      margin-right: 0;
+  }
+
+  /* Ensure bordered links don't have extra left margin from large screen styles */
+  .navbar-collapse.show .navbar-nav .nav-item a[href="/register"],
+  .navbar-collapse.show .navbar-nav .nav-item a[href="/dashboard"] {
+    margin-left: 0 !important;
+  }
+
+  /* Center hero text and button on mobile */
+  .hero .col-lg-6 {
+    text-align: center;
+  }
+
+  /* Make hero button larger on mobile */
+  .hero .btn {
+      padding: 0.8rem 1.8rem; /* Increase padding */
+      font-size: 1.1rem; /* Slightly larger font */
+      margin-top: 1rem; /* Add some space above the button */
+  }
+
+  /* Reduce padding and center feature boxes on mobile */
+  .feature-section {
+    padding: 40px 0; /* Reduced vertical padding */
+  }
+
+  .feature-box {
+      text-align: center; /* Center icon, heading, and text */
+  }
 }

@@ -16,24 +16,24 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto d-flex align-items-center">
-                    <li class="nav-item me-3">
+                <ul class="navbar-nav ms-auto align-items-center">
+                    <li class="nav-item me-lg-3">
                         <a class="nav-link" href="/docs">Docs</a>
                     </li>
                     <!-- Auth navigation - shown based on login status -->
-                    <div id="auth-nav-guest" class="d-flex">
-                        <li class="nav-item me-3">
+                    <span id="auth-nav-guest" class="d-contents">
+                        <li class="nav-item me-lg-3">
                             <a class="nav-link" href="/login">Login</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link ms-3" href="/register" style="border: 1px solid var(--primary); border-radius: 4px; color: var(--primary) !important;">Sign Up</a>
+                            <a class="nav-link ms-lg-3" href="/register" style="border: 1px solid var(--primary); border-radius: 4px; color: var(--primary) !important;">Sign Up</a>
                         </li>
-                    </div>
-                    <div id="auth-nav-user" style="display: none;">
+                    </span>
+                    <span id="auth-nav-user" class="d-contents" style="display: none;">
                         <li class="nav-item">
-                            <a class="nav-link ms-3" href="/dashboard" style="border: 1px solid var(--primary); border-radius: 4px; color: var(--primary) !important;">Dashboard</a>
+                            <a class="nav-link ms-lg-3" href="/dashboard" style="border: 1px solid var(--primary); border-radius: 4px; color: var(--primary) !important;">Dashboard</a>
                         </li>
-                    </div>
+                    </span>
                 </ul>
             </div>
         </div>
@@ -49,7 +49,7 @@
                     <p class="lead">SpaceBridge provides an open source MCP server and a free REST API that can keep your issue tracker updated while you focus on coding. </p>
                     <a href="/register" class="btn btn-primary btn-lg">Get Started</a>
                 </div>
-                <div class="col-lg-6 text-center">
+                <div id="main-diagram" class="col-lg-6 text-center">
                     <img src="/static/images/diagram.png" alt="SpaceBridge Diagram" class="img-fluid" style="max-width: 90%">
                 </div>
             </div>
@@ -61,25 +61,35 @@
             <div class="row g-4 justify-content-center">
                 <div class="col-md-4">
                     <div class="feature-box">
-                        <div class="feature-icon"><img src="/static/images/similarity.png" alt="Similarity Icon" width="48" height="48"></div>
+                        <div class="feature-icon"><img src="/static/images/similarity.png" alt="Similarity Icon"></div>
                         <h3>Smart Duplicate Detection</h3>
                         <p>Intelligent similarity search finds and prevents duplicate issues, even when terminology varies. </p>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="feature-box">
-                        <div class="feature-icon"><img src="/static/images/context.png" alt="Context Icon" width="48" height="48"></div>
+                        <div class="feature-icon"><img src="/static/images/context.png" alt="Context Icon"></div>
                         <h3>Augment your LLM context</h3>
                         <p>Seamless issue data access that supercharges your AI tools' effectiveness</p>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="feature-box">
-                        <div class="feature-icon"><img src="/static/images/ide.png" alt="IDE Icon" width="48" height="48"></div>
+                        <div class="feature-icon"><img src="/static/images/ide.png" alt="IDE Icon"></div>
                         <h3>Cursor, Windsurf, Claude Code Ready</h3>
                         <p>Streamlined setup process. Use with any agentic system that supports MCP.</p>
                     </div>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Video Section -->
+    <section class="video-section">
+        <div class="container text-center">
+            <!-- Responsive embed container -->
+            <div class="ratio ratio-16x9 mx-auto" style="max-width: 800px;">
+                <iframe src="https://www.youtube.com/embed/SoWBJFGaREw?si=uXjZQXVSwuiNTBc6" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
             </div>
         </div>
     </section>
@@ -133,7 +143,6 @@ pip install spacebridge-mcp
 # Then add to Claude Code
 claude mcp add spacebridge $(which spacebridge-mcp-server) \
   --scope user \
-  --env SPACEBRIDGE_API_URL="YOUR_URL" \
   --env SPACEBRIDGE_API_KEY="YOUR_KEY" \
   --env OPENAI_API_KEY="YOUR_OPENAI_KEY"</code></pre>
                                 <button class="copy-btn position-absolute top-0 end-0 mt-2 me-2 btn btn-sm text-secondary border-0" onclick="copyCode(this)">
@@ -175,7 +184,6 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \
     "spacebridge": {
       "command": "$(which spacebridge-mcp-server)",
       "env": {
-        "SPACEBRIDGE_API_URL": "YOUR_URL",
         "SPACEBRIDGE_API_KEY": "YOUR_KEY",
         "OPENAI_API_KEY": "YOUR_OPENAI_KEY"
       }
@@ -228,7 +236,6 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \
       "command": "/full/path/to/spacebridge-mcp-server",
       "args": [],
       "env": {
-        "SPACEBRIDGE_API_URL": "YOUR_URL",
         "SPACEBRIDGE_API_KEY": "YOUR_KEY",
         "OPENAI_API_KEY": "YOUR_OPENAI_KEY"
       }
@@ -299,7 +306,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \
             </div>
             <hr>
             <div class="text-center">
-                <p class="copyright">&copy; 2025 Spacecode.AI. All rights reserved.</p>
+                <p class="copyright">&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All rights reserved.</p>
             </div>
         </div>
     </footer>
