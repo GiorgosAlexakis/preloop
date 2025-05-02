@@ -135,13 +135,16 @@ def create_project(db_session, create_organization):
     """Create a test project."""
     from spacemodels.crud import crud_project
 
-    def _create_project(name="Test Project", identifier="test-project", **kwargs):
+    def _create_project(
+        name="Test Project", identifier="test-project", slug=None, **kwargs
+    ):
         # Create organization first if not provided
         organization = kwargs.pop("organization", create_organization())
 
         project_data = {
             "name": name,
             "identifier": identifier,
+            "slug": slug,  # Add slug field
             "organization_id": organization.id,
             "is_active": True,
             **kwargs,

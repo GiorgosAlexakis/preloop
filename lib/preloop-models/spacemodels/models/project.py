@@ -20,6 +20,7 @@ class Project(Base):
     # Project details
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     identifier: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    slug: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     description: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
 

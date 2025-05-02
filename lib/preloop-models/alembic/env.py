@@ -15,6 +15,10 @@ from spacemodels.models import issue  # noqa: F401
 from spacemodels.models import organization  # noqa: F401
 from spacemodels.models import project  # noqa: F401
 from spacemodels.models import tracker  # noqa: F401
+from spacemodels.models import account  # noqa: F401
+from spacemodels.models import api_key  # noqa: F401
+from spacemodels.models import api_usage  # noqa: F401
+from spacemodels.models import client_version_log  # noqa: F401
 
 
 # Load .env file from the parent directory (project root)

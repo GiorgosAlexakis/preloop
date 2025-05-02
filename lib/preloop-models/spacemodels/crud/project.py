@@ -13,18 +13,31 @@ from .base import CRUDBase
 class CRUDProject(CRUDBase[Project]):
     """CRUD operations for Project model."""
 
-    def get_by_identifier(
-        self, db: Session, *, identifier: str, organization_id: str
-    ) -> Optional[Project]:
-        """Get project by identifier within an organization."""
-        return (
-            db.query(Project)
-            .filter(
-                Project.identifier == identifier,
-                Project.organization_id == organization_id,
-            )
-            .first()
+    def get_by_slug_or_identifier(
+        self,
+        db: Session,
+        *,
+        slug_or_identifier: str,
+        organization_id: Optional[str] = None,
+    ) -> List[Project]:
+        """
+        Get projects by slug or identifier.
+
+        If organization_id is provided, search is limited to that organization.
+        If organization_id is None, search across all organizations.
+
+        Returns:
+            List of matching Project objects.
+        """
+        query = db.query(Project).filter(
+            (Project.slug == slug_or_identifier)
+            | (Project.identifier == slug_or_identifier)
         )
+
+        if organization_id:
+            query = query.filter(Project.organization_id == organization_id)
+
+        return query.all()
 
     def get_by_name(
         self,
@@ -32,19 +45,24 @@ class CRUDProject(CRUDBase[Project]):
         *,
         name: str,
         organization_id: Optional[str] = None,
-        tracker_id: Optional[str] = None,
-    ) -> Optional[Project]:
+        tracker_id: Optional[
+            str
+        ] = None,  # Keep tracker_id filter for potential future use, though search_issues doesn't use it now
+    ) -> List[Project]:
         """
-        Get project by name with optional organization and tracker filters.
+        Get projects by name with optional organization and tracker filters.
+
+        If organization_id is provided, search is limited to that organization.
+        If organization_id is None, search across all organizations (unless tracker_id is specified).
 
         Args:
             db: Database session
-            name: Project name to search for
+            name: Project name to search for (case-insensitive)
             organization_id: Optional organization ID to filter by
-            tracker_id: Optional tracker ID to filter by
+            tracker_id: Optional tracker ID to filter by (joins with Organization)
 
         Returns:
-            Project object if found, otherwise None
+            List of matching Project objects.
         """
         # Use case-insensitive comparison for name
         query = db.query(Project).filter(func.lower(Project.name) == func.lower(name))
@@ -57,7 +75,7 @@ class CRUDProject(CRUDBase[Project]):
             query = query.join(Organization, Project.organization_id == Organization.id)
             query = query.filter(Organization.tracker_id == tracker_id)
 
-        return query.first()
+        return query.all()
 
     def get_for_organization(
         self, db: Session, *, organization_id: str, skip: int = 0, limit: int = 100

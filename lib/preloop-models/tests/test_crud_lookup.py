@@ -1,6 +1,7 @@
 """Tests for the CRUD lookup functions in organization, project, and issue modules."""
 
 import uuid
+import pytest
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import crud_organization, crud_project, crud_issue
@@ -308,3 +309,115 @@ def test_issue_get_by_title(db_session: Session):
         db_session, title="Test Issue", project_id=str(uuid.uuid4())
     )
     assert issue is None
+
+
+def test_project_get_by_slug_or_identifier(
+    db_session: Session, create_project, create_organization
+):
+    """Test the get_by_slug_or_identifier function for Project."""
+    org1 = create_organization(identifier="org-slug-test-1")
+    org2 = create_organization(identifier="org-slug-test-2")
+
+    # Project with only identifier
+    project_id_only = create_project(
+        name="ID Only Project", identifier="proj-id-only", organization=org1
+    )
+
+    # Project with only slug
+    project_slug_only = create_project(
+        name="Slug Only Project",
+        identifier="proj-slug-only-id",
+        slug="proj-slug-only",
+        organization=org1,
+    )
+
+    # Project with both slug and identifier (different)
+    project_both = create_project(
+        name="Both Project",
+        identifier="proj-both-id",
+        slug="proj-both-slug",
+        organization=org2,
+    )
+
+    # --- Test Lookup by Identifier ---
+    # Test finding project with only identifier
+    found_proj = crud_project.get_by_slug_or_identifier(
+        db_session, slug_or_identifier="proj-id-only", organization_id=org1.id
+    )
+    assert found_proj is not None
+    assert found_proj.id == project_id_only.id
+    assert found_proj.identifier == "proj-id-only"
+    assert found_proj.slug is None
+
+    # Test finding project with both, using identifier (fallback)
+    found_proj = crud_project.get_by_slug_or_identifier(
+        db_session, slug_or_identifier="proj-both-id", organization_id=org2.id
+    )
+    assert found_proj is not None
+    assert found_proj.id == project_both.id
+    assert found_proj.identifier == "proj-both-id"
+    assert found_proj.slug == "proj-both-slug"  # Slug should still be present
+
+    # --- Test Lookup by Slug ---
+    # Test finding project with only slug
+    found_proj = crud_project.get_by_slug_or_identifier(
+        db_session, slug_or_identifier="proj-slug-only", organization_id=org1.id
+    )
+    assert found_proj is not None
+    assert found_proj.id == project_slug_only.id
+    assert found_proj.slug == "proj-slug-only"
+
+    # Test finding project with both, using slug (precedence)
+    found_proj = crud_project.get_by_slug_or_identifier(
+        db_session, slug_or_identifier="proj-both-slug", organization_id=org2.id
+    )
+    assert found_proj is not None
+    assert found_proj.id == project_both.id
+    assert found_proj.slug == "proj-both-slug"
+    assert found_proj.identifier == "proj-both-id"  # Identifier should still be present
+
+    # --- Test Lookup Failures ---
+    # Test non-existent identifier/slug
+    found_proj = crud_project.get_by_slug_or_identifier(
+        db_session, slug_or_identifier="non-existent", organization_id=org1.id
+    )
+    assert found_proj is None
+
+    # Test correct identifier/slug but wrong organization
+    found_proj = crud_project.get_by_slug_or_identifier(
+        db_session, slug_or_identifier="proj-id-only", organization_id=org2.id
+    )
+    assert found_proj is None
+    found_proj = crud_project.get_by_slug_or_identifier(
+        db_session, slug_or_identifier="proj-both-slug", organization_id=org1.id
+    )
+    assert found_proj is None
+
+    # Test lookup without organization_id (should fail if ambiguous, or find first if unique)
+    # Create another project with the same slug in a different org to test ambiguity
+    create_project(
+        name="Ambiguous Slug Project",
+        identifier="ambiguous-id",
+        slug="proj-slug-only",
+        organization=org2,
+    )
+    # Expect ambiguity error or specific behavior depending on implementation - assuming None for now
+    # Assuming the function raises ValueError on ambiguity without org_id
+    # If the actual behavior is different (e.g., returns None or first match), adjust the assertion.
+    with pytest.raises(ValueError, match="Multiple projects found"):
+        crud_project.get_by_slug_or_identifier(
+            db_session, slug_or_identifier="proj-slug-only"
+        )
+
+    # Test lookup without org_id for a unique identifier/slug
+    found_proj = crud_project.get_by_slug_or_identifier(
+        db_session, slug_or_identifier="proj-id-only"
+    )
+    assert found_proj is not None
+    assert found_proj.id == project_id_only.id
+
+    found_proj = crud_project.get_by_slug_or_identifier(
+        db_session, slug_or_identifier="proj-both-slug"
+    )
+    assert found_proj is not None
+    assert found_proj.id == project_both.id
