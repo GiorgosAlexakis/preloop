@@ -170,12 +170,12 @@ claude mcp add spacebridge \
 2. Click **Add MCP Server**
 3. Select **Add stdio Server**
 4. Enter the following information:
-   - **Name**: `SpaceBridge`
-   - **Command**: Full path to `spacebridge-mcp-server` (see "Find Server Path" above)
-   - **Environment Variables**: Add the following key-value pairs:
-     - `SPACEBRIDGE_API_KEY`: Your SpaceBridge API key
-     - `OPENAI_API_KEY`: Your OpenAI API key for similarity search
-     *Optional:* Add `SPACEBRIDGE_API_URL` with your custom URL if using a self-hosted instance.
+    - **Name**: `SpaceBridge`
+    - **Command**: Full path to `spacebridge-mcp-server` (see "Find Server Path" above)
+    - **Environment Variables**: Add the following key-value pairs:
+        - `SPACEBRIDGE_API_KEY`: Your SpaceBridge API key
+        - `OPENAI_API_KEY`: Your OpenAI API key for similarity search
+        - *Optional:* Add `SPACEBRIDGE_API_URL` with your custom URL if using a self-hosted instance.
 
 #### Method 2: Editing the Configuration File
 
@@ -234,9 +234,11 @@ Windsurf uses a JSON configuration file to manage MCP servers. Here's how to set
    ```
 
 The configuration file specifies:
+
 - The path to the `spacebridge-mcp-server` executable
 - Your SpaceBridge API key
 - Your OpenAI API key for similarity search and duplicate detection
+
 *Optional:* The `SPACEBRIDGE_API_URL` is only needed if using a self-hosted instance.
 
 Once configured, Windsurf's AI assistant will automatically detect and use available SpaceBridge tools when relevant to your task. You can also explicitly tell the assistant to use SpaceBridge tools by mentioning them in your prompts.
