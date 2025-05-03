@@ -86,38 +86,47 @@ The SpaceBridge REST API provides a set of endpoints for interacting with issue 
 
 ### Configuration
 
-The server requires the following configuration values:
+The server supports the following configuration values:
 
-*   **SpaceBridge API URL:** The base URL for your SpaceBridge API instance (e.g., `https://your-spacebridge.com/api/v1`).
-*   **SpaceBridge API Key:** Your API key for authenticating with SpaceBridge.
-*   **OpenAI API Key:** Your API key for OpenAI, used by the `create_issue` tool for duplicate checking.
+*   **SpaceBridge API Key:** Your API key for authenticating with SpaceBridge (required).
+*   **OpenAI API Key:** Your API key for OpenAI, used by the `create_issue` tool for duplicate checking (required).
+*   **SpaceBridge API URL:** The base URL for the SpaceBridge API (optional, defaults to the public SpaceBridge API if not set).
 
 These values can be provided in three ways, with the following order of precedence (highest first):
 
-1.  **Command-line Arguments:** Pass arguments when running the server:
+1.  **Command-line Arguments:** Pass the required arguments when running the server:
     ```bash
     spacebridge-mcp-server \
-      --spacebridge-api-url "YOUR_URL" \
       --spacebridge-api-key "YOUR_SB_KEY" \
       --openai-api-key "YOUR_OPENAI_KEY"
     ```
+    *Optional:* If using a self-hosted instance, add the following argument:
+    ```bash
+    --spacebridge-api-url "YOUR_CUSTOM_URL"
+    ```
     *(Use `spacebridge-mcp-server --help` to see all available arguments.)*
 
-2.  **Environment Variables:** Set standard environment variables:
+2.  **Environment Variables:** Set the required environment variables:
     ```bash
-    export SPACEBRIDGE_API_URL="YOUR_URL"
     export SPACEBRIDGE_API_KEY="YOUR_SB_KEY"
     export OPENAI_API_KEY="YOUR_OPENAI_KEY"
     # Then run:
     spacebridge-mcp-server
     ```
+    *Optional:* If using a self-hosted instance, also set this variable:
+    ```bash
+    export SPACEBRIDGE_API_URL="YOUR_CUSTOM_URL"
+    ```
 
-3.  **.env File:** Create a file named `.env` in the directory where you run the server:
+3.  **.env File:** Create a file named `.env` in the directory where you run the server containing the required variables:
     ```dotenv
     # .env file content
-    SPACEBRIDGE_API_URL="YOUR_URL"
     SPACEBRIDGE_API_KEY="YOUR_SB_KEY"
     OPENAI_API_KEY="YOUR_OPENAI_KEY"
+    ```
+    *Optional:* If using a self-hosted instance, add this line to the `.env` file:
+    ```dotenv
+    SPACEBRIDGE_API_URL="YOUR_CUSTOM_URL"
     ```
     The server will automatically load values from this file if it exists. Values from environment variables or command-line arguments will override those in the `.env` file.
 
@@ -143,11 +152,14 @@ This server uses standard input/output (stdio) for communication. You need to co
 claude mcp add spacebridge \
   /full/path/to/your/spacebridge-mcp-server \
   --scope user \
-  --env SPACEBRIDGE_API_URL="https://spacebridge.com/api" \
   --env SPACEBRIDGE_API_KEY="your-spacebridge-api-key" \
   --env OPENAI_API_KEY="your-openai-api-key"
 ```
 
+*Optional:* If using a self-hosted instance, add the following flag to the command above:
+```bash
+--env SPACEBRIDGE_API_URL="your-custom-url"
+```
 `--scope user` makes the server available across all your projects in Claude code. Use `--scope project` to limit it to the current project.
 
 ### Configuring Cursor with SpaceBridge
@@ -158,12 +170,12 @@ claude mcp add spacebridge \
 2. Click **Add MCP Server**
 3. Select **Add stdio Server**
 4. Enter the following information:
-   - **Name**: `SpaceBridge`
-   - **Command**: Full path to `spacebridge-mcp-server` (see "Find Server Path" above)
-   - **Environment Variables**: Add the following key-value pairs:
-     - `SPACEBRIDGE_API_URL`: Your SpaceBridge API URL
-     - `SPACEBRIDGE_API_KEY`: Your SpaceBridge API key
-     - `OPENAI_API_KEY`: Your OpenAI API key for similarity search
+    - **Name**: `SpaceBridge`
+    - **Command**: Full path to `spacebridge-mcp-server` (see "Find Server Path" above)
+    - **Environment Variables**: Add the following key-value pairs:
+        - `SPACEBRIDGE_API_KEY`: Your SpaceBridge API key
+        - `OPENAI_API_KEY`: Your OpenAI API key for similarity search
+        - *Optional:* Add `SPACEBRIDGE_API_URL` with your custom URL if using a self-hosted instance.
 
 #### Method 2: Editing the Configuration File
 
@@ -177,13 +189,16 @@ claude mcp add spacebridge \
          "command": "/full/path/to/spacebridge-mcp-server",
          "args": [],
          "env": {
-           "SPACEBRIDGE_API_URL": "https://spacebridge.com/api",
            "SPACEBRIDGE_API_KEY": "your-spacebridge-api-key",
            "OPENAI_API_KEY": "your-openai-api-key"
          }
        }
      }
    }
+   ```
+   *Optional:* If using a self-hosted instance, add the following line inside the `env` object:
+   ```json
+           "SPACEBRIDGE_API_URL": "your-custom-url"
    ```
 
 2. **Global configuration** (available in all projects):
@@ -206,7 +221,6 @@ Windsurf uses a JSON configuration file to manage MCP servers. Here's how to set
          "command": "/full/path/to/spacebridge-mcp-server",
          "args": [],
          "env": {
-           "SPACEBRIDGE_API_URL": "https://spacebridge.io/api",
            "SPACEBRIDGE_API_KEY": "your-spacebridge-api-key",
            "OPENAI_API_KEY": "your-openai-api-key"
          }
@@ -214,11 +228,18 @@ Windsurf uses a JSON configuration file to manage MCP servers. Here's how to set
      }
    }
    ```
+   *Optional:* If using a self-hosted instance, add the following line inside the `env` object:
+   ```json
+          "SPACEBRIDGE_API_URL": "your-custom-url"
+   ```
 
 The configuration file specifies:
+
 - The path to the `spacebridge-mcp-server` executable
-- Your SpaceBridge API URL and API key
+- Your SpaceBridge API key
 - Your OpenAI API key for similarity search and duplicate detection
+
+*Optional:* The `SPACEBRIDGE_API_URL` is only needed if using a self-hosted instance.
 
 Once configured, Windsurf's AI assistant will automatically detect and use available SpaceBridge tools when relevant to your task. You can also explicitly tell the assistant to use SpaceBridge tools by mentioning them in your prompts.
 
