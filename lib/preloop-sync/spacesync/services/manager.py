@@ -6,7 +6,7 @@ Tracker update service manager.
 from typing import Optional, Set, List
 
 import pytz
-from datetime import datetime
+from datetime import datetime, timedelta # Import timedelta
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.base import BaseScheduler # Import BaseScheduler for type hinting
 from apscheduler.triggers.interval import IntervalTrigger # Import IntervalTrigger
@@ -14,11 +14,15 @@ from apscheduler.jobstores.base import JobLookupError # Import specific error
 
 from spacemodels.crud import crud_tracker
 from spacemodels.db.session import get_db_session
-from spacemodels.models import Organization, Project
-from spacesync.scanner.core import TrackerClient
-from ..exceptions import TrackerRateLimitError, TrackerError # Import necessary exceptions
+from spacemodels.models import Organization
+from spacesync.scanner.core import TrackerClient, _process_organization # Import the helper
+from ..exceptions import TrackerRateLimitError # Import necessary exceptions
 
 from ..config import logger, SERVICE_POLL_INTERVAL # Import default interval
+
+# Define the polling threshold (consistency with core.py)
+# TODO: Make this configurable centrally
+POLLING_THRESHOLD = timedelta(hours=1)
 
 
 # Define a constant for the job ID prefix to easily identify tracker jobs
@@ -28,7 +32,16 @@ TRACKER_JOB_PREFIX = "tracker_update_"
 
 def update_tracker(tracker_id: str):
     logger.info(f"Starting update poll for tracker {tracker_id}")
-    total_embedding_updates = 0
+    # Initialize stats dictionary similar to scan_tracker
+    stats = {
+        "organizations_scanned": 0,
+        "organizations_skipped_webhook": 0,
+        "organizations_skipped_polling": 0,
+        "projects": 0,
+        "issues": 0,
+        "embeddings_updated": 0,
+        "errors": 0,
+    }
     rate_limited_tracker = False # Flag to stop processing this tracker if rate limited
 
     # Each job run gets its own session using the generator pattern
@@ -39,84 +52,85 @@ def update_tracker(tracker_id: str):
         tracker = crud_tracker.get_by_id(db, id=tracker_id)
         if not tracker:
             logger.error(f"Tracker {tracker_id} not found in database.")
-            return 0
+            return stats # Return empty stats
 
         tracker_client = TrackerClient(tracker)
+        # Use epoch time (Jan 1, 1970) to effectively scan all issues when polling
+        # This matches the behavior in the original scan_tracker before refactoring
+        since = datetime(1970, 1, 1)
+        # Force update is false by default for scheduled jobs
+        force_update = False
 
         # 1. Get organizations for this tracker from the API
         try:
             tracker_organizations: List[Organization] = tracker_client.scan_organizations(db)
             if not tracker_organizations:
                 logger.info(f"No active organizations found for tracker {tracker_id}. Skipping update cycle.")
-                return 0
+                return stats # Return empty stats
+        except TrackerRateLimitError as rle:
+             logger.warning(f"Rate limit hit for tracker {tracker_id} during organization scan. Pausing updates for this tracker. Details: {rle}")
+             rate_limited_tracker = True
+             tracker_organizations = [] # Ensure loop doesn't run
+             stats["errors"] += 1
         except Exception as e:
             logger.error(f"Failed to get organizations for tracker {tracker_id}: {e}", exc_info=True)
-            return 0 # Cannot proceed without organizations
+            return stats # Return empty stats with error count potentially incremented
 
-        # Process each organization
+        # Process each organization using the helper function from core.py
         for org in tracker_organizations:
             if rate_limited_tracker:
-                logger.warning(f"Skipping remaining organizations for tracker {tracker_id} due to rate limit.")
+                logger.warning(f"Skipping remaining organizations for tracker {tracker_id} due to prior rate limit.")
                 break # Stop processing orgs for this tracker if rate limited
 
-            logger.debug(f"Processing organization {org.identifier} (ID: {org.id}) for tracker {tracker_id}")
-
-            # 2. Scan Projects (fetches from API and reconciles with DB)
-            processed_projects: List[Project] = []
             try:
-                # Use the existing scan_projects method which handles API fetch and DB sync
-                processed_projects = tracker_client.scan_projects(db=db, organization=org)
-                logger.info(f"Successfully scanned/synchronized {len(processed_projects)} projects for org {org.identifier} (tracker {tracker_id}).")
+                # Call the centralized processing function
+                org_stats, skipped = _process_organization(
+                    db=db,
+                    client=tracker_client,
+                    org=org,
+                    since=since,
+                    force_update=force_update,
+                    polling_threshold=POLLING_THRESHOLD,
+                )
+
+                # Aggregate stats
+                if skipped:
+                    # Increment appropriate skipped counter based on current org state
+                    now = datetime.utcnow() # Re-check time
+                    if org.last_webhook_update and (now - org.last_webhook_update) < POLLING_THRESHOLD:
+                         stats["organizations_skipped_webhook"] += 1
+                    elif org.last_polling_update and (now - org.last_polling_update) < POLLING_THRESHOLD:
+                         stats["organizations_skipped_polling"] += 1
+                else:
+                    stats["organizations_scanned"] += 1
+                    stats["projects"] += org_stats["projects"]
+                    stats["issues"] += org_stats["issues"]
+                    stats["embeddings_updated"] += org_stats["embeddings_updated"]
+                    stats["errors"] += org_stats["errors"]
+
             except TrackerRateLimitError as rle:
-                logger.warning(f"Rate limit hit for tracker {tracker_id} during project scan for org {org.identifier}. Pausing updates for this tracker. Details: {rle}")
-                rate_limited_tracker = True
-                continue # Skip to next org (or break due to flag)
-            except (TrackerError, NotImplementedError) as te:
-                # Catch specific tracker errors or if scan_projects/get_projects isn't implemented
-                logger.error(f"Tracker error scanning projects for org {org.identifier} (tracker {tracker_id}): {te}", exc_info=True)
-                continue # Skip this org
+                 # Catch rate limit errors that might occur within _process_organization
+                 # (e.g., during project or issue scanning)
+                 logger.warning(f"Rate limit hit for tracker {tracker_id} while processing org {org.identifier}. Pausing updates. Details: {rle}")
+                 rate_limited_tracker = True
+                 stats["errors"] += 1
+                 # Don't 'continue' here, let the rate_limited_tracker flag handle skipping subsequent orgs
             except Exception as e:
-                logger.error(f"Unexpected error scanning projects for org {org.identifier} (tracker {tracker_id}): {e}", exc_info=True)
-                continue # Skip this org
+                 # Catch unexpected errors during the processing of a single organization
+                 logger.error(f"Unexpected error processing organization {org.identifier} for tracker {tracker_id}: {e}", exc_info=True)
+                 stats["errors"] += 1
+                 # Continue to the next organization even if one fails unexpectedly
 
-            # 3. Scan Issues for the synchronized projects returned by scan_projects
-            logger.info(f"Scanning issues for {len(processed_projects)} projects in org {org.identifier} (tracker {tracker_id}).")
-            for project in processed_projects:
-                if rate_limited_tracker:
-                    logger.warning(f"Skipping issue scan for project {project.identifier} due to rate limit.")
-                    break # Stop processing projects for this org
-
-                try:
-                    # Scan issues for this synchronized project
-                    # Note: scan_issues might also need error handling refinement
-                    issues, embedding_updates = tracker_client.scan_issues(
-                        db, org, project # Pass DB objects
-                    )
-                    total_embedding_updates += embedding_updates
-
-                    if embedding_updates > 0:
-                        logger.info(
-                            f"Updated {embedding_updates} embeddings for project {project.id} ({project.name}) in tracker {tracker_id}"
-                        )
-                except TrackerRateLimitError as rle:
-                    logger.warning(f"Rate limit hit for tracker {tracker_id} while scanning project {project.id}. Pausing updates for this tracker. Details: {rle}")
-                    rate_limited_tracker = True # Set flag
-                    break # Stop processing projects for this org
-                except TrackerError as te:
-                    logger.error(f"Tracker error scanning issues for project {project.id} (tracker {tracker_id}): {te}", exc_info=True)
-                    continue # Continue with next project
-                except Exception as e:
-                    logger.error(f"Unexpected error scanning issues for project {project.id} (tracker {tracker_id}): {e}", exc_info=True)
-                    continue # Continue with next project
-
-        logger.info(f"Finished update poll for tracker {tracker_id}. Total embedding updates: {total_embedding_updates}. Rate limited: {rate_limited_tracker}")
-        return 0 # Return 0 if tracker not found or other initial issues
+        logger.info(f"Finished update poll for tracker {tracker_id}. Stats: {stats}. Rate limited encountered: {rate_limited_tracker}")
+        return stats # Return the collected statistics
     except StopIteration:
         logger.error(f"Failed to get database session from generator for tracker {tracker_id}.")
-        return 0 # Failed to get session
+        stats["errors"] += 1
+        return stats # Return stats indicating error
     except Exception as e:
-        logger.error(f"Error during tracker update for {tracker_id}: {e}", exc_info=True)
-        return 0 # General error during update
+        logger.error(f"Error during tracker update job for {tracker_id}: {e}", exc_info=True)
+        stats["errors"] += 1
+        return stats # Return stats indicating error
     finally:
         # Ensure the session is closed if it was successfully obtained
         if db:

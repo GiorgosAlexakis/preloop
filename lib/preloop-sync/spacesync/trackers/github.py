@@ -265,3 +265,82 @@ class GitHubTracker(BaseTracker):
                 }
             )
         return processed_issues
+
+    def register_webhook(
+        self, org_identifier: str, webhook_url: str, secret: str
+    ) -> bool:
+        """
+        Register a webhook for the given GitHub organization.
+
+        Args:
+            org_identifier: The GitHub organization login name.
+            webhook_url: The target URL for the webhook.
+            secret: The secret to use for the webhook.
+
+        Returns:
+            True if registration was successful or webhook already exists, False otherwise.
+        """
+        # GitHub doesn't support organization-level webhooks for personal accounts via this API
+        if org_identifier == "personal":
+            logger.info(f"Skipping webhook registration for personal account '{self.connection_details.get('login', 'N/A')}'. GitHub personal webhooks are managed per-repository.")
+            # Consider this 'successful' in the sense that there's nothing to do here.
+            # Alternatively, could return False if strict registration is required.
+            return True
+
+        endpoint = f"orgs/{org_identifier}/hooks"
+        payload = {
+            "name": "web",
+            "active": True,
+            "events": [
+                "issues",       # Issue opened, edited, closed, reopened, assigned, etc.
+                "project",      # Project created, updated, deleted
+                "repository",   # Repository created, deleted, archived, unarchived
+                "push"          # Git push to a repository
+                # Add more events as needed, e.g., 'pull_request', 'release', 'member'
+            ],
+            "config": {
+                "url": webhook_url,
+                "content_type": "json",
+                "secret": secret,
+                "insecure_ssl": "0", # Recommended to verify SSL
+            },
+        }
+
+        try:
+            url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
+            response = requests.post(url, headers=self.headers, json=payload)
+
+            if response.status_code == 201:
+                logger.info(f"Successfully created webhook for GitHub org '{org_identifier}' pointing to {webhook_url}")
+                return True
+            elif response.status_code == 401:
+                logger.error(f"GitHub authentication failed while trying to register webhook for org '{org_identifier}'.")
+                # Raise specific error? Or just log and return False? Let's log and return False for now.
+                return False
+            elif response.status_code == 403:
+                 logger.error(f"Permission denied: Unable to register webhook for GitHub org '{org_identifier}'. Check token permissions (needs admin:org_hook).")
+                 return False
+            elif response.status_code == 404:
+                 logger.error(f"GitHub organization '{org_identifier}' not found while trying to register webhook.")
+                 return False
+            elif response.status_code == 422:
+                # Check if it's because the hook already exists
+                response_data = response.json()
+                if "errors" in response_data and any("Hook already exists" in e.get("message", "") for e in response_data["errors"]):
+                    logger.warning(f"Webhook for GitHub org '{org_identifier}' pointing to {webhook_url} already exists.")
+                    # Consider this a success as the desired state is achieved
+                    return True
+                else:
+                    logger.error(f"Failed to register webhook for GitHub org '{org_identifier}' (Unprocessable Entity - check config/permissions): {response.text}")
+                    return False
+            else:
+                # General API error
+                logger.error(f"GitHub API error registering webhook for org '{org_identifier}': {response.status_code} - {response.text}")
+                return False
+
+        except requests.RequestException as e:
+            logger.error(f"GitHub connection error while registering webhook for org '{org_identifier}': {e}", exc_info=True)
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error registering webhook for GitHub org '{org_identifier}': {e}", exc_info=True)
+            return False

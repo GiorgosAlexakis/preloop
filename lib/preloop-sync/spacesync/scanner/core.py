@@ -3,8 +3,12 @@ Core scanning functionality for SpaceSync.
 """
 
 import datetime
+from datetime import timedelta
+import os
+import secrets
 import time
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse, urljoin
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +25,7 @@ from spacemodels.models import Issue, Organization, Project, Tracker
 
 from ..config import logger
 
+POLLING_THRESHOLD = timedelta(seconds=os.getenv("POLLING_THRESHOLD", 3600))
 
 class TrackerClient:
     """Client for interacting with trackers."""
@@ -364,6 +369,183 @@ class TrackerClient:
 
         return issues_processed, embedding_updates
 
+    def register_webhook(
+        self, org_identifier: str, webhook_url: str, secret: str
+    ) -> bool:
+        """
+        Register a webhook for the given organization/group.
+
+        Args:
+            org_identifier: The identifier of the organization/group.
+            webhook_url: The target URL for the webhook.
+            secret: The secret to use for the webhook.
+
+        Returns:
+            True if registration was successful, False otherwise.
+
+        Raises:
+            NotImplementedError: If the specific tracker client doesn't implement it.
+        """
+        # Delegate to the specific client implementation
+        return self.client.register_webhook(org_identifier, webhook_url, secret)
+
+
+# Helper function to process a single organization with polling checks
+def _process_organization(
+    db: Session,
+    client: TrackerClient, # Pass the client instance
+    org: Organization,
+    since: datetime.datetime,
+    force_update: bool,
+    polling_threshold: timedelta,
+) -> Tuple[Dict[str, Any], bool]:
+    """
+    Processes a single organization: checks polling conditions, scans if necessary,
+    and updates the polling timestamp.
+
+    Args:
+        db: Database session.
+        client: Initialized TrackerClient.
+        org: The Organization object to process.
+        since: Datetime threshold for scanning issues.
+        force_update: Force embedding updates.
+        polling_threshold: Timedelta threshold for skipping polling.
+
+    Returns:
+        A tuple containing:
+        - A dictionary with scan statistics for this organization (projects, issues, embeddings_updated, errors).
+        - A boolean indicating if polling was skipped (True if skipped, False if polled).
+    """
+    org_stats = {"projects": 0, "issues": 0, "embeddings_updated": 0, "errors": 0}
+    now = datetime.datetime.utcnow()
+    should_poll = True
+    skipped = False
+
+    # --- Webhook Registration Logic ---
+    spacebridge_url_str = os.getenv("SPACEBRIDGE_URL")
+    webhook_registered_or_skipped = False # Flag to track if we handled webhook this run
+
+    if spacebridge_url_str:
+        try:
+            parsed_url = urlparse(spacebridge_url_str)
+            if not all([parsed_url.scheme, parsed_url.netloc]):
+                raise ValueError("Invalid SPACEBRIDGE_URL format")
+
+            if not org.webhook_secret:
+                logger.info(f"Organization {org.id} ({org.name}) has no webhook secret. Attempting registration.")
+                webhook_secret = secrets.token_hex(32)
+
+                # Save the secret *before* attempting registration
+                try:
+                    crud_organization.update(
+                        db, db_obj=org, obj_in={"webhook_secret": webhook_secret}
+                    )
+                    db.commit() # Commit immediately to store the secret
+                    logger.info(f"Saved new webhook secret for org {org.id}")
+                    org = db.merge(org) # Refresh org state with the new secret
+                except Exception as e:
+                    logger.error(f"Failed to save webhook secret for org {org.id}: {e}", exc_info=True)
+                    db.rollback()
+                    org_stats["errors"] += 1
+                    # Do not proceed with registration if saving secret failed
+                    webhook_registered_or_skipped = True # Mark as handled (failed)
+
+                # Proceed with registration only if secret was saved
+                if not webhook_registered_or_skipped:
+                    webhook_target_path = f"/api/v1/private/webhooks/{client.tracker_type}/{org.identifier}"
+                    webhook_target_url = urljoin(spacebridge_url_str, webhook_target_path)
+
+                    try:
+                        # Call the client method (to be implemented in TrackerClient and specific trackers)
+                        success = client.register_webhook(
+                            org_identifier=org.identifier,
+                            webhook_url=webhook_target_url,
+                            secret=webhook_secret,
+                        )
+                        if success:
+                            logger.info(f"Successfully registered webhook for org {org.id} at {webhook_target_url}")
+                        else:
+                            # Error logged within register_webhook implementation
+                            logger.warning(f"Webhook registration failed for org {org.id}. Secret is saved, won't retry automatically.")
+                            org_stats["errors"] += 1 # Count registration failure as an error
+
+                        webhook_registered_or_skipped = True # Mark as handled (success or logged failure)
+
+                    except NotImplementedError:
+                         logger.error(f"Webhook registration not implemented for tracker type {client.tracker_type}. Skipping for org {org.id}.")
+                         webhook_registered_or_skipped = True # Mark as handled (skipped due to missing implementation)
+                         org_stats["errors"] += 1 # Count as error for visibility
+                    except Exception as e:
+                        logger.error(f"Error registering webhook for org {org.id}: {e}", exc_info=True)
+                        org_stats["errors"] += 1
+                        webhook_registered_or_skipped = True # Mark as handled (failed)
+
+            else:
+                logger.debug(f"Org {org.id} already has a webhook secret. Skipping registration.")
+                webhook_registered_or_skipped = True # Mark as handled (already done)
+
+        except ValueError as e:
+            logger.warning(f"SPACEBRIDGE_URL is invalid ({spacebridge_url_str}): {e}. Skipping webhook registration.")
+            webhook_registered_or_skipped = True # Mark as handled (skipped due to invalid URL)
+        except Exception as e:
+            logger.error(f"Unexpected error during webhook check/registration setup for org {org.id}: {e}", exc_info=True)
+            org_stats["errors"] += 1
+            webhook_registered_or_skipped = True # Mark as handled (failed)
+    else:
+        logger.debug("SPACEBRIDGE_URL not set. Skipping webhook registration.")
+        webhook_registered_or_skipped = True # Mark as handled (skipped due to config)
+
+    # --- Polling Logic ---
+    # Check polling conditions only if webhook wasn't just handled (or if handling failed but we still might poll)
+    # Note: The original logic prioritizes skipping based on recent updates.
+    if org.last_webhook_update and (now - org.last_webhook_update) < polling_threshold:
+        logger.info(f"Skipping polling for org {org.id} ({org.name}) due to recent webhook update at {org.last_webhook_update}")
+        should_poll = False
+        skipped = True
+    elif org.last_polling_update and (now - org.last_polling_update) < polling_threshold:
+        logger.info(f"Skipping polling for org {org.id} ({org.name}) due to recent polling at {org.last_polling_update}")
+        should_poll = False
+        skipped = True
+
+    # Proceed with polling if conditions allow
+    if should_poll:
+        logger.info(f"Proceeding with polling for org {org.id} ({org.name})")
+        try:
+            # Scan projects for this organization
+            projects = client.scan_projects(db, org)
+            org_stats["projects"] = len(projects)
+
+            # Scan issues for each project within this organization
+            for project in projects:
+                # Ensure the org object is available (it should be 'org' from the outer loop)
+                issues, embedding_updates = client.scan_issues(
+                    db, org, project, since, force_update
+                )
+                org_stats["issues"] += len(issues)
+                org_stats["embeddings_updated"] += embedding_updates
+
+            # Update last_polling_update timestamp for this organization
+            try:
+                crud_organization.update(
+                    db, db_obj=org, obj_in={"last_polling_update": now}
+                )
+                # Commit immediately after processing one org successfully
+                # This makes the update visible sooner for subsequent runs/checks
+                db.commit()
+                logger.info(f"Updated last_polling_update for org {org.id} to {now}")
+            except Exception as e:
+                logger.error(f"Failed to update last_polling_update for org {org.id}: {e}", exc_info=True)
+                db.rollback() # Rollback timestamp update failure
+                org_stats["errors"] += 1
+
+        except Exception as e:
+             logger.error(f"Error scanning projects/issues for org {org.id} ({org.name}): {e}", exc_info=True)
+             org_stats["errors"] += 1
+             db.rollback() # Rollback potential partial changes within the org scan
+
+    return org_stats, skipped
+
+
 def scan_tracker(
     db: Session, tracker: Tracker, verbose: bool = False, force_update: bool = False
 ) -> Dict[str, Any]:
@@ -380,12 +562,15 @@ def scan_tracker(
         Dictionary containing scan statistics
     """
     start_time = time.time()
+    # Define the time threshold for skipping polling
     stats = {
-        "organizations": 0,
+        "organizations_scanned": 0, # Renamed for clarity
+        "organizations_skipped_webhook": 0,
+        "organizations_skipped_polling": 0,
         "projects": 0,
         "issues": 0,
         "embeddings_updated": 0,
-        "errors": 0,
+        "errors": 0, # Note: Error tracking might need refinement
     }
 
     # Debug information about the tracker
@@ -405,28 +590,45 @@ def scan_tracker(
     since = datetime.datetime(1970, 1, 1)
 
     # Scan organizations
-    orgs = client.scan_organizations(db)
-    stats["organizations"] = len(orgs)
+    # Scan organizations first to get the list
+    try:
+        orgs = client.scan_organizations(db)
+        logger.info(f"Found {len(orgs)} organizations associated with tracker {tracker.id}")
+    except Exception as e:
+        logger.error(f"Failed to scan organizations for tracker {tracker.id}: {e}", exc_info=True)
+        stats["errors"] += 1
+        orgs = [] # Ensure orgs is an empty list if scanning fails
 
-    # Scan projects for each organization
-    all_projects = []
+    # Process each organization using the helper function
     for org in orgs:
-        projects = client.scan_projects(db, org)
-        all_projects.extend(projects)
-
-    stats["projects"] = len(all_projects)
-
-    # Scan issues for each project
-    for project in all_projects:
-        org = next(org for org in orgs if org.id == project.organization_id)
-        issues, embedding_updates = client.scan_issues(
-            db, org, project, since, force_update
+        org_stats, skipped = _process_organization(
+            db=db,
+            client=client,
+            org=org,
+            since=since,
+            force_update=force_update,
+            polling_threshold=POLLING_THRESHOLD,
         )
-        stats["issues"] += len(issues)
-        stats["embeddings_updated"] += embedding_updates
 
-    # Try to store the current time as the last scan time
-    # This is optional and we continue even if it fails (field might not exist)
+        # Aggregate stats
+        if skipped:
+            # Increment appropriate skipped counter (logic inside helper determines why)
+            # We need to check the org object again as the helper doesn't return *why* it skipped
+            now = datetime.datetime.utcnow() # Re-get current time for accurate check
+            if org.last_webhook_update and (now - org.last_webhook_update) < POLLING_THRESHOLD:
+                 stats["organizations_skipped_webhook"] += 1
+            elif org.last_polling_update and (now - org.last_polling_update) < POLLING_THRESHOLD:
+                 stats["organizations_skipped_polling"] += 1
+            # Note: There's a slight edge case if the state changed between the helper check and here,
+            # but it's acceptable for logging/stats purposes.
+        else:
+            stats["organizations_scanned"] += 1
+            stats["projects"] += org_stats["projects"]
+            stats["issues"] += org_stats["issues"]
+            stats["embeddings_updated"] += org_stats["embeddings_updated"]
+            stats["errors"] += org_stats["errors"]
+
+    # Update tracker's last_scan_time (this is separate from org polling time)
     try:
         crud_tracker.update(
             db, db_obj=tracker, obj_in={"last_scan_time": datetime.datetime.now()}
@@ -441,11 +643,13 @@ def scan_tracker(
 
     if verbose:
         print(f"Tracker {tracker.id} ({tracker.tracker_type}) scan completed:")
-        print(f"  Organizations: {stats['organizations']}")
-        print(f"  Projects: {stats['projects']}")
-        print(f"  Issues: {stats['issues']}")
-        print(f"  Embeddings updated: {stats['embeddings_updated']}")
-        print(f"  Errors: {stats['errors']}")
+        print(f"  Organizations Scanned: {stats['organizations_scanned']}")
+        print(f"  Organizations Skipped (Webhook): {stats['organizations_skipped_webhook']}")
+        print(f"  Organizations Skipped (Polling): {stats['organizations_skipped_polling']}")
+        print(f"  Projects Scanned: {stats['projects']}")
+        print(f"  Issues Scanned: {stats['issues']}")
+        print(f"  Embeddings Updated: {stats['embeddings_updated']}")
+        print(f"  Errors Encountered: {stats['errors']}")
         print(f"  Duration: {stats['duration_seconds']:.2f} seconds")
 
     return stats
@@ -472,7 +676,9 @@ def scan_account(
     account_stats = {
         "trackers_scanned": 0,
         "trackers_with_errors": 0,
-        "organizations": 0,
+        "organizations_scanned": 0,
+        "organizations_skipped_webhook": 0,
+        "organizations_skipped_polling": 0,
         "projects": 0,
         "issues": 0,
         "embeddings_updated": 0,
@@ -493,7 +699,9 @@ def scan_account(
         account_stats["trackers_scanned"] += 1
         if stats["errors"] > 0:
             account_stats["trackers_with_errors"] += 1
-        account_stats["organizations"] += stats["organizations"]
+        account_stats["organizations_scanned"] += stats["organizations_scanned"]
+        account_stats["organizations_skipped_webhook"] += stats["organizations_skipped_webhook"]
+        account_stats["organizations_skipped_polling"] += stats["organizations_skipped_polling"]
         account_stats["projects"] += stats["projects"]
         account_stats["issues"] += stats["issues"]
         account_stats["embeddings_updated"] += stats["embeddings_updated"]
@@ -504,10 +712,12 @@ def scan_account(
         print(f"\nAccount {account_id} scan completed:")
         print(f"  Trackers scanned: {account_stats['trackers_scanned']}")
         print(f"  Trackers with errors: {account_stats['trackers_with_errors']}")
-        print(f"  Total organizations: {account_stats['organizations']}")
-        print(f"  Total projects: {account_stats['projects']}")
-        print(f"  Total issues: {account_stats['issues']}")
-        print(f"  Total embeddings updated: {account_stats['embeddings_updated']}")
+        print(f"  Total Organizations Scanned: {account_stats['organizations_scanned']}")
+        print(f"  Total Organizations Skipped (Webhook): {account_stats['organizations_skipped_webhook']}")
+        print(f"  Total Organizations Skipped (Polling): {account_stats['organizations_skipped_polling']}")
+        print(f"  Total Projects Scanned: {account_stats['projects']}")
+        print(f"  Total Issues Scanned: {account_stats['issues']}")
+        print(f"  Total Embeddings Updated: {account_stats['embeddings_updated']}")
         print(f"  Duration: {account_stats['duration_seconds']:.2f} seconds")
 
     return account_stats
@@ -562,7 +772,7 @@ def scan_all_accounts(db: Session, verbose: bool = False, force_update: bool = F
             overall_stats["accounts_with_errors"] += 1
         overall_stats["total_trackers_scanned"] += account_stats["trackers_scanned"]
         overall_stats["total_trackers_with_errors"] += account_stats["trackers_with_errors"]
-        overall_stats["total_organizations"] += account_stats["organizations"]
+        overall_stats["total_organizations"] += account_stats["organizations_scanned"]
         overall_stats["total_projects"] += account_stats["projects"]
         overall_stats["total_issues"] += account_stats["issues"]
         overall_stats["total_embeddings_updated"] += account_stats["embeddings_updated"]
