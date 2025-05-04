@@ -1,9 +1,10 @@
 """Organization model."""
 
 # Import at the end to avoid circular imports
+from datetime import datetime
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -37,6 +38,17 @@ class Organization(Base):
 
     # Generic metadata field for extensibility
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
+
+    # Secret for verifying incoming webhooks (e.g., HMAC signature)
+    webhook_secret: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # Timestamps for sync updates
+    last_webhook_update: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    last_polling_update: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
 
     # Foreign keys - the tracker determines the owner account
     tracker_id: Mapped[str] = mapped_column(

@@ -27,7 +27,7 @@ from .llm_model import CRUDLLMModel
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)
-crud_organization = CRUDOrganization(Organization)
+crud_organization = CRUDOrganization()
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
 crud_embedding_model = CRUDEmbeddingModel(EmbeddingModel)
