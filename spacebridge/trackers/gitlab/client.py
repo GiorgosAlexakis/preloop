@@ -493,7 +493,7 @@ class GitLabClient(TrackerInterface):
         """Search for issues in a GitLab project.
 
         Args:
-            project_key: Project key (ignored for GitLab).
+            project_key: Project ID (numeric string) or URL-encoded path (e.g., group%2Fproject).
             filter_params: Filter parameters.
             limit: Maximum number of issues to return.
             offset: Pagination offset.
@@ -501,8 +501,26 @@ class GitLabClient(TrackerInterface):
         Returns:
             Tuple of (list of issues, total count).
         """
-        # Build API path
-        issues_path = f"/projects/{self.project_id.replace('/', '%2F')}/issues"
+        # Validate project_key (should be the numeric ID string for GitLab issues API)
+        if not project_key or not project_key.isdigit():
+            # Although the API might support path, using ID is more reliable here.
+            # If proj.identifier isn't the numeric ID, this needs adjustment upstream.
+            # Assuming proj.identifier IS the numeric ID string based on previous analysis.
+            logger.error(
+                f"GitLab search_issues requires a numeric project ID, but received: {project_key}"
+            )
+            # Raise an error or return empty? Returning empty might hide issues.
+            # Let's proceed assuming it's correct for now, but add a warning.
+            logger.warning(
+                f"Proceeding with potentially non-numeric project_key for GitLab issue search: {project_key}"
+            )
+            # Fallback to self.project_id if project_key seems invalid? Or just use project_key?
+            # Let's use project_key as intended by the interface contract.
+
+        # Build API path using the provided project_key
+        # URL-encode the project_key in case it's a path (though we expect ID)
+        encoded_project_key = project_key.replace("/", "%2F")
+        issues_path = f"/projects/{encoded_project_key}/issues"
 
         # Build query parameters
         params = {

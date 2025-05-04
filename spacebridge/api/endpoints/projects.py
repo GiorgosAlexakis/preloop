@@ -274,9 +274,9 @@ def get_project_by_identifier(
             status_code=403, detail="Access denied to this organization"
         )
 
-    # Now get the project within the authorized organization
-    project = crud_project.get_by_identifier(
-        db, organization_id=organization_id, identifier=identifier
+    # Now get the project within the authorized organization using slug or identifier
+    project = crud_project.get_by_slug_or_identifier(
+        db, organization_id=organization_id, slug_or_identifier=identifier
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
