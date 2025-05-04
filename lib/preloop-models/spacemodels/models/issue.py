@@ -39,8 +39,9 @@ class Issue(Base):
     issue_type: Mapped[str] = mapped_column(String(50), nullable=False, default="task")
 
     # External issue identifiers
-    external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    external_id: Mapped[str] = mapped_column(String(255), nullable=False)
     external_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    key: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
 
     # Foreign keys
     project_id: Mapped[str] = mapped_column(

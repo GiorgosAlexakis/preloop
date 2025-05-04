@@ -19,15 +19,15 @@ class CRUDProject(CRUDBase[Project]):
         *,
         slug_or_identifier: str,
         organization_id: Optional[str] = None,
-    ) -> List[Project]:
+    ) -> Optional[Project]:
         """
-        Get projects by slug or identifier.
+        Get a project by slug or identifier, optionally filtered by organization.
 
         If organization_id is provided, search is limited to that organization.
         If organization_id is None, search across all organizations.
 
         Returns:
-            List of matching Project objects.
+            An optional matching Project object. Returns None if no match is found.
         """
         query = db.query(Project).filter(
             (Project.slug == slug_or_identifier)
@@ -35,9 +35,10 @@ class CRUDProject(CRUDBase[Project]):
         )
 
         if organization_id:
+            # If organization_id is provided, filter by it
             query = query.filter(Project.organization_id == organization_id)
-
-        return query.all()
+        query = query.order_by(Project.updated_at.desc())
+        return query.first()
 
     def get_by_name(
         self,
@@ -48,9 +49,9 @@ class CRUDProject(CRUDBase[Project]):
         tracker_id: Optional[
             str
         ] = None,  # Keep tracker_id filter for potential future use, though search_issues doesn't use it now
-    ) -> List[Project]:
+    ) -> Optional[Project]:
         """
-        Get projects by name with optional organization and tracker filters.
+        Get a project by name, optionally filtered by organization and tracker.
 
         If organization_id is provided, search is limited to that organization.
         If organization_id is None, search across all organizations (unless tracker_id is specified).
@@ -62,7 +63,7 @@ class CRUDProject(CRUDBase[Project]):
             tracker_id: Optional tracker ID to filter by (joins with Organization)
 
         Returns:
-            List of matching Project objects.
+            An optional matching Project object. Returns None if no match is found.
         """
         # Use case-insensitive comparison for name
         query = db.query(Project).filter(func.lower(Project.name) == func.lower(name))
@@ -75,7 +76,9 @@ class CRUDProject(CRUDBase[Project]):
             query = query.join(Organization, Project.organization_id == Organization.id)
             query = query.filter(Organization.tracker_id == tracker_id)
 
-        return query.all()
+        query = query.order_by(Project.updated_at.desc())
+
+        return query.first()
 
     def get_for_organization(
         self, db: Session, *, organization_id: str, skip: int = 0, limit: int = 100
@@ -119,15 +122,16 @@ class CRUDProject(CRUDBase[Project]):
 
     def get_by_identifier_or_name_across_orgs(
         self, db: Session, *, identifier_or_name: str
-    ) -> List[Project]:
-        """Get projects by identifier or name across all organizations.
+    ) -> Optional[Project]:  # Changed return type
+        """Get the most recently updated project by identifier or name across all organizations.
 
         Args:
             db: Database session
             identifier_or_name: Project identifier or name to search for
 
         Returns:
-            List of matching projects
+            An optional matching Project object (the most recently updated if multiple match).
+            Returns None if no match is found.
         """
         return (
             db.query(Project)
@@ -135,5 +139,6 @@ class CRUDProject(CRUDBase[Project]):
                 (Project.identifier == identifier_or_name)
                 | (func.lower(Project.name) == func.lower(identifier_or_name))
             )
-            .all()
+            .order_by(Project.updated_at.desc())
+            .first()
         )

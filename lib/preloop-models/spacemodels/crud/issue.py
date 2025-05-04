@@ -63,6 +63,15 @@ class CRUDIssue(CRUDBase[Issue]):
 
         return query.first()
 
+    def get_by_key(
+        self, db: Session, *, key: str, project_id: Optional[str] = None
+    ) -> Optional[Issue]:
+        """Get issue by its unique key."""
+        query = db.query(Issue).filter(Issue.key == key)
+        if project_id:
+            query = query.filter(Issue.project_id == project_id)
+        return query.first()
+
     def get_for_project(
         self,
         db: Session,
