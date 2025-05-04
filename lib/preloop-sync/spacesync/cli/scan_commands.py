@@ -3,59 +3,17 @@ Scan commands for SpaceSync CLI.
 """
 
 import click
-import time
-import logging
-import atexit
-import signal # Import signal
-import pytz
-from datetime import datetime # Import datetime
 
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.executors.pool import ThreadPoolExecutor
-from apscheduler.triggers.interval import IntervalTrigger
 
 from spacemodels.crud import crud_account, crud_tracker
 from spacemodels.db.session import get_db_session
 
-# Import scanner functions for other commands
-from ..scanner import scan_account
+# Import scanner functions
+from ..scanner import scan_account, scan_all_accounts # Import scan_all_accounts
 from ..scanner import scan_tracker as scan_tracker_func
 
 # Import service components for the 'scan all' (now service start) command
-from ..services.manager import sync_scheduled_jobs
-from ..config import logger # Use the configured logger
 from ..utils import safe_exit
-
-
-# --- Scheduler Setup ---
-# Global scheduler instance for the 'scan all' command
-scheduler = None
-
-def shutdown_scheduler():
-    """Function to shut down the scheduler."""
-    global scheduler
-    if scheduler and scheduler.running:
-        logger.info("Shutting down scheduler...")
-        try:
-            scheduler.shutdown(wait=False) # Use wait=False for atexit
-            logger.info("Scheduler shut down successfully.")
-        except Exception as e:
-            logger.error(f"Error shutting down scheduler: {e}")
-
-# Register the shutdown hook globally for the CLI process
-atexit.register(shutdown_scheduler)
-
-# --- Signal Handling for Graceful Shutdown ---
-keep_running = True
-def handle_shutdown_signal(sig, frame):
-    """Sets the flag to stop the main loop."""
-    global keep_running
-    logger.info(f"Received signal {sig}, initiating shutdown...")
-    keep_running = False
-
-signal.signal(signal.SIGINT, handle_shutdown_signal)
-signal.signal(signal.SIGTERM, handle_shutdown_signal)
-# --- End Signal Handling ---
 
 
 @click.group()
@@ -67,103 +25,39 @@ def scan():
 
 
 @scan.command(name="all")
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option(
-    "--reload-interval",
-    type=int,
-    default=60,
-    help="Interval (in seconds) to reload tracker list and sync jobs.",
-    show_default=True,
+    "--force-update",
+    "-f",
+    is_flag=True,
+    help="Force update of all embeddings even if content hasn't changed",
 )
-@click.option(
-    "--max-workers",
-    type=int,
-    default=10,
-    help="Maximum number of concurrent tracker update jobs.",
-    show_default=True,
-)
-@click.option(
-    "--log-level",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False),
-    default="INFO",
-    help="Set the logging level.",
-    show_default=True,
-)
-def scan_all(reload_interval: int, max_workers: int, log_level: str):
+def scan_all_cmd(verbose: bool, force_update: bool):
     """
-    Start the continuous SpaceSync service in the foreground.
-
-    This service periodically checks for active trackers and schedules
-    background jobs to scan them for updates based on their configured intervals.
-    Press Ctrl+C to stop the service.
+    Perform a ONE-OFF scan for all accounts and trackers.
+    Does NOT start the continuous service.
     """
-    global scheduler
-    # Set up logging level based on command option
-    logging.getLogger("spacesync").setLevel(getattr(logging, log_level.upper()))
-    # Configure root logger for APScheduler logs etc.
-    logging.basicConfig(level=getattr(logging, log_level.upper()), format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-
-
-    click.echo(f"Starting SpaceSync service in foreground (reload interval: {reload_interval}s, max workers: {max_workers})...")
-    click.echo("Press Ctrl+C to stop.")
-
-    # Get database session (ensure it stays open for the service duration)
-    # Note: The session created here is primarily for the manager initialization.
-    # The sync_scheduled_jobs function now creates its own session per run.
+    # Get database session
     db = next(get_db_session())
 
-    # Configure scheduler executor
-    executors = {
-        'default': ThreadPoolExecutor(max_workers)
-    }
-    job_defaults = {
-        'coalesce': False,
-        'max_instances': 1
-    }
+    click.echo("Scanning all accounts and trackers...")
 
-    # Initialize the scheduler
-    scheduler = BackgroundScheduler(executors=executors, job_defaults=job_defaults, timezone="UTC")
+    # Scan all accounts (pass verbose and force_update)
+    stats = scan_all_accounts(db, verbose, force_update)
 
-    try:
-        # Start the scheduler
-        scheduler.start()
-        logger.info(f"APScheduler started with max_workers={max_workers}")
+    # Print summary
+    click.echo("\n=== Scan Complete ===")
+    click.echo(f"Accounts scanned: {stats['accounts_scanned']}")
+    click.echo(f"Accounts with errors: {stats['accounts_with_errors']}")
+    click.echo(f"Total trackers scanned: {stats['total_trackers_scanned']}")
+    click.echo(f"Total trackers with errors: {stats['total_trackers_with_errors']}")
+    click.echo(f"Total organizations: {stats['total_organizations']}")
+    click.echo(f"Total projects: {stats['total_projects']}")
+    click.echo(f"Total issues: {stats['total_issues']}")
+    click.echo(f"Total embeddings updated: {stats['total_embeddings_updated']}")
+    click.echo(f"Total duration: {stats['total_duration_seconds']:.2f} seconds")
 
-        # Add the recurring job to sync tracker jobs
-        # Run it once immediately, then schedule subsequent runs
-        scheduler.add_job(
-            sync_scheduled_jobs,
-            trigger=IntervalTrigger(seconds=reload_interval),
-            args=[scheduler, db],
-            id='tracker_reload_job',
-            name='Sync Tracker Jobs',
-            replace_existing=True,
-            misfire_grace_time=60,
-            next_run_time=datetime.now(pytz.utc)
-        )
-        logger.info(f"Scheduled tracker job synchronization every {reload_interval} seconds.")
-
-        # Keep main thread alive while the scheduler runs in the background.
-        # Exit loop when keep_running flag is set by signal handler.
-        while keep_running:
-            time.sleep(1)
-
-        # No need for explicit except KeyboardInterrupt/SystemExit here,
-        # the signal handler sets the flag, the loop exits, and finally runs.
-        logger.info("Main loop exited.")
-
-    finally:
-        # Explicitly attempt scheduler shutdown here
-        shutdown_scheduler()
-
-        # Close DB session
-        # Use db.is_active check instead of is_closed
-        if db and db.is_active:
-            try:
-                db.close()
-                logger.info("Initial database session closed.")
-            except Exception as e:
-                logger.error(f"Error closing initial database session: {e}")
-        click.echo("SpaceSync service stopped.")
+    db.close()
 
 
 @scan.command(name="account")

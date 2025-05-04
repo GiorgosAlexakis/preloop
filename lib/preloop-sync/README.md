@@ -105,11 +105,15 @@ Check system configuration:
 spacesync check
 ```
 
-Scan all accounts and their trackers:
+Scan all active accounts and their associated trackers in a single, synchronous run:
 
 ```bash
-spacesync scan all
+spacesync scan all [--verbose] [--force-update]
 ```
+
+This command performs a one-time scan of all configured and active accounts and trackers. It fetches organizations, projects, and issues, updating the database accordingly. Upon completion, it prints summary statistics of the scan.
+
+Note: This command performs a *single* scan run. For continuous, scheduled, or periodic updates, use the `spacesync scheduler start` command instead.
 
 ### Continuous Update Service
 

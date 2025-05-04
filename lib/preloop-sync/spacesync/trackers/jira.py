@@ -161,7 +161,7 @@ class JiraTracker(BaseTracker):
         params = {
             "jql": jql,
             "maxResults": 100,
-            "fields": "summary,description,status,created,updated,labels,assignee,issuetype",
+            "fields": "id,key,summary,description,status,created,updated,labels,assignee,issuetype",  # Added id and key explicitly
         }
 
         issues_data = self._make_request("search", params)
@@ -183,7 +183,8 @@ class JiraTracker(BaseTracker):
 
             issues.append(
                 {
-                    "id": issue["key"],
+                    "external_id": issue["id"],  # Use Jira's internal ID
+                    "key": issue["key"],  # Use Jira's issue key
                     "title": issue["fields"]["summary"],
                     "description": issue["fields"].get("description", ""),
                     "state": issue["fields"]["status"]["name"].lower(),

@@ -214,9 +214,9 @@ class TrackerClient:
                      continue
 
                 # Find existing project or create new one
-                existing_project = crud_project.get_by_identifier(
+                existing_project = crud_project.get_by_slug_or_identifier(
                     db,
-                    identifier=project_identifier,
+                    slug_or_identifier=project_identifier,
                     organization_id=organization.id,
                 )
 
@@ -488,32 +488,31 @@ def scan_account(
     return account_stats
 
 
-def scan_all_accounts(
-    db: Session, verbose: bool = False, force_update: bool = False
-) -> Dict[str, Any]:
+def scan_all_accounts(db: Session, verbose: bool = False, force_update: bool = False) -> Dict[str, Any]:
     """
-    Scan all accounts and their trackers and update the database.
+    Scan all accounts and their trackers, updating the database.
 
     Args:
-        db: Database session
-        verbose: Whether to print verbose output
-        force_update: Whether to force update all embeddings even if content hasn't changed
+        db: Database session.
+        verbose: Whether to print verbose output during scans.
+        force_update: Whether to force update all embeddings even if content hasn't changed.
 
     Returns:
-        Dictionary containing scan statistics
+        Dictionary containing scan statistics.
     """
     logger.info("Starting scan of all accounts")
 
     start_time = time.time()
+    # Use consistent naming for stats dictionary keys as used in scan_account and scan_tracker
     overall_stats = {
         "accounts_scanned": 0,
         "accounts_with_errors": 0,
-        "trackers_scanned": 0,
-        "trackers_with_errors": 0,
-        "organizations": 0,
-        "projects": 0,
-        "issues": 0,
-        "embeddings_updated": 0,
+        "total_trackers_scanned": 0, # Renamed for clarity
+        "total_trackers_with_errors": 0, # Renamed for clarity
+        "total_organizations": 0, # Renamed for clarity
+        "total_projects": 0, # Renamed for clarity
+        "total_issues": 0, # Renamed for clarity
+        "total_embeddings_updated": 0, # Renamed for clarity
     }
 
     # Get all active accounts
@@ -522,43 +521,49 @@ def scan_all_accounts(
 
     if not accounts:
         logger.warning("No active accounts found")
+        # Add duration before returning early
+        overall_stats["total_duration_seconds"] = time.time() - start_time
         return overall_stats
 
     # Scan each account
     for account in accounts:
-        if verbose:
-            print(f"\nScanning account: {account.username} (ID: {account.id})")
+        logger.info(f"Starting scan for account: {account.username} (ID: {account.id})")
+        # Ensure verbose and force_update are passed explicitly by name for clarity
+        account_stats = scan_account(db, account.id, verbose=verbose, force_update=force_update)
 
-        account_stats = scan_account(db, account.id, verbose, force_update)
-
-        # Aggregate statistics
+        # Aggregate statistics using the renamed keys
         overall_stats["accounts_scanned"] += 1
         if account_stats["trackers_with_errors"] > 0:
             overall_stats["accounts_with_errors"] += 1
-        overall_stats["trackers_scanned"] += account_stats["trackers_scanned"]
-        overall_stats["trackers_with_errors"] += account_stats["trackers_with_errors"]
-        overall_stats["organizations"] += account_stats["organizations"]
-        overall_stats["projects"] += account_stats["projects"]
-        overall_stats["issues"] += account_stats["issues"]
-        overall_stats["embeddings_updated"] += account_stats["embeddings_updated"]
+        overall_stats["total_trackers_scanned"] += account_stats["trackers_scanned"]
+        overall_stats["total_trackers_with_errors"] += account_stats["trackers_with_errors"]
+        overall_stats["total_organizations"] += account_stats["organizations"]
+        overall_stats["total_projects"] += account_stats["projects"]
+        overall_stats["total_issues"] += account_stats["issues"]
+        overall_stats["total_embeddings_updated"] += account_stats["embeddings_updated"]
+        logger.info(f"Finished scan for account: {account.username} (ID: {account.id})")
 
-    overall_stats["duration_seconds"] = time.time() - start_time
 
+    overall_stats["total_duration_seconds"] = time.time() - start_time # Renamed for clarity
+
+    logger.info(f"Finished scanning all accounts in {overall_stats['total_duration_seconds']:.2f} seconds.")
+    # Use the renamed keys for the verbose printout to match the return dict and CLI output
     if verbose:
-        print("\n=== Overall Scan Results ===")
-        print(f"Accounts scanned: {overall_stats['accounts_scanned']}")
-        print(f"Accounts with errors: {overall_stats['accounts_with_errors']}")
-        print(f"Trackers scanned: {overall_stats['trackers_scanned']}")
-        print(f"Trackers with errors: {overall_stats['trackers_with_errors']}")
-        print(f"Total organizations: {overall_stats['organizations']}")
-        print(f"Total projects: {overall_stats['projects']}")
-        print(f"Total issues: {overall_stats['issues']}")
-        print(f"Total embeddings updated: {overall_stats['embeddings_updated']}")
-        print(f"Total duration: {overall_stats['duration_seconds']:.2f} seconds")
+        print("\n=== Overall Scan Summary ===")
+        print(f"  Accounts scanned: {overall_stats['accounts_scanned']}")
+        print(f"  Accounts with errors: {overall_stats['accounts_with_errors']}")
+        print(f"  Total trackers scanned: {overall_stats['total_trackers_scanned']}")
+        print(f"  Total trackers with errors: {overall_stats['total_trackers_with_errors']}")
+        print(f"  Total organizations: {overall_stats['total_organizations']}")
+        print(f"  Total projects: {overall_stats['total_projects']}")
+        print(f"  Total issues: {overall_stats['total_issues']}")
+        print(f"  Total embeddings updated: {overall_stats['total_embeddings_updated']}")
+        print(f"  Total duration: {overall_stats['total_duration_seconds']:.2f} seconds")
 
-    logger.info(f"Scan completed in {overall_stats['duration_seconds']:.2f} seconds")
-    logger.info(
-        f"Processed {overall_stats['issues']} issues, updated {overall_stats['embeddings_updated']} embeddings"
-    )
+    # Remove redundant logging already covered by verbose output or logger above
+    # logger.info(f"Scan completed in {overall_stats['total_duration_seconds']:.2f} seconds")
+    # logger.info(
+    #     f"Processed {overall_stats['total_issues']} issues, updated {overall_stats['total_embeddings_updated']} embeddings"
+    # )
 
     return overall_stats

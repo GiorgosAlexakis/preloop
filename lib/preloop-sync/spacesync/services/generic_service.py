@@ -3,7 +3,7 @@ Generic tracker update services.
 """
 
 from sqlalchemy.orm import Session
-
+from typing import List
 from spacemodels.crud import (
     crud_organization,
 )
