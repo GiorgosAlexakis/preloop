@@ -185,7 +185,8 @@ class BaseTracker(ABC):
 
         return {
             "project_id": project_id,
-            "external_id": issue_data["id"],
+            "external_id": issue_data["external_id"], # Use the correct field name
+            "key": issue_data["key"], # Add the key field
             "title": issue_data["title"],
             "description": description,
             "status": status,

@@ -3,14 +3,12 @@ CLI commands for SpaceSync.
 """
 
 import click
-
 from spacemodels.crud import crud_account, crud_tracker
 
 from .. import __version__
 from spacemodels.db.session import get_db_session
 from .scan_commands import scan
-from .service_commands import service
-
+from .scheduler_commands import scheduler_cmd
 
 @click.group()
 @click.version_option(version=__version__)
@@ -27,8 +25,7 @@ def cli() -> None:
 
 # Add command groups
 cli.add_command(scan)
-cli.add_command(service)
-
+cli.add_command(scheduler_cmd, name="scheduler")
 
 @cli.command()
 def version() -> None:

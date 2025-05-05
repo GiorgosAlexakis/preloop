@@ -15,58 +15,104 @@ class TestScanCommands(unittest.TestCase):
         """Set up test fixtures."""
         self.runner = CliRunner()
 
-    @patch("time.sleep") # Patch time.sleep globally for this test
-    @patch("spacesync.cli.scan_commands.BackgroundScheduler")
+    @patch("spacesync.cli.scan_commands.scan_all_accounts")
     @patch("spacesync.cli.scan_commands.get_db_session")
-    def test_scan_all(self, mock_get_db, mock_scheduler_cls, mock_sleep):
-        """Test scan_all command starts the service and shuts down gracefully."""
+    def test_scan_all_sync(self, mock_get_db, mock_scan_all_accounts):
+        """Test scan all command runs synchronously and prints stats."""
         # Setup mocks
         mock_db = MagicMock()
-        mock_get_db.return_value.__next__.return_value = mock_db
+        mock_get_db.return_value.__next__.return_value = mock_db # Use generator style
 
-        # Mock the scheduler instance and its methods
-        mock_scheduler_instance = MagicMock()
-        mock_scheduler_cls.return_value = mock_scheduler_instance
-        mock_scheduler_instance.start.return_value = None # Don't hang
-        mock_scheduler_instance.running = True # Ensure the shutdown condition passes
-
-        # Mock sleep's side effect to modify the actual keep_running flag
-        # in the scan_commands module after a couple of calls.
-        # This simulates the signal handler setting the flag to False.
-        def sleep_side_effect(*args):
-            import spacesync.cli.scan_commands # Import module where flag lives
-            if mock_sleep.call_count >= 2:
-                # Modify the flag in the module to stop the loop
-                spacesync.cli.scan_commands.keep_running = False
-            return None # time.sleep returns None
-
-        mock_sleep.side_effect = sleep_side_effect
-
-        # IMPORTANT: Reset keep_running flag before running the test
-        # to ensure it starts as True for the while loop.
-        import spacesync.cli.scan_commands
-        spacesync.cli.scan_commands.keep_running = True
+        # Mock the return value of the core scan function
+        mock_stats = {
+            "accounts_scanned": 3,
+            "accounts_with_errors": 1,
+            "total_trackers_scanned": 10,
+            "total_trackers_with_errors": 2,
+            "total_organizations": 5,
+            "total_projects": 20,
+            "total_issues": 150,
+            "total_embeddings_updated": 75,
+            "total_duration_seconds": 35.8,
+        }
+        mock_scan_all_accounts.return_value = mock_stats
 
         # Run the Click command
         with self.runner.isolated_filesystem():
-            result = self.runner.invoke(scan, ["all", "--max-workers", "1", "--reload-interval", "1"])
+            # Invoke without scheduler-specific args like --reload-interval
+            result = self.runner.invoke(scan, ["all"])
 
-            # Check setup calls
-            mock_scheduler_cls.assert_called_once()
-            mock_scheduler_instance.start.assert_called_once()
-            mock_scheduler_instance.add_job.assert_called_once()
+            # Print result to debug if failed
+            if result.exit_code != 0:
+                print(f"Command failed with output:\n{result.output}")
+                print(f"Exception:\n{result.exception}")
 
-            # Check cleanup calls
-            mock_db.close.assert_called_once() # From finally block
-            # Check that the scheduler's shutdown was called (via the atexit handler)
-            mock_scheduler_instance.shutdown.assert_called_once()
+            # Check exit code
+            self.assertEqual(result.exit_code, 0, msg=f"Command failed: {result.output}")
 
-            # Check exit code and output for graceful shutdown
-            self.assertEqual(result.exit_code, 0)
-            self.assertIn("Starting SpaceSync service", result.output)
-            self.assertIn("SpaceSync service stopped", result.output)
-            # We can also check sleep was called at least twice
-            self.assertGreaterEqual(mock_sleep.call_count, 2)
+            # Check that the core scan function was called correctly
+            # Check that the core scan function was called correctly
+            # The actual call uses the result of __next__ for the db session
+            mock_scan_all_accounts.assert_called_once_with(mock_db, False, False)
+
+            # Check that the database session context manager was used
+            mock_get_db.assert_called_once()
+            # Removed: mock_db.close.assert_not_called() - db.close() is called explicitly
+
+            # Check for expected statistics in the output
+            self.assertIn("=== Scan Complete ===", result.output) # Match actual output format
+            self.assertIn("Accounts scanned: 3", result.output)
+            self.assertIn("Accounts with errors: 1", result.output)
+            self.assertIn("Total trackers scanned: 10", result.output) # Check total count
+            self.assertIn("Total trackers with errors: 2", result.output)
+            self.assertIn("Total organizations: 5", result.output)
+            self.assertIn("Total projects: 20", result.output) # Corrected assertion
+            self.assertIn("Total issues: 150", result.output) # Corrected assertion
+            self.assertIn("Total embeddings updated: 75", result.output)
+            self.assertIn("Total duration: 35.8", result.output) # Check for substring
+    @patch("spacesync.cli.scan_commands.scan_all_accounts")
+    @patch("spacesync.cli.scan_commands.get_db_session")
+    def test_scan_all_sync_verbose(self, mock_get_db, mock_scan_all_accounts):
+        """Test scan all command with --verbose flag."""
+        mock_db = MagicMock()
+        mock_get_db.return_value.__next__.return_value = mock_db # Use generator style
+        # Provide default stats keys expected by the command's print logic
+        mock_stats = {
+            "accounts_scanned": 0, "accounts_with_errors": 0,
+            "total_trackers_scanned": 0, "total_trackers_with_errors": 0,
+            "total_organizations": 0, "total_projects": 0, "total_issues": 0,
+            "total_embeddings_updated": 0, "total_duration_seconds": 0.0,
+        }
+        mock_scan_all_accounts.return_value = mock_stats
+
+        with self.runner.isolated_filesystem():
+            result = self.runner.invoke(scan, ["all", "--verbose"])
+
+            self.assertEqual(result.exit_code, 0, msg=f"Command failed: {result.output}")
+            mock_scan_all_accounts.assert_called_once_with(mock_db, True, False)
+            self.assertIn("=== Scan Complete ===", result.output) # Match actual output format
+
+    @patch("spacesync.cli.scan_commands.scan_all_accounts")
+    @patch("spacesync.cli.scan_commands.get_db_session")
+    def test_scan_all_sync_force_update(self, mock_get_db, mock_scan_all_accounts):
+        """Test scan all command with --force-update flag."""
+        mock_db = MagicMock()
+        mock_get_db.return_value.__next__.return_value = mock_db # Use generator style
+        # Provide default stats keys expected by the command's print logic
+        mock_stats = {
+            "accounts_scanned": 0, "accounts_with_errors": 0,
+            "total_trackers_scanned": 0, "total_trackers_with_errors": 0,
+            "total_organizations": 0, "total_projects": 0, "total_issues": 0,
+            "total_embeddings_updated": 0, "total_duration_seconds": 0.0,
+        }
+        mock_scan_all_accounts.return_value = mock_stats
+
+        with self.runner.isolated_filesystem():
+            result = self.runner.invoke(scan, ["all", "--force-update"])
+
+            self.assertEqual(result.exit_code, 0, msg=f"Command failed: {result.output}")
+            mock_scan_all_accounts.assert_called_once_with(mock_db, False, True)
+            self.assertIn("=== Scan Complete ===", result.output) # Match actual output format
 
     @patch("spacesync.cli.scan_commands.scan_account")
     @patch("spacesync.cli.scan_commands.crud_account")

@@ -148,7 +148,7 @@ class GitHubTracker(BaseTracker):
                         "default_branch": repo["default_branch"],
                         "language": repo.get("language"),
                         "created_at": repo["created_at"],
-                        "updated_at": repo["updated_at"],
+                        "updated_at": repo["pushed_at"],  # Use pushed_at for last activity
                         "stars": repo["stargazers_count"],
                     },
                 }
@@ -198,9 +198,11 @@ class GitHubTracker(BaseTracker):
             if "pull_request" in issue:
                 continue
 
+            issue_number = issue["number"]
             issues.append(
                 {
-                    "id": str(issue["number"]),
+                    "external_id": str(issue_number),  # Use GitHub issue number
+                    "key": f"{repo_name}#{issue_number}",  # Construct key as repo#number
                     "title": issue["title"],
                     "description": issue["body"] or "",
                     "state": issue["state"],

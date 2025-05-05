@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import gitlab
 
+from ..config import logger # Added logger import
 from ..exceptions import (
     TrackerAuthenticationError,
     TrackerConnectionError,
@@ -141,17 +142,73 @@ class GitLabTracker(BaseTracker):
 
         project_list = []
         for project in projects:
+            # Ensure we have the necessary attributes, especially path_with_namespace for the slug
+            project_attributes = project.attributes # Use .attributes to get the raw dict
             project_list.append(
                 {
-                    "id": str(project.id),
-                    "name": project.name,
-                    "description": project.description or "",
-                    "url": project.web_url,
+                    "id": str(project_attributes.get("id")),
+                    "name": project_attributes.get("name"),
+                    "description": project_attributes.get("description", ""),
+                    "url": project_attributes.get("web_url"),
+                    "path_with_namespace": project_attributes.get("path_with_namespace"),
+                    # Add metadata including timestamps
+                    "meta_data": {
+                        "created_at": project_attributes.get("created_at"),
+                        "updated_at": project_attributes.get("last_activity_at"), # Use last_activity_at for updates
+                    },
                 }
             )
 
         return project_list
 
+    def transform_project(
+        self, proj_data: Dict[str, Any], organization_id: str
+    ) -> Dict[str, Any]:
+        """
+        Transform GitLab project data, adding the slug.
+
+        Args:
+            proj_data: Project data from the GitLab API.
+            organization_id: Database ID of the organization (UUID string).
+
+        Returns:
+            Transformed project data ready for database storage, including slug.
+        """
+        # Start with the base transformation
+        transformed_data = super().transform_project(proj_data, organization_id)
+
+        # Extract slug from GitLab's path_with_namespace if available
+        # The raw proj_data comes from the get_projects method which uses project.attributes
+        # Let's adjust get_projects to return the full object or ensure path_with_namespace is there.
+        # For now, assume proj_data might contain it directly or within meta_data if get_projects is adjusted.
+        # A safer approach is to modify get_projects first. Let's assume proj_data has 'path_with_namespace' for now.
+
+        # Re-checking get_projects: It returns a dict like:
+        # { 'id': ..., 'name': ..., 'description': ..., 'url': ... }
+        # It DOES NOT include path_with_namespace. We need to modify get_projects first.
+
+        # --- Let's modify get_projects first ---
+        # This insert is now incorrect, need to modify get_projects instead/before this.
+        # Backtracking: Modify get_projects to include 'path_with_namespace'
+
+        # --- Corrected Plan ---
+        # 1. Modify get_projects in gitlab.py to include 'path_with_namespace' in the returned dict.
+        # 2. Override transform_project in gitlab.py to extract 'path_with_namespace' and add it as 'slug'.
+
+        # --- Applying Step 1 (Modify get_projects) ---
+        # This requires an apply_diff, not insert_content.
+
+        # --- Applying Step 2 (Override transform_project) ---
+        # Assuming Step 1 is done, this insert would be correct.
+        gitlab_slug = proj_data.get("path_with_namespace") # Assumes get_projects was modified
+        if gitlab_slug:
+            transformed_data["slug"] = gitlab_slug
+        else:
+             # Fallback or log warning if path_with_namespace wasn't added
+             logger.warning(f"Could not determine slug (path_with_namespace) for GitLab project ID {proj_data.get('id')}")
+
+
+        return transformed_data
     def get_issues(
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
@@ -177,11 +234,21 @@ class GitLabTracker(BaseTracker):
         # Get issues for the project
         issues = self._make_request(project.issues.list, **kwargs)
 
+        # Ensure project object has path_with_namespace for constructing the key
+        project_slug = project.path_with_namespace
+        if not project_slug:
+             logger.error(f"Could not determine path_with_namespace (slug) for GitLab project ID {project_id}")
+             # Key is mandatory, so we cannot proceed without the slug.
+             raise TrackerResponseError(f"Missing path_with_namespace for GitLab project ID {project_id}")
+
         issue_list = []
         for issue in issues:
+            external_id = str(issue.iid)
+            key = f"{project_slug}#{external_id}"
             issue_list.append(
                 {
-                    "id": str(issue.iid),  # Use iid which is project-specific ID
+                    "external_id": external_id,  # Use iid which is project-specific ID
+                    "key": key, # Construct key as project_slug#iid
                     "title": issue.title,
                     "description": issue.description or "",
                     "state": issue.state,

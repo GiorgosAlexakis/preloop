@@ -3,7 +3,7 @@ Tracker update service manager.
 (Refactored for APScheduler integration)
 """
 
-from typing import Optional, Set
+from typing import Optional, Set, List
 
 import pytz
 from datetime import datetime
@@ -14,7 +14,7 @@ from apscheduler.jobstores.base import JobLookupError # Import specific error
 
 from spacemodels.crud import crud_tracker
 from spacemodels.db.session import get_db_session
-from spacemodels.models import Organization
+from spacemodels.models import Organization, Project
 from spacesync.scanner.core import TrackerClient
 from ..exceptions import TrackerRateLimitError, TrackerError # Import necessary exceptions
 
@@ -173,9 +173,6 @@ def sync_scheduled_jobs(scheduler: BaseScheduler, db: Session):
                  logger.warning(f"Job {job_id} not found in scheduler, likely already removed.")
             except Exception as e:
                 logger.error(f"Error removing job {job_id}: {e}")
-            finally:
-                 # Also stop and cleanup the service instance if it exists
-                 manager._stop_service_instance(tracker_id)
 
 
         # 6. Add jobs for new active trackers
