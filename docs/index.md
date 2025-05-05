@@ -36,6 +36,23 @@ SpaceBridge-MCP acts as a bridge between MCP clients and the SpaceBridge REST AP
 - Translates the request to an HTTP call to the SpaceBridge REST API
 - Returns the result back to the MCP client
 
+**Configuration (Environment Variables):**
+
+Besides the standard `SPACEBRIDGE_API_KEY` and `OPENAI_API_KEY` variables, the following *optional* environment variables can be used to customize behavior:
+
+*   `DUPLICATE_SIMILARITY_THRESHOLD`:
+    *   **Purpose**: Sets the similarity score threshold for detecting duplicates when the OpenAI API key is *not* provided or configured. Issues returned by the similarity search with a score greater than or equal to this value will be considered duplicates.
+    *   **Default**: `0.75`
+    *   **Example**: `export DUPLICATE_SIMILARITY_THRESHOLD="0.85"`
+*   `OPENAI_API_URL`:
+    *   **Purpose**: Specifies a custom base URL for the OpenAI API. Useful for connecting to OpenAI-compatible endpoints like Fireworks AI, local Ollama servers, etc.
+    *   **Default**: None (uses the official OpenAI API endpoint).
+    *   **Example**: `export OPENAI_API_URL="http://localhost:11434/v1"`
+*   `OPENAI_MODEL`:
+    *   **Purpose**: Defines the specific OpenAI model to use for the duplicate detection comparison step (only used if `OPENAI_API_KEY` is set).
+    *   **Default**: `gpt-4o`
+    *   **Example**: `export OPENAI_MODEL="gpt-3.5-turbo"`
+
 ### SpaceBridge REST API
 
 The SpaceBridge REST API provides a set of endpoints for interacting with issue trackers. It supports operations such as:
@@ -161,6 +178,14 @@ claude mcp add spacebridge \
 --env SPACEBRIDGE_API_URL="your-custom-url"
 ```
 `--scope user` makes the server available across all your projects in Claude code. Use `--scope project` to limit it to the current project.
+
+#### Removing Spacebridge from Claude Code
+
+If you wish to remove the Spacebridge MCP Server run:
+
+```bash
+claude mcp remove "spacebridge" -s user
+```
 
 ### Configuring Cursor with SpaceBridge
 
