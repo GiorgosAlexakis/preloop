@@ -784,17 +784,15 @@ class GitLabClient(TrackerInterface):
             body["title"] = issue_data.title
         if issue_data.description is not None:
             body["description"] = issue_data.description
-        if issue_data.status_id is not None:
-            body["state_event"] = (
-                "close" if issue_data.status_id == "closed" else "reopen"
-            )
-        if issue_data.assignee_id is not None:
-            body["assignee_ids"] = [int(issue_data.assignee_id)]
+        if issue_data.status is not None:
+            body["state_event"] = "close" if issue_data.status == "closed" else "reopen"
+        if issue_data.assignee is not None:
+            body["assignee_ids"] = [int(issue_data.assignee.id)]
         if issue_data.labels is not None:
             body["labels"] = ",".join(issue_data.labels)
 
         # Handle priority update (add/remove priority labels)
-        if issue_data.priority_id is not None:
+        if issue_data.priority is not None:
             # Get current labels first
             current_issue = await self.get_issue(issue_id)
             current_labels = set(current_issue.labels)
@@ -812,8 +810,8 @@ class GitLabClient(TrackerInterface):
             current_labels -= labels_to_remove
 
             # Add new priority label if not None
-            if issue_data.priority_id:
-                new_priority_label = f"priority::{issue_data.priority_id}"
+            if issue_data.priority:
+                new_priority_label = f"priority::{issue_data.priority}"
                 current_labels.add(new_priority_label)
 
             body["labels"] = ",".join(list(current_labels))

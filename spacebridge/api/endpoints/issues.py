@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from datetime import datetime  # Added import
 from spacebridge.schemas.issue import (
     IssueCreate as ApiIssueCreate,
     IssueResponse,
@@ -262,6 +263,16 @@ async def search_issues(
         None, description="Filter by comma-separated list of labels"
     ),
     assignee: Optional[str] = Query(None, description="Filter by assignee"),
+    priority: Optional[str] = Query(
+        None, description="Filter by issue priority"
+    ),  # Added
+    last_updated_before: Optional[datetime] = Query(
+        None,
+        description="Filter issues updated before this timestamp (ISO 8601 format)",
+    ),  # Added
+    last_updated_after: Optional[datetime] = Query(
+        None, description="Filter issues updated after this timestamp (ISO 8601 format)"
+    ),  # Added
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
@@ -298,25 +309,11 @@ async def search_issues(
         if project_id:
             proj = crud_project.get(db, id=project_id)
         elif project:
-            project_list: List[Project] = []
             # If we have an organization, use it to narrow down the project search
             if org_id:
-                project_list = crud_project.get_by_name(
+                proj = crud_project.get_by_name(
                     db, name=project, organization_id=org_id
                 )
-                # Handle the list result when org_id is specified
-                if not project_list:
-                    proj = None  # No project found by name in this org
-                elif len(project_list) == 1:
-                    proj = project_list[
-                        0
-                    ]  # Exactly one project found by name in this org
-                else:
-                    # This case should ideally not happen if name is unique within org, but handle defensively
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Multiple projects found with name '{project}' within organization '{org.identifier}'.",
-                    )
             else:
                 # --- No organization specified: Search globally by slug/id AND name ---
                 logger.warning(
@@ -446,6 +443,19 @@ async def search_issues(
             filter_obj.assignee = assignee
 
         response_items = []
+
+        # --- Determine Project IDs for Filtering ---
+        project_ids_filter: Optional[List[str]] = None
+        if proj:
+            project_ids_filter = [proj.id]
+        elif org:
+            # Filter projects by those belonging to accessible trackers for the user
+            project_ids_filter = [
+                p.id for p in org.projects if p.tracker_id in tracker_ids
+            ]
+        # If neither proj nor org is set, project_ids_filter remains None,
+        # and the CRUD layer will use tracker_ids as a fallback.
+
         if search_type == "similarity" and query:
             try:
                 # Get the active embedding model
@@ -460,64 +470,37 @@ async def search_issues(
                     )
                 model = active_models[0]
                 model_id = model.id
-
                 # Generate query vector
                 query_vector = crud_issue_embedding._generate_embedding_vector(
                     query, model
                 )
-
                 # Find similar issues using similarity search
                 similar_issues = crud_issue_embedding.similarity_search(
-                    db,
+                    db=db,
                     model_id=model_id,
                     query_vector=query_vector,
                     limit=limit,
-                    tracker_ids=tracker_ids,
+                    project_ids=project_ids_filter,  # Pass resolved project IDs
+                    tracker_ids=tracker_ids,  # Keep as fallback if project_ids_filter is None
+                    status=status,  # Pass status filter
+                    labels=filter_obj.labels,  # Pass labels filter (ensure filter_obj is populated)
+                    priority=priority,  # Pass priority filter
+                    assignee=assignee,  # Pass assignee filter
+                    last_updated_before=last_updated_before,  # Pass date filter
+                    last_updated_after=last_updated_after,  # Pass date filter
                 )
 
-                # Extract issues and apply filters
-                if proj:
-                    results = [
-                        (issue, score)
-                        for issue, score in similar_issues
-                        if issue.project_id == proj.id
-                    ]
-                else:
-                    results = [(issue, score) for issue, score in similar_issues]
+                # Post-fetch filtering is removed as it's now handled by the CRUD layer.
+                # The results from similarity_search are already filtered.
 
-                # Apply additional filters if specified
-                if status:
-                    results = [
-                        (issue, score)
-                        for issue, score in results
-                        if issue.status == status
-                    ]
-                if labels and isinstance(filter_obj.labels, list):
-                    results = [
-                        (issue, score)
-                        for issue, score in results
-                        if issue.meta_data
-                        and "labels" in issue.meta_data
-                        and all(
-                            label in issue.meta_data["labels"]
-                            for label in filter_obj.labels
-                        )
-                    ]
-                if assignee:
-                    results = [
-                        (issue, score)
-                        for issue, score in results
-                        if issue.meta_data
-                        and "assignee" in issue.meta_data
-                        and issue.meta_data["assignee"] == assignee
-                    ]
-
-                # Limit results
-                results = results[:limit]
-
-                # Convert to IssueResponse
-                for issue, score in results:
-                    issue_project = crud_project.get(db, id=issue.project_id)
+                # Convert directly to IssueResponse, limit is handled by CRUD
+                for (
+                    issue,
+                    score,
+                ) in similar_issues:  # similar_issues already respects limit
+                    issue_project = crud_project.get(
+                        db, id=issue.project_id
+                    )  # Still need project for response model
                     project_name = issue_project.name if issue_project else None
                     organization_name = None
                     if issue_project:
@@ -757,7 +740,7 @@ async def create_issue(
     Supports specifying organization/project by:
     - ID (organization_id/project_id)
     - Name (organization_name/project_name)
-    - Identifier (organization/project - deprecated)
+    - Slug (organization/project)
     """
     try:
         # Resolve organization and project using either ID, name, or identifier
@@ -766,7 +749,6 @@ async def create_issue(
         org = None
         proj = None
         org_id = None
-        proj_id = None
 
         # --- Resolve Organization and Project ---
 
@@ -783,7 +765,6 @@ async def create_issue(
         if issue.project_id:
             proj = crud_project.get(db, id=issue.project_id)
             if proj:
-                proj_id = proj.id
                 # If project found by ID, ensure org matches if org was also found by ID
                 if org_id and proj.organization_id != org_id:
                     raise HTTPException(
@@ -830,8 +811,10 @@ async def create_issue(
                     org_id = org.id
 
                 if not proj:  # If proj wasn't found by ID earlier
-                    proj = crud_project.get_by_identifier(
-                        db, organization_id=org_id, identifier=project_identifier
+                    proj = crud_project.get_by_slug_or_identifier(
+                        db,
+                        organization_id=org_id,
+                        slug_or_identifier=project_identifier,
                     ) or crud_project.get_by_name(
                         db, organization_id=org_id, name=project_identifier
                     )
@@ -840,27 +823,18 @@ async def create_issue(
                             status_code=404,
                             detail=f"Project '{project_identifier}' not found in organization '{organization_identifier}'",
                         )
-                    proj_id = proj.id
 
             else:
                 # Only Project provided, infer Organization
-                found_projects = crud_project.get_by_identifier_or_name_across_orgs(
-                    db, identifier_or_name=project_identifier
+                proj = crud_project.get_by_slug_or_identifier(
+                    db, slug_or_identifier=project_identifier
                 )
 
-                if not found_projects:
+                if not proj:
                     raise HTTPException(
                         status_code=404,
                         detail=f"Project '{project_identifier}' not found",
                     )
-                if len(found_projects) > 1:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Project '{project_identifier}' is ambiguous, please specify the organization",
-                    )
-
-                proj = found_projects[0]
-                proj_id = proj.id
                 org = crud_organization.get(db, id=proj.organization_id)
                 if not org:  # Data inconsistency
                     raise HTTPException(
@@ -925,12 +899,12 @@ async def create_issue(
             "description": created_issue.description,
             "status": created_issue.status.name if created_issue.status else None,
             "priority": created_issue.priority.name if created_issue.priority else None,
-            "assignee": created_issue.assignee.name if created_issue.assignee else None,
-            "labels": created_issue.labels,
+            # "assignee": created_issue.assignee.name if created_issue.assignee else None,
+            # "labels": created_issue.labels,
             "meta_data": created_issue.custom_fields,  # Map custom_fields to meta_data
             "external_id": tracker_external_id,
             "key": tracker_key,
-            "url": tracker_url,
+            # "url": tracker_url,
             "tracker_id": org.tracker_id,  # Use tracker_id from the organization
             "project_id": proj.id,  # Use internal project UUID
             "created_at": created_issue.created_at,
@@ -966,9 +940,9 @@ async def create_issue(
             description=db_issue.description,
             status=db_issue.status,
             priority=db_issue.priority,
-            assignee=db_issue.assignee,
-            labels=db_issue.labels,
-            url=db_issue.url,
+            # assignee=db_issue.assignee,
+            labels=db_issue.meta_data.get("labels", []),
+            url=db_issue.meta_data.get("url", ""),
             created_at=db_issue.created_at.isoformat() if db_issue.created_at else None,
             updated_at=db_issue.updated_at.isoformat() if db_issue.updated_at else None,
             metadata=db_issue.meta_data,
@@ -985,7 +959,7 @@ async def create_issue(
     "/issues/{issue_id:path}", response_model=IssueResponse
 )  # Added response_model
 def get_issue(
-    issue_id: str,  # Assume this is the external_id
+    issue_id: str,  # Issue key, Issue ID or external ID
     organization: Optional[str] = Query(None),
     project: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -1001,7 +975,14 @@ def get_issue(
 
         project_slug = None
         if "#" in issue_id:
-            project_slug, issue_id = issue_id.split("#")
+            project_slug, issue_external_id = issue_id.split("#")
+        else:
+            issue_external_id = issue_id
+            project_slug = project
+        # Find the issue by external_id
+        issue_query = db.query(Issue).filter(
+            Issue.tracker_id.in_(tracker_ids), Issue.external_id == issue_external_id
+        )
         # Get the project and organization
         if project_slug:
             project = crud_project.get_by_slug_or_identifier(
@@ -1012,15 +993,9 @@ def get_issue(
             organization = crud_organization.get(db, id=project.organization_id)
             if not organization:
                 raise HTTPException(status_code=404, detail="Organization not found")
+            issue_query = issue_query.filter(Issue.project_id == project.id)
+        issue = issue_query.order_by(Issue.last_updated_external.desc()).first()
 
-        # Find the issue by external_id
-        # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
-        issue = (
-            db.query(Issue)
-            .filter(Issue.tracker_id.in_(tracker_ids), Issue.external_id == issue_id)
-            .first()
-        )
-        # issue = crud_issue.get_by_external_id(db, external_id=issue_id) # Ideal way
         if not issue:
             # Maybe it was the internal ID? Try that as a fallback.
             issue = crud_issue.get(db, id=issue_id)
@@ -1090,7 +1065,7 @@ def get_issue(
 
 @router.put("/issues/{issue_id:path}", response_model=IssueResponse)
 async def update_issue(
-    issue_id: str,
+    issue_id: str,  # Issue key, Issue ID or external ID
     issue_update: ApiIssueUpdate,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
@@ -1128,22 +1103,22 @@ async def update_issue(
             try:
                 project_slug_from_key, external_id_from_key = issue_id.split("#", 1)
                 # Use get_by_slug_or_identifier which returns a list
-                project_list = crud_project.get_by_slug_or_identifier(
+                project = crud_project.get_by_slug_or_identifier(
                     db, slug_or_identifier=project_slug_from_key
                 )
-                if len(project_list) == 1:
-                    project_for_lookup = project_list[0]
+                if project:
                     # Ensure the project's tracker is accessible
-                    if project_for_lookup.tracker_id in tracker_ids:
+                    if project.organization.tracker_id in tracker_ids:
                         issue = (
                             db.query(Issue)
                             .filter(
-                                Issue.project_id == project_for_lookup.id,
+                                Issue.project_id == project.id,
                                 Issue.external_id == external_id_from_key,
                                 Issue.tracker_id.in_(
                                     tracker_ids
                                 ),  # Redundant check, but safe
                             )
+                            .order_by(Issue.last_updated_external.desc())
                             .first()
                         )
                     else:
@@ -1173,6 +1148,7 @@ async def update_issue(
                 .filter(
                     Issue.external_id == issue_id, Issue.tracker_id.in_(tracker_ids)
                 )
+                .order_by(Issue.last_updated_external.desc())
                 .first()
             )
 

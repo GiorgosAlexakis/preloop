@@ -16,3 +16,13 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+-   repo: local
+    hooks:
+    -   id: generate-openapi
+        name: Generate OpenAPI schema
+        entry: python scripts/generate_openapi.py
+        language: system
+        types: [python] # Run when Python files are committed
+        pass_filenames: false # The script doesn't need filenames
+        stages: [commit] # Run during the commit stage
