@@ -85,13 +85,8 @@ spec:
             {{- end }}
         - name: spacesync
           command:
-            - /bin/sh
-            - -c
-            - |
-              while true; do
-                sleep 1;
-                spacesync scan all
-              done
+            - spacesync
+            - scheduler
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"

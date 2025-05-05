@@ -75,7 +75,9 @@ class IssueUpdate(BaseModel):
 class IssueResponse(IssueBase):
     """Response model for issue data."""
 
-    id: str = Field(..., description="Issue ID in the original tracker (external ID)")
+    id: str = Field(..., description="Internal SpaceBridge database ID (UUID)")
+    external_id: str = Field(..., description="Issue ID in the original tracker")
+    key: str = Field(..., description="Human-readable issue key (e.g., PROJ-123)")
     organization: str = Field(..., description="Organization name")
     project: str = Field(..., description="Project name")
     url: str = Field(..., description="URL to the issue in the original tracker")

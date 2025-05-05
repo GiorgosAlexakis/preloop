@@ -17,6 +17,7 @@ from spacemodels.crud import (
     CRUDIssue,
     CRUDOrganization,
     CRUDProject,
+    CRUDTracker,  # Added CRUDTracker import
     crud_embedding_model,
     crud_issue_embedding,
 )
@@ -24,6 +25,7 @@ from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
+from spacemodels.models.tracker import Tracker  # Added Tracker model import
 from spacebridge.trackers.factory import TrackerFactory  # Import TrackerFactory
 from spacebridge.trackers.base import (
     IssueCreate,
@@ -35,6 +37,7 @@ from spacebridge.api.auth import get_current_active_user  # Import user dependen
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
+crud_tracker = CRUDTracker(Tracker)  # Added CRUDTracker instantiation
 
 
 # Define the filter class for issue searching
@@ -83,16 +86,39 @@ async def get_tracker_client(
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    # Check if project_id is a UUID or an identifier
-    if len(project_id) == 36:  # Simple UUID check
+    # Resolve project
+    project: Optional[Project] = None
+    if len(project_id) == 36:  # Check if project_id looks like a UUID (our internal ID)
         project = crud_project.get(db, id=project_id)
+        # Verify it belongs to the correct organization
+        if project and project.organization_id != organization.id:
+            logger.warning(
+                f"Project ID {project_id} found but belongs to wrong org ({project.organization_id} != {organization.id})"
+            )
+            project = None  # Treat as not found in this context
     else:
-        project = crud_project.get_by_identifier(
-            db, organization_id=organization.id, identifier=project_id
+        # Assume project_id is a slug or identifier if not a UUID
+        project_list = crud_project.get_by_slug_or_identifier(
+            db, organization_id=organization.id, slug_or_identifier=project_id
         )
+        if len(project_list) == 1:
+            project = project_list[0]
+        elif len(project_list) > 1:
+            # This shouldn't happen if org is specified, but handle defensively
+            logger.error(
+                f"Ambiguous project identifier '{project_id}' within organization '{organization.identifier}'."
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ambiguous project identifier '{project_id}' within organization.",
+            )
 
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        # If project is still None after trying ID and slug/identifier
+        raise HTTPException(
+            status_code=404,
+            detail=f"Project '{project_id}' not found within organization '{organization.identifier}'.",
+        )
 
     # Get tracker details from the organization
     tracker = organization.tracker
@@ -272,24 +298,127 @@ async def search_issues(
         if project_id:
             proj = crud_project.get(db, id=project_id)
         elif project:
+            project_list: List[Project] = []
             # If we have an organization, use it to narrow down the project search
             if org_id:
-                proj = crud_project.get_by_name(
+                project_list = crud_project.get_by_name(
                     db, name=project, organization_id=org_id
                 )
+                # Handle the list result when org_id is specified
+                if not project_list:
+                    proj = None  # No project found by name in this org
+                elif len(project_list) == 1:
+                    proj = project_list[
+                        0
+                    ]  # Exactly one project found by name in this org
+                else:
+                    # This case should ideally not happen if name is unique within org, but handle defensively
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Multiple projects found with name '{project}' within organization '{org.identifier}'.",
+                    )
             else:
-                proj = crud_project.get_by_name(db, name=project)
+                # --- No organization specified: Search globally by slug/id AND name ---
+                logger.warning(
+                    f"API: No organization specified. Searching globally for project '{project}'"
+                )  # Use warning
+                # Fetch single project by slug/id, returns Project or None
+                project_by_slug_id = crud_project.get_by_slug_or_identifier(
+                    db, slug_or_identifier=project
+                )
+                logger.warning(
+                    f"API: Found project matching slug/identifier '{project}' globally? {'Yes' if project_by_slug_id else 'No'}"
+                )  # Use warning
 
+                # Fetch single project by name, returns Project or None
+                project_by_name = crud_project.get_by_name(db, name=project)
+                logger.warning(
+                    f"API: Found project matching name '{project}' globally? {'Yes' if project_by_name else 'No'}"
+                )  # Use warning
+
+                # Combine results and filter for active projects
+                # Use a dictionary to handle potential duplicates from searching different fields
+                combined_projects_dict: Dict[str, Project] = {}
+                if project_by_slug_id:
+                    combined_projects_dict[project_by_slug_id.id] = project_by_slug_id
+                if project_by_name:  # Add/overwrite if found by name
+                    combined_projects_dict[project_by_name.id] = project_by_name
+                logger.warning(
+                    f"API: Combined unique projects found: {len(combined_projects_dict)}"
+                )  # Use warning
+
+                active_projects = [
+                    p for p in combined_projects_dict.values() if p.is_active
+                ]
+                logger.warning(
+                    f"API: Active projects found matching '{project}' globally: {len(active_projects)}"
+                )  # Use warning
+
+                if not active_projects:
+                    proj = None  # No active project found globally
+                elif len(active_projects) == 1:
+                    proj = active_projects[
+                        0
+                    ]  # Exactly one active project found globally
+                else:
+                    # Multiple active projects found globally
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Multiple active projects found matching '{project}'. Please specify an organization.",
+                    )
+
+        # --- Final Validation ---
+        logger.warning(
+            f"API: Before final validation: proj is {'set' if proj else 'None'}, project_id='{project_id}', project='{project}'"
+        )  # Add log
         # Validate project (if project is specified but not found)
+        # The check `if not proj` now correctly handles the case where the list was empty or ambiguity was detected earlier
         if (project_id or project) and not proj:
-            raise HTTPException(status_code=404, detail="Project not found")
-
-        if org and proj and org.id != proj.organization_id:
+            # Raise 404 if proj is None after the checks above
+            logger.error(
+                f"API: Raising 404 because proj is None. project_id='{project_id}', project='{project}'"
+            )  # Add log
             raise HTTPException(
-                status_code=404, detail="Project not found for this organization"
+                status_code=404, detail=f"Project '{project}' not found."
             )
+
+        # Ensure project belongs to the specified organization, if applicable
+        if org and proj and org.id != proj.organization_id:
+            # This check remains valid as proj is now a single object or None
+            raise HTTPException(
+                status_code=400,  # Use 400 as it's a mismatch based on input
+                detail=f"Project '{proj.name}' does not belong to organization '{org.identifier}'.",
+            )
+
+        # If organization wasn't specified initially, but we found a unique project, get its org
         if not org and proj:
-            org = proj.organization
+            # Explicitly fetch the organization using CRUD
+            logger.warning(
+                f"API: Globally found project '{proj.name}' (ID: {proj.id}). Fetching its organization (ID: {proj.organization_id})."
+            )
+            org = crud_organization.get(db, id=proj.organization_id)
+            if not org:
+                # This indicates an orphaned project or data inconsistency
+                logger.error(
+                    f"API: Found project '{proj.name}' (ID: {proj.id}) but could not find its organization (ID: {proj.organization_id}) in the database."
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Internal server error: Project organization data inconsistent.",
+                )
+            elif not org.is_active:
+                # Found the org, but it's inactive
+                logger.warning(
+                    f"API: Found project '{proj.name}' (ID: {proj.id}) but its organization '{org.identifier}' (ID: {org.id}) is inactive."
+                )
+                # Treat as project not found, as the org context is invalid
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Project '{project}' not found (its organization is inactive).",
+                )
+            logger.warning(
+                f"API: Successfully fetched organization '{org.identifier}' for project '{proj.name}'."
+            )
         # Validate access and get tracker client (even if not used directly for DB search)
         # This enforces the project selection rules before proceeding.
         try:
@@ -405,9 +534,32 @@ async def search_issues(
                     )
                     metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
                     external_url = metadata_dict.get("url") or issue.external_url
+                    # Determine response ID based on project slug
+                    response_id = issue.external_id or str(
+                        issue.id
+                    )  # Fallback to internal ID string
+                    if issue_project and issue_project.slug and issue.external_id:
+                        response_id = f"{issue_project.slug}#{issue.external_id}"
+                    elif issue.external_id:
+                        response_id = issue.external_id
+
+                    # Ensure required fields are present (as per task constraints, assume they are)
+                    if not issue.external_id:
+                        logger.warning(
+                            f"Issue {issue.id} missing external_id during similarity search response creation."
+                        )
+                        continue
+                    if not issue.key:
+                        logger.warning(
+                            f"Issue {issue.id} missing key during similarity search response creation."
+                        )
+                        continue
+
                     response_items.append(
                         IssueResponse(
-                            id=issue.external_id or issue.id,
+                            id=str(issue.id),  # Use internal DB UUID
+                            external_id=issue.external_id,  # Use tracker's external ID
+                            key=issue.key,  # Use human-readable key
                             title=issue.title,
                             description=issue.description,
                             status=issue.status,
@@ -415,7 +567,7 @@ async def search_issues(
                             organization=organization_name,
                             project=project_name,
                             url=external_url
-                            or f"https://spacebridge.io/issues/{issue.id}",
+                            or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=created_at_str,
                             updated_at=updated_at_str,
                             metadata=metadata_dict,
@@ -423,7 +575,7 @@ async def search_issues(
                             if isinstance(metadata_dict.get("labels"), list)
                             else [],
                             assignee=metadata_dict.get("assignee"),
-                            score=score,
+                            score=score,  # Include similarity score
                         )
                     )
 
@@ -521,9 +673,34 @@ async def search_issues(
                     )
                     metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
                     external_url = metadata_dict.get("url") or issue.external_url
+                    # Determine response ID based on project slug
+                    response_id = issue.external_id or str(
+                        issue.id
+                    )  # Fallback to internal ID string
+                    if issue_project and issue_project.slug and issue.external_id:
+                        response_id = f"{issue_project.slug}#{issue.external_id}"
+                    elif issue.external_id:
+                        response_id = issue.external_id
+
+                    # Ensure required fields are present (as per task constraints, assume they are)
+                    if not issue.external_id:
+                        logger.warning(
+                            f"Issue {issue.id} missing external_id during full-text search response creation."
+                        )
+                        # Decide handling: skip, error, or default? Skipping for now.
+                        continue
+                    if not issue.key:
+                        logger.warning(
+                            f"Issue {issue.id} missing key during full-text search response creation."
+                        )
+                        # Decide handling: skip, error, or default? Skipping for now.
+                        continue
+
                     response_items.append(
                         IssueResponse(
-                            id=issue.external_id or issue.id,
+                            id=str(issue.id),  # Use internal DB UUID
+                            external_id=issue.external_id,  # Use tracker's external ID
+                            key=issue.key,  # Use human-readable key
                             title=issue.title,
                             description=issue.description,
                             status=issue.status,
@@ -531,7 +708,7 @@ async def search_issues(
                             organization=organization_name,
                             project=project_name,
                             url=external_url
-                            or f"https://spacebridge.io/issues/{issue.id}",
+                            or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=created_at_str,
                             updated_at=updated_at_str,
                             metadata=metadata_dict,
@@ -539,6 +716,7 @@ async def search_issues(
                             if isinstance(metadata_dict.get("labels"), list)
                             else [],
                             assignee=metadata_dict.get("assignee"),
+                            score=None,  # No score for full-text search
                         )
                     )
 
@@ -727,34 +905,73 @@ async def create_issue(
             project_key_for_tracker, tracker_issue
         )
 
-        # For the response, use the names and external ID
-        # Map the returned tracker Issue object to the API IssueResponse
+        # --- Save to local database ---
+        # Extract necessary IDs and data from the tracker response
+        tracker_external_id = str(created_issue.id) if created_issue.id else None
+        tracker_key = created_issue.key
+        tracker_url = created_issue.url
+
+        # Ensure tracker_id is available
+        if not org.tracker_id:
+            logger.error(f"Organization {org.id} has no associated tracker_id.")
+            raise HTTPException(
+                status_code=500,
+                detail="Internal configuration error: Missing tracker ID.",
+            )
+
+        # Prepare data for database insertion
+        issue_data_for_db = {
+            "title": created_issue.title,
+            "description": created_issue.description,
+            "status": created_issue.status.name if created_issue.status else None,
+            "priority": created_issue.priority.name if created_issue.priority else None,
+            "assignee": created_issue.assignee.name if created_issue.assignee else None,
+            "labels": created_issue.labels,
+            "meta_data": created_issue.custom_fields,  # Map custom_fields to meta_data
+            "external_id": tracker_external_id,
+            "key": tracker_key,
+            "url": tracker_url,
+            "tracker_id": org.tracker_id,  # Use tracker_id from the organization
+            "project_id": proj.id,  # Use internal project UUID
+            "created_at": created_issue.created_at,
+            "updated_at": created_issue.updated_at,
+            # Add other relevant fields if the Issue model requires them
+        }
+
+        # Create the issue in the database
+        try:
+            db_issue = crud_issue.create(db=db, obj_in=issue_data_for_db)
+            db.commit()  # Commit the transaction
+            db.refresh(db_issue)  # Refresh to get DB-generated values like ID
+        except Exception as db_exc:
+            db.rollback()  # Rollback on error
+            logger.error(
+                f"Error saving created issue to database: {db_exc}", exc_info=True
+            )
+            # Consider if we should delete the issue from the tracker here?
+            # For now, return an error indicating partial success/failure.
+            raise HTTPException(
+                status_code=500,
+                detail=f"Issue created in tracker ({tracker_key or tracker_external_id}) but failed to save locally: {str(db_exc)}",
+            )
+
+        # --- Construct the API Response using the database object ---
         return IssueResponse(
-            id=created_issue.key
-            or created_issue.id,  # Use external key/id from tracker
-            organization=org.name,  # Use resolved organization name
-            project=proj.name,  # Use resolved project name
-            title=created_issue.title,
-            description=created_issue.description,
-            status=created_issue.status.name
-            if created_issue.status
-            else None,  # Extract name
-            priority=created_issue.priority.name
-            if created_issue.priority
-            else None,  # Extract name
-            assignee=created_issue.assignee.name
-            if created_issue.assignee
-            else None,  # Extract name
-            labels=created_issue.labels,
-            url=created_issue.url
-            or f"https://tracker.example.com/issues/{created_issue.key}",  # Use tracker URL or fallback
-            created_at=created_issue.created_at.isoformat()
-            if created_issue.created_at
-            else None,
-            updated_at=created_issue.updated_at.isoformat()
-            if created_issue.updated_at
-            else None,
-            metadata=created_issue.custom_fields,  # Map custom fields to metadata
+            id=str(db_issue.id),  # Use internal DB UUID
+            external_id=db_issue.external_id,  # Use external ID from DB
+            key=db_issue.key,  # Use key from DB
+            organization=org.name,
+            project=proj.name,
+            title=db_issue.title,
+            description=db_issue.description,
+            status=db_issue.status,
+            priority=db_issue.priority,
+            assignee=db_issue.assignee,
+            labels=db_issue.labels,
+            url=db_issue.url,
+            created_at=db_issue.created_at.isoformat() if db_issue.created_at else None,
+            updated_at=db_issue.updated_at.isoformat() if db_issue.updated_at else None,
+            metadata=db_issue.meta_data,
         )
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -764,20 +981,37 @@ async def create_issue(
         raise HTTPException(status_code=500, detail=f"Error creating issue: {str(e)}")
 
 
-@router.get("/issues/{issue_id}", response_model=IssueResponse)  # Added response_model
+@router.get(
+    "/issues/{issue_id:path}", response_model=IssueResponse
+)  # Added response_model
 def get_issue(
     issue_id: str,  # Assume this is the external_id
+    organization: Optional[str] = Query(None),
+    project: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
     """Get details of a specific issue using its external ID."""
-
     try:
         user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
         tracker_ids = [t.id for t in user_trackers]
 
         if not tracker_ids:
             raise HTTPException(status_code=404, detail="No trackers found for user")
+
+        project_slug = None
+        if "#" in issue_id:
+            project_slug, issue_id = issue_id.split("#")
+        # Get the project and organization
+        if project_slug:
+            project = crud_project.get_by_slug_or_identifier(
+                db, slug_or_identifier=project_slug
+            )
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            organization = crud_organization.get(db, id=project.organization_id)
+            if not organization:
+                raise HTTPException(status_code=404, detail="Organization not found")
 
         # Find the issue by external_id
         # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
@@ -794,12 +1028,7 @@ def get_issue(
                 raise HTTPException(
                     status_code=404, detail="Issue not found by external or internal ID"
                 )
-            # If found by internal ID, use external_id for the response 'id' field if available
-            response_id = issue.external_id or issue.id
-        else:
-            response_id = issue.external_id  # Should be same as input issue_id
 
-        # Get the project and organization
         project = crud_project.get(db, id=issue.project_id)
         if not project:
             # This indicates data inconsistency if the issue exists but project doesn't
@@ -824,23 +1053,27 @@ def get_issue(
 
         # Determine the URL
         external_url = meta_data.get("url") or issue.external_url
-        if not external_url and issue.external_id:
+        if not external_url:
             # Basic fallback if external_id exists but no URL found
-            external_url = (
-                f"https://tracker.example.com/issues/{issue.external_id}"  # Placeholder
-            )
+            external_url = f"https://spacebridge.io/issues/{issue.id}"
 
         # Convert to IssueResponse model
+        if (
+            project and project.slug and issue.external_id
+        ):  # Check external_id specifically for formatting
+            final_response_key = f"{project.slug}#{issue.external_id}"
+
         return IssueResponse(
-            id=response_id,  # Use external_id
+            id=issue.id,
+            key=final_response_key,
+            external_id=issue.external_id,
             organization=organization.name,
             project=project.name,
             title=issue.title,
             description=issue.description or "",
             status=issue.status or "",
             priority=issue.priority or "",
-            url=external_url
-            or f"https://spacebridge.io/issues/{issue.id}",  # Final fallback
+            url=external_url,
             created_at=issue.created_at.isoformat() if issue.created_at else None,
             updated_at=issue.updated_at.isoformat() if issue.updated_at else None,
             metadata=meta_data,
@@ -855,136 +1088,317 @@ def get_issue(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.put("/issues/{issue_id}", response_model=IssueResponse)
+@router.put("/issues/{issue_id:path}", response_model=IssueResponse)
 async def update_issue(
-    issue_id: str,  # Assume this is the external_id
+    issue_id: str,
     issue_update: ApiIssueUpdate,
-    # Removed org/project query params, should be derived if needed, but tracker client needs them
-    # Let's try finding the issue first to get org/project context
-    db: Session = Depends(get_db),
-) -> IssueResponse:
-    """Update an existing issue using its external ID."""
-    try:
-        raise HTTPException(status_code=500, detail="Not implemented")
-        # Find the issue by external_id to get its context (project/org)
-        # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
-        db_issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
-        # db_issue = crud_issue.get_by_external_id(db, external_id=issue_id) # Ideal way
-        if not db_issue:
-            raise HTTPException(
-                status_code=404, detail="Issue not found by external ID"
-            )
-
-        # Get project and organization from the found issue
-        proj_obj = crud_project.get(db, id=db_issue.project_id)
-        if not proj_obj:
-            raise HTTPException(status_code=404, detail="Associated project not found")
-        org_obj = crud_organization.get(db, id=proj_obj.organization_id)
-        if not org_obj:
-            raise HTTPException(
-                status_code=404, detail="Associated organization not found"
-            )
-
-        # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(
-            org_obj.id, proj_obj.id, db, current_user
-        )
-
-        # Prepare the update data using the base tracker schema
-        update_data = {
-            k: v
-            for k, v in issue_update.dict(exclude_unset=True).items()
-            if v is not None
-        }
-        # Map API metadata to custom_fields if needed by the tracker base model
-        if "metadata" in update_data:
-            update_data["custom_fields"] = update_data.pop("metadata")
-
-        tracker_update = IssueUpdate(**update_data)  # Use IssueUpdate from base.py
-
-        # Update the issue via the tracker client using the external ID (issue_id)
-        updated_issue = await tracker_client.update_issue(issue_id, tracker_update)
-
-        # Map the returned tracker Issue object to the API IssueResponse
-        return IssueResponse(
-            id=updated_issue.key
-            or updated_issue.id,  # Use external key/id from tracker
-            organization=org_obj.name,  # Use resolved org name
-            project=proj_obj.name,  # Use resolved project name
-            title=updated_issue.title,
-            description=updated_issue.description,
-            status=updated_issue.status.name if updated_issue.status else None,
-            priority=updated_issue.priority.name if updated_issue.priority else None,
-            assignee=updated_issue.assignee.name if updated_issue.assignee else None,
-            labels=updated_issue.labels,
-            url=updated_issue.url
-            or f"https://tracker.example.com/issues/{updated_issue.key}",  # Use tracker URL or fallback
-            created_at=updated_issue.created_at.isoformat()
-            if updated_issue.created_at
-            else None,
-            updated_at=updated_issue.updated_at.isoformat()
-            if updated_issue.updated_at
-            else None,
-            metadata=updated_issue.custom_fields,  # Map custom fields back to metadata
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating issue {issue_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error updating issue: {str(e)}")
-
-
-@router.delete("/issues/{issue_id}", status_code=204)
-async def delete_issue(
-    issue_id: str,  # Assume this is the external_id
-    # Removed org/project query params, derive from issue_id
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
-    """Delete an issue using its external ID. Requires authentication and checks user access."""
+    """Update an existing issue using its internal ID or external key."""
+    logger.info(f"Attempting to update issue: {issue_id}")
     try:
-        raise HTTPException(status_code=500, detail="Not implemented")
-        # Find the issue by external_id to get its context (project/org)
-        # TODO: Add get_by_external_id to CRUDIssue if it doesn't exist
-        db_issue = db.query(Issue).filter(Issue.external_id == issue_id).first()
-        # db_issue = crud_issue.get_by_external_id(db, external_id=issue_id) # Ideal way
-        if not db_issue:
-            # If not found by external ID, maybe it doesn't exist or sync is needed.
-            # For deletion, it's often okay to proceed if the tracker handles "not found" gracefully.
-            # However, we need org/project to get the client.
-            # Let's raise 404 for now. A more robust solution might try to find org/proj differently.
+        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        tracker_ids = [t.id for t in user_trackers]
+
+        if not tracker_ids:
+            logger.warning(f"User {current_user.username} has no associated trackers.")
+            raise HTTPException(
+                status_code=403, detail="User has no accessible trackers."
+            )
+
+        # --- Issue Retrieval Logic (Adapted from get_issue) ---
+        issue: Optional[Issue] = None
+        project_slug_from_key: Optional[str] = None
+        external_id_from_key: Optional[str] = None
+
+        # 1. Try internal UUID first
+        if len(issue_id) == 36:  # Basic UUID check
+            logger.debug(f"Attempting lookup by internal ID: {issue_id}")
+            issue = crud_issue.get(db, id=issue_id)
+            if issue and issue.tracker_id not in tracker_ids:
+                logger.warning(
+                    f"Issue {issue_id} found by ID, but tracker {issue.tracker_id} not accessible by user {current_user.id}"
+                )
+                issue = None  # Treat as not found if not accessible
+
+        # 2. Try combined key (project_slug#external_id)
+        if not issue and "#" in issue_id:
+            logger.debug(f"Attempting lookup by combined key: {issue_id}")
+            try:
+                project_slug_from_key, external_id_from_key = issue_id.split("#", 1)
+                # Use get_by_slug_or_identifier which returns a list
+                project_list = crud_project.get_by_slug_or_identifier(
+                    db, slug_or_identifier=project_slug_from_key
+                )
+                if len(project_list) == 1:
+                    project_for_lookup = project_list[0]
+                    # Ensure the project's tracker is accessible
+                    if project_for_lookup.tracker_id in tracker_ids:
+                        issue = (
+                            db.query(Issue)
+                            .filter(
+                                Issue.project_id == project_for_lookup.id,
+                                Issue.external_id == external_id_from_key,
+                                Issue.tracker_id.in_(
+                                    tracker_ids
+                                ),  # Redundant check, but safe
+                            )
+                            .first()
+                        )
+                    else:
+                        logger.warning(
+                            f"Project {project_slug_from_key} found, but its tracker {project_for_lookup.tracker_id} not accessible by user {current_user.id}"
+                        )
+                elif len(project_list) > 1:
+                    logger.warning(
+                        f"Ambiguous project slug '{project_slug_from_key}' found."
+                    )
+                    # Don't raise error, just proceed to next lookup method
+                else:
+                    logger.debug(
+                        f"Project with slug '{project_slug_from_key}' not found."
+                    )
+
+            except ValueError:
+                logger.warning(f"Invalid combined key format: {issue_id}")
+                # Proceed to next lookup method
+
+        # 3. Try direct external ID
+        if not issue:
+            logger.debug(f"Attempting lookup by direct external ID: {issue_id}")
+            # Search across all accessible trackers for this external ID
+            issue = (
+                db.query(Issue)
+                .filter(
+                    Issue.external_id == issue_id, Issue.tracker_id.in_(tracker_ids)
+                )
+                .first()
+            )
+
+        if not issue:
+            logger.warning(
+                f"Issue '{issue_id}' not found or not accessible by user {current_user.id}."
+            )
             raise HTTPException(
                 status_code=404,
-                detail="Issue not found by external ID, cannot determine tracker.",
+                detail=f"Issue '{issue_id}' not found or access denied.",
             )
 
-        # Get project and organization from the found issue
-        proj_obj = crud_project.get(db, id=db_issue.project_id)
-        if not proj_obj:
-            raise HTTPException(status_code=404, detail="Associated project not found")
-        org_obj = crud_organization.get(db, id=proj_obj.organization_id)
-        if not org_obj:
-            raise HTTPException(
-                status_code=404, detail="Associated organization not found"
-            )
-
-        # Get the tracker client using the resolved IDs
-        tracker_client = await get_tracker_client(
-            org_obj.id, proj_obj.id, db, current_user
+        logger.info(
+            f"Found issue {issue.id} (External: {issue.external_id}) for update."
         )
 
-        # Delete the issue via the tracker client using the external ID (issue_id)
-        await tracker_client.delete_issue(issue_id)
+        # --- Retrieve Project and Organization ---
+        project = crud_project.get(db, id=issue.project_id)
+        if not project:
+            logger.error(
+                f"Data inconsistency: Project {issue.project_id} not found for issue {issue.id}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Internal server error: Associated project data missing.",
+            )
 
-        # Optional: Delete the issue from the local DB as well
-        # crud_issue.remove(db, id=db_issue.id)
+        organization = crud_organization.get(db, id=project.organization_id)
+        if not organization:
+            logger.error(
+                f"Data inconsistency: Organization {project.organization_id} not found for project {project.id}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Internal server error: Associated organization data missing.",
+            )
 
-        # No content to return on successful deletion
-        return None
+        # --- Validate Access & Get Tracker Client ---
+        try:
+            # Use internal IDs for get_tracker_client
+            tracker_client = await get_tracker_client(
+                organization_id=str(organization.id),  # Pass UUID
+                project_id=str(project.id),  # Pass UUID
+                db=db,
+                current_user=current_user,
+            )
+        except HTTPException as e:
+            # Re-raise authorization or configuration errors from get_tracker_client
+            logger.warning(f"Access validation failed for issue {issue.id}: {e.detail}")
+            raise e
+        except Exception as e:
+            logger.error(
+                f"Error getting tracker client for issue {issue.id}: {e}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail="Error preparing tracker connection."
+            )
+
+        # --- Prepare Update Payload for Tracker ---
+        # Use the base IssueUpdate schema expected by the tracker client
+        tracker_update_payload = IssueUpdate(
+            title=issue_update.title,
+            description=issue_update.description,
+            status=issue_update.status,
+            priority=issue_update.priority,
+            labels=issue_update.labels,
+            assignee=issue_update.assignee,
+            # Add other fields if the base IssueUpdate schema supports them
+        )
+        # Filter out None values, as tracker clients might interpret None as "clear this field"
+        update_data_for_tracker = tracker_update_payload.model_dump(exclude_unset=True)
+
+        if not update_data_for_tracker:
+            logger.info(
+                f"No fields provided to update for issue {issue.id}. Skipping tracker update."
+            )
+            # Optionally, you could raise a 400 Bad Request here if an empty update is invalid
+            # raise HTTPException(status_code=400, detail="No update data provided.")
+        else:
+            # --- Call Tracker Client ---
+            if not issue.external_id:
+                logger.error(
+                    f"Cannot update issue {issue.id} in tracker: Missing external_id."
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot update issue in tracker: Missing external identifier.",
+                )
+
+            try:
+                logger.info(
+                    f"Calling tracker client to update issue {issue.external_id} with data: {update_data_for_tracker}"
+                )
+                # Use the issue's external_id for the tracker API call
+                await tracker_client.update_issue(
+                    issue.external_id, IssueUpdate(**update_data_for_tracker)
+                )
+                logger.info(
+                    f"Successfully updated issue {issue.external_id} via tracker client."
+                )
+            except NotImplementedError:
+                logger.warning(
+                    f"Tracker type {tracker_client.tracker_type} does not support updating issues."
+                )
+                # Decide if this should be an error or just a warning
+                # raise HTTPException(status_code=501, detail="Issue updates not supported by this tracker type.")
+            except Exception as e:
+                logger.error(
+                    f"Error updating issue {issue.external_id} via tracker client: {e}",
+                    exc_info=True,
+                )
+                # Depending on requirements, you might still update the local DB or raise an error
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to update issue in the external tracker: {str(e)}",
+                )
+
+        # --- Update Local DB ---
+        # Prepare data for local DB update using the ApiIssueUpdate model
+        update_data_for_db = issue_update.model_dump(exclude_unset=True)
+
+        if not update_data_for_db:
+            logger.info(
+                f"No fields provided to update for issue {issue.id} in local DB."
+            )
+            # If we skipped tracker update due to no data, we might skip DB update too,
+            # or just proceed to return the current state.
+        else:
+            try:
+                logger.info(
+                    f"Updating local DB for issue {issue.id} with data: {update_data_for_db}"
+                )
+                # Update the local database record
+                # Note: crud_issue.update expects the db object, the existing db_obj, and the update obj (Pydantic model or dict)
+                updated_issue_db = crud_issue.update(
+                    db=db, db_obj=issue, obj_in=update_data_for_db
+                )
+                db.commit()
+                db.refresh(
+                    updated_issue_db
+                )  # Ensure we have the latest data including timestamps
+                issue = updated_issue_db  # Use the updated object going forward
+                logger.info(f"Successfully updated issue {issue.id} in local DB.")
+            except SQLAlchemyError as e:
+                db.rollback()
+                logger.error(
+                    f"Database error updating issue {issue.id}: {e}", exc_info=True
+                )
+                raise HTTPException(
+                    status_code=500, detail="Database error during issue update."
+                )
+
+        # --- Format Response ---
+        # Fetch potentially updated metadata or related objects if necessary
+        # Re-fetch project/org in case their names changed (unlikely but possible)
+        # Use a joined load to potentially optimize if project/org were frequently changing,
+        # but simple re-fetch is fine for now.
+        db.refresh(
+            issue
+        )  # Refresh again after potential commit/refresh inside update block
+        project = crud_project.get(db, id=issue.project_id)  # Re-fetch
+        organization = (
+            crud_organization.get(db, id=project.organization_id) if project else None
+        )  # Re-fetch safely
+
+        if not project or not organization:
+            logger.error(
+                f"Data inconsistency after update: Project or Organization missing for issue {issue.id}"
+            )
+            # Fallback response data
+            project_name = "Error: Missing Project"
+            org_name = "Error: Missing Organization"
+            project_slug = "error"
+        else:
+            project_name = project.name
+            org_name = organization.name
+            project_slug = project.slug
+
+        meta_data = issue.meta_data or {}
+        labels_list = meta_data.get("labels", []) if isinstance(meta_data, dict) else []
+        assignee = meta_data.get("assignee") if isinstance(meta_data, dict) else None
+        external_url = (
+            meta_data.get("url") or issue.external_url or f"/issues/{issue.id}"
+        )  # Fallback URL
+
+        # Construct the key using potentially updated slug/external_id
+        final_response_key = (
+            f"{project_slug}#{issue.external_id}"
+            if project_slug and issue.external_id
+            else str(issue.id)
+        )
+
+        logger.info(f"Returning updated issue details for {issue.id}")
+        return IssueResponse(
+            id=str(issue.id),  # Ensure ID is string
+            key=final_response_key,
+            external_id=issue.external_id,
+            organization=org_name,
+            project=project_name,
+            title=issue.title,
+            description=issue.description or "",
+            status=issue.status or "",
+            priority=issue.priority or "",
+            url=external_url,
+            created_at=issue.created_at.isoformat() if issue.created_at else None,
+            updated_at=issue.updated_at.isoformat() if issue.updated_at else None,
+            metadata=meta_data,
+            labels=labels_list,
+            assignee=assignee,
+        )
+
     except HTTPException:
+        # Re-raise HTTPExceptions directly
+        db.rollback()  # Rollback on known HTTP errors too, just in case
         raise
     except Exception as e:
-        # Catch potential errors from the tracker client (e.g., issue not found there)
-        logger.error(f"Error deleting issue {issue_id}: {e}", exc_info=True)
-        # Consider returning a different status code if tracker deletion failed vs internal error
-        raise HTTPException(status_code=500, detail=f"Error deleting issue: {str(e)}")
+        db.rollback()  # Rollback on any unexpected error
+        logger.error(f"Unexpected error updating issue {issue_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Internal server error during issue update."
+        )
+
+
+# Note: Ensure necessary imports are present at the top of the file.
+# Imports needed: logging, Optional, List, Dict, Any, APIRouter, Depends,
+# HTTPException, Query, Body, Session, joinedload, SQLAlchemyError, IssueResponse,
+# ApiIssueUpdate, Account, CRUD*, get_db, Issue, Organization, Project, Tracker,
+# TrackerFactory, IssueUpdate (base), get_current_active_user
+# Also ensure `get_tracker_client` is defined or imported correctly.

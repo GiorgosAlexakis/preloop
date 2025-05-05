@@ -83,7 +83,11 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "tests",
+    "SpaceModels/tests",
+    "spacesync/tests",
+]
 python_files = "test_*.py"
 python_functions = "test_*"
 asyncio_mode = "strict"

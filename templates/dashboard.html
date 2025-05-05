@@ -2023,7 +2023,7 @@
                     const modal = bootstrap.Modal.getInstance(trackerModalElement);
                     modal.hide(); // This should trigger the 'hidden.bs.modal' event to reset
                     fetchTrackers(); // Refresh list
-                    alert(`Tracker ${isEditing ? 'updated' : 'added'} successfully!`);
+                    console.log(`Tracker ${isEditing ? 'updated' : 'added'} successfully!`);
                 } else if (response.status === 401) {
                     await refreshToken();
                     await saveTracker(); // Retry after refresh

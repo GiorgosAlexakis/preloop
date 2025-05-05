@@ -49,7 +49,8 @@ pytest:
   needs: []
   image: python:3.11-slim
   services:
-    - postgres:13
+    - name: pgvector/pgvector:pg13
+      alias: postgres
   variables:
     POSTGRES_DB: test_db
     POSTGRES_USER: test_user
@@ -60,14 +61,17 @@ pytest:
     - pip install pytest pytest-cov loguru
     - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
     - pip install -e ".[dev]"
+    - python ./spacesync/scripts/init_db.py --force
 
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
-    - pytest -v
+    - export PYTHONPATH=$PYTHONPATH:.
+    # Explicitly list top-level and SpaceModels tests, let pyproject.toml handle spacesync tests discovery
+    - pytest -v tests/ SpaceModels/tests/ --cov=spacebridge --cov=SpaceModels/spacemodels --cov=spacesync/spacesync --cov-report=xml --cov-report=term-missing
 
 deploy:
   stage: deploy
-  image: alpine/helm:3.13.2
+  image: dtzar/helm-kubectl:3.13.2
   when: manual
   # only:
   #   - main
@@ -76,6 +80,21 @@ deploy:
   environment:
     name: production
   script:
+    - set -e
+    - export POD_BACKUP_PATH="/run/tmp/db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
+    - export LOCAL_BACKUP_FILENAME="db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
+    - echo "Starting database backup inside pod $DB_POD_NAME to $POD_BACKUP_PATH..."
+    - kubectl exec -n spacebridge spacebridge-db-1 -- bash -c "pg_dump -U postgres -d spacebridge -F c -b -v -f $POD_BACKUP_PATH" # Removed --xz
+    - echo "Backup created inside pod. Copying to runner..."
+    - kubectl cp -n spacebridge spacebridge-db-1:$POD_BACKUP_PATH "$LOCAL_BACKUP_FILENAME"
+    - echo "Compressing backup file on runner..."
+    - apk add --no-cache xz # Ensure xz is available
+    - xz "$LOCAL_BACKUP_FILENAME" # Compress the file locally
+    - export LOCAL_COMPRESSED_FILENAME="$LOCAL_BACKUP_FILENAME.xz" # Define compressed filename variable
+    - echo "Cleaning up backup file inside pod..."
+    - kubectl exec -n spacebridge spacebridge-db-1 -- rm "$POD_BACKUP_PATH"
+    - if [ -n "$S3_BUCKET" ] && [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_DEFAULT_REGION" ]; then apk add --no-cache aws-cli; echo "Uploading backup to S3 bucket $S3_BUCKET..."; aws s3 cp "$LOCAL_COMPRESSED_FILENAME" "s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME"; echo "Backup successfully uploaded to s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME"; else echo "S3 credentials not fully configured (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION). Skipping S3 upload."; fi
+    - echo "Starting Helm deployment..."
     - helm upgrade --install spacebridge ./helm/spacebridge
       --namespace spacebridge
       --set image.tag=${CI_COMMIT_SHA}
@@ -94,3 +113,9 @@ deploy:
       --set config.smtp.from=${SMTP_FROM}
       --set config.smtp.fromName=${SMTP_FROM_NAME}
       --set ingress.enabled=true
+    - echo "Helm deployment finished."
+  artifacts:
+    paths:
+      - "db_backup_*.sql.xz" # Artifact path remains correct
+    when: on_success
+    expire_in: 7 days

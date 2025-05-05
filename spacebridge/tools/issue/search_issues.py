@@ -123,21 +123,84 @@ async def search_issues(
         crud_organization = CRUDOrganization(Organization)
         crud_project = CRUDProject(Project)
 
-        # Get organization using CRUD operations
-        org = crud_organization.get_by_identifier(db, identifier=organization)
-        if not org or not org.is_active:
-            return ErrorResponse(
-                error="not_found", message=f"Organization '{organization}' not found"
-            ).model_dump()
+        org: Optional[Organization] = None
+        proj: Optional[Project] = None
+        possible_projects: List[Project] = []
 
-        # Get project using CRUD operations
-        proj = crud_project.get_by_identifier(
-            db, organization_id=org.id, identifier=project
-        )
-        if not proj or not proj.is_active:
+        if organization:
+            # --- Organization is specified ---
+            org = crud_organization.get_by_identifier(db, identifier=organization)
+            if not org or not org.is_active:
+                return ErrorResponse(
+                    error="not_found",
+                    message=f"Organization '{organization}' not found or inactive.",
+                ).model_dump()
+
+            # Search within the specified organization
+            projects_by_slug_id = crud_project.get_by_slug_or_identifier(
+                db, organization_id=org.id, slug_or_identifier=project
+            )
+            projects_by_name = crud_project.get_by_name(
+                db, organization_id=org.id, name=project
+            )
+
+            # Combine results (should ideally be 0 or 1 unique project)
+            combined_results = {
+                p.id: p for p in projects_by_slug_id + projects_by_name
+            }.values()
+            active_projects = [p for p in combined_results if p.is_active]
+
+            if len(active_projects) == 1:
+                proj = active_projects[0]
+            elif len(active_projects) == 0:
+                return ErrorResponse(
+                    error="not_found",
+                    message=f"Project '{project}' not found or inactive within organization '{organization}'.",
+                ).model_dump()
+            else:  # Should not happen with org_id specified due to constraints, but handle defensively
+                return ErrorResponse(
+                    error="multiple_matches",
+                    message=f"Multiple active projects found for '{project}' within organization '{organization}'. This should not happen.",
+                ).model_dump()
+
+        else:
+            # --- No organization specified ---
+            projects_by_slug_id = crud_project.get_by_slug_or_identifier(
+                db, slug_or_identifier=project
+            )
+            projects_by_name = crud_project.get_by_name(db, name=project)
+
+            # Combine results and filter for active projects
+            combined_results = {
+                p.id: p for p in projects_by_slug_id + projects_by_name
+            }.values()
+            active_projects = [p for p in combined_results if p.is_active]
+
+            if not active_projects:
+                return ErrorResponse(
+                    error="not_found",
+                    message=f"Project '{project}' not found or inactive across all organizations.",
+                ).model_dump()
+
+            # Sort by updated_at (descending) to find the most recently updated
+            active_projects.sort(key=lambda p: p.updated_at, reverse=True)
+            proj = active_projects[0]  # Select the most recently updated
+
+            # Get the organization for the selected project
+            org = crud_organization.get(db, id=proj.organization_id)
+            if not org or not org.is_active:
+                # This case is unlikely if the project was found, but handle defensively
+                return ErrorResponse(
+                    error="internal_error",
+                    message=f"Organization for the selected project '{proj.name}' not found or inactive.",
+                ).model_dump()
+
+        # --- Proceed with the found project and organization ---
+        if not proj or not org:
+            # Should be caught above, but final safety check
             return ErrorResponse(
-                error="not_found",
-                message=f"Project '{project}' not found in organization '{organization}'",
+                error="internal_error",
+                message="Failed to determine project or organization.",
             ).model_dump()
 
         # In SpaceModels, we use tracker_settings instead of tracker_configurations
