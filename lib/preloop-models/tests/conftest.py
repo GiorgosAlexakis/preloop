@@ -29,8 +29,10 @@ def db_engine():
 
     yield engine
 
-    # Drop all tables after the session
-    Base.metadata.drop_all(bind=engine)
+    # Table dropping (`Base.metadata.drop_all`) removed.
+    # Tests now rely on transaction rollbacks in the `db_session` fixture
+    # for data cleanup and expect the schema to exist or be created
+    # by `Base.metadata.create_all` without being dropped afterwards.
 
 
 @pytest.fixture(scope="function")
@@ -135,13 +137,16 @@ def create_project(db_session, create_organization):
     """Create a test project."""
     from spacemodels.crud import crud_project
 
-    def _create_project(name="Test Project", identifier="test-project", **kwargs):
+    def _create_project(
+        name="Test Project", identifier="test-project", slug=None, **kwargs
+    ):
         # Create organization first if not provided
         organization = kwargs.pop("organization", create_organization())
 
         project_data = {
             "name": name,
             "identifier": identifier,
+            "slug": slug,  # Add slug field
             "organization_id": organization.id,
             "is_active": True,
             **kwargs,
@@ -154,12 +159,17 @@ def create_project(db_session, create_organization):
 @pytest.fixture
 def create_issue(db_session, create_project, create_tracker):
     """Create a test issue."""
+    import uuid  # Import uuid
     from spacemodels.crud import crud_issue
 
     def _create_issue(title="Test Issue", description="Test description", **kwargs):
         # Create project and tracker first if not provided
         project = kwargs.pop("project", create_project())
         tracker = kwargs.pop("tracker", create_tracker())
+
+        # Generate default unique values if not provided
+        default_key = f"TEST-KEY-{uuid.uuid4().hex[:6]}"
+        default_external_id = f"EXT-{uuid.uuid4().hex[:8]}"
 
         issue_data = {
             "title": title,
@@ -168,7 +178,11 @@ def create_issue(db_session, create_project, create_tracker):
             "issue_type": "task",
             "project_id": project.id,
             "tracker_id": tracker.id,
-            **kwargs,
+            "key": kwargs.pop("key", default_key),  # Use default or kwargs
+            "external_id": kwargs.pop(
+                "external_id", default_external_id
+            ),  # Use default or kwargs
+            **kwargs,  # Include remaining kwargs
         }
         return crud_issue.create(db_session, obj_in=issue_data)
 
