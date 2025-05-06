@@ -39,6 +39,8 @@ pre-commit:
   before_script:
     - apt-get update && apt-get install -y git
     - pip install -U pip pre-commit ruff
+    - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
+    - pip install -e ".[dev]"
   script:
     - pre-commit install
     - ruff check
