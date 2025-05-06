@@ -1,5 +1,6 @@
 """CRUD operations for EmbeddingModel and IssueEmbedding models."""
 
+import json
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -212,28 +213,77 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         model_id: str,
         query_vector: List[float],
         limit: int = 10,
-        distance_type: str = "cosine",  # or "euclidean"
+        distance_type: str = "cosine",  # or "euclidean" - Note: distance_type is not used in this SQL version
         tracker_ids: Optional[List[str]] = None,
+        project_ids: Optional[List[str]] = None,
+        status: Optional[str] = None,
+        labels: Optional[List[str]] = None,
+        priority: Optional[str] = None,
+        assignee: Optional[str] = None,
+        last_updated_before: Optional[datetime] = None,
+        last_updated_after: Optional[datetime] = None,
     ) -> List[Tuple[Issue, float]]:
         """
-        Search for similar issues based on vector similarity.
-
-        Uses pgvector for PostgreSQL and falls back to Python-based vector similarity
-        for other databases.
+        Search for similar issues based on vector similarity using raw SQL with pgvector.
 
         Args:
             db: Database session
             model_id: ID of the embedding model to search within
             query_vector: Vector to search for
             limit: Maximum number of results to return
-            distance_type: Distance metric to use ('cosine' or 'euclidean')
+            distance_type: (Currently unused in this SQL implementation) Distance metric.
+            tracker_ids: Optional list of tracker IDs to filter by.
+            project_ids: Optional list of project IDs to filter by.
+            status: Optional status to filter by.
+            labels: Optional list of labels to filter by (must contain all specified labels).
+            priority: Optional priority to filter by.
+            assignee: Optional assignee (stored in meta_data->>'assignee') to filter by.
+            last_updated_before: Optional upper bound for issue updated_at.
+            last_updated_after: Optional lower bound for issue updated_at.
+
 
         Returns:
             List of (issue, similarity_score) tuples
         """
-        # Construct the raw SQL query
-        query = text(
-            """
+        params = {
+            "model_id": model_id,
+            "query_vector": query_vector,
+            "limit": limit,
+        }
+        where_clauses = ["e.embedding_model_id = :model_id"]
+
+        if tracker_ids:
+            where_clauses.append("i.tracker_id = ANY(:tracker_ids)")
+            params["tracker_ids"] = tracker_ids
+        if project_ids:
+            where_clauses.append("i.project_id = ANY(:project_ids)")
+            params["project_ids"] = project_ids
+        if status:
+            where_clauses.append("i.status = :status")
+            params["status"] = status
+        if priority:
+            where_clauses.append("i.priority = :priority")
+            params["priority"] = priority
+        if labels:
+            # Assuming labels are stored as a JSON array in meta_data['labels']
+            # Use JSONB containment operator @>
+            where_clauses.append("i.meta_data->'labels' @> CAST(:labels AS JSONB)")
+            params["labels"] = json.dumps(labels)  # Pass as JSON string
+        if assignee:
+            # Assuming assignee is stored as text in meta_data['assignee']
+            where_clauses.append("i.meta_data->>'assignee' = :assignee")
+            params["assignee"] = assignee
+        if last_updated_after:
+            where_clauses.append("i.updated_at > :last_updated_after")
+            params["last_updated_after"] = last_updated_after
+        if last_updated_before:
+            where_clauses.append("i.updated_at < :last_updated_before")
+            params["last_updated_before"] = last_updated_before
+
+        where_sql = " AND ".join(where_clauses)
+
+        # Construct the raw SQL query dynamically
+        sql = f"""
             WITH results AS (
             SELECT
                 i.id,
@@ -244,6 +294,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 i.issue_type,
                 i.external_id,
                 i.external_url,
+                i.key,
                 i.project_id,
                 i.tracker_id,
                 i.meta_data,
@@ -257,39 +308,32 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             JOIN
                 issueembedding e ON i.id = e.issue_id
             WHERE
-                i.tracker_id = ANY(:tracker_ids) AND e.embedding_model_id = :model_id
+                {where_sql}
             )
             SELECT * FROM results
             ORDER BY sim DESC
             LIMIT :limit
         """
-        )
+        query = text(sql)
 
         # Execute the query
-        result = db.execute(
-            query,
-            {
-                "model_id": model_id,
-                "query_vector": query_vector,
-                "limit": limit,
-                "tracker_ids": tracker_ids,
-            },
-        )
+        result = db.execute(query, params)
 
         # Convert results to Issue objects with similarity scores
         issues_with_scores = []
+        result_keys = result.keys()  # Get keys once
 
         for row in result:
-            # Convert row to dictionary
-            issue_dict = {
-                col: val for col, val in zip(result.keys(), row, strict=False)
-            }
+            # Convert row to dictionary efficiently
+            issue_dict = dict(zip(result_keys, row, strict=False))
 
             # Extract similarity score
             similarity = issue_dict.pop("sim")
 
             # Create Issue object from dictionary
-            issue = Issue(**{k: v for k, v in issue_dict.items() if k != "sim"})
+            # Ensure only valid Issue fields are passed
+            valid_keys = {k for k in issue_dict if hasattr(Issue, k)}
+            issue = Issue(**{k: issue_dict[k] for k in valid_keys})
 
             # Add to results
             issues_with_scores.append((issue, float(similarity)))
