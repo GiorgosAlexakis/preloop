@@ -416,22 +416,31 @@ async def search_issues(
             logger.warning(
                 f"API: Successfully fetched organization '{org.identifier}' for project '{proj.name}'."
             )
-        # Validate access and get tracker client (even if not used directly for DB search)
-        # This enforces the project selection rules before proceeding.
-        try:
-            await get_tracker_client(org.id, proj.id, db, current_user)
-        except HTTPException as e:
-            # If get_tracker_client raises an error (e.g., 403 Forbidden due to project exclusion),
-            # re-raise it to stop the search.
-            raise e
-        except Exception as e:
-            # Catch potential errors during client creation/validation
-            logger.error(
-                f"Error validating tracker access for search: {e}", exc_info=True
-            )
-            raise HTTPException(
-                status_code=500, detail="Error validating tracker access."
-            )
+        # Validate access and get tracker client (even if not used directly for DB search).
+        # This enforces project selection rules *if a specific project context is resolved*.
+        if (
+            org and proj
+        ):  # Only attempt tracker client validation if both org and project are resolved
+            try:
+                # Now we are sure org and proj are not None
+                await get_tracker_client(org.id, proj.id, db, current_user)
+            except HTTPException as e:
+                # If get_tracker_client raises an error (e.g., 403 Forbidden due to project exclusion),
+                # re-raise it to stop the search for this specific project context.
+                raise e
+            except Exception as e:
+                # Catch potential errors during client creation/validation
+                logger.error(
+                    f"Error validating tracker access for search (org: {org.id}, proj: {proj.id}): {e}",
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Error validating tracker access for the specified project.",
+                )
+        # If only org is specified (proj is None), or neither org nor proj is specified,
+        # the search proceeds based on project_ids_filter derived from org or user's trackers.
+        # No specific single-project validation via get_tracker_client is performed in these cases.
 
         # Create filter object for traditional search
         filter_obj = IssueFilter(query=query, limit=limit)
@@ -746,108 +755,189 @@ async def create_issue(
         # Resolve organization and project using either ID, name, or identifier
         from spacemodels.crud import crud_organization, crud_project
 
-        org = None
-        proj = None
-        org_id = None
+        org: Optional[Organization] = None
+        proj: Optional[Project] = None
+        org_id: Optional[str] = None
 
         # --- Resolve Organization and Project ---
+        project_input_identifier = (
+            issue.project or issue.project_name
+        )  # User provided project string
+        org_input_identifier = (
+            issue.organization or issue.organization_name
+        )  # User provided org string
 
-        # Prioritize IDs if provided
+        if not project_input_identifier:
+            raise HTTPException(
+                status_code=400,
+                detail="Project identifier (project or project_name) is required.",
+            )
+
+        # 1. Try with IDs first if provided
         if issue.organization_id:
             org = crud_organization.get(db, id=issue.organization_id)
-            if org:
-                org_id = org.id
-            else:
+            if not org:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Organization with ID '{issue.organization_id}' not found",
+                    detail=f"Organization with ID '{issue.organization_id}' not found.",
                 )
+            if not org.is_active:
+                raise HTTPException(
+                    status_code=400, detail=f"Organization '{org.name}' is not active."
+                )
+            org_id = org.id
+
         if issue.project_id:
             proj = crud_project.get(db, id=issue.project_id)
-            if proj:
-                # If project found by ID, ensure org matches if org was also found by ID
-                if org_id and proj.organization_id != org_id:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Project does not belong to the specified organization ID",
-                    )
-                # If org wasn't found by ID, infer it from the project
-                if not org_id:
-                    org = crud_organization.get(db, id=proj.organization_id)
-                    if org:
-                        org_id = org.id
-                    else:  # Data inconsistency
-                        raise HTTPException(
-                            status_code=500, detail="Project's organization not found"
-                        )
-            else:
+            if not proj:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Project with ID '{issue.project_id}' not found",
+                    detail=f"Project with ID '{issue.project_id}' not found.",
                 )
-
-        # If IDs weren't used or didn't resolve both, try names/identifiers
-        if not org or not proj:
-            project_identifier = issue.project or issue.project_name
-            organization_identifier = issue.organization or issue.organization_name
-
-            if not project_identifier:
-                # Schema validation should prevent this, but double-check
+            if not proj.is_active:
                 raise HTTPException(
-                    status_code=400, detail="Project identifier or name is required"
+                    status_code=400, detail=f"Project '{proj.name}' is not active."
                 )
+            # If org was found by ID, ensure project belongs to it
+            if org_id and proj.organization_id != org_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Project '{proj.name}' (ID: {proj.id}) does not belong to specified organization (ID: {org_id}).",
+                )
+            # If org wasn't found by ID, infer it from project
+            if not org:
+                org = crud_organization.get(db, id=proj.organization_id)
+                if not org:  # Should not happen if DB is consistent
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Project '{proj.name}' (ID: {proj.id}) has an invalid organization ID '{proj.organization_id}'.",
+                    )
+                if not org.is_active:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Organization '{org.name}' for project '{proj.name}' is not active.",
+                    )
+                org_id = org.id
 
-            if organization_identifier:
-                # Org and Project provided by name/identifier
-                if not org:  # If org wasn't found by ID earlier
-                    org = crud_organization.get_by_identifier(
-                        db, identifier=organization_identifier
-                    ) or crud_organization.get_by_name(db, name=organization_identifier)
-                    if not org:
+        # 2. If project or org still not resolved, try with names/slugs
+        if not proj or not org:
+            if (
+                org_input_identifier and not org
+            ):  # Org identifier provided, but org not resolved yet
+                org = crud_organization.get_by_identifier(
+                    db, identifier=org_input_identifier
+                ) or crud_organization.get_by_name(db, name=org_input_identifier)
+                if not org:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Organization '{org_input_identifier}' not found.",
+                    )
+                if not org.is_active:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Organization '{org.name}' is not active.",
+                    )
+                org_id = org.id
+
+            if (
+                org_id and not proj
+            ):  # Org is resolved (either by ID or name/slug), try to find project within it
+                # Try by slug/identifier within the organization
+                proj_by_slug = crud_project.get_by_slug_or_identifier(
+                    db,
+                    organization_id=org_id,
+                    slug_or_identifier=project_input_identifier,
+                )
+                if proj_by_slug and proj_by_slug.is_active:
+                    proj = proj_by_slug
+                else:
+                    # Try by name within the organization
+                    proj_by_name = crud_project.get_by_name(
+                        db, organization_id=org_id, name=project_input_identifier
+                    )
+                    if proj_by_name and proj_by_name.is_active:
+                        proj = proj_by_name
+                    else:
                         raise HTTPException(
                             status_code=404,
-                            detail=f"Organization '{organization_identifier}' not found",
+                            detail=f"Active project '{project_input_identifier}' not found in organization '{org.name if org else org_input_identifier}'.",
+                        )
+
+            elif (
+                not org_id and not proj
+            ):  # No org identifier provided, try to find project globally
+                # Use the new global search method
+                candidate_projects = (
+                    crud_project.get_all_active_by_identifier_or_name_globally(
+                        db, identifier_or_name=project_input_identifier
+                    )
+                )
+
+                if not candidate_projects:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No active project matching '{project_input_identifier}' found in any active organization.",
+                    )
+                if len(candidate_projects) > 1:
+                    # Check if all candidates belong to the same org. If so, it's not ambiguous.
+                    # This can happen if a project has a name that matches another project's identifier in the same org.
+                    unique_org_ids = {p.organization_id for p in candidate_projects}
+                    if len(unique_org_ids) > 1:
+                        org_names = list(
+                            set(
+                                p.organization.name
+                                for p in candidate_projects
+                                if p.organization
+                            )
+                        )
+                        raise HTTPException(
+                            status_code=409,  # Conflict
+                            detail=f"Project identifier '{project_input_identifier}' is ambiguous. Found in multiple organizations: {', '.join(org_names)}. Please specify an organization.",
+                        )
+                    # If all from same org, pick the first one (they should be consistently ordered)
+                    proj = candidate_projects[0]
+                    org = proj.organization  # Already eager loaded
+                    if (
+                        not org
+                    ):  # Should not happen due to eager loading and DB consistency
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Internal error: Project's organization not loaded.",
+                        )
+                    org_id = org.id
+                else:  # Exactly one project found
+                    proj = candidate_projects[0]
+                    org = proj.organization  # Already eager loaded
+                    if not org:  # Should not happen
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Internal error: Project's organization not loaded.",
                         )
                     org_id = org.id
 
-                if not proj:  # If proj wasn't found by ID earlier
-                    proj = crud_project.get_by_slug_or_identifier(
-                        db,
-                        organization_id=org_id,
-                        slug_or_identifier=project_identifier,
-                    ) or crud_project.get_by_name(
-                        db, organization_id=org_id, name=project_identifier
-                    )
-                    if not proj:
-                        raise HTTPException(
-                            status_code=404,
-                            detail=f"Project '{project_identifier}' not found in organization '{organization_identifier}'",
-                        )
-
-            else:
-                # Only Project provided, infer Organization
-                proj = crud_project.get_by_slug_or_identifier(
-                    db, slug_or_identifier=project_identifier
-                )
-
-                if not proj:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Project '{project_identifier}' not found",
-                    )
-                org = crud_organization.get(db, id=proj.organization_id)
-                if not org:  # Data inconsistency
-                    raise HTTPException(
-                        status_code=500, detail="Project's organization not found"
-                    )
-                org_id = org.id
-
-        # --- End Resolve Organization and Project ---
-
-        # Ensure we have resolved both org and proj by now
+        # --- Final Sanity Checks ---
         if not org or not proj:
+            # This should ideally be caught by earlier specific checks
+            logger.error(
+                f"Failed to resolve org or project. Org: {org}, Proj: {proj}, Input Org: {org_input_identifier}, Input Proj: {project_input_identifier}"
+            )
             raise HTTPException(
-                status_code=500, detail="Failed to resolve organization or project"
+                status_code=500,
+                detail="Internal Server Error: Could not resolve project or organization.",
+            )
+
+        if not org.is_active:
+            raise HTTPException(
+                status_code=400, detail=f"Organization '{org.name}' is not active."
+            )
+        if not proj.is_active:
+            raise HTTPException(
+                status_code=400, detail=f"Project '{proj.name}' is not active."
+            )
+        if proj.organization_id != org.id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Mismatch: Project '{proj.name}' (Org ID: {proj.organization_id}) does not belong to resolved Organization '{org.name}' (Org ID: {org.id}).",
             )
 
         # Get the tracker client using the resolved IDs, passing the current user for auth check
@@ -904,11 +994,12 @@ async def create_issue(
             "meta_data": created_issue.custom_fields,  # Map custom_fields to meta_data
             "external_id": tracker_external_id,
             "key": tracker_key,
-            # "url": tracker_url,
+            "external_url": tracker_url,  # Save the URL from tracker to external_url
             "tracker_id": org.tracker_id,  # Use tracker_id from the organization
             "project_id": proj.id,  # Use internal project UUID
             "created_at": created_issue.created_at,
             "updated_at": created_issue.updated_at,
+            "last_updated_external": created_issue.updated_at,  # Also set this
             # Add other relevant fields if the Issue model requires them
         }
 
@@ -930,22 +1021,32 @@ async def create_issue(
             )
 
         # --- Construct the API Response using the database object ---
+        # Ensure all fields required by IssueResponse are present and correctly typed
+        response_url = db_issue.external_url or ""  # Use the saved external_url
+        if not response_url and created_issue.url:  # Fallback if somehow not saved
+            response_url = created_issue.url
+        if not response_url:  # Final fallback if tracker didn't provide it
+            logger.warning(
+                f"No URL available for issue {db_issue.key} (ID: {db_issue.id}) from tracker or DB."
+            )
+            # Construct a placeholder or leave empty based on requirements. For now, empty.
+
         return IssueResponse(
-            id=str(db_issue.id),  # Use internal DB UUID
-            external_id=db_issue.external_id,  # Use external ID from DB
-            key=db_issue.key,  # Use key from DB
+            id=str(db_issue.id),
+            external_id=db_issue.external_id,
+            key=db_issue.key,
             organization=org.name,
-            project=proj.name,
+            project=proj.slug,
             title=db_issue.title,
             description=db_issue.description,
             status=db_issue.status,
             priority=db_issue.priority,
-            # assignee=db_issue.assignee,
+            assignee=db_issue.meta_data.get("assignee"),
             labels=db_issue.meta_data.get("labels", []),
-            url=db_issue.meta_data.get("url", ""),
+            url=response_url,  # Use the resolved URL
             created_at=db_issue.created_at.isoformat() if db_issue.created_at else None,
             updated_at=db_issue.updated_at.isoformat() if db_issue.updated_at else None,
-            metadata=db_issue.meta_data,
+            metadata=db_issue.meta_data or {},  # Ensure dict
         )
     except HTTPException:
         # Re-raise HTTP exceptions
