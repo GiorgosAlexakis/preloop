@@ -2,16 +2,53 @@
 
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
-from sqlalchemy import func  # Import func for lower()
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_  # Import func for lower() and or_
 
 from ..models.project import Project
-from ..models.organization import Organization
+from ..models.organization import Organization  # Ensure Organization is imported
 from .base import CRUDBase
 
 
 class CRUDProject(CRUDBase[Project]):
     """CRUD operations for Project model."""
+
+    def get_all_active_by_identifier_or_name_globally(
+        self, db: Session, *, identifier_or_name: str
+    ) -> List[Project]:
+        """
+        Get all active projects by identifier or name across all active organizations.
+        The search is case-insensitive for names.
+        Eager loads the organization for each project.
+
+        Args:
+            db: Database session.
+            identifier_or_name: The project identifier (slug) or name to search for.
+
+        Returns:
+            A list of matching active Project objects, with their organizations eager-loaded.
+            Returns an empty list if no matches are found.
+        """
+        return (
+            db.query(Project)
+            .join(
+                Project.organization
+            )  # Join with organization to filter by its status
+            .options(
+                joinedload(Project.organization)
+            )  # Eager load organization details
+            .filter(
+                or_(
+                    Project.identifier == identifier_or_name,
+                    func.lower(Project.name) == func.lower(identifier_or_name),
+                    Project.slug == identifier_or_name,  # Also check slug explicitly
+                )
+            )
+            .filter(Project.is_active.is_(True))
+            .filter(Organization.is_active.is_(True))  # Ensure organization is active
+            .order_by(Project.updated_at.desc())  # Consistent ordering
+            .all()
+        )
 
     def get_by_slug_or_identifier(
         self,
