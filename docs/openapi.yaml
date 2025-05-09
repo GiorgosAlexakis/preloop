@@ -1675,6 +1675,21 @@ paths:
                 type: string
       security:
       - bearerAuth: []
+  /whatis-mcp:
+    get:
+      tags:
+      - Pages
+      summary: Whatis Mcp Page
+      operationId: whatis_mcp_page_whatis_mcp_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            text/html:
+              schema:
+                type: string
+      security:
+      - bearerAuth: []
 components:
   schemas:
     ApiKeyCreate:
@@ -1859,8 +1874,7 @@ components:
           description: Comment text
         metadata:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Metadata
           description: Additional comment metadata
@@ -1901,8 +1915,7 @@ components:
           description: Comment text
         metadata:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Metadata
           description: Additional comment metadata
@@ -1996,8 +2009,7 @@ components:
           description: Issue labels
         metadata:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Metadata
           description: Additional issue metadata
@@ -2082,8 +2094,7 @@ components:
           description: Issue labels
         metadata:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Metadata
           description: Additional issue metadata
@@ -2180,8 +2191,7 @@ components:
           description: New issue labels
         metadata:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Metadata
           description: Additional issue metadata
@@ -2220,8 +2230,7 @@ components:
           description: Organization description
         settings:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Settings
           description: Organization-wide settings
@@ -2271,8 +2280,7 @@ components:
           description: Organization description
         settings:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Settings
           description: Organization-wide settings
@@ -2302,7 +2310,6 @@ components:
           title: Updated At
           description: Last update timestamp
         meta_data:
-          additionalProperties: true
           type: object
           title: Meta Data
           description: Additional metadata
@@ -2330,8 +2337,7 @@ components:
           description: New organization description
         settings:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Settings
           description: Updated organization settings
@@ -2382,15 +2388,13 @@ components:
           description: Project description
         settings:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Settings
           description: Project-specific settings
         tracker_configurations:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Tracker Configurations
           description: Issue tracker configurations
@@ -2444,15 +2448,13 @@ components:
           description: Project description
         settings:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Settings
           description: Project-specific settings
         tracker_configurations:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Tracker Configurations
           description: Issue tracker configurations
@@ -2498,15 +2500,13 @@ components:
           description: New project description
         settings:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Settings
           description: Updated project settings
         tracker_configurations:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Tracker Configurations
           description: Updated issue tracker configurations
@@ -2551,8 +2551,7 @@ components:
           description: Connection test result message
         details:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Details
           description: Additional details about the connection
@@ -2609,15 +2608,13 @@ components:
           default: true
         connection_details:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Connection Details
           description: Tracker-specific connection details
         meta_data:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Meta Data
           description: Additional metadata
@@ -2710,8 +2707,7 @@ components:
           description: API key or token for the tracker
         connection_details:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Connection Details
           description: Tracker-specific connection details
@@ -2784,15 +2780,13 @@ components:
           description: New active status
         connection_details:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Connection Details
           description: Updated connection details
         meta_data:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Meta Data
           description: Updated metadata

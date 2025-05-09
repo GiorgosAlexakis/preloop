@@ -434,6 +434,11 @@ def create_app() -> FastAPI:
     async def terms_page(request: Request):
         return templates.TemplateResponse("terms.html", {"request": request})
 
+    @app.get("/whatis-mcp", response_class=HTMLResponse, tags=["Pages"])
+    async def whatis_mcp_page(request: Request):
+        # Placeholder - Implement actual logic if needed
+        return templates.TemplateResponse("whatis-mcp.html", {"request": request})
+
     # --- Database Setup on Startup ---
     @app.on_event("startup")
     def startup_db_client():
