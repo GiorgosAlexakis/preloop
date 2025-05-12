@@ -13,7 +13,6 @@
         /* Dashboard specific styles */
         .sidebar {
             background-color: var(--dark);
-            min-height: 100vh;
             color: var(--light);
             padding: 20px 0;
             position: fixed;
@@ -207,9 +206,12 @@
         .sidebar-copyright {
             font-size: 0.75rem;
             color: rgba(255, 255, 255, 0.5);
-            padding-bottom: 10px;
             border-top: 1px solid rgba(255, 255, 255, 0.1);
             margin: 0 15px;
+        }
+
+        .sidebar-copyright .copyright {
+            margin-bottom: 0;
         }
     </style>
 </head>
@@ -341,7 +343,7 @@
                     <!-- API Usage Tab -->
                     <div class="tab-pane fade" id="api-usage-tab" role="tabpanel" aria-labelledby="api-usage-tab-btn">
                         <div class="card">
-                            <div class="card-header d-flex align-items-center">API Usage Statistics</div>
+                            <!-- <div class="card-header d-flex align-items-center">API Usage Statistics</div> -->
                             <div class="card-body">
                                 <div class="row mb-3">
                                     <div class="col-md-4">
