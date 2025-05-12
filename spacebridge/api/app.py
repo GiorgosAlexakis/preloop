@@ -34,6 +34,7 @@ from spacebridge.api.endpoints import (
     embedding as embedding_router,
     llm_models,
     issue_duplicates,
+    webhooks,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -380,6 +381,12 @@ def create_app() -> FastAPI:
         tags=["Issue Duplicates"],
         dependencies=[Depends(get_current_active_user)],
     )
+    app.include_router(
+        version.router, prefix="/api/v1", tags=["Version"]
+    )  # No auth dependency for version check
+    app.include_router(
+        webhooks.router, prefix="/api/v1", tags=["Webhooks"]
+    )  # No user auth needed for incoming webhooks
 
     # --- HTML Page Routes ---
     templates = Jinja2Templates(directory=str(templates_dir))

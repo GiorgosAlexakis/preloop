@@ -2017,6 +2017,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+<<<<<<< HEAD
   /api/v1/issue-duplicates/check:
     get:
       tags:
@@ -2039,19 +2040,55 @@ paths:
         schema:
           type: string
           title: Issue2 Id
+=======
+  /api/v1/private/webhooks/{tracker_type}/{org_identifier}:
+    post:
+      tags:
+      - Webhooks
+      summary: Receive Webhook
+      description: 'Receive webhook events from external trackers (GitHub, GitLab).
+
+
+        Parses the payload to identify the organization and updates its
+
+        last_webhook_update timestamp.'
+      operationId: receive_webhook_api_v1_private_webhooks__tracker_type___org_identifier__post
+      parameters:
+      - name: tracker_type
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Tracker Type
+      - name: org_identifier
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Identifier
+>>>>>>> 0e4fec0 (Add support for Github org webhooks and Gitlab group webhooks)
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
+<<<<<<< HEAD
               schema:
                 $ref: '#/components/schemas/IssueDuplicate'
+=======
+              schema: {}
+>>>>>>> 0e4fec0 (Add support for Github org webhooks and Gitlab group webhooks)
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+<<<<<<< HEAD
+=======
+      security:
+      - bearerAuth: []
+>>>>>>> 0e4fec0 (Add support for Github org webhooks and Gitlab group webhooks)
   /:
     get:
       tags:

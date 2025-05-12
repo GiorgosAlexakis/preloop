@@ -312,9 +312,11 @@ async def search_issues(
         elif project:
             # If we have an organization, use it to narrow down the project search
             if org_id:
+                # get_by_name returns Optional[Project] when org_id is specified
                 proj = crud_project.get_by_name(
                     db, name=project, organization_id=org_id
                 )
+                # proj will be None if no project is found by that name in the org
             else:
                 # --- No organization specified: Search globally by slug/id AND name ---
                 logger.warning(

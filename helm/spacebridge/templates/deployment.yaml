@@ -34,10 +34,12 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
+            - name: SPACEBRIDGE_URL
+              value: {{ .Values.environment.spacebridgeUrl | quote }}
             - name: HOST
-              value: {{ .Values.environment.host | quote }}
+              value: "0.0.0.0"
             - name: PORT
-              value: {{ .Values.environment.port | quote }}
+              value: "8000"
             - name: DEBUG
               value: {{ .Values.environment.debug | quote }}
             - name: DATABASE_URL
