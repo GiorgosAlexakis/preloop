@@ -25,4 +25,4 @@ repos:
         language: system
         types: [python] # Run when Python files are committed
         pass_filenames: false # The script doesn't need filenames
-        stages: [commit] # Run during the commit stage
+        stages: [pre-commit] # Run during the commit stage
