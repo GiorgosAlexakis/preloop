@@ -37,7 +37,7 @@ fi
 echo "" # Add a blank line for separation
 # Initialize database tables and embedding model idempotently
 echo "Initializing database and embedding model..."
-python -m spacesync.scripts.init_db --force
+python spacesync/scripts/init_db.py --force
 cd SpaceModels
 alembic stamp head
 cd ..

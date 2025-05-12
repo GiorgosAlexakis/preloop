@@ -1675,6 +1675,21 @@ paths:
                 type: string
       security:
       - bearerAuth: []
+  /whatis-mcp:
+    get:
+      tags:
+      - Pages
+      summary: Whatis Mcp Page
+      operationId: whatis_mcp_page_whatis_mcp_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            text/html:
+              schema:
+                type: string
+      security:
+      - bearerAuth: []
 components:
   schemas:
     ApiKeyCreate:
