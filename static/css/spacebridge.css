@@ -166,11 +166,15 @@ h1, h2, h3, h4, h5, h6 {
 .btn-primary {
     background-color: #2271F2;
     border: none;
-    padding: 8px 14px;
+    padding: 16px 36px;
     font-weight: 500;
     font-size: 1.0rem;
     border-radius: 8px;
     transition: background-color 0.2s ease;
+}
+
+.tab-content .btn-primary {
+    padding: 8px 14px;
 }
 
 /* Center submit button in register and login forms */
