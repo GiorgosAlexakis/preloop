@@ -423,7 +423,7 @@ def _process_organization(
 
     # --- Webhook Registration Logic ---
     spacebridge_url_str = os.getenv("SPACEBRIDGE_URL")
-    webhook_registered_or_skipped = False # Flag to track if we handled webhook this run
+    webhook_registered = False # Flag to track if we handled webhook this run
 
     if spacebridge_url_str:
         try:
@@ -448,10 +448,10 @@ def _process_organization(
                     db.rollback()
                     org_stats["errors"] += 1
                     # Do not proceed with registration if saving secret failed
-                    webhook_registered_or_skipped = True # Mark as handled (failed)
+                    webhook_registered = True # Mark as handled (failed)
 
                 # Proceed with registration only if secret was saved
-                if not webhook_registered_or_skipped:
+                if not webhook_registered:
                     webhook_target_path = f"/api/v1/private/webhooks/{client.tracker_type}/{org.identifier}"
                     webhook_target_url = urljoin(spacebridge_url_str, webhook_target_path)
 
@@ -464,36 +464,36 @@ def _process_organization(
                         )
                         if success:
                             logger.info(f"Successfully registered webhook for org {org.id} at {webhook_target_url}")
+                            webhook_registered = True
                         else:
                             # Error logged within register_webhook implementation
                             logger.warning(f"Webhook registration failed for org {org.id}. Secret is saved, won't retry automatically.")
                             org_stats["errors"] += 1 # Count registration failure as an error
-
-                        webhook_registered_or_skipped = True # Mark as handled (success or logged failure)
+                            webhook_registered = False
 
                     except NotImplementedError:
                          logger.error(f"Webhook registration not implemented for tracker type {client.tracker_type}. Skipping for org {org.id}.")
-                         webhook_registered_or_skipped = True # Mark as handled (skipped due to missing implementation)
+                         webhook_registered = False
                          org_stats["errors"] += 1 # Count as error for visibility
                     except Exception as e:
                         logger.error(f"Error registering webhook for org {org.id}: {e}", exc_info=True)
                         org_stats["errors"] += 1
-                        webhook_registered_or_skipped = True # Mark as handled (failed)
+                        webhook_registered = False
 
             else:
                 logger.debug(f"Org {org.id} already has a webhook secret. Skipping registration.")
-                webhook_registered_or_skipped = True # Mark as handled (already done)
+                webhook_registered = True
 
         except ValueError as e:
             logger.warning(f"SPACEBRIDGE_URL is invalid ({spacebridge_url_str}): {e}. Skipping webhook registration.")
-            webhook_registered_or_skipped = True # Mark as handled (skipped due to invalid URL)
+            webhook_registered = False
         except Exception as e:
             logger.error(f"Unexpected error during webhook check/registration setup for org {org.id}: {e}", exc_info=True)
             org_stats["errors"] += 1
-            webhook_registered_or_skipped = True # Mark as handled (failed)
+            webhook_registered = False
     else:
         logger.debug("SPACEBRIDGE_URL not set. Skipping webhook registration.")
-        webhook_registered_or_skipped = True # Mark as handled (skipped due to config)
+        webhook_registered = False
 
     # --- Polling Logic ---
     # Check polling conditions only if webhook wasn't just handled (or if handling failed but we still might poll)
