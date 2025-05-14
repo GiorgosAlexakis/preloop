@@ -94,6 +94,8 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
+            - name: SPACEBRIDGE_URL
+              value: {{ .Values.environment.spacebridgeUrl | quote }}
             - name: HOST
               value: {{ .Values.environment.host | quote }}
             - name: PORT
@@ -145,7 +147,7 @@ spec:
             {{- end }}
           ports:
             - name: http
-              containerPort: {{ .Values.environment.port }}
+              containerPort: 8000
               protocol: TCP
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
