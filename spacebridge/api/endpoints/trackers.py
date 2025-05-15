@@ -3,11 +3,12 @@
 import logging
 import re
 import uuid
-from typing import Dict, List
+from typing import Dict, List, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import UUID4
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from spacebridge.api.auth.jwt import get_current_active_user
 from spacebridge.schemas.auth import UserResponse
@@ -23,13 +24,13 @@ from spacebridge.schemas.tracker import (
 )  # Corrected import location
 from spacebridge.trackers.github.client import GitHubClient  # Added import
 from spacebridge.trackers.gitlab.client import GitLabClient
+from spacebridge.trackers.jira.client import JiraClient
 from spacebridge.trackers.factory import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.organization import Organization
 from spacemodels.models.tracker import Tracker, TrackerType
-from spacemodels.db.session import Session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -459,7 +460,9 @@ async def delete_tracker(
         return {"message": message}
     except Exception as e:
         db.rollback()
-        logger.exception(f"Error during tracker deletion (ID: {tracker_id}): {e}")
+        logger.exception(
+            f"Error during tracker deletion (ID: {tracker_id}): {e}"
+        )  # Use logger.exception for stack trace
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error deleting tracker.",
@@ -616,114 +619,58 @@ async def test_connection_and_list_projects(
                 )
                 # Handle error appropriately
 
-        else:
-            # Existing logic for other non-GitHub/non-GitLab trackers (e.g., Jira)
-            logger.debug(
-                f"Tracker type is {test_data.tracker_type.value}, using default organization/project fetching."
-            )
-            # Note: This block assumes get_organizations and get_projects exist for other types
+        elif test_data.tracker_type == TrackerType.JIRA:
+            logger.debug("Tracker type is Jira, listing projects.")
+            jira_client = cast(JiraClient, client)
             try:
-                organizations_data = (
-                    await client.get_organizations()
-                )  # This might raise AttributeError for unsupported types
+                jira_projects_list: List[
+                    TrackerProject
+                ] = await jira_client.list_projects()
 
-                for org_data in organizations_data:
-                    # Use helper methods if available, otherwise access directly
-                    # Ensure org_data is treated as a dictionary for consistent access
-                    org_dict = (
-                        org_data
-                        if isinstance(org_data, dict)
-                        else getattr(org_data, "__dict__", {})
+                server_info = connection_result.server_info or {}
+                # For Jira, create one 'organization' (group in frontend terms) for the Jira instance itself
+                # Always use a UUID-based ID for Jira org_id to ensure it's DOM-safe and consistent.
+                org_id = f"jira-instance-{uuid.uuid4()}"
+
+                org_name = server_info.get("serverTitle", "Jira Projects")
+                # Keep org_url as the actual URL for display or linking purposes if needed elsewhere,
+                # but it's not used for the group's DOM ID.
+                org_url = server_info.get("baseUrl", jira_client.base_url)
+
+                project_identifiers: List[ProjectIdentifier] = []
+                for proj in jira_projects_list:
+                    project_identifiers.append(
+                        ProjectIdentifier(
+                            id=str(proj.id),
+                            name=proj.name,
+                            identifier=str(proj.identifier),
+                        )
                     )
-                    org_identifier = getattr(
-                        client, "transform_organization", lambda x: x
-                    )(org_dict).get("identifier")
-                    org_name = getattr(client, "transform_organization", lambda x: x)(
-                        org_dict
-                    ).get("name")
 
-                    if not org_identifier or not org_name:
-                        logger.warning(
-                            f"Skipping organization with missing identifier or name: {org_dict}"
-                        )
-                        continue
+                if project_identifiers:
+                    jira_org_group = OrganizationGroup(
+                        id=org_id,  # Use 'id' for OrganizationGroup schema
+                        name=org_name,  # Use 'name' for OrganizationGroup schema
+                        # The OrganizationGroup model from schemas.tracker uses 'id' and 'name'
+                        # and 'children' for ProjectIdentifier list.
+                        # We will adapt to what the frontend expects or adjust frontend/schemas.
+                        # For now, mapping to 'id' and 'name' for the group.
+                        # The frontend's renderProjectSelectionTree uses group.id and group.name
+                        children=project_identifiers,
+                    )
+                    project_tree.append(jira_org_group)
 
-                    # Ensure org_identifier is a string for the OrganizationGroup id
-                    org_id_str = str(org_identifier)
-                    org_group = OrganizationGroup(id=org_id_str, name=org_name)
-                    logger.debug(f"Processing organization: {org_name} ({org_id_str})")
+            except Exception as e:
+                logger.error(f"Error listing Jira projects: {str(e)}", exc_info=True)
+                # Allow to return success with empty project list if this part fails
+                pass
 
-                    try:
-                        # Pass identifier as string to get_projects
-                        projects_data = await client.get_projects(
-                            org_id_str
-                        )  # This might raise AttributeError
-                        for proj_data in projects_data:
-                            # Ensure proj_data is treated as a dictionary
-                            proj_dict = (
-                                proj_data
-                                if isinstance(proj_data, dict)
-                                else getattr(proj_data, "__dict__", {})
-                            )
-                            # Use helper methods if available
-                            proj_identifier = getattr(
-                                client, "_get_project_identifier", lambda x: x.get("id")
-                            )(proj_dict)
-                            # Pass org_id_str to transform_project helper if it exists
-                            proj_name = getattr(
-                                client, "transform_project", lambda x, y: x
-                            )(proj_dict, org_id_str).get("name")
-
-                            if proj_identifier and proj_name:
-                                # Ensure ID and identifier are strings for ProjectIdentifier
-                                proj_id_str = str(proj_identifier)
-                                logger.debug(
-                                    f"Adding project: {proj_name} ({proj_id_str})"
-                                )
-                                org_group.children.append(
-                                    ProjectIdentifier(
-                                        id=proj_id_str,
-                                        name=proj_name,
-                                        identifier=proj_id_str,
-                                    )
-                                )
-                            else:
-                                logger.warning(
-                                    f"Skipping project with missing identifier or name in org {org_id_str}: {proj_dict}"
-                                )
-
-                    except AttributeError as attr_err:
-                        logger.error(
-                            f"Client for {test_data.tracker_type.value} missing expected method (e.g., get_projects): {attr_err}"
-                        )
-                        # Skip project fetching for this org if method is missing
-                        if (
-                            org_group.children
-                        ):  # Still add org if it had children somehow? Unlikely.
-                            project_tree.append(org_group)
-                    except Exception as proj_error:
-                        # Log specific error fetching projects for this org, but continue with others
-                        logger.error(
-                            f"Error fetching projects for org {org_id_str} ({org_name}): {proj_error}",
-                            exc_info=True,
-                        )
-
-                    if (
-                        org_group.children
-                    ):  # Only add org if it has projects we could identify
-                        project_tree.append(org_group)
-                    else:
-                        logger.debug(f"Skipping empty organization group: {org_name}")
-
-            except AttributeError as attr_err:
-                logger.error(
-                    f"Client for {test_data.tracker_type.value} missing expected method (e.g., get_organizations): {attr_err}"
-                )
-                # Cannot proceed if get_organizations is missing
-            except Exception as org_err:
-                logger.exception(
-                    f"Error fetching organizations for tracker type {test_data.tracker_type.value}: {org_err}"
-                )
+        else:
+            logger.error(f"Unsupported tracker type: {test_data.tracker_type.value}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unsupported tracker type.",
+            )
 
         # Sort the final tree by organization/owner name
         project_tree.sort(key=lambda group: group.name.lower())

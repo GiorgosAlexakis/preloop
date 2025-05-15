@@ -6,7 +6,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+from spacebridge.schemas.tracker import ProjectIdentifier
 from spacebridge.trackers.base import (
+    TrackerInterface,
+    TrackerConnection,
     Issue,
     IssueComment,
     IssueCreate,
@@ -17,9 +20,8 @@ from spacebridge.trackers.base import (
     IssueUpdate,
     IssueUser,
     ProjectMetadata,
-    TrackerConnection,
-    TrackerInterface,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -345,36 +347,53 @@ class JiraClient(TrackerInterface):
         )
 
     async def test_connection(self) -> TrackerConnection:
-        """Test the connection to Jira.
-
-        Returns:
-            Connection status.
-        """
+        """Test the connection to Jira by fetching server information."""
         try:
-            # Get server info
-            response = await self._make_request("GET", "serverInfo")
+            # Fetching server information is a good way to test connection and auth
+            server_info = await self._make_request("GET", "serverInfo")
+            # You could also use "myself" endpoint: await self._make_request("GET", "myself")
 
-            # Get rate limiting info if available
-            rate_limit = None
+            # Check for a specific field that indicates success, e.g., baseUrl or serverTitle
+            if server_info and server_info.get("baseUrl"):
+                logger.info(
+                    f"Successfully connected to Jira instance at {server_info.get('baseUrl')}"
+                )
+                return TrackerConnection(
+                    connected=True,
+                    message="Connection successful.",
+                    server_info=server_info,
+                )
+            else:
+                logger.warning(
+                    "Jira connection test failed: Unexpected serverInfo response."
+                )
+                return TrackerConnection(
+                    connected=False,
+                    message="Connection test failed: Unexpected serverInfo response.",
+                    server_info=server_info,  # still provide what was received, if anything
+                )
 
-            return TrackerConnection(
-                connected=True,
-                message=f"Successfully connected to Jira {response.get('version', 'unknown version')}",
-                rate_limit=rate_limit,
-                server_info={
-                    "baseUrl": response.get("baseUrl"),
-                    "version": response.get("version"),
-                    "buildNumber": response.get("buildNumber"),
-                    "serverTitle": response.get("serverTitle"),
-                },
-            )
+        except ValueError as e:
+            # _make_request raises ValueError for API errors (>=400 status) or client errors
+            error_message = str(e)
+            logger.error(f"Jira connection test failed: {error_message}")
+            # Try to be more specific if it's an auth error
+            if "401" in error_message or "Unauthorized" in error_message:
+                msg = "Authentication failed. Please check your Jira username and API token."
+            elif "403" in error_message or "Forbidden" in error_message:
+                msg = "Access forbidden. The provided user may not have sufficient permissions."
+            elif "404" in error_message or "Not Found" in error_message:
+                msg = "Jira instance or API endpoint not found. Please check the Jira URL."
+            else:
+                msg = f"Connection failed: {error_message}"
+            return TrackerConnection(connected=False, message=msg)
         except Exception as e:
-            logger.exception(f"Failed to connect to Jira: {e}")
+            # Catch any other unexpected errors during the connection test
+            logger.exception(
+                f"An unexpected error occurred during Jira connection test: {e}"
+            )
             return TrackerConnection(
-                connected=False,
-                message=f"Failed to connect to Jira: {str(e)}",
-                rate_limit=None,
-                server_info=None,
+                connected=False, message=f"An unexpected error occurred: {str(e)}"
             )
 
     async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
@@ -817,3 +836,58 @@ class JiraClient(TrackerInterface):
         except Exception as e:
             logger.exception(f"Failed to add issue relation: {e}")
             return False
+
+    async def list_projects(self) -> List[ProjectIdentifier]:
+        """List all accessible projects in Jira.
+
+        Returns:
+            List of ProjectIdentifier instances.
+        """
+        projects_data = []
+        start_at = 0
+        max_results = 50
+        more_projects_exist = True
+
+        while more_projects_exist:
+            try:
+                response = await self._make_request(
+                    "GET",
+                    "project/search",
+                    params={"startAt": start_at, "maxResults": max_results},
+                )
+                values = response.get("values", [])
+                projects_data.extend(values)
+
+                is_last = response.get("isLast", True)
+                if is_last or not values:
+                    more_projects_exist = False
+                else:
+                    start_at += len(values)
+
+            except ValueError as e:
+                logger.error(f"Failed to fetch Jira projects: {e}")
+                break
+            except Exception as e:
+                logger.exception(
+                    f"An unexpected error occurred while fetching Jira projects: {e}"
+                )
+                break
+
+        mapped_projects: List[ProjectIdentifier] = []
+        for proj_data in projects_data:
+            project_id = str(proj_data.get("id"))
+            project_key = proj_data.get("key")
+            project_name = proj_data.get("name")
+
+            if project_id and project_name and project_key:
+                mapped_projects.append(
+                    ProjectIdentifier(
+                        id=project_id, name=project_name, identifier=project_key
+                    )
+                )
+            else:
+                logger.warning(
+                    f"Skipping Jira project with missing id, name, or key: {proj_data}"
+                )
+
+        return mapped_projects
