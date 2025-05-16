@@ -1,6 +1,7 @@
 """Jira client implementation for SpaceBridge."""
 
 import logging
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -122,6 +123,64 @@ class JiraClient(TrackerInterface):
             logger.exception(f"Jira API request failed: {e}")
             raise ValueError(f"Jira API request failed: {e}")
 
+    def _adf_to_plain_text(self, adf_node: Optional[Any]) -> str:
+        """Converts Jira Atlassian Document Format (ADF) to plain text."""
+        if adf_node is None:
+            return ""
+        # If it's already plain text (e.g., older Jira server or non-ADF field)
+        if isinstance(adf_node, str):
+            return adf_node
+        # If it's not a dict, we can't parse it as ADF, return empty string
+        if not isinstance(adf_node, dict):
+            logger.warning(
+                f"ADF description was not a dict, got {type(adf_node)}. Returning empty string."
+            )
+            return ""
+
+        texts: List[str] = []
+
+        # Inner function to recursively traverse ADF nodes
+        def _recursive_extract(current_node: Dict[str, Any]):
+            node_type = current_node.get("type")
+
+            if node_type == "text":
+                texts.append(current_node.get("text", ""))
+            elif node_type == "hardBreak":
+                if not texts or (texts and not texts[-1].endswith("\n")):
+                    texts.append("\n")
+
+            if "content" in current_node and isinstance(current_node["content"], list):
+                for child_node in current_node["content"]:
+                    if isinstance(child_node, dict):
+                        _recursive_extract(child_node)
+
+                # Add a newline after certain block elements if content was processed
+                # and the last text part doesn't already end with a newline.
+                if node_type in [
+                    "paragraph",
+                    "heading",
+                    "listItem",
+                    "codeBlock",
+                    "blockquote",
+                    "rule",
+                ]:
+                    if (
+                        texts
+                        and not texts[-1].endswith("\n")
+                        and texts[-1].strip() != ""
+                    ):
+                        texts.append("\n")
+
+        _recursive_extract(adf_node)
+
+        plain_text = "".join(texts)
+        plain_text = re.sub(r"\n{3,}", "\n\n", plain_text)  # Collapse 3+ newlines to 2
+        plain_text = (
+            plain_text.strip()
+        )  # Remove leading/trailing whitespace and newlines
+
+        return plain_text
+
     def _map_jira_status(self, jira_status: Dict[str, Any]) -> IssueStatus:
         """Map Jira status to SpaceBridge status.
 
@@ -225,7 +284,8 @@ class JiraClient(TrackerInterface):
 
         # Core issue data
         title = fields.get("summary", "")
-        description = fields.get("description", "")
+        raw_description = fields.get("description")
+        description_text = self._adf_to_plain_text(raw_description)
 
         # Status and priority
         status = self._map_jira_status(fields.get("status", {}))
@@ -326,7 +386,7 @@ class JiraClient(TrackerInterface):
             id=issue_id,
             key=issue_key,
             title=title,
-            description=description,
+            description=description_text,
             status=status,
             priority=priority,
             created_at=created_at,
