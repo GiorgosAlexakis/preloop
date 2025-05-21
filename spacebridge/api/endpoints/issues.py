@@ -5,6 +5,7 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from datetime import datetime  # Added import
 from spacebridge.schemas.issue import (
@@ -1082,7 +1083,8 @@ def get_issue(
             project_slug = project
         # Find the issue by external_id
         issue_query = db.query(Issue).filter(
-            Issue.tracker_id.in_(tracker_ids), Issue.external_id == issue_external_id
+            Issue.tracker_id.in_(tracker_ids),
+            or_(Issue.external_id == issue_external_id, Issue.key == issue_external_id),
         )
         # Get the project and organization
         if project_slug:
@@ -1134,7 +1136,9 @@ def get_issue(
             external_url = f"https://spacebridge.io/issues/{issue.id}"
 
         # Convert to IssueResponse model
-        if (
+        if issue.key:
+            final_response_key = issue.key
+        elif (
             project and project.slug and issue.external_id
         ):  # Check external_id specifically for formatting
             final_response_key = f"{project.slug}#{issue.external_id}"
