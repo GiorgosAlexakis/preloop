@@ -197,3 +197,25 @@ class JiraTracker(BaseTracker):
             )
 
         return issues
+
+    def transform_project(
+        self, proj_data: Dict[str, Any], organization_id: str
+    ) -> Dict[str, Any]:
+        """
+        Transform Jira project data, setting the slug to the project identifier (key).
+
+        Args:
+            proj_data: Project data from the Jira tracker.
+            organization_id: Database ID of the organization (UUID string).
+
+        Returns:
+            Transformed project data ready for database storage.
+        """
+        # Get the base transformation from the parent class
+        transformed_data = super().transform_project(proj_data, organization_id)
+
+        # Set the slug to be the project identifier (which is the Jira project key)
+        if "identifier" in transformed_data:
+            transformed_data["slug"] = transformed_data["identifier"]
+
+        return transformed_data
