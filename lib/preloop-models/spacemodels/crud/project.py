@@ -69,6 +69,7 @@ class CRUDProject(CRUDBase[Project]):
         query = db.query(Project).filter(
             (Project.slug == slug_or_identifier)
             | (Project.identifier == slug_or_identifier)
+            | (func.lower(Project.name) == func.lower(slug_or_identifier))
         )
 
         if organization_id:
