@@ -190,6 +190,27 @@ def create_issue(db_session, create_project, create_tracker):
 
 
 @pytest.fixture
+def create_comment(db_session, create_issue, create_account):
+    """Create a test comment."""
+    from spacemodels.crud import crud_comment
+
+    def _create_comment(body="Test comment body", type="issue", **kwargs):
+        issue = kwargs.pop("issue", create_issue())
+        author = kwargs.pop("author", create_account())
+
+        comment_data = {
+            "body": body,
+            "type": type,
+            "issue_id": issue.id,
+            # metadata can be added if needed
+        }
+
+        return crud_comment.create_with_author(db_session, obj_in=comment_data, author_id=author.id)
+
+    return _create_comment
+
+
+@pytest.fixture
 def create_embedding_model(db_session):
     """Create a test embedding model."""
     from spacemodels.crud import crud_embedding_model

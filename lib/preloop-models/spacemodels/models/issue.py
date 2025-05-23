@@ -13,6 +13,7 @@ from .base import Base
 
 from .project import Project
 from .tracker import Tracker
+from .comment import Comment
 
 # Get description max length from environment or use default 5000
 DESCRIPTION_MAX_LENGTH = int(os.environ.get("ISSUE_DESCRIPTION_MAX_LENGTH", "5000"))
@@ -62,6 +63,9 @@ class Issue(Base):
     tracker: Mapped["Tracker"] = relationship("Tracker", back_populates="issues")
     embeddings: Mapped[List["IssueEmbedding"]] = relationship(
         "IssueEmbedding", back_populates="issue", cascade="all, delete-orphan"
+    )
+    comments: Mapped[List["Comment"]] = relationship(
+        "Comment", back_populates="issue", cascade="all, delete-orphan"
     )
 
     # Metadata stored as JSON (for custom fields, labels, etc.)

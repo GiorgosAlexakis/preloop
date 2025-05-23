@@ -5,6 +5,7 @@ from ..models import (
     Account,
     ApiKey,
     ApiUsage,
+    Comment, # Add this import
     EmbeddingModel,
     Issue,
     IssueEmbedding,
@@ -16,6 +17,7 @@ from .account import CRUDAccount
 from .api_key import CRUDApiKey
 from .api_usage import CRUDApiUsage
 from .base import CRUDBase
+from .comment import CRUDComment, crud_comment # Add this import
 from .embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
 from .issue import CRUDIssue
 from .organization import CRUDOrganization
@@ -43,6 +45,7 @@ __all__ = [
     "CRUDIssueEmbedding",
     "CRUDApiKey",
     "CRUDApiUsage",
+    "CRUDComment", # Add this
     "crud_account",
     "crud_tracker",
     "crud_organization",
@@ -52,4 +55,5 @@ __all__ = [
     "crud_issue_embedding",
     "crud_api_key",
     "crud_api_usage",
+    "crud_comment", # Add this
 ]
