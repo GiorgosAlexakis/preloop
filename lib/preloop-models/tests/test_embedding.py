@@ -1,7 +1,8 @@
 """Tests for embedding functionality."""
 
-from spacemodels.crud import crud_embedding_model, crud_issue_embedding
+from spacemodels.crud import crud_embedding_model, crud_issue_embedding, crud_comment
 from spacemodels.models.issue import IssueEmbedding
+from spacemodels.models.comment import Comment
 
 
 def test_create_embedding_model(db_session):
@@ -49,6 +50,106 @@ def test_create_issue_embedding(db_session, create_issue, create_embedding_model
     # Verify the embedding has the correct dimension
     embedding = embeddings[model.name]
     assert len(embedding.embedding) == model.dimensions
+
+
+def test_create_comment_embedding(
+    db_session, create_issue, create_comment, create_embedding_model
+):
+    """Test creating an embedding for a specific comment."""
+    issue = create_issue()
+    comment = create_comment(issue_id=issue.id, body="This is a test comment.")
+    model = create_embedding_model()
+
+    # Create embedding for the comment
+    result = crud_issue_embedding.create_embeddings(
+        db_session, issue_id=issue.id, comment_id=comment.id, force_update=False
+    )
+
+    assert model.name in result
+    assert f"created_for_comment {comment.id}" in result[model.name]
+
+    # Verify embedding was created in the database for the comment
+    comment_embeddings = crud_issue_embedding.get_for_comment(
+        db_session, comment_id=comment.id
+    )
+    assert model.name in comment_embeddings
+    embedding = comment_embeddings[model.name]
+    assert embedding.comment_id == comment.id
+    assert embedding.issue_id == issue.id
+    assert len(embedding.embedding) == model.dimensions
+
+    # Verify it's not mistaken for an issue content embedding
+    issue_content_embeddings = crud_issue_embedding.get_for_issue_content(
+        db_session, issue_id=issue.id
+    )
+    assert model.name not in issue_content_embeddings
+
+
+def test_get_issue_content_embedding_distinct_from_comment(
+    db_session, create_issue, create_comment, create_embedding_model
+):
+    """Test that issue content embeddings are distinct from comment embeddings."""
+    issue = create_issue()
+    comment = create_comment(issue_id=issue.id, body="Another test comment.")
+    model = create_embedding_model()
+
+    # Create embedding for issue content
+    crud_issue_embedding.create_embeddings(db_session, issue_id=issue.id)
+    # Create embedding for comment
+    crud_issue_embedding.create_embeddings(
+        db_session, issue_id=issue.id, comment_id=comment.id
+    )
+
+    # Get issue content embeddings
+    issue_embeddings = crud_issue_embedding.get_for_issue_content(
+        db_session, issue_id=issue.id
+    )
+    assert model.name in issue_embeddings
+    assert issue_embeddings[model.name].comment_id is None
+
+    # Get comment embeddings
+    comment_embeddings = crud_issue_embedding.get_for_comment(
+        db_session, comment_id=comment.id
+    )
+    assert model.name in comment_embeddings
+    assert comment_embeddings[model.name].comment_id == comment.id
+
+
+def test_delete_comment_cascades_embeddings(
+    db_session, create_issue, create_comment, create_embedding_model
+):
+    """Test that deleting a comment also deletes its associated embeddings."""
+    issue = create_issue()
+    comment = create_comment(issue_id=issue.id, body="Comment to be deleted.")
+    model = create_embedding_model()
+
+    # Create embedding for the comment
+    crud_issue_embedding.create_embeddings(
+        db_session, issue_id=issue.id, comment_id=comment.id
+    )
+
+    comment_embeddings_before_delete = crud_issue_embedding.get_for_comment(
+        db_session, comment_id=comment.id
+    )
+    assert model.name in comment_embeddings_before_delete
+    embedding_id = comment_embeddings_before_delete[model.name].id
+
+    # Delete the comment
+    crud_comment.delete(db_session, id=comment.id)
+
+    # Verify the comment is deleted
+    deleted_comment = db_session.get(Comment, comment.id)
+    assert deleted_comment is None
+
+    # Verify the embedding associated with the comment is also deleted
+    retrieved_embedding = db_session.get(IssueEmbedding, embedding_id)
+    assert retrieved_embedding is None
+
+    # Verify using the CRUD method too
+    comment_embeddings_after_delete = crud_issue_embedding.get_for_comment(
+        db_session, comment_id=comment.id
+    )
+    assert model.name not in comment_embeddings_after_delete
 
 
 def test_similarity_search(
