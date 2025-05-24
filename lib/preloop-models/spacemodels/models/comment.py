@@ -1,6 +1,6 @@
 """Comment model."""
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
 
 from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -10,6 +10,7 @@ from .base import Base
 if TYPE_CHECKING:
     from .issue import Issue
     from .account import Account
+    from .embedding import IssueEmbedding
 
 
 class Comment(Base):
@@ -37,6 +38,9 @@ class Comment(Base):
     # Relationships
     issue: Mapped["Issue"] = relationship("Issue", back_populates="comments")
     author: Mapped[Optional["Account"]] = relationship("Account") # Add back_populates if a 'comments' relationship is added to Account
+    embeddings: Mapped[List["IssueEmbedding"]] = relationship(
+        "IssueEmbedding", back_populates="comment", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Comment(id={self.id}, type='{self.type}', issue_id='{self.issue_id}', author_id='{self.author_id}')>"

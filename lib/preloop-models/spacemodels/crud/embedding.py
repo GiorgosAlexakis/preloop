@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from ..models.comment import Comment
 from ..models.issue import EmbeddingModel, Issue, IssueEmbedding
 from .base import CRUDBase
 
@@ -43,7 +44,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
     """CRUD operations for IssueEmbedding model."""
 
     def get_for_issue(self, db: Session, *, issue_id: str) -> Dict[str, IssueEmbedding]:
-        """Get all embeddings for an issue, keyed by model name."""
+        """Get all embeddings for an issue (including its content and all its comments), keyed by model name."""
         embeddings = (
             db.query(IssueEmbedding, EmbeddingModel)
             .join(EmbeddingModel)
@@ -51,6 +52,26 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             .all()
         )
 
+        return {model.name: embedding for embedding, model in embeddings}
+
+    def get_for_issue_content(self, db: Session, *, issue_id: str) -> Dict[str, IssueEmbedding]:
+        """Get embeddings specifically for an issue's main content (not comments), keyed by model name."""
+        embeddings = (
+            db.query(IssueEmbedding, EmbeddingModel)
+            .join(EmbeddingModel)
+            .filter(IssueEmbedding.issue_id == issue_id, IssueEmbedding.comment_id.is_(None))
+            .all()
+        )
+        return {model.name: embedding for embedding, model in embeddings}
+
+    def get_for_comment(self, db: Session, *, comment_id: str) -> Dict[str, IssueEmbedding]:
+        """Get all embeddings for a specific comment, keyed by model name."""
+        embeddings = (
+            db.query(IssueEmbedding, EmbeddingModel)
+            .join(EmbeddingModel)
+            .filter(IssueEmbedding.comment_id == comment_id)
+            .all()
+        )
         return {model.name: embedding for embedding, model in embeddings}
 
     def get_for_model(
@@ -70,27 +91,47 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         db: Session,
         *,
         issue_id: str,
+        comment_id: Optional[str] = None,
         force_update: bool = False,
         api_key: Optional[str] = None,
     ) -> Dict[str, str]:
         """
-        Create embeddings for an issue using all active embedding models.
+        Create embeddings for an issue's content or a specific comment using all active embedding models.
 
         This implementation supports real embedding generation with OpenAI or other providers
         when an API key is provided, or falls back to random vectors for testing.
 
         Args:
             db: Database session
-            issue_id: ID of the issue to create embeddings for
+            issue_id: ID of the issue to associate with the embedding
+            comment_id: Optional ID of the comment to create embeddings for. If None, creates for issue content.
             force_update: Whether to update existing embeddings
             api_key: Optional API key for embedding providers
 
         Returns:
             Dictionary mapping model names to status ("created", "updated", "already_exists", "error")
         """
-        issue = db.get(Issue, issue_id)
-        if not issue:
-            raise ValueError(f"Issue with ID {issue_id} not found")
+        text_to_embed: str
+        source_entity_description: str
+
+        if comment_id:
+            comment = db.get(Comment, comment_id)
+            if not comment:
+                raise ValueError(f"Comment with ID {comment_id} not found")
+            if comment.issue_id != issue_id:
+                # Or handle as a different kind of error, depending on desired strictness
+                raise ValueError(f"Comment {comment_id} does not belong to issue {issue_id}")
+            text_to_embed = comment.body
+            source_entity_description = f"comment {comment_id}"
+        else:
+            issue = db.get(Issue, issue_id)
+            if not issue:
+                raise ValueError(f"Issue with ID {issue_id} not found")
+            text_to_embed = f"{issue.title}: {issue.description or ''}"
+            source_entity_description = f"issue {issue_id} content"
+
+        if not text_to_embed.strip():
+            return {model.name: "skipped_empty_text" for model in db.query(EmbeddingModel).filter(EmbeddingModel.is_active.is_(True)).all()}
 
         # Get active embedding models
         embedding_models = (
@@ -100,21 +141,20 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         results = {}
         for model in embedding_models:
             # Check if embedding already exists
-            existing = (
-                db.query(IssueEmbedding)
-                .filter(
-                    IssueEmbedding.issue_id == issue_id,
-                    IssueEmbedding.embedding_model_id == model.id,
-                )
-                .first()
+            query = db.query(IssueEmbedding).filter(
+                IssueEmbedding.issue_id == issue_id,
+                IssueEmbedding.embedding_model_id == model.id,
             )
+            if comment_id:
+                query = query.filter(IssueEmbedding.comment_id == comment_id)
+            else:
+                query = query.filter(IssueEmbedding.comment_id.is_(None))
+            
+            existing = query.first()
 
             if existing and not force_update:
-                results[model.name] = "already_exists"
+                results[model.name] = f"already_exists_for_{source_entity_description}"
                 continue
-
-            # Generate text to embed (typically title + description)
-            text_to_embed = f"{issue.title}: {issue.description or ''}"
 
             # Generate embedding vector
             try:
@@ -127,28 +167,31 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     existing.embedding = embedding_vector
                     existing.meta_data = {
                         "updated_at": datetime.utcnow().isoformat(),
+                        "source": source_entity_description,
                         "text_processed": text_to_embed[:100] + "..."
                         if len(text_to_embed) > 100
                         else text_to_embed,
                     }
                     db.add(existing)
-                    results[model.name] = "updated"
+                    results[model.name] = f"updated_for_{source_entity_description}"
                 else:
                     new_embedding = IssueEmbedding(
                         id=self.model.generate_id(),
                         issue_id=issue_id,
+                        comment_id=comment_id,  # Pass comment_id
                         embedding_model_id=model.id,
                         embedding=embedding_vector,
                         meta_data={
+                            "source": source_entity_description,
                             "text_processed": text_to_embed[:100] + "..."
                             if len(text_to_embed) > 100
-                            else text_to_embed
+                            else text_to_embed,
                         },
                     )
                     db.add(new_embedding)
-                    results[model.name] = "created"
+                    results[model.name] = f"created_for_{source_entity_description}"
             except Exception as e:
-                results[model.name] = f"error: {str(e)}"
+                results[model.name] = f"error_for_{source_entity_description}: {str(e)}"
 
         db.commit()
         return results

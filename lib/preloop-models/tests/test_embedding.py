@@ -40,7 +40,7 @@ def test_create_issue_embedding(db_session, create_issue, create_embedding_model
 
     # Check result contains the model name with success status
     assert model.name in result
-    assert result[model.name] == "created"
+    assert "created" in result[model.name]
 
     # Verify embedding was created in the database
     embeddings = crud_issue_embedding.get_for_issue(db_session, issue_id=issue.id)
