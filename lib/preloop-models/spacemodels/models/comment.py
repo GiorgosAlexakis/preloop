@@ -19,7 +19,12 @@ class Comment(Base):
     __tablename__ = "comment"
 
     body: Mapped[str] = mapped_column(Text, nullable=False)
-    type: Mapped[str] = mapped_column(String(50), nullable=False, default="issue", comment="Type of comment (e.g., 'issue', 'merge_request')")
+    type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="issue",
+        comment="Type of comment (e.g., 'issue', 'merge_request')",
+    )
 
     # Foreign keys
     issue_id: Mapped[str] = mapped_column(
@@ -30,14 +35,18 @@ class Comment(Base):
     )
     author_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("account.id", ondelete="SET NULL"),  # Or CASCADE, depending on desired behavior
+        ForeignKey(
+            "account.id", ondelete="SET NULL"
+        ),  # Or CASCADE, depending on desired behavior
         nullable=True,  # Allow comments from deleted users or system
         index=True,
     )
 
     # Relationships
     issue: Mapped["Issue"] = relationship("Issue", back_populates="comments")
-    author: Mapped[Optional["Account"]] = relationship("Account") # Add back_populates if a 'comments' relationship is added to Account
+    author: Mapped[Optional["Account"]] = relationship(
+        "Account"
+    )  # Add back_populates if a 'comments' relationship is added to Account
     embeddings: Mapped[List["IssueEmbedding"]] = relationship(
         "IssueEmbedding", back_populates="comment", cascade="all, delete-orphan"
     )

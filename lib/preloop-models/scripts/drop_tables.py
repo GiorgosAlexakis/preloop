@@ -38,12 +38,14 @@ def drop_tables(force: bool):
 
     # Get list of tables
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT table_name
             FROM information_schema.tables
             WHERE table_schema = 'public'
             ORDER BY table_name
-        """)
+        """
+        )
         tables = [row[0] for row in cursor.fetchall()]
     except Exception as e:
         click.echo(f"ERROR: Could not get table list: {str(e)}")

@@ -156,7 +156,9 @@ class IssueEmbedding(Base):
 
     # Relationships
     issue: Mapped["Issue"] = relationship("Issue", back_populates="embeddings")
-    comment: Mapped[Optional["Comment"]] = relationship("Comment", back_populates="embeddings")
+    comment: Mapped[Optional["Comment"]] = relationship(
+        "Comment", back_populates="embeddings"
+    )
     embedding_model: Mapped["EmbeddingModel"] = relationship(
         "EmbeddingModel", back_populates="embeddings"
     )
@@ -164,6 +166,9 @@ class IssueEmbedding(Base):
     __table_args__ = (
         # Enforce one embedding per issue per model
         UniqueConstraint(
-            "issue_id", "comment_id", "embedding_model_id", name="uix_issue_embedding_model"
+            "issue_id",
+            "comment_id",
+            "embedding_model_id",
+            name="uix_issue_embedding_model",
         ),
     )

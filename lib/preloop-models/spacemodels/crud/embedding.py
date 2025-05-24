@@ -54,17 +54,23 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
 
         return {model.name: embedding for embedding, model in embeddings}
 
-    def get_for_issue_content(self, db: Session, *, issue_id: str) -> Dict[str, IssueEmbedding]:
+    def get_for_issue_content(
+        self, db: Session, *, issue_id: str
+    ) -> Dict[str, IssueEmbedding]:
         """Get embeddings specifically for an issue's main content (not comments), keyed by model name."""
         embeddings = (
             db.query(IssueEmbedding, EmbeddingModel)
             .join(EmbeddingModel)
-            .filter(IssueEmbedding.issue_id == issue_id, IssueEmbedding.comment_id.is_(None))
+            .filter(
+                IssueEmbedding.issue_id == issue_id, IssueEmbedding.comment_id.is_(None)
+            )
             .all()
         )
         return {model.name: embedding for embedding, model in embeddings}
 
-    def get_for_comment(self, db: Session, *, comment_id: str) -> Dict[str, IssueEmbedding]:
+    def get_for_comment(
+        self, db: Session, *, comment_id: str
+    ) -> Dict[str, IssueEmbedding]:
         """Get all embeddings for a specific comment, keyed by model name."""
         embeddings = (
             db.query(IssueEmbedding, EmbeddingModel)
@@ -120,7 +126,9 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 raise ValueError(f"Comment with ID {comment_id} not found")
             if comment.issue_id != issue_id:
                 # Or handle as a different kind of error, depending on desired strictness
-                raise ValueError(f"Comment {comment_id} does not belong to issue {issue_id}")
+                raise ValueError(
+                    f"Comment {comment_id} does not belong to issue {issue_id}"
+                )
             text_to_embed = comment.body
             source_entity_description = f"comment {comment_id}"
         else:
@@ -131,7 +139,12 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             source_entity_description = f"issue {issue_id} content"
 
         if not text_to_embed.strip():
-            return {model.name: "skipped_empty_text" for model in db.query(EmbeddingModel).filter(EmbeddingModel.is_active.is_(True)).all()}
+            return {
+                model.name: "skipped_empty_text"
+                for model in db.query(EmbeddingModel)
+                .filter(EmbeddingModel.is_active.is_(True))
+                .all()
+            }
 
         # Get active embedding models
         embedding_models = (
@@ -149,7 +162,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 query = query.filter(IssueEmbedding.comment_id == comment_id)
             else:
                 query = query.filter(IssueEmbedding.comment_id.is_(None))
-            
+
             existing = query.first()
 
             if existing and not force_update:

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import crud_organization, crud_project, crud_issue, crud_comment
-from spacemodels.models import Account, Organization, Project, Issue, Tracker, Comment
+from spacemodels.models import Account, Organization, Project, Issue, Tracker
 
 
 def test_organization_get_by_name(db_session: Session):
@@ -645,13 +645,20 @@ def test_issue_get_by_key(db_session: Session):
 
 # --- Start of new Comment tests ---
 
+
 def test_comment_create_with_author(db_session: Session, create_issue, create_account):
     """Test creating a comment with an author using dictionary input."""
     issue = create_issue()
     author = create_account()
-    comment_data_in = {"body": "This is a test comment!", "type": "issue", "issue_id": issue.id}
+    comment_data_in = {
+        "body": "This is a test comment!",
+        "type": "issue",
+        "issue_id": issue.id,
+    }
 
-    comment = crud_comment.create_with_author(db_session, obj_in=comment_data_in, author_id=author.id)
+    comment = crud_comment.create_with_author(
+        db_session, obj_in=comment_data_in, author_id=author.id
+    )
 
     assert comment is not None
     assert comment.body == "This is a test comment!"
@@ -663,15 +670,23 @@ def test_comment_create_with_author(db_session: Session, create_issue, create_ac
     assert comment.updated_at is not None
 
 
-def test_comment_get_multi_by_issue(db_session: Session, create_comment, create_issue, create_account):
+def test_comment_get_multi_by_issue(
+    db_session: Session, create_comment, create_issue, create_account
+):
     """Test retrieving multiple comments for a specific issue."""
     author = create_account()
     issue1 = create_issue(title="Issue One for Comments")
     issue2 = create_issue(title="Issue Two for Comments")
 
-    comment1_issue1 = create_comment(issue=issue1, author=author, body="First comment for issue 1")
-    comment2_issue1 = create_comment(issue=issue1, author=author, body="Second comment for issue 1")
-    comment1_issue2 = create_comment(issue=issue2, author=author, body="First comment for issue 2")
+    comment1_issue1 = create_comment(
+        issue=issue1, author=author, body="First comment for issue 1"
+    )
+    comment2_issue1 = create_comment(
+        issue=issue1, author=author, body="Second comment for issue 1"
+    )
+    comment1_issue2 = create_comment(
+        issue=issue2, author=author, body="First comment for issue 2"
+    )
 
     # Test for issue1
     comments_issue1 = crud_comment.get_multi_by_issue(db_session, issue_id=issue1.id)
@@ -687,35 +702,51 @@ def test_comment_get_multi_by_issue(db_session: Session, create_comment, create_
 
     # Test for an issue with no comments
     issue_no_comments = create_issue(title="Issue With No Comments")
-    comments_no_issue = crud_comment.get_multi_by_issue(db_session, issue_id=issue_no_comments.id)
+    comments_no_issue = crud_comment.get_multi_by_issue(
+        db_session, issue_id=issue_no_comments.id
+    )
     assert len(comments_no_issue) == 0
 
 
-def test_comment_get_multi_by_author(db_session: Session, create_comment, create_issue, create_account):
+def test_comment_get_multi_by_author(
+    db_session: Session, create_comment, create_issue, create_account
+):
     """Test retrieving multiple comments by a specific author."""
     author1 = create_account(username="author_one_comments")
     author2 = create_account(username="author_two_comments")
     issue = create_issue()
 
-    comment1_author1 = create_comment(issue=issue, author=author1, body="Author 1, Comment 1")
-    comment2_author1 = create_comment(issue=issue, author=author1, body="Author 1, Comment 2")
-    comment1_author2 = create_comment(issue=issue, author=author2, body="Author 2, Comment 1")
+    comment1_author1 = create_comment(
+        issue=issue, author=author1, body="Author 1, Comment 1"
+    )
+    comment2_author1 = create_comment(
+        issue=issue, author=author1, body="Author 1, Comment 2"
+    )
+    comment1_author2 = create_comment(
+        issue=issue, author=author2, body="Author 2, Comment 1"
+    )
 
     # Test for author1
-    comments_author1 = crud_comment.get_multi_by_author(db_session, author_id=author1.id)
+    comments_author1 = crud_comment.get_multi_by_author(
+        db_session, author_id=author1.id
+    )
     assert len(comments_author1) == 2
     comment_ids_author1 = {c.id for c in comments_author1}
     assert comment1_author1.id in comment_ids_author1
     assert comment2_author1.id in comment_ids_author1
 
     # Test for author2
-    comments_author2 = crud_comment.get_multi_by_author(db_session, author_id=author2.id)
+    comments_author2 = crud_comment.get_multi_by_author(
+        db_session, author_id=author2.id
+    )
     assert len(comments_author2) == 1
     assert comments_author2[0].id == comment1_author2.id
 
     # Test for an author with no comments
     author_no_comments = create_account(username="author_no_comments")
-    comments_no_author = crud_comment.get_multi_by_author(db_session, author_id=author_no_comments.id)
+    comments_no_author = crud_comment.get_multi_by_author(
+        db_session, author_id=author_no_comments.id
+    )
     assert len(comments_no_author) == 0
 
 
@@ -734,7 +765,9 @@ def test_comment_base_crud_operations(db_session: Session, create_comment):
     # Test update
     update_data_dict = {"body": "Updated comment body!"}
     # The CRUDBase.update method expects db_obj (the SQLAlchemy model instance) and obj_in (a dict)
-    updated_comment = crud_comment.update(db_session, db_obj=retrieved_comment, obj_in=update_data_dict)
+    updated_comment = crud_comment.update(
+        db_session, db_obj=retrieved_comment, obj_in=update_data_dict
+    )
     assert updated_comment.body == "Updated comment body!"
     assert updated_comment.id == comment_id
     # Verify it's updated in the DB
@@ -742,11 +775,12 @@ def test_comment_base_crud_operations(db_session: Session, create_comment):
     assert re_retrieved_comment.body == "Updated comment body!"
 
     # Test delete
-    deleted_comment = crud_comment.delete(db_session, id=comment_id) 
+    deleted_comment = crud_comment.delete(db_session, id=comment_id)
     assert deleted_comment.id == comment_id
     # Verify it's deleted from the DB
     not_found_comment = crud_comment.get(db_session, id=comment_id)
     assert not_found_comment is None
+
 
 # --- End of new Comment tests ---
 
