@@ -1,9 +1,10 @@
 """Comment model."""
 
-from typing import TYPE_CHECKING, Optional, List
+from typing import TYPE_CHECKING, Optional, List, Dict
 
 from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 from .base import Base
 
@@ -50,6 +51,9 @@ class Comment(Base):
     embeddings: Mapped[List["IssueEmbedding"]] = relationship(
         "IssueEmbedding", back_populates="comment", cascade="all, delete-orphan"
     )
+
+    # Metadata stored as JSON (for custom fields, labels, etc.)
+    meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
     def __repr__(self) -> str:
         return f"<Comment(id={self.id}, type='{self.type}', issue_id='{self.issue_id}', author_id='{self.author_id}')>"
