@@ -6,6 +6,7 @@ SpaceSync is a read-only system that scans multiple issue trackers across differ
 
 - Multi-account support for tracker scanning
 - Integration with various issue trackers (GitHub, GitLab, Jira, Linear)
+- Fetches issue comments for supported trackers (currently GitLab, GitHub, Jira)
 - Vector embeddings for similarity search
 - Read-only operation (never modifies trackers)
 - Efficient incremental updates
@@ -38,46 +39,6 @@ DATABASE_URL=postgresql://username:password@localhost:5432/spacesync
 LOG_LEVEL=INFO
 LOG_FILE=/path/to/logs/spacesync.log
 ```
-
-## Usage
-
-### Database Initialization
-
-SpaceSync requires a properly initialized PostgreSQL database. Follow these steps to set up the database:
-
-1. **Initialize the database schema:**
-
-```bash
-python scripts/init_db.py --force
-```
-
-This command creates all necessary tables in the PostgreSQL database defined in your `.env` file. The `--force` flag will drop existing tables if they exist.
-
-2. **Create an admin account:**
-
-```bash
-python scripts/create_account.py --force
-```
-
-This creates an initial user account with configured trackers from the settings in your `.env` file. The `--force` flag will overwrite existing accounts with the same username.
-
-3. **Scan all trackers to populate the database:**
-
-```bash
-spacesync scan all
-```
-
-This command scans all configured trackers for the accounts in the database, fetching organizations, projects, and issues.
-
-4. **(Optional) Drop all tables:**
-
-If you need to reset the database completely:
-
-```bash
-python scripts/drop_tables.py --force
-```
-
-This will drop all tables from the database. Use with caution, as this will delete all data.
 
 ### CLI Commands
 
@@ -176,4 +137,3 @@ spacesync/
 ├── README.md
 ├── .env.template
 └── ROADMAP.md
-```
