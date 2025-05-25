@@ -160,8 +160,8 @@ class JiraTracker(BaseTracker):
 
         params = {
             "jql": jql,
-            "maxResults": 100, 
-            "fields": "id,key,summary,description,status,created,updated,labels,assignee,issuetype,comment", 
+            "maxResults": 100,
+            "fields": "id,key,summary,description,status,created,updated,labels,assignee,issuetype,comment",
         }
 
         try:
@@ -183,10 +183,12 @@ class JiraTracker(BaseTracker):
                 logger.warning(f"Could not parse datetime for Jira issue {issue_data.get('key')}: {ve}. Using fallback.")
                 created_dt = datetime.now()
                 if isinstance(issue_data["fields"].get("created"), str):
-                    try: created_dt = datetime.strptime(issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
-                    except ValueError: pass
+                    try:
+                        created_dt = datetime.strptime(issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+                    except ValueError:
+                        pass
                 updated_dt = created_dt
-            
+
             assignee_list = []
             if issue_data["fields"].get("assignee"):
                 assignee_list = [issue_data["fields"]["assignee"].get("displayName", issue_data["fields"]["assignee"].get("name"))]
@@ -203,24 +205,24 @@ class JiraTracker(BaseTracker):
                         logger.warning(f"Could not parse datetime for Jira comment {comment_item.get('id')} on issue {issue_data.get('key')}: {ve}. Using fallback.")
                         comment_created_dt = datetime.now()
                         if isinstance(comment_item.get("created"), str):
-                            try: comment_created_dt = datetime.strptime(comment_item["created"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
-                            except ValueError: pass
+                            try:
+                                comment_created_dt = datetime.strptime(comment_item["created"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+                            except ValueError:
+                                pass
                         comment_updated_dt = comment_created_dt
 
                     author = comment_item.get("author", {})
                     author_id = author.get("accountId") or author.get("key") or author.get("name")
-                    author_name = author.get("displayName", author.get("name", "Unknown User"))
 
                     comments_transformed.append({
                         "id": str(comment_item["id"]),
                         "body": comment_item.get("body", "") or "",
                         "author_id": str(author_id) if author_id else None,
-                        "author_name": author_name,
                         "created_at": comment_created_dt,
                         "updated_at": comment_updated_dt,
                         "url": f"{self.jira_url}/browse/{issue_data['key']}?focusedCommentId={comment_item['id']}#comment-{comment_item['id']}"
                     })
-            
+
             # Jira API might return None for description, ensure it's a string
             description_text = issue_data["fields"].get("description", "")
             if description_text is None:
@@ -228,6 +230,7 @@ class JiraTracker(BaseTracker):
 
             processed_issues.append(
                 {
+                    "id": issue_data["id"],  # Add this line for consistency with BaseTracker
                     "external_id": issue_data["id"],
                     "key": issue_data["key"],
                     "title": issue_data["fields"]["summary"],

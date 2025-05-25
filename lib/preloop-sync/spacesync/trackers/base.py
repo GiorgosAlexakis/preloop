@@ -92,7 +92,6 @@ class BaseTracker(ABC):
                 - id: External ID of the comment
                 - body: Text content of the comment
                 - author_id: External ID of the author (if available, from tracker)
-                - author_name: Name/username of the author (if available, from tracker)
                 - created_at: Creation datetime of the comment
                 - updated_at: Last update datetime of the comment
         """
@@ -144,13 +143,14 @@ class BaseTracker(ABC):
     ) -> Dict[str, Any]:
         """
         Transform issue data to a format that can be stored in the database.
+        It should also include transformed comment data under the 'comments' key.
 
         Args:
             issue_data: Issue data from the tracker.
             project_id: Database ID of the project (UUID string).
 
         Returns:
-            Transformed issue data ready for database storage.
+            Transformed issue data ready for database storage, including comments.
         """
         # Get issue status from data or default to "open"
         status = issue_data.get("state", "open")
@@ -159,6 +159,7 @@ class BaseTracker(ABC):
             status = "closed"
         elif status.lower() in ["open", "new", "todo", "to do"]:
             status = "open"
+        # Add more mappings as needed
 
         # Get issue type or default to "task"
         issue_type = issue_data.get("type", "task")
@@ -191,9 +192,9 @@ class BaseTracker(ABC):
                 f"Set ISSUE_DESCRIPTION_MAX_LENGTH env var to increase (current: {DESCRIPTION_MAX_LENGTH})"
             )
 
-        return {
+        transformed = {
             "project_id": project_id,
-            "external_id": issue_data["id"],
+            "external_id": issue_data.get("id", issue_data.get("external_id")),
             "key": issue_data["key"],
             "title": issue_data["title"],
             "description": description,
@@ -202,19 +203,22 @@ class BaseTracker(ABC):
             "priority": issue_data.get("priority", None),
             "last_updated_external": issue_data.get(
                 "updated_at"
-            ),  
-            "last_synced": datetime.now(),  
+            ),
+            "last_synced": datetime.now(),
             "meta_data": {
                 "labels": issue_data.get("labels", []),
                 "assignees": issue_data.get("assignees", []),
                 "url": issue_data.get("url", ""),
                 "external_url": issue_data.get("url", ""),
-                "external_created_at": created_at, 
-                "external_updated_at": last_updated, 
-                "source": "spacesync", 
+                "external_created_at": created_at,
+                "external_updated_at": last_updated,
+                "source": "spacesync",
             },
             "tracker_id": self.tracker_id,
+            "comments": issue_data.get("comments", []),
         }
+
+        return transformed
 
     def transform_comment(
         self, comment_data: Dict[str, Any], issue_db_id: str, author_db_id: Optional[str] = None
@@ -230,21 +234,16 @@ class BaseTracker(ABC):
         Returns:
             Transformed comment data ready for database storage.
         """
-        raw_created_at = comment_data.get("created_at")
-        raw_updated_at = comment_data.get("updated_at")
 
         return {
             "issue_id": issue_db_id,
-            "author_id": author_db_id, 
+            "author_id": None,
             "body": comment_data.get("body", ""),
-            "type": "issue", 
-            "external_id": str(comment_data.get("id")), 
+            "type": "issue",
+            "id": str(comment_data.get("id")),
             "meta_data": {
                 "external_author_id": str(comment_data.get("author_id")) if comment_data.get("author_id") else None,
-                "external_author_name": comment_data.get("author_name"),
-                "created_at_external": raw_created_at,
-                "updated_at_external": raw_updated_at,
-                "url": comment_data.get("url"), 
+                "url": comment_data.get("url"),
                 "source": "spacesync",
             },
         }

@@ -160,7 +160,7 @@ class GitHubTracker(BaseTracker):
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get issues for a repository from GitHub, including their comments, 
+        Get issues for a repository from GitHub, including their comments,
         optionally filtering by update time.
 
         Args:
@@ -200,7 +200,7 @@ class GitHubTracker(BaseTracker):
                 continue
 
             issue_number = issue_data["number"]
-            
+
             # Fetch comments for the issue
             comments_data_transformed = []
             comments_endpoint = f"repos/{repo_name}/issues/{issue_number}/comments"
@@ -216,16 +216,17 @@ class GitHubTracker(BaseTracker):
                         logger.warning(f"Could not parse datetime for comment {comment_item.get('id')} on issue {issue_number}: {ve}. Using fallback.")
                         created_at_dt = datetime.now()
                         if isinstance(comment_item.get("created_at"), str):
-                            try: created_at_dt = datetime.strptime(comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ")
-                            except ValueError: pass
+                            try:
+                                created_at_dt = datetime.strptime(comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+                            except ValueError:
+                                pass
                         updated_at_dt = created_at_dt
-                    
+
                     comments_data_transformed.append(
                         {
                             "id": str(comment_item["id"]),
                             "body": comment_item.get("body", "") or "", # Ensure body is not None
                             "author_id": str(comment_item["user"]["id"]) if comment_item.get("user") and comment_item["user"].get("id") else None,
-                            "author_name": comment_item["user"]["login"] if comment_item.get("user") and comment_item["user"].get("login") else "Unknown User",
                             "created_at": created_at_dt,
                             "updated_at": updated_at_dt,
                             "url": comment_item.get("html_url", ""),
@@ -242,8 +243,10 @@ class GitHubTracker(BaseTracker):
                 logger.warning(f"Could not parse datetime for issue {issue_number}: {ve}. Using fallback.")
                 issue_created_at = datetime.now()
                 if isinstance(issue_data.get("created_at"), str):
-                    try: issue_created_at = datetime.strptime(issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ")
-                    except ValueError: pass
+                    try:
+                        issue_created_at = datetime.strptime(issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+                    except ValueError:
+                        pass
                 issue_updated_at = issue_created_at
 
             processed_issues.append(

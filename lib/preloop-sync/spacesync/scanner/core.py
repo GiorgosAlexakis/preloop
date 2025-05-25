@@ -15,6 +15,7 @@ from spacemodels.crud import (
     crud_organization,
     crud_project,
     crud_tracker,
+    crud_comment, # Added import
 )
 from spacemodels.models import Issue, Organization, Project, Tracker
 
@@ -280,64 +281,94 @@ class TrackerClient:
         )
         logger.info(f"Found {len(issue_data_list)} issues in project {project.id} since {since}")
 
-        # Process each issue
-        issues = []
+        issues_processed = [] # Renamed from 'issues' to avoid conflict with model name
         embedding_updates = 0
 
         for issue_data in issue_data_list:
-            # Transform data for database
-            issue_create_data = self.client.transform_issue(issue_data, project.id)
+            transformed_data = self.client.transform_issue(issue_data, project.id)
 
-            # Find existing issues for this project
-            existing_issues = crud_issue.get_for_project(
+            comments_payload = transformed_data.pop("comments", [])
+            issue_obj_in = transformed_data
+
+            existing_issues_for_project = crud_issue.get_for_project(
                 db,
                 project_id=project.id,
                 skip=0,
-                limit=1000,  # Assume we won't have more than 1000 issues per project
+                limit=10000,
             )
 
-            # Find the matching issue by external_id
-            issue = next(
+            current_issue_model = next(
                 (
                     i
-                    for i in existing_issues
-                    if i.external_id == issue_create_data["external_id"]
+                    for i in existing_issues_for_project
+                    if i.external_id == issue_obj_in.get("external_id")
                 ),
                 None,
             )
 
             content_changed = False
+            created_new_issue = False
 
-            if issue:
-                # Check if content has changed to determine if we need to update embeddings
+            if current_issue_model:
                 if (
-                    issue.title != issue_create_data["title"]
-                    or issue.description != issue_create_data["description"]
+                    current_issue_model.title != issue_obj_in.get("title")
+                    or current_issue_model.description != issue_obj_in.get("description")
                 ):
                     content_changed = True
 
-                # Update existing
-                issue = crud_issue.update(db, db_obj=issue, obj_in=issue_create_data)
-                logger.debug(f"Updated issue {issue.id} ({issue.title})")
+                current_issue_model = crud_issue.update(db, db_obj=current_issue_model, obj_in=issue_obj_in)
+                logger.debug(f"Updated issue {current_issue_model.id} ({current_issue_model.title})")
             else:
-                # Create new - always need embedding
-                issue = crud_issue.create(db, obj_in=issue_create_data)
+                current_issue_model = crud_issue.create(db, obj_in=issue_obj_in)
                 content_changed = True
-                logger.debug(f"Created issue {issue.id} ({issue.title})")
+                created_new_issue = True
+                logger.debug(f"Created issue {current_issue_model.id} ({current_issue_model.title})")
 
-            issues.append(issue)
+            issues_processed.append(current_issue_model)
 
-            # Update embeddings if content changed or force_update is True
+            if comments_payload:
+                logger.info(f"Processing {len(comments_payload)} comments for issue {current_issue_model.id} ('{current_issue_model.title}')")
+                db_comments_for_issue = crud_comment.get_multi_by_issue(db, issue_id=current_issue_model.id, limit=10000)
+                db_comments_map_by_external_id = {
+                    c.id: c for c in db_comments_for_issue if c.id
+                }
+                processed_comment_external_ids = set()
+
+                for single_comment_data in comments_payload:
+                    comment_obj_in_for_crud = single_comment_data.copy()
+                    comment_obj_in_for_crud["issue_id"] = current_issue_model.id
+
+                    comment_external_id = comment_obj_in_for_crud.get("id")
+
+                    if not comment_external_id:
+                        crud_comment.create(db, obj_in=self.client.transform_comment(comment_obj_in_for_crud, issue_db_id=current_issue_model.id))
+                        logger.debug(f"Created new comment (no external_id) for issue {current_issue_model.id}")
+                        continue
+
+                    processed_comment_external_ids.add(comment_external_id)
+                    existing_db_comment = db_comments_map_by_external_id.get(comment_external_id)
+
+                    if existing_db_comment:
+                        crud_comment.update(db, db_obj=existing_db_comment, obj_in=self.client.transform_comment(comment_obj_in_for_crud, issue_db_id=current_issue_model.id))
+                        logger.debug(f"Updated comment {existing_db_comment.id} (ext_id: {comment_external_id}) for issue {current_issue_model.id}")
+                    else:
+                        new_db_comment = crud_comment.create(db, obj_in=self.client.transform_comment(comment_obj_in_for_crud, issue_db_id=current_issue_model.id))
+                        logger.debug(f"Created new comment {new_db_comment.id} (ext_id: {comment_external_id}) for issue {current_issue_model.id}")
+
+                if not created_new_issue:
+                    for db_comment_ext_id, db_comment_obj in db_comments_map_by_external_id.items():
+                        if db_comment_ext_id not in processed_comment_external_ids:
+                            crud_comment.remove(db, id=db_comment_obj.id)
+                            logger.info(f"Deleted comment {db_comment_obj.id} (ext_id: {db_comment_ext_id}) for issue {current_issue_model.id} (no longer in tracker payload)")
+
             if content_changed or force_update:
                 embedding_updates += 1
-                # Create or update embeddings
-                crud_issue_embedding.create_embeddings(db, issue_id=issue.id)
+                crud_issue_embedding.create_embeddings(db, issue_id=current_issue_model.id)
                 logger.info(
-                    f"Generated embeddings for issue {issue.id} - '{issue.title}'"
+                    f"Generated embeddings for issue {current_issue_model.id} - '{current_issue_model.title}'"
                 )
 
-        return issues, embedding_updates
-
+        return issues_processed, embedding_updates
 
 def scan_tracker(
     db: Session, tracker: Tracker, verbose: bool = False, force_update: bool = False
