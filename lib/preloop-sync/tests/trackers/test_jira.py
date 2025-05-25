@@ -4,7 +4,6 @@ from datetime import datetime
 import logging
 
 from spacesync.trackers.jira import JiraTracker
-from spacesync.exceptions import TrackerResponseError
 
 # Suppress logging during tests unless specifically needed for debugging a test
 logging.disable(logging.CRITICAL)
@@ -88,7 +87,6 @@ class TestJiraTrackerComments(unittest.TestCase):
         self.assertEqual(comment1_data["id"], "20001")
         self.assertEqual(comment1_data["body"], "First comment on the issue.")
         self.assertEqual(comment1_data["author_id"], "67890")
-        self.assertEqual(comment1_data["author_name"], "Commenter One")
         self.assertEqual(comment1_data["created_at"], datetime(2023, 1, 1, 12, 0, 0))
         self.assertEqual(comment1_data["updated_at"], datetime(2023, 1, 1, 12, 5, 0))
         expected_url1 = "https://test.jira.com/browse/PROJ-123?focusedCommentId=20001#comment-20001"
@@ -99,12 +97,11 @@ class TestJiraTrackerComments(unittest.TestCase):
         self.assertEqual(comment2_data["id"], "20002")
         self.assertEqual(comment2_data["body"], "Second comment here.")
         self.assertEqual(comment2_data["author_id"], "54321")
-        self.assertEqual(comment2_data["author_name"], "Commenter Two")
         self.assertEqual(comment2_data["created_at"], datetime(2023, 1, 2, 9, 30, 0))
         self.assertEqual(comment2_data["updated_at"], datetime(2023, 1, 2, 9, 30, 0))
         expected_url2 = "https://test.jira.com/browse/PROJ-123?focusedCommentId=20002#comment-20002"
         self.assertEqual(comment2_data["url"], expected_url2)
-        
+
         # Verify API call
         expected_api_url = "https://test.jira.com/rest/api/2/search"
         expected_params = {

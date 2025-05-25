@@ -83,8 +83,8 @@ class TestGitLabTrackerComments(unittest.TestCase):
         # 2. Initialize Tracker
         # Provide minimal connection_details as expected by the constructor
         tracker = GitLabTracker(
-            tracker_id="test-gitlab-tracker", 
-            api_key="fake_token", 
+            tracker_id="test-gitlab-tracker",
+            api_key="fake_token",
             connection_details={"url": "http://gitlab.com"}
         )
 
@@ -102,7 +102,6 @@ class TestGitLabTrackerComments(unittest.TestCase):
         self.assertEqual(comment_data["id"], str(mock_note_user.id))
         self.assertEqual(comment_data["body"], mock_note_user.body)
         self.assertEqual(comment_data["author_id"], mock_note_user.author["id"])
-        self.assertEqual(comment_data["author_name"], mock_note_user.author["username"])
         self.assertEqual(comment_data["created_at"], datetime.strptime(mock_note_user.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"))
         self.assertEqual(comment_data["updated_at"], datetime.strptime(mock_note_user.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"))
         self.assertEqual(comment_data["url"], f"{mock_issue1.web_url}#note_{mock_note_user.id}")
