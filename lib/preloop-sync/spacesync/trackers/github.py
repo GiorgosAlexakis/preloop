@@ -160,64 +160,105 @@ class GitHubTracker(BaseTracker):
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get issues for a repository from GitHub, optionally filtering by update time.
+        Get issues for a repository from GitHub, including their comments, 
+        optionally filtering by update time.
 
         Args:
             organization_id: GitHub organization login name or "personal" for user repos.
-            project_id: GitHub repository ID.
+            project_id: GitHub repository ID or full name (e.g., 'owner/repo').
             since: Only return issues updated since this datetime.
 
         Returns:
-            List of issue data dictionaries.
+            List of issue data dictionaries, each including a 'comments' list.
         """
 
-        # If project_id looks like a full repo name (contains a slash), use it directly
         if "/" in project_id:
             repo_name = project_id
         else:
-            # Make one API call to get the repository details
-            repo_details = self._make_request(f"repositories/{project_id}")
-            repo_name = repo_details["full_name"]
+            try:
+                repo_details = self._make_request(f"repositories/{project_id}")
+                repo_name = repo_details["full_name"]
+            except TrackerResponseError as e:
+                logger.error(f"Failed to get repository details for project_id {project_id}: {e}")
+                return [] # Cannot proceed without repo_name
 
-        # Query parameters for the issues API
         params = {"state": "all", "per_page": 100, "sort": "updated", "direction": "desc"}
         if since:
-            # GitHub API expects ISO8601 format string for 'since'
             params["since"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
             logger.debug(f"GitHub get_issues: Filtering issues updated since {params['since']}")
 
-
-        # Use the repo_name to directly access the issues
         issues_endpoint = f"repos/{repo_name}/issues"
-        issues_data = self._make_request(issues_endpoint, params)
+        try:
+            raw_issues_data = self._make_request(issues_endpoint, params)
+        except TrackerResponseError as e:
+            logger.error(f"Failed to get issues for repo {repo_name}: {e}")
+            return []
 
-        # Process issues as before, filtering out PRs
-        issues = []
-        for issue in issues_data:
-            # Skip pull requests
-            if "pull_request" in issue:
+        processed_issues = []
+        for issue_data in raw_issues_data:
+            if "pull_request" in issue_data: # Skip pull requests
                 continue
 
-            issue_number = issue["number"]
-            issues.append(
+            issue_number = issue_data["number"]
+            
+            # Fetch comments for the issue
+            comments_data_transformed = []
+            comments_endpoint = f"repos/{repo_name}/issues/{issue_number}/comments"
+            try:
+                # GitHub API for comments might not support 'since' for individual issue comments list
+                # It's usually for the main issues list. We fetch all comments for an issue.
+                raw_comments_data = self._make_request(comments_endpoint, params={"per_page": 100})
+                for comment_item in raw_comments_data:
+                    try:
+                        created_at_dt = datetime.strptime(comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+                        updated_at_dt = datetime.strptime(comment_item["updated_at"], "%Y-%m-%dT%H:%M:%SZ")
+                    except (ValueError, TypeError) as ve:
+                        logger.warning(f"Could not parse datetime for comment {comment_item.get('id')} on issue {issue_number}: {ve}. Using fallback.")
+                        created_at_dt = datetime.now()
+                        if isinstance(comment_item.get("created_at"), str):
+                            try: created_at_dt = datetime.strptime(comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+                            except ValueError: pass
+                        updated_at_dt = created_at_dt
+                    
+                    comments_data_transformed.append(
+                        {
+                            "id": str(comment_item["id"]),
+                            "body": comment_item.get("body", "") or "", # Ensure body is not None
+                            "author_id": str(comment_item["user"]["id"]) if comment_item.get("user") and comment_item["user"].get("id") else None,
+                            "author_name": comment_item["user"]["login"] if comment_item.get("user") and comment_item["user"].get("login") else "Unknown User",
+                            "created_at": created_at_dt,
+                            "updated_at": updated_at_dt,
+                            "url": comment_item.get("html_url", ""),
+                        }
+                    )
+            except TrackerResponseError as e:
+                logger.error(f"Failed to get comments for issue {repo_name}#{issue_number}: {e}")
+            # Continue processing the issue even if comments fail
+
+            try:
+                issue_created_at = datetime.strptime(issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+                issue_updated_at = datetime.strptime(issue_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ")
+            except (ValueError, TypeError) as ve:
+                logger.warning(f"Could not parse datetime for issue {issue_number}: {ve}. Using fallback.")
+                issue_created_at = datetime.now()
+                if isinstance(issue_data.get("created_at"), str):
+                    try: issue_created_at = datetime.strptime(issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+                    except ValueError: pass
+                issue_updated_at = issue_created_at
+
+            processed_issues.append(
                 {
-                    "external_id": str(issue_number),  # Use GitHub issue number
-                    "key": f"{repo_name}#{issue_number}",  # Construct key as repo#number
-                    "title": issue["title"],
-                    "description": issue["body"] or "",
-                    "state": issue["state"],
-                    "created_at": datetime.strptime(
-                        issue["created_at"], "%Y-%m-%dT%H:%M:%SZ"
-                    ),
-                    "updated_at": datetime.strptime(
-                        issue["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
-                    ),
-                    "labels": [label["name"] for label in issue.get("labels", [])],
-                    "assignees": [
-                        assignee["login"] for assignee in issue.get("assignees", [])
-                    ],
-                    "url": issue["html_url"],
+                    "external_id": str(issue_data["id"]),
+                    "key": f"{repo_name}#{issue_number}",
+                    "title": issue_data["title"],
+                    "description": issue_data.get("body", "") or "", # Ensure body is not None
+                    "state": issue_data["state"],
+                    "created_at": issue_created_at,
+                    "updated_at": issue_updated_at,
+                    "labels": [label["name"] for label in issue_data.get("labels", []) if isinstance(label, dict) and "name" in label],
+                    "assignees": [assignee["login"] for assignee in issue_data.get("assignees", []) if isinstance(assignee, dict) and "login" in assignee],
+                    "url": issue_data.get("html_url", ""),
+                    "comments": comments_data_transformed,
                 }
             )
-
-        return issues
+        return processed_issues

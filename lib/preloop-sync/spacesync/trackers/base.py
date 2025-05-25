@@ -87,6 +87,14 @@ class BaseTracker(ABC):
             - labels: List of label strings (optional)
             - assignees: List of assignee names (optional)
             - url: URL to the issue (optional)
+            - comments: List of comment data dictionaries.
+                Each comment dict should contain at least:
+                - id: External ID of the comment
+                - body: Text content of the comment
+                - author_id: External ID of the author (if available, from tracker)
+                - author_name: Name/username of the author (if available, from tracker)
+                - created_at: Creation datetime of the comment
+                - updated_at: Last update datetime of the comment
         """
         pass
 
@@ -185,8 +193,8 @@ class BaseTracker(ABC):
 
         return {
             "project_id": project_id,
-            "external_id": issue_data["external_id"], # Use the correct field name
-            "key": issue_data["key"], # Add the key field
+            "external_id": issue_data["id"],
+            "key": issue_data["key"],
             "title": issue_data["title"],
             "description": description,
             "status": status,
@@ -194,15 +202,53 @@ class BaseTracker(ABC):
             "priority": issue_data.get("priority", None),
             "last_updated_external": issue_data.get(
                 "updated_at"
-            ),  # Keep as datetime for DateTime column
-            "last_synced": datetime.now(),  # Keep as datetime for DateTime column
+            ),  
+            "last_synced": datetime.now(),  
             "meta_data": {
                 "labels": issue_data.get("labels", []),
                 "assignees": issue_data.get("assignees", []),
                 "url": issue_data.get("url", ""),
                 "external_url": issue_data.get("url", ""),
-                "created_at": created_at,
-                "updated_at": last_updated,
+                "external_created_at": created_at, 
+                "external_updated_at": last_updated, 
+                "source": "spacesync", 
             },
             "tracker_id": self.tracker_id,
         }
+
+    def transform_comment(
+        self, comment_data: Dict[str, Any], issue_db_id: str, author_db_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Transform comment data to a format that can be stored in the database.
+
+        Args:
+            comment_data: Comment data from the tracker.
+            issue_db_id: Database ID of the parent issue.
+            author_db_id: Database ID of the comment author (if known/created).
+
+        Returns:
+            Transformed comment data ready for database storage.
+        """
+        raw_created_at = comment_data.get("created_at")
+        raw_updated_at = comment_data.get("updated_at")
+
+        return {
+            "issue_id": issue_db_id,
+            "author_id": author_db_id, 
+            "body": comment_data.get("body", ""),
+            "type": "issue", 
+            "external_id": str(comment_data.get("id")), 
+            "meta_data": {
+                "external_author_id": str(comment_data.get("author_id")) if comment_data.get("author_id") else None,
+                "external_author_name": comment_data.get("author_name"),
+                "created_at_external": raw_created_at,
+                "updated_at_external": raw_updated_at,
+                "url": comment_data.get("url"), 
+                "source": "spacesync",
+            },
+        }
+
+
+if __name__ == "__main__":
+    pass

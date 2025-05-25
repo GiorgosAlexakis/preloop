@@ -5,6 +5,7 @@ Jira tracker implementation for SpaceSync.
 import base64
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import logging
 
 import requests
 
@@ -16,6 +17,7 @@ from ..exceptions import (
 from ..utils import retry
 from .base import BaseTracker
 
+logger = logging.getLogger(__name__)
 
 class JiraTracker(BaseTracker):
     """Jira tracker implementation."""
@@ -142,7 +144,7 @@ class JiraTracker(BaseTracker):
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get issues for a project from Jira.
+        Get issues for a project from Jira, including their comments.
 
         Args:
             organization_id: Not used for Jira, but kept for interface consistency.
@@ -150,53 +152,96 @@ class JiraTracker(BaseTracker):
             since: Only return issues updated since this datetime.
 
         Returns:
-            List of issue data dictionaries.
+            List of issue data dictionaries, each including a 'comments' list.
         """
-        # Build JQL query
         jql = f"project = {project_id}"
         if since:
             jql += f" AND updated >= '{since.strftime('%Y-%m-%d %H:%M')}'"
 
-        # Query parameters for the issues API
         params = {
             "jql": jql,
-            "maxResults": 100,
-            "fields": "id,key,summary,description,status,created,updated,labels,assignee,issuetype",  # Added id and key explicitly
+            "maxResults": 100, 
+            "fields": "id,key,summary,description,status,created,updated,labels,assignee,issuetype,comment", 
         }
 
-        issues_data = self._make_request("search", params)
+        try:
+            issues_response = self._make_request("search", params)
+        except TrackerResponseError as e:
+            logger.error(f"Failed to get Jira issues for project {project_id}: {e}")
+            return []
 
-        issues = []
-        for issue in issues_data.get("issues", []):
-            # Parse datetime strings
-            created = datetime.strptime(
-                issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
-            ).replace(tzinfo=None)
-            updated = datetime.strptime(
-                issue["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
-            ).replace(tzinfo=None)
+        processed_issues = []
+        for issue_data in issues_response.get("issues", []):
+            try:
+                created_dt = datetime.strptime(
+                    issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                ).replace(tzinfo=None)
+                updated_dt = datetime.strptime(
+                    issue_data["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                ).replace(tzinfo=None)
+            except (ValueError, TypeError) as ve:
+                logger.warning(f"Could not parse datetime for Jira issue {issue_data.get('key')}: {ve}. Using fallback.")
+                created_dt = datetime.now()
+                if isinstance(issue_data["fields"].get("created"), str):
+                    try: created_dt = datetime.strptime(issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+                    except ValueError: pass
+                updated_dt = created_dt
+            
+            assignee_list = []
+            if issue_data["fields"].get("assignee"):
+                assignee_list = [issue_data["fields"]["assignee"].get("displayName", issue_data["fields"]["assignee"].get("name"))]
 
-            # Get assignee if available
-            assignee = []
-            if issue["fields"].get("assignee"):
-                assignee = [issue["fields"]["assignee"]["displayName"]]
+            # Process comments
+            comments_transformed = []
+            if issue_data["fields"].get("comment") and issue_data["fields"]["comment"].get("comments"):
+                raw_comments = issue_data["fields"]["comment"]["comments"]
+                for comment_item in raw_comments:
+                    try:
+                        comment_created_dt = datetime.strptime(comment_item["created"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+                        comment_updated_dt = datetime.strptime(comment_item["updated"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+                    except (ValueError, TypeError) as ve:
+                        logger.warning(f"Could not parse datetime for Jira comment {comment_item.get('id')} on issue {issue_data.get('key')}: {ve}. Using fallback.")
+                        comment_created_dt = datetime.now()
+                        if isinstance(comment_item.get("created"), str):
+                            try: comment_created_dt = datetime.strptime(comment_item["created"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+                            except ValueError: pass
+                        comment_updated_dt = comment_created_dt
 
-            issues.append(
+                    author = comment_item.get("author", {})
+                    author_id = author.get("accountId") or author.get("key") or author.get("name")
+                    author_name = author.get("displayName", author.get("name", "Unknown User"))
+
+                    comments_transformed.append({
+                        "id": str(comment_item["id"]),
+                        "body": comment_item.get("body", "") or "",
+                        "author_id": str(author_id) if author_id else None,
+                        "author_name": author_name,
+                        "created_at": comment_created_dt,
+                        "updated_at": comment_updated_dt,
+                        "url": f"{self.jira_url}/browse/{issue_data['key']}?focusedCommentId={comment_item['id']}#comment-{comment_item['id']}"
+                    })
+            
+            # Jira API might return None for description, ensure it's a string
+            description_text = issue_data["fields"].get("description", "")
+            if description_text is None:
+                description_text = ""
+
+            processed_issues.append(
                 {
-                    "external_id": issue["id"],  # Use Jira's internal ID
-                    "key": issue["key"],  # Use Jira's issue key
-                    "title": issue["fields"]["summary"],
-                    "description": issue["fields"].get("description", ""),
-                    "state": issue["fields"]["status"]["name"].lower(),
-                    "created_at": created,
-                    "updated_at": updated,
-                    "labels": issue["fields"].get("labels", []),
-                    "assignees": assignee,
-                    "url": f"{self.jira_url}/browse/{issue['key']}",
+                    "external_id": issue_data["id"],
+                    "key": issue_data["key"],
+                    "title": issue_data["fields"]["summary"],
+                    "description": description_text,
+                    "state": issue_data["fields"]["status"]["name"].lower(),
+                    "created_at": created_dt,
+                    "updated_at": updated_dt,
+                    "labels": issue_data["fields"].get("labels", []),
+                    "assignees": assignee_list,
+                    "url": f"{self.jira_url}/browse/{issue_data['key']}",
+                    "comments": comments_transformed,
                 }
             )
-
-        return issues
+        return processed_issues
 
     def transform_project(
         self, proj_data: Dict[str, Any], organization_id: str
