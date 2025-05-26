@@ -26,6 +26,7 @@ dependencies = [
     "jinja2>=3.1.2",
     "aiosmtplib>=2.0.2",
     "loguru>=0.7.3",
+    "aiohttp>=3.9.0", # Added for Jira client
     # Using SpaceModels for database models and operations
     # "spacemodels @ file://${PROJECT_ROOT}/SpaceModels",
     # "spacesync @ file://${PROJECT_ROOT}/spacesync",

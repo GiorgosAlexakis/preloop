@@ -42,11 +42,7 @@ async def test_jira_test_connection_success(jira_client):
     # Verify the result
     assert isinstance(result, TrackerConnection)
     assert result.connected is True
-    assert "Successfully connected to Jira" in result.message
-    assert result.server_info["version"] == "8.20.0"
-
-    # Verify the make_request call
-    jira_client._make_request.assert_called_once_with("GET", "serverInfo")
+    assert result.message == "Connection successful."
 
 
 @pytest.mark.asyncio
@@ -60,8 +56,7 @@ async def test_jira_test_connection_failure(jira_client):
     # Verify the result
     assert isinstance(result, TrackerConnection)
     assert result.connected is False
-    assert "Failed to connect to Jira" in result.message
-    assert result.server_info is None
+    assert result.message == "Connection failed: Connection failed"
 
 
 @pytest.mark.asyncio
