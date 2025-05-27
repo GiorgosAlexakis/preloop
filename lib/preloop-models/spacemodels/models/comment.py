@@ -31,7 +31,7 @@ class Comment(Base):
     issue_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("issue.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     author_id: Mapped[str] = mapped_column(
