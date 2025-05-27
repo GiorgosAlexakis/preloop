@@ -15,9 +15,9 @@ from spacemodels.crud import (
     crud_organization,
     crud_project,
     crud_tracker,
-    crud_comment, 
+    crud_comment,
 )
-from spacemodels.models import Issue, Organization, Project, Tracker, Comment
+from spacemodels.models import Issue, Organization, Project, Tracker
 
 from ..config import logger
 
@@ -363,7 +363,7 @@ class TrackerClient:
                         old_body = existing_db_comment.body
                         updated_comment = crud_comment.update(db, db_obj=existing_db_comment, obj_in=transformed_comment_data)
                         logger.debug(f"Updated comment {updated_comment.id} (ext_id: {comment_external_id}) for issue {current_issue_model.id}")
-                        
+
                         comment_body_changed = (old_body != updated_comment.body)
                         if updated_comment.body and (comment_body_changed or force_update):
                             crud_issue_embedding.create_embeddings(
