@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class Token(BaseModel):
@@ -49,8 +49,9 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=8)
     full_name: Optional[str] = None
 
-    @validator("username")
-    def username_alphanumeric(cls, v):
+    @field_validator("username")
+    @classmethod
+    def username_alphanumeric(cls, v: str) -> str:
         if not v.isalnum():
             raise ValueError("Username must be alphanumeric")
         return v

@@ -18,8 +18,10 @@ from spacemodels.models.account import Account  # Import Account model
 from spacemodels.models.organization import Organization
 from spacemodels.models.tracker import Tracker
 
+# Initialize CRUD operations for Organization
+crud_organization = CRUDOrganization()  # Removed Organization argument
+
 router = APIRouter()
-crud_organization = CRUDOrganization(Organization)
 crud_tracker = CRUDTracker(Tracker)  # Instantiate tracker CRUD
 
 

@@ -1,7 +1,7 @@
 """Issue schemas for request and response validation."""
 
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator, root_validator, ValidationInfo
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 
 
@@ -38,8 +38,9 @@ class IssueCreate(IssueBase):
         None, description="Project identifier (name or ID)"
     )  # Keep for flexibility
 
-    @root_validator(pre=True)
-    def check_project_or_org_provided(cls, values):
+    @model_validator(mode="before")
+    @classmethod
+    def check_project_or_org_provided(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Validate that project information is provided, organization is optional."""
         has_project = (
             values.get("project_id")
@@ -87,7 +88,7 @@ class IssueResponse(IssueBase):
         None, description="Similarity score for search results (if applicable)"
     )
 
-    @field_validator("created_at", "updated_at", mode="before")
+    @model_validator("created_at", "updated_at", mode="before")
     @classmethod
     def format_datetime_fields_to_str(
         cls, v: Any, info: ValidationInfo
@@ -102,10 +103,7 @@ class IssueResponse(IssueBase):
             f"Field '{info.field_name}' must be a datetime object or a string, got {type(v).__name__}"
         )
 
-    class Config:
-        """Pydantic model configuration."""
-
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class IssueSearchResults(BaseModel):

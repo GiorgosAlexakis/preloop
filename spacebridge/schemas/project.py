@@ -42,10 +42,7 @@ class ProjectResponse(ProjectBase):
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
 
-    class Config:
-        """Pydantic model configuration."""
-
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TestConnectionRequest(BaseModel):

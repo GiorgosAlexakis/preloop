@@ -3,6 +3,8 @@
 from typing import Generator
 
 import pytest
+import os
+from dotenv import load_dotenv
 from sqlalchemy.orm import Session, sessionmaker
 
 # Try to import FastAPI, but don't fail if it's not available
@@ -17,6 +19,16 @@ except ImportError:
 # from spacebridge.api.app import create_app
 # from spacebridge.db.base import Base
 # from spacebridge.db.session import get_db
+
+
+def pytest_configure(config):
+    """
+    Load environment variables from .env file before tests run.
+    """
+    # Construct the path to the .env file relative to the conftest.py file
+    # Assuming .env is in the project root, and conftest.py is in tests/
+    dotenv_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    load_dotenv(dotenv_path)
 
 
 @pytest.fixture(scope="session")

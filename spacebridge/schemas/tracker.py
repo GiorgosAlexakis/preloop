@@ -3,7 +3,7 @@
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 
 from spacemodels.models.tracker import TrackerType
 
@@ -76,9 +76,9 @@ class TrackerRegisterRequest(BaseModel):
         description="Whether to automatically include new projects if no specific inclusions are set.",
     )
 
-    class Config:
-        populate_by_name = True  # Enables the alias functionality
-        json_schema_extra = {
+    model_config = ConfigDict(
+        populate_by_name=True,  # Enables the alias functionality
+        json_schema_extra={
             "examples": [
                 {
                     "name": "GitHub",
@@ -88,7 +88,8 @@ class TrackerRegisterRequest(BaseModel):
                     "config": None,
                 }
             ]
-        }
+        },
+    )
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -134,8 +135,7 @@ class TrackerResponse(TrackerBase):
     created: datetime = Field(..., description="Creation timestamp")
     last_updated: datetime = Field(..., description="Last update timestamp")
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TrackerTestRequest(BaseModel):

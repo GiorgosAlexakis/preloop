@@ -2,7 +2,7 @@
 
 from typing import Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class OrganizationBase(BaseModel):
@@ -38,8 +38,8 @@ class OrganizationResponse(OrganizationBase):
     updated_at: Optional[str] = Field(None, description="Last update timestamp")
     meta_data: Dict = Field(default_factory=dict, description="Additional metadata")
 
-    class Config:
-        """Pydantic model configuration."""
-
-        from_attributes = True
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(
+        from_attributes=True,  # Modern way of saying orm_mode = True
+        # Allow arbitrary types for field validation
+        arbitrary_types_allowed=True,
+    )

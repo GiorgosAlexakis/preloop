@@ -87,6 +87,8 @@ async def receive_webhook(
             logger.info(
                 f"GitHub webhook signature verified successfully for org ID {organization.id}"
             )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error during GitHub signature verification: {e}")
             raise HTTPException(
@@ -135,6 +137,7 @@ async def receive_webhook(
     # --- 5. Update Timestamp ---
     try:
         organization.last_webhook_update = datetime.now(timezone.utc)
+        db.add(organization)  # Ensure changes are staged for commit
         db.commit()
         logger.info(
             f"Updated last_webhook_update for organization ID {organization.id}"

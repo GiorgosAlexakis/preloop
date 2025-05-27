@@ -36,7 +36,7 @@ from spacebridge.trackers.base import (
 from spacebridge.api.auth import get_current_active_user
 
 # Initialize CRUD operations
-crud_organization = CRUDOrganization(Organization)
+crud_organization = CRUDOrganization()  # Removed Organization argument
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
 crud_tracker = CRUDTracker(Tracker)
