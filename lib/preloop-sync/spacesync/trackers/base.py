@@ -240,8 +240,8 @@ class BaseTracker(ABC):
             "author_id": None,
             "body": comment_data.get("body", ""),
             "type": "issue",
-            "id": str(comment_data.get("id")),
             "meta_data": {
+                "comment_id": str(comment_data.get("id")),
                 "external_author_id": str(comment_data.get("author_id")) if comment_data.get("author_id") else None,
                 "url": comment_data.get("url"),
                 "source": "spacesync",

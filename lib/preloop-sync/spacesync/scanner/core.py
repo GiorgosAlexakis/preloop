@@ -15,9 +15,9 @@ from spacemodels.crud import (
     crud_organization,
     crud_project,
     crud_tracker,
-    crud_comment, # Added import
+    crud_comment, 
 )
-from spacemodels.models import Issue, Organization, Project, Tracker
+from spacemodels.models import Issue, Organization, Project, Tracker, Comment
 
 from ..config import logger
 
@@ -288,7 +288,6 @@ class TrackerClient:
             transformed_data = self.client.transform_issue(issue_data, project.id)
 
             comments_payload = transformed_data.pop("comments", [])
-            issue_obj_in = transformed_data
 
             existing_issues_for_project = crud_issue.get_for_project(
                 db,
@@ -301,7 +300,7 @@ class TrackerClient:
                 (
                     i
                     for i in existing_issues_for_project
-                    if i.external_id == issue_obj_in.get("external_id")
+                    if i.external_id == transformed_data.get("external_id")
                 ),
                 None,
             )
@@ -311,15 +310,15 @@ class TrackerClient:
 
             if current_issue_model:
                 if (
-                    current_issue_model.title != issue_obj_in.get("title")
-                    or current_issue_model.description != issue_obj_in.get("description")
+                    current_issue_model.title != transformed_data.get("title")
+                    or current_issue_model.description != transformed_data.get("description")
                 ):
                     content_changed = True
 
-                current_issue_model = crud_issue.update(db, db_obj=current_issue_model, obj_in=issue_obj_in)
+                current_issue_model = crud_issue.update(db, db_obj=current_issue_model, obj_in=transformed_data)
                 logger.debug(f"Updated issue {current_issue_model.id} ({current_issue_model.title})")
             else:
-                current_issue_model = crud_issue.create(db, obj_in=issue_obj_in)
+                current_issue_model = crud_issue.create(db, obj_in=transformed_data)
                 content_changed = True
                 created_new_issue = True
                 logger.debug(f"Created issue {current_issue_model.id} ({current_issue_model.title})")
@@ -341,25 +340,50 @@ class TrackerClient:
                     comment_external_id = comment_obj_in_for_crud.get("id")
 
                     if not comment_external_id:
-                        crud_comment.create(db, obj_in=self.client.transform_comment(comment_obj_in_for_crud, issue_db_id=current_issue_model.id))
-                        logger.debug(f"Created new comment (no external_id) for issue {current_issue_model.id}")
+                        # For comments without an external ID, we assume they are always new if encountered.
+                        transformed_new_comment_data = self.client.transform_comment(comment_obj_in_for_crud, issue_db_id=current_issue_model.id)
+                        new_db_comment = crud_comment.create(db, obj_in=transformed_new_comment_data)
+                        logger.debug(f"Created new comment {new_db_comment.id} (no external_id) for issue {current_issue_model.id}")
+                        if new_db_comment.body: # Ensure there's text to embed
+                            crud_issue_embedding.create_embeddings(
+                                db=db,
+                                issue_id=current_issue_model.id,
+                                comment_id=new_db_comment.id,
+                                force_update=force_update # New comments are effectively 'forced' if body exists
+                            )
+                            logger.debug(f"Attempted embedding creation for new comment {new_db_comment.id} (no external_id)")
                         continue
 
                     processed_comment_external_ids.add(comment_external_id)
                     existing_db_comment = db_comments_map_by_external_id.get(comment_external_id)
 
-                    if existing_db_comment:
-                        crud_comment.update(db, db_obj=existing_db_comment, obj_in=self.client.transform_comment(comment_obj_in_for_crud, issue_db_id=current_issue_model.id))
-                        logger.debug(f"Updated comment {existing_db_comment.id} (ext_id: {comment_external_id}) for issue {current_issue_model.id}")
-                    else:
-                        new_db_comment = crud_comment.create(db, obj_in=self.client.transform_comment(comment_obj_in_for_crud, issue_db_id=current_issue_model.id))
-                        logger.debug(f"Created new comment {new_db_comment.id} (ext_id: {comment_external_id}) for issue {current_issue_model.id}")
+                    transformed_comment_data = self.client.transform_comment(comment_obj_in_for_crud, issue_db_id=current_issue_model.id)
 
-                if not created_new_issue:
-                    for db_comment_ext_id, db_comment_obj in db_comments_map_by_external_id.items():
-                        if db_comment_ext_id not in processed_comment_external_ids:
-                            crud_comment.remove(db, id=db_comment_obj.id)
-                            logger.info(f"Deleted comment {db_comment_obj.id} (ext_id: {db_comment_ext_id}) for issue {current_issue_model.id} (no longer in tracker payload)")
+                    if existing_db_comment:
+                        old_body = existing_db_comment.body
+                        updated_comment = crud_comment.update(db, db_obj=existing_db_comment, obj_in=transformed_comment_data)
+                        logger.debug(f"Updated comment {updated_comment.id} (ext_id: {comment_external_id}) for issue {current_issue_model.id}")
+                        
+                        comment_body_changed = (old_body != updated_comment.body)
+                        if updated_comment.body and (comment_body_changed or force_update):
+                            crud_issue_embedding.create_embeddings(
+                                db=db,
+                                issue_id=current_issue_model.id,
+                                comment_id=updated_comment.id,
+                                force_update=force_update # Respect force_update, otherwise only if body changed
+                            )
+                            logger.debug(f"Attempted embedding creation for updated comment {updated_comment.id} (body_changed: {comment_body_changed}, force_update: {force_update})")
+                    else:
+                        new_db_comment = crud_comment.create(db, obj_in=transformed_comment_data)
+                        logger.debug(f"Created new comment {new_db_comment.id} (ext_id: {comment_external_id}) for issue {current_issue_model.id}")
+                        if new_db_comment.body:
+                            crud_issue_embedding.create_embeddings(
+                                db=db,
+                                issue_id=current_issue_model.id,
+                                comment_id=new_db_comment.id,
+                                force_update=force_update # New comments are effectively 'forced' if body exists
+                            )
+                            logger.debug(f"Attempted embedding creation for new comment {new_db_comment.id} (ext_id: {comment_external_id})")
 
             if content_changed or force_update:
                 embedding_updates += 1
