@@ -17,6 +17,23 @@ from ..utils import retry
 from .base import BaseTracker
 
 
+import logging # Add this import at the top of the file if not already there
+
+# Enable detailed HTTP logging for requests library (used by python-gitlab)
+# This is very verbose and should be used for debugging only.
+# logging.basicConfig(level=logging.DEBUG) # Option 1: BasicConfig (might be too broad)
+# Option 2: More targeted requests logging
+requests_log = logging.getLogger("urllib3") # or "requests.packages.urllib3"
+requests_log.setLevel(logging.DEBUG)
+requests_log.propagate = True
+
+# You might also need to add a handler if one isn't configured that captures DEBUG from this logger
+# For example, if your main app configures logging but not for this specific logger at DEBUG:
+# handler = logging.StreamHandler()
+# handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+# requests_log.addHandler(handler)
+
+
 class GitLabTracker(BaseTracker):
     """GitLab tracker implementation using python-gitlab."""
 
@@ -342,6 +359,7 @@ class GitLabTracker(BaseTracker):
 
         try:
             # Get the group object first
+            logger.info(f"GitLabTracker: Attempting self.gl.groups.get(). org_identifier='{org_identifier}' (type: {type(org_identifier)}), client API URL='{self.gl.url}'")
             group = self._make_request(self.gl.groups.get, org_identifier)
 
             # Attempt to create the hook
@@ -366,7 +384,7 @@ class GitLabTracker(BaseTracker):
                      return False
                  else:
                      # Other creation errors
-                     logger.error(f"Failed to register webhook for GitLab group '{org_identifier}': {e.response_code} - {e.error_message}", exc_info=True)
+                     logger.error(f"GitLab API error {e.response_code} when trying to create hook for group '{org_identifier}'. Response: {e.error_message}", exc_info=True)
                      return False
 
         except gitlab.exceptions.GitlabAuthenticationError as e:
