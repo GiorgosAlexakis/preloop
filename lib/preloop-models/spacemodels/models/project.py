@@ -1,9 +1,11 @@
 """Project model."""
 
+import datetime
+
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String  # Added DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -43,6 +45,12 @@ class Project(Base):
 
     # Generic metadata field for extensibility
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
+
+    # Timestamp for the last webhook verification/registration attempt for this project
+    # Used by SpaceSync for GitLab CE project-level webhook handling.
+    webhook_last_verified_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     organization: Mapped["Organization"] = relationship(
