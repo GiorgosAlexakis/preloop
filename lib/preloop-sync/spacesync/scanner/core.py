@@ -26,6 +26,7 @@ from spacemodels.models import Issue, Organization, Project, Tracker
 from ..config import logger
 
 POLLING_THRESHOLD = timedelta(seconds=os.getenv("POLLING_THRESHOLD", 3600))
+RECHECK_PROJECT_WEBHOOK_INTERVAL = timedelta(days=1) # How often to re-check/register project webhooks
 
 class TrackerClient:
     """Client for interacting with trackers."""
@@ -423,7 +424,11 @@ def _process_organization(
 
     # --- Webhook Registration Logic ---
     spacebridge_url_str = os.getenv("SPACEBRIDGE_URL")
-    webhook_registered = False # Flag to track if we handled webhook this run
+    # This flag will determine if we save/update the org.webhook_secret.
+    # It's true if org already has a secret, or if we successfully register a group hook,
+    # or if (for GitLab CE) we successfully register at least one project hook AND the org secret wasn't set before.
+    org_webhook_secret_should_be_set = bool(org.webhook_secret)
+    temp_webhook_secret = None # Will hold newly generated secret if org doesn't have one
 
     if spacebridge_url_str:
         try:
@@ -431,69 +436,132 @@ def _process_organization(
             if not all([parsed_url.scheme, parsed_url.netloc]):
                 raise ValueError("Invalid SPACEBRIDGE_URL format")
 
+            webhook_target_path = f"/api/v1/private/webhooks/{client.tracker_type}/{org.identifier}"
+            webhook_target_url = urljoin(spacebridge_url_str, webhook_target_path)
+
             if not org.webhook_secret:
-                logger.info(f"Organization {org.id} ({org.name}) has no webhook secret. Attempting registration.")
-                webhook_secret = secrets.token_hex(32)
+                logger.info(f"Organization {org.id} ({org.name}) has no webhook secret. Will attempt registration.")
+                temp_webhook_secret = secrets.token_hex(32) # Generate a potential secret
+                current_secret_to_use = temp_webhook_secret
+            else:
+                logger.debug(f"Org {org.id} ({org.name}) already has a webhook secret. Will verify/update project webhooks if GitLab CE.")
+                current_secret_to_use = org.webhook_secret
 
-                # Save the secret *before* attempting registration
-                try:
-                    crud_organization.update(
-                        db, db_obj=org, obj_in={"webhook_secret": webhook_secret}
-                    )
-                    db.commit() # Commit immediately to store the secret
-                    logger.info(f"Saved new webhook secret for org {org.id}")
-                    org = db.merge(org) # Refresh org state with the new secret
-                except Exception as e:
-                    logger.error(f"Failed to save webhook secret for org {org.id}: {e}", exc_info=True)
-                    db.rollback()
-                    org_stats["errors"] += 1
-                    # Do not proceed with registration if saving secret failed
-                    webhook_registered = True # Mark as handled (failed)
+            gitlab_group_hooks_unsupported = False
 
-                # Proceed with registration only if secret was saved
-                if not webhook_registered:
-                    webhook_target_path = f"/api/v1/private/webhooks/{client.tracker_type}/{org.identifier}"
-                    webhook_target_url = urljoin(spacebridge_url_str, webhook_target_path)
-
+            # --- 1. Attempt Group Webhook Registration (for all tracker types initially) ---
+            if not org.webhook_secret: # Only attempt group registration if org doesn't have a secret yet
+                if hasattr(client.client, "register_group_webhook"):
+                    logger.info(f"Attempting group webhook registration for new org {org.id} ({client.tracker_type}).")
                     try:
-                        # Call the client method (to be implemented in TrackerClient and specific trackers)
-                        success = client.register_webhook(
-                            org_identifier=org.identifier,
-                            webhook_url=webhook_target_url,
-                            secret=webhook_secret,
+                        group_hook_status = client.client.register_group_webhook(
+                            org_identifier=org.identifier, webhook_url=webhook_target_url, secret=current_secret_to_use
+                        )
+                        if group_hook_status is True:
+                            logger.info(f"Successfully registered group webhook for org {org.id}.")
+                            org_webhook_secret_should_be_set = True # Mark that secret should be saved
+                        elif group_hook_status == "group_hooks_not_supported":
+                            if client.tracker_type == "gitlab":
+                                logger.info(f"Group hooks not supported for GitLab org {org.id}. Will attempt project-level webhooks.")
+                                gitlab_group_hooks_unsupported = True
+                            # For non-GitLab, "not_supported" is like a failure for setting the org secret via group hook
+                        else: # False (error)
+                            logger.warning(f"Group webhook registration failed for org {org.id}.")
+                            org_stats["errors"] += 1
+                    except Exception as e:
+                        logger.error(f"Error during group webhook registration for org {org.id}: {e}", exc_info=True)
+                        org_stats["errors"] += 1
+                elif hasattr(client.client, "register_webhook"): # Fallback for GitHub etc.
+                    logger.info(f"Attempting generic webhook registration for new org {org.id} ({client.tracker_type}).")
+                    try:
+                        success = client.client.register_webhook(
+                            org_identifier=org.identifier, webhook_url=webhook_target_url, secret=current_secret_to_use
                         )
                         if success:
-                            logger.info(f"Successfully registered webhook for org {org.id} at {webhook_target_url}")
-                            webhook_registered = True
+                            logger.info(f"Successfully registered generic webhook for org {org.id}.")
+                            org_webhook_secret_should_be_set = True
                         else:
-                            # Error logged within register_webhook implementation
-                            logger.warning(f"Webhook registration failed for org {org.id}. Secret is saved, won't retry automatically.")
-                            org_stats["errors"] += 1 # Count registration failure as an error
-                            webhook_registered = False
-
-                    except NotImplementedError:
-                         logger.error(f"Webhook registration not implemented for tracker type {client.tracker_type}. Skipping for org {org.id}.")
-                         webhook_registered = False
-                         org_stats["errors"] += 1 # Count as error for visibility
+                            logger.warning(f"Generic webhook registration failed for org {org.id}.")
+                            org_stats["errors"] += 1
                     except Exception as e:
-                        logger.error(f"Error registering webhook for org {org.id}: {e}", exc_info=True)
+                        logger.error(f"Error registering generic webhook for org {org.id}: {e}", exc_info=True)
                         org_stats["errors"] += 1
-                        webhook_registered = False
 
-            else:
-                logger.debug(f"Org {org.id} already has a webhook secret. Skipping registration.")
-                webhook_registered = True
+            # --- 2. Handle GitLab CE Project-Level Webhooks ---
+            # This runs if a) it's GitLab and group hooks were unsupported OR
+            # b) it's GitLab, org already has a secret (implying CE setup), so we need to check projects.
+            if client.tracker_type == "gitlab" and (gitlab_group_hooks_unsupported or org.webhook_secret):
+                if not current_secret_to_use: # Should only happen if org had no secret and group reg failed before CE check
+                     logger.error(f"Cannot proceed with GitLab project webhooks for org {org.id}: no secret available.")
+                else:
+                    logger.info(f"Processing project-level webhooks for GitLab org {org.id} ({org.name}). Using secret: {'existing' if org.webhook_secret else 'newly_generated'}")
+                    projects_for_org = client.scan_projects(db, org)
+                    if not projects_for_org:
+                        logger.info(f"No projects found for GitLab org {org.id} to check/register project webhooks.")
 
-        except ValueError as e:
+                    project_hooks_newly_registered_count = 0
+                    for project_to_hook in projects_for_org:
+                        # Check if project model has 'webhook_last_verified_at' and if it's recent
+                        needs_check = True
+                        if hasattr(project_to_hook, "webhook_last_verified_at") and project_to_hook.webhook_last_verified_at:
+                            if (now - project_to_hook.webhook_last_verified_at) <= RECHECK_PROJECT_WEBHOOK_INTERVAL:
+                                logger.debug(f"Skipping webhook check for project {project_to_hook.identifier}, recently verified at {project_to_hook.webhook_last_verified_at}.")
+                                needs_check = False
+
+                        if needs_check:
+                            logger.info(f"Checking/Registering project webhook for project {project_to_hook.identifier} in org {org.id}.")
+                            try:
+                                project_hook_success = client.client.register_project_webhook(
+                                    project_id_or_path=project_to_hook.identifier,
+                                    webhook_url=webhook_target_url,
+                                    secret=current_secret_to_use
+                                )
+                                if project_hook_success:
+                                    logger.info(f"Project webhook for project {project_to_hook.identifier} is active/registered.")
+                                    if not org.webhook_secret: # If org secret wasn't set yet, this counts as a success to set it
+                                        project_hooks_newly_registered_count += 1
+                                else: # False from register_project_webhook
+                                    logger.warning(f"Failed to ensure project webhook for project {project_to_hook.identifier} in org {org.id}.")
+                                    org_stats["errors"] +=1
+
+                                # Update verification timestamp on the project model
+                                if hasattr(project_to_hook, "webhook_last_verified_at"):
+                                    project_to_hook.webhook_last_verified_at = now
+                                    db.add(project_to_hook) # Stage for commit
+                                else:
+                                    logger.warning(f"Project model for {project_to_hook.identifier} missing 'webhook_last_verified_at' attribute.")
+
+                            except Exception as e:
+                                logger.error(f"Error during project webhook processing for {project_to_hook.identifier}: {e}", exc_info=True)
+                                org_stats["errors"] += 1
+
+                    if project_hooks_newly_registered_count > 0 and not org.webhook_secret:
+                        org_webhook_secret_should_be_set = True # Mark that the temp secret should be saved to org
+
+            # --- 3. Save Organization's Webhook Secret if marked ---
+            if org_webhook_secret_should_be_set and temp_webhook_secret and not org.webhook_secret:
+                # temp_webhook_secret will exist if org didn't have a secret initially
+                try:
+                    logger.info(f"Saving newly generated webhook secret for org {org.id}.")
+                    crud_organization.update(
+                        db, db_obj=org, obj_in={"webhook_secret": temp_webhook_secret}
+                    )
+                    # db.commit() will happen with project timestamp updates later or at end of _process_organization
+                    org = db.merge(org) # Refresh org state with the new secret
+                    logger.info(f"Successfully saved new webhook secret for org {org.id}.")
+                except Exception as e:
+                    logger.error(f"Failed to save webhook secret for org {org.id}: {e}", exc_info=True)
+                    db.rollback() # Rollback only this attempt to save secret
+                    org_stats["errors"] += 1
+                    # If saving fails, subsequent runs will try to generate a new temp_secret and re-register.
+
+        except ValueError as e: # For SPACEBRIDGE_URL format error
             logger.warning(f"SPACEBRIDGE_URL is invalid ({spacebridge_url_str}): {e}. Skipping webhook registration.")
-            webhook_registered = False
-        except Exception as e:
-            logger.error(f"Unexpected error during webhook check/registration setup for org {org.id}: {e}", exc_info=True)
+        except Exception as e: # Catch-all for other setup errors
+            logger.error(f"Unexpected error during webhook registration setup for org {org.id}: {e}", exc_info=True)
             org_stats["errors"] += 1
-            webhook_registered = False
-    else:
-        logger.debug("SPACEBRIDGE_URL not set. Skipping webhook registration.")
-        webhook_registered = False
+    else: # SPACEBRIDGE_URL not set
+        logger.info("SPACEBRIDGE_URL not set. Skipping webhook registration.")
 
     # --- Polling Logic ---
     # Check polling conditions only if webhook wasn't just handled (or if handling failed but we still might poll)

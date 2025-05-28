@@ -3,7 +3,8 @@ GitLab tracker implementation for SpaceSync using python-gitlab library.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+from typing_extensions import Literal # For Python < 3.8 compatibility with Literal
 
 import gitlab
 
@@ -15,23 +16,6 @@ from ..exceptions import (
 )
 from ..utils import retry
 from .base import BaseTracker
-
-
-import logging # Add this import at the top of the file if not already there
-
-# Enable detailed HTTP logging for requests library (used by python-gitlab)
-# This is very verbose and should be used for debugging only.
-# logging.basicConfig(level=logging.DEBUG) # Option 1: BasicConfig (might be too broad)
-# Option 2: More targeted requests logging
-requests_log = logging.getLogger("urllib3") # or "requests.packages.urllib3"
-requests_log.setLevel(logging.DEBUG)
-requests_log.propagate = True
-
-# You might also need to add a handler if one isn't configured that captures DEBUG from this logger
-# For example, if your main app configures logging but not for this specific logger at DEBUG:
-# handler = logging.StreamHandler()
-# handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-# requests_log.addHandler(handler)
 
 
 class GitLabTracker(BaseTracker):
@@ -329,9 +313,9 @@ class GitLabTracker(BaseTracker):
             )
         return issue_list_with_comments
 
-    def register_webhook(
+    def register_group_webhook(
         self, org_identifier: str, webhook_url: str, secret: str
-    ) -> bool:
+    ) -> Union[bool, Literal["group_hooks_not_supported"]]:
         """
         Register a webhook for the given GitLab group.
 
@@ -341,74 +325,154 @@ class GitLabTracker(BaseTracker):
             secret: The secret token to use for the webhook.
 
         Returns:
-            True if registration was successful or webhook already exists, False otherwise.
+            True if registration was successful or webhook already exists.
+            "group_hooks_not_supported" if the /hooks endpoint for the group returns 404.
+            False for other errors.
         """
-        logger.info(f"Attempting to register webhook for GitLab group ID '{org_identifier}' pointing to {webhook_url}")
+        logger.info(f"Attempting to register group webhook for GitLab group ID '{org_identifier}' pointing to {webhook_url}")
 
-        # Define the events we want to subscribe to
         hook_attrs = {
             "url": webhook_url,
             "token": secret,
             "issues_events": True,
             "push_events": True,
-            "merge_requests_events": False, # Example: disable merge request events
-            "repository_update_events": True, # Corresponds somewhat to GitHub's 'repository' event
-            "enable_ssl_verification": True, # Recommended
-            # Add other events as needed, e.g., 'job_events', 'pipeline_events', 'wiki_page_events'
+            "merge_requests_events": False,
+            "repository_update_events": True,
+            "enable_ssl_verification": True,
         }
 
         try:
-            # Get the group object first
-            logger.info(f"GitLabTracker: Attempting self.gl.groups.get(). org_identifier='{org_identifier}' (type: {type(org_identifier)}), client API URL='{self.gl.url}'")
+            logger.info(f"GitLabTracker: Attempting self.gl.groups.get() for group webhook. org_identifier='{org_identifier}', client API URL='{self.gl.url}'")
             group = self._make_request(self.gl.groups.get, org_identifier)
 
-            # Attempt to create the hook
-            # Use a direct try/except here as _make_request might not handle 409 specifically
+            # Try to list existing hooks. A 404 here indicates group hooks are not supported.
+            try:
+                existing_hooks = group.hooks.list(all=True)
+                for h in existing_hooks:
+                    if h.url == webhook_url:
+                        logger.warning(f"Group webhook for GitLab group '{org_identifier}' (URL: {webhook_url}) already exists (ID: {h.id}).")
+                        return True
+            except gitlab.exceptions.GitlabListError as e:
+                if e.response_code == 404:
+                    logger.info(f"Listing group hooks for GitLab group '{org_identifier}' failed with 404. Assuming group hooks are not supported (e.g., GitLab CE).")
+                    return "group_hooks_not_supported"
+                logger.error(f"Error listing group hooks for GitLab group '{org_identifier}': {e.response_code} - {e.error_message}", exc_info=True)
+                return False # Other errors during list are a failure
+
+            # If list succeeded and hook doesn't exist, try to create it.
+            logger.info(f"Attempting to create group hook for GitLab group '{org_identifier}' (URL: {webhook_url}).")
             try:
                 hook = group.hooks.create(hook_attrs)
-                logger.info(f"Successfully created webhook (ID: {hook.id}) for GitLab group '{org_identifier}' (ID: {group.id})")
+                logger.info(f"Successfully created group webhook (ID: {hook.id}) for GitLab group '{org_identifier}'.")
                 return True
             except gitlab.exceptions.GitlabCreateError as e:
-                 if e.response_code == 409: # Conflict - Hook already exists for this URL
-                     logger.warning(f"Webhook for GitLab group '{org_identifier}' pointing to {webhook_url} already exists.")
-                     # Consider this a success as the desired state is achieved
-                     return True
-                 elif e.response_code == 401:
-                     logger.error(f"GitLab authentication failed while trying to register webhook for group '{org_identifier}'.")
-                     raise TrackerAuthenticationError("GitLab authentication failed during webhook registration") from e
-                 elif e.response_code == 403:
-                     logger.error(f"Permission denied: Unable to register webhook for GitLab group '{org_identifier}'. Check token permissions (needs 'api' scope).")
-                     return False
-                 elif e.response_code == 404:
-                     logger.error(f"GitLab group '{org_identifier}' not found while trying to register webhook.")
-                     return False
-                 else:
-                     # Other creation errors
-                     logger.error(f"GitLab API error {e.response_code} when trying to create hook for group '{org_identifier}'. Response: {e.error_message}", exc_info=True)
-                     return False
+                if e.response_code == 409: # Conflict
+                    logger.warning(f"Group webhook for GitLab group '{org_identifier}' (URL: {webhook_url}) already exists (409 on create).")
+                    return True
+                elif e.response_code == 404: # Not Found on create
+                    logger.warning(f"Creating group hook for GitLab group '{org_identifier}' failed with 404. Assuming group hooks are not supported (e.g., GitLab CE).")
+                    return "group_hooks_not_supported"
+                elif e.response_code == 401:
+                    logger.error(f"GitLab authentication failed (401) creating group hook for '{org_identifier}'.")
+                    return False
+                elif e.response_code == 403:
+                    logger.error(f"Permission denied (403) creating group hook for '{org_identifier}'. Check token permissions.")
+                    return False
+                else:
+                    logger.error(f"GitLab API error {e.response_code} creating group hook for '{org_identifier}'. Response: {e.error_message}", exc_info=True)
+                    return False
 
-        except gitlab.exceptions.GitlabAuthenticationError as e:
-            # Caught by _make_request or direct call if group.get fails
-            logger.error(f"GitLab authentication error during webhook registration setup for group '{org_identifier}': {e}", exc_info=True)
-            # Re-raise or handle as appropriate for the calling context
-            raise TrackerAuthenticationError("GitLab authentication failed") from e
         except gitlab.exceptions.GitlabGetError as e:
             if e.response_code == 404:
-                logger.error(f"GitLab group '{org_identifier}' not found when trying to get group object for webhook registration.")
-                return False
-            else:
-                 logger.error(f"Error getting GitLab group '{org_identifier}' for webhook registration: {e.response_code} - {e.error_message}", exc_info=True)
-                 return False
-        except gitlab.exceptions.GitlabHttpError as e:
-             # General HTTP errors from _make_request or direct calls
-             logger.error(f"GitLab HTTP error during webhook registration for group '{org_identifier}': {e.response_code} - {e.error_message}", exc_info=True)
-             return False
-        except gitlab.exceptions.GitlabConnectionError as e:
-             # Connection errors from _make_request or direct calls
-             logger.error(f"GitLab connection error during webhook registration for group '{org_identifier}': {e}", exc_info=True)
-             return False
-        except Exception as e:
-            # Catch-all for unexpected errors
-            logger.error(f"Unexpected error registering webhook for GitLab group '{org_identifier}': {e}", exc_info=True)
+                logger.error(f"GitLab group '{org_identifier}' not found when attempting to register group webhook.")
+                return False # Group itself not found
+            logger.error(f"Error getting GitLab group '{org_identifier}' for group webhook: {e.response_code} - {e.error_message}", exc_info=True)
+            return False
+        except gitlab.exceptions.GitlabAuthenticationError as e: # Should be caught by _make_request mostly
+            logger.error(f"GitLab authentication error during group webhook setup for '{org_identifier}': {e}", exc_info=True)
+            raise # Re-raise as this is a fundamental issue
+        except Exception as e: # Catch-all for unexpected issues
+            logger.error(f"Unexpected error registering group webhook for GitLab group '{org_identifier}': {e}", exc_info=True)
             return False
 
+    def register_project_webhook(
+        self, project_id_or_path: Union[int, str], webhook_url: str, secret: str
+    ) -> bool:
+        """
+        Register a webhook for the given GitLab project.
+
+        Args:
+            project_id_or_path: The GitLab project ID (int) or path_with_namespace (str).
+            webhook_url: The target URL for the webhook.
+            secret: The secret token to use for the webhook.
+
+        Returns:
+            True if registration was successful or webhook already exists, False otherwise.
+        """
+        logger.info(f"Attempting to register project webhook for GitLab project '{project_id_or_path}' pointing to {webhook_url}")
+
+        hook_attrs = {
+            "url": webhook_url,
+            "token": secret,
+            "issues_events": True,
+            "push_events": True,
+            "merge_requests_events": False, # Keep consistent with group hook events for now
+            "repository_update_events": True,
+            "enable_ssl_verification": True,
+            # Consider adding more project-specific events if needed:
+            # "note_events": True,
+            # "job_events": True,
+            # "pipeline_events": True,
+            # "wiki_page_events": True,
+        }
+
+        try:
+            logger.info(f"GitLabTracker: Attempting self.gl.projects.get() for project webhook. project_id_or_path='{project_id_or_path}'")
+            project = self._make_request(self.gl.projects.get, project_id_or_path)
+
+            # Try to list existing hooks for the project.
+            try:
+                existing_hooks = project.hooks.list(all=True)
+                for h in existing_hooks:
+                    if h.url == webhook_url:
+                        logger.warning(f"Project webhook for GitLab project '{project_id_or_path}' (URL: {webhook_url}) already exists (ID: {h.id}).")
+                        return True
+            except gitlab.exceptions.GitlabListError as e:
+                # A 404 on listing project hooks is a genuine error if the project itself was found.
+                # It might indicate a permissions issue for listing hooks specifically.
+                logger.error(f"Error listing project hooks for GitLab project '{project_id_or_path}': {e.response_code} - {e.error_message}", exc_info=True)
+                return False
+
+            # If list succeeded and hook doesn't exist, try to create it.
+            logger.info(f"Attempting to create project hook for GitLab project '{project_id_or_path}' (URL: {webhook_url}).")
+            try:
+                hook = project.hooks.create(hook_attrs)
+                logger.info(f"Successfully created project webhook (ID: {hook.id}) for GitLab project '{project_id_or_path}'.")
+                return True
+            except gitlab.exceptions.GitlabCreateError as e:
+                if e.response_code == 409: # Conflict
+                    logger.warning(f"Project webhook for GitLab project '{project_id_or_path}' (URL: {webhook_url}) already exists (409 on create).")
+                    return True
+                elif e.response_code == 401:
+                    logger.error(f"GitLab authentication failed (401) creating project hook for '{project_id_or_path}'.")
+                    return False
+                elif e.response_code == 403:
+                    logger.error(f"Permission denied (403) creating project hook for '{project_id_or_path}'. Check token permissions.")
+                    return False
+                # Any other error, including 404 on create (which means project exists but /hooks endpoint for POST is an issue)
+                else:
+                    logger.error(f"GitLab API error {e.response_code} creating project hook for '{project_id_or_path}'. Response: {e.error_message}", exc_info=True)
+                    return False
+
+        except gitlab.exceptions.GitlabGetError as e: # Error getting the project object itself
+            if e.response_code == 404:
+                logger.error(f"GitLab project '{project_id_or_path}' not found when attempting to register project webhook.")
+                return False # Project itself not found
+            logger.error(f"Error getting GitLab project '{project_id_or_path}' for project webhook: {e.response_code} - {e.error_message}", exc_info=True)
+            return False
+        except gitlab.exceptions.GitlabAuthenticationError as e:
+            logger.error(f"GitLab authentication error during project webhook setup for '{project_id_or_path}': {e}", exc_info=True)
+            raise # Re-raise as this is a fundamental issue
+        except Exception as e: # Catch-all for unexpected issues
+            logger.error(f"Unexpected error registering project webhook for GitLab project '{project_id_or_path}': {e}", exc_info=True)
+            return False
