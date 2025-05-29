@@ -13,8 +13,6 @@ from .base import CRUDBase
 
 # Import optional pgvector functionality
 
-from ..db.vector_types import cosine_distance, euclidean_distance
-
 
 class CRUDEmbeddingModel(CRUDBase[EmbeddingModel]):
     """CRUD operations for EmbeddingModel model."""
@@ -278,6 +276,9 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         assignee: Optional[str] = None,
         last_updated_before: Optional[datetime] = None,
         last_updated_after: Optional[datetime] = None,
+        embedding_type: Optional[
+            str
+        ] = None,  # New parameter: "issue", "comment", or None
     ) -> List[Tuple[Issue, float]]:
         """
         Search for similar issues based on vector similarity using raw SQL with pgvector.
@@ -296,6 +297,8 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             assignee: Optional assignee (stored in meta_data->>'assignee') to filter by.
             last_updated_before: Optional upper bound for issue updated_at.
             last_updated_after: Optional lower bound for issue updated_at.
+            embedding_type: Optional type of embedding to filter by.
+                            Can be "issue", "comment", or None (default, no type filter).
 
 
         Returns:
@@ -335,6 +338,13 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         if last_updated_before:
             where_clauses.append("i.updated_at < :last_updated_before")
             params["last_updated_before"] = last_updated_before
+
+        if embedding_type:
+            if embedding_type == "issue":
+                where_clauses.append("e.comment_id IS NULL")
+            elif embedding_type == "comment":
+                where_clauses.append("e.comment_id IS NOT NULL")
+            # else: no filter or raise error for invalid type
 
         where_sql = " AND ".join(where_clauses)
 

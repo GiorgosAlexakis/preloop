@@ -3,6 +3,7 @@
 from spacemodels.crud import crud_embedding_model, crud_issue_embedding, crud_comment
 from spacemodels.models.issue import IssueEmbedding
 from spacemodels.models.comment import Comment
+from sqlalchemy.orm import Session
 
 
 def test_create_embedding_model(db_session):
@@ -203,3 +204,133 @@ def test_similarity_search(
     assert results[0][0].id == issue1.id  # Most similar
     assert results[1][0].id == issue3.id  # Second most similar
     assert results[2][0].id == issue2.id  # Least similar
+
+
+def test_similarity_search_with_embedding_type(
+    db_session: Session,
+    create_issue,
+    create_embedding_model,
+    create_tracker,
+    create_comment,  # Assumes this fixture creates a Comment and links it to an issue
+):
+    """Test similarity search with embedding_type filtering."""
+    model = create_embedding_model(name="test_model_type_filter", dimensions=3)
+    tracker = create_tracker(name="test_tracker_type_filter")
+
+    issue1 = create_issue(title="Issue One For Type Filter", tracker_id=tracker.id)
+    issue2 = create_issue(title="Issue Two For Type Filter", tracker_id=tracker.id)
+
+    # create_comment should return the Comment object and handle db_session internally or take it as arg
+    comment1 = create_comment(issue_id=issue1.id, body="A comment on Issue One")
+
+    embedding_vector_issue1 = [1.0, 0.0, 0.0]
+    embedding_vector_issue2 = [0.0, 1.0, 0.0]
+    embedding_vector_comment1 = [0.0, 0.0, 1.0]  # Distinct embedding for the comment
+
+    # Create embeddings directly for precise testing
+    embedding_for_issue1 = IssueEmbedding(
+        issue_id=issue1.id,
+        embedding_model_id=model.id,
+        embedding=embedding_vector_issue1,
+        comment_id=None,  # Explicitly for an issue embedding
+    )
+    embedding_for_issue2 = IssueEmbedding(
+        issue_id=issue2.id,
+        embedding_model_id=model.id,
+        embedding=embedding_vector_issue2,
+        comment_id=None,  # Explicitly for an issue embedding
+    )
+    embedding_for_comment1 = IssueEmbedding(
+        issue_id=comment1.issue_id,  # Link to the parent issue of the comment
+        comment_id=comment1.id,
+        embedding_model_id=model.id,
+        embedding=embedding_vector_comment1,
+    )
+    db_session.add_all(
+        [embedding_for_issue1, embedding_for_issue2, embedding_for_comment1]
+    )
+    db_session.commit()
+
+    # Test with embedding_type="issue"
+    results_issue_type_query_issue1_vec = crud_issue_embedding.similarity_search(
+        db_session,
+        model_id=model.id,
+        query_vector=embedding_vector_issue1,
+        embedding_type="issue",
+        limit=5,
+    )
+    assert len(results_issue_type_query_issue1_vec) == 2
+    assert results_issue_type_query_issue1_vec[0][0].id == issue1.id
+
+    results_issue_type_query_comment1_vec = crud_issue_embedding.similarity_search(
+        db_session,
+        model_id=model.id,
+        query_vector=embedding_vector_comment1,
+        embedding_type="issue",
+        limit=5,
+    )
+    assert len(results_issue_type_query_comment1_vec) == 2
+
+    # Test with embedding_type="comment"
+    results_comment_type_query_comment1_vec = crud_issue_embedding.similarity_search(
+        db_session,
+        model_id=model.id,
+        query_vector=embedding_vector_comment1,
+        embedding_type="comment",
+        limit=5,
+    )
+    assert len(results_comment_type_query_comment1_vec) == 1
+    assert (
+        results_comment_type_query_comment1_vec[0][0].id == issue1.id
+    )  # Returns parent issue
+
+    results_comment_type_query_issue1_vec = crud_issue_embedding.similarity_search(
+        db_session,
+        model_id=model.id,
+        query_vector=embedding_vector_issue1,
+        embedding_type="comment",
+        limit=5,
+    )
+    assert len(results_comment_type_query_issue1_vec) == 1
+
+    # Test with embedding_type=None (default behavior)
+    results_none_type_query_issue1_vec = crud_issue_embedding.similarity_search(
+        db_session,
+        model_id=model.id,
+        query_vector=embedding_vector_issue1,
+        embedding_type=None,
+        limit=5,
+    )
+    assert len(results_none_type_query_issue1_vec) == 3
+    assert results_none_type_query_issue1_vec[0][0].id == issue1.id
+
+    results_none_type_query_comment1_vec = crud_issue_embedding.similarity_search(
+        db_session,
+        model_id=model.id,
+        query_vector=embedding_vector_comment1,
+        embedding_type=None,
+        limit=5,
+    )
+    assert len(results_none_type_query_comment1_vec) == 3
+    assert results_none_type_query_comment1_vec[0][0].id == issue1.id
+
+    # Test with an invalid embedding_type (should behave like None as per current CRUDEmbedding logic)
+    results_invalid_type_query_issue1_vec = crud_issue_embedding.similarity_search(
+        db_session,
+        model_id=model.id,
+        query_vector=embedding_vector_issue1,
+        embedding_type="invalid_type_string",
+        limit=5,
+    )
+    assert len(results_invalid_type_query_issue1_vec) == 3
+    assert results_invalid_type_query_issue1_vec[0][0].id == issue1.id
+
+    results_invalid_type_query_comment1_vec = crud_issue_embedding.similarity_search(
+        db_session,
+        model_id=model.id,
+        query_vector=embedding_vector_comment1,
+        embedding_type="invalid_type_string",
+        limit=5,
+    )
+    assert len(results_invalid_type_query_comment1_vec) == 3
+    assert results_invalid_type_query_comment1_vec[0][0].id == issue1.id
