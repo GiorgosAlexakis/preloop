@@ -40,3 +40,11 @@ class CommentList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class CommentSearchResults(BaseModel):
+    """Response model for comment search results."""
+
+    items: List[CommentResponse] = Field(..., description="Search result items")
+    total: int = Field(..., description="Total number of matching comments")
+    query: str = Field(..., description="Search query used")

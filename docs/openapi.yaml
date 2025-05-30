@@ -1267,6 +1267,114 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/comments/search:
+    get:
+      tags:
+      - Comments
+      summary: Search Comments
+      description: 'Search for comments using full-text or similarity search.
+
+        Requires authentication and checks user access to related issues/projects.'
+      operationId: search_comments_api_v1_comments_search_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Search query text for comment body or vector search
+          title: Query
+        description: Search query text for comment body or vector search
+      - name: search_type
+        in: query
+        required: false
+        schema:
+          type: string
+          description: Type of search to perform ('full_text' or 'similarity')
+          enum:
+          - full_text
+          - similarity
+          default: full_text
+          title: Search Type
+        description: Type of search to perform ('full_text' or 'similarity')
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of comments to return
+          default: 10
+          title: Limit
+        description: Maximum number of comments to return
+      - name: issue_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by a specific issue ID (UUID)
+          title: Issue Id
+        description: Filter comments by a specific issue ID (UUID)
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by parent issue's project ID (UUID)
+          title: Project Id
+        description: Filter comments by parent issue's project ID (UUID)
+      - name: organization_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by parent issue's organization ID (UUID)
+          title: Organization Id
+        description: Filter comments by parent issue's organization ID (UUID)
+      - name: author_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by author ID (UUID)
+          title: Author Id
+        description: Filter comments by author ID (UUID)
+      - name: embedding_model_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Name of the embedding model for similarity search (e.g., 'text-embedding-ada-002')
+          title: Embedding Model Name
+        description: Name of the embedding model for similarity search (e.g., 'text-embedding-ada-002')
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentSearchResults'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/trackers/debug:
     post:
       tags:
@@ -1952,6 +2060,29 @@ components:
       - created_at
       title: CommentResponse
       description: Response model for comment data.
+    CommentSearchResults:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CommentResponse'
+          type: array
+          title: Items
+          description: Search result items
+        total:
+          type: integer
+          title: Total
+          description: Total number of matching comments
+        query:
+          type: string
+          title: Query
+          description: Search query used
+      type: object
+      required:
+      - items
+      - total
+      - query
+      title: CommentSearchResults
+      description: Response model for comment search results.
     EmailVerificationRequest:
       properties:
         token:

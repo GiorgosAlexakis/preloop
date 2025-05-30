@@ -7,19 +7,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from datetime import datetime  # Added import
+from datetime import datetime
 from spacebridge.schemas.issue import (
     IssueCreate as ApiIssueCreate,
     IssueResponse,
     IssueUpdate as ApiIssueUpdate,
-)  # Renamed to avoid conflict
+)
 from spacemodels.models.account import Account
 
 from spacemodels.crud import (
     CRUDIssue,
     CRUDOrganization,
     CRUDProject,
-    CRUDTracker,  # Added CRUDTracker import
+    CRUDTracker,
     crud_embedding_model,
     crud_issue_embedding,
 )
@@ -27,19 +27,19 @@ from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
-from spacemodels.models.tracker import Tracker  # Added Tracker model import
-from spacebridge.trackers.factory import TrackerFactory  # Import TrackerFactory
+from spacemodels.models.tracker import Tracker
+from spacebridge.trackers.factory import TrackerFactory
 from spacebridge.trackers.base import (
     IssueCreate,
     IssueUpdate,
-)  # Import base tracker schemas
+)
 from spacebridge.api.auth import get_current_active_user  # Import user dependency
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
-crud_tracker = CRUDTracker(Tracker)  # Added CRUDTracker instantiation
+crud_tracker = CRUDTracker(Tracker)
 
 
 # Define the filter class for issue searching
@@ -289,7 +289,7 @@ async def search_issues(
         tracker_ids = [t.id for t in user_trackers]
 
         if not tracker_ids:
-            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+            return {"items": [], "total": 0, "limit": limit, "offset": 0}
 
         # Get Issues linked to the user's trackers
         issues = db.query(Issue).filter(Issue.tracker_id.in_(tracker_ids))
@@ -1150,9 +1150,9 @@ def get_issue(
             organization=organization.name,
             project=project.name,
             title=issue.title,
-            description=issue.description or "",
-            status=issue.status or "",
-            priority=issue.priority or "",
+            description=issue.description,
+            status=issue.status,
+            priority=issue.priority,
             url=external_url,
             created_at=issue.created_at.isoformat() if issue.created_at else None,
             updated_at=issue.updated_at.isoformat() if issue.updated_at else None,
@@ -1454,9 +1454,9 @@ async def update_issue(
             organization=org_name,
             project=project_name,
             title=issue.title,
-            description=issue.description or "",
-            status=issue.status or "",
-            priority=issue.priority or "",
+            description=issue.description,
+            status=issue.status,
+            priority=issue.priority,
             url=external_url,
             created_at=issue.created_at.isoformat() if issue.created_at else None,
             updated_at=issue.updated_at.isoformat() if issue.updated_at else None,
@@ -1475,11 +1475,3 @@ async def update_issue(
         raise HTTPException(
             status_code=500, detail="Internal server error during issue update."
         )
-
-
-# Note: Ensure necessary imports are present at the top of the file.
-# Imports needed: logging, Optional, List, Dict, Any, APIRouter, Depends,
-# HTTPException, Query, Body, Session, joinedload, SQLAlchemyError, IssueResponse,
-# ApiIssueUpdate, Account, CRUD*, get_db, Issue, Organization, Project, Tracker,
-# TrackerFactory, IssueUpdate (base), get_current_active_user
-# Also ensure `get_tracker_client` is defined or imported correctly.
