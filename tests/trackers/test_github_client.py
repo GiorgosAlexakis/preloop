@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from spacebridge.trackers.base import (
     IssueCreate,
@@ -21,9 +21,7 @@ def github_credentials():
 def github_client(github_credentials):
     """Create a GitHub client for testing."""
     return GitHubClient(
-        credentials=github_credentials,
-        owner="test-owner",
-        repo="test-repo"
+        credentials=github_credentials, owner="test-owner", repo="test-repo"
     )
 
 
@@ -31,16 +29,23 @@ def github_client(github_credentials):
 async def test_github_test_connection_success(github_client):
     """Test successful connection to GitHub."""
     # _request is called twice: once for repo, once for rate_limit
-    github_client._request = AsyncMock(side_effect=[
-        {"full_name": "test-owner/test-repo"},  # Response for repo check
-        {"resources": {"core": {"limit": 5000, "remaining": 4999}}}  # Response for rate_limit check
-    ])
+    github_client._request = AsyncMock(
+        side_effect=[
+            {"full_name": "test-owner/test-repo"},  # Response for repo check
+            {
+                "resources": {"core": {"limit": 5000, "remaining": 4999}}
+            },  # Response for rate_limit check
+        ]
+    )
 
     result = await github_client.test_connection()
 
     assert isinstance(result, TrackerConnection)
     assert result.connected is True
-    assert result.message == "Successfully connected to GitHub repository: test-owner/test-repo"
+    assert (
+        result.message
+        == "Successfully connected to GitHub repository: test-owner/test-repo"
+    )
     # Check calls
     assert github_client._request.call_count == 2
     calls = github_client._request.call_args_list
@@ -51,9 +56,7 @@ async def test_github_test_connection_success(github_client):
 @pytest.mark.asyncio
 async def test_github_test_connection_failure(github_client):
     """Test failed connection to GitHub."""
-    github_client._request = AsyncMock(
-        side_effect=Exception("Connection error")
-    )
+    github_client._request = AsyncMock(side_effect=Exception("Connection error"))
 
     result = await github_client.test_connection()
 
@@ -73,24 +76,36 @@ async def test_github_search_issues(github_client):
                 "id": 12345,
                 "number": 1347,
                 "title": "Found a bug",
-                "user": {"login": "octocat", "id": 1, "avatar_url": "http://example.com/avatar.png"},
+                "user": {
+                    "login": "octocat",
+                    "id": 1,
+                    "avatar_url": "http://example.com/avatar.png",
+                },
                 "labels": [{"name": "bug"}, {"name": "high-priority"}],
                 "state": "open",
-                "assignee": {"login": "octocat", "id": 1, "avatar_url": "http://example.com/avatar.png"},
+                "assignee": {
+                    "login": "octocat",
+                    "id": 1,
+                    "avatar_url": "http://example.com/avatar.png",
+                },
                 "comments": 0,
                 "created_at": "2011-04-22T13:33:48Z",
                 "updated_at": "2011-04-22T13:33:48Z",
                 "closed_at": None,
                 "body": "I'm having a problem with this.",
                 "html_url": "https://github.com/test-owner/test-repo/issues/1347",
-                "url": "https://api.github.com/repos/test-owner/test-repo/issues/1347"
+                "url": "https://api.github.com/repos/test-owner/test-repo/issues/1347",
             }
         ],
     }
     github_client._request = AsyncMock(return_value=search_response)
 
     filter_params = IssueFilter(
-        query="bug", status=["open"], labels=["bug"], sort_by="created", sort_direction="desc"
+        query="bug",
+        status=["open"],
+        labels=["bug"],
+        sort_by="created",
+        sort_direction="desc",
     )
 
     issues, total = await github_client.search_issues(
@@ -119,11 +134,14 @@ async def test_github_search_issues(github_client):
     github_client._request.assert_called_once()
     call_args = github_client._request.call_args
     assert call_args[0][0] == "GET"
-    assert call_args[0][1].startswith(f"/search/issues")
-    assert f"repo:{github_client.owner}/{github_client.repo}" in call_args[1]["params"]["q"]
-    assert "bug" in call_args[1]["params"]["q"] # query text
-    assert "is:open" in call_args[1]["params"]["q"] # status filter
-    assert 'label:"bug"' in call_args[1]["params"]["q"] # label filter
+    assert call_args[0][1].startswith("/search/issues")
+    assert (
+        f"repo:{github_client.owner}/{github_client.repo}"
+        in call_args[1]["params"]["q"]
+    )
+    assert "bug" in call_args[1]["params"]["q"]  # query text
+    assert "is:open" in call_args[1]["params"]["q"]  # status filter
+    assert 'label:"bug"' in call_args[1]["params"]["q"]  # label filter
     assert call_args[1]["params"]["sort"] == "created"
     assert call_args[1]["params"]["order"] == "desc"
     assert call_args[1]["params"]["per_page"] == 10
@@ -138,15 +156,19 @@ async def test_github_create_issue(github_client):
         "number": 1347,
         "title": "New Test Issue",
         "body": "This is a test issue.",
-        "user": {"login": "octocat", "id": 1, "avatar_url": "http://example.com/avatar.png"}, # Reporter
+        "user": {
+            "login": "octocat",
+            "id": 1,
+            "avatar_url": "http://example.com/avatar.png",
+        },  # Reporter
         "labels": [],
-        "state": "open", 
-        "assignee": None, # No assignee initially
+        "state": "open",
+        "assignee": None,  # No assignee initially
         "comments": 0,
         "created_at": "2023-01-01T00:00:00Z",
         "updated_at": "2023-01-01T00:00:00Z",
         "html_url": "https://github.com/test-owner/test-repo/issues/1347",
-        "url": "https://api.github.com/repos/test-owner/test-repo/issues/1347"
+        "url": "https://api.github.com/repos/test-owner/test-repo/issues/1347",
     }
     github_client._request = AsyncMock(return_value=created_issue_response)
 
@@ -170,8 +192,10 @@ async def test_github_create_issue(github_client):
     github_client._request.assert_called_once()
     call_args = github_client._request.call_args
     assert call_args[0][0] == "POST"
-    assert call_args[0][1] == f"/repos/{github_client.owner}/{github_client.repo}/issues"
-    assert call_args[1]["data"]["title"] == "New Test Issue"  
+    assert (
+        call_args[0][1] == f"/repos/{github_client.owner}/{github_client.repo}/issues"
+    )
+    assert call_args[1]["data"]["title"] == "New Test Issue"
     assert call_args[1]["data"]["body"] == "This is a test issue."
     # Add assertions for other payload fields if sent (e.g., labels, assignees)
 
@@ -180,21 +204,25 @@ async def test_github_create_issue(github_client):
 async def test_github_add_comment(github_client):
     """Test adding a comment to a GitHub issue."""
     comment_response = {
-        "id": 1, # Comment ID
+        "id": 1,  # Comment ID
         "body": "This is a test comment",
-        "user": {"login": "octocat", "id": 1, "avatar_url": "http://example.com/avatar.png"}, # Comment author
+        "user": {
+            "login": "octocat",
+            "id": 1,
+            "avatar_url": "http://example.com/avatar.png",
+        },  # Comment author
         "created_at": "2023-01-01T00:00:00Z",
         "updated_at": "2023-01-01T00:00:00Z",
         "html_url": "https://github.com/test-owner/test-repo/issues/1347#issuecomment-1",
     }
     github_client._request = AsyncMock(return_value=comment_response)
 
-    issue_key = "1347" # This is the issue number for GitHub
+    issue_key = "1347"  # This is the issue number for GitHub
     comment_text = "This is a test comment"
 
     added_comment = await github_client.add_comment(
-        issue_id=issue_key, # issue_id is the issue number for GitHub
-        comment=comment_text
+        issue_id=issue_key,  # issue_id is the issue number for GitHub
+        comment=comment_text,
     )
 
     assert added_comment.id == "1"
@@ -202,8 +230,11 @@ async def test_github_add_comment(github_client):
     assert added_comment.author.name == "octocat"
     # Add more assertions (created_at, updated_at, url)
 
-    github_client._request.assert_called_once() 
+    github_client._request.assert_called_once()
     call_args = github_client._request.call_args
     assert call_args[0][0] == "POST"
-    assert call_args[0][1] == f"/repos/{github_client.owner}/{github_client.repo}/issues/{issue_key}/comments" 
+    assert (
+        call_args[0][1]
+        == f"/repos/{github_client.owner}/{github_client.repo}/issues/{issue_key}/comments"
+    )
     assert call_args[1]["data"] == {"body": comment_text}
