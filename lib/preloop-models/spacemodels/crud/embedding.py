@@ -2,13 +2,13 @@
 
 import json
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Union, Tuple
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..models.comment import Comment
-from ..models.issue import EmbeddingModel, Issue, IssueEmbedding
+from ..models.issue import Issue, IssueEmbedding, EmbeddingModel
 from .base import CRUDBase
 
 # Import optional pgvector functionality
@@ -267,7 +267,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         model_id: str,
         query_vector: List[float],
         limit: int = 10,
-        distance_type: str = "cosine",  # or "euclidean" - Note: distance_type is not used in this SQL version
+        distance_type: str = "cosine",  # Note: distance_type is not used in this SQL version
         tracker_ids: Optional[List[str]] = None,
         project_ids: Optional[List[str]] = None,
         status: Optional[str] = None,
@@ -276,12 +276,10 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         assignee: Optional[str] = None,
         last_updated_before: Optional[datetime] = None,
         last_updated_after: Optional[datetime] = None,
-        embedding_type: Optional[
-            str
-        ] = None,  # New parameter: "issue", "comment", or None
-    ) -> List[Tuple[Issue, float]]:
+        embedding_type: Optional[str] = None,  # "issue", "comment", or None
+    ) -> Union[List[Tuple[Issue, float]], List[Tuple[Comment, float]]]:
         """
-        Search for similar issues based on vector similarity using raw SQL with pgvector.
+        Search for similar issues or comments based on vector similarity using raw SQL with pgvector.
 
         Args:
             db: Database session
@@ -289,20 +287,20 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             query_vector: Vector to search for
             limit: Maximum number of results to return
             distance_type: (Currently unused in this SQL implementation) Distance metric.
-            tracker_ids: Optional list of tracker IDs to filter by.
-            project_ids: Optional list of project IDs to filter by.
-            status: Optional status to filter by.
-            labels: Optional list of labels to filter by (must contain all specified labels).
-            priority: Optional priority to filter by.
-            assignee: Optional assignee (stored in meta_data->>'assignee') to filter by.
+            tracker_ids: Optional list of tracker IDs to filter by (applies to the issue).
+            project_ids: Optional list of project IDs to filter by (applies to the issue).
+            status: Optional status to filter by (applies to the issue).
+            labels: Optional list of labels to filter by (applies to the issue, must contain all specified labels).
+            priority: Optional priority to filter by (applies to the issue).
+            assignee: Optional assignee (stored in issue's meta_data->>'assignee') to filter by.
             last_updated_before: Optional upper bound for issue updated_at.
             last_updated_after: Optional lower bound for issue updated_at.
             embedding_type: Optional type of embedding to filter by.
-                            Can be "issue", "comment", or None (default, no type filter).
-
+                            Can be "issue", "comment". If None, defaults to "issue".
 
         Returns:
-            List of (issue, similarity_score) tuples
+            List of (Issue, similarity_score) tuples if embedding_type is "issue" or None.
+            List of (Comment, similarity_score) tuples if embedding_type is "comment".
         """
         params = {
             "model_id": model_id,
@@ -311,6 +309,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         }
         where_clauses = ["e.embedding_model_id = :model_id"]
 
+        # Issue-related filters (applied via JOIN with 'issue' table for both issue and comment searches)
         if tracker_ids:
             where_clauses.append("i.tracker_id = ANY(:tracker_ids)")
             params["tracker_ids"] = tracker_ids
@@ -324,12 +323,9 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             where_clauses.append("i.priority = :priority")
             params["priority"] = priority
         if labels:
-            # Assuming labels are stored as a JSON array in meta_data['labels']
-            # Use JSONB containment operator @>
             where_clauses.append("i.meta_data->'labels' @> CAST(:labels AS JSONB)")
-            params["labels"] = json.dumps(labels)  # Pass as JSON string
+            params["labels"] = json.dumps(labels)
         if assignee:
-            # Assuming assignee is stored as text in meta_data['assignee']
             where_clauses.append("i.meta_data->>'assignee' = :assignee")
             params["assignee"] = assignee
         if last_updated_after:
@@ -339,69 +335,112 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             where_clauses.append("i.updated_at < :last_updated_before")
             params["last_updated_before"] = last_updated_before
 
-        if embedding_type:
-            if embedding_type == "issue":
-                where_clauses.append("e.comment_id IS NULL")
-            elif embedding_type == "comment":
-                where_clauses.append("e.comment_id IS NOT NULL")
-            # else: no filter or raise error for invalid type
+        is_comment_search = embedding_type == "comment"
+
+        if is_comment_search:
+            where_clauses.append("e.comment_id IS NOT NULL")
+        else:  # Default to "issue" (embedding_type is "issue" or None)
+            where_clauses.append("e.issue_id IS NOT NULL AND e.comment_id IS NULL")
 
         where_sql = " AND ".join(where_clauses)
 
-        # Construct the raw SQL query dynamically
-        sql = f"""
-            WITH results AS (
-            SELECT
-                i.id,
-                i.title,
-                i.description,
-                i.status,
-                i.priority,
-                i.issue_type,
-                i.external_id,
-                i.external_url,
-                i.key,
-                i.project_id,
-                i.tracker_id,
-                i.meta_data,
-                i.last_updated_external,
-                i.last_synced,
-                i.created_at,
-                i.updated_at,
-                (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
-            FROM
-                issue i
-            JOIN
-                issueembedding e ON i.id = e.issue_id
-            WHERE
-                {where_sql}
-            )
-            SELECT * FROM results
-            ORDER BY sim DESC
-            LIMIT :limit
-        """
+        if is_comment_search:
+            # SQL query for comments
+            sql = f"""
+                WITH results AS (
+                SELECT
+                    c.id, c.body, c.type, c.issue_id, c.author_id,
+                    c.meta_data AS comment_meta_data,
+                    c.created_at AS comment_created_at,
+                    c.updated_at AS comment_updated_at,
+                    (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
+                FROM
+                    comment c
+                JOIN
+                    issueembedding e ON c.id = e.comment_id
+                JOIN
+                    issue i ON e.issue_id = i.id  -- Join for issue-based filters
+                WHERE
+                    {where_sql}
+                )
+                SELECT * FROM results
+                ORDER BY sim DESC
+                LIMIT :limit
+            """
+        else:
+            # SQL query for issues
+            sql = f"""
+                WITH results AS (
+                SELECT
+                    i.id, i.title, i.description, i.status, i.priority,
+                    i.issue_type, i.external_id, i.external_url, i.key,
+                    i.project_id, i.tracker_id, i.meta_data AS issue_meta_data,
+                    i.last_updated_external, i.last_synced,
+                    i.created_at AS issue_created_at,
+                    i.updated_at AS issue_updated_at,
+                    (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
+                FROM
+                    issue i
+                JOIN
+                    issueembedding e ON i.id = e.issue_id
+                WHERE
+                    {where_sql}
+                )
+                SELECT * FROM results
+                ORDER BY sim DESC
+                LIMIT :limit
+            """
+
         query = text(sql)
+        db_result = db.execute(query, params)
+        result_keys = db_result.keys()
 
-        # Execute the query
-        result = db.execute(query, params)
+        processed_results: Union[
+            List[Tuple[Issue, float]], List[Tuple[Comment, float]]
+        ] = []
 
-        # Convert results to Issue objects with similarity scores
-        issues_with_scores = []
-        result_keys = result.keys()  # Get keys once
+        for row in db_result:
+            item_dict = dict(zip(result_keys, row, strict=False))
+            similarity_score = item_dict.pop("sim")
 
-        for row in result:
-            # Convert row to dictionary efficiently
-            issue_dict = dict(zip(result_keys, row, strict=False))
+            if is_comment_search:
+                item_dict["meta_data"] = item_dict.pop("comment_meta_data", None)
+                item_dict["created_at"] = item_dict.pop("comment_created_at", None)
+                item_dict["updated_at"] = item_dict.pop("comment_updated_at", None)
 
-            # Extract similarity score
-            similarity = issue_dict.pop("sim")
+                valid_comment_keys = {c.key for c in Comment.__mapper__.columns}
+                comment_data = {
+                    k: v for k, v in item_dict.items() if k in valid_comment_keys
+                }
+                obj = Comment(**comment_data)
+            else:  # Issue search
+                item_dict["meta_data"] = item_dict.pop("issue_meta_data", None)
+                item_dict["created_at"] = item_dict.pop("issue_created_at", None)
+                item_dict["updated_at"] = item_dict.pop("issue_updated_at", None)
 
-            # Create Issue object from dictionary
-            # Ensure only valid Issue fields are passed
-            valid_keys = {k for k in issue_dict if hasattr(Issue, k)}
-            issue = Issue(**{k: issue_dict[k] for k in valid_keys})
+                valid_issue_keys = {c.key for c in Issue.__mapper__.columns}
+                issue_data = {
+                    k: v for k, v in item_dict.items() if k in valid_issue_keys
+                }
+                obj = Issue(**issue_data)
 
-            # Add to results
-            issues_with_scores.append((issue, float(similarity)))
+            processed_results.append((obj, float(similarity_score)))
 
-        return issues_with_scores
+        return processed_results
+
+    def get_embeddings_by_issue_ids(
+        self, db: Session, *, issue_ids: List[str]
+    ) -> Dict[str, List[IssueEmbedding]]:
+        """Get all embeddings for a list of issue IDs, grouped by issue_id."""
+        embeddings_query = (
+            db.query(IssueEmbedding)
+            .filter(IssueEmbedding.issue_id.in_(issue_ids))
+            .all()
+        )
+
+        results: Dict[str, List[IssueEmbedding]] = {
+            issue_id: [] for issue_id in issue_ids
+        }
+        for emb in embeddings_query:
+            results[emb.issue_id].append(emb)
+        return results

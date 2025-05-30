@@ -281,8 +281,8 @@ def test_similarity_search_with_embedding_type(
     )
     assert len(results_comment_type_query_comment1_vec) == 1
     assert (
-        results_comment_type_query_comment1_vec[0][0].id == issue1.id
-    )  # Returns parent issue
+        results_comment_type_query_comment1_vec[0][0].id == comment1.id
+    )  # Should return the Comment object itself
 
     results_comment_type_query_issue1_vec = crud_issue_embedding.similarity_search(
         db_session,
@@ -301,7 +301,7 @@ def test_similarity_search_with_embedding_type(
         embedding_type=None,
         limit=5,
     )
-    assert len(results_none_type_query_issue1_vec) == 3
+    assert len(results_none_type_query_issue1_vec) == 2
     assert results_none_type_query_issue1_vec[0][0].id == issue1.id
 
     results_none_type_query_comment1_vec = crud_issue_embedding.similarity_search(
@@ -311,7 +311,7 @@ def test_similarity_search_with_embedding_type(
         embedding_type=None,
         limit=5,
     )
-    assert len(results_none_type_query_comment1_vec) == 3
+    assert len(results_none_type_query_comment1_vec) == 2
     assert results_none_type_query_comment1_vec[0][0].id == issue1.id
 
     # Test with an invalid embedding_type (should behave like None as per current CRUDEmbedding logic)
@@ -322,7 +322,7 @@ def test_similarity_search_with_embedding_type(
         embedding_type="invalid_type_string",
         limit=5,
     )
-    assert len(results_invalid_type_query_issue1_vec) == 3
+    assert len(results_invalid_type_query_issue1_vec) == 2
     assert results_invalid_type_query_issue1_vec[0][0].id == issue1.id
 
     results_invalid_type_query_comment1_vec = crud_issue_embedding.similarity_search(
@@ -332,5 +332,5 @@ def test_similarity_search_with_embedding_type(
         embedding_type="invalid_type_string",
         limit=5,
     )
-    assert len(results_invalid_type_query_comment1_vec) == 3
+    assert len(results_invalid_type_query_comment1_vec) == 2
     assert results_invalid_type_query_comment1_vec[0][0].id == issue1.id
