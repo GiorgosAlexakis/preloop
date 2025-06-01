@@ -277,7 +277,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         last_updated_before: Optional[datetime] = None,
         last_updated_after: Optional[datetime] = None,
         embedding_type: Optional[str] = None,  # "issue", "comment", or None
-    ) -> Union[List[Tuple[Issue, float]], List[Tuple[Comment, float]]]:
+    ) -> List[Union[Tuple[Issue, float], Tuple[Comment, float]]]:
         """
         Search for similar issues or comments based on vector similarity using raw SQL with pgvector.
 
@@ -296,135 +296,239 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             last_updated_before: Optional upper bound for issue updated_at.
             last_updated_after: Optional lower bound for issue updated_at.
             embedding_type: Optional type of embedding to filter by.
-                            Can be "issue", "comment". If None, defaults to "issue".
+                            Can be "issue", "comment". If None, results can be a mix of Issues and Comments.
 
         Returns:
-            List of (Issue, similarity_score) tuples if embedding_type is "issue" or None.
+            List of (Issue, similarity_score) tuples if embedding_type is "issue".
             List of (Comment, similarity_score) tuples if embedding_type is "comment".
+            List containing a mix of (Issue, similarity_score) and (Comment, similarity_score)
+            tuples if embedding_type is None, ordered by similarity.
         """
         params = {
             "model_id": model_id,
-            "query_vector": query_vector,
+            "query_vector": query_vector,  # pgvector expects a string representation of a list
             "limit": limit,
         }
-        where_clauses = ["e.embedding_model_id = :model_id"]
+        common_where_clauses = ["e.embedding_model_id = :model_id"]
 
-        # Issue-related filters (applied via JOIN with 'issue' table for both issue and comment searches)
+        # Issue-related filters (applied via JOIN with 'issue' table)
         if tracker_ids:
-            where_clauses.append("i.tracker_id = ANY(:tracker_ids)")
+            common_where_clauses.append("i.tracker_id = ANY(:tracker_ids)")
             params["tracker_ids"] = tracker_ids
         if project_ids:
-            where_clauses.append("i.project_id = ANY(:project_ids)")
+            common_where_clauses.append("i.project_id = ANY(:project_ids)")
             params["project_ids"] = project_ids
         if status:
-            where_clauses.append("i.status = :status")
+            common_where_clauses.append("i.status = :status")
             params["status"] = status
         if priority:
-            where_clauses.append("i.priority = :priority")
+            common_where_clauses.append("i.priority = :priority")
             params["priority"] = priority
         if labels:
-            where_clauses.append("i.meta_data->'labels' @> CAST(:labels AS JSONB)")
+            # Ensure labels are passed as a JSON string for the @> operator
+            common_where_clauses.append(
+                "i.meta_data->'labels' @> CAST(:labels AS JSONB)"
+            )
             params["labels"] = json.dumps(labels)
         if assignee:
-            where_clauses.append("i.meta_data->>'assignee' = :assignee")
+            common_where_clauses.append("i.meta_data->>'assignee' = :assignee")
             params["assignee"] = assignee
         if last_updated_after:
-            where_clauses.append("i.updated_at > :last_updated_after")
+            common_where_clauses.append("i.updated_at > :last_updated_after")
             params["last_updated_after"] = last_updated_after
         if last_updated_before:
-            where_clauses.append("i.updated_at < :last_updated_before")
+            common_where_clauses.append("i.updated_at < :last_updated_before")
             params["last_updated_before"] = last_updated_before
 
-        is_comment_search = embedding_type == "comment"
+        processed_results: List[Union[Tuple[Issue, float], Tuple[Comment, float]]] = []
 
-        if is_comment_search:
-            where_clauses.append("e.comment_id IS NOT NULL")
-        else:  # Default to "issue" (embedding_type is "issue" or None)
-            where_clauses.append("e.issue_id IS NOT NULL AND e.comment_id IS NULL")
-
-        where_sql = " AND ".join(where_clauses)
-
-        if is_comment_search:
-            # SQL query for comments
+        if embedding_type == "issue":
+            specific_where_clauses = common_where_clauses + [
+                "e.issue_id IS NOT NULL",
+                "e.comment_id IS NULL",
+            ]
+            where_sql = " AND ".join(specific_where_clauses)
             sql = f"""
                 WITH results AS (
-                SELECT
-                    c.id, c.body, c.type, c.issue_id, c.author_id,
-                    c.meta_data AS comment_meta_data,
-                    c.created_at AS comment_created_at,
-                    c.updated_at AS comment_updated_at,
-                    (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
-                FROM
-                    comment c
-                JOIN
-                    issueembedding e ON c.id = e.comment_id
-                JOIN
-                    issue i ON e.issue_id = i.id  -- Join for issue-based filters
-                WHERE
-                    {where_sql}
+                    SELECT
+                        i.id, i.title, i.description, i.status, i.priority,
+                        i.issue_type, i.external_id, i.external_url, i.key,
+                        i.project_id, i.tracker_id, i.meta_data AS issue_meta_data,
+                        i.last_updated_external, i.last_synced,
+                        i.created_at AS issue_created_at,
+                        i.updated_at AS issue_updated_at,
+                        (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
+                    FROM
+                        issueembedding e
+                    JOIN
+                        issue i ON e.issue_id = i.id
+                    WHERE {where_sql}
                 )
                 SELECT * FROM results
                 ORDER BY sim DESC
                 LIMIT :limit
             """
+            query_results = db.execute(text(sql), params).fetchall()
+            for row in query_results:
+                issue = Issue(
+                    id=row.id,
+                    title=row.title,
+                    description=row.description,
+                    status=row.status,
+                    priority=row.priority,
+                    issue_type=row.issue_type,
+                    external_id=row.external_id,
+                    external_url=row.external_url,
+                    key=row.key,
+                    project_id=row.project_id,
+                    tracker_id=row.tracker_id,
+                    meta_data=json.loads(row.issue_meta_data)
+                    if row.issue_meta_data and isinstance(row.issue_meta_data, str)
+                    else row.issue_meta_data,
+                    last_updated_external=row.last_updated_external,
+                    last_synced=row.last_synced,
+                    created_at=row.issue_created_at,
+                    updated_at=row.issue_updated_at,
+                )
+                processed_results.append((issue, row.sim))
+
+        elif embedding_type == "comment":
+            specific_where_clauses = common_where_clauses + ["e.comment_id IS NOT NULL"]
+            # For comments, common_where_clauses join on 'i' via 'c.issue_id = i.id'
+            where_sql = " AND ".join(specific_where_clauses)
+            sql = f"""
+                WITH results AS (
+                    SELECT
+                        c.id, c.body, c.type, c.issue_id, c.author_id,
+                        c.meta_data AS comment_meta_data,
+                        c.created_at AS comment_created_at,
+                        c.updated_at AS comment_updated_at,
+                        (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
+                    FROM
+                        comment c
+                    JOIN
+                        issueembedding e ON c.id = e.comment_id
+                    JOIN
+                        issue i ON c.issue_id = i.id
+                    WHERE {where_sql}
+                )
+                SELECT * FROM results
+                ORDER BY sim DESC
+                LIMIT :limit
+            """
+            query_results = db.execute(text(sql), params).fetchall()
+            for row in query_results:
+                comment = Comment(
+                    id=row.id,
+                    body=row.body,
+                    type=row.type,
+                    issue_id=row.issue_id,
+                    author_id=row.author_id,
+                    meta_data=json.loads(row.comment_meta_data)
+                    if row.comment_meta_data and isinstance(row.comment_meta_data, str)
+                    else row.comment_meta_data,
+                    created_at=row.comment_created_at,
+                    updated_at=row.comment_updated_at,
+                )
+                processed_results.append((comment, row.sim))
+
+        elif embedding_type is None:
+            where_issues_specific = common_where_clauses + [
+                "e.issue_id IS NOT NULL",
+                "e.comment_id IS NULL",
+            ]
+            where_sql_issues_part = " AND ".join(where_issues_specific)
+
+            where_comments_specific = common_where_clauses + [
+                "e.comment_id IS NOT NULL"
+            ]
+            where_sql_comments_part = " AND ".join(where_comments_specific)
+
+            sql = f"""
+                WITH combined_embeddings AS (
+                    -- Issue Embeddings
+                    SELECT
+                        'issue' AS item_type,
+                        e.embedding AS embedding_vector,
+                        i.id AS issue_obj_id, i.title, i.description, i.status, i.priority, i.issue_type,
+                        i.external_id, i.external_url, i.key, i.project_id AS issue_project_id, i.tracker_id AS issue_tracker_id,
+                        i.meta_data AS issue_meta_data, i.last_updated_external, i.last_synced,
+                        i.created_at AS issue_created_at, i.updated_at AS issue_updated_at,
+                        NULL AS comment_obj_id, NULL AS comment_body, NULL AS comment_type, NULL AS comment_issue_id,
+                        NULL AS comment_author_id, NULL AS comment_meta_data,
+                        NULL AS comment_created_at, NULL AS comment_updated_at
+                    FROM issueembedding e JOIN issue i ON e.issue_id = i.id
+                    WHERE {where_sql_issues_part}
+
+                    UNION ALL
+
+                    -- Comment Embeddings
+                    SELECT
+                        'comment' AS item_type,
+                        e.embedding AS embedding_vector,
+                        NULL, NULL, NULL, NULL, NULL, NULL, -- Issue specific fields
+                        NULL, NULL, NULL, i.project_id, i.tracker_id, -- Parent issue's project/tracker id
+                        NULL, NULL, NULL, -- Issue specific metadata/timestamps
+                        NULL, NULL, -- Issue specific timestamps
+                        c.id AS comment_obj_id, c.body AS comment_body, c.type AS comment_type, c.issue_id AS comment_issue_id,
+                        c.author_id AS comment_author_id, c.meta_data AS comment_meta_data,
+                        c.created_at AS comment_created_at, c.updated_at AS comment_updated_at
+                    FROM issueembedding e
+                        JOIN comment c ON e.comment_id = c.id
+                        JOIN issue i ON c.issue_id = i.id
+                    WHERE {where_sql_comments_part}
+                )
+                SELECT
+                    *,
+                    (1 - (embedding_vector <=> CAST(:query_vector AS vector))) as sim
+                FROM combined_embeddings
+                ORDER BY sim DESC
+                LIMIT :limit
+            """
+            query_results = db.execute(text(sql), params).fetchall()
+            for row in query_results:
+                sim_score = row.sim
+                if row.item_type == "issue":
+                    issue = Issue(
+                        id=row.issue_obj_id,
+                        title=row.title,
+                        description=row.description,
+                        status=row.status,
+                        priority=row.priority,
+                        issue_type=row.issue_type,
+                        external_id=row.external_id,
+                        external_url=row.external_url,
+                        key=row.key,
+                        project_id=row.issue_project_id,
+                        tracker_id=row.issue_tracker_id,
+                        meta_data=json.loads(row.issue_meta_data)
+                        if row.issue_meta_data and isinstance(row.issue_meta_data, str)
+                        else row.issue_meta_data,
+                        last_updated_external=row.last_updated_external,
+                        last_synced=row.last_synced,
+                        created_at=row.issue_created_at,
+                        updated_at=row.issue_updated_at,
+                    )
+                    processed_results.append((issue, sim_score))
+                elif row.item_type == "comment":
+                    comment = Comment(
+                        id=row.comment_obj_id,
+                        body=row.comment_body,
+                        type=row.comment_type,
+                        issue_id=row.comment_issue_id,
+                        author_id=row.comment_author_id,
+                        meta_data=json.loads(row.comment_meta_data)
+                        if row.comment_meta_data
+                        and isinstance(row.comment_meta_data, str)
+                        else row.comment_meta_data,
+                        created_at=row.comment_created_at,
+                        updated_at=row.comment_updated_at,
+                    )
+                    processed_results.append((comment, sim_score))
         else:
-            # SQL query for issues
-            sql = f"""
-                WITH results AS (
-                SELECT
-                    i.id, i.title, i.description, i.status, i.priority,
-                    i.issue_type, i.external_id, i.external_url, i.key,
-                    i.project_id, i.tracker_id, i.meta_data AS issue_meta_data,
-                    i.last_updated_external, i.last_synced,
-                    i.created_at AS issue_created_at,
-                    i.updated_at AS issue_updated_at,
-                    (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
-                FROM
-                    issue i
-                JOIN
-                    issueembedding e ON i.id = e.issue_id
-                WHERE
-                    {where_sql}
-                )
-                SELECT * FROM results
-                ORDER BY sim DESC
-                LIMIT :limit
-            """
-
-        query = text(sql)
-        db_result = db.execute(query, params)
-        result_keys = db_result.keys()
-
-        processed_results: Union[
-            List[Tuple[Issue, float]], List[Tuple[Comment, float]]
-        ] = []
-
-        for row in db_result:
-            item_dict = dict(zip(result_keys, row, strict=False))
-            similarity_score = item_dict.pop("sim")
-
-            if is_comment_search:
-                item_dict["meta_data"] = item_dict.pop("comment_meta_data", None)
-                item_dict["created_at"] = item_dict.pop("comment_created_at", None)
-                item_dict["updated_at"] = item_dict.pop("comment_updated_at", None)
-
-                valid_comment_keys = {c.key for c in Comment.__mapper__.columns}
-                comment_data = {
-                    k: v for k, v in item_dict.items() if k in valid_comment_keys
-                }
-                obj = Comment(**comment_data)
-            else:  # Issue search
-                item_dict["meta_data"] = item_dict.pop("issue_meta_data", None)
-                item_dict["created_at"] = item_dict.pop("issue_created_at", None)
-                item_dict["updated_at"] = item_dict.pop("issue_updated_at", None)
-
-                valid_issue_keys = {c.key for c in Issue.__mapper__.columns}
-                issue_data = {
-                    k: v for k, v in item_dict.items() if k in valid_issue_keys
-                }
-                obj = Issue(**issue_data)
-
-            processed_results.append((obj, float(similarity_score)))
+            raise ValueError(
+                f"Unsupported embedding_type: {embedding_type}. Must be 'issue', 'comment', or None."
+            )
 
         return processed_results
 
