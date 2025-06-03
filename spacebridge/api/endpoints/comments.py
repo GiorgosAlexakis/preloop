@@ -81,7 +81,7 @@ async def list_issue_comments(
                     body=comment.body,
                     created_at=comment.created_at,
                     updated_at=comment.updated_at,
-                    metadata=comment.metadata,
+                    meta_data=comment.metadata,
                 )
             )
 
@@ -126,7 +126,7 @@ async def add_issue_comment(
         # Create the comment
         tracker_comment = TrackerComment(
             body=comment.body,
-            metadata=comment.metadata or {},
+            meta_data=comment.meta_data or {},
         )
         created_comment = await tracker_client.add_comment(issue_id, tracker_comment)
 
@@ -138,7 +138,7 @@ async def add_issue_comment(
             body=created_comment.body,
             created_at=created_comment.created_at,
             updated_at=created_comment.updated_at,
-            metadata=created_comment.metadata,
+            meta_data=created_comment.meta_data,
         )
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -172,10 +172,6 @@ async def search_comments(
     ),
     author_id: Optional[str] = Query(
         None, description="Filter comments by author ID (UUID)"
-    ),
-    embedding_model_name: Optional[str] = Query(
-        None,
-        description="Name of the embedding model for similarity search (e.g., 'text-embedding-ada-002')",
     ),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
@@ -214,9 +210,6 @@ async def search_comments(
                     detail="similarity search cannot be performed: No active embedding model configured.",
                 )
             model = active_models[0]
-            model_id = model.id
-            # Generate query vector
-            query_vector = crud_issue_embedding._generate_embedding_vector(query, model)
             try:
                 query_vector = crud_issue_embedding._generate_embedding_vector(
                     query, model

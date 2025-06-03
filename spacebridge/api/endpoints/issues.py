@@ -498,6 +498,7 @@ async def search_issues(
                     assignee=assignee,  # Pass assignee filter
                     last_updated_before=last_updated_before,  # Pass date filter
                     last_updated_after=last_updated_after,  # Pass date filter
+                    embedding_type="issue",
                 )
 
                 # Post-fetch filtering is removed as it's now handled by the CRUD layer.
@@ -557,7 +558,7 @@ async def search_issues(
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
                             updated_at=issue.updated_at,
-                            metadata=metadata_dict,
+                            meta_data=metadata_dict,
                             labels=metadata_dict.get("labels", [])
                             if isinstance(metadata_dict.get("labels"), list)
                             else [],
@@ -652,12 +653,6 @@ async def search_issues(
                         )
                         if issue_org:
                             organization_name = issue_org.name
-                    created_at_str = (
-                        issue.created_at.isoformat() if issue.created_at else None
-                    )
-                    updated_at_str = (
-                        issue.updated_at.isoformat() if issue.updated_at else None
-                    )
                     metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
                     external_url = metadata_dict.get("url") or issue.external_url
                     # Determine response ID based on project slug
@@ -696,9 +691,9 @@ async def search_issues(
                             project=project_name,
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
-                            created_at=created_at_str,
-                            updated_at=updated_at_str,
-                            metadata=metadata_dict,
+                            created_at=issue.created_at,
+                            updated_at=issue.updated_at,
+                            meta_data=metadata_dict,
                             labels=metadata_dict.get("labels", [])
                             if isinstance(metadata_dict.get("labels"), list)
                             else [],
@@ -946,7 +941,7 @@ async def create_issue(
             assignee=issue.assignee,
             labels=issue.labels,
             # Map API metadata to custom_fields if needed by the tracker base model
-            custom_fields=issue.metadata or None,
+            custom_fields=issue.meta_data or None,
         )
 
         # Create the issue - Pass the project identifier expected by the tracker client
@@ -1039,9 +1034,9 @@ async def create_issue(
             assignee=db_issue.meta_data.get("assignee"),
             labels=db_issue.meta_data.get("labels", []),
             url=response_url,  # Use the resolved URL
-            created_at=db_issue.created_at.isoformat() if db_issue.created_at else None,
-            updated_at=db_issue.updated_at.isoformat() if db_issue.updated_at else None,
-            metadata=db_issue.meta_data or {},  # Ensure dict
+            created_at=db_issue.created_at,
+            updated_at=db_issue.updated_at,
+            meta_data=db_issue.meta_data or {},  # Ensure dict
         )
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -1148,9 +1143,9 @@ def get_issue(
             status=issue.status,
             priority=issue.priority,
             url=external_url,
-            created_at=issue.created_at.isoformat() if issue.created_at else None,
-            updated_at=issue.updated_at.isoformat() if issue.updated_at else None,
-            metadata=meta_data,
+            created_at=issue.created_at,
+            updated_at=issue.updated_at,
+            meta_data=meta_data,
             labels=labels_list,
             assignee=assignee,
         )
@@ -1452,9 +1447,9 @@ async def update_issue(
             status=issue.status,
             priority=issue.priority,
             url=external_url,
-            created_at=issue.created_at.isoformat() if issue.created_at else None,
-            updated_at=issue.updated_at.isoformat() if issue.updated_at else None,
-            metadata=meta_data,
+            created_at=issue.created_at,
+            updated_at=issue.updated_at,
+            meta_data=meta_data,
             labels=labels_list,
             assignee=assignee,
         )

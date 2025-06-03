@@ -1,8 +1,8 @@
 """Issue schemas for request and response validation."""
 
 from typing import Any, Dict, List, Optional
-
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, field_validator, root_validator, ValidationInfo
+from datetime import datetime
 
 
 class IssueBase(BaseModel):
@@ -16,7 +16,7 @@ class IssueBase(BaseModel):
     status: Optional[str] = Field(None, description="Issue status")
     assignee: Optional[str] = Field(None, description="Issue assignee")
     labels: Optional[List[str]] = Field(None, description="Issue labels")
-    metadata: Optional[Dict[str, Any]] = Field(
+    meta_data: Optional[Dict[str, Any]] = Field(
         None, description="Additional issue metadata"
     )
 
@@ -67,7 +67,7 @@ class IssueUpdate(BaseModel):
     priority: Optional[str] = Field(None, description="New issue priority")
     assignee: Optional[str] = Field(None, description="New issue assignee")
     labels: Optional[List[str]] = Field(None, description="New issue labels")
-    metadata: Optional[Dict[str, Any]] = Field(
+    meta_data: Optional[Dict[str, Any]] = Field(
         None, description="Additional issue metadata"
     )
 
@@ -86,6 +86,21 @@ class IssueResponse(IssueBase):
     score: Optional[float] = Field(
         None, description="Similarity score for search results (if applicable)"
     )
+
+    @field_validator("created_at", "updated_at", mode="before")
+    @classmethod
+    def format_datetime_fields_to_str(
+        cls, v: Any, info: ValidationInfo
+    ) -> Optional[str]:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v.isoformat()
+        if isinstance(v, str):
+            return v
+        raise TypeError(
+            f"Field '{info.field_name}' must be a datetime object or a string, got {type(v).__name__}"
+        )
 
     class Config:
         """Pydantic model configuration."""
