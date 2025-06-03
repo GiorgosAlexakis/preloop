@@ -519,12 +519,6 @@ async def search_issues(
                         )
                         if issue_org:
                             organization_name = issue_org.name
-                    created_at_str = (
-                        issue.created_at.isoformat() if issue.created_at else None
-                    )
-                    updated_at_str = (
-                        issue.updated_at.isoformat() if issue.updated_at else None
-                    )
                     metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
                     external_url = metadata_dict.get("url") or issue.external_url
                     # Determine response ID based on project slug
@@ -561,8 +555,8 @@ async def search_issues(
                             project=project_name,
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
-                            created_at=created_at_str,
-                            updated_at=updated_at_str,
+                            created_at=issue.created_at,
+                            updated_at=issue.updated_at,
                             metadata=metadata_dict,
                             labels=metadata_dict.get("labels", [])
                             if isinstance(metadata_dict.get("labels"), list)

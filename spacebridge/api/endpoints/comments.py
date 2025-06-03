@@ -263,24 +263,13 @@ async def search_comments(
                     )
                     continue
 
-                created_at_str = (
-                    comment_obj.created_at.isoformat()
-                    if comment_obj.created_at
-                    else None
-                )
-                updated_at_str = (
-                    comment_obj.updated_at.isoformat()
-                    if comment_obj.updated_at
-                    else None
-                )
-
                 comments_data.append(
                     CommentResponse(
                         id=comment_obj.id,
                         body=comment_obj.body,
                         author=comment_obj.author_id or "",
-                        created_at=created_at_str,
-                        updated_at=updated_at_str,
+                        created_at=comment_obj.created_at,
+                        updated_at=comment_obj.updated_at,
                         issue_id=comment_obj.issue_id,
                         project_id=parent_issue.project_id,
                         organization_id=parent_project.organization_id,
