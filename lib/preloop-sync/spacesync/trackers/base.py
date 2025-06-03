@@ -234,14 +234,15 @@ class BaseTracker(ABC):
         Returns:
             Transformed comment data ready for database storage.
         """
-
+        external_id = str(comment_data.get("id"))
         return {
             "issue_id": issue_db_id,
+            "external_id": external_id,
             "author_id": None,
             "body": comment_data.get("body", ""),
             "type": "issue",
             "meta_data": {
-                "comment_id": str(comment_data.get("id")),
+                "comment_id": external_id,
                 "external_author_id": str(comment_data.get("author_id")) if comment_data.get("author_id") else None,
                 "url": comment_data.get("url"),
                 "source": "spacesync",
