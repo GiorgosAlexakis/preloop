@@ -654,6 +654,7 @@ def test_comment_create_with_author(db_session: Session, create_issue, create_ac
         "body": "This is a test comment!",
         "type": "issue",
         "issue_id": issue.id,
+        "external_id": "901",
     }
 
     comment = crud_comment.create_with_author(
@@ -679,13 +680,16 @@ def test_comment_get_multi_by_issue(
     issue2 = create_issue(title="Issue Two for Comments")
 
     comment1_issue1 = create_comment(
-        issue=issue1, author=author, body="First comment for issue 1"
+        issue=issue1, external_id="901", author=author, body="First comment for issue 1"
     )
     comment2_issue1 = create_comment(
-        issue=issue1, author=author, body="Second comment for issue 1"
+        issue=issue1,
+        external_id="902",
+        author=author,
+        body="Second comment for issue 1",
     )
     comment1_issue2 = create_comment(
-        issue=issue2, author=author, body="First comment for issue 2"
+        issue=issue2, external_id="903", author=author, body="First comment for issue 2"
     )
 
     # Test for issue1
@@ -717,13 +721,13 @@ def test_comment_get_multi_by_author(
     issue = create_issue()
 
     comment1_author1 = create_comment(
-        issue=issue, author=author1, body="Author 1, Comment 1"
+        issue=issue, external_id="901", author=author1, body="Author 1, Comment 1"
     )
     comment2_author1 = create_comment(
-        issue=issue, author=author1, body="Author 1, Comment 2"
+        issue=issue, external_id="902", author=author1, body="Author 1, Comment 2"
     )
     comment1_author2 = create_comment(
-        issue=issue, author=author2, body="Author 2, Comment 1"
+        issue=issue, external_id="903", author=author2, body="Author 2, Comment 1"
     )
 
     # Test for author1
@@ -753,7 +757,9 @@ def test_comment_get_multi_by_author(
 def test_comment_base_crud_operations(db_session: Session, create_comment):
     """Test basic CRUD operations (get, update, delete) for Comment using dictionaries."""
     # Create a comment using the fixture
-    initial_comment = create_comment(body="Initial comment for CRUD test")
+    initial_comment = create_comment(
+        external_id="901", body="Initial comment for CRUD test"
+    )
     comment_id = initial_comment.id
 
     # Test get

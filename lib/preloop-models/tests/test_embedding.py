@@ -60,7 +60,9 @@ def test_create_comment_embedding(
 ):
     """Test creating an embedding for a specific comment."""
     issue = create_issue()
-    comment = create_comment(issue_id=issue.id, body="This is a test comment.")
+    comment = create_comment(
+        issue_id=issue.id, external_id="901", body="This is a test comment."
+    )
     model = create_embedding_model()
 
     # Create embedding for the comment
@@ -93,7 +95,9 @@ def test_get_issue_content_embedding_distinct_from_comment(
 ):
     """Test that issue content embeddings are distinct from comment embeddings."""
     issue = create_issue()
-    comment = create_comment(issue_id=issue.id, body="Another test comment.")
+    comment = create_comment(
+        issue_id=issue.id, external_id="901", body="Another test comment."
+    )
     model = create_embedding_model()
 
     # Create embedding for issue content
@@ -123,7 +127,9 @@ def test_delete_comment_cascades_embeddings(
 ):
     """Test that deleting a comment also deletes its associated embeddings."""
     issue = create_issue()
-    comment = create_comment(issue_id=issue.id, body="Comment to be deleted.")
+    comment = create_comment(
+        issue_id=issue.id, external_id="901", body="Comment to be deleted."
+    )
     model = create_embedding_model()
 
     # Create embedding for the comment
@@ -223,7 +229,9 @@ def test_similarity_search_with_embedding_type(
     issue2 = create_issue(title="Issue Two For Type Filter", tracker_id=tracker.id)
 
     # create_comment should return the Comment object and handle db_session internally or take it as arg
-    comment1 = create_comment(issue_id=issue1.id, body="A comment on Issue One")
+    comment1 = create_comment(
+        issue_id=issue1.id, external_id="901", body="A comment on Issue One"
+    )
 
     embedding_vector_issue1 = [1.0, 0.0, 0.0]
     embedding_vector_issue2 = [0.0, 1.0, 0.0]

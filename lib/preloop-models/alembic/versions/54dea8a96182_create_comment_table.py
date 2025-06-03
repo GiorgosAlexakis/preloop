@@ -34,6 +34,7 @@ def upgrade() -> None:
         sa.Column("author_id", sa.String(length=36), nullable=True),
         sa.Column("meta_data", sa.JSON(), nullable=True),
         sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("external_id", sa.String(length=36), nullable=False),
         sa.Column(
             "created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False
         ),

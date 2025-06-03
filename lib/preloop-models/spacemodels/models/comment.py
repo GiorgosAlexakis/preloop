@@ -26,6 +26,11 @@ class Comment(Base):
         default="issue",
         comment="Type of comment (e.g., 'issue', 'merge_request')",
     )
+    external_id: Mapped[str] = mapped_column(
+        String(36),
+        nullable=False,
+        comment="External ID of the comment",
+    )
 
     # Foreign keys
     issue_id: Mapped[str] = mapped_column(
