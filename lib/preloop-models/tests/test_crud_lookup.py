@@ -1,6 +1,7 @@
 """Tests for the CRUD lookup functions in organization, project, and issue modules."""
 
 import uuid
+
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
@@ -643,7 +644,54 @@ def test_issue_get_by_key(db_session: Session):
     assert found_issue_proj2.project_id == project2.id
 
 
-# --- Start of new Comment tests ---
+def test_get_comment_by_external_id_simple(
+    db_session: Session, create_comment, create_issue, create_account
+) -> None:
+    """Test retrieving a comment by external_id with a simpler setup."""
+    # Setup: Create an author, an issue, and a comment
+    author = create_account()
+    issue1 = create_issue()  # Corrected: Removed author_id
+    # Create a second, distinct issue to test the issue_id filter
+    issue2 = create_issue()  # Corrected: Removed author_id
+
+    comment_external_id = "ext_comment_simple_001"
+    comment_body = "This is a simple test comment."
+
+    created_comment = create_comment(
+        issue_id=issue1.id,
+        author_id=author.id,
+        external_id=comment_external_id,
+        body=comment_body,
+    )
+
+    # 1. Retrieve by external_id only
+    retrieved_by_external_id = crud_comment.get_by_external_id(
+        db_session, external_id=comment_external_id
+    )
+    assert retrieved_by_external_id is not None
+    assert retrieved_by_external_id.id == created_comment.id
+    assert retrieved_by_external_id.body == comment_body
+
+    # 2. Retrieve by external_id and correct issue_id
+    retrieved_by_external_id_and_issue_id = crud_comment.get_by_external_id(
+        db_session, external_id=comment_external_id, issue_id=issue1.id
+    )
+    assert retrieved_by_external_id_and_issue_id is not None
+    assert retrieved_by_external_id_and_issue_id.id == created_comment.id
+
+    # 3. Attempt to retrieve with correct external_id but wrong issue_id
+    retrieved_with_wrong_issue_id = crud_comment.get_by_external_id(
+        db_session,
+        external_id=comment_external_id,
+        issue_id=issue2.id,  # Using issue2.id
+    )
+    assert retrieved_with_wrong_issue_id is None
+
+    # 4. Attempt to retrieve with a non-existent external_id
+    retrieved_non_existent = crud_comment.get_by_external_id(
+        db_session, external_id="non_existent_ext_id"
+    )
+    assert retrieved_non_existent is None
 
 
 def test_comment_create_with_author(db_session: Session, create_issue, create_account):

@@ -1,6 +1,6 @@
 """CRUD operations for Comment model."""
 
-from typing import List
+from typing import Optional, List
 
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,15 @@ class CRUDComment(CRUDBase[Comment]):
         comment_data = obj_in.copy()
         comment_data["author_id"] = author_id
         return super().create(db, obj_in=comment_data)
+
+    def get_by_external_id(
+        self, db: Session, *, external_id: str, issue_id: Optional[str] = None
+    ) -> Optional[Comment]:
+        """Get comment by external ID with optional issue filter."""
+        query = db.query(self.model).filter(self.model.external_id == external_id)
+        if issue_id:
+            query = query.filter(self.model.issue_id == issue_id)
+        return query.first()
 
     def get_multi_by_issue(
         self, db: Session, *, issue_id: str, skip: int = 0, limit: int = 100
