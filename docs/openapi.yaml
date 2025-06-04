@@ -1565,7 +1565,7 @@ paths:
       summary: Perform Similarity Search
       description: Performs a similarity search across issues and/or comments based
         on a query text and an embedding model.
-      operationId: perform_similarity_search_api_v1_search_get
+      operationId: search_all_api_v1_search_get
       security:
       - bearerAuth: []
       parameters:
@@ -1632,9 +1632,19 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
-          description: Filter comments by parent issue's project ID (UUID)
+          description: Filter search results by project ID (UUID).
           title: Project Id
-        description: Filter comments by parent issue's project ID (UUID)
+        description: Filter search results by project ID (UUID).
+      - name: project
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter search results by project name.
+          title: Project
+        description: Filter search results by project name.
       - name: organization_id
         in: query
         required: false
@@ -1642,9 +1652,19 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
-          description: Filter comments by parent issue's organization ID (UUID)
+          description: Filter search results by organization ID (UUID).
           title: Organization Id
-        description: Filter comments by parent issue's organization ID (UUID)
+        description: Filter search results by organization ID (UUID).
+      - name: organization
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter search results by organization name.
+          title: Organization
+        description: Filter search results by organization name.
       - name: author_id
         in: query
         required: false
@@ -2153,6 +2173,12 @@ components:
           - type: 'null'
           title: Updated At
           description: Last update timestamp
+        score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Score
+          description: Similarity score for search results (if applicable)
       type: object
       required:
       - body

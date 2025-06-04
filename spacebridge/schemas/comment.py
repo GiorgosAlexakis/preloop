@@ -29,6 +29,9 @@ class CommentResponse(CommentBase):
     author: Optional[str] = Field(default=None, description="Comment author")
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: Optional[str] = Field(default=None, description="Last update timestamp")
+    score: Optional[float] = Field(
+        None, description="Similarity score for search results (if applicable)"
+    )
 
     @field_validator("created_at", "updated_at", mode="before")
     @classmethod

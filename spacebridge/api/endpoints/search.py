@@ -61,7 +61,7 @@ router = APIRouter()
     summary="Perform Similarity Search",
     description="Performs a similarity search across issues and/or comments based on a query text and an embedding model.",
 )
-async def perform_similarity_search(
+async def search_all(
     query: str = Query(..., description="The text query to search for."),
     embedding_type: Optional[str] = Query(
         None,
@@ -80,10 +80,16 @@ async def perform_similarity_search(
         None, description="Filter comments by a specific issue ID (UUID)"
     ),
     project_id: Optional[str] = Query(
-        None, description="Filter comments by parent issue's project ID (UUID)"
+        None, description="Filter search results by project ID (UUID)."
+    ),
+    project: Optional[str] = Query(
+        None, description="Filter search results by project name."
     ),
     organization_id: Optional[str] = Query(
-        None, description="Filter comments by parent issue's organization ID (UUID)"
+        None, description="Filter search results by organization ID (UUID)."
+    ),
+    organization: Optional[str] = Query(
+        None, description="Filter search results by organization name."
     ),
     author_id: Optional[str] = Query(
         None, description="Filter comments by author ID (UUID)"
@@ -98,7 +104,98 @@ async def perform_similarity_search(
     - **search_type**: 'similarity' or 'full_text'.
     - Filters: project_id, limit, etc. Note: issue_id, organization_id, author_id are not used for similarity search.
     """
-    resolved_project_ids: Optional[List[str]] = [project_id] if project_id else None
+    # --- Project and Organization Resolution Logic ---
+    resolved_project_ids_param: Optional[List[str]] = None
+
+    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+    tracker_ids = [t.id for t in user_trackers]
+
+    if project_id or project or organization_id or organization:
+        if not tracker_ids:
+            # User has no trackers, so any project/org filter yields no results
+            resolved_project_ids_param = []
+        else:
+            actual_organization_id: Optional[str] = None
+            org_filter_is_valid = True
+
+            if organization_id:
+                org_obj = crud_organization.get(db, id=organization_id)
+                if org_obj and org_obj.tracker_id in tracker_ids:
+                    actual_organization_id = org_obj.id
+                else:
+                    org_filter_is_valid = False
+            elif organization:
+                # Query organizations accessible by the user and filter by name
+                user_accessible_orgs = (
+                    db.query(sm_models.Organization)
+                    .filter(sm_models.Organization.tracker_id.in_(tracker_ids))
+                    .all()
+                )
+                named_org = next(
+                    (o for o in user_accessible_orgs if o.name == organization), None
+                )
+                if named_org:
+                    actual_organization_id = named_org.id
+                else:
+                    org_filter_is_valid = False
+
+            if not org_filter_is_valid:
+                resolved_project_ids_param = []  # Org filter failed
+            else:
+                # Organization filter is valid or was not specified; proceed to resolve project
+                if project_id:
+                    proj_obj = crud_project.get(db, id=project_id)
+                    if proj_obj and proj_obj.is_active:  # Check active status first
+                        # A project is accessible if its organization's tracker is in tracker_ids
+                        project_org = crud_organization.get(
+                            db, id=proj_obj.organization_id
+                        )
+                        if project_org and project_org.tracker_id in tracker_ids:
+                            # Now check if it matches actual_organization_id if that filter is active
+                            if (
+                                not actual_organization_id
+                                or proj_obj.organization_id == actual_organization_id
+                            ):
+                                resolved_project_ids_param = [proj_obj.id]
+                            else:
+                                resolved_project_ids_param = []  # Does not match org filter
+                        else:
+                            resolved_project_ids_param = []  # Tracker not accessible or org not found for project
+                    else:
+                        resolved_project_ids_param = []  # Project not found or inactive
+                elif project:  # Filter by project name
+                    query_proj = (
+                        db.query(sm_models.Project)
+                        .join(sm_models.Organization)
+                        .filter(
+                            sm_models.Project.name == project,
+                            sm_models.Organization.tracker_id.in_(tracker_ids),
+                            sm_models.Project.is_active,
+                        )
+                    )
+                    if actual_organization_id:
+                        query_proj = query_proj.filter(
+                            sm_models.Project.organization_id == actual_organization_id
+                        )
+                    matched_projects = query_proj.all()
+                    resolved_project_ids_param = [p.id for p in matched_projects]
+                elif (
+                    actual_organization_id
+                ):  # Only org filter, no specific project filter
+                    query_proj_org = (
+                        db.query(sm_models.Project)
+                        .join(sm_models.Organization)
+                        .filter(
+                            sm_models.Project.organization_id == actual_organization_id,
+                            sm_models.Organization.tracker_id.in_(tracker_ids),
+                            sm_models.Project.is_active,
+                        )
+                    )
+                    matched_projects_in_org = query_proj_org.all()
+                    resolved_project_ids_param = [p.id for p in matched_projects_in_org]
+                # If no project/org filters were specified at all, resolved_project_ids_param remains None
+
+    # --- End of Project and Organization Resolution Logic ---
 
     if search_type == "similarity":
         # 1. Get Active Embedding Model (since model_id is not in signature)
@@ -123,9 +220,6 @@ async def perform_similarity_search(
                 detail="Error generating query vector for similarity search.",
             )
 
-        # Prepare project_ids for CRUD if project_id is provided
-        project_ids_for_crud = [project_id] if project_id else None
-
         # 3. Call similarity_search from CRUD
         # Only pass parameters supported by CRUD and available in the current signature
 
@@ -134,9 +228,14 @@ async def perform_similarity_search(
             model_id=model.id,
             query_vector=query_vector,
             limit=limit,
-            project_ids=resolved_project_ids,
+            project_ids=resolved_project_ids_param,  # Use the new resolved list
             embedding_type=embedding_type,
+            # Consider passing issue_id and author_id if supported by CRUD for similarity search
+            # issue_id=issue_id,
+            # author_id=author_id,
         )
+
+        # print(resolved_project_ids_param) # Optional: for debugging
 
     elif search_type == "full_text":
         raise HTTPException(
@@ -199,6 +298,7 @@ async def perform_similarity_search(
                 updated_at=db_obj.updated_at,
                 issue_id=str(db_obj.issue_id),
                 meta_data=db_obj.meta_data or {},
+                score=score,
             )
             item_type_str = "comment"
         else:
