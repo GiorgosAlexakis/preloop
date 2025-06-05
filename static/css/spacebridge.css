@@ -250,6 +250,34 @@ h1, h2, h3, h4, h5, h6 {
     opacity: 0.8;
 }
 
+/* Styles for the bottom line of the footer */
+.footer-bottom-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.footer-bottom-line .copyright-text {
+    font-size: 0.85rem;
+}
+
+/* General styling for links within the footer-bottom-line */
+.footer-bottom-line .copyright-text a,
+.footer-bottom-line .linkedin-icon-footer {
+    color: inherit;
+    text-decoration: none;
+}
+
+.footer-bottom-line .copyright-text a:hover,
+.footer-bottom-line .linkedin-icon-footer:hover {
+    text-decoration: underline;
+}
+
+.footer-bottom-line .linkedin-icon-footer svg {
+    fill: currentColor; 
+    vertical-align: middle; 
+}
+
 /* IDE Selection Tab */
 #ide-list .list-group-item {
     padding: 0;
