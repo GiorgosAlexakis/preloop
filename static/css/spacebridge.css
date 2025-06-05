@@ -278,11 +278,37 @@ h1, h2, h3, h4, h5, h6 {
     vertical-align: middle;
 }
 
+/* FAQ Section Styles */
+.faq-section {
+    background-color: var(--bs-gray-100); /* Or a light background color of your choice */
+}
+
+
+.faq-section .accordion-button {
+    font-weight: 500;
+    color: var(--bs-gray-800);
+}
+
+.faq-section .accordion-button:not(.collapsed) {
+    color: var(--primary);
+}
+
+.faq-section .accordion-body {
+    font-size: 0.95rem;
+    color: var(--bs-gray-700);
+}
+
 /* IDE Selection Tab */
+
+.text-start .row {
+    border: 1px solid var(--gray-200);
+    background-color: white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+}
+
 #ide-list .list-group-item {
     padding: 0;
     margin: 0;
-    border-radius: 0;
 }
 
 #ide-list .list-group-item.active {
