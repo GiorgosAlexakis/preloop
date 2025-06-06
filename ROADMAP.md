@@ -71,6 +71,15 @@
 - [ ] Bulk operations for efficiency
 - [ ] Rate limit optimization strategies
 
+### Explore: Issue Tracker Visualization
+- [ ] **Frontend:** Implement a new 'Explore' route and view component within the SpaceBridge dashboard.
+- [ ] **Backend API:** Develop an API endpoint to serve raw embeddings for issues (and later, comments, MRs).
+- [ ] **Frontend Dimensionality Reduction:** Integrate modular JavaScript libraries (e.g., UMAP-JS, tSNE-JS, scikit-learn.js for PCA) for client-side dimensionality reduction of fetched embeddings.
+- [ ] **Frontend Caching:** Implement browser-side caching (e.g., IndexedDB or localStorage) for storing and retrieving computed dimensionality reduction results to optimize performance.
+- [ ] **Frontend Visualization:** Utilize `deck.gl` to implement a 2D/3D scatter plot visualization layer for the client-side reduced embedding data within the 'Explore' view.
+- [ ] **Interactive Navigation:** Configure `deck.gl` controllers for zoom, pan, and data point inspection (e.g., displaying issue details on hover/click).
+- [ ] **Data Scope:** Initially support visualization of issue embeddings; design data pipelines and API for future inclusion of comment and MR embeddings.
+
 ## Phase 4: Enterprise Readiness (Q4 2025)
 
 ### Enterprise Features
