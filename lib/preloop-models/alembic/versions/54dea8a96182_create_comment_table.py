@@ -10,6 +10,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -31,10 +32,15 @@ def upgrade() -> None:
             nullable=False,
             comment="Type of comment (e.g., 'issue', 'merge_request')",
         ),
-        sa.Column("issue_id", sa.String(length=36), nullable=True),
-        sa.Column("author_id", sa.String(length=36), nullable=True),
+        sa.Column("issue_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("author_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("meta_data", sa.JSON(), nullable=True),
-        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
         sa.Column("external_id", sa.String(length=36), nullable=False),
         sa.Column(
             "created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False
@@ -52,7 +58,8 @@ def upgrade() -> None:
     op.create_index(op.f("ix_comment_id"), "comment", ["id"], unique=False)
     op.create_index(op.f("ix_comment_issue_id"), "comment", ["issue_id"], unique=False)
     op.add_column(
-        "issueembedding", sa.Column("comment_id", sa.String(length=36), nullable=True)
+        "issueembedding",
+        sa.Column("comment_id", postgresql.UUID(as_uuid=True), nullable=True),
     )
     op.create_index(
         op.f("ix_issueembedding_comment_id"),

@@ -6,7 +6,8 @@ from typing import Any, Dict, Optional
 
 from pydantic import field_validator, ValidationInfo
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, func
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -27,8 +28,8 @@ class Base(DeclarativeBase):
         return cls.__name__.lower()
 
     # Common columns for all models
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4())
+    id: Mapped[uuid.UUID] = mapped_column(  # Changed str to uuid.UUID
+        UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
@@ -53,9 +54,9 @@ class Base(DeclarativeBase):
         )
 
     @classmethod
-    def generate_id(cls) -> str:
+    def generate_id(cls) -> uuid.UUID:  # Changed return type to uuid.UUID
         """Generate a new UUID for the id field."""
-        return str(uuid.uuid4())
+        return uuid.uuid4()  # Return uuid.UUID object
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary."""

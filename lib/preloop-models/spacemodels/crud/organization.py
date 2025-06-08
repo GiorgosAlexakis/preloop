@@ -12,10 +12,6 @@ from .base import CRUDBase
 class CRUDOrganization(CRUDBase[Organization]):
     """CRUD operations for Organization model."""
 
-    def __init__(self):
-        """Initialize with the Organization model."""
-        super().__init__(model=Organization)
-
     def get_by_identifier(
         self, db: Session, *, identifier: str
     ) -> Optional[Organization]:

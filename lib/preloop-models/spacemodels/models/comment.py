@@ -1,8 +1,10 @@
 """Comment model."""
 
 from typing import TYPE_CHECKING, Optional, List, Dict
+import uuid  # Added uuid import
 
 from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import UUID  # Added UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -33,14 +35,18 @@ class Comment(Base):
     )
 
     # Foreign keys
-    issue_id: Mapped[str] = mapped_column(
-        String(36),
+    issue_id: Mapped[
+        Optional[uuid.UUID]
+    ] = mapped_column(  # Changed str to Optional[uuid.UUID]
+        UUID(as_uuid=True),  # Changed String(36) to UUID
         ForeignKey("issue.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    author_id: Mapped[str] = mapped_column(
-        String(36),
+    author_id: Mapped[
+        Optional[uuid.UUID]
+    ] = mapped_column(  # Changed str to Optional[uuid.UUID]
+        UUID(as_uuid=True),  # Changed String(36) to UUID
         ForeignKey(
             "account.id", ondelete="SET NULL"
         ),  # Or CASCADE, depending on desired behavior

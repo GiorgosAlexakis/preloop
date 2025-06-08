@@ -12,6 +12,7 @@ from ..models import (
     Organization,
     Project,
     Tracker,
+    Organization,
 )
 from .account import CRUDAccount
 from .api_key import CRUDApiKey
@@ -27,7 +28,7 @@ from .llm_model import CRUDLLMModel
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)
-crud_organization = CRUDOrganization()
+crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
 crud_embedding_model = CRUDEmbeddingModel(EmbeddingModel)

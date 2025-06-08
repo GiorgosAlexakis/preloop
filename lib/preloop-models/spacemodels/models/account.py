@@ -1,11 +1,13 @@
 """Account and AccountOrganization models."""
 
 from datetime import datetime
+import uuid  # Added uuid import
 
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, func, String  # Added String back
+from sqlalchemy.dialects.postgresql import UUID  # Added UUID
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -98,11 +100,15 @@ class AccountOrganization(Base):
     __tablename__ = "accountorganization"
 
     # Composite primary key
-    account_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("account.id", ondelete="CASCADE"), primary_key=True
+    account_id: Mapped[uuid.UUID] = mapped_column(  # Changed str to uuid.UUID
+        UUID(as_uuid=True),
+        ForeignKey("account.id", ondelete="CASCADE"),
+        primary_key=True,
     )
-    organization_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("organization.id", ondelete="CASCADE"), primary_key=True
+    organization_id: Mapped[uuid.UUID] = mapped_column(  # Changed str to uuid.UUID
+        UUID(as_uuid=True),
+        ForeignKey("organization.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
     # Role in the organization

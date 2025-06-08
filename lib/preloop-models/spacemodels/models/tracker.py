@@ -1,12 +1,14 @@
 """Tracker model and related types."""
 
 import enum
+import uuid  # Added uuid import
 from datetime import datetime
 
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, String, func
+from sqlalchemy.dialects.postgresql import UUID  # Added UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import JSON, DateTime
 
@@ -101,9 +103,27 @@ class Tracker(Base):
     # Generic metadata field for extensibility
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
+    # Webhook event subscriptions
+    subscribed_events: Mapped[Optional[List[str]]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=list,
+        comment="List of specific webhook event names to subscribe to (e.g., ['push', 'issues']). Empty or None might imply default/all events based on client logic.",
+    )
+
+    # Jira Webhook specific fields
+    jira_webhook_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="Stored Jira Webhook ID"
+    )
+    jira_webhook_secret: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Secret used to validate incoming Jira webhooks. Store encrypted if possible.",
+    )
+
     # Foreign keys
-    account_id: Mapped[str] = mapped_column(
-        String(36),
+    account_id: Mapped[uuid.UUID] = mapped_column(  # Changed str to uuid.UUID
+        UUID(as_uuid=True),  # Changed String(36) to UUID
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

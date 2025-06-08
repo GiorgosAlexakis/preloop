@@ -1,7 +1,7 @@
 """Add webhook_secret to Organization model
 
 Revision ID: c07e5024f8df
-Revises: a5bd730968f3
+Revises: 54dea8a96182
 Create Date: 2025-05-04 22:53:58.898437
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "c07e5024f8df"
-down_revision: Union[str, None] = "a5bd730968f3"
+down_revision: Union[str, None] = "54dea8a96182"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
