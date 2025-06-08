@@ -20,6 +20,7 @@ spec:
   {{- end }}
 
   # User management
+  enableSuperuserAccess: true
   superuserSecret:
     name: {{ include "spacebridge.fullname" . }}-db-superuser
   bootstrap:
