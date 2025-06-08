@@ -34,12 +34,24 @@ class TrackerBase(BaseModel):
         True,
         description="Whether to automatically include new projects if no specific inclusions are set.",
     )
+    subscribed_events: Optional[List[str]] = Field(
+        default_factory=list,
+        description="List of specific webhook event names to subscribe to. Empty list implies default/all events based on client logic.",
+    )
+    jira_webhook_id: Optional[str] = Field(None, description="Stored Jira Webhook ID")
+    # jira_webhook_secret is intentionally not in TrackerBase to avoid accidental exposure.
+    # It should be handled in specific create/update schemas if needed for input,
+    # and never in response schemas.
 
 
 class TrackerCreate(TrackerBase):
     """Model for creating a new tracker."""
 
     api_key: str = Field(..., description="API key or token for the tracker")
+    # If Jira provides a secret during webhook creation and we need to store it,
+    # it could be added here. For now, assuming it's set/updated separately or
+    # derived, and not part of initial creation payload directly for the webhook secret itself.
+    # jira_webhook_secret: Optional[str] = Field(None, description="Secret for Jira webhook validation")
 
 
 class TrackerRegisterRequest(BaseModel):
@@ -118,6 +130,15 @@ class TrackerUpdate(BaseModel):
     include_future_projects: Optional[bool] = Field(
         None, description="Updated setting for including future projects."
     )
+    subscribed_events: Optional[List[str]] = Field(
+        None,
+        description="Updated list of specific webhook event names to subscribe to.",
+    )
+    jira_webhook_id: Optional[str] = Field(None, description="Updated Jira Webhook ID")
+    jira_webhook_secret: Optional[str] = Field(
+        None,
+        description="Updated Secret for Jira webhook validation (handle with care)",
+    )
 
 
 class TrackerResponse(TrackerBase):
@@ -134,6 +155,8 @@ class TrackerResponse(TrackerBase):
     )
     created: datetime = Field(..., description="Creation timestamp")
     last_updated: datetime = Field(..., description="Last update timestamp")
+    # jira_webhook_secret is intentionally omitted from responses for security.
+    # jira_webhook_id is already inherited from TrackerBase and will be included.
 
     model_config = {"from_attributes": True}
 

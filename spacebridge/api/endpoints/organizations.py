@@ -19,7 +19,7 @@ from spacemodels.models.organization import Organization
 from spacemodels.models.tracker import Tracker
 
 # Initialize CRUD operations for Organization
-crud_organization = CRUDOrganization()  # Removed Organization argument
+crud_organization = CRUDOrganization(Organization)
 
 router = APIRouter()
 crud_tracker = CRUDTracker(Tracker)  # Instantiate tracker CRUD

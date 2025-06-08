@@ -2018,6 +2018,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
 <<<<<<< HEAD
+<<<<<<< HEAD
   /api/v1/issue-duplicates/check:
     get:
       tags:
@@ -2042,6 +2043,9 @@ paths:
           title: Issue2 Id
 =======
   /api/v1/private/webhooks/{tracker_type}/{org_identifier}:
+=======
+  /api/v1/private/webhooks/{tracker_type}/{identifier_in_url}:
+>>>>>>> 43956a8 (feat(webhooks): Implement configurable event subscriptions and Jira webhook handling\n\n- Updates schemas, clients, and webhook endpoint for configurable GitHub/GitLab event subscriptions.\n- Integrates Jira webhook registration, validation, and event processing.\n- Updates SpaceModels submodule with related model changes.\n\nRelates to #55, #56)
     post:
       tags:
       - Webhooks
@@ -2052,7 +2056,7 @@ paths:
         Parses the payload to identify the organization and updates its
 
         last_webhook_update timestamp.'
-      operationId: receive_webhook_api_v1_private_webhooks__tracker_type___org_identifier__post
+      operationId: receive_webhook_api_v1_private_webhooks__tracker_type___identifier_in_url__post
       parameters:
       - name: tracker_type
         in: path
@@ -2060,13 +2064,17 @@ paths:
         schema:
           type: string
           title: Tracker Type
-      - name: org_identifier
+      - name: identifier_in_url
         in: path
         required: true
         schema:
           type: string
+<<<<<<< HEAD
           title: Org Identifier
 >>>>>>> 0e4fec0 (Add support for Github org webhooks and Gitlab group webhooks)
+=======
+          title: Identifier In Url
+>>>>>>> 43956a8 (feat(webhooks): Implement configurable event subscriptions and Jira webhook handling\n\n- Updates schemas, clients, and webhook endpoint for configurable GitHub/GitLab event subscriptions.\n- Integrates Jira webhook registration, validation, and event processing.\n- Updates SpaceModels submodule with related model changes.\n\nRelates to #55, #56)
       responses:
         '200':
           description: Successful Response
@@ -3592,6 +3600,21 @@ components:
           description: Whether to automatically include new projects if no specific
             inclusions are set.
           default: true
+        subscribed_events:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Subscribed Events
+          description: List of specific webhook event names to subscribe to. Empty
+            list implies default/all events based on client logic.
+        jira_webhook_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Jira Webhook Id
+          description: Stored Jira Webhook ID
         id:
           type: string
           title: Id
@@ -3766,6 +3789,26 @@ components:
           - type: 'null'
           title: Include Future Projects
           description: Updated setting for including future projects.
+        subscribed_events:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Subscribed Events
+          description: Updated list of specific webhook event names to subscribe to.
+        jira_webhook_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Jira Webhook Id
+          description: Updated Jira Webhook ID
+        jira_webhook_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Jira Webhook Secret
+          description: Updated Secret for Jira webhook validation (handle with care)
       type: object
       title: TrackerUpdate
       description: Model for updating an existing tracker.

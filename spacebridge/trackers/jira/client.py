@@ -951,3 +951,199 @@ class JiraClient(TrackerInterface):
                 )
 
         return mapped_projects
+
+    async def register_webhook(
+        self,
+        callback_url: str,
+        events_to_subscribe: List[str],
+        jql_filter: Optional[str] = None,
+        name: Optional[str] = "SpaceBridge Webhook",
+        description: Optional[str] = "Webhook for SpaceBridge integration",
+    ) -> Dict[str, Any]:
+        """Register a webhook with the Jira instance.
+
+        Args:
+            callback_url: The URL that Jira will send webhook events to.
+            events_to_subscribe: A list of Jira event names (e.g., "jira:issue_created").
+            jql_filter: JQL query to filter events.
+            name: A user-friendly name for the webhook.
+            description: A description for the webhook.
+
+        Returns:
+            The response from Jira after attempting to register the webhook,
+            which should include the webhook ID.
+        """
+        # Reference: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-webhooks/#api-rest-api-3-webhook-post
+        payload = {
+            "name": name,
+            "url": callback_url,
+            "events": events_to_subscribe,  # e.g., ["jira:issue_created", "jira:issue_updated"]
+            "jqlFilter": jql_filter if jql_filter else "",
+            "excludeIssueDetails": False,  # We want issue details
+            "description": description,
+        }
+        logger.info(f"Registering Jira webhook with payload: {payload}")
+        response = await self._make_request("POST", "webhook", json_data=payload)
+        logger.info(f"Jira webhook registration response: {response}")
+
+        # Standard response for successful webhook registration:
+        # {
+        #   "webhookRegistrationResult": [
+        #     { "createdWebhookId": 123 }
+        #   ]
+        # }
+        # Some older versions or specific Jira setups might return a direct ID:
+        # { "id": 123, ... }
+
+        if (
+            "webhookRegistrationResult" in response
+            and response["webhookRegistrationResult"]
+        ):
+            if (
+                isinstance(response["webhookRegistrationResult"], list)
+                and len(response["webhookRegistrationResult"]) > 0
+                and "createdWebhookId" in response["webhookRegistrationResult"][0]
+            ):
+                return {
+                    "id": response["webhookRegistrationResult"][0]["createdWebhookId"],
+                    "raw_response": response,
+                }
+        elif "id" in response:  # Fallback for direct ID in response
+            return {"id": response["id"], "raw_response": response}
+
+        error_message = (
+            f"Failed to register webhook or extract ID, unexpected response: {response}"
+        )
+        logger.error(error_message)
+        raise ValueError(error_message)
+
+    async def list_webhooks(self) -> List[Dict[str, Any]]:
+        """List webhooks registered for this Jira instance.
+
+        Returns:
+            A list of webhooks.
+        """
+        # Reference: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-webhooks/#api-rest-api-3-webhook-get
+        logger.info("Listing Jira webhooks")
+        response = await self._make_request("GET", "webhook")
+        # Response can be a list directly, or an object with a 'values' array for paginated results
+        webhooks = []
+        if isinstance(response, list):
+            webhooks = response
+        elif isinstance(response, dict) and "values" in response:
+            webhooks = response.get("values", [])
+        else:
+            logger.warning(f"Unexpected response format for list_webhooks: {response}")
+            return []  # Return empty list if format is not recognized
+
+        if not isinstance(webhooks, list):  # Double check if 'values' was not a list
+            logger.warning(
+                f"Expected 'values' to be a list in list_webhooks response, got: {type(webhooks)}"
+            )
+            return []
+
+        logger.info(f"Found {len(webhooks)} Jira webhooks.")
+        return webhooks
+
+    async def update_webhook(
+        self,
+        webhook_id: int,
+        new_callback_url: Optional[str] = None,
+        new_events_to_subscribe: Optional[List[str]] = None,
+        new_jql_filter: Optional[str] = None,
+        new_name: Optional[str] = None,
+        new_description: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Update an existing webhook.
+
+        Args:
+            webhook_id: The ID of the webhook to update.
+            new_callback_url: New callback URL.
+            new_events_to_subscribe: New list of events. If None, events are not changed.
+                                     Pass an empty list to remove all event subscriptions.
+            new_jql_filter: New JQL filter. If None, filter is not changed.
+                            Pass an empty string to remove the filter.
+            new_name: New name for the webhook.
+            new_description: New description for the webhook.
+
+        Returns:
+            The response from Jira.
+        """
+        # Reference: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-webhooks/#api-rest-api-3-webhook-put
+        # This endpoint is for bulk registration/update. To update, we provide the ID.
+        webhook_update_data: Dict[str, Any] = {"id": webhook_id}
+
+        # Only include fields in the payload if they are explicitly provided for update
+        if new_name is not None:
+            webhook_update_data["name"] = new_name
+        if new_callback_url is not None:
+            webhook_update_data["url"] = new_callback_url
+        if new_events_to_subscribe is not None:  # Allows setting to empty list
+            webhook_update_data["events"] = new_events_to_subscribe
+        if new_jql_filter is not None:  # Allows setting to empty string
+            webhook_update_data["jqlFilter"] = new_jql_filter
+        if new_description is not None:
+            webhook_update_data["description"] = new_description
+
+        # The API expects a body like:
+        # { "webhooksToRegister": [ { "id": webhook_id, ...updated_fields... } ] }
+        update_payload = {"webhooksToRegister": [webhook_update_data]}
+
+        logger.info(
+            f"Updating Jira webhook ID {webhook_id} with payload: {update_payload}"
+        )
+        response = await self._make_request("PUT", "webhook", json_data=update_payload)
+        logger.info(f"Jira webhook update response for ID {webhook_id}: {response}")
+        # Successful update usually returns 200 OK with details of the update operation.
+        # Example: { "webhookRegistrationResult": [ { "updatedWebhookId": 123 } ] }
+        # We should check this response.
+        if (
+            "webhookRegistrationResult" in response
+            and response["webhookRegistrationResult"]
+        ):
+            if (
+                isinstance(response["webhookRegistrationResult"], list)
+                and len(response["webhookRegistrationResult"]) > 0
+                and "updatedWebhookId" in response["webhookRegistrationResult"][0]
+                and response["webhookRegistrationResult"][0]["updatedWebhookId"]
+                == webhook_id
+            ):
+                return response  # Successfully updated
+
+        # Fallback or if no specific "updatedWebhookId" is found but no error occurred
+        if response is not None and not isinstance(
+            response.get("errorMessages"), list
+        ):  # Check if _make_request returned something and no obvious errors
+            return response
+
+        error_message = f"Failed to update webhook ID {webhook_id} or verify update, response: {response}"
+        logger.error(error_message)
+        raise ValueError(error_message)
+
+    async def delete_webhook(self, webhook_id: int) -> bool:
+        """Delete a webhook.
+
+        Args:
+            webhook_id: The ID of the webhook to delete.
+
+        Returns:
+            True if deletion was successful (status 202 or 204), False otherwise.
+        """
+        # Reference: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-webhooks/#api-rest-api-3-webhook-delete
+        payload = {"webhookIds": [webhook_id]}
+        logger.info(f"Attempting to delete Jira webhook ID: {webhook_id}")
+        try:
+            # _make_request handles status codes and raises ValueError for >= 400.
+            # A successful DELETE request to this endpoint returns a 202 Accepted.
+            await self._make_request("DELETE", "webhook", json_data=payload)
+            logger.info(f"Jira webhook ID {webhook_id} delete request accepted.")
+            return True
+        except ValueError as e:
+            # This will catch 404 if webhook_id doesn't exist, or other errors.
+            logger.error(f"Failed to delete Jira webhook ID {webhook_id}: {e}")
+            return False
+        except Exception as e:
+            logger.exception(
+                f"Unexpected error deleting Jira webhook ID {webhook_id}: {e}"
+            )
+            return False

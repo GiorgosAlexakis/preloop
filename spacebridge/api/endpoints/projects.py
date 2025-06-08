@@ -38,7 +38,7 @@ from spacemodels.models.issue import IssueEmbedding, EmbeddingModel
 logger = logging.getLogger(__name__)
 router = APIRouter()
 crud_project = CRUDProject(Project)
-crud_organization = CRUDOrganization()  # Removed Organization argument
+crud_organization = CRUDOrganization(Organization)
 crud_tracker = CRUDTracker(Tracker)  # Instantiate tracker CRUD
 crud_issue = CRUDIssue(Issue)
 crud_issue_embedding = CRUDIssueEmbedding(IssueEmbedding)
