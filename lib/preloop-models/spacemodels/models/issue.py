@@ -13,6 +13,7 @@ from .base import Base
 
 from .project import Project
 from .tracker import Tracker
+from .comment import Comment
 
 # Get description max length from environment or use default 5000
 DESCRIPTION_MAX_LENGTH = int(os.environ.get("ISSUE_DESCRIPTION_MAX_LENGTH", "5000"))
@@ -62,6 +63,9 @@ class Issue(Base):
     tracker: Mapped["Tracker"] = relationship("Tracker", back_populates="issues")
     embeddings: Mapped[List["IssueEmbedding"]] = relationship(
         "IssueEmbedding", back_populates="issue", cascade="all, delete-orphan"
+    )
+    comments: Mapped[List["Comment"]] = relationship(
+        "Comment", back_populates="issue", cascade="all, delete-orphan"
     )
 
     # Metadata stored as JSON (for custom fields, labels, etc.)
@@ -123,6 +127,12 @@ class IssueEmbedding(Base):
         nullable=False,
         index=True,
     )
+    comment_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("comment.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     embedding_model_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("embeddingmodel.id", ondelete="CASCADE"),
@@ -146,6 +156,9 @@ class IssueEmbedding(Base):
 
     # Relationships
     issue: Mapped["Issue"] = relationship("Issue", back_populates="embeddings")
+    comment: Mapped[Optional["Comment"]] = relationship(
+        "Comment", back_populates="embeddings"
+    )
     embedding_model: Mapped["EmbeddingModel"] = relationship(
         "EmbeddingModel", back_populates="embeddings"
     )
@@ -153,6 +166,9 @@ class IssueEmbedding(Base):
     __table_args__ = (
         # Enforce one embedding per issue per model
         UniqueConstraint(
-            "issue_id", "embedding_model_id", name="uix_issue_embedding_model"
+            "issue_id",
+            "comment_id",
+            "embedding_model_id",
+            name="uix_issue_embedding_model",
         ),
     )

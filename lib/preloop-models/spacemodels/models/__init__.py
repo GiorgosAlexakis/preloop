@@ -4,6 +4,7 @@ from .account import Account, AccountOrganization
 from .api_key import ApiKey
 from .api_usage import ApiUsage
 from .base import Base
+from .comment import Comment
 from .issue import EmbeddingModel, Issue, IssueEmbedding
 from .organization import Organization
 from .project import Project
@@ -24,4 +25,5 @@ __all__ = [
     "ApiKey",
     "ApiUsage",
     "ClientVersionLog",
+    "Comment",
 ]

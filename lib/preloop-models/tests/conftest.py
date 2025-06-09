@@ -190,6 +190,42 @@ def create_issue(db_session, create_project, create_tracker):
 
 
 @pytest.fixture
+def create_comment(db_session, create_issue, create_account):
+    """Create a test comment.
+    Handles 'issue_id' or 'issue' object passed in kwargs,
+    or creates a default issue.
+    """
+    from spacemodels.crud import crud_comment
+
+    def _create_comment(body="Test comment body", type="issue", **kwargs):
+        current_issue_id: str
+
+        if "issue_id" in kwargs:
+            current_issue_id = kwargs.pop("issue_id")
+        elif "issue" in kwargs:
+            issue_obj = kwargs.pop("issue")
+            current_issue_id = issue_obj.id
+        else:
+            # Default: Create a new issue if no specific identifier or object was provided
+            new_issue_obj = create_issue()
+            current_issue_id = new_issue_obj.id
+
+        author_obj = kwargs.pop("author", create_account())
+
+        comment_data = {
+            "body": body,
+            "type": type,
+            "issue_id": current_issue_id,
+            "author_id": author_obj.id,
+            **kwargs,
+        }
+
+        return crud_comment.create(db_session, obj_in=comment_data)
+
+    return _create_comment
+
+
+@pytest.fixture
 def create_embedding_model(db_session):
     """Create a test embedding model."""
     from spacemodels.crud import crud_embedding_model

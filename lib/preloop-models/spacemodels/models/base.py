@@ -2,7 +2,9 @@
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+from pydantic import field_validator, ValidationInfo
 
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.ext.declarative import declared_attr
@@ -34,6 +36,21 @@ class Base(DeclarativeBase):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+    @field_validator("created_at", "updated_at", mode="before")
+    @classmethod
+    def format_datetime_fields_to_str(
+        cls, v: Any, info: ValidationInfo
+    ) -> Optional[str]:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v.isoformat()
+        if isinstance(v, str):
+            return v
+        raise TypeError(
+            f"Field '{info.field_name}' must be a datetime object or a string, got {type(v).__name__}"
+        )
 
     @classmethod
     def generate_id(cls) -> str:
