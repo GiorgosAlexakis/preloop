@@ -114,13 +114,7 @@ class AccountOrganization(Base):
     # Role in the organization
     role: Mapped[str] = mapped_column(String(50), default="member")
 
-    # Add timestamps manually since we're not inheriting from Base
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
-    )
+    # Timestamps are inherited from Base. id is also inherited as PK.
 
     # Relationships
     account: Mapped["Account"] = relationship(

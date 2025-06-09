@@ -28,7 +28,7 @@ class Base(DeclarativeBase):
         return cls.__name__.lower()
 
     # Common columns for all models
-    id: Mapped[uuid.UUID] = mapped_column(  # Changed str to uuid.UUID
+    id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4
     )
     created_at: Mapped[datetime] = mapped_column(

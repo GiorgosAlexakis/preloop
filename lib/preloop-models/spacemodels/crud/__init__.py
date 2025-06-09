@@ -20,11 +20,13 @@ from .api_usage import CRUDApiUsage
 from .base import CRUDBase
 from .comment import CRUDComment, crud_comment
 from .embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
+from .flow import CRUDFlow  # Import CRUDFlow class
 from .issue import CRUDIssue
-from .organization import CRUDOrganization
+from .organization import CRUDOrganization  # Removed create_organization import
 from .project import CRUDProject
 from .tracker import CRUDTracker
 from .llm_model import CRUDLLMModel
+
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)
@@ -37,12 +39,14 @@ crud_api_key = CRUDApiKey(ApiKey)
 crud_api_usage = CRUDApiUsage(ApiUsage)
 crud_llm_model = CRUDLLMModel(LLMModel)  # Instantiate crud_llm_model
 # crud_comment is already instantiated in its own file
+crud_flow = CRUDFlow()  # Instantiate CRUDFlow
 
 __all__ = [
     "CRUDBase",
     "CRUDAccount",
     "CRUDTracker",
     "CRUDOrganization",
+    # "crud_create_organization", # Removed export
     "CRUDProject",
     "CRUDIssue",
     "CRUDEmbeddingModel",
@@ -51,6 +55,7 @@ __all__ = [
     "CRUDApiUsage",
     "CRUDComment",
     "CRUDLLMModel",
+    "CRUDFlow",
     "crud_account",
     "crud_tracker",
     "crud_organization",
@@ -62,4 +67,5 @@ __all__ = [
     "crud_api_usage",
     "crud_comment",
     "crud_llm_model",
+    "crud_flow",
 ]

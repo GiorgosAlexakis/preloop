@@ -12,6 +12,7 @@ from .project import Project
 from .tracker import Tracker, TrackerType
 from .client_version_log import ClientVersionLog
 from .llm_model import LLMModel
+from .flow import Flow
 
 __all__ = [
     "Base",
@@ -30,4 +31,5 @@ __all__ = [
     "ClientVersionLog",
     "Comment",
     "LLMModel",
+    "Flow",
 ]

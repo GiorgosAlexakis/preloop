@@ -28,11 +28,18 @@ class Organization(Base):
     """
 
     # Organization details
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(
+        String(255), nullable=False
+    )  # Assuming String is imported if still needed
     identifier: Mapped[str] = mapped_column(
-        String(100), unique=True, nullable=False, index=True
+        String(100),
+        unique=True,
+        nullable=False,
+        index=True,  # Assuming String is imported
     )
-    description: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(
+        String(1000), nullable=True
+    )  # Assuming String is imported
     is_active: Mapped[bool] = mapped_column(default=True)
 
     # Organization settings stored as JSON
@@ -42,7 +49,9 @@ class Organization(Base):
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
     # Secret for verifying incoming webhooks (e.g., HMAC signature)
-    webhook_secret: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    webhook_secret: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )  # Assuming String is imported
 
     # Timestamps for sync updates
     last_webhook_update: Mapped[Optional[datetime]] = mapped_column(

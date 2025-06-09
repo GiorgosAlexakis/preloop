@@ -1,7 +1,9 @@
+import uuid  # Import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String  # String re-added
+from sqlalchemy.dialects.postgresql import UUID  # Added UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -28,10 +30,14 @@ class ClientVersionLog(Base):
         index=True,  # Changed type to String(36)
     )
     organization_identifier: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True, index=True
+        String,
+        nullable=True,
+        index=True,  # Assuming String is still needed and imported
     )
     project_identifier: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True, index=True
+        String,
+        nullable=True,
+        index=True,  # Assuming String is still needed and imported
     )
 
     # Relationship to Account (optional)
