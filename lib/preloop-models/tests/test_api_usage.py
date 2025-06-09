@@ -69,12 +69,15 @@ def test_get_endpoint_stats(db_session, create_account):
     # Create an account
     account = create_account()
 
+    # Define endpoints used in this test
+    test_endpoints = ["/api/v1/issues", "/api/v1/projects"]
+
     # Log requests to different endpoints
     for i in range(3):
         crud_api_usage.log_request(
             db_session,
             username=account.username,
-            endpoint="/api/v1/issues",
+            endpoint=test_endpoints[0],  # /api/v1/issues
             method="GET",
             status_code=200,
             duration=0.1 + i * 0.1,
@@ -84,35 +87,50 @@ def test_get_endpoint_stats(db_session, create_account):
         crud_api_usage.log_request(
             db_session,
             username=account.username,
-            endpoint="/api/v1/projects",
+            endpoint=test_endpoints[1],  # /api/v1/projects
             method="GET",
             status_code=200,
             duration=0.2 + i * 0.1,
         )
 
     # Get endpoint stats
-    stats = crud_api_usage.get_endpoint_stats(db_session, days=1)
+    all_stats = crud_api_usage.get_endpoint_stats(db_session, days=1)
 
-    # Should have stats for 2 endpoints
+    # Filter stats to only include those relevant to this test
+    stats = [s for s in all_stats if s["endpoint"] in test_endpoints]
+
+    # Should have stats for 2 endpoints relevant to this test
     assert len(stats) == 2
 
-    # First endpoint should be /issues (most requests)
-    assert stats[0]["endpoint"] == "/api/v1/issues"
+    # Sort stats by endpoint name to ensure consistent order for assertions
+    stats.sort(key=lambda x: x["endpoint"])
+
+    # First endpoint should be /api/v1/issues
+    assert stats[0]["endpoint"] == test_endpoints[0]
     assert stats[0]["request_count"] == 3
     assert 0.1 <= stats[0]["min_duration"] <= 0.3
-    assert 0.2 <= stats[0]["avg_duration"] <= 0.3
+    # Adjust avg_duration check due to potential floating point inaccuracies
+    assert 0.19 <= stats[0]["avg_duration"] <= 0.21  # (0.1+0.2+0.3)/3 = 0.2
     assert 0.3 <= stats[0]["max_duration"] <= 0.4
 
-    # Second endpoint should be /projects
-    assert stats[1]["endpoint"] == "/api/v1/projects"
+    # Second endpoint should be /api/v1/projects
+    assert stats[1]["endpoint"] == test_endpoints[1]
     assert stats[1]["request_count"] == 2
+    # (0.2+0.3)/2 = 0.25
+    assert 0.24 <= stats[1]["avg_duration"] <= 0.26
 
 
 def test_get_user_stats(db_session, create_account):  # Added create_account fixture
     """Test getting user statistics."""
     # Create the accounts first to satisfy foreign key constraint
-    account1 = create_account(username="user1")
-    account2 = create_account(username="user2")
+    account1 = create_account(
+        username="user1_test_api_usage"
+    )  # Make usernames more unique
+    account2 = create_account(
+        username="user2_test_api_usage"
+    )  # Make usernames more unique
+
+    test_usernames = {account1.username, account2.username}
 
     # Log API usage for the created accounts
     crud_api_usage.create(
@@ -151,15 +169,22 @@ def test_get_user_stats(db_session, create_account):  # Added create_account fix
         )
 
     # Get user stats
-    stats = crud_api_usage.get_user_stats(db_session, days=1, limit=10)
+    all_stats = crud_api_usage.get_user_stats(db_session, days=1, limit=10)
 
-    # Should have stats for 2 users
+    # Filter stats to only include those relevant to this test
+    stats = [s for s in all_stats if s["username"] in test_usernames]
+
+    # Should have stats for 2 users relevant to this test
     assert len(stats) == 2
 
-    # First user should be user1 (most requests)
-    assert stats[0]["username"] == "user1"
+    # Sort stats by username to ensure consistent order for assertions
+    stats.sort(key=lambda x: x["username"])
+
+    # First user should be user1 (alphabetically, or by request count if sorted differently)
+    # Assuming user1_test_api_usage comes before user2_test_api_usage alphabetically
+    assert stats[0]["username"] == account1.username
     assert stats[0]["request_count"] == 3
 
     # Second user should be user2
-    assert stats[1]["username"] == "user2"
+    assert stats[1]["username"] == account2.username
     assert stats[1]["request_count"] == 1

@@ -1,10 +1,11 @@
 """Tests for the CRUD lookup functions in organization, project, and issue modules."""
 
 import uuid
+
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
-from spacemodels.crud import crud_organization, crud_project, crud_issue
+from spacemodels.crud import crud_organization, crud_project, crud_issue, crud_comment
 from spacemodels.models import Account, Organization, Project, Issue, Tracker
 
 
@@ -641,3 +642,203 @@ def test_issue_get_by_key(db_session: Session):
     assert found_issue_proj2.id == issue2.id
     assert found_issue_proj2.key == issue_key
     assert found_issue_proj2.project_id == project2.id
+
+
+def test_get_comment_by_external_id_simple(
+    db_session: Session, create_comment, create_issue, create_account
+) -> None:
+    """Test retrieving a comment by external_id with a simpler setup."""
+    # Setup: Create an author, an issue, and a comment
+    author = create_account()
+    issue1 = create_issue()  # Corrected: Removed author_id
+    # Create a second, distinct issue to test the issue_id filter
+    issue2 = create_issue()  # Corrected: Removed author_id
+
+    comment_external_id = "ext_comment_simple_001"
+    comment_body = "This is a simple test comment."
+
+    created_comment = create_comment(
+        issue_id=issue1.id,
+        author_id=author.id,
+        external_id=comment_external_id,
+        body=comment_body,
+    )
+
+    # 1. Retrieve by external_id only
+    retrieved_by_external_id = crud_comment.get_by_external_id(
+        db_session, external_id=comment_external_id
+    )
+    assert retrieved_by_external_id is not None
+    assert retrieved_by_external_id.id == created_comment.id
+    assert retrieved_by_external_id.body == comment_body
+
+    # 2. Retrieve by external_id and correct issue_id
+    retrieved_by_external_id_and_issue_id = crud_comment.get_by_external_id(
+        db_session, external_id=comment_external_id, issue_id=issue1.id
+    )
+    assert retrieved_by_external_id_and_issue_id is not None
+    assert retrieved_by_external_id_and_issue_id.id == created_comment.id
+
+    # 3. Attempt to retrieve with correct external_id but wrong issue_id
+    retrieved_with_wrong_issue_id = crud_comment.get_by_external_id(
+        db_session,
+        external_id=comment_external_id,
+        issue_id=issue2.id,  # Using issue2.id
+    )
+    assert retrieved_with_wrong_issue_id is None
+
+    # 4. Attempt to retrieve with a non-existent external_id
+    retrieved_non_existent = crud_comment.get_by_external_id(
+        db_session, external_id="non_existent_ext_id"
+    )
+    assert retrieved_non_existent is None
+
+
+def test_comment_create_with_author(db_session: Session, create_issue, create_account):
+    """Test creating a comment with an author using dictionary input."""
+    issue = create_issue()
+    author = create_account()
+    comment_data_in = {
+        "body": "This is a test comment!",
+        "type": "issue",
+        "issue_id": issue.id,
+        "external_id": "901",
+    }
+
+    comment = crud_comment.create_with_author(
+        db_session, obj_in=comment_data_in, author_id=author.id
+    )
+
+    assert comment is not None
+    assert comment.body == "This is a test comment!"
+    assert comment.type == "issue"
+    assert comment.issue_id == issue.id
+    assert comment.author_id == author.id
+    assert comment.id is not None
+    assert comment.created_at is not None
+    assert comment.updated_at is not None
+
+
+def test_comment_get_multi_by_issue(
+    db_session: Session, create_comment, create_issue, create_account
+):
+    """Test retrieving multiple comments for a specific issue."""
+    author = create_account()
+    issue1 = create_issue(title="Issue One for Comments")
+    issue2 = create_issue(title="Issue Two for Comments")
+
+    comment1_issue1 = create_comment(
+        issue=issue1, external_id="901", author=author, body="First comment for issue 1"
+    )
+    comment2_issue1 = create_comment(
+        issue=issue1,
+        external_id="902",
+        author=author,
+        body="Second comment for issue 1",
+    )
+    comment1_issue2 = create_comment(
+        issue=issue2, external_id="903", author=author, body="First comment for issue 2"
+    )
+
+    # Test for issue1
+    comments_issue1 = crud_comment.get_multi_by_issue(db_session, issue_id=issue1.id)
+    assert len(comments_issue1) == 2
+    comment_ids_issue1 = {c.id for c in comments_issue1}
+    assert comment1_issue1.id in comment_ids_issue1
+    assert comment2_issue1.id in comment_ids_issue1
+
+    # Test for issue2
+    comments_issue2 = crud_comment.get_multi_by_issue(db_session, issue_id=issue2.id)
+    assert len(comments_issue2) == 1
+    assert comments_issue2[0].id == comment1_issue2.id
+
+    # Test for an issue with no comments
+    issue_no_comments = create_issue(title="Issue With No Comments")
+    comments_no_issue = crud_comment.get_multi_by_issue(
+        db_session, issue_id=issue_no_comments.id
+    )
+    assert len(comments_no_issue) == 0
+
+
+def test_comment_get_multi_by_author(
+    db_session: Session, create_comment, create_issue, create_account
+):
+    """Test retrieving multiple comments by a specific author."""
+    author1 = create_account(username="author_one_comments")
+    author2 = create_account(username="author_two_comments")
+    issue = create_issue()
+
+    comment1_author1 = create_comment(
+        issue=issue, external_id="901", author=author1, body="Author 1, Comment 1"
+    )
+    comment2_author1 = create_comment(
+        issue=issue, external_id="902", author=author1, body="Author 1, Comment 2"
+    )
+    comment1_author2 = create_comment(
+        issue=issue, external_id="903", author=author2, body="Author 2, Comment 1"
+    )
+
+    # Test for author1
+    comments_author1 = crud_comment.get_multi_by_author(
+        db_session, author_id=author1.id
+    )
+    assert len(comments_author1) == 2
+    comment_ids_author1 = {c.id for c in comments_author1}
+    assert comment1_author1.id in comment_ids_author1
+    assert comment2_author1.id in comment_ids_author1
+
+    # Test for author2
+    comments_author2 = crud_comment.get_multi_by_author(
+        db_session, author_id=author2.id
+    )
+    assert len(comments_author2) == 1
+    assert comments_author2[0].id == comment1_author2.id
+
+    # Test for an author with no comments
+    author_no_comments = create_account(username="author_no_comments")
+    comments_no_author = crud_comment.get_multi_by_author(
+        db_session, author_id=author_no_comments.id
+    )
+    assert len(comments_no_author) == 0
+
+
+def test_comment_base_crud_operations(db_session: Session, create_comment):
+    """Test basic CRUD operations (get, update, delete) for Comment using dictionaries."""
+    # Create a comment using the fixture
+    initial_comment = create_comment(
+        external_id="901", body="Initial comment for CRUD test"
+    )
+    comment_id = initial_comment.id
+
+    # Test get
+    retrieved_comment = crud_comment.get(db_session, id=comment_id)
+    assert retrieved_comment is not None
+    assert retrieved_comment.id == comment_id
+    assert retrieved_comment.body == "Initial comment for CRUD test"
+
+    # Test update
+    update_data_dict = {"body": "Updated comment body!"}
+    # The CRUDBase.update method expects db_obj (the SQLAlchemy model instance) and obj_in (a dict)
+    updated_comment = crud_comment.update(
+        db_session, db_obj=retrieved_comment, obj_in=update_data_dict
+    )
+    assert updated_comment.body == "Updated comment body!"
+    assert updated_comment.id == comment_id
+    # Verify it's updated in the DB
+    re_retrieved_comment = crud_comment.get(db_session, id=comment_id)
+    assert re_retrieved_comment.body == "Updated comment body!"
+
+    # Test delete
+    deleted_comment = crud_comment.delete(db_session, id=comment_id)
+    assert deleted_comment.id == comment_id
+    # Verify it's deleted from the DB
+    not_found_comment = crud_comment.get(db_session, id=comment_id)
+    assert not_found_comment is None
+
+
+# --- End of new Comment tests ---
+
+
+# Existing tests after this point, e.g.:
+# def test_project_get_by_slug_or_identifier(
+# ...
