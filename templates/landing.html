@@ -102,7 +102,7 @@
         <div class="container">
             <h2 class="mb-5">Get Started</h2>
 
-            <div class="row p-4 rounded" style="border: 1px solid var(--gray-200); background-color: white; box-shadow: 0 2px 10px rgba(0,0,0,0.03);">
+            <div class="row p-4 rounded">
                 <!-- Left sidebar with IDE selection -->
                 <div class="col-md-3" style="border-right: 1px solid var(--gray-200);">
                     <div class="list-group border-0" id="ide-list" role="tablist" style="border-radius: 0;">
@@ -272,6 +272,111 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \
         </div>
     </section>
 
+    <!-- FAQ Section -->
+    <section class="faq-section py-5">
+        <div class="container">
+            <h2 class="mb-5">FAQs</h2>
+            <div class="accordion" id="faqAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingOne">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="false" aria-controls="collapseOne">
+                            What is SpaceBridge?
+                        </button>
+                    </h2>
+                    <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            SpaceBridge is an open-source Master Control Program (MCP) server designed to unify your issue trackers (like Jira, GitHub Issues, GitLab Issues) and enhance them with AI-powered features like similarity search for duplicate detection. It provides a consistent API for AI agents and developers to interact with issue data.
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingTwo">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">
+                            How does SpaceBridge help with AI development?
+                        </button>
+                    </h2>
+                    <div id="collapseTwo" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            SpaceBridge provides a standardized MCP interface, allowing AI agents (like those in Claude Code, Cursor, or Windsurf) to easily access and manipulate issue tracker data. This augments the AI's context, enabling it to perform tasks like automated issue creation, updates, and intelligent searches more effectively.
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingThree">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree" aria-expanded="false" aria-controls="collapseThree">
+                            Is SpaceBridge free to use?
+                        </button>
+                    </h2>
+                    <div id="collapseThree" class="accordion-collapse collapse" aria-labelledby="headingThree" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            Yes, the SpaceBridge MCP server software is open-source (MIT License) and free to self-host. We also offer a free tier for our hosted REST API service, which is perfect for individual developers and small teams to get started.
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingFour">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFour" aria-expanded="false" aria-controls="collapseFour">
+                            What issue trackers are currently supported?
+                        </button>
+                    </h2>
+                    <div id="collapseFour" class="accordion-collapse collapse" aria-labelledby="headingFour" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            SpaceBridge is designed to be extensible. Currently, we have built-in support for GitHub Issues, GitLab Issues, and Jira. We are continuously working on adding support for more trackers, and the open-source nature allows the community to contribute new integrations as well.
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingFive">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFive" aria-expanded="false" aria-controls="collapseFive">
+                            How is my issue tracker data and LLM API keys handled?
+                        </button>
+                    </h2>
+                    <div id="collapseFive" class="accordion-collapse collapse" aria-labelledby="headingFive" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            We securely store the access credentials (like API keys or tokens) you provide for your issue trackers and Large Language Models (LLMs). This data is used to connect to your trackers, retrieve issue information (titles, descriptions, metadata) for processing, and to utilize LLMs for features like duplicate detection and summarization. Issue content is processed to create vector embeddings for similarity search. All credentials and sensitive data are protected with strong security measures. You can manage or revoke these credentials at any time via your account settings. For more details, please see our <a href="/privacy">Privacy Policy</a>.
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingSix">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSix" aria-expanded="false" aria-controls="collapseSix">
+                            Does SpaceBridge train AI models on my specific issue data?
+                        </button>
+                    </h2>
+                    <div id="collapseSix" class="accordion-collapse collapse" aria-labelledby="headingSix" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            No, we do not use your specific, identifiable issue content or project details to train general AI models. We may use anonymized and aggregated data derived from the usage of SpaceBridge to improve our specialized machine learning models for features like duplicate detection and to enhance our understanding of common issue patterns. This helps us make SpaceBridge better for everyone. Our use of data for improvement is detailed in our <a href="/privacy">Privacy Policy</a>.
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingSeven">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSeven" aria-expanded="false" aria-controls="collapseSeven">
+                            What happens to my data if I stop using SpaceBridge or delete my account?
+                        </button>
+                    </h2>
+                    <div id="collapseSeven" class="accordion-collapse collapse" aria-labelledby="headingSeven" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            If you revoke access to an issue tracker or LLM service, we will stop collecting new data from that service and cease using the associated credentials. Processed data (like embeddings) from before the revocation will remain unless you request its deletion. If you choose to delete your SpaceBridge account, we will delete or anonymize your personal information and associated project data in accordance with our data retention policies and your requests. You can request data deletion by contacting us as outlined in our <a href="/privacy">Privacy Policy</a>.
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingEight">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEight" aria-expanded="false" aria-controls="collapseEight">
+                            What are the costs associated with using SpaceBridge?
+                        </button>
+                    </h2>
+                    <div id="collapseEight" class="accordion-collapse collapse" aria-labelledby="headingEight" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            The SpaceBridge MCP server software itself is open-source (MIT License) and completely free for you to download, self-host, and modify. We also offer a hosted REST API service. Currently, we provide a generous free tier for this hosted service, ideal for individual developers and small teams. We may introduce paid tiers in the future for users or organizations requiring higher usage limits, advanced features, or dedicated support.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <section class="text-center py-5">
         <div class="container">
             <h2 class="fw-bold mb-4">Ready to Supercharge your AI Workflow?</h2>
@@ -298,8 +403,11 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \
                 </div>
             </div>
             <hr>
-            <div class="text-center">
-                <p class="copyright">&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All rights reserved.</p>
+            <div class="footer-bottom-line">
+                <span class="copyright-text">&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All rights reserved.</span>
+                <a href="https://www.linkedin.com/company/spacecode-ai/" target="_blank" rel="noopener noreferrer" title="LinkedIn" class="linkedin-icon-footer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.761 0 5-2.239 5-5v-14c0-2.761-2.239-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+                </a>
             </div>
         </div>
     </footer>
