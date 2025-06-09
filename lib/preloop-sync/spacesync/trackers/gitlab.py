@@ -209,11 +209,12 @@ class GitLabTracker(BaseTracker):
 
 
         return transformed_data
+
     def get_issues(
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get issues for a project from GitLab.
+        Get issues for a project from GitLab, including their comments (notes).
 
         Args:
             organization_id: GitLab group ID (not used in API call but kept for interface consistency).
@@ -221,49 +222,96 @@ class GitLabTracker(BaseTracker):
             since: Only return issues updated since this datetime.
 
         Returns:
-            List of issue data dictionaries.
+            List of issue data dictionaries, each including a 'comments' list.
         """
-        # Get the project object
         project = self._make_request(self.gl.projects.get, project_id)
-
-        # Prepare query parameters
-        kwargs = {"all": True}
-        if since:
-            kwargs["updated_after"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        # Get issues for the project
-        issues = self._make_request(project.issues.list, **kwargs)
-
-        # Ensure project object has path_with_namespace for constructing the key
         project_slug = project.path_with_namespace
         if not project_slug:
              logger.error(f"Could not determine path_with_namespace (slug) for GitLab project ID {project_id}")
-             # Key is mandatory, so we cannot proceed without the slug.
              raise TrackerResponseError(f"Missing path_with_namespace for GitLab project ID {project_id}")
 
-        issue_list = []
-        for issue in issues:
-            external_id = str(issue.iid)
+        kwargs = {"all": True, "include_metadata": True}
+        if since:
+            kwargs["updated_after"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        gitlab_issues = self._make_request(project.issues.list, **kwargs)
+
+        issue_list_with_comments = []
+        for issue_obj in gitlab_issues:
+            try:
+                notes = self._make_request(issue_obj.notes.list, all=True, sort='asc', order_by='created_at')
+            except Exception as e:
+                logger.error(f"Failed to fetch notes for GitLab issue {issue_obj.iid} in project {project_id}: {e}")
+                notes = []
+
+            comments_data = []
+            for note in notes:
+                if note.system:
+                    continue
+
+                author_id_str = None
+                if hasattr(note, 'author') and isinstance(note.author, dict):
+                    author_id_str = str(note.author.get('id')) if note.author.get('id') else None
+
+                try:
+                    created_at_dt = datetime.strptime(note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+                    updated_at_dt = datetime.strptime(note.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+                except (ValueError, TypeError) as ve: # Added TypeError for None values
+                    logger.warning(f"Could not parse datetime for note {note.id} on issue {issue_obj.iid}: {ve}. Using fallback.")
+                    created_at_dt = datetime.now() # Fallback, consider if note.created_at can be None
+                    if isinstance(note.created_at, str):
+                        try:
+                            created_at_dt = datetime.strptime(note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+                        except ValueError:
+                            pass # Keep datetime.now() if parsing fails
+                    updated_at_dt = created_at_dt
+
+                comments_data.append(
+                    {
+                        "id": str(note.id),
+                        "body": note.body or "",
+                        "author_id": author_id_str,
+                        "created_at": created_at_dt,
+                        "updated_at": updated_at_dt,
+                        "url": f"{issue_obj.web_url}#note_{note.id}"
+                    }
+                )
+
+            external_id = str(issue_obj.iid)
             key = f"{project_slug}#{external_id}"
-            issue_list.append(
+
+            try:
+                issue_created_at = datetime.strptime(issue_obj.created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+                issue_updated_at = datetime.strptime(issue_obj.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+            except (ValueError, TypeError) as ve: # Added TypeError for None values
+                 logger.warning(f"Could not parse datetime for issue {issue_obj.iid}: {ve}. Using fallback.")
+                 issue_created_at = datetime.now()
+                 if isinstance(issue_obj.created_at, str):
+                     try:
+                        issue_created_at = datetime.strptime(issue_obj.created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+                     except ValueError:
+                        pass # Keep datetime.now() if parsing fails
+                 issue_updated_at = issue_created_at
+
+            issue_list_with_comments.append(
                 {
-                    "external_id": external_id,  # Use iid which is project-specific ID
-                    "key": key, # Construct key as project_slug#iid
-                    "title": issue.title,
-                    "description": issue.description or "",
-                    "state": issue.state,
-                    "created_at": datetime.strptime(
-                        issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    ),
-                    "updated_at": datetime.strptime(
-                        issue.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    ),
-                    "labels": issue.labels if hasattr(issue, "labels") else [],
-                    "assignees": [assignee["username"] for assignee in issue.assignees]
-                    if hasattr(issue, "assignees")
+                    "external_id": external_id,
+                    "key": key,
+                    "title": issue_obj.title,
+                    "description": issue_obj.description or "",
+                    "state": issue_obj.state,
+                    "created_at": issue_created_at,
+                    "updated_at": issue_updated_at,
+                    "labels": issue_obj.labels if hasattr(issue_obj, "labels") else [],
+                    "assignees": [assignee["username"] for assignee in issue_obj.assignees if isinstance(assignee, dict) and "username" in assignee]
+                    if hasattr(issue_obj, "assignees")
                     else [],
-                    "url": issue.web_url,
+                    "url": issue_obj.web_url,
+                    "comments": comments_data,
                 }
             )
+        return issue_list_with_comments
 
-        return issue_list
+
+if __name__ == "__main__":
+    pass

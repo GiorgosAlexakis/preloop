@@ -15,6 +15,7 @@ from spacemodels.crud import (
     crud_organization,
     crud_project,
     crud_tracker,
+    crud_comment,
 )
 from spacemodels.models import Issue, Organization, Project, Tracker
 
@@ -280,64 +281,88 @@ class TrackerClient:
         )
         logger.info(f"Found {len(issue_data_list)} issues in project {project.id} since {since}")
 
-        # Process each issue
-        issues = []
+        issues_processed = [] # Renamed from 'issues' to avoid conflict with model name
         embedding_updates = 0
 
         for issue_data in issue_data_list:
-            # Transform data for database
-            issue_create_data = self.client.transform_issue(issue_data, project.id)
+            xformed_issue_data = self.client.transform_issue(issue_data, project.id)
 
-            # Find existing issues for this project
-            existing_issues = crud_issue.get_for_project(
+            existing_issues_for_project = crud_issue.get_for_project(
                 db,
                 project_id=project.id,
                 skip=0,
-                limit=1000,  # Assume we won't have more than 1000 issues per project
+                limit=10000,
             )
 
-            # Find the matching issue by external_id
-            issue = next(
+            current_issue_model = next(
                 (
                     i
-                    for i in existing_issues
-                    if i.external_id == issue_create_data["external_id"]
+                    for i in existing_issues_for_project
+                    if i.external_id == xformed_issue_data.get("external_id")
                 ),
                 None,
             )
 
-            content_changed = False
+            issue_changed = False
 
-            if issue:
-                # Check if content has changed to determine if we need to update embeddings
+            if current_issue_model:
                 if (
-                    issue.title != issue_create_data["title"]
-                    or issue.description != issue_create_data["description"]
+                    current_issue_model.title != xformed_issue_data.get("title")
+                    or current_issue_model.description != xformed_issue_data.get("description")
                 ):
-                    content_changed = True
+                    issue_changed = True
 
-                # Update existing
-                issue = crud_issue.update(db, db_obj=issue, obj_in=issue_create_data)
-                logger.debug(f"Updated issue {issue.id} ({issue.title})")
+                current_issue_model = crud_issue.update(db, db_obj=current_issue_model, obj_in=xformed_issue_data)
+                logger.debug(f"Updated issue {current_issue_model.id} ({current_issue_model.title})")
             else:
-                # Create new - always need embedding
-                issue = crud_issue.create(db, obj_in=issue_create_data)
-                content_changed = True
-                logger.debug(f"Created issue {issue.id} ({issue.title})")
+                current_issue_model = crud_issue.create(db, obj_in=xformed_issue_data)
+                issue_changed = True
+                logger.debug(f"Created issue {current_issue_model.id} ({current_issue_model.title})")
 
-            issues.append(issue)
+            issues_processed.append(current_issue_model)
 
-            # Update embeddings if content changed or force_update is True
-            if content_changed or force_update:
+            comment_data = xformed_issue_data.pop("comments", [])
+
+            if len(comment_data):
+                logger.debug(f"Proce {len(comment_data)} comments for issue {current_issue_model.id}")
+
+            db_comments_for_issue = crud_comment.get_multi_by_issue(db, issue_id=current_issue_model.id, limit=10000)
+            db_comments_map_by_external_id = {
+                c.external_id: c for c in db_comments_for_issue if c.external_id
+            }
+
+            for single_comment_data in comment_data:
+                comment_changed = False
+                xformed_comment_data = self.client.transform_comment(single_comment_data, current_issue_model.id)
+                #Find if comment exists in db comparing commend_data id with db external_id
+                db_comment = db_comments_map_by_external_id.get(xformed_comment_data.get("external_id"))
+                if db_comment and db_comment.body != xformed_comment_data.get("body"):
+                    # Check if comment needs update
+                    db_comment = crud_comment.update(db, db_obj=db_comment, obj_in=xformed_comment_data)
+                    comment_changed = True
+                    logger.debug(f"Updated comment {db_comment.id} (external_id: {xformed_comment_data.get('external_id')})")
+                elif not db_comment:
+                    #Create comment
+                    db_comment = crud_comment.create(db, obj_in=xformed_comment_data)
+                    comment_changed = True
+                    logger.debug(f"Created comment {db_comment.id} (external_id: {xformed_comment_data.get('external_id')})")
+                # Generate comment embedding
+                if comment_changed or force_update:
+                    crud_issue_embedding.create_embeddings(
+                                    db=db,
+                                    issue_id=current_issue_model.id,
+                                    comment_id=db_comment.id,
+                                    force_update=force_update
+                                )
+
+            if issue_changed or force_update:
                 embedding_updates += 1
-                # Create or update embeddings
-                crud_issue_embedding.create_embeddings(db, issue_id=issue.id)
+                crud_issue_embedding.create_embeddings(db, issue_id=current_issue_model.id)
                 logger.info(
-                    f"Generated embeddings for issue {issue.id} - '{issue.title}'"
+                    f"Generated embeddings for issue {current_issue_model.id} - '{current_issue_model.title}'"
                 )
 
-        return issues, embedding_updates
-
+        return issues_processed, embedding_updates
 
 def scan_tracker(
     db: Session, tracker: Tracker, verbose: bool = False, force_update: bool = False
