@@ -7,19 +7,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from datetime import datetime  # Added import
+from datetime import datetime
 from spacebridge.schemas.issue import (
     IssueCreate as ApiIssueCreate,
     IssueResponse,
     IssueUpdate as ApiIssueUpdate,
-)  # Renamed to avoid conflict
+)
 from spacemodels.models.account import Account
 
 from spacemodels.crud import (
     CRUDIssue,
     CRUDOrganization,
     CRUDProject,
-    CRUDTracker,  # Added CRUDTracker import
+    CRUDTracker,
     crud_embedding_model,
     crud_issue_embedding,
 )
@@ -27,19 +27,19 @@ from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
-from spacemodels.models.tracker import Tracker  # Added Tracker model import
-from spacebridge.trackers.factory import TrackerFactory  # Import TrackerFactory
+from spacemodels.models.tracker import Tracker
+from spacebridge.trackers.factory import TrackerFactory
 from spacebridge.trackers.base import (
     IssueCreate,
     IssueUpdate,
-)  # Import base tracker schemas
+)
 from spacebridge.api.auth import get_current_active_user  # Import user dependency
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
-crud_tracker = CRUDTracker(Tracker)  # Added CRUDTracker instantiation
+crud_tracker = CRUDTracker(Tracker)
 
 
 # Define the filter class for issue searching
@@ -289,7 +289,7 @@ async def search_issues(
         tracker_ids = [t.id for t in user_trackers]
 
         if not tracker_ids:
-            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+            return {"items": [], "total": 0, "limit": limit, "offset": 0}
 
         # Get Issues linked to the user's trackers
         issues = db.query(Issue).filter(Issue.tracker_id.in_(tracker_ids))
@@ -498,6 +498,7 @@ async def search_issues(
                     assignee=assignee,  # Pass assignee filter
                     last_updated_before=last_updated_before,  # Pass date filter
                     last_updated_after=last_updated_after,  # Pass date filter
+                    embedding_type="issue",
                 )
 
                 # Post-fetch filtering is removed as it's now handled by the CRUD layer.
@@ -519,12 +520,6 @@ async def search_issues(
                         )
                         if issue_org:
                             organization_name = issue_org.name
-                    created_at_str = (
-                        issue.created_at.isoformat() if issue.created_at else None
-                    )
-                    updated_at_str = (
-                        issue.updated_at.isoformat() if issue.updated_at else None
-                    )
                     metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
                     external_url = metadata_dict.get("url") or issue.external_url
                     # Determine response ID based on project slug
@@ -561,9 +556,9 @@ async def search_issues(
                             project=project_name,
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
-                            created_at=created_at_str,
-                            updated_at=updated_at_str,
-                            metadata=metadata_dict,
+                            created_at=issue.created_at,
+                            updated_at=issue.updated_at,
+                            meta_data=metadata_dict,
                             labels=metadata_dict.get("labels", [])
                             if isinstance(metadata_dict.get("labels"), list)
                             else [],
@@ -658,12 +653,6 @@ async def search_issues(
                         )
                         if issue_org:
                             organization_name = issue_org.name
-                    created_at_str = (
-                        issue.created_at.isoformat() if issue.created_at else None
-                    )
-                    updated_at_str = (
-                        issue.updated_at.isoformat() if issue.updated_at else None
-                    )
                     metadata_dict = dict(issue.meta_data) if issue.meta_data else {}
                     external_url = metadata_dict.get("url") or issue.external_url
                     # Determine response ID based on project slug
@@ -702,9 +691,9 @@ async def search_issues(
                             project=project_name,
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
-                            created_at=created_at_str,
-                            updated_at=updated_at_str,
-                            metadata=metadata_dict,
+                            created_at=issue.created_at,
+                            updated_at=issue.updated_at,
+                            meta_data=metadata_dict,
                             labels=metadata_dict.get("labels", [])
                             if isinstance(metadata_dict.get("labels"), list)
                             else [],
@@ -952,7 +941,7 @@ async def create_issue(
             assignee=issue.assignee,
             labels=issue.labels,
             # Map API metadata to custom_fields if needed by the tracker base model
-            custom_fields=issue.metadata or None,
+            custom_fields=issue.meta_data or None,
         )
 
         # Create the issue - Pass the project identifier expected by the tracker client
@@ -1045,9 +1034,9 @@ async def create_issue(
             assignee=db_issue.meta_data.get("assignee"),
             labels=db_issue.meta_data.get("labels", []),
             url=response_url,  # Use the resolved URL
-            created_at=db_issue.created_at.isoformat() if db_issue.created_at else None,
-            updated_at=db_issue.updated_at.isoformat() if db_issue.updated_at else None,
-            metadata=db_issue.meta_data or {},  # Ensure dict
+            created_at=db_issue.created_at,
+            updated_at=db_issue.updated_at,
+            meta_data=db_issue.meta_data or {},  # Ensure dict
         )
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -1150,13 +1139,13 @@ def get_issue(
             organization=organization.name,
             project=project.name,
             title=issue.title,
-            description=issue.description or "",
-            status=issue.status or "",
-            priority=issue.priority or "",
+            description=issue.description,
+            status=issue.status,
+            priority=issue.priority,
             url=external_url,
-            created_at=issue.created_at.isoformat() if issue.created_at else None,
-            updated_at=issue.updated_at.isoformat() if issue.updated_at else None,
-            metadata=meta_data,
+            created_at=issue.created_at,
+            updated_at=issue.updated_at,
+            meta_data=meta_data,
             labels=labels_list,
             assignee=assignee,
         )
@@ -1454,13 +1443,13 @@ async def update_issue(
             organization=org_name,
             project=project_name,
             title=issue.title,
-            description=issue.description or "",
-            status=issue.status or "",
-            priority=issue.priority or "",
+            description=issue.description,
+            status=issue.status,
+            priority=issue.priority,
             url=external_url,
-            created_at=issue.created_at.isoformat() if issue.created_at else None,
-            updated_at=issue.updated_at.isoformat() if issue.updated_at else None,
-            metadata=meta_data,
+            created_at=issue.created_at,
+            updated_at=issue.updated_at,
+            meta_data=meta_data,
             labels=labels_list,
             assignee=assignee,
         )
@@ -1475,11 +1464,3 @@ async def update_issue(
         raise HTTPException(
             status_code=500, detail="Internal server error during issue update."
         )
-
-
-# Note: Ensure necessary imports are present at the top of the file.
-# Imports needed: logging, Optional, List, Dict, Any, APIRouter, Depends,
-# HTTPException, Query, Body, Session, joinedload, SQLAlchemyError, IssueResponse,
-# ApiIssueUpdate, Account, CRUD*, get_db, Issue, Organization, Project, Tracker,
-# TrackerFactory, IssueUpdate (base), get_current_active_user
-# Also ensure `get_tracker_client` is defined or imported correctly.

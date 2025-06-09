@@ -1267,6 +1267,104 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/comments/search:
+    get:
+      tags:
+      - Comments
+      summary: Search Comments
+      description: 'Search for comments using full-text or similarity search.
+
+        Requires authentication and checks user access to related issues/projects.'
+      operationId: search_comments_api_v1_comments_search_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Search query text for comment body or vector search
+          title: Query
+        description: Search query text for comment body or vector search
+      - name: search_type
+        in: query
+        required: false
+        schema:
+          type: string
+          description: Type of search to perform ('full_text' or 'similarity')
+          enum:
+          - full_text
+          - similarity
+          default: full_text
+          title: Search Type
+        description: Type of search to perform ('full_text' or 'similarity')
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of comments to return
+          default: 10
+          title: Limit
+        description: Maximum number of comments to return
+      - name: issue_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by a specific issue ID (UUID)
+          title: Issue Id
+        description: Filter comments by a specific issue ID (UUID)
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by parent issue's project ID (UUID)
+          title: Project Id
+        description: Filter comments by parent issue's project ID (UUID)
+      - name: organization_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by parent issue's organization ID (UUID)
+          title: Organization Id
+        description: Filter comments by parent issue's organization ID (UUID)
+      - name: author_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by author ID (UUID)
+          title: Author Id
+        description: Filter comments by author ID (UUID)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentSearchResults'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/trackers/debug:
     post:
       tags:
@@ -1460,6 +1558,136 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/search:
+    get:
+      tags:
+      - Search
+      summary: Perform Similarity Search
+      description: Performs a similarity search across issues and/or comments based
+        on a query text and an embedding model.
+      operationId: search_all_api_v1_search_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: true
+        schema:
+          type: string
+          description: The text query to search for.
+          title: Query
+        description: The text query to search for.
+      - name: embedding_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: 'Type of items to search: ''issue'', ''comment'', or null for
+            both.'
+          examples:
+          - issue
+          - comment
+          title: Embedding Type
+        description: 'Type of items to search: ''issue'', ''comment'', or null for
+          both.'
+      - name: search_type
+        in: query
+        required: false
+        schema:
+          type: string
+          description: Type of search to perform ('full_text' or 'similarity')
+          enum:
+          - full_text
+          - similarity
+          default: full_text
+          title: Search Type
+        description: Type of search to perform ('full_text' or 'similarity')
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of comments to return
+          default: 10
+          title: Limit
+        description: Maximum number of comments to return
+      - name: issue_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by a specific issue ID (UUID)
+          title: Issue Id
+        description: Filter comments by a specific issue ID (UUID)
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter search results by project ID (UUID).
+          title: Project Id
+        description: Filter search results by project ID (UUID).
+      - name: project
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter search results by project name.
+          title: Project
+        description: Filter search results by project name.
+      - name: organization_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter search results by organization ID (UUID).
+          title: Organization Id
+        description: Filter search results by organization ID (UUID).
+      - name: organization
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter search results by organization name.
+          title: Organization
+        description: Filter search results by organization name.
+      - name: author_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter comments by author ID (UUID)
+          title: Author Id
+        description: Filter comments by author ID (UUID)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/version:
     get:
       tags:
@@ -1872,12 +2100,12 @@ components:
           type: string
           title: Body
           description: Comment text
-        metadata:
+        meta_data:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
-          title: Metadata
+          title: Meta Data
           description: Additional comment metadata
       type: object
       required:
@@ -1914,12 +2142,12 @@ components:
           type: string
           title: Body
           description: Comment text
-        metadata:
+        meta_data:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
-          title: Metadata
+          title: Meta Data
           description: Additional comment metadata
         id:
           type: string
@@ -1930,7 +2158,9 @@ components:
           title: Issue Id
           description: Issue ID this comment belongs to
         author:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Author
           description: Comment author
         created_at:
@@ -1943,15 +2173,43 @@ components:
           - type: 'null'
           title: Updated At
           description: Last update timestamp
+        score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Score
+          description: Similarity score for search results (if applicable)
       type: object
       required:
       - body
       - id
       - issue_id
-      - author
       - created_at
       title: CommentResponse
       description: Response model for comment data.
+    CommentSearchResults:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CommentResponse'
+          type: array
+          title: Items
+          description: Search result items
+        total:
+          type: integer
+          title: Total
+          description: Total number of matching comments
+        query:
+          type: string
+          title: Query
+          description: Search query used
+      type: object
+      required:
+      - items
+      - total
+      - query
+      title: CommentSearchResults
+      description: Response model for comment search results.
     EmailVerificationRequest:
       properties:
         token:
@@ -2009,12 +2267,12 @@ components:
           - type: 'null'
           title: Labels
           description: Issue labels
-        metadata:
+        meta_data:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
-          title: Metadata
+          title: Meta Data
           description: Additional issue metadata
         organization_id:
           anyOf:
@@ -2095,12 +2353,12 @@ components:
           - type: 'null'
           title: Labels
           description: Issue labels
-        metadata:
+        meta_data:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
-          title: Metadata
+          title: Meta Data
           description: Additional issue metadata
         id:
           type: string
@@ -2193,12 +2451,12 @@ components:
           - type: 'null'
           title: Labels
           description: New issue labels
-        metadata:
+        meta_data:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
-          title: Metadata
+          title: Meta Data
           description: Additional issue metadata
       type: object
       title: IssueUpdate
@@ -2538,6 +2796,42 @@ components:
       - refresh_token
       title: RefreshRequest
       description: Model for token refresh requests.
+    SearchResponse:
+      properties:
+        results:
+          items:
+            $ref: '#/components/schemas/SearchResultItem'
+          type: array
+          title: Results
+      type: object
+      required:
+      - results
+      title: SearchResponse
+    SearchResultItem:
+      properties:
+        item_type:
+          type: string
+          title: Item Type
+          description: 'Type of the search result item: ''issue'' or ''comment''.'
+          examples:
+          - issue
+          - comment
+        item:
+          anyOf:
+          - $ref: '#/components/schemas/IssueResponse'
+          - $ref: '#/components/schemas/CommentResponse'
+          title: Item
+          description: The actual issue or comment object.
+        similarity:
+          type: number
+          title: Similarity
+          description: Similarity score of the item to the query.
+      type: object
+      required:
+      - item_type
+      - item
+      - similarity
+      title: SearchResultItem
     TestConnectionRequest:
       properties:
         organization:

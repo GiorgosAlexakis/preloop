@@ -86,12 +86,8 @@ def create_project(
         "organization_id": db_project.organization_id,
         "settings": db_project.settings,
         "tracker_configurations": db_project.tracker_settings,
-        "created_at": db_project.created_at.isoformat()
-        if db_project.created_at
-        else None,
-        "updated_at": db_project.updated_at.isoformat()
-        if db_project.updated_at
-        else None,
+        "created_at": db_project.created_at,
+        "updated_at": db_project.updated_at,
     }
 
 
@@ -154,12 +150,8 @@ def list_projects(
                 "organization_id": project.organization_id,
                 "settings": project.settings,
                 "tracker_configurations": project.tracker_settings,
-                "created_at": project.created_at.isoformat()
-                if project.created_at
-                else None,
-                "updated_at": project.updated_at.isoformat()
-                if project.updated_at
-                else None,
+                "created_at": project.created_at,
+                "updated_at": project.updated_at,
             }
         )
 
@@ -204,12 +196,8 @@ def list_organization_projects(
             "description": project.description,
             "is_active": project.is_active,
             "organization_id": project.organization_id,
-            "created_at": project.created_at.isoformat()
-            if project.created_at
-            else None,
-            "updated_at": project.updated_at.isoformat()
-            if project.updated_at
-            else None,
+            "created_at": project.created_at,
+            "updated_at": project.updated_at,
             "settings": project.settings or {},
             "tracker_settings": project.tracker_settings or {},
             "meta_data": project.meta_data or {},
@@ -249,8 +237,8 @@ def get_project(
         "organization_id": project.organization_id,
         "settings": project.settings,
         "tracker_configurations": project.tracker_settings,
-        "created_at": project.created_at.isoformat() if project.created_at else None,
-        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        "created_at": project.created_at,
+        "updated_at": project.updated_at,
     }
 
 
@@ -290,8 +278,8 @@ def get_project_by_identifier(
         "organization_id": project.organization_id,
         "settings": project.settings,
         "tracker_configurations": project.tracker_settings,
-        "created_at": project.created_at.isoformat() if project.created_at else None,
-        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        "created_at": project.created_at,
+        "updated_at": project.updated_at,
     }
 
 
@@ -335,12 +323,8 @@ def update_project(
         "organization_id": updated_project.organization_id,
         "settings": updated_project.settings,
         "tracker_configurations": updated_project.tracker_settings,
-        "created_at": updated_project.created_at.isoformat()
-        if updated_project.created_at
-        else None,
-        "updated_at": updated_project.updated_at.isoformat()
-        if updated_project.updated_at
-        else None,
+        "created_at": updated_project.created_at,
+        "updated_at": updated_project.updated_at,
     }
 
 

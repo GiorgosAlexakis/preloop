@@ -10,6 +10,7 @@ __all__ = [
     "issues",
     "organizations",
     "projects",
-    "trackers",  # Added missing trackers
-    "version",  # Added new version endpoint
+    "search",  # Added new search endpoint
+    "trackers",
+    "version",
 ]

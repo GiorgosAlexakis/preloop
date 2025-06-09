@@ -99,8 +99,8 @@ def list_organizations(
             "description": org.description,
             "is_active": org.is_active,
             "tracker_id": org.tracker_id,
-            "created_at": org.created_at.isoformat() if org.created_at else None,
-            "updated_at": org.updated_at.isoformat() if org.updated_at else None,
+            "created_at": org.created_at,
+            "updated_at": org.updated_at,
             "settings": org.settings or {},
             "meta_data": org.meta_data or {},
         }
