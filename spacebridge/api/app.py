@@ -428,6 +428,11 @@ def create_app() -> FastAPI:
         # Placeholder - Requires auth
         return templates.TemplateResponse("dashboard.html", {"request": request})
 
+    @app.get("/explore", response_class=HTMLResponse, tags=["Pages"])
+    async def explore_page(request: Request):
+        # Placeholder - Requires auth
+        return templates.TemplateResponse("explore.html", {"request": request})
+
     @app.get("/trackers", response_class=HTMLResponse, tags=["Pages"])
     async def trackers_page(request: Request):
         # Placeholder - Requires auth
