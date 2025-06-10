@@ -13,6 +13,14 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  nats:
+    image: nats:alpine
+    restart: unless-stopped
+    ports:
+      - "4222:4222" # Client port
+      - "8222:8222" # Monitoring port
+    command: ["-js"]
+
   spacebridge:
     build:
       context: .
@@ -21,8 +29,10 @@ services:
     restart: unless-stopped
     depends_on:
       - postgres
+      - nats
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/spacebridge
+      NATS_URL: nats://nats:4222
       HOST: 0.0.0.0
       PORT: 8000
       DEBUG: 'true'
@@ -36,6 +46,54 @@ services:
     volumes:
       - .:/app
     command: ./start.sh
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: registry.spacecode.ai/spacecode/spacebridge:latest
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - nats
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/spacebridge
+      NATS_URL: nats://nats:4222
+      HOST: 0.0.0.0
+      PORT: 8000
+      DEBUG: 'true'
+      JWT_SECRET: development_secret_key_do_not_use_in_production
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 60
+      LOG_LEVEL: DEBUG
+      INIT_TEST_DATA: 'true'
+    volumes:
+      - .:/app
+    command: spacesync scheduler
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: registry.spacecode.ai/spacecode/spacebridge:latest
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - nats
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/spacebridge
+      NATS_URL: nats://nats:4222
+      HOST: 0.0.0.0
+      PORT: 8000
+      DEBUG: 'true'
+      JWT_SECRET: development_secret_key_do_not_use_in_production
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 60
+      LOG_LEVEL: DEBUG
+      INIT_TEST_DATA: 'true'
+    volumes:
+      - .:/app
+    command: python -m spacesync.worker
 
 volumes:
   postgres-data:

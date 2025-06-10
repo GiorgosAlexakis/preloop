@@ -11,7 +11,7 @@ image:
 
 spacelit:
   repository: registry.spacecode.ai/spacecode/spacelit
-  tag: "latest"
+  tag: "issue-compliance"
   pullPolicy: Always
 
 # Image pull secrets
@@ -169,12 +169,13 @@ profiling:
       # Size of the PVC
       size: 1Gi
 
-# Datadog configuration
-datadog:
-  tracing:
-    enabled: false
-    # Set to true if you are running the Datadog agent as a DaemonSet
-    daemonSet: true
-    # The host and port of the Datadog agent
-    host: "datadog-agent.datadog.svc.cluster.local"
-    port: 8126
+# NATS configuration
+nats:
+  enabled: true
+  url: ""
+  config:
+    jetstream:
+      enabled: true
+  nats:
+    jetstream:
+      enabled: true

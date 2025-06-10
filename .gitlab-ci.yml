@@ -1,4 +1,4 @@
-image: alpine:3.15
+image: alpine:3.22
 
 variables:
   CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/spacebridge
@@ -45,6 +45,7 @@ pre-commit:
     - cp -r /app/SpaceLit/dist ./SpaceLit/dist
   script:
     - pre-commit install
+    - sleep 1
     - pre-commit run --all-files --show-diff
     - ruff check
 
@@ -80,6 +81,9 @@ staging:
   environment:
     name: staging
   script:
+    - helm repo add nats https://nats-io.github.io/k8s/helm/charts
+    - helm dependency update ./helm/spacebridge
+    - helm dependency build ./helm/spacebridge
     - helm upgrade --install spacebridge ./helm/spacebridge
       --namespace spacebridge-staging
       --set image.tag=${CI_COMMIT_SHA}
@@ -100,8 +104,7 @@ staging:
       --set environment.spacebridgeUrl=https://${STAGING_DOMAIN}
       --set sentry.enabled=true
       --set sentry.dsn=${SENTRY_DSN}
-      --set profiling.enabled=true
-      --set datadog.tracing.enabled=true
+      --set profiling.enabled=false
 
     - echo "Helm deployment finished."
   artifacts:
@@ -137,6 +140,9 @@ prod:
     - kubectl exec -n spacebridge spacebridge-db-1 -- rm "$POD_BACKUP_PATH"
     - if [ -n "$S3_BUCKET" ] && [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_DEFAULT_REGION" ]; then apk add --no-cache aws-cli; echo "Uploading backup to S3 bucket $S3_BUCKET..."; aws s3 cp "$LOCAL_COMPRESSED_FILENAME" "s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME"; echo "Backup successfully uploaded to s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME"; else echo "S3 credentials not fully configured (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION). Skipping S3 upload."; fi
     - echo "Starting Helm deployment..."
+    - helm repo add nats https://nats-io.github.io/k8s/helm/charts
+    - helm dependency update ./helm/spacebridge
+    - helm dependency build ./helm/spacebridge
     - helm upgrade --install spacebridge ./helm/spacebridge
       --namespace spacebridge
       --set image.tag=${CI_COMMIT_SHA}

@@ -1139,7 +1139,12 @@ def get_issue(
         # Find the issue by external_id
         issue_query = db.query(Issue).filter(
             Issue.tracker_id.in_(tracker_ids),
-            or_(Issue.external_id == issue_external_id, Issue.key == issue_external_id),
+            or_(
+                Issue.external_id == issue_external_id,
+                Issue.key == issue_external_id,
+                Issue.key == issue_id,
+                Issue.id == issue_id,
+            ),
         )
         # Get the project and organization
         if project_slug:
@@ -1290,7 +1295,11 @@ async def update_issue(
                             db.query(Issue)
                             .filter(
                                 Issue.project_id == project.id,
-                                Issue.external_id == external_id_from_key,
+                                or_(
+                                    Issue.external_id == external_id_from_key,
+                                    Issue.key == issue_id,
+                                    Issue.id == issue_id,
+                                ),
                                 Issue.tracker_id.in_(
                                     tracker_ids
                                 ),  # Redundant check, but safe

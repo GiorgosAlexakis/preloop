@@ -1,7 +1,14 @@
 """Issue schemas for request and response validation."""
 
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    model_validator,
+    field_validator,
+    ValidationInfo,
+    ConfigDict,
+)
 from datetime import datetime
 
 
@@ -110,14 +117,22 @@ class IssueResponse(IssueBase):
         None, description="Similarity score for search results (if applicable)"
     )
 
-    _format_created_at = field_validator("created_at", mode="before")(
-        format_datetime_optional_to_iso_string
-    )
-    _format_updated_at = field_validator("updated_at", mode="before")(
-        format_datetime_optional_to_iso_string
-    )
+    @field_validator("created_at", "updated_at", mode="before")
+    @classmethod
+    def format_datetime_fields_to_str(
+        cls, v: Any, info: ValidationInfo
+    ) -> Optional[str]:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v.isoformat()
+        if isinstance(v, str):
+            return v
+        raise TypeError(
+            f"Field '{info.field_name}' must be a datetime object or a string, got {type(v).__name__}"
+        )
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IssueSearchResults(BaseModel):

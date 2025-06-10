@@ -46,6 +46,7 @@ from spacebridge.api.endpoints import (
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
 from spacemodels.models.api_usage import ApiUsage
+from spacesync.services.event_bus import connect_nats, close_nats  # NATS integration
 
 logger = logging.getLogger(__name__)
 
@@ -242,12 +243,27 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         logger.error(f"Database setup failed: {e}", exc_info=True)
-        # Depending on the severity, you might want to exit or handle differently
-        # raise RuntimeError("Database setup failed") from e
+        raise RuntimeError("Database setup failed") from e
+
+    # Connect to NATS
+    logger.info("Connecting to NATS...")
+    try:
+        await connect_nats()
+        logger.info("NATS connection established.")
+    except Exception as e:
+        logger.error(f"NATS connection failed: {e}", exc_info=True)
+        raise RuntimeError("NATS connection failed") from e
 
     yield
 
     # Shutdown logic
+    logger.info("Shutting down NATS connection...")
+    try:
+        await close_nats()
+        logger.info("NATS connection closed.")
+    except Exception as e:
+        logger.error(f"Error closing NATS connection: {e}", exc_info=True)
+
     logger.info("Shutting down application...")
     # Restore the original jsonable_encoder
     import fastapi.encoders

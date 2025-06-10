@@ -24,6 +24,4 @@
 # CI files
 .gitlab-ci.yml
 # Temporary files
-*.tgz
-charts/
 tmp/

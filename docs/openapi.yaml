@@ -2568,7 +2568,8 @@ paths:
       tags:
       - Webhooks
       summary: Receive Webhook
-      description: 'Receive webhook events from external trackers (GitHub, GitLab).
+      description: 'Receive webhook events from external trackers (GitHub, GitLab,
+        Jira).
 
 
         Parses the payload to identify the organization and updates its
@@ -4418,6 +4419,7 @@ components:
         last_validation:
           anyOf:
           - type: string
+            format: date-time
           - type: 'null'
           title: Last Validation
           description: Timestamp of the last validation attempt
