@@ -9,7 +9,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -24,40 +23,51 @@ def upgrade() -> None:
     op.create_table(
         "flow",
         sa.Column(
-            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+            "id",
+            sa.String(36),
+            primary_key=True,
+            nullable=False,  # Changed from UUID
         ),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("trigger_event_source", sa.String(), nullable=False),
         sa.Column("trigger_event_type", sa.String(), nullable=False),
         sa.Column(
-            "trigger_config", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            "trigger_config",
+            sa.JSON(),
+            nullable=True,  # Changed from postgresql.JSONB
         ),
         sa.Column("prompt_template", sa.Text(), nullable=False),
         sa.Column(
-            "model_configuration_id", postgresql.UUID(as_uuid=True), nullable=True
+            "model_configuration_id",
+            sa.String(36),
+            nullable=True,  # Changed from UUID
         ),
         sa.Column(
             "openhands_agent_config",
-            postgresql.JSONB(astext_type=sa.Text()),
+            sa.JSON(),  # Changed from postgresql.JSONB
             nullable=False,
         ),
         sa.Column(
             "allowed_mcp_servers",
-            postgresql.JSONB(astext_type=sa.Text()),
+            sa.JSON(),  # Changed from postgresql.JSONB
             nullable=False,
             server_default="[]",
         ),
         sa.Column(
             "allowed_mcp_tools",
-            postgresql.JSONB(astext_type=sa.Text()),
+            sa.JSON(),  # Changed from postgresql.JSONB
             nullable=False,
             server_default="[]",
         ),
         sa.Column("is_preset", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("is_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("created_by_user_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column(
+            "created_by_user_id", sa.String(36), nullable=True
+        ),  # Changed from UUID
+        sa.Column(
+            "organization_id", sa.String(36), nullable=False
+        ),  # Changed from UUID
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

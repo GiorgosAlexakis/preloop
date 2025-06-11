@@ -240,7 +240,9 @@ def test_remove_flow(db_session: Session, test_organization: Organization) -> No
 def test_get_flow_not_found(db_session: Session) -> None:
     """Test retrieving a non-existent flow."""
     non_existent_flow_id = uuid4()
-    retrieved_flow = crud_flow.get(db=db_session, id=non_existent_flow_id)
+    retrieved_flow = crud_flow.get(
+        db=db_session, id=str(non_existent_flow_id)
+    )  # Changed to str
     assert retrieved_flow is None
 
 
@@ -257,5 +259,7 @@ def test_get_flow_not_found(db_session: Session) -> None:
 def test_remove_flow_not_found(db_session: Session) -> None:
     """Test removing a non-existent flow."""
     non_existent_flow_id = uuid4()
-    removed_flow = crud_flow.remove(db=db_session, id=non_existent_flow_id)
+    removed_flow = crud_flow.remove(
+        db=db_session, id=str(non_existent_flow_id)
+    )  # Changed to str
     assert removed_flow is None

@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID  # Added UUID import
+
+# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, DateTime
 
@@ -45,14 +46,14 @@ class Issue(Base):
     key: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
 
     # Foreign keys
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),  # Changed String(36) to UUID
+    project_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("project.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    tracker_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),  # Changed String(36) to UUID
+    tracker_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("tracker.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -115,22 +116,20 @@ class IssueEmbedding(Base):
     # Primary key is inherited from Base
 
     # Foreign keys
-    issue_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),  # Changed String(36) to UUID
+    issue_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("issue.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    comment_id: Mapped[
-        Optional[uuid.UUID]
-    ] = mapped_column(  # Changed str to Optional[uuid.UUID]
-        UUID(as_uuid=True),  # Changed String(36) to UUID
+    comment_id: Mapped[Optional[str]] = mapped_column(  # Reverted to Optional[str]
+        String(36),  # Reverted to String(36)
         ForeignKey("comment.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    embedding_model_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),  # Changed String(36) to UUID
+    embedding_model_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("embeddingmodel.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

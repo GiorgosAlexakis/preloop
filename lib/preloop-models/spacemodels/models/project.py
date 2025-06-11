@@ -1,13 +1,13 @@
 """Project model."""
 
 import datetime
-import uuid  # Added uuid import
 
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import DateTime, ForeignKey, String  # Added DateTime
-from sqlalchemy.dialects.postgresql import UUID  # Added UUID import
+
+# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -29,8 +29,8 @@ class Project(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
 
     # Foreign keys
-    organization_id: Mapped[uuid.UUID] = mapped_column(  # Changed str to uuid.UUID
-        UUID(as_uuid=True),  # Changed String(36) to UUID
+    organization_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("organization.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

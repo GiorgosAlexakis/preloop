@@ -2,11 +2,11 @@
 
 # Import at the end to avoid circular imports
 from datetime import datetime
-import uuid  # Added uuid import
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import DateTime, ForeignKey, String
-from sqlalchemy.dialects.postgresql import UUID  # Added UUID import
+
+# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -62,8 +62,8 @@ class Organization(Base):
     )
 
     # Foreign keys - the tracker determines the owner account
-    tracker_id: Mapped[uuid.UUID] = mapped_column(  # Changed str to uuid.UUID
-        UUID(as_uuid=True),  # Changed String(36) to UUID
+    tracker_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("tracker.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
