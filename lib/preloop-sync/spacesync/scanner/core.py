@@ -418,7 +418,7 @@ def _process_organization(
         - A boolean indicating if polling was skipped (True if skipped, False if polled).
     """
     org_stats = {"projects": 0, "issues": 0, "embeddings_updated": 0, "errors": 0}
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     should_poll = True
     skipped = False
 
@@ -682,7 +682,7 @@ def scan_tracker(
         if skipped:
             # Increment appropriate skipped counter (logic inside helper determines why)
             # We need to check the org object again as the helper doesn't return *why* it skipped
-            now = datetime.datetime.utcnow() # Re-get current time for accurate check
+            now = datetime.datetime.now(datetime.timezone.utc) # Re-get current time for accurate check
             if org.last_webhook_update and (now - org.last_webhook_update) < POLLING_THRESHOLD:
                  stats["organizations_skipped_webhook"] += 1
             elif org.last_polling_update and (now - org.last_polling_update) < POLLING_THRESHOLD:
