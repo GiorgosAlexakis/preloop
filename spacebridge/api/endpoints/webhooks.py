@@ -26,13 +26,15 @@ DEFAULT_GITHUB_SUBSCRIBED_EVENTS = [
     "deployment_status",
 ]
 DEFAULT_GITLAB_SUBSCRIBED_EVENTS = [
-    "push_events",
-    "issues_events",
-    "merge_requests_events",
-    "note_events",
-    "pipeline_events",
-    "job_events",
-    "releases_events",
+    "Push Hook",
+    "Tag Push Hook",
+    "Issue Hook",
+    "Note Hook",
+    "Merge Request Hook",
+    "Pipeline Hook",
+    "Job Hook",
+    "Deployment Hook",
+    "Release Hook",
 ]
 DEFAULT_JIRA_SUBSCRIBED_EVENTS = [
     "jira:issue_created",
@@ -66,7 +68,7 @@ async def receive_webhook(
 
     # --- 1. Read Raw Body ---
     raw_body = await request.body()
-    logger.debug(f"Raw webhook body length: {len(raw_body)}")
+    logger.info(f"Raw webhook body length: {len(raw_body)}")
 
     # --- 2. Resolve Tracker, Secret, and context for timestamp update ---
     resolved_tracker: Optional[Tracker] = None
