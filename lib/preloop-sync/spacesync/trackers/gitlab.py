@@ -395,7 +395,10 @@ class GitLabTracker(BaseTracker):
             "token": secret,
             "issues_events": True,
             "push_events": True,
-            "merge_requests_events": False,
+            "merge_requests_events": True,
+            "note_events": True,
+            "pipeline_events": True,
+            "job_events": True,
             "repository_update_events": True,
             "enable_ssl_verification": True,
         }
@@ -475,14 +478,14 @@ class GitLabTracker(BaseTracker):
             "token": secret,
             "issues_events": True,
             "push_events": True,
-            "merge_requests_events": False, # Keep consistent with group hook events for now
+            "merge_requests_events": True,
             "repository_update_events": True,
             "enable_ssl_verification": True,
             # Consider adding more project-specific events if needed:
-            # "note_events": True,
-            # "job_events": True,
-            # "pipeline_events": True,
-            # "wiki_page_events": True,
+            "note_events": True,
+            "job_events": True,
+            "pipeline_events": True,
+            "wiki_page_events": True,
         }
 
         try:
