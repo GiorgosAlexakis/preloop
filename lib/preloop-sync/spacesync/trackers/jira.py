@@ -326,6 +326,33 @@ class JiraTracker(BaseTracker):
 
         return transformed_data
 
+    def transform_issue(
+        self, issue_data: Dict[str, Any], project: "Project"
+    ) -> Dict[str, Any]:
+        """
+        Transforms Jira issue data into a standardized format.
+        """
+        if "key" not in issue_data:
+            issue_data["key"] = issue_data["key"]
+
+        transformed_data = super().transform_issue(issue_data, project)
+
+        # Jira-specific transformations can be added here if needed
+
+        return transformed_data
+
+    def transform_comment(
+        self, comment_data: Dict[str, Any], issue_db_id: str, author_db_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Transforms Jira comment data into a standardized format.
+        """
+        transformed_data = super().transform_comment(comment_data, issue_db_id, author_db_id)
+
+        # Jira-specific transformations can be added here if needed
+
+        return transformed_data
+
     def _handle_jira_error(self, e: JIRAError, context: str) -> None:
         """Helper to map JIRAError to tracker exceptions."""
         logger.error(f"{context} (JIRAError): {e.status_code} - {e.text}")

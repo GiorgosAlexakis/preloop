@@ -313,6 +313,33 @@ class GitLabTracker(BaseTracker):
             )
         return issue_list_with_comments
 
+    def transform_issue(
+        self, issue_data: Dict[str, Any], project: "Project"
+    ) -> Dict[str, Any]:
+        """
+        Transforms GitLab issue data into a standardized format.
+        """
+        if "key" not in issue_data:
+            issue_data["key"] = f"{project.slug}#{issue_data['iid']}"
+
+        transformed_data = super().transform_issue(issue_data, project)
+
+        # GitLab-specific transformations can be added here if needed
+
+        return transformed_data
+
+    def transform_comment(
+        self, comment_data: Dict[str, Any], issue_db_id: str, author_db_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Transforms GitLab comment data into a standardized format.
+        """
+        transformed_data = super().transform_comment(comment_data, issue_db_id, author_db_id)
+
+        # GitLab-specific transformations can be added here if needed
+
+        return transformed_data
+
     def register_webhook(self, **kwargs: Any) -> bool:
         """
         Register a webhook for the GitLab tracker, attempting group-level registration.

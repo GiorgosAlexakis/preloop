@@ -291,7 +291,7 @@ class TrackerClient:
         embedding_updates = 0
 
         for issue_data in issue_data_list:
-            xformed_issue_data = self.client.transform_issue(issue_data, project.id)
+            xformed_issue_data = self.client.transform_issue(issue_data, project)
 
             existing_issues_for_project = crud_issue.get_for_project(
                 db,

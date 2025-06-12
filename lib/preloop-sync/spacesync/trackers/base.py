@@ -139,7 +139,7 @@ class BaseTracker(ABC):
         }
 
     def transform_issue(
-        self, issue_data: Dict[str, Any], project_id: str
+        self, issue_data: Dict[str, Any], project: "Project"
     ) -> Dict[str, Any]:
         """
         Transform issue data to a format that can be stored in the database.
@@ -147,7 +147,7 @@ class BaseTracker(ABC):
 
         Args:
             issue_data: Issue data from the tracker.
-            project_id: Database ID of the project (UUID string).
+            project: The Project object from the database.
 
         Returns:
             Transformed issue data ready for database storage, including comments.
@@ -193,9 +193,9 @@ class BaseTracker(ABC):
             )
 
         transformed = {
-            "project_id": project_id,
+            "project_id": project.id,
             "external_id": issue_data.get("id", issue_data.get("external_id")),
-            "key": issue_data["key"],
+            "key": issue_data.get("key"),
             "title": issue_data["title"],
             "description": description,
             "status": status,

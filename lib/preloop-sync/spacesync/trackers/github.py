@@ -267,6 +267,33 @@ class GitHubTracker(BaseTracker):
             )
         return processed_issues
 
+    def transform_issue(
+        self, issue_data: Dict[str, Any], project: "Project"
+    ) -> Dict[str, Any]:
+        """
+        Transforms GitHub issue data into a standardized format.
+        """
+        if "key" not in issue_data:
+            issue_data["key"] = f"{project.slug}#{issue_data['number']}"
+
+        transformed_data = super().transform_issue(issue_data, project)
+
+        # GitHub-specific transformations can be added here if needed
+
+        return transformed_data
+
+    def transform_comment(
+        self, comment_data: Dict[str, Any], issue_db_id: str, author_db_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Transforms GitHub comment data into a standardized format.
+        """
+        transformed_data = super().transform_comment(comment_data, issue_db_id, author_db_id)
+
+        # GitHub-specific transformations can be added here if needed
+
+        return transformed_data
+
     def register_webhook(
         self, org_identifier: str, webhook_url: str, secret: str
     ) -> bool:
