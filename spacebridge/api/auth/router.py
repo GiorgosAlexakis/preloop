@@ -7,7 +7,15 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
@@ -35,7 +43,11 @@ from spacebridge.schemas.auth import (
     UserCreate,
     UserResponse,
 )
-from spacebridge.utils.email import send_password_reset_email, send_verification_email
+from spacebridge.utils.email import (
+    send_password_reset_email,
+    send_verification_email,
+    send_product_notification_email,
+)
 from spacebridge.utils.tokens import (
     TokenError,
     create_email_verification_token,
@@ -55,13 +67,14 @@ router = APIRouter()
     "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
 )
 async def register(
-    user_data: UserCreate, background_tasks: BackgroundTasks
+    user_data: UserCreate, background_tasks: BackgroundTasks, request: Request
 ) -> Dict[str, str]:
     """Register a new user.
 
     Args:
         user_data: User creation data.
         background_tasks: Background tasks for sending emails.
+        request: The incoming request object.
 
     Returns:
         The created user.
@@ -120,6 +133,29 @@ async def register(
             background_tasks.add_task(
                 send_verification_email, user_email=user_data.email, token=token
             )
+
+            # Send product notification email
+            try:
+                user_info_for_email = {
+                    "username": new_user.username,
+                    "email": new_user.email,
+                    "full_name": new_user.full_name,
+                    "is_active": new_user.is_active,
+                    "email_verified": new_user.email_verified,
+                    "id": str(new_user.id) if new_user.id else None,
+                    "created_at": new_user.created_at.isoformat()
+                    if new_user.created_at
+                    else None,
+                }
+                await send_product_notification_email(
+                    user_data=user_info_for_email,
+                    source_ip=request.client.host if request.client else "Unknown",
+                    tracker_data=None,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to send product notification email for user {new_user.email}: {str(e)}"
+                )
 
             return {
                 "username": new_user.username,

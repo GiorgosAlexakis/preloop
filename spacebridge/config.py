@@ -51,6 +51,9 @@ class Settings(BaseSettings):
         "development", description="Environment (development, production)"
     )
     log_level: str = Field("INFO", description="Log level")
+    product_team_email: str = Field(
+        "product@spacecode.ai", description="Product team email address"
+    )
 
     database: DatabaseSettings
     security: SecuritySettings
@@ -111,6 +114,7 @@ class Settings(BaseSettings):
             app_name=os.getenv("APP_NAME", "SpaceBridge"),
             environment=os.getenv("ENVIRONMENT", "development"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
+            product_team_email=os.getenv("PRODUCT_TEAM_EMAIL", "product@spacecode.ai"),
             database=database,
             security=security,
             server=server,

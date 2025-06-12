@@ -10,9 +10,9 @@ paths:
       - Auth
       summary: Register
       description: "Register a new user.\n\nArgs:\n    user_data: User creation data.\n\
-        \    background_tasks: Background tasks for sending emails.\n\nReturns:\n\
-        \    The created user.\n\nRaises:\n    HTTPException: If the username or email\
-        \ is already taken."
+        \    background_tasks: Background tasks for sending emails.\n    request:\
+        \ The incoming request object.\n\nReturns:\n    The created user.\n\nRaises:\n\
+        \    HTTPException: If the username or email is already taken."
       operationId: register_api_v1_auth_register_post
       requestBody:
         content:

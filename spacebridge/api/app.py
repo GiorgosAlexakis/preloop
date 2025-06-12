@@ -173,9 +173,12 @@ async def lifespan(app: FastAPI):
 
     # Shutdown logic
     logger.info("Shutting down application...")
-    # Keep the original encoder to restore on shutdown if necessary
-    original_jsonable_encoder = fastapi.encoders.jsonable_encoder
-    fastapi.encoders.jsonable_encoder = original_jsonable_encoder
+    # Restore the original jsonable_encoder
+    import fastapi.encoders
+
+    if hasattr(app.state, "original_jsonable_encoder"):
+        fastapi.encoders.jsonable_encoder = app.state.original_jsonable_encoder
+        logger.info("Restored original jsonable_encoder.")
     logger.info("Application shutdown complete.")
 
 
@@ -231,7 +234,7 @@ def create_app() -> FastAPI:
     # Patch FastAPI's jsonable_encoder
     import fastapi.encoders
 
-    original_jsonable_encoder = fastapi.encoders.jsonable_encoder
+    app.state.original_jsonable_encoder = fastapi.encoders.jsonable_encoder
     fastapi.encoders.jsonable_encoder = custom_jsonable_encoder
 
     # Configure CORS
