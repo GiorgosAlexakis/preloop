@@ -33,7 +33,7 @@ from spacebridge.trackers.base import (
     IssueCreate,
     IssueUpdate,
 )
-from spacebridge.api.auth import get_current_active_user  # Import user dependency
+from spacebridge.api.auth import get_current_active_user
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)

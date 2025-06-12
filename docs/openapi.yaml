@@ -1688,6 +1688,83 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/embeddings/projects/{project_name}/embeddings:
+    get:
+      tags:
+      - Embeddings
+      - projects
+      - embeddings
+      summary: Get all issue embeddings for a project
+      description: 'API endpoint to fetch raw embedding vectors for issues, with optional
+        filtering.
+
+
+        This endpoint is designed to provide data for frontend visualizations like
+        deck.gl.'
+      operationId: get_raw_embeddings_api_v1_embeddings_projects__project_name__embeddings_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Name
+      - name: embedding_model_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: The ID of the embedding model to use.
+          title: Embedding Model Id
+        description: The ID of the embedding model to use.
+      - name: organization_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter embeddings by organization name.
+          title: Organization Name
+        description: Filter embeddings by organization name.
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of records to skip for pagination.
+          default: 0
+          title: Skip
+        description: Number of records to skip for pagination.
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 2000
+          minimum: 1
+          description: Maximum number of records to return.
+          default: 1000
+          title: Limit
+        description: Maximum number of records to return.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingRawResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/version:
     get:
       tags:
@@ -2235,6 +2312,34 @@ components:
       - token
       title: EmailVerificationRequest
       description: Model for email verification requests.
+    EmbeddingRawDataItem:
+      properties:
+        issue_id:
+          type: string
+          title: Issue Id
+        embedding:
+          items:
+            type: number
+          type: array
+          title: Embedding
+      type: object
+      required:
+      - issue_id
+      - embedding
+      title: EmbeddingRawDataItem
+      description: Individual data item in the raw embedding response.
+    EmbeddingRawResponse:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/EmbeddingRawDataItem'
+          type: array
+          title: Data
+      type: object
+      required:
+      - data
+      title: EmbeddingRawResponse
+      description: Response model for the raw embeddings endpoint.
     HTTPValidationError:
       properties:
         detail:

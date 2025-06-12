@@ -13,8 +13,112 @@
         <div class="row">
             <div class="col main-content explore-content d-flex align-items-center justify-content-center">
                 <h2 class="text-muted">Explore: Issue Embedding Visualization (Coming Soon)</h2>
+                <div class="input-group mb-3">
+                    <select id="projectSelect" class="form-select">
+                        <option selected disabled>Loading projects...</option>
+                    </select>
+                    <button id="fetchEmbeddingsBtn" class="btn btn-primary">Fetch Embeddings</button>
+                </div>
+                <div id="results"></div>
             </div>
         </div>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const projectSelect = document.getElementById('projectSelect');
+            const resultsDiv = document.getElementById('results');
+            const apiKey = localStorage.getItem('accessToken');
+
+            if (!apiKey) {
+                projectSelect.innerHTML = '<option selected disabled>Please log in first via /login</option>';
+                resultsDiv.textContent = 'API key not found. Please log in first via the /login page.';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/v1/projects', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    }
+                });
+
+                if (response.ok) {
+                    const projects = await response.json();
+                    projectSelect.innerHTML = ''; // Clear loading/error message
+                    if (projects.length > 0) {
+                        projects.forEach(project => {
+                            const option = document.createElement('option');
+                            option.value = project.name; // Use project name as value
+                            option.textContent = project.name; // Display project name
+                            projectSelect.appendChild(option);
+                        });
+                        // Optionally select the first project or a default one
+                        if (projectSelect.options.length > 0) {
+                             projectSelect.value = 'SpaceBridge'; // Default to SpaceBridge if it exists
+                             if (!Array.from(projectSelect.options).some(opt => opt.value === 'SpaceBridge')) {
+                                projectSelect.selectedIndex = 0; // Or select the first one if SpaceBridge is not found
+                             }
+                        }
+                    } else {
+                        projectSelect.innerHTML = '<option selected disabled>No projects found.</option>';
+                    }
+                } else {
+                    const errorResult = await response.json();
+                    projectSelect.innerHTML = `<option selected disabled>Error loading projects: ${errorResult.detail || 'Unknown error'}</option>`;
+                    resultsDiv.textContent = `Error loading projects: ${errorResult.detail || 'Failed to fetch projects'}`;
+                }
+            } catch (error) {
+                console.error('Error fetching projects:', error);
+                projectSelect.innerHTML = '<option selected disabled>Error fetching projects.</option>';
+                resultsDiv.textContent = 'An error occurred while fetching projects.';
+            }
+        });
+
+        document.getElementById('fetchEmbeddingsBtn').addEventListener('click', async () => {
+            const selectedProjectName = document.getElementById('projectSelect').value;
+            const resultsDiv = document.getElementById('results');
+            const apiKey = localStorage.getItem('accessToken'); // Retrieve API key
+
+            if (!selectedProjectName || document.getElementById('projectSelect').selectedOptions[0].disabled) {
+                resultsDiv.textContent = 'Please select a project.';
+                return;
+            }
+            if (!apiKey) {
+                resultsDiv.textContent = 'API key not found. Please log in first via the /login page.';
+                return;
+            }
+
+            resultsDiv.textContent = 'Fetching embeddings...';
+
+            try {
+                const response = await fetch(`/api/v1/embeddings/projects/${selectedProjectName}/embeddings`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    const embeddings = result.data;
+                    if (embeddings && embeddings.length > 0) {
+                        const formattedJson = JSON.stringify(embeddings, null, 2);
+                        resultsDiv.textContent = `Found ${embeddings.length} embeddings for ${selectedProjectName}:\n${formattedJson}`;
+                    } else {
+                        resultsDiv.textContent = `No embeddings found for project ${selectedProjectName}.`;
+                    }
+                } else {
+                    resultsDiv.textContent = `Error: ${result.detail || 'Failed to fetch embeddings'}`;
+                }
+            } catch (error) {
+                console.error('Fetch error:', error);
+                resultsDiv.textContent = 'An error occurred while fetching embeddings.';
+            }
+        });
+    </script>
 </body>
 </html>

@@ -31,6 +31,7 @@ from spacebridge.api.endpoints import (
     search,  # Add search endpoint
     trackers,
     version,
+    embedding as embedding_router,  # Add this import
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -357,6 +358,9 @@ def create_app() -> FastAPI:
         prefix="/api/v1",
         tags=["Search"],
         dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        embedding_router.router, prefix="/api/v1/embeddings", tags=["Embeddings"]
     )
     app.include_router(
         version.router, prefix="/api/v1", tags=["Version"]

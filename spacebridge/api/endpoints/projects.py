@@ -132,12 +132,11 @@ def list_projects(
                 projects = (
                     db.query(Project)
                     .filter(Project.organization_id.in_(org_ids))
-                    .filter(Project.is_active is True)
+                    .filter(Project.is_active)
                     .offset(offset)
                     .limit(limit)
                     .all()
                 )
-
     # Convert datetime objects to ISO format strings
     result = []
     for project in projects:
@@ -150,8 +149,8 @@ def list_projects(
                 "organization_id": project.organization_id,
                 "settings": project.settings,
                 "tracker_configurations": project.tracker_settings,
-                "created_at": project.created_at,
-                "updated_at": project.updated_at,
+                "created_at": project.created_at.isoformat(),
+                "updated_at": project.updated_at.isoformat(),
             }
         )
 
@@ -196,8 +195,8 @@ def list_organization_projects(
             "description": project.description,
             "is_active": project.is_active,
             "organization_id": project.organization_id,
-            "created_at": project.created_at,
-            "updated_at": project.updated_at,
+            "created_at": project.created_at.isoformat(),
+            "updated_at": project.updated_at.isoformat(),
             "settings": project.settings or {},
             "tracker_settings": project.tracker_settings or {},
             "meta_data": project.meta_data or {},
@@ -237,8 +236,8 @@ def get_project(
         "organization_id": project.organization_id,
         "settings": project.settings,
         "tracker_configurations": project.tracker_settings,
-        "created_at": project.created_at,
-        "updated_at": project.updated_at,
+        "created_at": project.created_at.isoformat(),
+        "updated_at": project.updated_at.isoformat(),
     }
 
 
@@ -278,8 +277,8 @@ def get_project_by_identifier(
         "organization_id": project.organization_id,
         "settings": project.settings,
         "tracker_configurations": project.tracker_settings,
-        "created_at": project.created_at,
-        "updated_at": project.updated_at,
+        "created_at": project.created_at.isoformat(),
+        "updated_at": project.updated_at.isoformat(),
     }
 
 
@@ -323,8 +322,8 @@ def update_project(
         "organization_id": updated_project.organization_id,
         "settings": updated_project.settings,
         "tracker_configurations": updated_project.tracker_settings,
-        "created_at": updated_project.created_at,
-        "updated_at": updated_project.updated_at,
+        "created_at": updated_project.created_at.isoformat(),
+        "updated_at": updated_project.updated_at.isoformat(),
     }
 
 
