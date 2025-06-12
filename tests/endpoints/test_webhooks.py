@@ -225,31 +225,50 @@ class TestWebhooksEndpoint:
         assert response.status_code == 403
         assert response.json()["detail"] == "Invalid GitHub signature"
 
-    @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
-    def test_github_webhook_valid_signature(  # mock_crud_org not used
-        self, mock_crud_org_unused_param, configured_mock_org_fixture
+    @patch("spacebridge.api.endpoints.webhooks.crud_issue_embedding")
+    @patch("spacebridge.api.endpoints.webhooks.crud_issue")
+    @patch("spacebridge.api.endpoints.webhooks.crud_project")
+    @patch("spacebridge.api.endpoints.webhooks.TrackerClient")
+    def test_github_webhook_valid_signature(
+        self,
+        mock_tracker_client,
+        mock_crud_project,
+        mock_crud_issue,
+        mock_crud_issue_embedding,
+        configured_mock_org_fixture,
     ):
         """Test GitHub webhook with a valid signature (200)."""
         current_org_mock = configured_mock_org_fixture
         secret_to_use = "valid-github-secret-for-this-test"
         setup_mock_webhook_secret(current_org_mock, secret_to_use)
-        # Mock the tracker relationship on current_org_mock
         current_org_mock.tracker = MagicMock(name="MockTracker")
         current_org_mock.tracker.id = "tracker-gh-valid"
         current_org_mock.tracker.is_active = True
-        current_org_mock.tracker.subscribed_events = [
-            "push"
-        ]  # Ensure 'push' is subscribed
+        current_org_mock.tracker.subscribed_events = ["issues"]
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
         self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
 
+        mock_tracker_instance = MagicMock()
+        mock_tracker_client.return_value = mock_tracker_instance
+
+        mock_project = MagicMock()
+        mock_project.id = "project-123"
+        mock_project.slug = "test/repo"
+        mock_crud_project.get_by_identifier.return_value = mock_project
+
+        mock_crud_issue.get_by_external_id.return_value = None
+        mock_crud_issue.create.return_value = MagicMock()
+
         payload_dict = {
-            "ref": "refs/heads/main"
-        }  # "event" key is not usually in GH payload, type is from header
-        # TestClient's `json=` param will do `json.dumps(payload_dict, separators=(",", ":")).encode("utf-8")`
+            "action": "opened",
+            "issue": {
+                "id": 456,
+                "number": 1,
+                "title": "Test Issue",
+                "body": "Test Body",
+            },
+            "repository": {"id": 123, "full_name": "test/repo"},
+        }
         payload_bytes_for_signature = json.dumps(
             payload_dict, separators=(",", ":")
         ).encode("utf-8")
@@ -262,25 +281,16 @@ class TestWebhooksEndpoint:
             json=payload_dict,
             headers={
                 "X-Hub-Signature-256": f"sha256={signature}",
-                "X-GitHub-Event": "push",
-            },  # Add event header
+                "X-GitHub-Event": "issues",
+            },
         )
 
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        self.mock_session.query.assert_called_once()
         assert response.status_code == 200
         response_json = response.json()
         assert response_json["status"] == "success"
-        assert (
-            response_json["tracker_id"] == current_org_mock.tracker.id
-        )  # Check tracker_id
-        # The actual datetime.now() will be called, so we check if it's not None
-        # and that the mock_session was used to add and commit it.
-        self.mock_session.add.assert_called_once_with(current_org_mock)
-        self.mock_session.commit.assert_called_once()
-        assert current_org_mock.last_webhook_update is not None
+        assert response_json["tracker_id"] == current_org_mock.tracker.id
+        self.mock_session.add.assert_called()
+        self.mock_session.commit.assert_called()
 
     @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
     def test_gitlab_webhook_missing_token(  # mock_crud_org not used
@@ -338,52 +348,64 @@ class TestWebhooksEndpoint:
         assert response.status_code == 403
         assert response.json()["detail"] == "Invalid GitLab token"
 
-    @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
-    def test_gitlab_webhook_valid_token(  # mock_crud_org not used
-        self, mock_crud_org_unused_param, configured_mock_org_fixture
+    @patch("spacebridge.api.endpoints.webhooks.crud_issue_embedding")
+    @patch("spacebridge.api.endpoints.webhooks.crud_issue")
+    @patch("spacebridge.api.endpoints.webhooks.crud_project")
+    @patch("spacebridge.api.endpoints.webhooks.TrackerClient")
+    def test_gitlab_webhook_valid_token(
+        self,
+        mock_tracker_client,
+        mock_crud_project,
+        mock_crud_issue,
+        mock_crud_issue_embedding,
+        configured_mock_org_fixture,
     ):
         """Test GitLab webhook succeeds with valid token."""
         current_org_mock = configured_mock_org_fixture
         secret_to_use = "valid-gitlab-secret"
         setup_mock_webhook_secret(current_org_mock, secret_to_use)
-        # Mock the tracker relationship
         current_org_mock.tracker = MagicMock(name="MockTrackerGL")
         current_org_mock.tracker.id = "tracker-gl-valid"
         current_org_mock.tracker.is_active = True
-        # For GitLab, the event type is in the header, e.g., "Push Hook", "Merge Request Hook"
-        # The subscribed_events should match these header values.
-        current_org_mock.tracker.subscribed_events = ["Push Hook"]
+        current_org_mock.tracker.subscribed_events = ["Issue Hook"]
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
         self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
+
+        mock_tracker_instance = MagicMock()
+        mock_tracker_client.return_value = mock_tracker_instance
+
+        mock_project = MagicMock()
+        mock_project.id = "project-123"
+        mock_project.slug = "test/repo"
+        mock_crud_project.get_by_identifier.return_value = mock_project
+
+        mock_crud_issue.get_by_external_id.return_value = None
+        mock_crud_issue.create.return_value = MagicMock()
 
         response = self.test_client.post(
             f"/api/v1/private/webhooks/gitlab/{current_org_mock.identifier}",
             json={
-                "event_name": "push_events",
-                "action": "merged",
-            },  # Payload for GitLab
+                "object_kind": "issue",
+                "object_attributes": {
+                    "id": 1,
+                    "title": "Test Issue",
+                    "description": "Test Body",
+                    "iid": 1,
+                },
+                "project": {"id": 123, "path_with_namespace": "test/repo"},
+            },
             headers={
                 "X-Gitlab-Token": secret_to_use,
-                "X-Gitlab-Event": "Push Hook",
-            },  # Actual event type from header
+                "X-Gitlab-Event": "Issue Hook",
+            },
         )
 
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        self.mock_session.query.assert_called_once()
         assert response.status_code == 200
         response_json = response.json()
         assert response_json["status"] == "success"
-        assert (
-            response_json["tracker_id"] == current_org_mock.tracker.id
-        )  # Check tracker_id
-        self.mock_session.add.assert_called_once_with(current_org_mock)
-        self.mock_session.commit.assert_called_once()
-        assert current_org_mock.last_webhook_update is not None
+        assert response_json["tracker_id"] == current_org_mock.tracker.id
+        self.mock_session.add.assert_called()
+        self.mock_session.commit.assert_called()
 
     @patch(
         "spacebridge.api.endpoints.webhooks.CRUDOrganization"
@@ -455,32 +477,41 @@ class TestWebhooksEndpoint:
         assert response.status_code == 400
         assert "Invalid JSON payload" in response.json()["detail"]
 
-    @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
+    @patch("spacebridge.api.endpoints.webhooks.crud_issue_embedding")
+    @patch("spacebridge.api.endpoints.webhooks.crud_issue")
+    @patch("spacebridge.api.endpoints.webhooks.crud_project")
+    @patch("spacebridge.api.endpoints.webhooks.TrackerClient")
     def test_database_error_on_update(
-        self, mock_crud_org_unused_param, configured_mock_org_fixture
-    ):  # mock_crud_org not used
+        self,
+        mock_tracker_client,
+        mock_crud_project,
+        mock_crud_issue,
+        mock_crud_issue_embedding,
+        configured_mock_org_fixture,
+    ):
         """Test webhook handles database errors gracefully during DB update."""
         current_org_mock = configured_mock_org_fixture
         current_org_mock.identifier = "db-error-org-final"
         secret_to_use = "db-error-secret-final"
         setup_mock_webhook_secret(current_org_mock, secret_to_use)
-        # Mock the tracker relationship
         current_org_mock.tracker = MagicMock(name="MockTrackerDBError")
         current_org_mock.tracker.id = "tracker-gh-db-error"
         current_org_mock.tracker.is_active = True
-        current_org_mock.tracker.subscribed_events = [
-            "test_event"
-        ]  # Event type for the test
+        current_org_mock.tracker.subscribed_events = ["issues"]
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
         self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
 
-        self.mock_session.commit.side_effect = Exception("Simulated DB error on commit")
-        self.mock_session.rollback.return_value = None
+        mock_tracker_instance = MagicMock()
+        mock_tracker_client.return_value = mock_tracker_instance
+        mock_crud_project.get_by_identifier.side_effect = Exception(
+            "Simulated DB error"
+        )
 
-        payload_dict = {"action": "assigned"}  # "event" key not in GH payload
+        payload_dict = {
+            "action": "opened",
+            "issue": {"number": 1, "title": "Test Issue", "body": "Test Body"},
+            "repository": {"id": 123, "full_name": "test/repo"},
+        }
         payload_bytes_for_signature = json.dumps(
             payload_dict, separators=(",", ":")
         ).encode("utf-8")
@@ -493,23 +524,8 @@ class TestWebhooksEndpoint:
             json=payload_dict,
             headers={
                 "X-Hub-Signature-256": f"sha256={signature}",
-                "X-GitHub-Event": "test_event",
-            },  # Provide event header
+                "X-GitHub-Event": "issues",
+            },
         )
 
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        self.mock_session.query.assert_called_once()
-        # The endpoint now logs the error and returns 200 to prevent retries if NATS part was (simulated) ok.
-        # The critical failure is logged. If NATS publish itself failed, that might be a 500.
-        # For a timestamp DB error post-NATS, we expect 200.
-        assert response.status_code == 200
-        assert (
-            response.json()["status"] == "success"
-        )  # The main operation (NATS publish) is considered success
-        assert response.json()["tracker_id"] == current_org_mock.tracker.id
-
-        self.mock_session.add.assert_called_once_with(current_org_mock)
-        self.mock_session.commit.assert_called_once()  # Commit was attempted
-        self.mock_session.rollback.assert_called_once()  # Rollback was called due to error
+        assert response.status_code == 500

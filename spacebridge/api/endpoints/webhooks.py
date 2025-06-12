@@ -2,15 +2,23 @@ import hashlib
 import hmac
 import logging
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, joinedload
 
+from spacemodels.crud import (
+    crud_comment,
+    crud_issue,
+    crud_issue_embedding,
+    crud_project,
+)
 from spacemodels.crud.organization import CRUDOrganization
-from spacemodels.models.organization import Organization  # Added
 from spacemodels.crud.tracker import CRUDTracker
-from spacemodels.models.tracker import Tracker
 from spacemodels.db.session import get_db_session
+from spacemodels.models.organization import Organization  # Added
+from spacemodels.models.tracker import Tracker
+from spacesync.scanner.core import TrackerClient
 
 logger = logging.getLogger(__name__)
 
@@ -395,15 +403,181 @@ async def receive_webhook(
         f"Event '{actual_event_type}' for tracker ID {resolved_tracker.id} ({tracker_type}) IS SUBSCRIBED. Proceeding."
     )
 
-    # --- 6. Publish to NATS (Simulated) ---
-    logger.debug(
-        f"Webhook payload for subscribed event (tracker ID {resolved_tracker.id}): {parsed_payload}"
-    )
-    # TODO: Add more sophisticated payload validation/parsing based on tracker_type
-    # TODO: Publish the validated 'actual_event_type' and 'parsed_payload' to NATS here.
-    logger.info(
-        f"SIMULATING NATS PUBLISH: Event Type: {actual_event_type}, Tracker Type: {tracker_type}, TrackerID: {resolved_tracker.id}"
-    )
+    # --- 6. Process Payload and Update Database ---
+    try:
+        tracker_client = TrackerClient(resolved_tracker)
+        if actual_event_type in [
+            "Issue Hook",
+            "issues",
+            "jira:issue_created",
+            "jira:issue_updated",
+        ]:
+            project_data = parsed_payload.get("project") or parsed_payload.get(
+                "repository"
+            )
+            if not project_data and tracker_type.lower() != "jira":
+                raise HTTPException(
+                    status_code=400, detail="Project data missing from payload"
+                )
+
+            project_identifier = None
+            if tracker_type.lower() == "gitlab":
+                project_identifier = str(project_data["id"])
+            elif tracker_type.lower() == "github":
+                project_identifier = str(project_data["id"])
+            elif tracker_type.lower() == "jira":
+                project_identifier = (
+                    parsed_payload.get("issue", {})
+                    .get("fields", {})
+                    .get("project", {})
+                    .get("id")
+                )
+
+            if not project_identifier:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Could not determine project identifier from payload",
+                )
+
+            project = crud_project.get_by_identifier(db, identifier=project_identifier)
+            if not project:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Project with identifier {project_identifier} not found",
+                )
+
+            issue_data = parsed_payload.get("object_attributes") or parsed_payload.get(
+                "issue"
+            )
+            if not issue_data:
+                raise HTTPException(
+                    status_code=400, detail="Issue data missing from payload"
+                )
+
+            # Construct key if it's not in the payload
+            if "key" not in issue_data:
+                if tracker_type.lower() == "gitlab":
+                    project_slug = project.slug
+                    issue_iid = issue_data.get("iid")
+                    if project_slug and issue_iid:
+                        issue_data["key"] = f"{project_slug}#{issue_iid}"
+                    else:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Missing data to construct GitLab issue key.",
+                        )
+                elif tracker_type.lower() == "github":
+                    repo_full_name = project.slug
+                    issue_number = issue_data.get("number")
+                    if repo_full_name and issue_number:
+                        issue_data["key"] = f"{repo_full_name}#{issue_number}"
+                    else:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Missing data to construct GitHub issue key.",
+                        )
+
+            transformed_issue = tracker_client.client.transform_issue(
+                issue_data, project
+            )
+
+            existing_issue = crud_issue.get_by_external_id(
+                db,
+                project_id=project.id,
+                external_id=transformed_issue.get("external_id"),
+            )
+
+            if existing_issue:
+                db_issue = crud_issue.update(
+                    db, db_obj=existing_issue, obj_in=transformed_issue
+                )
+            else:
+                db_issue = crud_issue.create(db, obj_in=transformed_issue)
+
+            crud_issue_embedding.create_embeddings(
+                db, issue_id=db_issue.id, force_update=True
+            )
+
+        elif actual_event_type in [
+            "Note Hook",
+            "issue_comment",
+            "comment_created",
+            "comment_updated",
+        ]:
+            project_data = parsed_payload.get("project") or parsed_payload.get(
+                "repository"
+            )
+            if not project_data and tracker_type.lower() != "jira":
+                raise HTTPException(
+                    status_code=400, detail="Project data missing from payload"
+                )
+
+            project_identifier = None
+            if tracker_type.lower() == "gitlab":
+                project_identifier = str(project_data["id"])
+            elif tracker_type.lower() == "github":
+                project_identifier = str(project_data["id"])
+            elif tracker_type.lower() == "jira":
+                project_identifier = (
+                    parsed_payload.get("comment", {})
+                    .get("self", "")
+                    .split("/rest/api/2/issue/")[1]
+                    .split("/")[0]
+                )
+
+            if not project_identifier:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Could not determine project identifier from payload",
+                )
+
+            project = crud_project.get_by_identifier(db, identifier=project_identifier)
+            if not project:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Project with identifier {project_identifier} not found",
+                )
+
+            issue_data = parsed_payload.get("issue")
+            if not issue_data:
+                raise HTTPException(
+                    status_code=400, detail="Issue data missing from payload"
+                )
+
+            issue = crud_issue.get_by_external_id(
+                db, project_id=project.id, external_id=str(issue_data["id"])
+            )
+            if not issue:
+                raise HTTPException(status_code=404, detail="Issue not found")
+
+            comment_data = parsed_payload.get("object_attributes")
+            transformed_comment = tracker_client.client.transform_comment(
+                comment_data, issue.id
+            )
+
+            existing_comment = crud_comment.get_by_external_id(
+                db,
+                issue_id=issue.id,
+                external_id=transformed_comment.get("external_id"),
+            )
+
+            if existing_comment:
+                db_comment = crud_comment.update(
+                    db, db_obj=existing_comment, obj_in=transformed_comment
+                )
+            else:
+                db_comment = crud_comment.create(db, obj_in=transformed_comment)
+
+            crud_issue_embedding.create_embeddings(
+                db, issue_id=issue.id, comment_id=db_comment.id, force_update=True
+            )
+
+    except Exception as e:
+        logger.error(
+            f"Failed to process webhook payload for tracker {resolved_tracker.id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to process webhook payload")
 
     # --- 7. Update Timestamp (after successful processing) ---
     try:
