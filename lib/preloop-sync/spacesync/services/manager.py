@@ -6,7 +6,7 @@ Tracker update service manager.
 from typing import Optional, Set, List
 
 import pytz
-from datetime import datetime, timedelta # Import timedelta
+from datetime import datetime, timedelta, timezone # Import timedelta, timezone
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.base import BaseScheduler # Import BaseScheduler for type hinting
 from apscheduler.triggers.interval import IntervalTrigger # Import IntervalTrigger
@@ -32,6 +32,7 @@ TRACKER_JOB_PREFIX = "tracker_update_"
 
 def update_tracker(tracker_id: str):
     logger.info(f"Starting update poll for tracker {tracker_id}")
+    now = datetime.now(timezone.utc)  # Define now as timezone-aware UTC
     # Initialize stats dictionary similar to scan_tracker
     stats = {
         "organizations_scanned": 0,
@@ -96,10 +97,23 @@ def update_tracker(tracker_id: str):
                 # Aggregate stats
                 if skipped:
                     # Increment appropriate skipped counter based on current org state
-                    now = datetime.utcnow() # Re-check time
-                    if org.last_webhook_update and (now - org.last_webhook_update) < POLLING_THRESHOLD:
+                    last_webhook_update_aware: Optional[datetime] = None
+                    if org.last_webhook_update:
+                        if org.last_webhook_update.tzinfo is None:
+                            last_webhook_update_aware = org.last_webhook_update.replace(tzinfo=timezone.utc)
+                        else:
+                            last_webhook_update_aware = org.last_webhook_update.astimezone(timezone.utc)
+
+                    last_polling_update_aware: Optional[datetime] = None
+                    if org.last_polling_update:
+                        if org.last_polling_update.tzinfo is None:
+                            last_polling_update_aware = org.last_polling_update.replace(tzinfo=timezone.utc)
+                        else:
+                            last_polling_update_aware = org.last_polling_update.astimezone(timezone.utc)
+
+                    if last_webhook_update_aware and (now - last_webhook_update_aware) < POLLING_THRESHOLD:
                          stats["organizations_skipped_webhook"] += 1
-                    elif org.last_polling_update and (now - org.last_polling_update) < POLLING_THRESHOLD:
+                    elif last_polling_update_aware and (now - last_polling_update_aware) < POLLING_THRESHOLD:
                          stats["organizations_skipped_polling"] += 1
                 else:
                     stats["organizations_scanned"] += 1

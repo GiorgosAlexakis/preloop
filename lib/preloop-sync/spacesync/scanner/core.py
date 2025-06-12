@@ -311,26 +311,31 @@ class TrackerClient:
 
             issue_changed = False
 
+            # Pop comments BEFORE creating or updating the issue to prevent AttributeError
+            # The Issue model expects related Comment objects, not a list of dicts for 'comments' field
+            comment_data: List[Dict] = xformed_issue_data.pop("comments", [])
+
             if current_issue_model:
                 if (
                     current_issue_model.title != xformed_issue_data.get("title")
                     or current_issue_model.description != xformed_issue_data.get("description")
+                    # Potentially add other fields that define an "update"
                 ):
                     issue_changed = True
-
+                # Ensure xformed_issue_data doesn't contain 'comments' when updating
                 current_issue_model = crud_issue.update(db, db_obj=current_issue_model, obj_in=xformed_issue_data)
                 logger.debug(f"Updated issue {current_issue_model.id} ({current_issue_model.title})")
             else:
+                # Ensure xformed_issue_data doesn't contain 'comments' when creating
                 current_issue_model = crud_issue.create(db, obj_in=xformed_issue_data)
                 issue_changed = True
                 logger.debug(f"Created issue {current_issue_model.id} ({current_issue_model.title})")
 
             issues_processed.append(current_issue_model)
 
-            comment_data = xformed_issue_data.pop("comments", [])
-
+            # Process comments after the issue has been created or retrieved
             if len(comment_data):
-                logger.debug(f"Proce {len(comment_data)} comments for issue {current_issue_model.id}")
+                logger.debug(f"Processing {len(comment_data)} comments for issue {current_issue_model.id}")
 
             db_comments_for_issue = crud_comment.get_multi_by_issue(db, issue_id=current_issue_model.id, limit=10000)
             db_comments_map_by_external_id = {
@@ -483,6 +488,9 @@ def _process_organization(
                             if client.tracker_type == "gitlab":
                                 logger.info(f"Group hooks not supported for GitLab org {org.id}. Will attempt project-level webhooks.")
                                 gitlab_group_hooks_unsupported = True
+                                if temp_webhook_secret: # This implies org.webhook_secret was initially None
+                                    logger.info(f"Marking org {org.id} for secret save due to GitLab CE fallback.")
+                                    org_webhook_secret_should_be_set = True
                             # For non-GitLab, "not_supported" is like a failure for setting the org secret via group hook
                         else: # False (error)
                             logger.warning(f"Group webhook registration failed for org {org.id}.")
@@ -624,9 +632,9 @@ def _process_organization(
             if org_webhook_secret_should_be_set and temp_webhook_secret and not org.webhook_secret:
                 # temp_webhook_secret will exist if org didn't have a secret initially
                 try:
-                    logger.info(f"Saving newly generated webhook secret for org {org.id}.")
+                    logger.info(f"Saving newly generated webhook secret and updating last_webhook_update for org {org.id}.")
                     crud_organization.update(
-                        db, db_obj=org, obj_in={"webhook_secret": temp_webhook_secret}
+                        db, db_obj=org, obj_in={"webhook_secret": temp_webhook_secret, "last_webhook_update": now}
                     )
                     # db.commit() will happen with project timestamp updates later or at end of _process_organization
                     org = db.merge(org) # Refresh org state with the new secret
@@ -648,11 +656,31 @@ def _process_organization(
     # --- Polling Logic ---
     # Check polling conditions only if webhook wasn't just handled (or if handling failed but we still might poll)
     # Note: The original logic prioritizes skipping based on recent updates.
-    if org.last_webhook_update and (now - org.last_webhook_update) < polling_threshold:
+
+    # Ensure datetime objects are timezone-aware (UTC) for comparison
+    last_webhook_update_aware: Optional[datetime.datetime] = None
+    if org.last_webhook_update:
+        if org.last_webhook_update.tzinfo is None:
+            # Assume naive datetime from DB is UTC, as per DateTime(timezone=True) intention
+            last_webhook_update_aware = org.last_webhook_update.replace(tzinfo=datetime.timezone.utc)
+        else:
+            # Convert to UTC if it's already aware but possibly different timezone
+            last_webhook_update_aware = org.last_webhook_update.astimezone(datetime.timezone.utc)
+
+    last_polling_update_aware: Optional[datetime.datetime] = None
+    if org.last_polling_update:
+        if org.last_polling_update.tzinfo is None:
+            # Assume naive datetime from DB is UTC
+            last_polling_update_aware = org.last_polling_update.replace(tzinfo=datetime.timezone.utc)
+        else:
+            # Convert to UTC if it's already aware
+            last_polling_update_aware = org.last_polling_update.astimezone(datetime.timezone.utc)
+
+    if last_webhook_update_aware and (now - last_webhook_update_aware) < polling_threshold:
         logger.info(f"Skipping polling for org {org.id} ({org.name}) due to recent webhook update at {org.last_webhook_update}")
         should_poll = False
         skipped = True
-    elif org.last_polling_update and (now - org.last_polling_update) < polling_threshold:
+    elif last_polling_update_aware and (now - last_polling_update_aware) < polling_threshold:
         logger.info(f"Skipping polling for org {org.id} ({org.name}) due to recent polling at {org.last_polling_update}")
         should_poll = False
         skipped = True
