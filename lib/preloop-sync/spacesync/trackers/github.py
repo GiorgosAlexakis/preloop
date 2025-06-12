@@ -4,6 +4,7 @@ GitHub tracker implementation for SpaceSync.
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import os
 
 import requests
 
@@ -344,3 +345,208 @@ class GitHubTracker(BaseTracker):
         except Exception as e:
             logger.error(f"Unexpected error registering webhook for GitHub org '{org_identifier}': {e}", exc_info=True)
             return False
+
+    def unregister_webhook(
+        self,
+        org_identifier: str,
+        webhook_id: Optional[int] = None,
+        webhook_url: Optional[str] = None,
+    ) -> bool:
+        """
+        Unregister a webhook for the given GitHub organization.
+        Can unregister by specific webhook ID or by matching a webhook URL.
+
+        Args:
+            org_identifier: The GitHub organization login name.
+            webhook_id: The ID of the webhook to remove.
+            webhook_url: The target URL of the webhook to remove (used if webhook_id is None).
+
+        Returns:
+            True if unregistration was successful or webhook didn't exist/was already unregistered, False otherwise.
+        """
+        if not org_identifier or org_identifier == "personal":
+            logger.info(
+                f"Skipping webhook unregistration for org '{org_identifier}'. GitHub webhooks are managed per-repository for personal accounts or org_identifier is missing."
+            )
+            return True # No action to take, consider it success for this context
+
+        if not webhook_id and not webhook_url:
+            logger.error(
+                f"Cannot unregister webhook for org '{org_identifier}': either webhook_id or webhook_url must be provided."
+            )
+            return False
+
+        base_hooks_endpoint = f"orgs/{org_identifier}/hooks"
+        hook_to_delete_id = webhook_id
+
+        try:
+            if not hook_to_delete_id and webhook_url:
+                # Need to list hooks to find the ID by URL
+                list_url = f"{self.API_BASE_URL}/{base_hooks_endpoint.lstrip('/')}"
+                list_response = requests.get(
+                    list_url, headers=self.headers, params={"per_page": 100}
+                )
+
+                if list_response.status_code != 200:
+                    logger.error(
+                        f"Failed to list webhooks for GitHub org '{org_identifier}' to find URL '{webhook_url}': {list_response.status_code} - {list_response.text}"
+                    )
+                    return False
+
+                hooks = list_response.json()
+                for hook in hooks:
+                    if hook.get("config", {}).get("url") == webhook_url:
+                        hook_to_delete_id = hook["id"]
+                        break
+
+                if not hook_to_delete_id:
+                    logger.warning(
+                        f"Webhook for GitHub org '{org_identifier}' with URL '{webhook_url}' not found. Assuming already unregistered."
+                    )
+                    return True # Not found is a form of success for unregistration
+
+            if not hook_to_delete_id: # Should only happen if only webhook_id was None and URL wasn't found
+                logger.warning(
+                    f"No webhook ID provided or found for GitHub org '{org_identifier}' with URL '{webhook_url}'. Cannot unregister."
+                )
+                return True # Or False if strict "must find then delete" is required. True aligns with "not found is success".
+
+            # Proceed to delete the hook by its ID
+            delete_endpoint = f"{base_hooks_endpoint}/{hook_to_delete_id}"
+            delete_url = f"{self.API_BASE_URL}/{delete_endpoint.lstrip('/')}"
+            delete_response = requests.delete(delete_url, headers=self.headers)
+
+            if delete_response.status_code == 204:
+                logger.info(
+                    f"Successfully unregistered webhook {hook_to_delete_id} for GitHub org '{org_identifier}'."
+                )
+                return True
+            elif delete_response.status_code == 404: # Not found during delete attempt
+                logger.warning(
+                    f"Webhook {hook_to_delete_id} for GitHub org '{org_identifier}' not found during delete attempt. Assuming already unregistered."
+                )
+                return True
+            else:
+                logger.error(
+                    f"Failed to unregister webhook {hook_to_delete_id} for GitHub org '{org_identifier}': {delete_response.status_code} - {delete_response.text}"
+                )
+                return False
+
+        except requests.RequestException as e:
+            logger.error(
+                f"GitHub connection error while unregistering webhook for org '{org_identifier}': {e}",
+                exc_info=True,
+            )
+            return False
+        except Exception as e:
+            logger.error(
+                f"Unexpected error unregistering webhook for GitHub org '{org_identifier}': {e}",
+                exc_info=True,
+            )
+            return False
+
+    def unregister_all_webhooks(
+        self, webhook_url_pattern: Optional[str] = None
+    ) -> Dict[str, int]:
+        """
+        Unregister all webhooks for all relevant organizations, optionally matching a URL pattern.
+        For GitHub, this targets organization-level webhooks.
+
+        Args:
+            webhook_url_pattern: If provided, only unregister webhooks whose URL
+                                 matches this pattern. If None, attempts to unregister
+                                 webhooks matching the SPACEBRIDGE_URL pattern.
+
+        Returns:
+            A dictionary summarizing the actions taken, e.g.,
+            {"unregistered": count, "failed": count, "not_found": count}.
+        """
+        results = {"unregistered": 0, "failed": 0, "not_found": 0}
+
+        # Determine the target URL pattern
+        target_pattern = webhook_url_pattern
+        if target_pattern is None:
+            # Fallback to SPACEBRIDGE_URL if available and pattern is not given
+            # Ensure SPACEBRIDGE_URL is correctly imported or accessed from config
+            # from ..config import SPACEBRIDGE_URL # or os.getenv
+            sb_url = os.getenv("SPACEBRIDGE_URL")
+            if sb_url:
+                target_pattern = f"{sb_url.rstrip('/')}/api/v1/private/webhooks/"
+                logger.info(f"No specific webhook_url_pattern provided, using default pattern: {target_pattern}")
+            else:
+                logger.warning("Cannot determine target webhook URL pattern: webhook_url_pattern is None and SPACEBRIDGE_URL is not set.")
+                # Depending on desired behavior, could return early or try to delete all webhooks (risky)
+                # For safety, let's not delete all if no pattern can be determined.
+                return results
+
+
+        try:
+            organizations = self.get_organizations()
+        except (TrackerAuthenticationError, TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(f"Failed to get organizations for GitHub tracker {self.tracker_id}: {e}")
+            return results # Cannot proceed
+
+        for org_data in organizations:
+            org_identifier = org_data.get("id")
+            if not org_identifier or org_identifier == "personal":
+                logger.debug(f"Skipping webhook operations for org '{org_identifier}' (personal or invalid).")
+                continue
+
+            logger.info(f"Processing webhooks for GitHub organization: {org_identifier}")
+            hooks_endpoint = f"orgs/{org_identifier}/hooks"
+            list_url = f"{self.API_BASE_URL}/{hooks_endpoint.lstrip('/')}"
+
+            try:
+                list_response = requests.get(
+                    list_url, headers=self.headers, params={"per_page": 100}
+                )
+                if list_response.status_code != 200:
+                    logger.error(
+                        f"Failed to list webhooks for GitHub org '{org_identifier}': {list_response.status_code} - {list_response.text}"
+                    )
+                    results["failed"] += 1 # Count failure at org level if list fails
+                    continue
+
+                hooks = list_response.json()
+                if not hooks:
+                    logger.info(f"No webhooks found for GitHub org '{org_identifier}'.")
+                    results["not_found"] += 1 # Or just continue, depends on how "not_found" is defined
+                    continue
+
+                hooks_to_delete_ids = []
+                for hook in hooks:
+                    hook_config_url = hook.get("config", {}).get("url")
+                    if hook_config_url:
+                        if target_pattern and target_pattern in hook_config_url:
+                            hooks_to_delete_ids.append(hook["id"])
+                        elif not target_pattern:
+                            # This case should ideally be handled by the check above for sb_url
+                            # If target_pattern is None here, it means SPACEBRIDGE_URL was also not found.
+                            # Avoid deleting all hooks if no pattern.
+                            logger.debug(f"Skipping hook {hook['id']} for org {org_identifier} as no target_pattern is defined.")
+                            pass
+
+
+                if not hooks_to_delete_ids:
+                    logger.info(f"No webhooks matching pattern '{target_pattern}' found for GitHub org '{org_identifier}'.")
+                    # This could be counted as "not_found" for webhooks matching the pattern
+                    # For simplicity, let's assume if none match, it's not an error but nothing to do.
+                    # results["not_found"] += 1 # if we consider "no matching hooks" as "not_found"
+                    continue
+
+                for hook_id in hooks_to_delete_ids:
+                    if self.unregister_webhook(org_identifier=org_identifier, webhook_id=hook_id):
+                        results["unregistered"] += 1
+                    else:
+                        # unregister_webhook already logs errors, so just count failure
+                        results["failed"] += 1
+
+            except requests.RequestException as e:
+                logger.error(f"Connection error processing webhooks for org '{org_identifier}': {e}", exc_info=True)
+                results["failed"] += 1 # Count as failed for this org
+            except Exception as e:
+                logger.error(f"Unexpected error processing webhooks for org '{org_identifier}': {e}", exc_info=True)
+                results["failed"] += 1 # Count as failed for this org
+
+        logger.info(f"GitHub unregister_all_webhooks summary: {results}")
+        return results

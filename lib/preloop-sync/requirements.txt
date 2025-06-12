@@ -10,3 +10,4 @@ mypy>=0.950
 python-gitlab
 flask>=2.0.0
 APScheduler>=3.0.0
+jira>=3.8.0

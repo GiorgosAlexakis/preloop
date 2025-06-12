@@ -388,7 +388,26 @@ class TrackerClient:
             NotImplementedError: If the specific tracker client doesn't implement it.
         """
         # Delegate to the specific client implementation
-        return self.client.register_webhook(org_identifier, webhook_url, secret)
+        # For Jira, this method on the client itself is now more generic,
+        # and the actual project-specific registration happens in _process_organization.
+        # This base register_webhook on TrackerClient might need to be re-evaluated
+        # or made more abstract if it's not directly used for group-level hooks by Jira.
+        # For now, we assume it might be called by some generic logic, but Jira's
+        # primary webhook setup is project-based within _process_organization.
+        if self.tracker_type == "jira":
+            # This generic org-level registration is not directly applicable to Jira's project-based webhooks.
+            # The actual registration for Jira projects is handled in _process_organization.
+            # However, to satisfy the interface, we can log a message or return a specific status.
+            logger.warning(
+                f"Org-level webhook registration via TrackerClient.register_webhook is not "
+                f"the primary mechanism for Jira (tracker_id: {self.tracker.id}). "
+                f"Project-specific webhooks are registered in _process_organization."
+            )
+            # Returning True to indicate it's not an error, but not a typical registration.
+            # Or, raise NotImplementedError if this path should strictly not be taken for Jira.
+            return True # Or False, or raise NotImplementedError
+
+        return self.client.register_webhook(org_identifier=org_identifier, webhook_url=webhook_url, secret=secret)
 
 
 # Helper function to process a single organization with polling checks
@@ -538,7 +557,70 @@ def _process_organization(
                     if project_hooks_newly_registered_count > 0 and not org.webhook_secret:
                         org_webhook_secret_should_be_set = True # Mark that the temp secret should be saved to org
 
-            # --- 3. Save Organization's Webhook Secret if marked ---
+            # --- 3. Handle Jira Project-Level Webhooks ---
+            elif client.tracker_type == "jira":
+                if not current_secret_to_use:
+                    logger.error(f"Cannot proceed with Jira project webhooks for instance {org.identifier}: no secret available.")
+                else:
+                    logger.info(f"Processing project-level webhooks for Jira instance {org.identifier} (Org ID: {org.id}). Using secret: {'existing' if org.webhook_secret else 'newly_generated'}")
+                    # For Jira, "organization" is the Jira instance. We need to scan its projects.
+                    # Ensure projects are scanned/fetched first to iterate through them.
+                    projects_for_jira_instance = client.scan_projects(db, org)
+                    if not projects_for_jira_instance:
+                        logger.info(f"No projects found for Jira instance {org.identifier} to register webhooks.")
+                    else:
+                        jira_project_hooks_registered_count = 0
+                        for jira_project in projects_for_jira_instance:
+                            # Check if this project needs a webhook update (e.g., based on last_webhook_check_at)
+                            needs_hook_check = True # Default to true
+                            # Ensure last_webhook_check_at is a datetime object if it exists
+                            last_check_time = getattr(jira_project, 'last_webhook_check_at', None)
+                            if last_check_time and isinstance(last_check_time, datetime.datetime):
+                                if (now.replace(tzinfo=None) - last_check_time) < RECHECK_PROJECT_WEBHOOK_INTERVAL:
+                                    logger.debug(f"Skipping webhook check for Jira project {jira_project.identifier}, recently checked at {last_check_time}.")
+                                    needs_hook_check = False
+                            elif last_check_time: # Exists but not a datetime, log warning
+                                logger.warning(f"last_webhook_check_at for Jira project {jira_project.identifier} is not a datetime object: {last_check_time}. Proceeding with check.")
+
+
+                            if needs_hook_check and hasattr(client.client, "register_webhook"): # JiraTracker has register_webhook
+                                project_key_to_use = jira_project.slug or jira_project.identifier
+                                if not project_key_to_use:
+                                    logger.warning(f"Skipping Jira project {jira_project.name} as it has no slug or identifier for webhook registration.")
+                                    continue
+
+                                logger.info(f"Checking/Registering webhook for Jira project {project_key_to_use}.")
+                                try:
+                                    # Jira's register_webhook takes project_key, webhook_url, secret, events
+                                    # webhook_target_url is generic for SpaceBridge. Jira client appends project_key & secret.
+                                    jira_hook_status = client.client.register_webhook(
+                                        project_key=project_key_to_use,
+                                        webhook_url=webhook_target_url, # Base URL for SpaceBridge
+                                        secret=current_secret_to_use,
+                                        # events=None will use defaults in JiraTracker
+                                    )
+                                    if jira_hook_status is True: # True means registered or already exists correctly
+                                        logger.info(f"Successfully registered/verified webhook for Jira project {project_key_to_use}.")
+                                        jira_project_hooks_registered_count += 1
+                                        # Update last_webhook_check_at for the project
+                                        crud_project.update(db, db_obj=jira_project, obj_in={"last_webhook_check_at": now.replace(tzinfo=None)})
+                                    else: # False (error)
+                                        logger.warning(f"Jira project webhook registration failed for {project_key_to_use}.")
+                                        org_stats["errors"] += 1
+                                except Exception as e:
+                                    logger.error(f"Error registering webhook for Jira project {project_key_to_use}: {e}", exc_info=True)
+                                    org_stats["errors"] += 1
+                            elif not hasattr(client.client, "register_webhook"):
+                                logger.error(f"JiraTracker instance is missing 'register_webhook' method for project {jira_project.identifier}. This should not happen.")
+                                break # Stop trying for other projects if method is missing on client
+
+                        if jira_project_hooks_registered_count > 0 and not org.webhook_secret:
+                            # If at least one Jira project hook was set up and the "org" (Jira instance)
+                            # didn't have a secret before, then mark the org's secret as needing to be set.
+                            org_webhook_secret_should_be_set = True
+                            logger.info(f"Successfully registered {jira_project_hooks_registered_count} project webhooks for Jira instance {org.identifier}. Org secret will be set.")
+
+            # --- 4. Save Organization's Webhook Secret if marked ---
             if org_webhook_secret_should_be_set and temp_webhook_secret and not org.webhook_secret:
                 # temp_webhook_secret will exist if org didn't have a secret initially
                 try:

@@ -249,6 +249,58 @@ class BaseTracker(ABC):
             },
         }
 
+    @abstractmethod
+    def register_webhook(self, **kwargs: Any) -> bool:
+        """
+        Register a webhook for the tracker.
+        Specific arguments will depend on the tracker type.
 
-if __name__ == "__main__":
-    pass
+        Args:
+            **kwargs: Arbitrary keyword arguments specific to the tracker implementation.
+                      For example, for GitHub/GitLab, it might be `org_identifier`, `webhook_url`, `secret`.
+                      For Jira, it might be `project_key`, `webhook_url`, `secret`, `events`.
+
+        Returns:
+            True if registration was successful or webhook already exists, False otherwise.
+        """
+        pass
+
+    @abstractmethod
+    def unregister_webhook(self, **kwargs: Any) -> bool:
+        """
+        Unregister a webhook for the tracker.
+        Specific arguments will depend on the tracker type.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments specific to the tracker implementation.
+                      For example, for Jira, it might be `project_key`, and either `webhook_url` or `webhook_id`.
+
+        Returns:
+            True if unregistration was successful, False otherwise.
+        """
+        pass
+
+        @abstractmethod
+        def unregister_all_webhooks(self, webhook_url_pattern: Optional[str] = None) -> Dict[str, int]:
+            """
+            Unregister all webhooks, optionally matching a URL pattern.
+
+            This method should iterate through all relevant scopes (e.g., organizations,
+            projects, groups) for the tracker and attempt to unregister webhooks.
+
+            Args:
+                webhook_url_pattern: If provided, only unregister webhooks whose URL
+                                     matches this pattern. Otherwise, the tracker might
+                                     try to identify and remove all webhooks it
+                                     previously registered (e.g., by a known description
+                                     or a URL pattern based on SPACEBRIDGE_URL).
+
+            Returns:
+                A dictionary summarizing the actions taken, e.g.,
+                {"unregistered": count, "failed": count, "not_found": count}.
+            """
+            pass
+
+
+    if __name__ == "__main__":
+        pass
