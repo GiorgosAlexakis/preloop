@@ -1,7 +1,6 @@
 """Trackers router for registering and managing issue trackers."""
 
 import logging
-import re
 import uuid
 from typing import Dict, List, cast
 
@@ -29,7 +28,6 @@ from spacebridge.trackers.factory import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
-from spacemodels.models.organization import Organization
 from spacemodels.models.tracker import Tracker, TrackerType
 
 logger = logging.getLogger(__name__)
@@ -198,36 +196,6 @@ async def register_tracker(
 
         # Then create or find organization for this tracker
         # (Assuming one org per tracker for now, might need adjustment later)
-        org = (
-            db.query(Organization)
-            .filter(Organization.tracker_id == new_tracker.id)
-            .first()
-        )
-
-        if not org:
-            # Create a default organization
-            safe_tracker_name = re.sub(r"[^a-zA-Z0-9]", "-", name.lower())
-            safe_tracker_name = re.sub(r"-+", "-", safe_tracker_name)[:20]
-            org_identifier = f"{current_user.username.lower()}-{tracker_type.value}-{safe_tracker_name}"
-
-            existing_org = (
-                db.query(Organization)
-                .filter(Organization.identifier == org_identifier)
-                .first()
-            )
-            if existing_org:
-                short_uuid = str(uuid.uuid4())[:8]
-                org_identifier = f"{org_identifier}-{short_uuid}"
-
-            logger.info(f"Creating organization with identifier: {org_identifier}")
-            org = Organization(
-                name=f"{name} Organization",
-                identifier=org_identifier,
-                tracker_id=new_tracker.id,
-                is_active=True,
-            )
-            db.add(org)
-
         db.commit()
         db.refresh(new_tracker)
 
