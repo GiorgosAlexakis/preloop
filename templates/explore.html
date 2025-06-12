@@ -7,6 +7,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/spacebridge.css">
     <link rel="stylesheet" href="/static/css/explore.css">
+    <script src="/static/js/tsne.js"></script>
 </head>
 <body>
     <div class="container-fluid">
@@ -104,10 +105,31 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    const embeddings = result.data;
-                    if (embeddings && embeddings.length > 0) {
-                        const formattedJson = JSON.stringify(embeddings, null, 2);
-                        resultsDiv.textContent = `Found ${embeddings.length} embeddings for ${selectedProjectName}:\n${formattedJson}`;
+                    const rawData = result.data;
+                    if (rawData && rawData.length > 0) {
+                        resultsDiv.textContent = `Found ${rawData.length} embeddings. Computing t-SNE...`;
+
+                        // Use a timeout to allow the DOM to update before the heavy computation
+                        setTimeout(() => {
+                            const highDimensionalData = rawData.map(item => item.embedding);
+
+                            const tsne = new tsnejs.tSNE({
+                                dim: 2,
+                                perplexity: 30,
+                                metric: "cosine"
+                            });
+
+                            tsne.initDataRaw(highDimensionalData);
+
+                            for(var i = 0; i < 1000; i++) {
+                                tsne.step();
+                            }
+
+                            const solution = tsne.getSolution();
+                            const formattedJson = JSON.stringify(solution, null, 2);
+                            resultsDiv.textContent = `t-SNE computation complete for ${rawData.length} embeddings:\n${formattedJson}`;
+                        }, 10);
+
                     } else {
                         resultsDiv.textContent = `No embeddings found for project ${selectedProjectName}.`;
                     }

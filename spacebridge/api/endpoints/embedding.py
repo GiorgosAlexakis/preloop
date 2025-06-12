@@ -3,7 +3,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from spacebridge.api.auth.jwt import get_current_active_user
 from spacemodels.db.session import get_db_session as get_db
 from spacebridge.schemas.embedding import (
     EmbeddingRawDataItem,
