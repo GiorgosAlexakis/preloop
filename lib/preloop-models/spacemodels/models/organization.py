@@ -55,10 +55,10 @@ class Organization(Base):
 
     # Timestamps for sync updates
     last_webhook_update: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True
+        DateTime(timezone=True), nullable=True
     )
     last_polling_update: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True
+        DateTime(timezone=True), nullable=True
     )
 
     # Foreign keys - the tracker determines the owner account
