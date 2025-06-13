@@ -278,6 +278,8 @@
                                 const midpoint = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, 0];
                                 duplicates.push({
                                     position: midpoint,
+                                    issue1_id: scatterplotData[i].issue_id,
+                                    issue2_id: scatterplotData[j].issue_id,
                                     issue1: scatterplotData[i].title,
                                     issue2: scatterplotData[j].title
                                 });
@@ -354,8 +356,29 @@
                                 tooltip.style.display = 'none';
                             }
                         }
+                    },
+                    onClick: (info, event) => {
+                        if (info.object && info.object.issue1_id && info.object.issue2_id) {
+                            const issue1Id = info.object.issue1_id;
+                            const issue2Id = info.object.issue2_id;
+
+                            const issue1 = scatterplotData.find(p => p.issue_id === issue1Id);
+                            const issue2 = scatterplotData.find(p => p.issue_id === issue2Id);
+
+                            if (issue1 && issue2) {
+                                selectedIssues.length = 0; // Clear current selections
+                                selectedIssues.push(issue1, issue2); // Add the two duplicates
+
+                                renderLayers(); // Re-render layers to update highlights
+                                renderSelectionPanel(); // Update the selection panel list
+                            } else {
+                                console.warn("Could not find one or both duplicate issues in scatterplotData. Issue1 ID:", issue1Id, "Issue2 ID:", issue2Id);
+                            }
+                        }
                     }
                 });
+
+                const selectionId = selectedIssues.map(i => i.issue_id).join(',');
 
                 const scatterplotLayer = new deck.ScatterplotLayer({
                     id: 'scatterplot-layer',
@@ -371,10 +394,10 @@
                     getLineWidth: d => selectedIssues.some(selected => selected.issue_id === d.issue_id) ? 4 : 2,
                     getPosition: d => d.position,
                     getFillColor: d => getAgeColor(d.createdAtDate, minCreatedAt, maxCreatedAt),
-                    getLineColor: d => selectedIssues.some(selected => selected.issue_id === d.issue_id) ? [255, 255, 0, 255] : [255, 255, 255, 100],
+                    getLineColor: d => selectedIssues.some(selected => selected.issue_id === d.issue_id) ? [255, 255, 0, 255] : [255, 255, 255, 255],
                     updateTriggers: {
-                        getLineWidth: [selectedIssues.length],
-                        getLineColor: [selectedIssues.length],
+                        getLineWidth: [selectionId],
+                        getLineColor: [selectionId],
                         getFillColor: [minCreatedAt, maxCreatedAt, scatterplotData.length] // Add triggers for color
                     },
                     onHover: info => {
@@ -398,6 +421,11 @@
                     onClick: (info, event) => {
                         if (event.srcEvent.shiftKey) {
                             toggleSelection(info.object);
+                        } else if (info.object) {
+                            selectedIssues.length = 0;
+                            selectedIssues.push(info.object);
+                            renderLayers();
+                            renderSelectionPanel();
                         }
                     }
                 });
