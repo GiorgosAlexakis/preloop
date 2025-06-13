@@ -61,6 +61,7 @@ def get_raw_embeddings(
             issue_title=item[2],
             # issue_labels=item[3],
             issue_type=item[3],
+            issue_created_at=item[4],
         )
         for item in raw_data
     ]

@@ -1,5 +1,6 @@
 from typing import List, Optional
 from pydantic import BaseModel
+from datetime import datetime
 
 
 class EmbeddingRawRequest(BaseModel):
@@ -21,6 +22,7 @@ class EmbeddingRawDataItem(BaseModel):
     issue_title: Optional[str] = None
     issue_labels: Optional[List[str]] = None
     issue_type: Optional[str] = None
+    issue_created_at: Optional[datetime] = None
 
 
 class EmbeddingRawResponse(BaseModel):

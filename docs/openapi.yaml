@@ -2339,6 +2339,12 @@ components:
           - type: string
           - type: 'null'
           title: Issue Type
+        issue_created_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Issue Created At
       type: object
       required:
       - issue_id

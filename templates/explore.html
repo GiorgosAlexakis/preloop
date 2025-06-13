@@ -26,7 +26,7 @@
 
             <div>
                 <a href="#collapseDuplicateSettings" data-bs-toggle="collapse" aria-expanded="false" aria-controls="collapseDuplicateSettings" class="settings-toggle text-decoration-none text-secondary fw-bold d-flex justify-content-between align-items-center mb-2">
-                    Settings
+                    Advanced Settings
                 </a>
                 <div class="collapse" id="collapseDuplicateSettings">
                     <label for="distanceThresholdSlider" class="form-label">Duplicate Threshold</label>
@@ -143,6 +143,8 @@
                 zoom: 1,
                 // Add any other view state properties you might need like pitch, bearing
             };
+            let minCreatedAt = null; // For age-based coloring
+            let maxCreatedAt = null; // For age-based coloring
 
             const deckgl = new deck.DeckGL({
                 container: 'deck-container',
@@ -248,6 +250,21 @@
             function renderLayers() {
                 const distanceThreshold = thresholdSlider.value;
 
+                // --- Calculate Age Range for Coloring ---
+                if (scatterplotData.length > 0) {
+                    const timestamps = scatterplotData.filter(d => d.createdAtDate).map(d => d.createdAtDate.getTime());
+                    if (timestamps.length > 0) {
+                        minCreatedAt = new Date(Math.min(...timestamps));
+                        maxCreatedAt = new Date(Math.max(...timestamps));
+                    } else {
+                        minCreatedAt = null;
+                        maxCreatedAt = null;
+                    }
+                } else {
+                    minCreatedAt = null;
+                    maxCreatedAt = null;
+                }
+
                 // --- Duplicate Detection ---
                 const duplicates = [];
                 if (scatterplotData.length > 1) {
@@ -283,6 +300,27 @@
                     if (lowerType.includes('feature')) return issueTypeColors['feature'];
                     if (lowerType.includes('task')) return issueTypeColors['task'];
                     return issueTypeColors['default'];
+                };
+
+                const getAgeColor = (createdAt, minDate, maxDate) => {
+                    const newestColor = [0, 255, 127]; // Green-cyan
+                    const oldestColor = [127, 0, 255]; // Deep blue-magenta
+
+                    if (!createdAt || !minDate || !maxDate || minDate.getTime() === maxDate.getTime()) {
+                        // Default to a neutral or newest color if data is insufficient
+                        return issueTypeColors['default'];
+                    }
+
+                    const totalAgeRange = maxDate.getTime() - minDate.getTime();
+                    // Age: 0 for newest (closest to maxDate), 1 for oldest (closest to minDate)
+                    const normalizedAge = (maxDate.getTime() - createdAt.getTime()) / totalAgeRange;
+                    const ratio = Math.max(0, Math.min(1, normalizedAge)); // Clamp between 0 and 1
+
+                    const r = Math.round(newestColor[0] * (1 - ratio) + oldestColor[0] * ratio);
+                    const g = Math.round(newestColor[1] * (1 - ratio) + oldestColor[1] * ratio);
+                    const b = Math.round(newestColor[2] * (1 - ratio) + oldestColor[2] * ratio);
+
+                    return [r, g, b];
                 };
 
                 const duplicateIconLayer = new deck.IconLayer({
@@ -332,23 +370,26 @@
                     lineWidthUnits: 'pixels',
                     getLineWidth: d => selectedIssues.some(selected => selected.issue_id === d.issue_id) ? 4 : 2,
                     getPosition: d => d.position,
-                    getFillColor: d => getColor(d.type),
+                    getFillColor: d => getAgeColor(d.createdAtDate, minCreatedAt, maxCreatedAt),
                     getLineColor: d => selectedIssues.some(selected => selected.issue_id === d.issue_id) ? [255, 255, 0, 255] : [255, 255, 255, 100],
                     updateTriggers: {
                         getLineWidth: [selectedIssues.length],
-                        getLineColor: [selectedIssues.length]
+                        getLineColor: [selectedIssues.length],
+                        getFillColor: [minCreatedAt, maxCreatedAt, scatterplotData.length] // Add triggers for color
                     },
                     onHover: info => {
                         const tooltip = document.getElementById('tooltip');
                         if (info.object) {
-                            const { title, type, labels } = info.object;
+                            const { title, type, labels, createdAtDate } = info.object;
+                            const dateStr = createdAtDate ? createdAtDate.toLocaleDateString() : 'N/A';
                             tooltip.style.display = 'block';
                             tooltip.style.left = `${info.x}px`;
                             tooltip.style.top = `${info.y}px`;
                             tooltip.innerHTML = `
                                 <strong>${title}</strong>
                                 Type: ${type || 'N/A'}<br>
-                                Labels: ${labels && labels.length > 0 ? labels.join(', ') : 'None'}
+                                Labels: ${labels && labels.length > 0 ? labels.join(', ') : 'None'}<br>
+                                Created: ${dateStr}
                             `;
                         } else {
                             tooltip.style.display = 'none';
@@ -530,6 +571,7 @@
                                     title: item.issue_title,
                                     labels: item.issue_labels,
                                     type: item.issue_type,
+                                    createdAtDate: item.issue_created_at ? new Date(item.issue_created_at) : null // Parse date
                                 }];
                                 console.log("Only one issue found, skipping t-SNE.");
                             } else {
@@ -556,6 +598,7 @@
                                     title: validData[index].issue_title,
                                     labels: validData[index].issue_labels, // Will be null if not sent, tooltip handles this
                                     type: validData[index].issue_type,
+                                    createdAtDate: validData[index].issue_created_at ? new Date(validData[index].issue_created_at) : null // Parse date
                                 }));
                             }
 
