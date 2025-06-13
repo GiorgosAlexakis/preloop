@@ -869,6 +869,58 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/projects/{project_id}/duplicates:
+    get:
+      tags:
+      - Projects
+      summary: Find Project Duplicates
+      description: Finds potential duplicate issues within a project using semantic
+        similarity.
+      operationId: find_project_duplicates_api_v1_projects__project_id__duplicates_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: similarity_threshold
+        in: query
+        required: false
+        schema:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          description: Similarity threshold for considering issues as duplicates.
+          default: 0.85
+          title: Similarity Threshold
+        description: Similarity threshold for considering issues as duplicates.
+      - name: limit_per_issue
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 20
+          minimum: 1
+          description: Maximum number of duplicates to find for each issue.
+          default: 5
+          title: Limit Per Issue
+        description: Maximum number of duplicates to find for each issue.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDuplicatesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issues/search:
     get:
       tags:
@@ -2302,6 +2354,25 @@ components:
       - query
       title: CommentSearchResults
       description: Response model for comment search results.
+    DuplicateIssuePair:
+      properties:
+        issue1:
+          $ref: '#/components/schemas/IssueResponse'
+          description: The first issue in the duplicate pair.
+        issue2:
+          $ref: '#/components/schemas/IssueResponse'
+          description: The second issue in the duplicate pair.
+        similarity:
+          type: number
+          title: Similarity
+          description: The similarity score between the two issues.
+      type: object
+      required:
+      - issue1
+      - issue2
+      - similarity
+      title: DuplicateIssuePair
+      description: Represents a pair of issues that are potential duplicates.
     EmailVerificationRequest:
       properties:
         token:
@@ -2821,6 +2892,34 @@ components:
       - organization_id
       title: ProjectCreate
       description: Model for creating a new project.
+    ProjectDuplicatesResponse:
+      properties:
+        project_id:
+          type: string
+          title: Project Id
+          description: The ID of the project that was scanned.
+        model_id_used:
+          type: string
+          title: Model Id Used
+          description: The ID of the embedding model used for the similarity search.
+        threshold_used:
+          type: number
+          title: Threshold Used
+          description: The similarity threshold used for detecting duplicates.
+        duplicates:
+          items:
+            $ref: '#/components/schemas/DuplicateIssuePair'
+          type: array
+          title: Duplicates
+          description: A list of potential duplicate issue pairs.
+      type: object
+      required:
+      - project_id
+      - model_id_used
+      - threshold_used
+      - duplicates
+      title: ProjectDuplicatesResponse
+      description: Response model for the project duplicates endpoint.
     ProjectIdentifier:
       properties:
         id:

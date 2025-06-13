@@ -5,10 +5,15 @@ import uuid
 from typing import List, Optional  # Added Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from spacebridge.api.auth import get_current_active_user  # Import user dependency
 
+from spacebridge.schemas.duplicates import (
+    ProjectDuplicatesResponse,
+    DuplicateIssuePair,
+)
+from spacebridge.schemas.issue import IssueResponse
 from spacebridge.schemas.project import (
     ProjectCreate,
     ProjectResponse,
@@ -20,17 +25,24 @@ from spacebridge.trackers.factory import TrackerFactory
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
 from spacemodels.crud.tracker import CRUDTracker  # Import tracker CRUD
+from spacemodels.crud.issue import CRUDIssue
+from spacemodels.crud.embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.account import Account  # Import Account model
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker  # Import Tracker model
+from spacemodels.models.issue import Issue
+from spacemodels.models.issue import IssueEmbedding, EmbeddingModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 crud_project = CRUDProject(Project)
 crud_organization = CRUDOrganization(Organization)
 crud_tracker = CRUDTracker(Tracker)  # Instantiate tracker CRUD
+crud_issue = CRUDIssue(Issue)
+crud_issue_embedding = CRUDIssueEmbedding(IssueEmbedding)
+crud_embedding_model = CRUDEmbeddingModel(EmbeddingModel)
 
 
 @router.post("/projects", response_model=ProjectResponse, status_code=201)
@@ -435,3 +447,173 @@ async def test_project_connection(
         raise HTTPException(
             status_code=500, detail=f"Error testing connection: {str(e)}"
         )
+
+
+@router.get(
+    "/projects/{project_id}/duplicates", response_model=ProjectDuplicatesResponse
+)
+def find_project_duplicates(
+    project_id: str,
+    similarity_threshold: float = Query(
+        0.85,
+        ge=0.0,
+        le=1.0,
+        description="Similarity threshold for considering issues as duplicates.",
+    ),
+    limit_per_issue: int = Query(
+        5,
+        ge=1,
+        le=20,
+        description="Maximum number of duplicates to find for each issue.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+):
+    """Finds potential duplicate issues within a project using semantic similarity."""
+    project = (
+        db.query(Project)
+        .options(joinedload(Project.organization).joinedload(Organization.tracker))
+        .filter(Project.id == project_id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Authorization check: Ensure user has access to the project's tracker
+    if (
+        not project.organization
+        or not project.organization.tracker
+        or project.organization.tracker.account_id != current_user.id
+    ):
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+
+    # Get the active embedding model
+    active_models = crud_embedding_model.get_active(db)
+    if not active_models:
+        logger.error(
+            "similarity search requested, but no active embedding model found."
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="similarity search cannot be performed: No active embedding model configured.",
+        )
+    model = active_models[0]
+
+    # Fetch all issues for the project and eagerly load their embeddings to avoid N+1 queries.
+    issues = (
+        db.query(Issue)
+        .options(selectinload(Issue.embeddings))
+        .filter(Issue.project_id == project_id)
+        .all()
+    )
+
+    if not issues:
+        return ProjectDuplicatesResponse(
+            project_id=project_id,
+            model_id_used=model.id,
+            threshold_used=similarity_threshold,
+            duplicates=[],
+        )
+
+    all_duplicates_pairs: List[DuplicateIssuePair] = []
+    # Use a set of frozensets of issue IDs to track pairs and avoid (A,B) and (B,A) and (A,A)
+    reported_pairs = set()
+
+    for current_issue_obj in issues:
+        # Find the embedding vector for the current issue corresponding to the active model.
+        query_embedding_vector = None
+        for emb in current_issue_obj.embeddings:
+            if emb.embedding_model_id == model.id:
+                query_embedding_vector = emb.embedding
+                break
+
+        # If no embedding exists for this issue with the current model, we can't find duplicates.
+        if query_embedding_vector is None:
+            continue
+
+        # Perform similarity search using the issue's own embedding vector.
+        similar_issue_score_tuples: List[Tuple[Issue, float]] = (
+            crud_issue_embedding.similarity_search(
+                db=db,
+                model_id=model.id,
+                query_vector=query_embedding_vector,  # Correctly use the vector for the search
+                limit=limit_per_issue
+                + 1,  # Fetch one extra in case the source issue itself is returned
+                project_ids=[project_id],  # Explicitly scope to the current project
+                embedding_type="issue",  # Specify we are comparing issue embeddings
+            )
+        )
+
+        for similar_issue_obj, score in similar_issue_score_tuples:
+            # Manually filter by similarity_threshold
+            if score < similarity_threshold:
+                continue
+
+            # Ensure we are not pairing an issue with itself
+            if similar_issue_obj.id == current_issue_obj.id:
+                continue
+
+            # Create a canonical representation of the pair to avoid (A,B) and (B,A) duplicates
+            # Ensure IDs are consistently typed (e.g., str) for the frozenset key
+            id1_str = str(current_issue_obj.id)
+            id2_str = str(similar_issue_obj.id)
+            pair_key = frozenset([id1_str, id2_str])
+
+            if pair_key not in reported_pairs:
+                try:
+                    # Manually construct data for IssueResponse to match its existing schema
+                    # (as per IssueResponse definition in Step 140)
+                    issue1_data = {
+                        "id": str(current_issue_obj.id),
+                        "external_id": current_issue_obj.external_id,
+                        "key": current_issue_obj.key,
+                        "organization": "",
+                        "project": "",
+                        "url": current_issue_obj.external_url or "",
+                        "created_at": current_issue_obj.created_at,
+                        "updated_at": current_issue_obj.updated_at,
+                        "title": current_issue_obj.title,
+                        "description": current_issue_obj.description,
+                        "status": current_issue_obj.status,
+                        "priority": current_issue_obj.priority,
+                        # Add other fields from IssueBase if necessary
+                        # Ensure all non-optional fields in IssueResponse are covered
+                    }
+                    issue1_response = IssueResponse(**issue1_data)
+
+                    issue2_data = {
+                        "id": str(similar_issue_obj.id),
+                        "external_id": similar_issue_obj.external_id,
+                        "key": similar_issue_obj.key,
+                        "organization": "",
+                        "project": "",
+                        "url": similar_issue_obj.external_url or "",
+                        "created_at": similar_issue_obj.created_at,
+                        "updated_at": similar_issue_obj.updated_at,
+                        "title": similar_issue_obj.title,
+                        "description": similar_issue_obj.description,
+                        "status": similar_issue_obj.status,
+                        "priority": similar_issue_obj.priority,
+                    }
+                    issue2_response = IssueResponse(**issue2_data)
+
+                    all_duplicates_pairs.append(
+                        DuplicateIssuePair(
+                            issue1=issue1_response,
+                            issue2=issue2_response,
+                            similarity=score,
+                        )
+                    )
+                    reported_pairs.add(pair_key)
+                except Exception as e:
+                    logger.error(
+                        f"Error processing duplicate pair ({current_issue_obj.id}, {similar_issue_obj.id}): {e}",
+                        exc_info=True,
+                    )
+
+    return ProjectDuplicatesResponse(
+        project_id=project_id,
+        model_id_used=str(model.id),
+        threshold_used=similarity_threshold,
+        duplicates=all_duplicates_pairs,
+    )

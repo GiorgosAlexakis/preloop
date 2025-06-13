@@ -39,6 +39,10 @@ from spacebridge.schemas.project import (
     TestConnectionRequest,
     TestConnectionResponse,
 )
+from spacebridge.schemas.duplicates import (
+    DuplicateIssuePair,
+    ProjectDuplicatesResponse,
+)
 
 __all__ = [
     # Auth schemas
@@ -71,4 +75,6 @@ __all__ = [
     "ProjectUpdate",
     "TestConnectionRequest",
     "TestConnectionResponse",
+    "DuplicateIssuePair",
+    "ProjectDuplicatesResponse",
 ]
