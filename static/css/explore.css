@@ -25,17 +25,48 @@ body, html {
     background-color: #dbdbe6;
 }
 
-#controls {
+.settings-toggle::after {
+    content: '\25B2'; /* Up-pointing triangle */
+    font-size: 0.8em;
+    transition: transform 0.2s ease-in-out;
+    transform: rotate(180deg);
+}
+.settings-toggle[aria-expanded="true"]::after {
+    transform: rotate(0deg);
+}
+#left-panels {
     position: absolute;
-    top: 20px;
-    left: 20px;
+    top: 10px;
+    left: 10px;
+    z-index: 10;
+    width: 450px;
+    max-width: 90vw;
+}
+#selection-panel {
+    background: rgba(255, 255, 255, 0.95);
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    margin-top: 10px;
+    max-height: calc(50vh - 20px);
+    overflow-y: auto;
+}
+#selected-issues-list .list-group-item {
+    padding: 0.5rem 0.75rem;
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+#selected-issues-list .list-group-item:last-child {
+    border-bottom: none;
+}
+
+#controls {
     z-index: 2;
     background: rgba(255, 255, 255, 0.95);
     padding: 15px;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    width: 450px;
-    max-width: 90vw;
 }
 
 #results {
