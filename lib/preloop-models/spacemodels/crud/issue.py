@@ -72,6 +72,18 @@ class CRUDIssue(CRUDBase[Issue]):
             query = query.filter(Issue.project_id == project_id)
         return query.first()
 
+    def get_by_external_id(
+        self, db: Session, *, project_id: str, external_id: str
+    ) -> Optional[Issue]:
+        """Get issue by its external ID and project ID."""
+        return (
+            db.query(Issue)
+            .filter(
+                Issue.project_id == project_id, Issue.external_id == str(external_id)
+            )
+            .first()
+        )
+
     def get_for_project(
         self,
         db: Session,

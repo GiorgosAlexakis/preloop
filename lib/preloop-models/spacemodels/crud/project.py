@@ -118,6 +118,19 @@ class CRUDProject(CRUDBase[Project]):
 
         return query.first()
 
+    def get_by_identifier(self, db: Session, *, identifier: str) -> Optional[Project]:
+        """
+        Get a project by identifier.
+
+        Args:
+            db: Database session.
+            identifier: The project identifier to search for.
+
+        Returns:
+            An optional matching Project object. Returns None if no match is found.
+        """
+        return db.query(Project).filter(Project.identifier == identifier).first()
+
     def get_for_organization(
         self, db: Session, *, organization_id: str, skip: int = 0, limit: int = 100
     ) -> List[Project]:
