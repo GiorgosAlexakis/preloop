@@ -8,137 +8,342 @@
     <link rel="stylesheet" href="/static/css/spacebridge.css">
     <link rel="stylesheet" href="/static/css/explore.css">
     <script src="/static/js/tsne.js"></script>
+    <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
 </head>
 <body>
-    <div class="container-fluid">
-        <div class="row">
-            <div class="col main-content explore-content d-flex align-items-center justify-content-center">
-                <h2 class="text-muted">Explore: Issue Embedding Visualization (Coming Soon)</h2>
-                <div class="input-group mb-3">
-                    <select id="projectSelect" class="form-select">
-                        <option selected disabled>Loading projects...</option>
-                    </select>
-                    <button id="fetchEmbeddingsBtn" class="btn btn-primary">Fetch Embeddings</button>
-                </div>
-                <div id="results"></div>
-            </div>
-        </div>
-    </div>
-    <script>
-        document.addEventListener('DOMContentLoaded', async () => {
-            const projectSelect = document.getElementById('projectSelect');
-            const resultsDiv = document.getElementById('results');
-            const apiKey = localStorage.getItem('accessToken');
+    <div id="deck-container"></div>
+    <div id="tooltip"></div>
 
-            if (!apiKey) {
-                projectSelect.innerHTML = '<option selected disabled>Please log in first via /login</option>';
-                resultsDiv.textContent = 'API key not found. Please log in first via the /login page.';
-                return;
+    <div id="controls">
+        <h5>Explore Embeddings</h5>
+        <div class="input-group mb-3">
+            <select id="projectSelect" class="form-select">
+                <option selected disabled>Loading projects...</option>
+            </select>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Authentication --- //
+        async function refreshToken() {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) {
+                logout();
+                return null;
             }
 
             try {
-                const response = await fetch('/api/v1/projects', {
-                    method: 'GET',
+                const response = await fetch('/api/v1/auth/token/refresh', {
+                    method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`
-                    }
+                    },
+                    body: JSON.stringify({ refresh_token: refreshToken }),
                 });
 
                 if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('accessToken', data.access_token);
+                    localStorage.setItem('refreshToken', data.refresh_token);
+                    return data.access_token;
+                } else {
+                    logout();
+                    return null;
+                }
+            } catch (error) {
+                console.error('Token refresh failed:', error);
+                logout();
+                return null;
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            window.location.href = '/login?session_expired=true';
+        }
+
+        async function checkAuthStatus() {
+            const accessToken = localStorage.getItem('accessToken');
+            if (!accessToken) {
+                window.location.href = '/login';
+                return false;
+            }
+            // You could add a check here to see if the token is close to expiring
+            // and refresh it proactively, but for now we'll rely on refreshing upon a 401.
+            return true;
+        }
+
+        // --- API Fetch Wrapper --- //
+        async function fetchWithAuth(url, options = {}) {
+            let accessToken = localStorage.getItem('accessToken');
+            options.headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+            };
+
+            let response = await fetch(url, options);
+
+            if (response.status === 401 || response.status === 403) { // Unauthorized or Forbidden
+                console.log('Access token expired or invalid, attempting refresh...');
+                const newAccessToken = await refreshToken();
+                if (newAccessToken) {
+                    options.headers['Authorization'] = `Bearer ${newAccessToken}`;
+                    response = await fetch(url, options); // Retry the request with the new token
+                } else {
+                    // If refresh fails, the user is already redirected to login by refreshToken()
+                    return null; // Stop further execution
+                }
+            }
+
+            return response;
+        }
+
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!await checkAuthStatus()) {
+                return; // Stop script execution if not authenticated
+            }
+
+            const projectSelect = document.getElementById('projectSelect');
+
+            let currentViewState = {
+                target: [0, 0, 0],
+                zoom: 1,
+                // Add any other view state properties you might need like pitch, bearing
+            };
+
+            const deckgl = new deck.DeckGL({
+                container: 'deck-container',
+                viewState: currentViewState,
+                onViewStateChange: ({viewState}) => {
+                    currentViewState = viewState;
+                    // We need to tell Deck.gl to re-render with the updated viewState
+                    deckgl.setProps({viewState: currentViewState});
+                },
+                controller: {
+                    scrollZoom: true,
+                    dragPan: true,
+                    doubleClickZoom: true
+                },
+                views: new deck.OrthographicView({
+                    controller: true
+                }),
+                layers: []
+            });
+
+            try {
+                const response = await fetchWithAuth('/api/v1/projects');
+
+                if (response && response.ok) {
                     const projects = await response.json();
-                    projectSelect.innerHTML = ''; // Clear loading/error message
                     if (projects.length > 0) {
-                        projects.forEach(project => {
-                            const option = document.createElement('option');
-                            option.value = project.name; // Use project name as value
-                            option.textContent = project.name; // Display project name
-                            projectSelect.appendChild(option);
-                        });
-                        // Optionally select the first project or a default one
-                        if (projectSelect.options.length > 0) {
-                             projectSelect.value = 'SpaceBridge'; // Default to SpaceBridge if it exists
-                             if (!Array.from(projectSelect.options).some(opt => opt.value === 'SpaceBridge')) {
-                                projectSelect.selectedIndex = 0; // Or select the first one if SpaceBridge is not found
-                             }
+                        projectSelect.innerHTML = projects.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+
+                        // Get the last selected project from localStorage
+                        const lastSelectedProject = localStorage.getItem('spacebridge_lastSelectedProject');
+                        let projectToLoad;
+
+                        // Check if the last selected project still exists in the current projects list
+                        if (lastSelectedProject && projects.some(p => p.name === lastSelectedProject)) {
+                            projectToLoad = lastSelectedProject;
+                            projectSelect.value = lastSelectedProject;
+                        } else {
+                            // Fall back to the first project if last selected doesn't exist
+                            projectToLoad = projects[0].name;
+                            projectSelect.value = projects[0].name;
                         }
+
+                        // Load the selected project
+                        await fetchAndVisualize(projectToLoad);
                     } else {
                         projectSelect.innerHTML = '<option selected disabled>No projects found.</option>';
                     }
                 } else {
                     const errorResult = await response.json();
                     projectSelect.innerHTML = `<option selected disabled>Error loading projects: ${errorResult.detail || 'Unknown error'}</option>`;
-                    resultsDiv.textContent = `Error loading projects: ${errorResult.detail || 'Failed to fetch projects'}`;
                 }
             } catch (error) {
                 console.error('Error fetching projects:', error);
-                projectSelect.innerHTML = '<option selected disabled>Error fetching projects.</option>';
-                resultsDiv.textContent = 'An error occurred while fetching projects.';
-            }
-        });
-
-        document.getElementById('fetchEmbeddingsBtn').addEventListener('click', async () => {
-            const selectedProjectName = document.getElementById('projectSelect').value;
-            const resultsDiv = document.getElementById('results');
-            const apiKey = localStorage.getItem('accessToken'); // Retrieve API key
-
-            if (!selectedProjectName || document.getElementById('projectSelect').selectedOptions[0].disabled) {
-                resultsDiv.textContent = 'Please select a project.';
-                return;
-            }
-            if (!apiKey) {
-                resultsDiv.textContent = 'API key not found. Please log in first via the /login page.';
-                return;
+                projectSelect.innerHTML = '<option selected disabled>An error occurred.</option>';
             }
 
-            resultsDiv.textContent = 'Fetching embeddings...';
+            projectSelect.addEventListener('change', async () => {
+                const selectedProjectName = projectSelect.value;
 
-            try {
-                const response = await fetch(`/api/v1/embeddings/projects/${selectedProjectName}/embeddings`, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`
-                    }
-                });
+                // Save the selected project to localStorage
+                localStorage.setItem('spacebridge_lastSelectedProject', selectedProjectName);
 
-                const result = await response.json();
+                await fetchAndVisualize(selectedProjectName);
+            });
 
-                if (response.ok) {
-                    const rawData = result.data;
-                    if (rawData && rawData.length > 0) {
-                        resultsDiv.textContent = `Found ${rawData.length} embeddings. Computing t-SNE...`;
+            async function fetchAndVisualize(projectName) {
+                if (!projectName) {
+                    return;
+                }
 
-                        // Use a timeout to allow the DOM to update before the heavy computation
-                        setTimeout(() => {
-                            const highDimensionalData = rawData.map(item => item.embedding);
+                deckgl.setProps({ layers: [] }); // Clear previous visualization
 
-                            const tsne = new tsnejs.tSNE({
-                                dim: 2,
-                                perplexity: 30,
-                                metric: "cosine"
-                            });
+                try {
+                    const response = await fetchWithAuth(`/api/v1/embeddings/projects/${projectName}/embeddings`);
 
-                            tsne.initDataRaw(highDimensionalData);
+                    if (!response) return; // Stop if auth failed and user was redirected
 
-                            for(var i = 0; i < 1000; i++) {
-                                tsne.step();
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        const rawData = result.data;
+                        console.log(rawData);
+                        if (rawData && rawData.length > 0) {
+
+                            // Filter out items that don't have a valid embedding to prevent errors.
+                            const validData = rawData.filter(item => item && item.embedding && Array.isArray(item.embedding) && item.embedding.length > 0);
+
+                            if (validData.length === 0) {
+                                console.log('No valid embeddings found to visualize.');
+                                return; // Exit if no data is left after filtering
                             }
 
-                            const solution = tsne.getSolution();
-                            const formattedJson = JSON.stringify(solution, null, 2);
-                            resultsDiv.textContent = `t-SNE computation complete for ${rawData.length} embeddings:\n${formattedJson}`;
-                        }, 10);
+                            let scatterplotData;
 
+                            if (validData.length === 1) {
+                                // Handle single data point case without t-SNE
+                                const item = validData[0];
+                                scatterplotData = [{
+                                    position: [0, 0, 0],
+                                    issue_id: item.issue_id,
+                                    title: item.issue_title,
+                                    labels: item.issue_labels,
+                                    type: item.issue_type,
+                                }];
+                                console.log("Only one issue found, skipping t-SNE.");
+                            } else {
+                                // Proceed with t-SNE for multiple data points
+                                const highDimensionalData = validData.map(item => item.embedding);
+
+                                const tsne = new tsnejs.tSNE({
+                                    dim: 2,
+                                    // Perplexity must be less than the number of points.
+                                    perplexity: Math.max(1, Math.min(30, validData.length - 1)),
+                                    metric: "cosine"
+                                });
+
+                                tsne.initDataRaw(highDimensionalData);
+
+                                for(var i = 0; i < 1500; i++) { // Reduced steps for faster interaction
+                                    tsne.step();
+                                }
+
+                                const solution = tsne.getSolution();
+                                scatterplotData = solution.map((point, index) => ({
+                                    position: [point[0], point[1], 0],
+                                    issue_id: validData[index].issue_id, // Use validData to keep indices aligned
+                                    title: validData[index].issue_title,
+                                    labels: validData[index].issue_labels, // Will be null if not sent, tooltip handles this
+                                    type: validData[index].issue_type,
+                                }));
+                            }
+
+                            const issueTypeColors = {
+                                'bug': [255, 71, 71],        // Red
+                                'feature': [71, 255, 153],   // Green
+                                'task': [31, 133, 255],      // Blue
+                                'default': [180, 180, 180]   // Gray
+                            };
+
+                            const getColor = (type) => {
+                                if (!type) return issueTypeColors['default'];
+                                const lowerType = type.toLowerCase();
+                                if (lowerType.includes('bug')) return issueTypeColors['bug'];
+                                if (lowerType.includes('feature')) return issueTypeColors['feature'];
+                                if (lowerType.includes('task')) return issueTypeColors['task'];
+                                return issueTypeColors['default'];
+                            };
+
+                            const scatterplotLayer = new deck.ScatterplotLayer({
+                                id: 'scatterplot-layer',
+                                data: scatterplotData,
+                                pickable: true,
+                                opacity: 0.95,
+                                stroked: true,
+                                filled: true,
+                                radiusScale: 4,
+                                radiusMinPixels: 1,
+                                radiusMaxPixels: 10,
+                                lineWidthUnits: 'pixels',
+                                getLineWidth: 2,
+                                getPosition: d => d.position,
+                                getFillColor: d => getColor(d.type),
+                                getLineColor: [255, 255, 255, 100],
+                                onHover: info => {
+                                    const tooltip = document.getElementById('tooltip');
+                                    if (info.object) {
+                                        const { title, type, labels } = info.object;
+                                        tooltip.style.display = 'block';
+                                        tooltip.style.left = `${info.x}px`;
+                                        tooltip.style.top = `${info.y}px`;
+                                        tooltip.innerHTML = `
+                                            <strong>${title}</strong>
+                                            Type: ${type || 'N/A'}<br>
+                                            Labels: ${labels && labels.length > 0 ? labels.join(', ') : 'None'}
+                                        `;
+                                    } else {
+                                        tooltip.style.display = 'none';
+                                    }
+                                }
+                            });
+
+                            deckgl.setProps({ layers: [scatterplotLayer] });
+
+                            // Zoom to fit data
+                            if (scatterplotData.length > 0) {
+                                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                                scatterplotData.forEach(d => {
+                                    minX = Math.min(minX, d.position[0]);
+                                    maxX = Math.max(maxX, d.position[0]);
+                                    minY = Math.min(minY, d.position[1]);
+                                    maxY = Math.max(maxY, d.position[1]);
+                                });
+
+                                const centerX = (minX + maxX) / 2;
+                                const centerY = (minY + maxY) / 2;
+                                const dataWidth = maxX - minX;
+                                const dataHeight = maxY - minY;
+
+                                const viewportWidth = deckgl.width;
+                                const viewportHeight = deckgl.height;
+                                let newZoom;
+
+                                if (dataWidth === 0 && dataHeight === 0) { // Single point or all points identical
+                                    newZoom = 0; // Default zoom, shows point at reasonable size
+                                } else {
+                                    const dataSpan = Math.max(dataWidth, dataHeight) || 1;
+                                    const viewSpan = Math.min(viewportWidth, viewportHeight);
+                                    // Calculate pixels per world unit, aiming for 80% coverage
+                                    const pixelsPerWorldUnit = (viewSpan * 0.8) / dataSpan;
+                                    newZoom = Math.log2(pixelsPerWorldUnit);
+                                }
+
+                                // Update our managed view state
+                                currentViewState = {
+                                    ...currentViewState, // Preserve other properties like pitch/bearing if any
+                                    target: [centerX, centerY, 0],
+                                    zoom: newZoom,
+                                    transitionDuration: 500,
+                                    transitionInterpolator: new deck.LinearInterpolator(['target', 'zoom'])
+                                };
+                                // Tell Deck.gl to use the updated view state
+                                deckgl.setProps({ viewState: currentViewState });
+                            }
+                        } else {
+                        }
                     } else {
-                        resultsDiv.textContent = `No embeddings found for project ${selectedProjectName}.`;
                     }
-                } else {
-                    resultsDiv.textContent = `Error: ${result.detail || 'Failed to fetch embeddings'}`;
+                } catch (error) {
+                    console.error('Fetch error:', error);
                 }
-            } catch (error) {
-                console.error('Fetch error:', error);
-                resultsDiv.textContent = 'An error occurred while fetching embeddings.';
             }
         });
     </script>

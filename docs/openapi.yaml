@@ -2322,6 +2322,23 @@ components:
             type: number
           type: array
           title: Embedding
+        issue_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Issue Title
+        issue_labels:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Issue Labels
+        issue_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Issue Type
       type: object
       required:
       - issue_id

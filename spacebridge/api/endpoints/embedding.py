@@ -44,18 +44,25 @@ def get_raw_embeddings(
     crud_embedding = CRUDIssueEmbedding(db)
     raw_data = crud_embedding.get_raw_embeddings(
         db=db,
-        embedding_model_id=embedding_model_id,
         project_name=project_name,
+        embedding_model_id=embedding_model_id,
         organization_name=organization_name,
-        account_id=current_user.id,
         skip=skip,
         limit=limit,
+        # Pass current_user's account_id to enforce data access restrictions
+        account_id=str(current_user.id),
     )
 
-    # Format the data into the response model
+    # Transform the list of tuples into a list of EmbeddingRawDataItem objects
     response_data = [
-        EmbeddingRawDataItem(issue_id=issue_id, embedding=embedding)
-        for issue_id, embedding in raw_data
+        EmbeddingRawDataItem(
+            issue_id=item[0],
+            embedding=item[1],
+            issue_title=item[2],
+            # issue_labels=item[3],
+            issue_type=item[3],
+        )
+        for item in raw_data
     ]
 
     return EmbeddingRawResponse(data=response_data)

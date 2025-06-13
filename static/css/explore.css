@@ -1,8 +1,74 @@
 /* Explore page specific styles */
+
+body, html {
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevent scrollbars on the body */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
 .explore-content {
     min-height: 100vh;
     width: 100vw;
     margin: 0;
     padding: 0;
     background: var(--bs-gray-100, #f8f9fa);
+}
+
+#deck-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+    background-color: #dbdbe6;
+}
+
+#controls {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 2;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    width: 450px;
+    max-width: 90vw;
+}
+
+#results {
+    margin-top: 15px;
+    max-height: 200px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border: 1px solid #dee2e6;
+}
+
+#tooltip {
+    position: absolute;
+    z-index: 3; /* Above controls */
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 0.9em;
+    display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    max-width: 300px;
+    text-align: left;
+    line-height: 1.4;
+}
+
+#tooltip strong {
+    color: #66ccff; /* A nice highlight color for the title */
+    display: block;
+    margin-bottom: 4px;
 }

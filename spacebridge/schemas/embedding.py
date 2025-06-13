@@ -18,6 +18,9 @@ class EmbeddingRawDataItem(BaseModel):
 
     issue_id: str
     embedding: List[float]
+    issue_title: Optional[str] = None
+    issue_labels: Optional[List[str]] = None
+    issue_type: Optional[str] = None
 
 
 class EmbeddingRawResponse(BaseModel):
