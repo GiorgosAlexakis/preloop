@@ -7,6 +7,17 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/spacebridge.css">
     <link rel="stylesheet" href="/static/css/explore.css">
+    <style>
+        .settings-toggle::after {
+            content: '\25B2'; /* Up-pointing triangle */
+            font-size: 0.8em;
+            transition: transform 0.2s ease-in-out;
+            transform: rotate(180deg);
+        }
+        .settings-toggle[aria-expanded="true"]::after {
+            transform: rotate(0deg);
+        }
+    </style>
     <script src="/static/js/tsne.js"></script>
     <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
 </head>
@@ -20,6 +31,19 @@
             <select id="projectSelect" class="form-select">
                 <option selected disabled>Loading projects...</option>
             </select>
+        </div>
+
+        <div>
+            <a href="#collapseDuplicateSettings" data-bs-toggle="collapse" aria-expanded="false" aria-controls="collapseDuplicateSettings" class="settings-toggle text-decoration-none text-secondary fw-bold d-flex justify-content-between align-items-center mb-2">
+                Settings
+            </a>
+            <div class="collapse" id="collapseDuplicateSettings">
+                    <label for="distanceThresholdSlider" class="form-label">Duplicate Threshold</label>
+                    <div class="d-flex align-items-center">
+                        <input type="range" class="form-range me-2" min="0" max="1" step="0.01" id="distanceThresholdSlider">
+                        <input type="text" class="form-control" style="width: 80px;" id="distanceThresholdInput">
+                    </div>
+            </div>
         </div>
 
     </div>
@@ -108,7 +132,10 @@
             }
 
             const projectSelect = document.getElementById('projectSelect');
+            const thresholdSlider = document.getElementById('distanceThresholdSlider');
+            const thresholdInput = document.getElementById('distanceThresholdInput');
 
+            let scatterplotData = []; // Store scatterplot data globally within this scope
             let currentViewState = {
                 target: [0, 0, 0],
                 zoom: 1,
@@ -132,6 +159,141 @@
                     controller: true
                 }),
                 layers: []
+            });
+
+            // Load initial threshold from storage or use a default
+            let initialThreshold = localStorage.getItem('spacebridge_distanceThreshold') || 0.1;
+            if (initialThreshold < 0) initialThreshold = 0.1; // Ensure it's within the new valid range
+            thresholdSlider.value = initialThreshold;
+            thresholdInput.value = initialThreshold;
+
+            function renderLayers() {
+                const distanceThreshold = thresholdSlider.value;
+
+                // --- Duplicate Detection ---
+                const duplicates = [];
+                if (scatterplotData.length > 1) {
+                    for (let i = 0; i < scatterplotData.length; i++) {
+                        for (let j = i + 1; j < scatterplotData.length; j++) {
+                            const p1 = scatterplotData[i].position;
+                            const p2 = scatterplotData[j].position;
+                            const distance = Math.sqrt(Math.pow(p1[0] - p2[0], 2) + Math.pow(p1[1] - p2[1], 2));
+
+                            if (distance < distanceThreshold) {
+                                const midpoint = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, 0];
+                                duplicates.push({
+                                    position: midpoint,
+                                    issue1: scatterplotData[i].title,
+                                    issue2: scatterplotData[j].title
+                                });
+                            }
+                        }
+                    }
+                }
+
+                const issueTypeColors = {
+                    'bug': [255, 71, 71],        // Red
+                    'feature': [71, 255, 153],   // Green
+                    'task': [31, 133, 255],      // Blue
+                    'default': [180, 180, 180]   // Gray
+                };
+
+                const getColor = (type) => {
+                    if (!type) return issueTypeColors['default'];
+                    const lowerType = type.toLowerCase();
+                    if (lowerType.includes('bug')) return issueTypeColors['bug'];
+                    if (lowerType.includes('feature')) return issueTypeColors['feature'];
+                    if (lowerType.includes('task')) return issueTypeColors['task'];
+                    return issueTypeColors['default'];
+                };
+
+                const duplicateIconLayer = new deck.IconLayer({
+                    id: 'duplicate-icon-layer',
+                    data: duplicates,
+                    pickable: true,
+                    iconAtlas: '/static/images/exclamation-warning-round-black-yellow-icon-alt.svg',
+                    iconMapping: {
+                        marker: {x: 0, y: 0, width: 512, height: 618, mask: false}
+                    },
+                    getIcon: d => 'marker',
+                    sizeScale: 15,
+                    getPosition: d => d.position,
+                    getSize: d => 2.5,
+                    getColor: d => [255, 255, 255], // Use white to not tint the icon
+                    getPixelOffset: [0, -18.75],
+                    onHover: info => {
+                        const tooltip = document.getElementById('tooltip');
+                        if (info.object) {
+                            tooltip.style.display = 'block';
+                            tooltip.style.left = `${info.x}px`;
+                            tooltip.style.top = `${info.y}px`;
+                            tooltip.innerHTML = `
+                                <strong>Potential Duplicate Pair:</strong><br>
+                                - ${info.object.issue1}<br>
+                                - ${info.object.issue2}
+                            `;
+                        } else {
+                            const scatterHover = deckgl.pickObject({x: info.x, y: info.y, layerIds: ['scatterplot-layer']});
+                            if (!scatterHover) {
+                                tooltip.style.display = 'none';
+                            }
+                        }
+                    }
+                });
+
+                const scatterplotLayer = new deck.ScatterplotLayer({
+                    id: 'scatterplot-layer',
+                    data: scatterplotData,
+                    pickable: true,
+                    opacity: 0.95,
+                    stroked: true,
+                    filled: true,
+                    radiusScale: 4,
+                    radiusMinPixels: 1,
+                    radiusMaxPixels: 10,
+                    lineWidthUnits: 'pixels',
+                    getLineWidth: 2,
+                    getPosition: d => d.position,
+                    getFillColor: d => getColor(d.type),
+                    getLineColor: [255, 255, 255, 100],
+                    onHover: info => {
+                        const tooltip = document.getElementById('tooltip');
+                        if (info.object) {
+                            const { title, type, labels } = info.object;
+                            tooltip.style.display = 'block';
+                            tooltip.style.left = `${info.x}px`;
+                            tooltip.style.top = `${info.y}px`;
+                            tooltip.innerHTML = `
+                                <strong>${title}</strong>
+                                Type: ${type || 'N/A'}<br>
+                                Labels: ${labels && labels.length > 0 ? labels.join(', ') : 'None'}
+                            `;
+                        } else {
+                            tooltip.style.display = 'none';
+                        }
+                    }
+                });
+
+                deckgl.setProps({ layers: [scatterplotLayer, duplicateIconLayer] });
+            }
+
+            thresholdSlider.addEventListener('input', () => {
+                thresholdInput.value = thresholdSlider.value;
+                localStorage.setItem('spacebridge_distanceThreshold', thresholdSlider.value);
+                renderLayers();
+            });
+
+            thresholdInput.addEventListener('input', () => {
+                let value = parseFloat(thresholdInput.value.trim());
+                if (isNaN(value) || value < 0) {
+                    value = 0;
+                } else if (value > 1) {
+                    value = 1;
+                }
+                thresholdSlider.value = value;
+                thresholdInput.value = value; // Correct the input field if the value was invalid/out of bounds
+                localStorage.setItem('spacebridge_distanceThreshold', value);
+                renderLayers();
             });
 
             try {
@@ -203,10 +365,10 @@
 
                             if (validData.length === 0) {
                                 console.log('No valid embeddings found to visualize.');
+                                scatterplotData = [];
+                                renderLayers();
                                 return; // Exit if no data is left after filtering
                             }
-
-                            let scatterplotData;
 
                             if (validData.length === 1) {
                                 // Handle single data point case without t-SNE
@@ -246,56 +408,7 @@
                                 }));
                             }
 
-                            const issueTypeColors = {
-                                'bug': [255, 71, 71],        // Red
-                                'feature': [71, 255, 153],   // Green
-                                'task': [31, 133, 255],      // Blue
-                                'default': [180, 180, 180]   // Gray
-                            };
-
-                            const getColor = (type) => {
-                                if (!type) return issueTypeColors['default'];
-                                const lowerType = type.toLowerCase();
-                                if (lowerType.includes('bug')) return issueTypeColors['bug'];
-                                if (lowerType.includes('feature')) return issueTypeColors['feature'];
-                                if (lowerType.includes('task')) return issueTypeColors['task'];
-                                return issueTypeColors['default'];
-                            };
-
-                            const scatterplotLayer = new deck.ScatterplotLayer({
-                                id: 'scatterplot-layer',
-                                data: scatterplotData,
-                                pickable: true,
-                                opacity: 0.95,
-                                stroked: true,
-                                filled: true,
-                                radiusScale: 4,
-                                radiusMinPixels: 1,
-                                radiusMaxPixels: 10,
-                                lineWidthUnits: 'pixels',
-                                getLineWidth: 2,
-                                getPosition: d => d.position,
-                                getFillColor: d => getColor(d.type),
-                                getLineColor: [255, 255, 255, 100],
-                                onHover: info => {
-                                    const tooltip = document.getElementById('tooltip');
-                                    if (info.object) {
-                                        const { title, type, labels } = info.object;
-                                        tooltip.style.display = 'block';
-                                        tooltip.style.left = `${info.x}px`;
-                                        tooltip.style.top = `${info.y}px`;
-                                        tooltip.innerHTML = `
-                                            <strong>${title}</strong>
-                                            Type: ${type || 'N/A'}<br>
-                                            Labels: ${labels && labels.length > 0 ? labels.join(', ') : 'None'}
-                                        `;
-                                    } else {
-                                        tooltip.style.display = 'none';
-                                    }
-                                }
-                            });
-
-                            deckgl.setProps({ layers: [scatterplotLayer] });
+                            renderLayers();
 
                             // Zoom to fit data
                             if (scatterplotData.length > 0) {
@@ -338,14 +451,21 @@
                                 deckgl.setProps({ viewState: currentViewState });
                             }
                         } else {
+                            scatterplotData = [];
+                            renderLayers();
                         }
                     } else {
+                        scatterplotData = [];
+                        renderLayers();
                     }
                 } catch (error) {
                     console.error('Fetch error:', error);
+                    scatterplotData = [];
+                    renderLayers();
                 }
             }
         });
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
