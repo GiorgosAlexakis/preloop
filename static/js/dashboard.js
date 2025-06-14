@@ -1685,9 +1685,9 @@ function toggleDetails(detailsRowId) {
     const detailsRow = document.getElementById(detailsRowId);
     if (detailsRow) {
         console.log(`Details row found. Current display: ${detailsRow.style.display}`); // Log current state
-        if (detailsRow.style.display === 'none') {
-            detailsRow.style.display = ''; // Show the row (defaults to table-row)
-            console.log(`Details row set to display: ''`);
+        if (detailsRow.style.display === 'none' || detailsRow.style.display === '') {
+            detailsRow.style.display = 'table-row'; // Show the row
+            console.log(`Details row set to display: 'table-row'`);
         } else {
             detailsRow.style.display = 'none'; // Hide the row
             console.log(`Details row set to display: 'none'`);
