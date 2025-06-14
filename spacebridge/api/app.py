@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -266,6 +266,53 @@ def create_app() -> FastAPI:
 
     # Mount general static files (CSS, JS for landing/auth pages)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    # --- Mount Lit Frontend ---
+    v2_frontend_dir = base_dir / "SpaceLit" / "dist"
+    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
+
+    if dev_mode:
+        import httpx
+
+        logger.info(
+            "DEV_MODE enabled. Proxying /v2 to Vite dev server at http://localhost:5173"
+        )
+        vite_client = httpx.AsyncClient(base_url="http://localhost:5173")
+
+        @app.api_route("/v2/{rest_of_path:path}")
+        async def proxy_to_vite(request: Request, rest_of_path: str):
+            url = httpx.URL(
+                path=request.url.path, query=request.url.query.encode("utf-8")
+            )
+            rp_req = vite_client.build_request(
+                request.method,
+                url,
+                headers=request.headers.raw,
+                content=await request.body(),
+            )
+            rp_resp = await vite_client.send(rp_req, stream=True)
+            return StreamingResponse(
+                rp_resp.aiter_raw(),
+                status_code=rp_resp.status_code,
+                headers=rp_resp.headers,
+                background=rp_resp.aclose,
+            )
+
+    elif v2_frontend_dir.exists() and v2_frontend_dir.is_dir():
+        logger.info(f"Mounting Lit frontend from: {v2_frontend_dir}")
+        app.mount(
+            "/v2/assets",
+            StaticFiles(directory=str(v2_frontend_dir / "assets")),
+            name="v2-assets",
+        )
+
+        @app.get("/v2/{rest_of_path:path}", response_class=HTMLResponse, tags=["Pages"])
+        async def serve_v2_frontend(request: Request):
+            return FileResponse(str(v2_frontend_dir / "index.html"))
+    else:
+        logger.warning(
+            f"Lit frontend directory '{v2_frontend_dir}' not found. The new UI will not be served."
+        )
 
     # --- Mount MkDocs Site ---
     # Check if the 'site' directory exists (created by 'mkdocs build')

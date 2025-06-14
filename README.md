@@ -36,6 +36,15 @@ This structure allows:
 - Independent development and versioning of the core components.
 - Direct HTTP API access for applications that don't need MCP.
 
+## Frontend
+
+### V2 (Work in Progress)
+
+A new frontend is under active development in the `SpaceLit` directory. This version is being built from the ground up using modern web technologies to provide a fast, responsive, and feature-rich user experience.
+
+- **Technology Stack**: Lit, Vite, TypeScript, and Material Web Components.
+- **Status**: This frontend is a work in progress and is not yet feature-complete.
+
 ## Installation
 
 ### Prerequisites

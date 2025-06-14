@@ -430,7 +430,7 @@ async function saveTracker() {
         payload = { ...basePayload };
         // Only send token if a new one was provided
         if (token) {
-            payload.api_key = token;
+            payload.token = token;
         }
         // Only send config if Jira and username was editable and potentially changed
         if (type === 'jira' && document.getElementById('jiraUsername').disabled === false) {

@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 
 from spacemodels.models.tracker import TrackerType
+from .tracker_scope_rule import TrackerScopeRuleCreate, TrackerScopeRuleResponse
 
 
 class TrackerBase(BaseModel):
@@ -23,17 +24,6 @@ class TrackerBase(BaseModel):
     meta_data: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Additional metadata"
     )
-    included_project_identifiers: Optional[List[str]] = Field(
-        None,
-        description="List of project identifiers to include. None means include all.",
-    )
-    excluded_project_identifiers: Optional[List[str]] = Field(
-        None, description="List of project identifiers to exclude."
-    )
-    include_future_projects: bool = Field(
-        True,
-        description="Whether to automatically include new projects if no specific inclusions are set.",
-    )
     subscribed_events: Optional[List[str]] = Field(
         default_factory=list,
         description="List of specific webhook event names to subscribe to. Empty list implies default/all events based on client logic.",
@@ -48,10 +38,9 @@ class TrackerCreate(TrackerBase):
     """Model for creating a new tracker."""
 
     api_key: str = Field(..., description="API key or token for the tracker")
-    # If Jira provides a secret during webhook creation and we need to store it,
-    # it could be added here. For now, assuming it's set/updated separately or
-    # derived, and not part of initial creation payload directly for the webhook secret itself.
-    # jira_webhook_secret: Optional[str] = Field(None, description="Secret for Jira webhook validation")
+    scope_rules: List[TrackerScopeRuleCreate] = Field(
+        default_factory=list, description="List of scope rules for the tracker"
+    )
 
 
 class TrackerRegisterRequest(BaseModel):
@@ -76,16 +65,8 @@ class TrackerRegisterRequest(BaseModel):
     meta_data: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Additional metadata"
     )
-    included_project_identifiers: Optional[List[str]] = Field(
-        None,
-        description="List of project identifiers to include. None means include all.",
-    )
-    excluded_project_identifiers: Optional[List[str]] = Field(
-        None, description="List of project identifiers to exclude."
-    )
-    include_future_projects: bool = Field(
-        True,
-        description="Whether to automatically include new projects if no specific inclusions are set.",
+    scope_rules: List[TrackerScopeRuleCreate] = Field(
+        default_factory=list, description="List of scope rules for the tracker"
     )
 
     model_config = ConfigDict(
@@ -121,14 +102,8 @@ class TrackerUpdate(BaseModel):
         None, description="Updated connection details"
     )
     meta_data: Optional[Dict[str, Any]] = Field(None, description="Updated metadata")
-    included_project_identifiers: Optional[List[str]] = Field(
-        None, description="Updated list of included project identifiers."
-    )
-    excluded_project_identifiers: Optional[List[str]] = Field(
-        None, description="Updated list of excluded project identifiers."
-    )
-    include_future_projects: Optional[bool] = Field(
-        None, description="Updated setting for including future projects."
+    scope_rules: Optional[List[TrackerScopeRuleCreate]] = Field(
+        None, description="Updated list of scope rules for the tracker"
     )
     subscribed_events: Optional[List[str]] = Field(
         None,
@@ -155,8 +130,9 @@ class TrackerResponse(TrackerBase):
     )
     created: datetime = Field(..., description="Creation timestamp")
     last_updated: datetime = Field(..., description="Last update timestamp")
-    # jira_webhook_secret is intentionally omitted from responses for security.
-    # jira_webhook_id is already inherited from TrackerBase and will be included.
+    scope_rules: List[TrackerScopeRuleResponse] = Field(
+        default_factory=list, description="List of scope rules for the tracker"
+    )
 
     model_config = {"from_attributes": True}
 
@@ -169,6 +145,9 @@ class TrackerTestRequest(BaseModel):
     api_key: str = Field(..., description="API key or token for the tracker")
     connection_details: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Tracker-specific connection details"
+    )
+    organization_identifier: Optional[str] = Field(
+        None, description="Identifier for the organization to fetch projects from"
     )
 
 

@@ -633,17 +633,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/trackers/test-and-list-projects:
+  /api/v1/trackers/test-and-list-orgs:
     post:
       tags:
       - Trackers
-      summary: Test Connection And List Projects
-      description: "Tests connection to a tracker with provided credentials and lists\
-        \ accessible projects.\nDoes not save the tracker configuration.\n\nArgs:\n\
-        \    test_data: Temporary tracker connection details.\n    current_user: The\
-        \ authenticated user performing the test.\n\nReturns:\n    TrackerTestResponse\
-        \ indicating success/failure and the project list if successful."
-      operationId: test_connection_and_list_projects_api_v1_trackers_test_and_list_projects_post
+      summary: Test Connection And List Orgs
+      description: 'Tests connection to a tracker and lists accessible organizations/groups.
+
+        This endpoint does not fetch the projects within each organization.'
+      operationId: test_connection_and_list_orgs_api_v1_trackers_test_and_list_orgs_post
       requestBody:
         content:
           application/json:
@@ -657,6 +655,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackerTestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/trackers/list-projects-for-org:
+    post:
+      tags:
+      - Trackers
+      summary: List Projects For Org
+      description: Lists projects for a specific organization/group within a tracker.
+      operationId: list_projects_for_org_api_v1_trackers_list_projects_for_org_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackerTestRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ProjectIdentifier'
+                type: array
+                title: Response List Projects For Org Api V1 Trackers List Projects
+                  For Org Post
         '422':
           description: Validation Error
           content:
@@ -2017,8 +2047,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-<<<<<<< HEAD
-<<<<<<< HEAD
   /api/v1/issue-duplicates/check:
     get:
       tags:
@@ -2041,11 +2069,20 @@ paths:
         schema:
           type: string
           title: Issue2 Id
-=======
-  /api/v1/private/webhooks/{tracker_type}/{org_identifier}:
-=======
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicate'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/private/webhooks/{tracker_type}/{identifier_in_url}:
->>>>>>> 43956a8 (feat(webhooks): Implement configurable event subscriptions and Jira webhook handling\n\n- Updates schemas, clients, and webhook endpoint for configurable GitHub/GitLab event subscriptions.\n- Integrates Jira webhook registration, validation, and event processing.\n- Updates SpaceModels submodule with related model changes.\n\nRelates to #55, #56)
     post:
       tags:
       - Webhooks
@@ -2069,34 +2106,21 @@ paths:
         required: true
         schema:
           type: string
-<<<<<<< HEAD
-          title: Org Identifier
->>>>>>> 0e4fec0 (Add support for Github org webhooks and Gitlab group webhooks)
-=======
           title: Identifier In Url
->>>>>>> 43956a8 (feat(webhooks): Implement configurable event subscriptions and Jira webhook handling\n\n- Updates schemas, clients, and webhook endpoint for configurable GitHub/GitLab event subscriptions.\n- Integrates Jira webhook registration, validation, and event processing.\n- Updates SpaceModels submodule with related model changes.\n\nRelates to #55, #56)
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
-<<<<<<< HEAD
-              schema:
-                $ref: '#/components/schemas/IssueDuplicate'
-=======
               schema: {}
->>>>>>> 0e4fec0 (Add support for Github org webhooks and Gitlab group webhooks)
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-<<<<<<< HEAD
-=======
       security:
       - bearerAuth: []
->>>>>>> 0e4fec0 (Add support for Github org webhooks and Gitlab group webhooks)
   /:
     get:
       tags:
@@ -3443,6 +3467,20 @@ components:
       - refresh_token
       title: RefreshRequest
       description: Model for token refresh requests.
+    RuleType:
+      type: string
+      enum:
+      - INCLUDE
+      - EXCLUDE
+      title: RuleType
+      description: Enum for rule types.
+    ScopeType:
+      type: string
+      enum:
+      - ORGANIZATION
+      - PROJECT
+      title: ScopeType
+      description: Enum for scope types.
     SearchResponse:
       properties:
         results:
@@ -3577,29 +3615,6 @@ components:
           - type: 'null'
           title: Meta Data
           description: Additional metadata
-        included_project_identifiers:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          title: Included Project Identifiers
-          description: List of project identifiers to include. None means include
-            all.
-        excluded_project_identifiers:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          title: Excluded Project Identifiers
-          description: List of project identifiers to exclude.
-        include_future_projects:
-          type: boolean
-          title: Include Future Projects
-          description: Whether to automatically include new projects if no specific
-            inclusions are set.
-          default: true
         subscribed_events:
           anyOf:
           - items:
@@ -3650,6 +3665,12 @@ components:
           format: date-time
           title: Last Updated
           description: Last update timestamp
+        scope_rules:
+          items:
+            $ref: '#/components/schemas/TrackerScopeRuleResponse'
+          type: array
+          title: Scope Rules
+          description: List of scope rules for the tracker
       type: object
       required:
       - name
@@ -3661,6 +3682,49 @@ components:
       title: TrackerResponse
       description: Response model for tracker data (excluding sensitive info like
         api_key).
+    TrackerScopeRuleCreate:
+      properties:
+        scope_type:
+          $ref: '#/components/schemas/ScopeType'
+          description: The type of scope (ORGANIZATION or PROJECT).
+        rule_type:
+          $ref: '#/components/schemas/RuleType'
+          description: The type of rule (INCLUDE or EXCLUDE).
+        identifier:
+          type: string
+          title: Identifier
+          description: The identifier for the scope (e.g., 'my-org' or 'my-org/my-repo').
+      type: object
+      required:
+      - scope_type
+      - rule_type
+      - identifier
+      title: TrackerScopeRuleCreate
+      description: Schema for creating a new tracker scope rule.
+    TrackerScopeRuleResponse:
+      properties:
+        scope_type:
+          $ref: '#/components/schemas/ScopeType'
+          description: The type of scope (ORGANIZATION or PROJECT).
+        rule_type:
+          $ref: '#/components/schemas/RuleType'
+          description: The type of rule (INCLUDE or EXCLUDE).
+        identifier:
+          type: string
+          title: Identifier
+          description: The identifier for the scope (e.g., 'my-org' or 'my-org/my-repo').
+        id:
+          type: string
+          title: Id
+          description: The unique ID of the scope rule.
+      type: object
+      required:
+      - scope_type
+      - rule_type
+      - identifier
+      - id
+      title: TrackerScopeRuleResponse
+      description: Schema for responding with tracker scope rule details.
     TrackerTestRequest:
       properties:
         tracker_type:
@@ -3686,6 +3750,12 @@ components:
           - type: 'null'
           title: Connection Details
           description: Tracker-specific connection details
+        organization_identifier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization Identifier
+          description: Identifier for the organization to fetch projects from
       type: object
       required:
       - tracker_type
@@ -3767,28 +3837,14 @@ components:
           - type: 'null'
           title: Meta Data
           description: Updated metadata
-        included_project_identifiers:
+        scope_rules:
           anyOf:
           - items:
-              type: string
+              $ref: '#/components/schemas/TrackerScopeRuleCreate'
             type: array
           - type: 'null'
-          title: Included Project Identifiers
-          description: Updated list of included project identifiers.
-        excluded_project_identifiers:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          title: Excluded Project Identifiers
-          description: Updated list of excluded project identifiers.
-        include_future_projects:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Include Future Projects
-          description: Updated setting for including future projects.
+          title: Scope Rules
+          description: Updated list of scope rules for the tracker
         subscribed_events:
           anyOf:
           - items:

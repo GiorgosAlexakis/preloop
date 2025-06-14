@@ -55,6 +55,56 @@ graph LR
 *   **SpaceBridge-MCP (Separate Repository):** An MCP server acting as a bridge for MCP clients, translating MCP requests into calls to the SpaceBridge REST API.
 *   **External Systems:** Issue trackers and MCP clients interacting with the SpaceBridge ecosystem.
 
+## Frontend Architecture (V2)
+
+A new, modern frontend is being developed in the `SpaceLit` directory, aiming to replace the existing static HTML/JavaScript interface.
+
+```mermaid
+graph TD
+    subgraph "Browser"
+        direction LR
+        WebApp["Lit Web Application"]
+        MWC["Material Web Components"]
+        WebApp -- Uses --> MWC
+    end
+
+    subgraph "Build & Dev Tools"
+        direction LR
+        Vite["Vite"]
+        TypeScript["TypeScript"]
+        WTR["Web Test Runner"]
+    end
+
+    subgraph "Backend"
+        SpaceBridgeAPI["SpaceBridge REST API"]
+    end
+
+    WebApp -- Bundled by --> Vite
+    TypeScript -- Transpiled by --> Vite
+    WebApp -- Makes API Calls to --> SpaceBridgeAPI
+    WTR -- Runs Tests on --> WebApp
+
+    style WebApp fill:#aef,stroke:#333,stroke-width:2px
+```
+
+### Technology Stack
+
+*   **Framework:** [Lit](https://lit.dev/) - A simple library for building fast, lightweight web components. It provides reactive state, scoped styles, and a declarative templating system.
+*   **Build Tool:** [Vite](https://vitejs.dev/) - A modern frontend build tool that provides an extremely fast development experience with features like Hot Module Replacement (HMR) and optimized production builds.
+*   **Language:** [TypeScript](https://www.typescriptlang.org/) - A statically typed superset of JavaScript that enhances code quality and maintainability.
+*   **UI Components:** [Material Web Components (MWC)](https://github.com/material-components/material-web) - A set of high-quality, standards-based web components that implement the Material v3 design system.
+*   **Testing:** [Web Test Runner](https://modern-web.dev/docs/test-runner/overview/) - A tool for testing web applications in a real browser, ensuring that components behave as expected in a live environment.
+
+### Structure
+
+The `SpaceLit` application is structured around a component-based architecture.
+
+*   **`src/components/`**: This directory contains all the custom Lit components that make up the application. Each component is typically defined in its own file (e.g., `tracker-list.ts`) and may have a corresponding test file (e.g., `tracker-list.test.ts`).
+*   **`src/api.ts`**: A dedicated module for handling communication with the SpaceBridge REST API. It encapsulates fetch logic, authentication, and data transformation.
+*   **`index.html`**: The main entry point for the application.
+*   **`vite.config.ts`**: Configuration for the Vite build tool.
+*   **`package.json`**: Defines project metadata, dependencies, and scripts for development, building, and testing.
+
 ## Core Components
 
 ### SpaceBridge API Server (Main Repository)
