@@ -1534,7 +1534,7 @@ async function loadProjectsForDuplicatesTab() {
 
         if (response.ok) {
             const projects = await response.json();
-            selectElement.innerHTML = '<option selected disabled>Select a project to find duplicates</option>'; // Clear loading text
+            selectElement.innerHTML = '<option selected disabled>Select a project...</option>'; // Clear loading text
             if (projects.length > 0) {
                 projects.forEach(project => {
                     const option = document.createElement('option');
@@ -1561,7 +1561,7 @@ async function loadProjectsForDuplicatesTab() {
 // --- Fetch and Render Project Duplicates ---
 async function fetchProjectDuplicates(projectId) {
     const resultArea = document.getElementById('duplicates-result-area');
-    resultArea.innerHTML = '<p class="text-center"><i class="bi bi-hourglass-split"></i> Loading duplicates...</p>';
+    resultArea.innerHTML = '<p class="text-center"><i class="bi bi-hourglass-split"></i> Loading issues...</p>';
 
     if (!projectId) {
         resultArea.innerHTML = '<p class="text-muted text-center">Please select a project.</p>';
@@ -1642,8 +1642,8 @@ function renderDuplicates(data) {
         tableHtml += `
             <tr onclick="toggleDetails('${detailRowId}')" style="cursor: pointer;" title="Click to see details">
                 <td>
-                    <div><a href="#" onclick="event.stopPropagation(); showIssueDetails('${pair.issue1.id}'); return false;"><strong>${pair.issue1.key}</strong></a></div>
-                    <div><a href="#" onclick="event.stopPropagation(); showIssueDetails('${pair.issue2.id}'); return false;"><strong>${pair.issue2.key}</strong></a></div>
+                    <div><a href="${pair.issue1.url}" target="_blank" rel="noopener noreferrer"><strong>${pair.issue1.key}</strong> <i class="bi bi-box-arrow-up-right ms-1"></i></a></div>
+                    <div><a href="${pair.issue2.url}" target="_blank" rel="noopener noreferrer"><strong>${pair.issue2.key}</strong> <i class="bi bi-box-arrow-up-right ms-1"></i></a></div>
                 </td>
                 <td>
                     <div>${pair.issue1.title}</div>
@@ -1655,13 +1655,15 @@ function renderDuplicates(data) {
                 <td colspan="3" class="p-3">
                     <div class="row">
                         <div class="col-md-6">
-                            <h6><a href="#" onclick="event.stopPropagation(); showIssueDetails('${pair.issue1.id}'); return false;"><strong>${pair.issue1.key}</strong></a></h6>
+                            <h5>${pair.issue1.title}</h5>
+                            <div><a href="${pair.issue1.url}" target="_blank" rel="noopener noreferrer"><strong>${pair.issue1.key}</strong> <i class="bi bi-box-arrow-up-right ms-1"></i></a></div>
                             <p><strong>Status:</strong> ${pair.issue1.status || 'N/A'}<br>
                                <strong>Priority:</strong> ${pair.issue1.priority || 'N/A'}</p>
                             <div class="description-text">${pair.issue1.description ? pair.issue1.description.replace(/\n/g, '<br>') : 'No description available.'}</div>
                         </div>
                         <div class="col-md-6">
-                            <h6><a href="#" onclick="event.stopPropagation(); showIssueDetails('${pair.issue2.id}'); return false;"><strong>${pair.issue2.key}</strong></a></h6>
+                            <h5>${pair.issue2.title}</h5>
+                            <div><a href="${pair.issue2.url}" target="_blank" rel="noopener noreferrer"><strong>${pair.issue2.key}</strong> <i class="bi bi-box-arrow-up-right ms-1"></i></a></div>
                             <p><strong>Status:</strong> ${pair.issue2.status || 'N/A'}<br>
                                <strong>Priority:</strong> ${pair.issue2.priority || 'N/A'}</p>
                             <div class="description-text">${pair.issue2.description ? pair.issue2.description.replace(/\n/g, '<br>') : 'No description available.'}</div>
