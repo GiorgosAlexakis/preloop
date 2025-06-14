@@ -26,7 +26,7 @@ function checkAuthStatus() {
 // Set up event listeners
 function setupEventListeners() {
 
-// Event delegation for "Add Tracker" buttons/links on dashboard
+    // Event delegation for "Add Tracker" buttons/links on dashboard
     document.body.addEventListener('click', function(event) {
         const targetButton = event.target.closest('.dashboardAddTrackerBtn');
         if (targetButton) {
@@ -35,15 +35,24 @@ function setupEventListeners() {
             // Find the actual sidebar tab button for "Trackers"
             const trackersTabButton = document.getElementById('trackers-tab-btn');
             if (trackersTabButton) {
-                // Trigger the click on the sidebar button to use the existing manual tab logic
-                trackersTabButton.click();
+                // Create a new bootstrap Tab instance and show it
+                const tab = new bootstrap.Tab(trackersTabButton);
+                tab.show();
             } else {
                 console.error('Trackers tab button (#trackers-tab-btn) not found.');
             }
         }
     });
-    // Tab switching
-    // Remove event listener setup since we're handling clicks directly
+
+    // Let Bootstrap handle tab switching, and hook into its event system
+    // to update the page title. This avoids conflicts with the default tab behavior.
+    const tabToggles = document.querySelectorAll('[data-bs-toggle="tab"]');
+    tabToggles.forEach(tabToggle => {
+        tabToggle.addEventListener('shown.bs.tab', event => {
+            // event.target is the tab link that was just shown
+            document.getElementById('currentPageTitle').textContent = event.target.textContent.trim();
+        });
+    });
 
     // Custom date range toggle
     document.getElementById('dateRangeSelector').addEventListener('change', function() {
@@ -66,19 +75,11 @@ function setupEventListeners() {
     // Add handlers for the dashboard "Add Tracker" buttons
     document.getElementById('dashboardAddTrackerBtn').addEventListener('click', function() {
         // Show trackers tab
-        document.querySelectorAll('.tab-pane').forEach(tab => {
-            tab.classList.remove('show', 'active');
-        });
-        document.getElementById('trackers-tab').classList.add('show', 'active');
-
-        // Update active tab button
-        document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.getElementById('trackers-tab-btn').classList.add('active');
-
-        // Update page title
-        document.getElementById('currentPageTitle').textContent = 'Trackers';
+        const trackersTabButton = document.getElementById('trackers-tab-btn');
+        if (trackersTabButton) {
+            const tab = new bootstrap.Tab(trackersTabButton);
+            tab.show();
+        }
 
         // Open the add tracker modal
         const modal = new bootstrap.Modal(document.getElementById('addTrackerModal'));
@@ -89,19 +90,11 @@ function setupEventListeners() {
     document.querySelectorAll('.dashboardAddTrackerBtn').forEach(btn => {
         btn.addEventListener('click', function() {
             // Show trackers tab
-            document.querySelectorAll('.tab-pane').forEach(tab => {
-                tab.classList.remove('show', 'active');
-            });
-            document.getElementById('trackers-tab').classList.add('show', 'active');
-
-            // Update active tab button
-            document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            document.getElementById('trackers-tab-btn').classList.add('active');
-
-            // Update page title
-            document.getElementById('currentPageTitle').textContent = 'Trackers';
+            const trackersTabButton = document.getElementById('trackers-tab-btn');
+            if (trackersTabButton) {
+                const tab = new bootstrap.Tab(trackersTabButton);
+                tab.show();
+            }
 
             // Open the add tracker modal
             const modal = new bootstrap.Modal(document.getElementById('addTrackerModal'));
@@ -312,32 +305,6 @@ function logout() {
 
 // Load all dashboard data
 function loadDashboardData() {
-    // Initialize tabs
-    // For now we'll use direct link activation instead of Bootstrap's tab system
-    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-        btn.addEventListener('click', function() {
-            // Get target tab
-            const targetId = this.getAttribute('data-bs-target');
-
-            // Update page title
-            document.getElementById('currentPageTitle').textContent = this.textContent.trim();
-
-            // Hide all tabs
-            document.querySelectorAll('.tab-pane').forEach(tab => {
-                tab.classList.remove('show', 'active');
-            });
-
-            // Show target tab
-            document.querySelector(targetId).classList.add('show', 'active');
-
-            // Update active state
-            document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            this.classList.add('active');
-        });
-    });
-
     // Fetch trackers
     fetchTrackers();
 
@@ -1581,7 +1548,7 @@ async function fetchProjectDuplicates(projectId) {
     resultArea.innerHTML = '<p class="text-center"><i class="bi bi-hourglass-split"></i> Loading duplicates...</p>';
 
     if (!projectId) {
-        resultArea.innerHTML = '<p class="text-muted text-center">Please select a project to find duplicates.</p>';
+        resultArea.innerHTML = '<p class="text-muted text-center">Please select a project.</p>';
         return;
     }
 
@@ -1640,7 +1607,8 @@ function renderDuplicates(data) {
     }
 
     let tableHtml = `
-        <h5 class="mt-4 mb-3">Duplicate Pairs Found (Threshold: ${data.threshold_used}, Model: ${data.model_id_used ? data.model_id_used.substring(0, 8) + '...' : 'Default'})</h5>
+        <h5 class="mt-4 mb-3">Duplicate Pairs Found</h5>
+        <h6 class="text-muted">Threshold: ${(data.threshold_used * 100).toFixed(2)}%</h6>
         <table class="table table-hover table-sm small">
             <thead>
                 <tr>
@@ -1652,18 +1620,38 @@ function renderDuplicates(data) {
             <tbody>
     `;
 
-    duplicates.forEach(pair => {
+    duplicates.forEach((pair, index) => {
+        console.log(`Rendering duplicate pair ${index}:`, JSON.stringify(pair, null, 2)); // Log the pair data
+        const detailRowId = `details-row-${index}`;
         tableHtml += `
-            <tr>
+            <tr onclick="toggleDetails('${detailRowId}')" style="cursor: pointer;" title="Click to see details">
                 <td>
-                    <div><a href="#" onclick="showIssueDetails('${pair.issue1.id}'); return false;"><strong>${pair.issue1.key}</strong></a></div>
-                    <div><a href="#" onclick="showIssueDetails('${pair.issue2.id}'); return false;"><strong>${pair.issue2.key}</strong></a></div>
+                    <div><a href="#" onclick="event.stopPropagation(); showIssueDetails('${pair.issue1.id}'); return false;"><strong>${pair.issue1.key}</strong></a></div>
+                    <div><a href="#" onclick="event.stopPropagation(); showIssueDetails('${pair.issue2.id}'); return false;"><strong>${pair.issue2.key}</strong></a></div>
                 </td>
                 <td>
                     <div>${pair.issue1.title}</div>
                     <div>${pair.issue2.title}</div>
                 </td>
                 <td>${(pair.similarity * 100).toFixed(2)}%</td>
+            </tr>
+            <tr id="${detailRowId}" class="duplicate-details-row" style="display: none;">
+                <td colspan="3" class="p-3">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6><a href="#" onclick="event.stopPropagation(); showIssueDetails('${pair.issue1.id}'); return false;"><strong>${pair.issue1.key}</strong></a></h6>
+                            <p><strong>Status:</strong> ${pair.issue1.status || 'N/A'}<br>
+                               <strong>Priority:</strong> ${pair.issue1.priority || 'N/A'}</p>
+                            <div class="description-text">${pair.issue1.description ? pair.issue1.description.replace(/\n/g, '<br>') : 'No description available.'}</div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6><a href="#" onclick="event.stopPropagation(); showIssueDetails('${pair.issue2.id}'); return false;"><strong>${pair.issue2.key}</strong></a></h6>
+                            <p><strong>Status:</strong> ${pair.issue2.status || 'N/A'}<br>
+                               <strong>Priority:</strong> ${pair.issue2.priority || 'N/A'}</p>
+                            <div class="description-text">${pair.issue2.description ? pair.issue2.description.replace(/\n/g, '<br>') : 'No description available.'}</div>
+                        </div>
+                    </div>
+                </td>
             </tr>
         `;
     });
@@ -1676,11 +1664,29 @@ function renderDuplicates(data) {
     resultArea.innerHTML = tableHtml;
 }
 
-// Placeholder for showing issue details - implement as needed
+function toggleDetails(detailsRowId) {
+    console.log(`toggleDetails called for: ${detailsRowId}`); // Log when function is called
+    const detailsRow = document.getElementById(detailsRowId);
+    if (detailsRow) {
+        console.log(`Details row found. Current display: ${detailsRow.style.display}`); // Log current state
+        if (detailsRow.style.display === 'none') {
+            detailsRow.style.display = ''; // Show the row (defaults to table-row)
+            console.log(`Details row set to display: ''`);
+        } else {
+            detailsRow.style.display = 'none'; // Hide the row
+            console.log(`Details row set to display: 'none'`);
+        }
+    } else {
+        console.error(`Details row with ID ${detailsRowId} not found!`);
+    }
+}
+
+// Placeholder for showing issue details - implement if needed
 function showIssueDetails(issueId) {
     console.log("Show details for issue:", issueId);
     // Implement logic to show issue details, perhaps in a modal
-    alert(`Details for issue ${issueId} would be shown here.`);
+    // For now, this function is called by clicking the issue keys.
+    // We've added event.stopPropagation() to prevent the row click when a key is clicked.
 }
 
 // Add event listener for project selection dropdown

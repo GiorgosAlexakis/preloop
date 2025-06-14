@@ -21,23 +21,23 @@
                 <h4 class="text-center mb-4">
                     <img src="/static/images/logo_dark.png" alt="SpaceBridge MCP" height="32" class="mb-1">
                 </h4>
-                <div class="d-flex flex-column flex-grow-1">
-                    <button class="nav-link active" id="dashboard-tab-btn" data-bs-target="#dashboard-tab" data-bs-toggle="tab">
+                <div class="d-flex flex-column flex-grow-1" role="tablist">
+                    <button class="nav-link active" id="dashboard-tab-btn" data-bs-target="#dashboard-tab" data-bs-toggle="tab" role="tab" aria-controls="dashboard-tab" aria-selected="true">
                         <i class="bi bi-speedometer2"></i> Dashboard
                     </button>
-                    <button class="nav-link" id="trackers-tab-btn" data-bs-target="#trackers-tab" data-bs-toggle="tab">
+                    <button class="nav-link" id="trackers-tab-btn" data-bs-target="#trackers-tab" data-bs-toggle="tab" role="tab" aria-controls="trackers-tab" aria-selected="false">
                         <i class="bi bi-hdd-network"></i> Trackers
                     </button>
-                    <button class="nav-link" id="api-usage-tab-btn" data-bs-target="#api-usage-tab" data-bs-toggle="tab">
+                    <button class="nav-link" id="api-usage-tab-btn" data-bs-target="#api-usage-tab" data-bs-toggle="tab" role="tab" aria-controls="api-usage-tab" aria-selected="false">
                         <i class="bi bi-graph-up"></i> API Usage
                     </button>
-                    <button class="nav-link" id="api-keys-tab-btn" data-bs-target="#api-keys-tab" data-bs-toggle="tab">
+                    <button class="nav-link" id="api-keys-tab-btn" data-bs-target="#api-keys-tab" data-bs-toggle="tab" role="tab" aria-controls="api-keys-tab" aria-selected="false">
                         <i class="bi bi-key-fill"></i> API Keys
                     </button>
-                    <button class="nav-link" id="duplicates-tab-btn" data-bs-target="#duplicates-tab" data-bs-toggle="tab">
+                    <button class="nav-link" id="duplicates-tab-btn" data-bs-target="#duplicates-tab" data-bs-toggle="tab" role="tab" aria-controls="duplicates-tab" aria-selected="false">
                         <i class="bi bi-files"></i> Duplicates
                     </button>
-                    <button class="nav-link" id="settings-tab-btn" data-bs-target="#settings-tab" data-bs-toggle="tab">
+                    <button class="nav-link" id="settings-tab-btn" data-bs-target="#settings-tab" data-bs-toggle="tab" role="tab" aria-controls="settings-tab" aria-selected="false">
                         <i class="bi bi-gear"></i> Settings
                     </button>
                 </div>
@@ -63,7 +63,7 @@
                 <!-- Tab Content -->
                 <div class="tab-content" id="dashboardTabContent">
                     <!-- Dashboard Tab -->
-                    <div class="tab-pane fade show active" id="dashboard-tab" role="tabpanel" aria-labelledby="dashboard-tab-btn">
+                    <div class="tab-pane fade show active" id="dashboard-tab" role="tabpanel" aria-labelledby="dashboard-tab-btn" tabindex="0">
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="stat-card">
@@ -125,7 +125,7 @@
                     </div>
 
                     <!-- Trackers Tab -->
-                    <div class="tab-pane fade" id="trackers-tab" role="tabpanel" aria-labelledby="trackers-tab-btn">
+                    <div class="tab-pane fade" id="trackers-tab" role="tabpanel" aria-labelledby="trackers-tab-btn" tabindex="0">
                         <div class="card">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <span>Your Trackers</span>
@@ -142,7 +142,7 @@
                     </div>
 
                     <!-- API Usage Tab -->
-                    <div class="tab-pane fade" id="api-usage-tab" role="tabpanel" aria-labelledby="api-usage-tab-btn">
+                    <div class="tab-pane fade" id="api-usage-tab" role="tabpanel" aria-labelledby="api-usage-tab-btn" tabindex="0">
                         <div class="card">
                             <!-- <div class="card-header d-flex align-items-center">API Usage Statistics</div> -->
                             <div class="card-body">
@@ -199,7 +199,7 @@
                     </div>
 
                     <!-- API Keys Tab -->
-                    <div class="tab-pane fade" id="api-keys-tab" role="tabpanel" aria-labelledby="api-keys-tab-btn">
+                    <div class="tab-pane fade" id="api-keys-tab" role="tabpanel" aria-labelledby="api-keys-tab-btn" tabindex="0">
                         <div class="card">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <span>API Keys</span>
@@ -233,11 +233,10 @@
                     </div>
 
                     <!-- Duplicates Tab -->
-                    <div class="tab-pane fade" id="duplicates-tab" role="tabpanel" aria-labelledby="duplicates-tab-btn">
+                    <div class="tab-pane fade" id="duplicates-tab" role="tabpanel" aria-labelledby="duplicates-tab-btn" tabindex="0">
                         <div class="card">
                             <div class="card-body">
                                 <div class="mb-3">
-                                    <label for="projectSelect" class="form-label">Select a Project</label>
                                     <select class="form-select" id="projectSelect">
                                         <option selected>Loading projects...</option>
                                     </select>
@@ -250,7 +249,7 @@
                     </div>
 
                     <!-- Settings Tab -->
-                    <div class="tab-pane fade" id="settings-tab" role="tabpanel" aria-labelledby="settings-tab-btn">
+                    <div class="tab-pane fade" id="settings-tab" role="tabpanel" aria-labelledby="settings-tab-btn" tabindex="0">
                         <div class="card">
                             <div class="card-header d-flex align-items-center">Account Settings</div>
                             <div class="card-body">

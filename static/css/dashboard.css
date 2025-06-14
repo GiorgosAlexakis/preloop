@@ -196,6 +196,31 @@
     padding: .5em .25em;
 }
 
+.duplicate-details-row td {
+    background-color: #f8f9fa; /* Light background for details section */
+    border-top: 1px solid #dee2e6;
+}
+
+.duplicate-details-row h6 {
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.duplicate-details-row p {
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.duplicate-details-row .description-text {
+    font-size: 0.8rem;
+    max-height: 150px; /* Limit height and make scrollable if needed */
+    overflow-y: auto;
+    padding: 5px;
+    background-color: #fff;
+    border: 1px solid #eee;
+    border-radius: 4px;
+}
+
 /* Sidebar copyright styling */
 .sidebar-copyright {
     font-size: 0.75rem;
