@@ -201,6 +201,7 @@ class BaseTracker(ABC):
             "status": status,
             "issue_type": issue_type,
             "priority": issue_data.get("priority", None),
+            "updated_at": issue_data.get("updated_at"),
             "last_updated_external": issue_data.get(
                 "updated_at"
             ),

@@ -133,7 +133,9 @@ def scan_tracker_cmd(tracker_id: str, verbose: bool, force_update: bool):
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
-    click.echo(f"Organizations: {stats['organizations']}")
+    click.echo(f"Organizations scanned: {stats['organizations_scanned']}")
+    click.echo(f"Organizations skipped webhook: {stats['organizations_skipped_webhook']}")
+    click.echo(f"Organizations skipped polling: {stats['organizations_skipped_polling']}")
     click.echo(f"Projects: {stats['projects']}")
     click.echo(f"Issues: {stats['issues']}")
     click.echo(f"Embeddings updated: {stats['embeddings_updated']}")

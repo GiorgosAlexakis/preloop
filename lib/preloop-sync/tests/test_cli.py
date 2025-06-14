@@ -175,7 +175,9 @@ class TestScanCommands(unittest.TestCase):
 
         # Mock the scan_tracker_func
         mock_scan_tracker_func.return_value = {
-            "organizations": 1,
+            "organizations_scanned": 1,
+            "organizations_skipped_webhook": 0,
+            "organizations_skipped_polling": 0,
             "projects": 3,
             "issues": 25,
             "embeddings_updated": 10,

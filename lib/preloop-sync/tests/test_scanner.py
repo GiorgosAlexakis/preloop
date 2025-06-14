@@ -2,6 +2,7 @@
 
 import unittest
 from unittest.mock import MagicMock, patch
+from datetime import datetime
 
 from spacesync.scanner.core import TrackerClient
 
@@ -61,7 +62,7 @@ class TestTrackerClient(unittest.TestCase):
         mock_project.name = "Test Project"
 
         # Setup mocks
-        mock_crud_issue.get_last_updated.return_value = None
+        mock_crud_issue.get_by_external_id.return_value = None
         mock_crud_issue.get_for_project.return_value = []
 
         # Mock the transform_issue method
@@ -70,6 +71,8 @@ class TestTrackerClient(unittest.TestCase):
                 "title": "Test Issue",
                 "description": "Test Description",
                 "status": "open",
+                "external_id": "1234",
+                "updated_at": datetime.now(),
             }
         )
 
