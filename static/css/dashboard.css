@@ -190,6 +190,12 @@
     color: var(--secondary);
 }
 
+/* Duplicates Tab */
+
+#duplicates-result-area td {
+    padding: .5em .25em;
+}
+
 /* Sidebar copyright styling */
 .sidebar-copyright {
     font-size: 0.75rem;

@@ -1631,6 +1631,9 @@ function renderDuplicates(data) {
     const duplicates = data.duplicates;
     const projectId = data.project_id; // Assuming project_id is in the response for context if needed
 
+    // Sort duplicates by similarity in descending order
+    duplicates.sort((a, b) => b.similarity - a.similarity);
+
     if (duplicates.length === 0) {
         resultArea.innerHTML = '<p class="text-center">No duplicates found for this project.</p>';
         return;
@@ -1641,10 +1644,9 @@ function renderDuplicates(data) {
         <table class="table table-hover table-sm small">
             <thead>
                 <tr>
-                    <th>Issue 1</th>
-                    <th>Issue 2</th>
+                    <th>Issue Keys</th>
+                    <th>Issue Titles</th>
                     <th>Similarity</th>
-                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -1653,14 +1655,15 @@ function renderDuplicates(data) {
     duplicates.forEach(pair => {
         tableHtml += `
             <tr>
-                <td><a href="#" onclick="showIssueDetails('${pair.issue1.id}'); return false;">${pair.issue1.key}</a>: ${pair.issue1.title}</td>
-                <td><a href="#" onclick="showIssueDetails('${pair.issue2.id}'); return false;">${pair.issue2.key}</a>: ${pair.issue2.title}</td>
-                <td>${(pair.similarity * 100).toFixed(2)}%</td>
                 <td>
-                    <button class="btn btn-outline-primary btn-sm" onclick="showIssueDetails('${pair.issue1.id}')" title="View ${pair.issue1.key}"><i class="bi bi-eye"></i></button>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="showIssueDetails('${pair.issue2.id}')" title="View ${pair.issue2.key}"><i class="bi bi-eye"></i></button>
-                    <!-- Add more actions here, e.g., link, merge -->
+                    <div><a href="#" onclick="showIssueDetails('${pair.issue1.id}'); return false;"><strong>${pair.issue1.key}</strong></a></div>
+                    <div><a href="#" onclick="showIssueDetails('${pair.issue2.id}'); return false;"><strong>${pair.issue2.key}</strong></a></div>
                 </td>
+                <td>
+                    <div>${pair.issue1.title}</div>
+                    <div>${pair.issue2.title}</div>
+                </td>
+                <td>${(pair.similarity * 100).toFixed(2)}%</td>
             </tr>
         `;
     });
