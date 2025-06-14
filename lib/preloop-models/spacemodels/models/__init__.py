@@ -13,6 +13,7 @@ from .tracker import Tracker, TrackerType
 from .client_version_log import ClientVersionLog
 from .llm_model import LLMModel
 from .flow import Flow
+from .webhook import Webhook
 
 __all__ = [
     "Base",
@@ -32,4 +33,5 @@ __all__ = [
     "Comment",
     "LLMModel",
     "Flow",
+    "Webhook",
 ]
