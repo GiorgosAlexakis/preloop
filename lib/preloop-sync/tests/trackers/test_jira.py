@@ -1,14 +1,12 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from datetime import datetime
-import logging
 import json # For creating content bytes for mock response
 import requests # For spec in MagicMock
+from jira import JIRAError
 
 from spacesync.trackers.jira import JiraTracker
-
-# Suppress logging during tests unless specifically needed for debugging a test
-logging.disable(logging.CRITICAL)
+from spacesync.exceptions import TrackerAuthenticationError
 
 class TestJiraTrackerComments(unittest.TestCase):
 
@@ -156,6 +154,88 @@ class TestJiraTrackerComments(unittest.TestCase):
             params=expected_search_params,
             json=None # _make_request passes json_data=None for GET requests
         )
+
+class TestJiraTrackerWebhooks(unittest.TestCase):
+
+    def setUp(self):
+        # Basic setup for all webhook tests
+        self.mock_jira_patcher = patch('spacesync.trackers.jira.JIRA')
+        self.mock_jira_class = self.mock_jira_patcher.start()
+
+        self.mock_jira_client = MagicMock()
+        self.mock_jira_class.return_value = self.mock_jira_client
+
+        self.tracker = JiraTracker(
+            tracker_id="test-webhook-tracker",
+            api_key="fake_key",
+            connection_details={
+                "jira_url": "https://myjira.atlassian.net",
+                "username": "user@example.com"
+            }
+        )
+
+    def tearDown(self):
+        self.mock_jira_patcher.stop()
+
+    def test_register_webhook_success(self):
+        """Test successful webhook registration."""
+        self.mock_jira_client._session.post.return_value = MagicMock(status_code=201)
+
+        result = self.tracker.register_webhook(
+            project_key="TEST",
+            webhook_url="https://example.com/webhook",
+            secret="mysecret"
+        )
+
+        self.assertTrue(result)
+        self.mock_jira_client._session.post.assert_called_once()
+        call_args = self.mock_jira_client._session.post.call_args
+        self.assertEqual(call_args[0][0], "https://myjira.atlassian.net/rest/webhooks/1.0/webhook")
+        self.assertIn("SpaceBridge Sync for TEST", call_args[1]['json']['name'])
+        self.assertIn("secret=mysecret", call_args[1]['json']['url'])
+        self.assertIn("project_key=TEST", call_args[1]['json']['url'])
+
+    def test_register_webhook_already_exists(self):
+        """Test registration when webhook already exists (Jira 400 error)."""
+        error_text = "webhook with same name and url already exists"
+        self.mock_jira_client._session.post.side_effect = JIRAError(status_code=400, text=error_text)
+
+        with self.assertLogs('spacesync.trackers.jira', level='WARNING') as cm:
+            result = self.tracker.register_webhook(
+                project_key="TEST",
+                webhook_url="https://example.com/webhook",
+                secret="mysecret"
+            )
+            self.assertTrue(result)
+            # Check that a warning was logged about the webhook already existing
+            self.assertTrue(any("already exists" in log_msg for log_msg in cm.output))
+
+    def test_register_webhook_permission_denied(self):
+        """Test registration failure due to permissions (Jira 403 error)."""
+        error_text = "You do not have permission to configure webhooks for this project."
+        self.mock_jira_client._session.post.side_effect = JIRAError(status_code=403, text=error_text)
+
+        with self.assertRaises(TrackerAuthenticationError) as e:
+            self.tracker.register_webhook(
+                project_key="TEST",
+                webhook_url="https://example.com/webhook",
+                secret="mysecret"
+            )
+        self.assertIn("Jira permission denied", str(e.exception))
+
+
+    def test_register_webhook_no_client(self):
+        """Test registration when Jira client is not initialized."""
+        self.tracker.jira_client = None
+        with self.assertLogs('spacesync.trackers.jira', level='ERROR') as cm:
+            result = self.tracker.register_webhook(
+                project_key="TEST",
+                webhook_url="https://example.com/webhook",
+                secret="mysecret"
+            )
+            self.assertFalse(result)
+            self.assertTrue(any("Jira client not initialized" in log_msg for log_msg in cm.output))
+
 
 if __name__ == '__main__':
     unittest.main()

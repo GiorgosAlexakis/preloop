@@ -29,6 +29,7 @@ setup(
         "flask>=2.0.0",
         "APScheduler>=3.0.0",
         "pytz>=2025.2",
+        "jira>=3.8.0",
     ],
     entry_points={
         "console_scripts": [

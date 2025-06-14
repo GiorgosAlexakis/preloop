@@ -404,52 +404,35 @@ class JiraTracker(BaseTracker):
 
         jql_filter = f"project = {project_key.upper()}" # JQL project keys are often uppercase
 
+        # TODO: Migrate to OAuth 2.0 for long-term stability, as Basic Auth is deprecated for many cloud APIs.
+        # The 'list webhooks' endpoint is restricted, so we adopt a 'try-to-create' approach.
         try:
-            existing_webhooks = self.jira_client.webhooks()
-            for wh in existing_webhooks:
-                # Normalize URLs for comparison if needed, though exact match is safer here
-                wh_url_parsed = urllib.parse.urlparse(wh.url)
-                wh_query_params = urllib.parse.parse_qs(wh_url_parsed.query)
-
-                # Check if the core URL matches (ignoring our specific query params for a moment)
-                core_wh_url = wh_url_parsed._replace(query='').geturl()
-                core_target_url = parsed_url._replace(query='').geturl()
-
-                if core_wh_url == core_target_url and \
-                   wh_query_params.get('project_key') == [project_key] and \
-                   set(wh.events) == set(actual_events) and \
-                   wh.jqlFilter == jql_filter:
-
-                    # Now check if the secret also matches, if our secret param exists
-                    if wh_query_params.get('secret') == [secret]:
-                        logger.warning(
-                            f"Webhook for project {project_key} with URL {url_with_secret_and_project} "
-                            f"and events {actual_events} already exists (ID: {wh.id})."
-                        )
-                        return True
-                    else:
-                        # Same core webhook but different secret. This might be an issue.
-                        # For now, we'll treat it as "not our webhook" and try to register ours.
-                        # Alternatively, one might want to delete the old one and register new.
-                        logger.info(
-                            f"Webhook for project {project_key} with URL {core_target_url} exists (ID: {wh.id}), "
-                            f"but with a different secret or configuration. Will attempt to register new one."
-                        )
-
             logger.info(
                 f"Registering webhook for project {project_key}: Name='{webhook_name}', "
                 f"URL='{url_with_secret_and_project}', JQL='{jql_filter}', Events='{actual_events}'"
             )
-            self.jira_client.add_webhook(
-                name=webhook_name,
-                url=url_with_secret_and_project,
-                jqlFilter=jql_filter,
-                events=actual_events,
-                excludeIssueDetails=False, # Typically false to get full data
+            self.jira_client._session.post(
+                f"{self.jira_url}/rest/webhooks/1.0/webhook",
+                json={
+                    "name": webhook_name,
+                    "url": url_with_secret_and_project,
+                    "events": actual_events,
+                    "jqlFilter": jql_filter,
+                    "excludeIssueDetails": False,
+                },
             )
             logger.info(f"Successfully registered webhook for project {project_key}.")
             return True
         except JIRAError as e:
+            # Check if the error is because the webhook already exists.
+            if e.status_code == 400 and "webhook with same name and url already exists" in e.text.lower():
+                logger.warning(
+                    f"Webhook for project {project_key} with URL {url_with_secret_and_project} "
+                    f"already exists. Assuming it's correctly configured."
+                )
+                return True
+
+            # Handle other Jira errors
             self._handle_jira_error(e, f"registering webhook for project {project_key}")
             return False
         except Exception as e:
@@ -486,34 +469,38 @@ class JiraTracker(BaseTracker):
         try:
             if webhook_id:
                 logger.info(f"Attempting to unregister webhook with ID {webhook_id} for project {project_key}.")
-                self.jira_client.delete_webhook(webhook_id)
+                self.jira_client._session.delete(
+                    f"{self.jira_url}/rest/webhooks/1.0/webhook/{webhook_id}"
+                )
                 logger.info(f"Successfully unregistered webhook ID {webhook_id}.")
                 return True
 
             if webhook_url:
                 logger.info(f"Attempting to unregister webhooks for project {project_key} matching base URL pattern similar to {webhook_url}.")
-                all_webhooks = self.jira_client.webhooks()
+                all_webhooks = self.jira_client._get_json("webhook")
                 deleted_count = 0
                 found_potential_matches = False
                 jql_filter_to_match = f"project = {project_key.upper()}"
 
                 for wh in all_webhooks:
-                    wh_url_parsed = urllib.parse.urlparse(wh.url)
+                    wh_url_parsed = urllib.parse.urlparse(wh["url"])
                     wh_query_params = urllib.parse.parse_qs(wh_url_parsed.query)
                     core_wh_url = wh_url_parsed._replace(query='').geturl()
 
                     if core_wh_url.rstrip('/') == webhook_url.rstrip('/') and \
-                       wh.jqlFilter == jql_filter_to_match and \
+                       wh["jqlFilter"] == jql_filter_to_match and \
                        'secret' in wh_query_params and \
                        wh_query_params.get('project_key') == [project_key]:
                         found_potential_matches = True
-                        logger.info(f"Found matching webhook ID {wh.id} (URL: {wh.url}, JQL: {wh.jqlFilter}) for project {project_key} and base URL {webhook_url}. Attempting to delete.")
+                        logger.info(f"Found matching webhook ID {wh['id']} (URL: {wh['url']}, JQL: {wh['jqlFilter']}) for project {project_key} and base URL {webhook_url}. Attempting to delete.")
                         try:
-                            self.jira_client.delete_webhook(wh.id)
-                            logger.info(f"Successfully deleted webhook ID {wh.id}.")
+                            self.jira_client._session.delete(
+                                f"{self.jira_url}/rest/webhooks/1.0/webhook/{wh['id']}"
+                            )
+                            logger.info(f"Successfully deleted webhook ID {wh['id']}.")
                             deleted_count += 1
                         except JIRAError as e_delete:
-                            logger.error(f"Failed to delete webhook ID {wh.id} for project {project_key}: {e_delete.status_code} - {e_delete.text}")
+                            logger.error(f"Failed to delete webhook ID {wh['id']} for project {project_key}: {e_delete.status_code} - {e_delete.text}")
                             # Continue to try deleting other matches
 
                 if not found_potential_matches:
