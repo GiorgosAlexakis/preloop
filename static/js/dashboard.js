@@ -6,11 +6,22 @@ let apiUsage = null;
 let activeKeyId = null;
 let activeTrackerId = null;
 
-// Check auth status on page load
-document.addEventListener('DOMContentLoaded', function() {
-    checkAuthStatus();
+// Initialize dashboard
+function initializeDashboard() {
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+        window.location.href = '/login';
+        return;
+    }
+
+    fetchUserProfile();
     setupEventListeners();
-});
+    loadDashboardData();
+    loadLastActiveTab(); // Restore last active tab
+}
+
+// Call initializeDashboard when the DOM is fully loaded
+document.addEventListener('DOMContentLoaded', initializeDashboard);
 
 // Check if user is authenticated
 function checkAuthStatus() {
@@ -49,8 +60,13 @@ function setupEventListeners() {
     const tabToggles = document.querySelectorAll('[data-bs-toggle="tab"]');
     tabToggles.forEach(tabToggle => {
         tabToggle.addEventListener('shown.bs.tab', event => {
-            // event.target is the tab link that was just shown
             document.getElementById('currentPageTitle').textContent = event.target.textContent.trim();
+            // Store the active tab and timestamp
+            const activeTabData = {
+                tabId: event.target.id,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('activeDashboardTab', JSON.stringify(activeTabData));
         });
     });
 
@@ -1607,7 +1623,7 @@ function renderDuplicates(data) {
     }
 
     let tableHtml = `
-        <h5 class="mt-4 mb-3">Duplicate Pairs Found</h5>
+        <h5 class="mt-4 mb-3"Potential Duplicate Pairs</h5>
         <h6 class="text-muted">Threshold: ${(data.threshold_used * 100).toFixed(2)}%</h6>
         <table class="table table-hover table-sm small">
             <thead>
@@ -1701,4 +1717,48 @@ if (projectSelectElement) {
             resultArea.innerHTML = '<p class="text-muted text-center">Please select a project.</p>';
         }
     });
+}
+
+const EXPIRATION_TIME_MS = 2 * 60 * 1000; // 2 minutes
+
+// Restore last active tab from localStorage if not expired
+function loadLastActiveTab() {
+    const storedTabData = localStorage.getItem('activeDashboardTab');
+
+    if (storedTabData) {
+        try {
+            const { tabId, timestamp } = JSON.parse(storedTabData);
+
+            const timeSinceStored = Date.now() - timestamp;
+            const isExpired = timeSinceStored >= EXPIRATION_TIME_MS;
+
+            if (tabId && timestamp && !isExpired) {
+                const tabButton = document.getElementById(tabId);
+
+                if (tabButton) {
+                    if (!tabButton.classList.contains('active')) {
+                        const tab = new bootstrap.Tab(tabButton);
+                        tab.show(); // This should trigger 'shown.bs.tab' which also updates title
+                    } else {
+                        document.getElementById('currentPageTitle').textContent = tabButton.textContent.trim();
+                    }
+                } else {
+                    localStorage.removeItem('activeDashboardTab'); // Clean up invalid entry
+                }
+            } else {
+                localStorage.removeItem('activeDashboardTab');
+                const defaultTabButton = document.getElementById('dashboard-tab-btn'); // Assuming this is your default
+                if (defaultTabButton && defaultTabButton.classList.contains('active')) {
+                    document.getElementById('currentPageTitle').textContent = defaultTabButton.textContent.trim();
+                }
+            }
+        } catch (error) {
+            localStorage.removeItem('activeDashboardTab'); // Clean up corrupted entry
+        }
+    } else {
+        const defaultTabButton = document.getElementById('dashboard-tab-btn'); // Assuming this is your default
+        if (defaultTabButton && defaultTabButton.classList.contains('active')) {
+             document.getElementById('currentPageTitle').textContent = defaultTabButton.textContent.trim();
+        }
+    }
 }
