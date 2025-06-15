@@ -569,7 +569,7 @@
                 deckgl.setProps({ layers: [] }); // Clear previous visualization
 
                 try {
-                    const response = await fetchWithAuth(`/api/v1/embeddings/projects/${projectName}/embeddings`);
+                    const response = await fetchWithAuth(`/api/v1/projects/${projectName}/embeddings`);
 
                     if (!response) return; // Stop if auth failed and user was redirected
 

@@ -5,6 +5,7 @@ let apiKeys = [];
 let apiUsage = null;
 let activeKeyId = null;
 let activeTrackerId = null;
+let llm_providers_url = '/api/v1/llm-providers';
 
 // Initialize dashboard
 function initializeDashboard() {
@@ -21,7 +22,212 @@ function initializeDashboard() {
 }
 
 // Call initializeDashboard when the DOM is fully loaded
-document.addEventListener('DOMContentLoaded', initializeDashboard);
+document.addEventListener('DOMContentLoaded', function () {
+    initializeDashboard();
+
+    // LLM Providers Section
+    const llmProviderModal = new bootstrap.Modal(document.getElementById('llmProviderModal'));
+    const llmProviderForm = document.getElementById('llmProviderForm');
+    const saveLLMProviderBtn = document.getElementById('saveLLMProviderBtn');
+    const llmProvidersTableBody = document.getElementById('llmProvidersTable');
+    const addLLMProviderBtn = document.getElementById('addLLMProviderBtn');
+
+    async function fetchLLMProviders() {
+        try {
+            const response = await fetch(llm_providers_url, { // User updated this path
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                }
+            });
+            if (!response.ok) {
+                if (response.status === 401) {
+                    console.error('Session expired. Please log in again.');
+                    // Potentially redirect to login: window.location.href = '/login';
+                    return [];
+                }
+                const errorData = await response.json().catch(() => ({ detail: 'Failed to fetch LLM providers' }));
+                console.error(`Error fetching LLM providers: ${errorData.detail}`);
+                return [];
+            }
+            return await response.json();
+        } catch (error) {
+            console.error('Error fetching LLM providers:', error);
+            console.error('An unexpected error occurred while fetching LLM providers.');
+            return [];
+        }
+    }
+
+    function renderLLMProvidersTable(providers) {
+        llmProvidersTableBody.innerHTML = ''; // Clear existing rows
+        if (!providers || providers.length === 0) {
+            const row = llmProvidersTableBody.insertRow();
+            const cell = row.insertCell(0);
+            cell.colSpan = 4;
+            cell.textContent = 'No LLM providers configured yet.';
+            cell.classList.add('text-center', 'text-muted');
+            return;
+        }
+
+        providers.forEach(provider => {
+            const row = llmProvidersTableBody.insertRow();
+            row.insertCell().textContent = provider.provider_name;
+
+            const defaultCell = row.insertCell();
+            const defaultBadge = document.createElement('span');
+            defaultBadge.classList.add('badge');
+            if (provider.is_default) {
+                defaultBadge.classList.add('bg-success');
+                defaultBadge.textContent = 'Default';
+            } else {
+                defaultBadge.classList.add('bg-secondary', 'clickable');
+                defaultBadge.textContent = 'Set Default';
+                defaultBadge.title = 'Click to set as default provider';
+                defaultBadge.addEventListener('click', () => setDefaultLLMProvider(provider.id));
+            }
+            defaultCell.appendChild(defaultBadge);
+
+            row.insertCell().textContent = new Date(provider.created_at).toLocaleDateString();
+
+            const actionsCell = row.insertCell();
+            const deleteBtn = document.createElement('button');
+            deleteBtn.classList.add('btn', 'btn-danger', 'btn-sm');
+            deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+            deleteBtn.title = 'Delete Provider';
+            deleteBtn.addEventListener('click', () => confirmDeleteLLMProvider(provider.id, provider.provider_name));
+            actionsCell.appendChild(deleteBtn);
+        });
+    }
+
+    async function loadLLMProviders() {
+        showLoadingIndicator(llmProvidersTableBody, 4);
+        const providers = await fetchLLMProviders();
+        renderLLMProvidersTable(providers);
+    }
+
+    if (saveLLMProviderBtn) {
+        saveLLMProviderBtn.addEventListener('click', async function () {
+            const providerName = document.getElementById('llmProviderName').value;
+            const apiKey = document.getElementById('llmProviderApiKey').value;
+            const isDefault = document.getElementById('llmProviderIsDefault').checked;
+
+            if (!providerName || !apiKey) {
+                console.warn('Provider name and API key are required.');
+                return;
+            }
+
+            const payload = {
+                provider_name: providerName,
+                credentials: { api_key: apiKey }, // Assuming all providers use 'api_key' for now
+                is_default: isDefault
+            };
+
+            try {
+                const response = await fetch(llm_providers_url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.status === 201) {
+                    console.log('LLM Provider added successfully!');
+                    llmProviderForm.reset();
+                    llmProviderModal.hide();
+                    loadLLMProviders(); // Refresh the table
+                } else {
+                    const errorData = await response.json().catch(() => ({ detail: 'Failed to add LLM provider' }));
+                    console.error(`Error adding LLM provider: ${errorData.detail}`);
+                }
+            } catch (error) {
+                console.error('Error adding LLM provider:', error);
+                console.error('An unexpected error occurred while adding LLM provider.');
+            }
+        });
+    }
+
+    function confirmDeleteLLMProvider(providerId, providerName) {
+        // Assuming you have a generic confirmation modal or use window.confirm
+        if (confirm(`Are you sure you want to delete the LLM provider "${providerName}"?`)) {
+            deleteLLMProvider(providerId);
+        }
+    }
+
+    async function deleteLLMProvider(providerId) {
+        try {
+            const response = await fetch(`${llm_providers_url}/${providerId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                }
+            });
+
+            if (response.status === 204) {
+                console.log('LLM Provider deleted successfully.');
+                loadLLMProviders(); // Refresh the table
+            } else {
+                const errorData = await response.json().catch(() => ({ detail: 'Failed to delete LLM provider' }));
+                console.error(`Error deleting LLM provider: ${errorData.detail}`);
+            }
+        } catch (error) {
+            console.error('Error deleting LLM provider:', error);
+            console.error('An unexpected error occurred while deleting LLM provider.');
+        }
+    }
+
+    async function setDefaultLLMProvider(providerId) {
+        try {
+            const response = await fetch(`${llm_providers_url}/${providerId}`,
+            {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                },
+                body: JSON.stringify({ is_default: true })
+            });
+
+            if (response.ok) {
+                console.log('LLM Provider set as default.');
+                loadLLMProviders(); // Refresh the table to show the new default
+            } else {
+                const errorData = await response.json().catch(() => ({ detail: 'Failed to set default LLM provider' }));
+                console.error(`Error setting default LLM provider: ${errorData.detail}`);
+            }
+        } catch (error) {
+            console.error('Error setting default LLM provider:', error);
+            console.error('An unexpected error occurred while setting default LLM provider.');
+        }
+    }
+
+    // Load LLM providers when the settings tab is shown or if it's already active
+    const settingsTabButton = document.getElementById('settings-tab-btn');
+    if (settingsTabButton) {
+        if (settingsTabButton.classList.contains('active')) {
+            loadLLMProviders();
+        }
+        settingsTabButton.addEventListener('shown.bs.tab', function (event) {
+            if (event.target.hash === '#settings-tab') {
+                loadLLMProviders();
+            }
+        });
+    }
+
+    // Utility function to show loading indicator (assuming you might have one)
+    function showLoadingIndicator(element, colspan) {
+        if (element && typeof element.insertRow === 'function') {
+            element.innerHTML = ''; // Clear existing content
+            const row = element.insertRow();
+            const cell = row.insertCell(0);
+            cell.colSpan = colspan;
+            cell.innerHTML = '<div class="d-flex justify-content-center"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+        }
+    }
+
+});
 
 // Check if user is authenticated
 function checkAuthStatus() {
@@ -980,10 +1186,10 @@ async function testAndListProjects() {
             projectError.textContent = data.message || 'Connection failed.';
         }
     } catch (error) {
-        console.error('Error testing connection:', error);
-        statusDiv.innerHTML = `<div class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> An error occurred while testing the connection.</div>`;
-        projectTree.innerHTML = '<p class="text-danger">An error occurred. Please try again.</p>';
-        projectError.textContent = 'An error occurred.';
+            console.error('Error testing connection:', error);
+            statusDiv.innerHTML = `<div class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> An error occurred while testing the connection.</div>`;
+            projectTree.innerHTML = '<p class="text-danger">An error occurred. Please try again.</p>';
+            projectError.textContent = 'An error occurred.';
     } finally {
         nextButton.disabled = false;
         nextButton.innerHTML = isEditing ? 'Next: Configure Project Scope' : 'Next: Test & Select Projects';

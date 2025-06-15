@@ -35,7 +35,7 @@ def get_account_id_from_user(db: Session, current_user: UserResponse) -> int:
 
 
 @router.post(
-    "/",
+    "/llm-providers",
     response_model=LLMProviderRead,
     status_code=status.HTTP_201_CREATED,
     summary="Create LLM Provider",
@@ -55,7 +55,7 @@ def create_llm_provider(
 
 
 @router.get(
-    "/",
+    "/llm-providers",
     response_model=List[LLMProviderRead],
     summary="List LLM Providers",
     tags=["LLM Providers"],
@@ -71,7 +71,7 @@ def list_llm_providers(
 
 
 @router.get(
-    "/{provider_id}",
+    "/llm-providers/{provider_id}",
     response_model=LLMProviderRead,
     summary="Get LLM Provider by ID",
     tags=["LLM Providers"],
@@ -103,7 +103,7 @@ def get_llm_provider(
 
 
 @router.put(
-    "/{provider_id}",
+    "/llm-providers/{provider_id}",
     response_model=LLMProviderRead,
     summary="Update LLM Provider",
     tags=["LLM Providers"],
@@ -140,7 +140,7 @@ def update_llm_provider(
 
 
 @router.delete(
-    "/{provider_id}",
+    "/llm-providers/{provider_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete LLM Provider",
     tags=["LLM Providers"],

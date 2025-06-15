@@ -393,13 +393,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/health/health:
+  /api/v1/health:
     get:
       tags:
       - Health
       summary: Health Check
       description: Health check endpoint.
-      operationId: health_check_api_v1_health_health_get
+      operationId: health_check_api_v1_health_get
       responses:
         '200':
           description: Successful Response
@@ -409,8 +409,8 @@ paths:
                 additionalProperties:
                   type: string
                 type: object
-                title: Response Health Check Api V1 Health Health Get
-  /api/v1/version/version:
+                title: Response Health Check Api V1 Health Get
+  /api/v1/version:
     get:
       tags:
       - Version
@@ -423,7 +423,7 @@ paths:
         If an `Authorization: Bearer <token>` header is provided and valid,
 
         the associated account ID will also be logged.'
-      operationId: get_version_info_api_v1_version_version_get
+      operationId: get_version_info_api_v1_version_get
       parameters:
       - name: X-Client-Version
         in: header
@@ -472,13 +472,13 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/trackers/trackers/debug:
+  /api/v1/trackers/debug:
     post:
       tags:
       - Trackers
       summary: Debug Tracker Request
       description: Debug endpoint to see raw request data
-      operationId: debug_tracker_request_api_v1_trackers_trackers_debug_post
+      operationId: debug_tracker_request_api_v1_trackers_debug_post
       responses:
         '200':
           description: Successful Response
@@ -487,13 +487,13 @@ paths:
               schema: {}
       security:
       - bearerAuth: []
-  /api/v1/trackers/trackers:
+  /api/v1/trackers:
     get:
       tags:
       - Trackers
       summary: List Trackers
       description: List all non-deleted trackers for the current user.
-      operationId: list_trackers_api_v1_trackers_trackers_get
+      operationId: list_trackers_api_v1_trackers_get
       responses:
         '200':
           description: Successful Response
@@ -503,7 +503,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/TrackerResponse'
                 type: array
-                title: Response List Trackers Api V1 Trackers Trackers Get
+                title: Response List Trackers Api V1 Trackers Get
       security:
       - bearerAuth: []
     post:
@@ -514,7 +514,7 @@ paths:
         \ registration data.\n    background_tasks: Background tasks for sending emails.\n\
         \    current_user: The current authenticated user.\n\nReturns:\n    The registered\
         \ tracker ID.\n\nRaises:\n    HTTPException: If registration fails."
-      operationId: register_tracker_api_v1_trackers_trackers_post
+      operationId: register_tracker_api_v1_trackers_post
       responses:
         '201':
           description: Successful Response
@@ -524,17 +524,17 @@ paths:
                 additionalProperties:
                   type: string
                 type: object
-                title: Response Register Tracker Api V1 Trackers Trackers Post
+                title: Response Register Tracker Api V1 Trackers Post
       security:
       - bearerAuth: []
-  /api/v1/trackers/trackers/{tracker_id}:
+  /api/v1/trackers/{tracker_id}:
     get:
       tags:
       - Trackers
       summary: Get Tracker
       description: Get a non-deleted tracker by ID, ensuring it belongs to the current
         user.
-      operationId: get_tracker_api_v1_trackers_trackers__tracker_id__get
+      operationId: get_tracker_api_v1_trackers__tracker_id__get
       security:
       - bearerAuth: []
       parameters:
@@ -563,7 +563,7 @@ paths:
       - Trackers
       summary: Update Tracker
       description: Update an existing tracker.
-      operationId: update_tracker_api_v1_trackers_trackers__tracker_id__put
+      operationId: update_tracker_api_v1_trackers__tracker_id__put
       security:
       - bearerAuth: []
       parameters:
@@ -599,7 +599,7 @@ paths:
       summary: Delete Tracker
       description: Delete a tracker by ID (soft delete by default, hard delete if
         specified).
-      operationId: delete_tracker_api_v1_trackers_trackers__tracker_id__delete
+      operationId: delete_tracker_api_v1_trackers__tracker_id__delete
       security:
       - bearerAuth: []
       parameters:
@@ -626,14 +626,14 @@ paths:
                 type: object
                 additionalProperties:
                   type: string
-                title: Response Delete Tracker Api V1 Trackers Trackers  Tracker Id  Delete
+                title: Response Delete Tracker Api V1 Trackers  Tracker Id  Delete
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/trackers/trackers/test-and-list-projects:
+  /api/v1/trackers/test-and-list-projects:
     post:
       tags:
       - Trackers
@@ -643,7 +643,7 @@ paths:
         \    test_data: Temporary tracker connection details.\n    current_user: The\
         \ authenticated user performing the test.\n\nReturns:\n    TrackerTestResponse\
         \ indicating success/failure and the project list if successful."
-      operationId: test_connection_and_list_projects_api_v1_trackers_trackers_test_and_list_projects_post
+      operationId: test_connection_and_list_projects_api_v1_trackers_test_and_list_projects_post
       requestBody:
         content:
           application/json:
@@ -665,14 +665,14 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/organizations/organizations:
+  /api/v1/organizations:
     post:
       tags:
       - Organizations
       summary: Create Organization
       description: Create a new organization, ensuring it's linked to the current
         user's tracker.
-      operationId: create_organization_api_v1_organizations_organizations_post
+      operationId: create_organization_api_v1_organizations_post
       security:
       - bearerAuth: []
       requestBody:
@@ -699,7 +699,7 @@ paths:
       - Organizations
       summary: List Organizations
       description: List organizations accessible to the current user.
-      operationId: list_organizations_api_v1_organizations_organizations_get
+      operationId: list_organizations_api_v1_organizations_get
       security:
       - bearerAuth: []
       parameters:
@@ -732,13 +732,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/organizations/organizations/{organization_id}:
+  /api/v1/organizations/{organization_id}:
     get:
       tags:
       - Organizations
       summary: Get Organization
       description: Get an organization by ID, ensuring user has access.
-      operationId: get_organization_api_v1_organizations_organizations__organization_id__get
+      operationId: get_organization_api_v1_organizations__organization_id__get
       security:
       - bearerAuth: []
       parameters:
@@ -766,7 +766,7 @@ paths:
       - Organizations
       summary: Update Organization
       description: Update an organization, ensuring user has access.
-      operationId: update_organization_api_v1_organizations_organizations__organization_id__put
+      operationId: update_organization_api_v1_organizations__organization_id__put
       security:
       - bearerAuth: []
       parameters:
@@ -800,7 +800,7 @@ paths:
       - Organizations
       summary: Delete Organization
       description: Delete an organization, ensuring user has access.
-      operationId: delete_organization_api_v1_organizations_organizations__organization_id__delete
+      operationId: delete_organization_api_v1_organizations__organization_id__delete
       security:
       - bearerAuth: []
       parameters:
@@ -819,13 +819,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/organizations/organizations/by-identifier/{identifier}:
+  /api/v1/organizations/by-identifier/{identifier}:
     get:
       tags:
       - Organizations
       summary: Get Organization By Identifier
       description: Get an organization by identifier, ensuring user has access.
-      operationId: get_organization_by_identifier_api_v1_organizations_organizations_by_identifier__identifier__get
+      operationId: get_organization_by_identifier_api_v1_organizations_by_identifier__identifier__get
       security:
       - bearerAuth: []
       parameters:
@@ -848,13 +848,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/projects/projects:
+  /api/v1/projects:
     post:
       tags:
       - Projects
       summary: Create Project
       description: Create a new project, ensuring user has access to the organization.
-      operationId: create_project_api_v1_projects_projects_post
+      operationId: create_project_api_v1_projects_post
       security:
       - bearerAuth: []
       requestBody:
@@ -882,7 +882,7 @@ paths:
       summary: List Projects
       description: List projects accessible to the current user, optionally filtered
         by organization.
-      operationId: list_projects_api_v1_projects_projects_get
+      operationId: list_projects_api_v1_projects_get
       security:
       - bearerAuth: []
       parameters:
@@ -920,20 +920,20 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ProjectResponse'
-                title: Response List Projects Api V1 Projects Projects Get
+                title: Response List Projects Api V1 Projects Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/projects/organizations/{organization_id}/projects:
+  /api/v1/organizations/{organization_id}/projects:
     get:
       tags:
       - Projects
       summary: List Organization Projects
       description: List all projects for an organization, ensuring user has access.
-      operationId: list_organization_projects_api_v1_projects_organizations__organization_id__projects_get
+      operationId: list_organization_projects_api_v1_organizations__organization_id__projects_get
       security:
       - bearerAuth: []
       parameters:
@@ -972,13 +972,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/projects/projects/{project_id}:
+  /api/v1/projects/{project_id}:
     get:
       tags:
       - Projects
       summary: Get Project
       description: Get a project by ID, ensuring user has access.
-      operationId: get_project_api_v1_projects_projects__project_id__get
+      operationId: get_project_api_v1_projects__project_id__get
       security:
       - bearerAuth: []
       parameters:
@@ -1006,7 +1006,7 @@ paths:
       - Projects
       summary: Update Project
       description: Update a project, ensuring user has access.
-      operationId: update_project_api_v1_projects_projects__project_id__put
+      operationId: update_project_api_v1_projects__project_id__put
       security:
       - bearerAuth: []
       parameters:
@@ -1040,7 +1040,7 @@ paths:
       - Projects
       summary: Delete Project
       description: Delete a project, ensuring user has access.
-      operationId: delete_project_api_v1_projects_projects__project_id__delete
+      operationId: delete_project_api_v1_projects__project_id__delete
       security:
       - bearerAuth: []
       parameters:
@@ -1059,14 +1059,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/projects/organizations/{organization_id}/projects/{identifier}:
+  /api/v1/organizations/{organization_id}/projects/{identifier}:
     get:
       tags:
       - Projects
       summary: Get Project By Identifier
       description: Get a project by organization ID and project identifier, ensuring
         user has access.
-      operationId: get_project_by_identifier_api_v1_projects_organizations__organization_id__projects__identifier__get
+      operationId: get_project_by_identifier_api_v1_organizations__organization_id__projects__identifier__get
       security:
       - bearerAuth: []
       parameters:
@@ -1095,14 +1095,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/projects/projects/test-connection:
+  /api/v1/projects/test-connection:
     post:
       tags:
       - Projects
       summary: Test Project Connection
       description: Test the connection to an issue tracker for a project, ensuring
         user has access.
-      operationId: test_project_connection_api_v1_projects_projects_test_connection_post
+      operationId: test_project_connection_api_v1_projects_test_connection_post
       requestBody:
         content:
           application/json:
@@ -1124,14 +1124,14 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/projects/projects/{project_id}/duplicates:
+  /api/v1/projects/{project_id}/duplicates:
     get:
       tags:
       - Projects
       summary: Find Project Duplicates
       description: Finds potential duplicate issues within a project using semantic
         similarity.
-      operationId: find_project_duplicates_api_v1_projects_projects__project_id__duplicates_get
+      operationId: find_project_duplicates_api_v1_projects__project_id__duplicates_get
       security:
       - bearerAuth: []
       parameters:
@@ -1176,7 +1176,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/issues/issues/search:
+  /api/v1/issues/search:
     get:
       tags:
       - Issues
@@ -1185,7 +1185,7 @@ paths:
         similarity search.
 
         Requires authentication and checks user access.'
-      operationId: search_issues_api_v1_issues_issues_search_get
+      operationId: search_issues_api_v1_issues_search_get
       security:
       - bearerAuth: []
       parameters:
@@ -1334,14 +1334,14 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/IssueResponse'
-                title: Response Search Issues Api V1 Issues Issues Search Get
+                title: Response Search Issues Api V1 Issues Search Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/issues/issues:
+  /api/v1/issues:
     post:
       tags:
       - Issues
@@ -1357,7 +1357,7 @@ paths:
         - Name (organization_name/project_name)
 
         - Slug (organization/project)'
-      operationId: create_issue_api_v1_issues_issues_post
+      operationId: create_issue_api_v1_issues_post
       requestBody:
         content:
           application/json:
@@ -1379,13 +1379,13 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/issues/issues/{issue_id}:
+  /api/v1/issues/{issue_id}:
     get:
       tags:
       - Issues
       summary: Get Issue
       description: Get details of a specific issue using its external ID.
-      operationId: get_issue_api_v1_issues_issues__issue_id__get
+      operationId: get_issue_api_v1_issues__issue_id__get
       security:
       - bearerAuth: []
       parameters:
@@ -1429,7 +1429,7 @@ paths:
       - Issues
       summary: Update Issue
       description: Update an existing issue using its internal ID or external key.
-      operationId: update_issue_api_v1_issues_issues__issue_id__put
+      operationId: update_issue_api_v1_issues__issue_id__put
       security:
       - bearerAuth: []
       parameters:
@@ -1458,13 +1458,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/comments/issues/{issue_id}/comments:
+  /api/v1/issues/{issue_id}/comments:
     get:
       tags:
       - Comments
       summary: List Issue Comments
       description: Get a list of comments for a specific issue. Requires authentication.
-      operationId: list_issue_comments_api_v1_comments_issues__issue_id__comments_get
+      operationId: list_issue_comments_api_v1_issues__issue_id__comments_get
       security:
       - bearerAuth: []
       parameters:
@@ -1529,7 +1529,7 @@ paths:
       - Comments
       summary: Add Issue Comment
       description: Add a new comment to a specific issue. Requires authentication.
-      operationId: add_issue_comment_api_v1_comments_issues__issue_id__comments_post
+      operationId: add_issue_comment_api_v1_issues__issue_id__comments_post
       security:
       - bearerAuth: []
       parameters:
@@ -1574,7 +1574,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/comments/comments/search:
+  /api/v1/comments/search:
     get:
       tags:
       - Comments
@@ -1582,7 +1582,7 @@ paths:
       description: 'Search for comments using full-text or similarity search.
 
         Requires authentication and checks user access to related issues/projects.'
-      operationId: search_comments_api_v1_comments_comments_search_get
+      operationId: search_comments_api_v1_comments_search_get
       security:
       - bearerAuth: []
       parameters:
@@ -1672,14 +1672,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/search/search:
+  /api/v1/search:
     get:
       tags:
       - Search
       summary: Perform Similarity Search
       description: Performs a similarity search across issues and/or comments based
         on a query text and an embedding model.
-      operationId: search_all_api_v1_search_search_get
+      operationId: search_all_api_v1_search_get
       security:
       - bearerAuth: []
       parameters:
@@ -1802,7 +1802,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/embeddings/projects/{project_name}/embeddings:
+  /api/v1/projects/{project_name}/embeddings:
     get:
       tags:
       - Embeddings
@@ -1815,7 +1815,7 @@ paths:
 
         This endpoint is designed to provide data for frontend visualizations like
         deck.gl.'
-      operationId: get_raw_embeddings_api_v1_embeddings_projects__project_name__embeddings_get
+      operationId: get_raw_embeddings_api_v1_projects__project_name__embeddings_get
       security:
       - bearerAuth: []
       parameters:
@@ -1879,7 +1879,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/llm-providers/:
+  /api/v1/llm-providers:
     get:
       tags:
       - LLM Providers
@@ -1887,7 +1887,7 @@ paths:
       summary: List LLM Providers
       description: List all LLM Providers associated with the authenticated user's
         account.
-      operationId: list_llm_providers_api_v1_llm_providers__get
+      operationId: list_llm_providers_api_v1_llm_providers_get
       responses:
         '200':
           description: Successful Response
@@ -1897,7 +1897,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/LLMProviderRead'
                 type: array
-                title: Response List Llm Providers Api V1 Llm Providers  Get
+                title: Response List Llm Providers Api V1 Llm Providers Get
       security:
       - bearerAuth: []
     post:
@@ -1906,7 +1906,7 @@ paths:
       - LLM Providers
       summary: Create LLM Provider
       description: Create a new LLM Provider for the authenticated user's account.
-      operationId: create_llm_provider_api_v1_llm_providers__post
+      operationId: create_llm_provider_api_v1_llm_providers_post
       requestBody:
         content:
           application/json:
