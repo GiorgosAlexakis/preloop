@@ -30,11 +30,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const llmProviderForm = document.getElementById('llmProviderForm');
     const saveLLMProviderBtn = document.getElementById('saveLLMProviderBtn');
     const llmProvidersTableBody = document.getElementById('llmProvidersTable');
-    const addLLMProviderBtn = document.getElementById('addLLMProviderBtn');
 
     async function fetchLLMProviders() {
         try {
-            const response = await fetch(llm_providers_url, { // User updated this path
+            const response = await fetch(llm_providers_url, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -243,24 +242,6 @@ function checkAuthStatus() {
 // Set up event listeners
 function setupEventListeners() {
 
-    // Event delegation for "Add Tracker" buttons/links on dashboard
-    document.body.addEventListener('click', function(event) {
-        const targetButton = event.target.closest('.dashboardAddTrackerBtn');
-        if (targetButton) {
-            event.preventDefault(); // Prevent default link behavior if it's an <a> tag
-
-            // Find the actual sidebar tab button for "Trackers"
-            const trackersTabButton = document.getElementById('trackers-tab-btn');
-            if (trackersTabButton) {
-                // Create a new bootstrap Tab instance and show it
-                const tab = new bootstrap.Tab(trackersTabButton);
-                tab.show();
-            } else {
-                console.error('Trackers tab button (#trackers-tab-btn) not found.');
-            }
-        }
-    });
-
     // Let Bootstrap handle tab switching, and hook into its event system
     // to update the page title. This avoids conflicts with the default tab behavior.
     const tabToggles = document.querySelectorAll('[data-bs-toggle="tab"]');
@@ -292,36 +273,6 @@ function setupEventListeners() {
         } else {
             document.querySelector('.custom-expiry-date').classList.add('d-none');
         }
-    });
-
-    // Add handlers for the dashboard "Add Tracker" buttons
-    document.getElementById('dashboardAddTrackerBtn').addEventListener('click', function() {
-        // Show trackers tab
-        const trackersTabButton = document.getElementById('trackers-tab-btn');
-        if (trackersTabButton) {
-            const tab = new bootstrap.Tab(trackersTabButton);
-            tab.show();
-        }
-
-        // Open the add tracker modal
-        const modal = new bootstrap.Modal(document.getElementById('addTrackerModal'));
-        modal.show();
-    });
-
-    // Add handlers for the "Connect Your First Tracker" button
-    document.querySelectorAll('.dashboardAddTrackerBtn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            // Show trackers tab
-            const trackersTabButton = document.getElementById('trackers-tab-btn');
-            if (trackersTabButton) {
-                const tab = new bootstrap.Tab(trackersTabButton);
-                tab.show();
-            }
-
-            // Open the add tracker modal
-            const modal = new bootstrap.Modal(document.getElementById('addTrackerModal'));
-            modal.show();
-        });
     });
 
     // Tracker type toggle for Jira config and URL auto-population
@@ -571,130 +522,110 @@ function renderTrackers() {
     const trackersList = document.getElementById('trackersList');
     const trackersListFull = document.getElementById('trackersListFull');
 
-    if (trackers.length === 0) {
-        trackersList.innerHTML = `
-            <div class="text-center text-muted py-5">
-                <i class="bi bi-hdd-network fs-1 mb-3"></i>
-                <p>No trackers connected yet</p>
-                <a href="#" class="btn btn-sm btn-outline-primary dashboardAddTrackerBtn"> <!-- Removed data-bs-toggle, added class -->
-                    Connect Your First Tracker
-                </a>
-            </div>
-        `;
-        trackersListFull.innerHTML = `
-            <div class="text-center text-muted py-5">
-                <i class="bi bi-hdd-network fs-1 mb-3"></i>
-                <p>No trackers connected yet</p>
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">
-                    <i class="bi bi-plus-lg"></i> Add Your First Tracker
-                </button>
-            </div>
-        `;
-        return;
-    }
+    if (trackers.length >= 1) {
+        // Render summary list for dashboard
+        let trackerItems = '';
+        trackers.slice(0, 3).forEach(tracker => {
+            let iconClass = '';
+            let badgeClass = '';
 
-    // Render summary list for dashboard
-    let trackerItems = '';
-    trackers.slice(0, 3).forEach(tracker => {
-        let iconClass = '';
-        let badgeClass = '';
+            switch(tracker.type) {
+                case 'github':
+                    iconClass = 'github-color';
+                    badgeClass = 'badge-github';
+                    break;
+                case 'gitlab':
+                    iconClass = 'gitlab-color';
+                    badgeClass = 'badge-gitlab';
+                    break;
+                case 'jira':
+                    iconClass = 'jira-color';
+                    badgeClass = 'badge-jira';
+                    break;
+                default:
+                    // Fallback for undefined
+                    iconClass = 'text-secondary';
+                    badgeClass = 'badge-secondary';
+            }
 
-        switch(tracker.type) {
-            case 'github':
-                iconClass = 'github-color';
-                badgeClass = 'badge-github';
-                break;
-            case 'gitlab':
-                iconClass = 'gitlab-color';
-                badgeClass = 'badge-gitlab';
-                break;
-            case 'jira':
-                iconClass = 'jira-color';
-                badgeClass = 'badge-jira';
-                break;
-            default:
-                // Fallback for undefined
-                iconClass = 'text-secondary';
-                badgeClass = 'badge-secondary';
-        }
-
-        trackerItems += `
-            <div class="d-flex align-items-center p-3 border-bottom">
-                <i class="bi bi-${tracker.type === 'jira' ? 'kanban' : 'git'} fs-4 ${iconClass} me-3"></i>
-                <div>
-                    <h6 class="mb-0">${tracker.name}</h6>
-                    <span class="badge ${badgeClass}">${tracker.type || 'unknown'}</span>
-                </div>
-            </div>
-        `;
-    });
-
-    if (trackers.length > 3) {
-        trackerItems += `
-            <div class="text-center p-2">
-                <a href="#trackers-tab" class="btn btn-sm btn-link" data-bs-toggle="tab">
-                    View all ${trackers.length} trackers
-                </a>
-            </div>
-        `;
-    }
-
-    trackersList.innerHTML = trackerItems;
-
-    // Render full list for trackers tab
-    let trackerCards = '<div class="row">';
-    trackers.forEach(tracker => {
-        let iconClass = '';
-        let iconName = '';
-
-        switch(tracker.type) {
-            case 'github':
-                iconClass = 'github-color';
-                iconName = 'github';
-                break;
-            case 'gitlab':
-                iconClass = 'gitlab-color';
-                iconName = 'gitlab';
-                break;
-            case 'jira':
-                iconClass = 'jira-color';
-                iconName = 'kanban';
-                break;
-            default:
-                // Fallback for undefined
-                iconClass = 'text-secondary';
-                iconName = 'gear';
-        }
-
-        trackerCards += `
-            <div class="col-md-4 mb-4">
-                <div class="tracker-card p-4">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-${iconName} fs-2 ${iconClass} me-2"></i>
-                            <h5 class="mb-0">${tracker.name}</h5>
-                        </div>
-                        <span class="badge bg-${tracker.tracker_type === 'github' ? 'dark' : tracker.tracker_type === 'gitlab' ? 'danger' : 'primary'}">${tracker.tracker_type ? tracker.tracker_type.charAt(0).toUpperCase() + tracker.tracker_type.slice(1) : 'Unknown'}</span>
+            trackerItems += `
+                <div class="d-flex align-items-center p-3 border-bottom">
+                    <i class="bi bi-${tracker.type === 'jira' ? 'kanban' : 'git'} fs-4 ${iconClass} me-3"></i>
+                    <div>
+                        <h6 class="mb-0">${tracker.name}</h6>
+                        <span class="badge ${badgeClass}">${tracker.type || 'unknown'}</span>
                     </div>
-                    <p class="text-muted mb-3 small">${tracker.url}</p>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <small class="text-muted">Created: ${tracker.created ? new Date(tracker.created).toLocaleDateString() : 'Unknown'}</small>
-                        <div>
-                            <button class="btn btn-sm btn-outline-secondary edit-tracker-btn me-1" data-tracker-id="${tracker.id}">
-                                <i class="bi bi-pencil"></i> Edit
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger delete-tracker-btn" data-tracker-id="${tracker.id}" data-tracker-name="${tracker.name}">
-                                <i class="bi bi-trash"></i> Delete
-                            </button>
+                </div>
+            `;
+        });
+
+        if (trackers.length > 3) {
+            trackerItems += `
+                <div class="text-center p-2">
+                    <a href="#trackers-tab" class="btn btn-sm btn-link" data-bs-toggle="tab">
+                        View all ${trackers.length} trackers
+                    </a>
+                </div>
+            `;
+        }
+
+        trackersList.innerHTML = trackerItems;
+
+        // Render full list for trackers tab
+        let trackerCards = '<div class="row">';
+        trackers.forEach(tracker => {
+            let iconClass = '';
+            let iconName = '';
+
+            switch(tracker.type) {
+                case 'github':
+                    iconClass = 'github-color';
+                    iconName = 'github';
+                    break;
+                case 'gitlab':
+                    iconClass = 'gitlab-color';
+                    iconName = 'gitlab';
+                    break;
+                case 'jira':
+                    iconClass = 'jira-color';
+                    iconName = 'kanban';
+                    break;
+                default:
+                    // Fallback for undefined
+                    iconClass = 'text-secondary';
+                    iconName = 'gear';
+            }
+
+            trackerCards += `
+                <div class="col-md-4 mb-4">
+                    <div class="tracker-card p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-${iconName} fs-2 ${iconClass} me-2"></i>
+                                <h5 class="mb-0">${tracker.name}</h5>
+                            </div>
+                            <span class="badge bg-${tracker.tracker_type === 'github' ? 'dark' : tracker.tracker_type === 'gitlab' ? 'danger' : 'primary'}">${tracker.tracker_type ? tracker.tracker_type.charAt(0).toUpperCase() + tracker.tracker_type.slice(1) : 'Unknown'}</span>
+                        </div>
+                        <p class="text-muted mb-3 small">${tracker.url}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Created: ${tracker.created ? new Date(tracker.created).toLocaleDateString() : 'Unknown'}</small>
+                            <div>
+                                <button class="btn btn-sm btn-outline-secondary edit-tracker-btn me-1" data-tracker-id="${tracker.id}">
+                                    <i class="bi bi-pencil"></i> Edit
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger delete-tracker-btn" data-tracker-id="${tracker.id}" data-tracker-name="${tracker.name}">
+                                    <i class="bi bi-trash"></i> Delete
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        `;
-    });
-    trackerCards += '</div>';
+            `;
+        });
+        trackerCards += '</div>';
 
-    trackersListFull.innerHTML = trackerCards;
+        trackersListFull.innerHTML = trackerCards;
+    }
 
     // Add event listeners to delete buttons
     document.querySelectorAll('.delete-tracker-btn').forEach(btn => {
