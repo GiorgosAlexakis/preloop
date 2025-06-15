@@ -126,16 +126,20 @@
 
                     <!-- Trackers Tab -->
                     <div class="tab-pane fade" id="trackers-tab" role="tabpanel" aria-labelledby="trackers-tab-btn" tabindex="0">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <span>Your Trackers</span>
-                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">
-                                    <i class="bi bi-plus-lg"></i> Add Tracker
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <div id="trackersListFull">
-                                    <!-- Trackers will be loaded here -->
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <div class="card">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>Your Trackers</span>
+                                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">
+                                            <i class="bi bi-plus-lg"></i> Add Tracker
+                                        </button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="trackersListFull">
+                                            <!-- Trackers will be loaded here -->
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -200,49 +204,57 @@
 
                     <!-- API Keys Tab -->
                     <div class="tab-pane fade" id="api-keys-tab" role="tabpanel" aria-labelledby="api-keys-tab-btn" tabindex="0">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <span>API Keys</span>
-                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createKeyModal">
-                                    <i class="bi bi-plus-lg"></i> Create New API Key
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <div class="alert alert-info">
-                                    <i class="bi bi-info-circle"></i>
-                                    API keys allow you to authenticate requests to the SpaceBridge API.
-                                    Keep your API keys secure and never share them publicly.
-                                </div>
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <div class="card">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>API Keys</span>
+                                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createKeyModal">
+                                            <i class="bi bi-plus-lg"></i> Create New API Key
+                                        </button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle"></i>
+                                            API keys allow you to authenticate requests to the SpaceBridge API.
+                                            Keep your API keys secure and never share them publicly.
+                                        </div>
 
-                                <table class="table api-key-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Created</th>
-                                            <th>Last Used</th>
-                                            <th>Expires</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="apiKeysList">
-                                        <!-- API keys will be loaded here -->
-                                    </tbody>
-                                </table>
+                                        <table class="table api-key-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Created</th>
+                                                    <th>Last Used</th>
+                                                    <th>Expires</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="apiKeysList">
+                                                <!-- API keys will be loaded here -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- Duplicates Tab -->
                     <div class="tab-pane fade" id="duplicates-tab" role="tabpanel" aria-labelledby="duplicates-tab-btn" tabindex="0">
-                        <div class="card">
-                            <div class="card-body">
-                                <div class="mb-3">
-                                    <select class="form-select" id="projectSelect">
-                                        <option selected>Loading projects...</option>
-                                    </select>
-                                </div>
-                                <div id="duplicates-result-area">
-                                    <!-- Duplicate pairs will be loaded here -->
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="mb-3">
+                                            <select class="form-select" id="projectSelect">
+                                                <option selected>Loading projects...</option>
+                                            </select>
+                                        </div>
+                                        <div id="duplicates-result-area">
+                                            <!-- Duplicate pairs will be loaded here -->
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -250,93 +262,97 @@
 
                     <!-- Settings Tab -->
                     <div class="tab-pane fade" id="settings-tab" role="tabpanel" aria-labelledby="settings-tab-btn" tabindex="0">
-                        <div class="card">
-                            <div class="card-header d-flex align-items-center">Account Settings</div>
-                            <div class="card-body">
-                                <form id="updateProfileForm">
-                                    <div class="mb-3 row">
-                                        <label for="userUsername" class="col-sm-3 col-form-label">Username</label>
-                                        <div class="col-sm-9">
-                                            <input type="text" class="form-control" id="userUsername" readonly>
-                                        </div>
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <div class="card">
+                                    <div class="card-header d-flex align-items-center">Account Settings</div>
+                                    <div class="card-body">
+                                        <form id="updateProfileForm">
+                                            <div class="mb-3 row">
+                                                <label for="userUsername" class="col-sm-3 col-form-label">Username</label>
+                                                <div class="col-sm-9">
+                                                    <input type="text" class="form-control" id="userUsername" readonly>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <label for="userEmail" class="col-sm-3 col-form-label">Email</label>
+                                                <div class="col-sm-9">
+                                                    <input type="email" class="form-control" id="userEmail" readonly>
+                                                    <div class="form-text" id="emailVerificationStatus"></div>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <label for="userFullName" class="col-sm-3 col-form-label">Full Name</label>
+                                                <div class="col-sm-9">
+                                                    <input type="text" class="form-control" id="userFullName">
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <div class="col-sm-9 offset-sm-3">
+                                                    <button type="submit" class="btn btn-primary">Update Profile</button>
+                                                </div>
+                                            </div>
+                                        </form>
                                     </div>
-                                    <div class="mb-3 row">
-                                        <label for="userEmail" class="col-sm-3 col-form-label">Email</label>
-                                        <div class="col-sm-9">
-                                            <input type="email" class="form-control" id="userEmail" readonly>
-                                            <div class="form-text" id="emailVerificationStatus"></div>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3 row">
-                                        <label for="userFullName" class="col-sm-3 col-form-label">Full Name</label>
-                                        <div class="col-sm-9">
-                                            <input type="text" class="form-control" id="userFullName">
-                                        </div>
-                                    </div>
-                                    <div class="mb-3 row">
-                                        <div class="col-sm-9 offset-sm-3">
-                                            <button type="submit" class="btn btn-primary">Update Profile</button>
-                                        </div>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-
-                        <div class="card mt-4">
-                            <div class="card-header d-flex align-items-center">Change Password</div>
-                            <div class="card-body">
-                                <form id="changePasswordForm">
-                                    <div class="mb-3 row">
-                                        <label for="currentPassword" class="col-sm-3 col-form-label">Current Password</label>
-                                        <div class="col-sm-9">
-                                            <input type="password" class="form-control" id="currentPassword" required>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3 row">
-                                        <label for="newPassword" class="col-sm-3 col-form-label">New Password</label>
-                                        <div class="col-sm-9">
-                                            <input type="password" class="form-control" id="newPassword" required minlength="8">
-                                            <div class="form-text">Password must be at least 8 characters long.</div>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3 row">
-                                        <label for="confirmNewPassword" class="col-sm-3 col-form-label">Confirm New Password</label>
-                                        <div class="col-sm-9">
-                                            <input type="password" class="form-control" id="confirmNewPassword" required>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3 row">
-                                        <div class="col-sm-9 offset-sm-3">
-                                            <button type="submit" class="btn btn-primary">Change Password</button>
-                                        </div>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-
-                        <div class="card mt-4" id="llm-providers-section">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <span>LLM Providers</span>
-                                <button class="btn btn-primary btn-sm" id="addLLMProviderBtn" data-bs-toggle="modal" data-bs-target="#llmProviderModal">
-                                    <i class="bi bi-plus-lg"></i> Add Provider
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <div class="alert alert-info d-none" id="noLLMProvidersAlert">
-                                    <i class="bi bi-info-circle"></i> No LLM providers configured yet. Click 'Add Provider' to get started.
                                 </div>
-                                <table class="table table-hover" id="llmProvidersTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Provider Name</th>
-                                            <th>Default</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="llmProvidersListBody">
-                                        <!-- LLM Providers will be loaded here by JavaScript -->
-                                    </tbody>
-                                </table>
+
+                                <div class="card mt-4">
+                                    <div class="card-header d-flex align-items-center">Change Password</div>
+                                    <div class="card-body">
+                                        <form id="changePasswordForm">
+                                            <div class="mb-3 row">
+                                                <label for="currentPassword" class="col-sm-3 col-form-label">Current Password</label>
+                                                <div class="col-sm-9">
+                                                    <input type="password" class="form-control" id="currentPassword" required>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <label for="newPassword" class="col-sm-3 col-form-label">New Password</label>
+                                                <div class="col-sm-9">
+                                                    <input type="password" class="form-control" id="newPassword" required minlength="8">
+                                                    <div class="form-text">Password must be at least 8 characters long.</div>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <label for="confirmNewPassword" class="col-sm-3 col-form-label">Confirm New Password</label>
+                                                <div class="col-sm-9">
+                                                    <input type="password" class="form-control" id="confirmNewPassword" required>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <div class="col-sm-9 offset-sm-3">
+                                                    <button type="submit" class="btn btn-primary">Change Password</button>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+
+                                <div class="card mt-4" id="llm-providers-section">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>LLM Providers</span>
+                                        <button class="btn btn-primary btn-sm" id="addLLMProviderBtn" data-bs-toggle="modal" data-bs-target="#llmProviderModal">
+                                            <i class="bi bi-plus-lg"></i> Add Provider
+                                        </button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="alert alert-info d-none" id="noLLMProvidersAlert">
+                                            <i class="bi bi-info-circle"></i> No LLM providers configured yet. Click 'Add Provider' to get started.
+                                        </div>
+                                        <table class="table table-hover" id="llmProvidersTable">
+                                            <thead>
+                                                <tr>
+                                                    <th>Provider Name</th>
+                                                    <th>Default</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="llmProvidersListBody">
+                                                <!-- LLM Providers will be loaded here by JavaScript -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
