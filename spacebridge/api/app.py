@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -21,7 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.encoders import jsonable_encoder
 
 from spacebridge import __version__
-from spacebridge.api.auth import auth_router, get_current_active_user
+from spacebridge.api.auth import auth_router
 from spacebridge.api.endpoints import (
     comments,
     health,
@@ -32,6 +32,7 @@ from spacebridge.api.endpoints import (
     trackers,
     version,
     embedding as embedding_router,  # Add this import
+    llm_providers,  # Add LLM Providers router
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -321,50 +322,23 @@ def create_app() -> FastAPI:
     app.openapi = custom_openapi
 
     # Add routers
-    app.include_router(health.router, prefix="/api/v1", tags=["Health"])
-    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
+    app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
+    app.include_router(version.router, prefix="/api/v1/version", tags=["Version"])
+    app.include_router(trackers.router, prefix="/api/v1/trackers", tags=["Trackers"])
     app.include_router(
-        organizations.router,
-        prefix="/api/v1",
-        tags=["Organizations"],
-        dependencies=[Depends(get_current_active_user)],
+        organizations.router, prefix="/api/v1/organizations", tags=["Organizations"]
     )
-    app.include_router(
-        projects.router,
-        prefix="/api/v1",
-        tags=["Projects"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        issues.router,
-        prefix="/api/v1",
-        tags=["Issues"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        comments.router,
-        prefix="/api/v1",
-        tags=["Comments"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        trackers.router,
-        prefix="/api/v1",
-        tags=["Trackers"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        search.router,  # Add search router
-        prefix="/api/v1",
-        tags=["Search"],
-        dependencies=[Depends(get_current_active_user)],
-    )
+    app.include_router(projects.router, prefix="/api/v1/projects", tags=["Projects"])
+    app.include_router(issues.router, prefix="/api/v1/issues", tags=["Issues"])
+    app.include_router(comments.router, prefix="/api/v1/comments", tags=["Comments"])
+    app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
     app.include_router(
         embedding_router.router, prefix="/api/v1/embeddings", tags=["Embeddings"]
     )
     app.include_router(
-        version.router, prefix="/api/v1", tags=["Version"]
-    )  # No auth dependency for version check
+        llm_providers.router, prefix="/api/v1/llm-providers", tags=["LLM Providers"]
+    )
 
     # --- HTML Page Routes ---
     templates = Jinja2Templates(directory=str(templates_dir))
