@@ -20,6 +20,7 @@ from spacemodels.models import api_key  # noqa: F401
 from spacemodels.models import api_usage  # noqa: F401
 from spacemodels.models import client_version_log  # noqa: F401
 from spacemodels.models import comment  # noqa: F401
+from spacemodels.models import llm_provider  # noqa: F401
 
 # Load .env file from the parent directory (project root)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
