@@ -3,7 +3,7 @@
 from typing import Any, List, Optional
 
 import numpy as np
-from sqlalchemy import TypeDecorator
+from sqlalchemy import TypeDecorator, text
 from sqlalchemy.engine.interfaces import Dialect
 
 from pgvector.sqlalchemy import Vector
@@ -57,22 +57,15 @@ def euclidean_distance(v1: List[float], v2: List[float]) -> float:
 
 def check_pgvector_extension(engine: Any) -> bool:
     """Check if pgvector extension is installed in PostgreSQL."""
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')"
-            ).scalar()
-            return bool(result)
-    except Exception:
-        return False
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')")
+        ).scalar()
+        return bool(result)
 
 
 def install_pgvector_extension(engine: Any) -> bool:
     """Install pgvector extension in PostgreSQL if not already installed."""
-    try:
-        with engine.connect() as conn:
-            conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-            conn.commit()
-            return True
-    except Exception:
-        return False
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
