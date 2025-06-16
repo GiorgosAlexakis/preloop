@@ -1242,9 +1242,6 @@ function addTreeEventListeners() {
     // No listener needed for includeFutureProjects regarding tree disabling
 }
 
-// REMOVED: toggleProjectSelectionAvailability function (Req 2)
-
-
 // Handle expand/collapse icon clicks
 function handleExpandCollapse(event) {
     const icon = event.target;
@@ -1305,7 +1302,6 @@ function handleSelectAllChange(event) {
     });
 }
 
-
 // Save (Add or Update) a tracker
 async function saveTracker() {
     const form = document.getElementById('trackerForm');
@@ -1337,8 +1333,8 @@ async function saveTracker() {
 
     // --- Project Scope Data ---
     const includeFutureProjects = document.getElementById('includeFutureProjects').checked;
-    let includedProjectIdentifiers = null; // Initialize as null
-    let excludedProjectIdentifiers = null; // Initialize as null
+    let includedProjectIdentifiers = null;
+    let excludedProjectIdentifiers = null;
 
     // Get all project identifiers currently rendered in the tree
     const allProjectCheckboxes = document.querySelectorAll('.project-checkbox');
@@ -1458,9 +1454,6 @@ async function openEditTrackerModal(trackerId) {
             }
 
         const tracker = await response.json();
-
-        // REMOVED check for essential tracker data to bypass potential issue
-        // console.log("Tracker data received:", tracker); // Optional: Add logging to see the data
 
         // --- Populate Step 1 ---
         document.getElementById('trackerId').value = tracker.id;
@@ -1836,14 +1829,6 @@ function toggleDetails(detailsRowId) {
     }
 }
 
-// Placeholder for showing issue details - implement if needed
-function showIssueDetails(issueId) {
-    console.log("Show details for issue:", issueId);
-    // Implement logic to show issue details, perhaps in a modal
-    // For now, this function is called by clicking the issue keys.
-    // We've added event.stopPropagation() to prevent the row click when a key is clicked.
-}
-
 // Add event listener for project selection dropdown
 const projectSelectElement = document.getElementById('projectSelect');
 if (projectSelectElement) {
@@ -1862,42 +1847,38 @@ const EXPIRATION_TIME_MS = 2 * 60 * 1000; // 2 minutes
 
 // Restore last active tab from localStorage if not expired
 function loadLastActiveTab() {
-    const storedTabData = localStorage.getItem('activeDashboardTab');
+    try {
+        const storedTabData = localStorage.getItem('activeDashboardTab');
+        const { tabId, timestamp } = JSON.parse(storedTabData);
 
-    if (storedTabData) {
-        try {
-            const { tabId, timestamp } = JSON.parse(storedTabData);
+        const timeSinceStored = Date.now() - timestamp;
+        const isExpired = timeSinceStored >= EXPIRATION_TIME_MS;
 
-            const timeSinceStored = Date.now() - timestamp;
-            const isExpired = timeSinceStored >= EXPIRATION_TIME_MS;
+        if (tabId && timestamp && !isExpired) {
+            const tabButton = document.getElementById(tabId);
 
-            if (tabId && timestamp && !isExpired) {
-                const tabButton = document.getElementById(tabId);
-
-                if (tabButton) {
-                    if (!tabButton.classList.contains('active')) {
-                        const tab = new bootstrap.Tab(tabButton);
-                        tab.show(); // This should trigger 'shown.bs.tab' which also updates title
-                    } else {
-                        document.getElementById('currentPageTitle').textContent = tabButton.textContent.trim();
-                    }
+            if (tabButton) {
+                if (!tabButton.classList.contains('active')) {
+                    const tab = new bootstrap.Tab(tabButton);
+                    tab.show(); // This should trigger 'shown.bs.tab' which also updates title
                 } else {
-                    localStorage.removeItem('activeDashboardTab'); // Clean up invalid entry
+                    document.getElementById('currentPageTitle').textContent = tabButton.textContent.trim();
                 }
             } else {
-                localStorage.removeItem('activeDashboardTab');
-                const defaultTabButton = document.getElementById('dashboard-tab-btn'); // Assuming this is your default
-                if (defaultTabButton && defaultTabButton.classList.contains('active')) {
-                    document.getElementById('currentPageTitle').textContent = defaultTabButton.textContent.trim();
-                }
+                localStorage.removeItem('activeDashboardTab'); // Clean up invalid entry
             }
-        } catch (error) {
-            localStorage.removeItem('activeDashboardTab'); // Clean up corrupted entry
+        } else {
+            showDefaultTab();
         }
-    } else {
-        const defaultTabButton = document.getElementById('dashboard-tab-btn'); // Assuming this is your default
-        if (defaultTabButton && defaultTabButton.classList.contains('active')) {
-             document.getElementById('currentPageTitle').textContent = defaultTabButton.textContent.trim();
-        }
+    } catch (error) {
+        showDefaultTab();
+    }
+}
+
+function showDefaultTab() {
+    localStorage.removeItem('activeDashboardTab');
+    const defaultTabButton = document.getElementById('dashboard-tab-btn'); // Assuming this is your default
+    if (defaultTabButton && defaultTabButton.classList.contains('active')) {
+        document.getElementById('currentPageTitle').textContent = defaultTabButton.textContent.trim();
     }
 }
