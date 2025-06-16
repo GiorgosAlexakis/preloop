@@ -41,6 +41,5 @@ class OrganizationResponse(OrganizationBase):
     class Config:
         """Pydantic model configuration."""
 
-        from_attributes = True  # Modern way of saying orm_mode = True
-        # Allow arbitrary types for field validation
+        from_attributes = True
         arbitrary_types_allowed = True

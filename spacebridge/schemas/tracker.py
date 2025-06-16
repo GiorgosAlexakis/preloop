@@ -135,7 +135,7 @@ class TrackerResponse(TrackerBase):
     last_updated: datetime = Field(..., description="Last update timestamp")
 
     class Config:
-        from_attributes = True  # Replaces orm_mode = True
+        from_attributes = True
 
 
 class TrackerTestRequest(BaseModel):

@@ -35,7 +35,7 @@ class LLMProviderInDBBase(LLMProviderBase):
     account_id: str
 
     class Config:
-        from_attributes = True  # Replaces orm_mode = True in Pydantic v2
+        from_attributes = True
 
 
 class LLMProviderRead(LLMProviderInDBBase):

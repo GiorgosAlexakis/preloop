@@ -18,7 +18,7 @@ class DuplicateIssuePair(BaseModel):
     )
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class ProjectDuplicatesResponse(BaseModel):
@@ -36,4 +36,4 @@ class ProjectDuplicatesResponse(BaseModel):
     )
 
     class Config:
-        orm_mode = True
+        from_attributes = True

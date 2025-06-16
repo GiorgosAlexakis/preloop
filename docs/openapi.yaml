@@ -1149,7 +1149,7 @@ paths:
           maximum: 1.0
           minimum: 0.0
           description: Similarity threshold for considering issues as duplicates.
-          default: 0.85
+          default: 0.7
           title: Similarity Threshold
         description: Similarity threshold for considering issues as duplicates.
       - name: limit_per_issue
@@ -2018,6 +2018,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue-duplicates/check:
+    get:
+      tags:
+      - Issue Duplicates
+      - Issue Duplicates
+      summary: Check Or Create Issue Duplicate
+      operationId: check_or_create_issue_duplicate_api_v1_issue_duplicates_check_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: issue1_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Issue1 Id
+      - name: issue2_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Issue2 Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicate'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /:
     get:
       tags:
@@ -2668,6 +2703,58 @@ components:
       - title
       title: IssueCreate
       description: Model for creating a new issue.
+    IssueDuplicate:
+      properties:
+        issue1_id:
+          type: string
+          title: Issue1 Id
+        issue2_id:
+          type: string
+          title: Issue2 Id
+        decision:
+          type: string
+          title: Decision
+        decision_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Decision At
+        llm_provider_id:
+          type: string
+          title: Llm Provider Id
+        llm_model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Llm Model Name
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        id:
+          type: string
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - issue1_id
+      - issue2_id
+      - decision
+      - llm_provider_id
+      - id
+      - created_at
+      - updated_at
+      title: IssueDuplicate
+      description: Schema for returning an IssueDuplicate.
     IssueResponse:
       properties:
         title:

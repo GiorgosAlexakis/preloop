@@ -455,7 +455,7 @@ async def test_project_connection(
 def find_project_duplicates(
     project_id: str,
     similarity_threshold: float = Query(
-        0.85,
+        0.7,
         ge=0.0,
         le=1.0,
         description="Similarity threshold for considering issues as duplicates.",
