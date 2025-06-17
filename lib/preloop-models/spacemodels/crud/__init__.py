@@ -8,7 +8,7 @@ from ..models import (
     EmbeddingModel,
     Issue,
     IssueEmbedding,
-    LLMProvider,  # Add LLMProvider model import
+    LLMModel,  # Add LLMModel model import
     Organization,
     Project,
     Tracker,
@@ -23,7 +23,7 @@ from .issue import CRUDIssue
 from .organization import CRUDOrganization
 from .project import CRUDProject
 from .tracker import CRUDTracker
-from .llm_provider import CRUDLLMProvider  # Import only the class
+from .llm_model import CRUDLLMModel
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)
@@ -34,7 +34,7 @@ crud_embedding_model = CRUDEmbeddingModel(EmbeddingModel)
 crud_issue_embedding = CRUDIssueEmbedding(IssueEmbedding)
 crud_api_key = CRUDApiKey(ApiKey)
 crud_api_usage = CRUDApiUsage(ApiUsage)
-crud_llm_provider = CRUDLLMProvider(LLMProvider)  # Instantiate crud_llm_provider
+crud_llm_model = CRUDLLMModel(LLMModel)  # Instantiate crud_llm_model
 # crud_comment is already instantiated in its own file
 
 __all__ = [
@@ -49,7 +49,7 @@ __all__ = [
     "CRUDApiKey",
     "CRUDApiUsage",
     "CRUDComment",
-    "CRUDLLMProvider",
+    "CRUDLLMModel",
     "crud_account",
     "crud_tracker",
     "crud_organization",
@@ -60,5 +60,5 @@ __all__ = [
     "crud_api_key",
     "crud_api_usage",
     "crud_comment",
-    "crud_llm_provider",
+    "crud_llm_model",
 ]

@@ -11,7 +11,7 @@ from .organization import Organization
 from .project import Project
 from .tracker import Tracker, TrackerType
 from .client_version_log import ClientVersionLog
-from .llm_provider import LLMProvider
+from .llm_model import LLMModel
 
 __all__ = [
     "Base",
@@ -29,5 +29,5 @@ __all__ = [
     "ApiUsage",
     "ClientVersionLog",
     "Comment",
-    "LLMProvider",
+    "LLMModel",
 ]

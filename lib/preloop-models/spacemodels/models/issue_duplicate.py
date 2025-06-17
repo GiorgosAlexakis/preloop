@@ -17,10 +17,10 @@ class IssueDuplicate(Base):
     issue2_id = Column(String, ForeignKey("issue.id"), nullable=False)
     decision = Column(String, nullable=False)
     decision_at = Column(DateTime, server_default=func.now())
-    llm_provider_id = Column(String, ForeignKey("llm_provider.id"), nullable=False)
+    llm_model_id = Column(String, ForeignKey("llm_model.id"), nullable=False)
     llm_model_name = Column(String, nullable=True)
     reason = Column(Text, nullable=True)
 
     issue1 = relationship("Issue", foreign_keys=[issue1_id])
     issue2 = relationship("Issue", foreign_keys=[issue2_id])
-    llm_provider = relationship("LLMProvider", foreign_keys=[llm_provider_id])
+    llm_model = relationship("LLMModel", foreign_keys=[llm_model_id])
