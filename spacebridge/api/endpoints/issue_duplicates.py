@@ -20,25 +20,26 @@ router = APIRouter()
 DEFAULT_DUPLICATE_ANALYSIS_LLM_NAME = "gpt-4o"
 LLM_DUPLICATE_SYSTEM_PROMPT = "You are an expert issue tracker assistant. Your task is to determine if two issues are duplicates of each other."
 LLM_DUPLICATE_USER_PROMPT_TEMPLATE = """
-Compare the following two issues and determine if they are duplicates.
+Use your expert judgement to determine if the following two issues are duplicates.
 
-Issue 1 Details:
-ID: {issue1_id}
+- Two issues are considered duplicates if they describe the same core problem, request, or task, even if the wording differs slightly or one contains minor additional details.
+- Two issues are not considered duplicates even if they look almost identical, if they refer to different components.
+
+Issue 1:
 Title: {issue1_title}
 Description:
 ---
 {issue1_description}
 ---
 
-Issue 2 Details:
-ID: {issue2_id}
+Issue 2:
 Title: {issue2_title}
 Description:
 ---
 {issue2_description}
 ---
 
-Based on the information above, is Issue 2 a likely duplicate of Issue 1?
+Based on the information above, is Issue 2 a duplicate of Issue 1?
 
 Respond with ONLY one of the following words:
 DUPLICATE
