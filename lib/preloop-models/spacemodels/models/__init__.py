@@ -6,6 +6,7 @@ from .api_usage import ApiUsage
 from .base import Base
 from .comment import Comment
 from .issue import EmbeddingModel, Issue, IssueEmbedding
+from .issue_duplicate import IssueDuplicate
 from .organization import Organization
 from .project import Project
 from .tracker import Tracker, TrackerType
@@ -23,6 +24,7 @@ __all__ = [
     "Issue",
     "EmbeddingModel",
     "IssueEmbedding",
+    "IssueDuplicate",
     "ApiKey",
     "ApiUsage",
     "ClientVersionLog",

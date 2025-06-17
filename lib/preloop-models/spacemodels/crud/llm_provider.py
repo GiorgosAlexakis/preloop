@@ -12,6 +12,10 @@ from .base import CRUDBase
 class CRUDLLMProvider(CRUDBase[LLMProvider]):
     """CRUD class for LLMProvider operations."""
 
+    def get_default_active_provider(self, db: Session) -> Optional[LLMProvider]:
+        """Get the default, active LLMProvider for the system."""
+        return db.query(self.model).filter(self.model.is_default is True).first()
+
     def create_with_account(
         self,
         db: Session,
@@ -22,7 +26,7 @@ class CRUDLLMProvider(CRUDBase[LLMProvider]):
         """Create a new LLMProvider linked to an account."""
         if obj_in.is_default:
             db.query(self.model).filter(
-                self.model.account_id == account_id, self.model.is_default == True
+                self.model.account_id == account_id, self.model.is_default is True
             ).update({"is_default": False})
 
         db_obj = self.model(**obj_in.model_dump(), account_id=account_id)
@@ -41,7 +45,7 @@ class CRUDLLMProvider(CRUDBase[LLMProvider]):
         """Get the default LLMProvider for a specific account."""
         return (
             db.query(self.model)
-            .filter(self.model.account_id == account_id, self.model.is_default == True)
+            .filter(self.model.account_id == account_id, self.model.is_default is True)
             .first()
         )
 
@@ -63,7 +67,7 @@ class CRUDLLMProvider(CRUDBase[LLMProvider]):
             db.query(self.model).filter(
                 self.model.account_id == db_obj.account_id,
                 self.model.id != db_obj.id,
-                self.model.is_default == True,
+                self.model.is_default is True,
             ).update({"is_default": False})
 
         return super().update(db, db_obj=db_obj, obj_in=update_data)

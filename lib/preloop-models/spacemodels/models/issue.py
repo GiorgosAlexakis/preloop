@@ -1,7 +1,6 @@
 """Issue, EmbeddingModel, and IssueEmbedding models."""
 
 import os
-import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -81,11 +80,6 @@ class Issue(Base):
 class EmbeddingModel(Base):
     """Model to track different embedding models used in the system."""
 
-    # Primary key
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4())
-    )
-
     # Embedding model details
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     provider: Mapped[str] = mapped_column(
@@ -114,11 +108,6 @@ class IssueEmbedding(Base):
 
     This flexible design supports embeddings of different dimensions.
     """
-
-    # Primary key
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4())
-    )
 
     # Foreign keys
     issue_id: Mapped[str] = mapped_column(

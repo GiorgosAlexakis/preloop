@@ -1,9 +1,8 @@
 """Tests for LLMProvider model and CRUD operations."""
 
-import pytest
 from sqlalchemy.orm import Session
 
-from spacemodels.models import Account, LLMProvider
+from spacemodels.models import Account
 from spacemodels.crud import crud_llm_provider
 from spacebridge.schemas.llm_provider import LLMProviderCreate, LLMProviderUpdate
 
@@ -30,8 +29,12 @@ def test_create_llm_provider(db_session: Session, create_account):
 
 def test_get_llm_providers_by_account(db_session: Session, create_account):
     """Test retrieving LLMProviders for a specific account."""
-    account1: Account = create_account(username="user1_llm", email="user1_llm@example.com")
-    account2: Account = create_account(username="user2_llm", email="user2_llm@example.com")
+    account1: Account = create_account(
+        username="user1_llm", email="user1_llm@example.com"
+    )
+    account2: Account = create_account(
+        username="user2_llm", email="user2_llm@example.com"
+    )
 
     crud_llm_provider.create_with_account(
         db=db_session,
@@ -49,8 +52,12 @@ def test_get_llm_providers_by_account(db_session: Session, create_account):
         account_id=account2.id,
     )
 
-    providers_acc1 = crud_llm_provider.get_by_account_id(db=db_session, account_id=account1.id)
-    providers_acc2 = crud_llm_provider.get_by_account_id(db=db_session, account_id=account2.id)
+    providers_acc1 = crud_llm_provider.get_by_account_id(
+        db=db_session, account_id=account1.id
+    )
+    providers_acc2 = crud_llm_provider.get_by_account_id(
+        db=db_session, account_id=account2.id
+    )
 
     assert len(providers_acc1) == 2
     assert len(providers_acc2) == 1
@@ -81,21 +88,25 @@ def test_update_llm_provider_and_default_logic(db_session: Session, create_accou
     # Update p2 to be default, p1 should become non-default
     update_data = LLMProviderUpdate(is_default=True, credentials={"key": "v2_updated"})
     updated_p2 = crud_llm_provider.update(db=db_session, db_obj=p2, obj_in=update_data)
-    db_session.refresh(p1) # Refresh p1 to get its updated state from the DB
+    db_session.refresh(p1)  # Refresh p1 to get its updated state from the DB
 
     assert updated_p2.is_default is True
     assert updated_p2.credentials == {"key": "v2_updated"}
     assert p1.is_default is False
 
     # Update p1 to be default again
-    updated_p1 = crud_llm_provider.update(db=db_session, db_obj=p1, obj_in=LLMProviderUpdate(is_default=True))
+    updated_p1 = crud_llm_provider.update(
+        db=db_session, db_obj=p1, obj_in=LLMProviderUpdate(is_default=True)
+    )
     db_session.refresh(updated_p2)
 
     assert updated_p1.is_default is True
     assert updated_p2.is_default is False
 
     # Test setting a provider to non-default
-    still_default_p1 = crud_llm_provider.update(db=db_session, db_obj=updated_p1, obj_in=LLMProviderUpdate(is_default=False))
+    still_default_p1 = crud_llm_provider.update(
+        db=db_session, db_obj=updated_p1, obj_in=LLMProviderUpdate(is_default=False)
+    )
     assert still_default_p1.is_default is False
 
 
@@ -104,28 +115,40 @@ def test_get_default_llm_provider(db_session: Session, create_account):
     account: Account = create_account()
     crud_llm_provider.create_with_account(
         db=db_session,
-        obj_in=LLMProviderCreate(provider_name="non_default", credentials={}, is_default=False),
+        obj_in=LLMProviderCreate(
+            provider_name="non_default", credentials={}, is_default=False
+        ),
         account_id=account.id,
     )
     default_provider_obj = crud_llm_provider.create_with_account(
         db=db_session,
-        obj_in=LLMProviderCreate(provider_name="default_one", credentials={}, is_default=True),
+        obj_in=LLMProviderCreate(
+            provider_name="default_one", credentials={}, is_default=True
+        ),
         account_id=account.id,
     )
 
-    retrieved_default = crud_llm_provider.get_default_by_account_id(db=db_session, account_id=account.id)
+    retrieved_default = crud_llm_provider.get_default_by_account_id(
+        db=db_session, account_id=account.id
+    )
     assert retrieved_default is not None
     assert retrieved_default.id == default_provider_obj.id
     assert retrieved_default.provider_name == "default_one"
 
     # Test with no default provider
-    account2: Account = create_account(username="no_default_user", email="no_default@example.com")
+    account2: Account = create_account(
+        username="no_default_user", email="no_default@example.com"
+    )
     crud_llm_provider.create_with_account(
         db=db_session,
-        obj_in=LLMProviderCreate(provider_name="another_non_default", credentials={}, is_default=False),
+        obj_in=LLMProviderCreate(
+            provider_name="another_non_default", credentials={}, is_default=False
+        ),
         account_id=account2.id,
     )
-    no_default = crud_llm_provider.get_default_by_account_id(db=db_session, account_id=account2.id)
+    no_default = crud_llm_provider.get_default_by_account_id(
+        db=db_session, account_id=account2.id
+    )
     assert no_default is None
 
 

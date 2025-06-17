@@ -1,0 +1,53 @@
+"""CRUD operations for IssueDuplicate model."""
+from typing import List, Optional, Dict, Any
+
+from sqlalchemy.orm import Session
+
+from spacemodels.crud.base import CRUDBase
+from ..models.issue_duplicate import IssueDuplicate
+
+
+class CRUDIssueDuplicate(CRUDBase[IssueDuplicate]):
+    """CRUD for IssueDuplicate model."""
+
+    def create(self, db: Session, *, obj_in: Dict[str, Any]) -> IssueDuplicate:
+        """Create a new issue duplicate."""
+        db_obj_data = obj_in.copy()
+
+        # Ensure issue1_id is less than or equal to issue2_id for consistency
+        id1 = db_obj_data.pop("issue1_id")
+        id2 = db_obj_data.pop("issue2_id")
+
+        db_obj_data["issue1_id"] = min(id1, id2)
+        db_obj_data["issue2_id"] = max(id1, id2)
+
+        db_obj = self.model(**db_obj_data)
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def get_by_issue_ids(
+        self, db: Session, *, issue1_id: int, issue2_id: int
+    ) -> Optional[IssueDuplicate]:
+        """Get an IssueDuplicate entry by the two issue IDs, order-agnostic."""
+        id_a = min(issue1_id, issue2_id)
+        id_b = max(issue1_id, issue2_id)
+        return (
+            db.query(self.model)
+            .filter(self.model.issue1_id == id_a, self.model.issue2_id == id_b)
+            .first()
+        )
+
+    def get_all_for_issue(self, db: Session, *, issue_id: int) -> List[IssueDuplicate]:
+        """Get all duplicates for a given issue."""
+        return (
+            db.query(self.model)
+            .filter(
+                (self.model.issue1_id == issue_id) | (self.model.issue2_id == issue_id)
+            )
+            .all()
+        )
+
+
+crud_issue_duplicate = CRUDIssueDuplicate(IssueDuplicate)
