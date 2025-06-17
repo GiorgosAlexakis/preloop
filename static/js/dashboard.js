@@ -7,6 +7,25 @@ let activeKeyId = null;
 let activeTrackerId = null;
 let llm_providers_url = '/api/v1/llm-providers';
 
+// Data store for duplicates tab with sorting capability
+let projectDuplicatesDataStore = {
+    duplicates: [],
+    projectId: null,
+    modelIdUsed: null,
+    thresholdUsed: null,
+    llmRequestsPending: 0
+};
+
+// Helper to initialize tooltips
+function initializeTooltips(selector = '[data-bs-toggle="tooltip"]') {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll(selector));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        // Ensure existing tooltips are disposed before creating new ones if necessary
+        // For simplicity, Bootstrap 5 handles this reasonably well, but for older versions or complex scenarios, manual disposal might be needed.
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+}
+
 // Initialize dashboard
 function initializeDashboard() {
     const token = localStorage.getItem('accessToken');
@@ -289,7 +308,6 @@ function loadDashboardData() {
     loadProjectsForDuplicatesTab();
 
     // Fetch LLM providers
-    // TODO: When adding this, I get multiple TypeError: Load Failed and the page returns to login
     loadLLMProviders();
 }
 
@@ -722,7 +740,6 @@ function updateDashboardStats() {
     }
 }
 
-
 // --- Duplicates Tab Logic ---
 async function loadProjectsForDuplicatesTab() {
     const selectElement = document.getElementById('projectSelect');
@@ -777,99 +794,87 @@ async function fetchProjectDuplicates(projectId) {
         });
         if (!response.ok) {
             if (response.status === 401) {
-                // Try to refresh the token and retry
-                await refreshToken(); // Wait for token refresh
-                // Retry the request with the new token
-                const retryResponse = await fetch(`/api/v1/projects/${projectId}/duplicates`, {
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                    }
-                });
-                if (!retryResponse.ok) {
-                    const errorData = await retryResponse.json().catch(() => ({ detail: 'Failed to fetch duplicates after token refresh.' }));
-                    throw new Error(errorData.detail || `HTTP error! status: ${retryResponse.status}`);
-                }
-                const data = await retryResponse.json();
-                renderDuplicates(data);
-                return; // Exit after successful retry
+                await refreshToken();
+                return fetchProjectDuplicates(projectId); // Retry
             }
-            const errorData = await response.json().catch(() => ({ detail: 'Failed to fetch duplicates. Server returned an error.' }));
+            // Try to parse error response, default if parsing fails
+            const errorData = await response.json().catch(() => ({ detail: 'Failed to fetch duplicates after token refresh.' }));
             throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
-        console.log(data)
         renderDuplicates(data);
-    } catch (error) {
+    } catch (error) { // Catch network errors or other unexpected issues during fetch itself
         console.error('Error fetching project duplicates:', error);
         resultArea.innerHTML = `<div class="alert alert-danger" role="alert">Error fetching duplicates: ${error.message}</div>`;
     }
 }
 
 function renderDuplicates(data) {
-    const resultArea = document.getElementById('duplicates-result-area');
-    if (!data || !data.duplicates) {
-        resultArea.innerHTML = '<p class="text-muted text-center">No duplicate data received.</p>';
+    console.log("Rendering duplicates with data:", data);
+    const resultArea = document.getElementById('duplicates-result-area'); // Ensure this ID matches your HTML
+    if (!data || !data.duplicates || data.duplicates.length === 0) {
+        resultArea.innerHTML = '<p>No potential duplicates found with the current settings.</p>';
         return;
     }
 
-    const duplicates = data.duplicates;
-    const projectId = data.project_id; // Assuming project_id is in the response for context if needed
-
-    // Sort duplicates by similarity in descending order
-    duplicates.sort((a, b) => b.similarity - a.similarity);
-
-    if (duplicates.length === 0) {
-        resultArea.innerHTML = '<p class="text-center">No duplicates found for this project.</p>';
-        return;
-    }
+    // Initialize data store
+    projectDuplicatesDataStore.duplicates = data.duplicates.map(pair => ({
+        ...pair,
+        llm_decision_status: 'loading', // Initial status
+        llm_decision_details: null      // To store the full response from LLM check
+    }));
+    projectDuplicatesDataStore.projectId = data.project_id_used;
+    projectDuplicatesDataStore.modelIdUsed = data.model_id_used;
+    projectDuplicatesDataStore.thresholdUsed = data.threshold_used;
+    projectDuplicatesDataStore.llmRequestsPending = data.duplicates.length;
 
     let tableHtml = `
-        <h5 class="mt-4 mb-3"Potential Duplicate Pairs</h5>
-        <h6 class="text-muted">Threshold: ${(data.threshold_used * 100).toFixed(2)}%</h6>
-        <table class="table table-hover table-sm small">
+        <p>Showing ${projectDuplicatesDataStore.duplicates.length} potential duplicate pairs.</p>
+        <table class="table table-hover duplicates-table">
             <thead>
                 <tr>
-                    <th>Issue Keys</th>
-                    <th>Issue Titles</th>
+                    <th>Issue IDs</th>
+                    <th>Titles</th>
                     <th>Similarity</th>
+                    <th class="text-center">LLM Check</th>
                 </tr>
             </thead>
-            <tbody>
-    `;
+            <tbody id="duplicatesTableBody">
+    `; // Added id to tbody
 
-    duplicates.forEach((pair, index) => {
-        console.log(`Rendering duplicate pair ${index}:`, JSON.stringify(pair, null, 2)); // Log the pair data
-        const detailRowId = `details-row-${index}`;
+    // Initial render (unsorted, with spinners)
+    projectDuplicatesDataStore.duplicates.forEach((pairData) => {
+        const issue1 = pairData.issue1;
+        const issue2 = pairData.issue2;
+        // Use actual issue IDs for unique and stable row/detail IDs
+        const stableIdSuffix = `${issue1.id}-${issue2.id}`;
+        const detailRowId = `details-row-${stableIdSuffix}`;
+        const rowId = `duplicate-row-${stableIdSuffix}`;
+        const llmCellId = `llm-check-${stableIdSuffix}`;
+
         tableHtml += `
-            <tr onclick="toggleDetails('${detailRowId}')" style="cursor: pointer;" title="Click to see details">
+            <tr id="${rowId}" onclick="toggleDetails('${detailRowId}')" style="cursor: pointer;" title="Click to see details">
                 <td>
-                    <div><a href="${pair.issue1.url}" target="_blank" rel="noopener noreferrer"><strong>${pair.issue1.key}</strong> <i class="bi bi-box-arrow-up-right ms-1"></i></a></div>
-                    <div><a href="${pair.issue2.url}" target="_blank" rel="noopener noreferrer"><strong>${pair.issue2.key}</strong> <i class="bi bi-box-arrow-up-right ms-1"></i></a></div>
+                    <div>${issue1.external_id || issue1.id.substring(0,8)}</div>
+                    <div>${issue2.external_id || issue2.id.substring(0,8)}</div>
                 </td>
                 <td>
-                    <div>${pair.issue1.title}</div>
-                    <div>${pair.issue2.title}</div>
+                    <div>${truncateText(issue1.title, 50)}</div>
+                    <div>${truncateText(issue2.title, 50)}</div>
                 </td>
-                <td>${(pair.similarity * 100).toFixed(2)}%</td>
+                <td>${(pairData.similarity * 100).toFixed(2)}%</td>
+                <td id="${llmCellId}" class="text-center align-middle">
+                    <div class="spinner-border spinner-border-sm" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </td>
             </tr>
             <tr id="${detailRowId}" class="duplicate-details-row" style="display: none;">
-                <td colspan="3" class="p-3">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h5>${pair.issue1.title}</h5>
-                            <div><a href="${pair.issue1.url}" target="_blank" rel="noopener noreferrer"><strong>${pair.issue1.key}</strong> <i class="bi bi-box-arrow-up-right ms-1"></i></a></div>
-                            <p><strong>Status:</strong> ${pair.issue1.status || 'N/A'}<br>
-                               <strong>Priority:</strong> ${pair.issue1.priority || 'N/A'}</p>
-                            <div class="description-text">${pair.issue1.description ? pair.issue1.description.replace(/\n/g, '<br>') : 'No description available.'}</div>
-                        </div>
-                        <div class="col-md-6">
-                            <h5>${pair.issue2.title}</h5>
-                            <div><a href="${pair.issue2.url}" target="_blank" rel="noopener noreferrer"><strong>${pair.issue2.key}</strong> <i class="bi bi-box-arrow-up-right ms-1"></i></a></div>
-                            <p><strong>Status:</strong> ${pair.issue2.status || 'N/A'}<br>
-                               <strong>Priority:</strong> ${pair.issue2.priority || 'N/A'}</p>
-                            <div class="description-text">${pair.issue2.description ? pair.issue2.description.replace(/\n/g, '<br>') : 'No description available.'}</div>
-                        </div>
-                    </div>
+                <td colspan="4">
+                    <h6>Issue 1: ${truncateText(issue1.title, 100)} (${issue1.external_id || issue1.id})</h6>
+                    <p><strong>Description:</strong><br>${issue1.description ? truncateText(issue1.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
+                    <h6>Issue 2: ${truncateText(issue2.title, 100)} (${issue2.external_id || issue2.id})</h6>
+                    <p><strong>Description:</strong><br>${issue2.description ? truncateText(issue2.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
                 </td>
             </tr>
         `;
@@ -879,8 +884,229 @@ function renderDuplicates(data) {
             </tbody>
         </table>
     `;
-
     resultArea.innerHTML = tableHtml;
+    initializeTooltips(); // Initialize tooltips for title attributes on rows
+
+    // Fetch LLM decisions for each pair
+    projectDuplicatesDataStore.duplicates.forEach((pairData) => {
+        const issue1Id = pairData.issue1.id;
+        const issue2Id = pairData.issue2.id;
+        const llmCellId = `llm-check-${issue1Id}-${issue2Id}`;
+        const rowId = `duplicate-row-${issue1Id}-${issue2Id}`;
+        // Pass the pairData object by reference so fetchLLMDuplicateDecision can update it
+        fetchLLMDuplicateDecision(projectDuplicatesDataStore.projectId, issue1Id, issue2Id, llmCellId, rowId, pairData);
+    });
+}
+
+async function fetchLLMDuplicateDecision(projectId, issue1Id, issue2Id, cellId, rowId, pairDataRef) {
+    const cellElement = document.getElementById(cellId);
+    const rowElement = document.getElementById(rowId);
+
+    try {
+        const response = await fetch(`/api/v1/issue-duplicates/check?issue1_id=${encodeURIComponent(issue1Id)}&issue2_id=${encodeURIComponent(issue2Id)}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                'Content-Type': 'application/json'
+            },
+        });
+
+        let decisionResult;
+        if (!response.ok) {
+            if (response.status === 401) {
+                await refreshToken();
+                return fetchLLMDuplicateDecision(projectId, issue1Id, issue2Id, cellId, rowId, pairDataRef); // Retry
+            }
+            // Try to parse error response, default if parsing fails
+            const errorData = await response.json().catch(() => ({ detail: 'LLM check failed with non-JSON response.' }));
+            decisionResult = { decision: 'error', detail: errorData.detail || `HTTP error! status: ${response.status}` };
+        } else {
+            decisionResult = await response.json();
+        }
+
+        // Update the data store
+        pairDataRef.llm_decision_details = decisionResult; // Store full details
+        pairDataRef.llm_decision_status = decisionResult.decision; // Store just the decision string for sorting
+
+        if (decisionResult.decision === 'error') {
+             console.error(`LLM check error for ${issue1Id} & ${issue2Id}:`, decisionResult.detail);
+        }
+
+        // Update the specific cell immediately
+        let iconHtml = '';
+        let tooltipText = '';
+
+        switch (pairDataRef.llm_decision_status) {
+            case 'confirmed':
+                iconHtml = '<i class="bi bi-check-circle-fill text-success llm-status-icon"></i>';
+                tooltipText = `LLM Decision: Confirmed`;
+                break;
+            case 'rejected':
+                iconHtml = '<i class="bi bi-x-circle-fill text-danger llm-status-icon"></i>';
+                tooltipText = `LLM Decision: Rejected`;
+                rowElement.classList.add('issue-rejected');
+                break;
+            case 'undecided':
+                iconHtml = '<i class="bi bi-question-circle-fill text-warning llm-status-icon"></i>';
+                tooltipText = `LLM Decision: Undecided`;
+                break;
+            case 'error':
+                iconHtml = '<i class="bi bi-exclamation-triangle-fill text-danger llm-status-icon"></i>';
+                tooltipText = `Error: ${pairDataRef.llm_decision_details.detail || 'Failed to get LLM decision.'}`;
+                break;
+            case 'loading': // Should ideally not be 'loading' when re-rendering after all calls
+                iconHtml = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div>';
+                tooltipText = 'LLM Check: Loading...';
+                break;
+            default:
+                iconHtml = `<i class="bi bi-slash-circle text-muted llm-status-icon"></i>`;
+                tooltipText = `Status: ${pairDataRef.llm_decision_status}`;
+        }
+
+        // Add more details to tooltip if available and not an error
+        if (pairDataRef.llm_decision_details && pairDataRef.llm_decision_status !== 'error' && pairDataRef.llm_decision_status !== 'loading') {
+             tooltipText += `\nChecked at: ${new Date(pairDataRef.llm_decision_details.decision_at || pairDataRef.llm_decision_details.created_at).toLocaleString()}`;
+             tooltipText += `\nLLM: ${pairDataRef.llm_decision_details.llm_model_name}`;
+        }
+
+        if (cellElement) {
+            cellElement.innerHTML = `<span data-bs-toggle="tooltip" data-bs-placement="top" title="${tooltipText.replace(/"/g, '&quot;')}">${iconHtml}</span>`;
+            // Re-initialize tooltip for this specific new element
+            if (cellElement.querySelector('[data-bs-toggle="tooltip"]')) {
+                 new bootstrap.Tooltip(cellElement.querySelector('[data-bs-toggle="tooltip"]'));
+            }
+        } else {
+            console.warn("Could not find cellElement to update: ", cellId);
+        }
+
+    } catch (error) { // Catch network errors or other unexpected issues during fetch itself
+        console.error(`Critical error in fetchLLMDuplicateDecision for ${issue1Id} & ${issue2Id}:`, error);
+        pairDataRef.llm_decision_status = 'error';
+        pairDataRef.llm_decision_details = { detail: error.message || 'Network error or critical failure during fetch.' };
+        if (cellElement) {
+            const errorTooltipText = `Error: ${pairDataRef.llm_decision_details.detail}`;
+            cellElement.innerHTML = `<span data-bs-toggle="tooltip" data-bs-placement="top" title="${errorTooltipText.replace(/"/g, '&quot;')}"><i class="bi bi-exclamation-triangle-fill text-danger llm-status-icon"></i></span>`;
+            if (cellElement.querySelector('[data-bs-toggle="tooltip"]')) {
+                 new bootstrap.Tooltip(cellElement.querySelector('[data-bs-toggle="tooltip"]'));
+            }
+        }
+    } finally {
+        projectDuplicatesDataStore.llmRequestsPending--;
+        sortAndReRenderDuplicatesTable();
+    }
+}
+
+function sortAndReRenderDuplicatesTable() {
+    const decisionOrder = {
+        'confirmed': 0,
+        'undecided': 1,
+        'rejected': 2,
+        'error': 3,    // Errors after rejected
+        'loading': 4   // Loading last (should ideally not be 'loading' if all requests are done)
+    };
+
+    projectDuplicatesDataStore.duplicates.sort((a, b) => {
+        const statusA = decisionOrder[a.llm_decision_status] !== undefined ? decisionOrder[a.llm_decision_status] : 99; // Default for unknown statuses
+        const statusB = decisionOrder[b.llm_decision_status] !== undefined ? decisionOrder[b.llm_decision_status] : 99;
+
+        if (statusA !== statusB) {
+            return statusA - statusB;
+        }
+        return b.similarity - a.similarity; // Secondary sort: by similarity descending
+    });
+
+    const tableBody = document.getElementById('duplicatesTableBody');
+    if (!tableBody) {
+        console.error('Could not find duplicatesTableBody to re-render.');
+        return;
+    }
+
+    let newTableBodyHtml = '';
+    projectDuplicatesDataStore.duplicates.forEach((pairData) => {
+        const issue1 = pairData.issue1;
+        const issue2 = pairData.issue2;
+        const stableIdSuffix = `${issue1.id}-${issue2.id}`;
+        const detailRowId = `details-row-${stableIdSuffix}`;
+        const rowId = `duplicate-row-${stableIdSuffix}`;
+
+        let iconHtml = '';
+        let tooltipText = '';
+        let rowClass = '';
+
+        switch (pairData.llm_decision_status) {
+            case 'confirmed':
+                iconHtml = '<i class="bi bi-check-circle-fill text-success llm-status-icon"></i>';
+                tooltipText = `LLM Decision: Confirmed`;
+                break;
+            case 'rejected':
+                iconHtml = '<i class="bi bi-x-circle-fill text-danger llm-status-icon"></i>';
+                tooltipText = `LLM Decision: Rejected`;
+                rowClass = 'issue-rejected';
+                break;
+            case 'undecided':
+                iconHtml = '<i class="bi bi-question-circle-fill text-warning llm-status-icon"></i>';
+                tooltipText = `LLM Decision: Undecided`;
+                break;
+            case 'error':
+                iconHtml = '<i class="bi bi-exclamation-triangle-fill text-danger llm-status-icon"></i>';
+                tooltipText = `Error: ${pairData.llm_decision_details && pairData.llm_decision_details.detail ? pairData.llm_decision_details.detail : 'Failed to get LLM decision.'}`;
+                break;
+            case 'loading': // Should ideally not be 'loading' when re-rendering after all calls
+                iconHtml = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div>';
+                tooltipText = 'LLM Check: Loading...';
+                break;
+            default:
+                iconHtml = `<i class="bi bi-slash-circle text-muted llm-status-icon"></i>`;
+                tooltipText = `Status: ${pairData.llm_decision_status}`;
+        }
+
+        if (pairData.llm_decision_details && pairData.llm_decision_status !== 'error' && pairData.llm_decision_status !== 'loading') {
+            tooltipText += `\nChecked at: ${new Date(pairData.llm_decision_details.decision_at || pairData.llm_decision_details.created_at).toLocaleString()}`;
+            tooltipText += `\nLLM: ${pairData.llm_decision_details.llm_model_name}`;
+        }
+
+        newTableBodyHtml += `
+            <tr id="${rowId}" class="${rowClass}" onclick="toggleDetails('${detailRowId}')" style="cursor: pointer;" title="Click to see details">
+                <td>
+                    <div>${issue1.external_id || issue1.id.substring(0,8)}</div>
+                    <div>${issue2.external_id || issue2.id.substring(0,8)}</div>
+                </td>
+                <td>
+                    <div>${truncateText(issue1.title, 50)}</div>
+                    <div>${truncateText(issue2.title, 50)}</div>
+                </td>
+                <td>${(pairData.similarity * 100).toFixed(2)}%</td>
+                <td class="text-center align-middle">
+                    <span data-bs-toggle="tooltip" data-bs-placement="top" title="${tooltipText.replace(/"/g, '&quot;')}">${iconHtml}</span>
+                </td>
+            </tr>
+            <tr id="${detailRowId}" class="duplicate-details-row" style="display: none;">
+                <td colspan="4">
+                    <h6>Issue 1: ${truncateText(issue1.title, 100)} (${issue1.external_id || issue1.id})</h6>
+                    <p><strong>Description:</strong><br>${issue1.description ? truncateText(issue1.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
+                    <h6>Issue 2: ${truncateText(issue2.title, 100)} (${issue2.external_id || issue2.id})</h6>
+                    <p><strong>Description:</strong><br>${issue2.description ? truncateText(issue2.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
+                </td>
+            </tr>
+        `;
+    });
+
+    tableBody.innerHTML = newTableBodyHtml;
+    initializeTooltips('#duplicatesTableBody [data-bs-toggle="tooltip"]'); // Re-initialize tooltips for the new content
+}
+
+// Add event listener for project selection dropdown
+const projectSelectElement = document.getElementById('projectSelect');
+if (projectSelectElement) {
+    projectSelectElement.addEventListener('change', function() {
+        const selectedProjectId = this.value;
+        if (selectedProjectId) {
+            fetchProjectDuplicates(selectedProjectId);
+        } else {
+            const resultArea = document.getElementById('duplicatesResultArea');
+            resultArea.innerHTML = '<p class="text-muted text-center">Please select a project.</p>';
+        }
+    });
 }
 
 function toggleDetails(detailsRowId) {
@@ -898,20 +1124,6 @@ function toggleDetails(detailsRowId) {
     } else {
         console.error(`Details row with ID ${detailsRowId} not found!`);
     }
-}
-
-// Add event listener for project selection dropdown
-const projectSelectElement = document.getElementById('projectSelect');
-if (projectSelectElement) {
-    projectSelectElement.addEventListener('change', function() {
-        const selectedProjectId = this.value;
-        if (selectedProjectId) {
-            fetchProjectDuplicates(selectedProjectId);
-        } else {
-            const resultArea = document.getElementById('duplicates-result-area');
-            resultArea.innerHTML = '<p class="text-muted text-center">Please select a project.</p>';
-        }
-    });
 }
 
 // LLM Providers Section
@@ -1144,4 +1356,13 @@ function showDefaultTab() {
     if (defaultTabButton && defaultTabButton.classList.contains('active')) {
         document.getElementById('currentPageTitle').textContent = defaultTabButton.textContent.trim();
     }
+}
+
+// Helper function for truncating text (if not already present)
+function truncateText(text, maxLength) {
+    if (!text) return '';
+    if (text.length <= maxLength) {
+        return text;
+    }
+    return text.substring(0, maxLength) + '...';
 }

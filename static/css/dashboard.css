@@ -236,6 +236,25 @@
     cursor: pointer;
 }
 
+/* Add to static/css/dashboard.css */
+.issue-rejected {
+    opacity: 0.4; /* Make it less prominent */
+}
+
+.issue-rejected:hover {
+    opacity: 1; /* Full opacity on hover if desired */
+}
+
+.llm-status-icon {
+    font-size: 1.1rem; /* Adjust as needed */
+    cursor: help; /* Indicate tooltip availability */
+}
+
+/* Ensure spinners in table cells are vertically aligned */
+.duplicates-table td .spinner-border {
+    vertical-align: middle;
+}
+
 /* Sidebar copyright styling */
 .sidebar-copyright {
     font-size: 0.75rem;
