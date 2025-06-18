@@ -1,4 +1,5 @@
 """CRUD operations for IssueDuplicate model."""
+
 from typing import List, Optional, Dict, Any
 
 from sqlalchemy.orm import Session

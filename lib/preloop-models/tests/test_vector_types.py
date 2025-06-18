@@ -9,7 +9,6 @@ from spacemodels.db.vector_types import (
     check_pgvector_extension,
     cosine_distance,
     euclidean_distance,
-    install_pgvector_extension,
 )
 
 

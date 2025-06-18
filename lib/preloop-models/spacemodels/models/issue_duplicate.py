@@ -1,4 +1,5 @@
 """Issue Duplicate model."""
+
 from __future__ import annotations
 
 

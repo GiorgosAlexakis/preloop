@@ -19,13 +19,13 @@ class ClientVersionLog(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    account_id: Mapped[
-        Optional[str]
-    ] = mapped_column(  # Changed type hint to Optional[str]
-        String(36),
-        ForeignKey("account.id"),
-        nullable=True,
-        index=True,  # Changed type to String(36)
+    account_id: Mapped[Optional[str]] = (
+        mapped_column(  # Changed type hint to Optional[str]
+            String(36),
+            ForeignKey("account.id"),
+            nullable=True,
+            index=True,  # Changed type to String(36)
+        )
     )
     organization_identifier: Mapped[Optional[str]] = mapped_column(
         String, nullable=True, index=True
