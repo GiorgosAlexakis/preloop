@@ -1879,15 +1879,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/llm-providers:
+  /api/v1/llm-models:
     get:
       tags:
-      - LLM Providers
-      - LLM Providers
-      summary: List LLM Providers
-      description: List all LLM Providers associated with the authenticated user's
-        account.
-      operationId: list_llm_providers_api_v1_llm_providers_get
+      - LLM Models
+      - LLM Models
+      summary: List LLM Models
+      description: List all LLM Models associated with the authenticated user's account.
+      operationId: list_llm_models_api_v1_llm_models_get
       responses:
         '200':
           description: Successful Response
@@ -1895,23 +1894,23 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: '#/components/schemas/LLMProviderRead'
+                  $ref: '#/components/schemas/LLMModelRead'
                 type: array
-                title: Response List Llm Providers Api V1 Llm Providers Get
+                title: Response List Llm Models Api V1 Llm Models Get
       security:
       - bearerAuth: []
     post:
       tags:
-      - LLM Providers
-      - LLM Providers
-      summary: Create LLM Provider
-      description: Create a new LLM Provider for the authenticated user's account.
-      operationId: create_llm_provider_api_v1_llm_providers_post
+      - LLM Models
+      - LLM Models
+      summary: Create LLM Model
+      description: Create a new LLM Model for the authenticated user's account.
+      operationId: create_llm_model_api_v1_llm_models_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LLMProviderCreate'
+              $ref: '#/components/schemas/LLMModelCreate'
         required: true
       responses:
         '201':
@@ -1919,7 +1918,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LLMProviderRead'
+                $ref: '#/components/schemas/LLMModelRead'
         '422':
           description: Validation Error
           content:
@@ -1928,30 +1927,30 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/llm-providers/{provider_id}:
+  /api/v1/llm-models/{model_id}:
     get:
       tags:
-      - LLM Providers
-      - LLM Providers
-      summary: Get LLM Provider by ID
-      description: Retrieve a specific LLM Provider by its ID.
-      operationId: get_llm_provider_api_v1_llm_providers__provider_id__get
+      - LLM Models
+      - LLM Models
+      summary: Get LLM Model by ID
+      description: Retrieve a specific LLM Model by its ID.
+      operationId: get_llm_model_api_v1_llm_models__model_id__get
       security:
       - bearerAuth: []
       parameters:
-      - name: provider_id
+      - name: model_id
         in: path
         required: true
         schema:
           type: string
-          title: Provider Id
+          title: Model Id
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LLMProviderRead'
+                $ref: '#/components/schemas/LLMModelRead'
         '422':
           description: Validation Error
           content:
@@ -1960,33 +1959,33 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
     put:
       tags:
-      - LLM Providers
-      - LLM Providers
-      summary: Update LLM Provider
-      description: Update an existing LLM Provider by its ID.
-      operationId: update_llm_provider_api_v1_llm_providers__provider_id__put
+      - LLM Models
+      - LLM Models
+      summary: Update LLM Model
+      description: Update an existing LLM Model by its ID.
+      operationId: update_llm_model_api_v1_llm_models__model_id__put
       security:
       - bearerAuth: []
       parameters:
-      - name: provider_id
+      - name: model_id
         in: path
         required: true
         schema:
           type: string
-          title: Provider Id
+          title: Model Id
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LLMProviderUpdate'
+              $ref: '#/components/schemas/LLMModelUpdate'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LLMProviderRead'
+                $ref: '#/components/schemas/LLMModelRead'
         '422':
           description: Validation Error
           content:
@@ -1995,20 +1994,20 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
     delete:
       tags:
-      - LLM Providers
-      - LLM Providers
-      summary: Delete LLM Provider
-      description: Delete an LLM Provider by its ID.
-      operationId: delete_llm_provider_api_v1_llm_providers__provider_id__delete
+      - LLM Models
+      - LLM Models
+      summary: Delete LLM Model
+      description: Delete an LLM Model by its ID.
+      operationId: delete_llm_model_api_v1_llm_models__model_id__delete
       security:
       - bearerAuth: []
       parameters:
-      - name: provider_id
+      - name: model_id
         in: path
         required: true
         schema:
           type: string
-          title: Provider Id
+          title: Model Id
       responses:
         '204':
           description: Successful Response
@@ -2720,9 +2719,9 @@ components:
             format: date-time
           - type: 'null'
           title: Decision At
-        llm_provider_id:
+        llm_model_id:
           type: string
-          title: Llm Provider Id
+          title: Llm Model Id
         llm_model_name:
           anyOf:
           - type: string
@@ -2749,7 +2748,7 @@ components:
       - issue1_id
       - issue2_id
       - decision
-      - llm_provider_id
+      - llm_model_id
       - id
       - created_at
       - updated_at
@@ -2901,15 +2900,25 @@ components:
       type: object
       title: IssueUpdate
       description: Model for updating an issue.
-    LLMProviderCreate:
+    LLMModelCreate:
       properties:
         provider_name:
           type: string
           title: Provider Name
-        credentials:
-          additionalProperties: true
-          type: object
-          title: Credentials
+        api_key:
+          type: string
+          title: Api Key
+        api_url:
+          type: string
+          title: Api Url
+        model_name:
+          type: string
+          title: Model Name
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
         is_default:
           anyOf:
           - type: boolean
@@ -2919,18 +2928,30 @@ components:
       type: object
       required:
       - provider_name
-      - credentials
-      title: LLMProviderCreate
-      description: Schema for creating a new LLMProvider entry.
-    LLMProviderRead:
+      - api_key
+      - api_url
+      - model_name
+      title: LLMModelCreate
+      description: Schema for creating a new LLMModel entry.
+    LLMModelRead:
       properties:
         provider_name:
           type: string
           title: Provider Name
-        credentials:
-          additionalProperties: true
-          type: object
-          title: Credentials
+        api_key:
+          type: string
+          title: Api Key
+        api_url:
+          type: string
+          title: Api Url
+        model_name:
+          type: string
+          title: Model Name
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
         is_default:
           anyOf:
           - type: boolean
@@ -2954,34 +2975,50 @@ components:
       type: object
       required:
       - provider_name
-      - credentials
+      - api_key
+      - api_url
+      - model_name
       - id
       - account_id
       - created_at
       - updated_at
-      title: LLMProviderRead
-      description: Schema for reading LLMProvider entries, including timestamps.
-    LLMProviderUpdate:
+      title: LLMModelRead
+      description: Schema for reading LLMModel entries, including timestamps.
+    LLMModelUpdate:
       properties:
         provider_name:
           anyOf:
           - type: string
           - type: 'null'
           title: Provider Name
-        credentials:
+        api_key:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: string
           - type: 'null'
-          title: Credentials
+          title: Api Key
+        api_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Url
+        model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Name
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
         is_default:
           anyOf:
           - type: boolean
           - type: 'null'
           title: Is Default
       type: object
-      title: LLMProviderUpdate
-      description: Schema for updating an existing LLMProvider entry. All fields are
+      title: LLMModelUpdate
+      description: Schema for updating an existing LLMModel entry. All fields are
         optional.
     LoginRequest:
       properties:

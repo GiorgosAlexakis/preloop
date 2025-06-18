@@ -32,7 +32,7 @@ from spacebridge.api.endpoints import (
     trackers,
     version,
     embedding as embedding_router,
-    llm_providers,
+    llm_models,
     issue_duplicates,
 )
 from spacemodels.db.session import get_db_session
@@ -369,9 +369,9 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        llm_providers.router,
+        llm_models.router,
         prefix="/api/v1",
-        tags=["LLM Providers"],
+        tags=["LLM Models"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(

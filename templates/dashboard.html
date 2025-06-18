@@ -290,31 +290,32 @@
                                     </div>
                                 </div>
 
-                                <div class="card mt-4" id="llm-providers-section">
+                                <div class="card mt-4" id="llm-models-section">
                                     <div class="card-header d-flex justify-content-between align-items-center">
-                                        <span>LLM Providers</span>
-                                        <button class="btn btn-primary btn-sm" id="addLLMProviderBtn" data-bs-toggle="modal" data-bs-target="#llmProviderModal">
-                                            <i class="bi bi-plus-lg"></i> Add Provider
+                                        <span>LLM Models</span>
+                                        <button class="btn btn-primary btn-sm" id="addLLMModelBtn" data-bs-toggle="modal" data-bs-target="#llmModelModal">
+                                            <i class="bi bi-plus-lg"></i> Add Model
                                         </button>
                                     </div>
                                     <div class="card-body">
                                         <div class="alert alert-info">
                                             <i class="bi bi-info-circle"></i>
-                                            LLM providers are required to use advanced AI enabled features.
+                                            LLM models are required to use advanced AI-enabled features like duplicate detection.
                                         </div>
-                                        <div class="alert alert-info d-none" id="noLLMProvidersAlert">
-                                            <i class="bi bi-info-circle"></i> No LLM providers configured yet. Click 'Add Provider' to get started.
+                                        <div class="alert alert-info d-none" id="noLLMModelsAlert">
+                                            <i class="bi bi-info-circle"></i> No LLM models configured yet. Click 'Add Model' to get started.
                                         </div>
-                                        <table class="table table-hover" id="llmProvidersTable">
+                                        <table class="table table-hover" id="llmModelsTable">
                                             <thead>
                                                 <tr>
-                                                    <th>Provider Name</th>
-                                                    <th>Default</th>
+                                                    <th>Name</th>
+                                                    <th>Provider</th>
+                                                    <th>Model Name</th>
                                                     <th>Actions</th>
                                                 </tr>
                                             </thead>
-                                            <tbody id="llmProvidersListBody">
-                                                <!-- LLM Providers will be loaded here by JavaScript -->
+                                            <tbody id="llmModelsListBody">
+                                                <!-- LLM Models will be loaded here by JavaScript -->
                                             </tbody>
                                         </table>
                                     </div>
@@ -574,55 +575,70 @@
         </div>
     </div>
 
-    <!-- Add/Edit LLM Provider Modal -->
-    <div class="modal fade" id="llmProviderModal" tabindex="-1" aria-labelledby="llmProviderModalLabel" aria-hidden="true">
+    <!-- LLM Model Modal -->
+    <div class="modal fade" id="llmModelModal" tabindex="-1" aria-labelledby="llmModelModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="llmProviderModalLabel">Add LLM Provider</h5>
+                    <h5 class="modal-title" id="llmModelModalLabel">Add LLM Model</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="llmProviderForm">
-                        <input type="hidden" id="llmProviderId">
+                    <form id="llmModelForm">
+                        <input type="hidden" id="llmModelId">
                         <div class="mb-3">
-                            <label for="llmProviderName" class="form-label">Provider Name</label>
-                            <input type="text" class="form-control" id="llmProviderName" required>
+                            <label for="llmModelName" class="form-label">Friendly Name</label>
+                            <input type="text" class="form-control" id="llmModelName" required placeholder="e.g., My OpenAI Model">
+                            <div class="form-text">A unique, friendly name for this model configuration.</div>
                         </div>
                         <div class="mb-3">
-                            <label for="llmProviderApiKey" class="form-label">API Key</label>
-                            <input type="password" class="form-control" id="llmProviderApiKey" placeholder="Enter provider API key" required>
+                            <label for="llmModelProvider" class="form-label">Provider</label>
+                            <select class="form-select" id="llmModelProvider" required>
+                                <option value="" disabled selected>Select a provider</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="anthropic">Anthropic</option>
+                                <option value="google">Google</option>
+                                <option value="custom">Custom</option>
+                            </select>
                         </div>
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="llmProviderIsDefault">
-                            <label class="form-check-label" for="llmProviderIsDefault">
-                                Set as Default Provider
-                            </label>
+                        <div class="mb-3">
+                            <label for="llmModelIdentifier" class="form-label">Model Name / ID</label>
+                            <input type="text" class="form-control" id="llmModelIdentifier" required placeholder="e.g., gpt-4-turbo">
+                            <div class="form-text">The specific model identifier from the provider (e.g., gpt-4-turbo, claude-3-opus-20240229).</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="llmModelApiUrl" class="form-label">API URL</label>
+                            <input type="url" class="form-control" id="llmModelApiUrl" required placeholder="e.g., https://api.openai.com/v1">
+                            <div class="form-text">The base URL for the provider's API.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="llmModelApiKey" class="form-label">API Key</label>
+                            <input type="password" class="form-control" id="llmModelApiKey" placeholder="Leave blank to keep existing key">
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="saveLLMProviderBtn">Save Provider</button>
+                    <button type="button" class="btn btn-primary" id="saveLLMModelBtn">Save Model</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Delete LLM Provider Confirmation Modal -->
-    <div class="modal fade" id="deleteLLMProviderModal" tabindex="-1" aria-labelledby="deleteLLMProviderModalLabel" aria-hidden="true">
+    <!-- Delete LLM Model Confirmation Modal -->
+    <div class="modal fade" id="deleteLLMModelModal" tabindex="-1" aria-labelledby="deleteLLMModelModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="deleteLLMProviderModalLabel">Confirm Deletion</h5>
+                    <h5 class="modal-title" id="deleteLLMModelModalLabel">Delete LLM Model</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    Are you sure you want to delete this LLM provider? This action cannot be undone.
+                    <p>Are you sure you want to delete the LLM Model <strong id="llmModelNameToDelete"></strong>? This action cannot be undone.</p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" id="confirmDeleteLLMProviderBtn">Delete Provider</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteLLMModelBtn">Delete</button>
                 </div>
             </div>
         </div>

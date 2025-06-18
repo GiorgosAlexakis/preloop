@@ -10,7 +10,7 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateCreate,
 )
 from SpaceModels.spacemodels.crud.issue_duplicate import crud_issue_duplicate
-from spacemodels.crud import crud_issue, crud_llm_provider
+from spacemodels.crud import crud_issue, crud_llm_model
 from spacemodels.db.session import get_db_session as get_db
 
 logger = logging.getLogger(__name__)
@@ -87,15 +87,15 @@ def check_or_create_issue_duplicate(
         logger.warning(detail)
         raise HTTPException(status_code=404, detail=detail)
 
-    default_provider = crud_llm_provider.get_default_active_provider(db)
-    if not default_provider:
-        logger.error("No default active LLM provider configured.")
+    default_model = crud_llm_model.get_default_active_model(db)
+    if not default_model:
+        logger.error("No default active LLM model configured.")
         raise HTTPException(
-            status_code=500, detail="No default active LLM provider configured."
+            status_code=500, detail="No default active LLM model configured."
         )
 
     logger.info(
-        f"Using LLM model '{DEFAULT_DUPLICATE_ANALYSIS_LLM_NAME}' from provider '{default_provider.provider_name}'."
+        f"Using LLM model '{DEFAULT_DUPLICATE_ANALYSIS_LLM_NAME}' from model '{default_model.model_name}'."
     )
 
     prompt_text = LLM_DUPLICATE_USER_PROMPT_TEMPLATE.format(
@@ -114,20 +114,16 @@ def check_or_create_issue_duplicate(
 
     llm_response_text = ""
     try:
-        api_key = (
-            default_provider.credentials.get("api_key")
-            if default_provider.credentials
-            else None
-        )
+        api_key = default_model.api_key
         if not api_key:
             logger.warning(
-                f"API key not found in credentials for provider {default_provider.name}. Trying OPENAI_API_KEY env var."
+                f"API key not found in credentials for model {default_model.model_name}. Trying OPENAI_API_KEY env var."
             )
             api_key = os.getenv("OPENAI_API_KEY")
 
         if not api_key:
             logger.error(
-                f"OpenAI API key not found for provider {default_provider.name} or environment variable."
+                f"OpenAI API key not found for model {default_model.model_name} or environment variable."
             )
             raise HTTPException(
                 status_code=500, detail="OpenAI API key not configured."
@@ -172,8 +168,8 @@ def check_or_create_issue_duplicate(
         issue1_id=issue1.id,
         issue2_id=issue2.id,
         decision=parsed_status,
-        llm_provider_id=default_provider.id,
-        llm_model_name=DEFAULT_DUPLICATE_ANALYSIS_LLM_NAME,
+        llm_model_id=default_model.id,
+        llm_model_name=default_model.model_name,
     )
 
     new_duplicate_entry = crud_issue_duplicate.create(

@@ -15,7 +15,7 @@ class IssueDuplicateBase(BaseModel):
     issue2_id: str
     decision: str
     decision_at: Optional[datetime] = None
-    llm_provider_id: str
+    llm_model_id: str
     llm_model_name: Optional[str] = None
     reason: Optional[str] = None
 

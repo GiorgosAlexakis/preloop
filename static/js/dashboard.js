@@ -5,7 +5,9 @@ let apiKeys = [];
 let apiUsage = null;
 let activeKeyId = null;
 let activeTrackerId = null;
-let llm_providers_url = '/api/v1/llm-providers';
+let activeLLMModelId = null;
+let llm_models_url = '/api/v1/llm-models';
+let llmModels = [];
 
 // Data store for duplicates tab with sorting capability
 let projectDuplicatesDataStore = {
@@ -307,8 +309,8 @@ function loadDashboardData() {
     // Fetch projects for duplicates tab
     loadProjectsForDuplicatesTab();
 
-    // Fetch LLM providers
-    loadLLMProviders();
+    // Fetch LLM models
+    loadLLMModels();
 }
 
 // Render trackers
@@ -1126,110 +1128,124 @@ function toggleDetails(detailsRowId) {
     }
 }
 
-// LLM Providers Section
-const llmProviderModal = new bootstrap.Modal(document.getElementById('llmProviderModal'));
-const llmProviderForm = document.getElementById('llmProviderForm');
-const saveLLMProviderBtn = document.getElementById('saveLLMProviderBtn');
-const llmProvidersTableBody = document.getElementById('llmProvidersTable');
+// LLM Models Section
+const llmModelModal = new bootstrap.Modal(document.getElementById('llmModelModal'));
+const llmModelForm = document.getElementById('llmModelForm');
+const saveLLMModelBtn = document.getElementById('saveLLMModelBtn');
+const addLLMModelBtn = document.getElementById('addLLMModelBtn');
+const deleteLLMModelModal = new bootstrap.Modal(document.getElementById('deleteLLMModelModal'));
+const llmModelProviderSelect = document.getElementById('llmModelProvider');
+const llmModelApiUrlInput = document.getElementById('llmModelApiUrl');
 
-async function fetchLLMProviders() {
-    try {
-        const response = await fetch(llm_providers_url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+const providerUrls = {
+    'openai': 'https://api.openai.com/v1',
+    'anthropic': 'https://api.anthropic.com/v1',
+    'google': 'https://generativelanguage.googleapis.com/v1beta'
+};
+
+if (llmModelProviderSelect) {
+    llmModelProviderSelect.addEventListener('change', () => {
+        const selectedProvider = llmModelProviderSelect.value;
+        const apiUrl = providerUrls[selectedProvider] || '';
+        if (llmModelApiUrlInput) {
+            llmModelApiUrlInput.value = apiUrl;
+            llmModelApiUrlInput.readOnly = selectedProvider !== 'custom';
+            if (selectedProvider === 'custom') {
+                llmModelApiUrlInput.placeholder = 'Enter custom API URL';
             }
-        });
-        if (!response.ok) {
-            if (response.status === 401) {
-                console.error('Session expired. Please log in again.');
-                // Potentially redirect to login: window.location.href = '/login';
-                return [];
-            }
-            const errorData = await response.json().catch(() => ({ detail: 'Failed to fetch LLM providers' }));
-            console.error(`Error fetching LLM providers: ${errorData.detail}`);
-            return [];
         }
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching LLM providers:', error);
-        console.error('An unexpected error occurred while fetching LLM providers.');
-        return [];
-    }
-}
-
-function renderLLMProvidersTable(providers) {
-    llmProvidersTableBody.innerHTML = ''; // Clear existing rows
-    if (!providers || providers.length === 0) {
-        const row = llmProvidersTableBody.insertRow();
-        const cell = row.insertCell(0);
-        cell.colSpan = 4;
-        cell.textContent = 'No LLM providers configured yet.';
-        cell.classList.add('text-center', 'text-muted');
-        return;
-    }
-
-    providers.forEach(provider => {
-        const row = llmProvidersTableBody.insertRow();
-        row.insertCell().textContent = provider.provider_name;
-
-        const defaultCell = row.insertCell();
-        if (provider.is_default) {
-            const defaultBadge = document.createElement('span');
-            defaultBadge.classList.add('badge', 'bg-success');
-            defaultBadge.textContent = 'Default';
-            defaultCell.appendChild(defaultBadge);
-        } else {
-            const setDefaultLink = document.createElement('a');
-            setDefaultLink.href = '#';
-            setDefaultLink.classList.add('badge', 'bg-secondary', 'text-decoration-none');
-            setDefaultLink.textContent = 'Set Default';
-            setDefaultLink.title = 'Click to set as default provider';
-            setDefaultLink.addEventListener('click', (event) => {
-                event.preventDefault(); // Prevent page from jumping to top
-                setDefaultLLMProvider(provider.id);
-            });
-            defaultCell.appendChild(setDefaultLink);
-        }
-
-        row.insertCell().textContent = new Date(provider.created_at).toLocaleDateString();
-
-        const actionsCell = row.insertCell();
-        const deleteBtn = document.createElement('button');
-        deleteBtn.classList.add('btn', 'btn-danger', 'btn-sm');
-        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
-        deleteBtn.title = 'Delete Provider';
-        deleteBtn.addEventListener('click', () => confirmDeleteLLMProvider(provider.id, provider.provider_name));
-        actionsCell.appendChild(deleteBtn);
     });
 }
 
-function loadLLMProviders() {
-    showLoadingIndicator(llmProvidersTableBody, 4);
-    fetchLLMProviders().then(providers => renderLLMProvidersTable(providers));
+function loadLLMModels() {
+    fetch(llm_models_url, {
+        headers: {
+            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        llmModels = data;
+        renderLLMModelsTable(data);
+    })
+    .catch(error => console.error('Error fetching LLM models:', error));
 }
 
-if (saveLLMProviderBtn) {
-    saveLLMProviderBtn.addEventListener('click', async function () {
-        const providerName = document.getElementById('llmProviderName').value;
-        const apiKey = document.getElementById('llmProviderApiKey').value;
-        const isDefault = document.getElementById('llmProviderIsDefault').checked;
+function renderLLMModelsTable(models) {
+    const tableBody = document.getElementById('llmModelsListBody');
+    const noModelsAlert = document.getElementById('noLLMModelsAlert');
 
-        if (!providerName || !apiKey) {
-            console.warn('Provider name and API key are required.');
+    if (models.length === 0) {
+        tableBody.innerHTML = '';
+        noModelsAlert.classList.remove('d-none');
+        return;
+    }
+
+    noModelsAlert.classList.add('d-none');
+    tableBody.innerHTML = models.map(model => `
+        <tr>
+            <td>${model.name}</td>
+            <td><span class="badge bg-secondary">${model.provider_name}</span></td>
+            <td><code>${model.model_name}</code></td>
+            <td>
+                <button
+                    class="btn btn-sm ${model.is_default ? 'btn-success' : 'btn-outline-secondary'}"
+                    onclick="setDefaultLLMModel('${model.id}')"
+                    ${model.is_default ? 'disabled' : ''}>
+                    ${model.is_default ? 'Default' : 'Set Default'}
+                </button>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" onclick="editLLMModel('${model.id}')"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteLLMModel('${model.id}', '${model.name}')"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+if (addLLMModelBtn) {
+    addLLMModelBtn.addEventListener('click', () => {
+        activeLLMModelId = null;
+        document.getElementById('llmModelModalLabel').textContent = 'Add LLM Model';
+        llmModelForm.reset();
+        document.getElementById('llmModelApiKey').placeholder = 'Enter API Key';
+    });
+}
+
+if (saveLLMModelBtn) {
+    saveLLMModelBtn.addEventListener('click', async () => {
+        const modelId = document.getElementById('llmModelId').value;
+        const name = document.getElementById('llmModelName').value; // Friendly Name
+        const providerName = document.getElementById('llmModelProvider').value; // Changed variable name and will use for correct payload key
+        const modelIdentifier = document.getElementById('llmModelIdentifier').value; // Model Name/Identifier
+        const apiUrl = document.getElementById('llmModelApiUrl').value;
+        const apiKey = document.getElementById('llmModelApiKey').value;
+
+        if (!name || !providerName || !modelIdentifier || !apiUrl) {
+            alert('Please fill in all required fields: Friendly Name, Provider, Model Identifier, and API URL.');
             return;
         }
 
-        const payload = {
+        const url = modelId ? `${llm_models_url}/${modelId}` : llm_models_url;
+        const method = modelId ? 'PUT' : 'POST';
+
+        let payload = {
+            name: name,
             provider_name: providerName,
-            credentials: { api_key: apiKey }, // Assuming all providers use 'api_key' for now
-            is_default: isDefault
+            model_name: modelIdentifier,
+            api_url: apiUrl,
+            is_default: false, // Default value, can be updated separately
+            model_version: null, // Optional, can be added later
         };
 
+        // Only include the API key if it's being set or changed
+        if (apiKey) {
+            payload.api_key = apiKey;
+        }
+
         try {
-            const response = await fetch(llm_providers_url, {
-                method: 'POST',
+            const response = await fetch(url, {
+                method: method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
@@ -1237,55 +1253,77 @@ if (saveLLMProviderBtn) {
                 body: JSON.stringify(payload)
             });
 
-            if (response.status === 201) {
-                console.log('LLM Provider added successfully!');
-                llmProviderForm.reset();
-                llmProviderModal.hide();
-                loadLLMProviders(); // Refresh the table
-            } else {
-                const errorData = await response.json().catch(() => ({ detail: 'Failed to add LLM provider' }));
-                console.error(`Error adding LLM provider: ${errorData.detail}`);
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to save LLM model');
             }
+
+            llmModelModal.hide();
+            loadLLMModels();
         } catch (error) {
-            console.error('Error adding LLM provider:', error);
-            console.error('An unexpected error occurred while adding LLM provider.');
+            console.error('Error saving LLM Model:', error);
+            alert(`Error: ${error.message}`);
         }
     });
 }
 
-function confirmDeleteLLMProvider(providerId, providerName) {
-    // Assuming you have a generic confirmation modal or use window.confirm
-    if (confirm(`Are you sure you want to delete the LLM provider "${providerName}"?`)) {
-        deleteLLMProvider(providerId);
-    }
+function editLLMModel(modelId) {
+    const model = llmModels.find(m => m.id === modelId);
+    if (!model) return;
+
+    activeLLMModelId = modelId;
+    document.getElementById('llmModelId').value = model.id;
+    document.getElementById('llmModelModalLabel').textContent = 'Edit LLM Model';
+    document.getElementById('llmModelName').value = model.name;
+    document.getElementById('llmModelProvider').value = model.provider_name;
+    document.getElementById('llmModelIdentifier').value = model.model_name;
+    document.getElementById('llmModelApiUrl').value = model.api_url;
+    document.getElementById('llmModelApiKey').value = '';
+    document.getElementById('llmModelApiKey').placeholder = 'Leave blank to keep existing key';
+
+    // Trigger change event to set readonly status of URL field correctly
+    llmModelProviderSelect.dispatchEvent(new Event('change'));
+
+    llmModelModal.show();
 }
 
-async function deleteLLMProvider(providerId) {
+function confirmDeleteLLMModel(modelId, modelName) {
+    activeLLMModelId = modelId;
+    document.getElementById('llmModelNameToDelete').textContent = modelName;
+    deleteLLMModelModal.show();
+}
+
+document.getElementById('confirmDeleteLLMModelBtn')?.addEventListener('click', () => {
+    if (activeLLMModelId) {
+        deleteLLMModel(activeLLMModelId);
+    }
+});
+
+async function deleteLLMModel(modelId) {
     try {
-        const response = await fetch(`${llm_providers_url}/${providerId}`, {
+        const response = await fetch(`${llm_models_url}/${modelId}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
             }
         });
 
-        if (response.status === 204) {
-            console.log('LLM Provider deleted successfully.');
-            loadLLMProviders(); // Refresh the table
-        } else {
-            const errorData = await response.json().catch(() => ({ detail: 'Failed to delete LLM provider' }));
-            console.error(`Error deleting LLM provider: ${errorData.detail}`);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to delete LLM model');
         }
+
+        deleteLLMModelModal.hide();
+        loadLLMModels();
     } catch (error) {
-        console.error('Error deleting LLM provider:', error);
-        console.error('An unexpected error occurred while deleting LLM provider.');
+        console.error('Error deleting LLM model:', error);
+        alert(`Error: ${error.message}`);
     }
 }
 
-async function setDefaultLLMProvider(providerId) {
+async function setDefaultLLMModel(modelId) {
     try {
-        const response = await fetch(`${llm_providers_url}/${providerId}`,
-        {
+        const response = await fetch(`${llm_models_url}/${modelId}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -1294,28 +1332,30 @@ async function setDefaultLLMProvider(providerId) {
             body: JSON.stringify({ is_default: true })
         });
 
-        if (response.ok) {
-            console.log('LLM Provider set as default.');
-            loadLLMProviders(); // Refresh the table to show the new default
-        } else {
-            const errorData = await response.json().catch(() => ({ detail: 'Failed to set default LLM provider' }));
-            console.error(`Error setting default LLM provider: ${errorData.detail}`);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to set default LLM model');
         }
+
+        loadLLMModels(); // Reload to reflect the change
     } catch (error) {
-        console.error('Error setting default LLM provider:', error);
-        console.error('An unexpected error occurred while setting default LLM provider.');
+        console.error('Error setting default LLM model:', error);
+        alert(`Error: ${error.message}`);
     }
 }
 
 // Utility function to show loading indicator (assuming you might have one)
 function showLoadingIndicator(element, colspan) {
-    if (element && typeof element.insertRow === 'function') {
-        element.innerHTML = ''; // Clear existing content
-        const row = element.insertRow();
-        const cell = row.insertCell(0);
-        cell.colSpan = colspan;
-        cell.innerHTML = '<div class="d-flex justify-content-center"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div></div>';
-    }
+    const loadingRow = `
+        <tr>
+            <td colspan="${colspan}" class="text-center">
+                <div class="spinner-border spinner-border-sm" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </td>
+        </tr>
+    `;
+    element.innerHTML = loadingRow;
 }
 
 const EXPIRATION_TIME_MS = 2 * 60 * 1000; // 2 minutes
