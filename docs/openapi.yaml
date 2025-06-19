@@ -2902,6 +2902,9 @@ components:
       description: Model for updating an issue.
     LLMModelCreate:
       properties:
+        name:
+          type: string
+          title: Name
         provider_name:
           type: string
           title: Provider Name
@@ -2927,6 +2930,7 @@ components:
           default: false
       type: object
       required:
+      - name
       - provider_name
       - api_key
       - api_url
@@ -2935,6 +2939,9 @@ components:
       description: Schema for creating a new LLMModel entry.
     LLMModelRead:
       properties:
+        name:
+          type: string
+          title: Name
         provider_name:
           type: string
           title: Provider Name
@@ -2974,6 +2981,7 @@ components:
           title: Updated At
       type: object
       required:
+      - name
       - provider_name
       - api_key
       - api_url
@@ -2986,6 +2994,11 @@ components:
       description: Schema for reading LLMModel entries, including timestamps.
     LLMModelUpdate:
       properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
         provider_name:
           anyOf:
           - type: string

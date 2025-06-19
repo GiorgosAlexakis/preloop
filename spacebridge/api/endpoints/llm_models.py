@@ -60,6 +60,7 @@ def create_llm_model(
     account_id = get_account_id_from_user(db, current_user)
     created_model = crud_llm_model.create_with_account(
         db=db,
+        name=llm_model_in.name,
         provider_name=llm_model_in.provider_name,
         api_key=llm_model_in.api_key,
         api_url=llm_model_in.api_url,
@@ -153,6 +154,7 @@ def update_llm_model(
     updated_model = crud_llm_model.update(
         db=db,
         db_obj=db_model,
+        name=llm_model_in.name,
         provider_name=llm_model_in.provider_name,
         api_key=llm_model_in.api_key,
         api_url=llm_model_in.api_url,

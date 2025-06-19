@@ -9,6 +9,7 @@ from pydantic import BaseModel
 class LLMModelBase(BaseModel):
     """Base schema for LLMModel, containing common attributes."""
 
+    name: str
     provider_name: str
     api_key: str
     api_url: str
@@ -26,6 +27,7 @@ class LLMModelCreate(LLMModelBase):
 class LLMModelUpdate(LLMModelBase):
     """Schema for updating an existing LLMModel entry. All fields are optional."""
 
+    name: Optional[str] = None
     provider_name: Optional[str] = None
     api_key: Optional[str] = None
     api_url: Optional[str] = None
