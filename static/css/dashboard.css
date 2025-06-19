@@ -192,6 +192,10 @@
 
 /* Duplicates Tab */
 
+.duplicates-placeholder p {
+    margin: 0;
+}
+
 #duplicates-result-area td {
     padding: 1em .25em;
 }

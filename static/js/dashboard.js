@@ -36,6 +36,12 @@ function initializeDashboard() {
         return;
     }
 
+    // Set initial placeholder for the similarity tab
+    const resultArea = document.getElementById('duplicates-result-area');
+    if (resultArea) {
+        resultArea.innerHTML = '<div class="duplicates-placeholder text-center p-5"><p class="text-muted">Please select a project to find similar issues.</p></div>';
+    }
+
     fetchUserProfile();
     setupEventListeners();
     loadDashboardData();
@@ -66,13 +72,26 @@ function setupEventListeners() {
     const tabToggles = document.querySelectorAll('[data-bs-toggle="tab"]');
     tabToggles.forEach(tabToggle => {
         tabToggle.addEventListener('shown.bs.tab', event => {
-            document.getElementById('currentPageTitle').textContent = event.target.textContent.trim();
-            // Store the active tab and timestamp
-            const activeTabData = {
-                tabId: event.target.id,
-                timestamp: Date.now()
-            };
-            localStorage.setItem('activeDashboardTab', JSON.stringify(activeTabData));
+            // The sub-tabs are in a container with id 'issues-sub-tabs'. Main tabs are not.
+            // We only update the title if the clicked tab is NOT a sub-tab.
+            if (!event.target.closest('#issues-sub-tabs')) {
+                // Correctly extract only the text from the button, ignoring the icon
+                const titleText = Array.from(event.target.childNodes)
+                    .filter(node => node.nodeType === Node.TEXT_NODE)
+                    .map(node => node.textContent.trim())
+                    .join('');
+
+                if (titleText) {
+                    document.getElementById('currentPageTitle').textContent = titleText;
+                }
+
+                // Store the active tab and timestamp
+                const activeTabData = {
+                    tabId: event.target.id,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem('activeDashboardTab', JSON.stringify(activeTabData));
+            }
         });
     });
 
@@ -784,7 +803,7 @@ async function fetchProjectDuplicates(projectId) {
     resultArea.innerHTML = '<p class="text-center"><i class="bi bi-hourglass-split"></i> Loading issues...</p>';
 
     if (!projectId) {
-        resultArea.innerHTML = '<p class="text-muted text-center">Please select a project.</p>';
+        resultArea.innerHTML = '<div class="text-center p-5"><p class="text-muted">Please select a project to find similar issues.</p></div>';
         return;
     }
 
@@ -815,7 +834,7 @@ function renderDuplicates(data) {
     console.log("Rendering duplicates with data:", data);
     const resultArea = document.getElementById('duplicates-result-area'); // Ensure this ID matches your HTML
     if (!data || !data.duplicates || data.duplicates.length === 0) {
-        resultArea.innerHTML = '<p>No potential duplicates found with the current settings.</p>';
+        resultArea.innerHTML = '<div class="text-center p-5"><p>No potential duplicates found with the current settings.</p></div>';
         return;
     }
 
@@ -831,17 +850,18 @@ function renderDuplicates(data) {
     projectDuplicatesDataStore.llmRequestsPending = data.duplicates.length;
 
     let tableHtml = `
-        <p>Showing ${projectDuplicatesDataStore.duplicates.length} potential duplicate pairs.</p>
-        <table class="table table-hover duplicates-table">
-            <thead>
-                <tr>
-                    <th>Issue IDs</th>
-                    <th>Titles</th>
-                    <th>Similarity</th>
-                    <th class="text-center">LLM Check</th>
-                </tr>
-            </thead>
-            <tbody id="duplicatesTableBody">
+        <div id="duplicates-summary" class="text-center my-5"></div>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm duplicates-table">
+                <thead>
+                    <tr>
+                        <th>Issue IDs</th>
+                        <th>Titles</th>
+                        <th>Similarity</th>
+                        <th class="text-center">LLM Check</th>
+                    </tr>
+                </thead>
+                <tbody id="duplicatesTableBody">
     `; // Added id to tbody
 
     // Initial render (unsorted, with spinners)
@@ -854,11 +874,13 @@ function renderDuplicates(data) {
         const rowId = `duplicate-row-${stableIdSuffix}`;
         const llmCellId = `llm-check-${stableIdSuffix}`;
 
+        const { iconHtml, tooltipText } = getLLMCheckIconAndTooltip(pairData.llm_decision_status, pairData.llm_decision_details);
+
         tableHtml += `
             <tr id="${rowId}" onclick="toggleDetails('${detailRowId}')" style="cursor: pointer;" title="Click to see details">
                 <td>
-                    <div>${issue1.external_id || issue1.id.substring(0,8)}</div>
-                    <div>${issue2.external_id || issue2.id.substring(0,8)}</div>
+                    <div><a href="${issue1.url}" target="_blank" rel="noopener noreferrer">${issue1.external_id || issue1.id.substring(0,8)}</a></div>
+                    <div><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">${issue2.external_id || issue2.id.substring(0,8)}</a></div>
                 </td>
                 <td>
                     <div>${truncateText(issue1.title, 50)}</div>
@@ -866,17 +888,19 @@ function renderDuplicates(data) {
                 </td>
                 <td>${(pairData.similarity * 100).toFixed(2)}%</td>
                 <td id="${llmCellId}" class="text-center align-middle">
-                    <div class="spinner-border spinner-border-sm" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
+                    <span data-bs-toggle="tooltip" data-bs-placement="top" title="${tooltipText.replace(/"/g, '&quot;')}">${iconHtml}</span>
                 </td>
             </tr>
             <tr id="${detailRowId}" class="duplicate-details-row" style="display: none;">
                 <td colspan="4">
-                    <h6>Issue 1: ${truncateText(issue1.title, 100)} (${issue1.external_id || issue1.id})</h6>
+                    <h6><a href="${issue1.url}" target="_blank" rel="noopener noreferrer">Issue 1: ${truncateText(issue1.title, 100)}</a> (${issue1.external_id || issue1.id})</h6>
                     <p><strong>Description:</strong><br>${issue1.description ? truncateText(issue1.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
-                    <h6>Issue 2: ${truncateText(issue2.title, 100)} (${issue2.external_id || issue2.id})</h6>
+                    <h6><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">Issue 2: ${truncateText(issue2.title, 100)}</a> (${issue2.external_id || issue2.id})</h6>
                     <p><strong>Description:</strong><br>${issue2.description ? truncateText(issue2.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
+                    <div class="decision-info" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
+                        <p style="margin-bottom: 5px;"><strong>Decision:</strong> ${getLLMCheckIconHTML(pairData.llm_decision_status)} ${pairData.llm_decision_status === 'confirmed' ? 'Confirmed Duplicate' : pairData.llm_decision_status === 'rejected' ? 'Not a Duplicate' : (pairData.llm_decision_status || 'Not yet decided')}</p>
+                        <p style="margin-bottom: 0;"><strong>Reason:</strong> ${ (pairData.llm_decision_details && pairData.llm_decision_details.reason) ? pairData.llm_decision_details.reason : 'No reason provided.' }</p>
+                    </div>
                 </td>
             </tr>
         `;
@@ -888,6 +912,9 @@ function renderDuplicates(data) {
     `;
     resultArea.innerHTML = tableHtml;
     initializeTooltips(); // Initialize tooltips for title attributes on rows
+
+    // Update the summary
+    updateDuplicatesSummary();
 
     // Fetch LLM decisions for each pair
     projectDuplicatesDataStore.duplicates.forEach((pairData) => {
@@ -912,7 +939,6 @@ async function fetchLLMDuplicateDecision(projectId, issue1Id, issue2Id, cellId, 
                 'Content-Type': 'application/json'
             },
         });
-
         let decisionResult;
         if (!response.ok) {
             if (response.status === 401) {
@@ -921,59 +947,24 @@ async function fetchLLMDuplicateDecision(projectId, issue1Id, issue2Id, cellId, 
             }
             // Try to parse error response, default if parsing fails
             const errorData = await response.json().catch(() => ({ detail: 'LLM check failed with non-JSON response.' }));
-            decisionResult = { decision: 'error', detail: errorData.detail || `HTTP error! status: ${response.status}` };
+            decisionResult = { decision: 'error', reason: errorData.detail || `HTTP error! status: ${response.status}` };
         } else {
             decisionResult = await response.json();
         }
 
         // Update the data store
-        pairDataRef.llm_decision_details = decisionResult; // Store full details
         pairDataRef.llm_decision_status = decisionResult.decision; // Store just the decision string for sorting
+        pairDataRef.llm_decision_details = decisionResult; // Store the whole flat object for details
 
         if (decisionResult.decision === 'error') {
-             console.error(`LLM check error for ${issue1Id} & ${issue2Id}:`, decisionResult.detail);
+             console.error(`LLM check error for ${issue1Id} & ${issue2Id}:`, decisionResult.reason);
         }
 
         // Update the specific cell immediately
-        let iconHtml = '';
-        let tooltipText = '';
-
-        switch (pairDataRef.llm_decision_status) {
-            case 'confirmed':
-                iconHtml = '<i class="bi bi-check-circle-fill text-success llm-status-icon"></i>';
-                tooltipText = `LLM Decision: Confirmed`;
-                break;
-            case 'rejected':
-                iconHtml = '<i class="bi bi-x-circle-fill text-danger llm-status-icon"></i>';
-                tooltipText = `LLM Decision: Rejected`;
-                rowElement.classList.add('issue-rejected');
-                break;
-            case 'undecided':
-                iconHtml = '<i class="bi bi-question-circle-fill text-warning llm-status-icon"></i>';
-                tooltipText = `LLM Decision: Undecided`;
-                break;
-            case 'error':
-                iconHtml = '<i class="bi bi-exclamation-triangle-fill text-danger llm-status-icon"></i>';
-                tooltipText = `Error: ${pairDataRef.llm_decision_details.detail || 'Failed to get LLM decision.'}`;
-                break;
-            case 'loading': // Should ideally not be 'loading' when re-rendering after all calls
-                iconHtml = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div>';
-                tooltipText = 'LLM Check: Loading...';
-                break;
-            default:
-                iconHtml = `<i class="bi bi-slash-circle text-muted llm-status-icon"></i>`;
-                tooltipText = `Status: ${pairDataRef.llm_decision_status}`;
-        }
-
-        // Add more details to tooltip if available and not an error
-        if (pairDataRef.llm_decision_details && pairDataRef.llm_decision_status !== 'error' && pairDataRef.llm_decision_status !== 'loading') {
-             tooltipText += `\nChecked at: ${new Date(pairDataRef.llm_decision_details.decision_at || pairDataRef.llm_decision_details.created_at).toLocaleString()}`;
-             tooltipText += `\nLLM: ${pairDataRef.llm_decision_details.llm_model_name}`;
-        }
+        const { iconHtml, tooltipText } = getLLMCheckIconAndTooltip(decisionResult.decision, decisionResult);
 
         if (cellElement) {
             cellElement.innerHTML = `<span data-bs-toggle="tooltip" data-bs-placement="top" title="${tooltipText.replace(/"/g, '&quot;')}">${iconHtml}</span>`;
-            // Re-initialize tooltip for this specific new element
             if (cellElement.querySelector('[data-bs-toggle="tooltip"]')) {
                  new bootstrap.Tooltip(cellElement.querySelector('[data-bs-toggle="tooltip"]'));
             }
@@ -981,20 +972,28 @@ async function fetchLLMDuplicateDecision(projectId, issue1Id, issue2Id, cellId, 
             console.warn("Could not find cellElement to update: ", cellId);
         }
 
+        // Update the summary
+        updateDuplicatesSummary();
+
     } catch (error) { // Catch network errors or other unexpected issues during fetch itself
         console.error(`Critical error in fetchLLMDuplicateDecision for ${issue1Id} & ${issue2Id}:`, error);
         pairDataRef.llm_decision_status = 'error';
-        pairDataRef.llm_decision_details = { detail: error.message || 'Network error or critical failure during fetch.' };
+        pairDataRef.llm_decision_details = { decision: 'error', reason: error.message || 'Network error or critical failure during fetch.' };
         if (cellElement) {
-            const errorTooltipText = `Error: ${pairDataRef.llm_decision_details.detail}`;
-            cellElement.innerHTML = `<span data-bs-toggle="tooltip" data-bs-placement="top" title="${errorTooltipText.replace(/"/g, '&quot;')}"><i class="bi bi-exclamation-triangle-fill text-danger llm-status-icon"></i></span>`;
+            const { iconHtml, tooltipText } = getLLMCheckIconAndTooltip('error', pairDataRef.llm_decision_details);
+            cellElement.innerHTML = `<span data-bs-toggle="tooltip" data-bs-placement="top" title="${tooltipText.replace(/"/g, '&quot;')}">${iconHtml}</span>`;
             if (cellElement.querySelector('[data-bs-toggle="tooltip"]')) {
                  new bootstrap.Tooltip(cellElement.querySelector('[data-bs-toggle="tooltip"]'));
             }
         }
+        // Update the summary even on error
+        updateDuplicatesSummary();
     } finally {
         projectDuplicatesDataStore.llmRequestsPending--;
-        sortAndReRenderDuplicatesTable();
+        if (projectDuplicatesDataStore.llmRequestsPending === 0) {
+            console.log("All LLM checks complete. Re-rendering table.");
+            sortAndReRenderDuplicatesTable(); // Re-render the whole table to apply sorting and final state
+        }
     }
 }
 
@@ -1031,47 +1030,29 @@ function sortAndReRenderDuplicatesTable() {
         const detailRowId = `details-row-${stableIdSuffix}`;
         const rowId = `duplicate-row-${stableIdSuffix}`;
 
-        let iconHtml = '';
-        let tooltipText = '';
+        const { iconHtml, tooltipText } = getLLMCheckIconAndTooltip(pairData.llm_decision_status, pairData.llm_decision_details);
         let rowClass = '';
 
         switch (pairData.llm_decision_status) {
             case 'confirmed':
-                iconHtml = '<i class="bi bi-check-circle-fill text-success llm-status-icon"></i>';
-                tooltipText = `LLM Decision: Confirmed`;
                 break;
             case 'rejected':
-                iconHtml = '<i class="bi bi-x-circle-fill text-danger llm-status-icon"></i>';
-                tooltipText = `LLM Decision: Rejected`;
                 rowClass = 'issue-rejected';
                 break;
             case 'undecided':
-                iconHtml = '<i class="bi bi-question-circle-fill text-warning llm-status-icon"></i>';
-                tooltipText = `LLM Decision: Undecided`;
                 break;
             case 'error':
-                iconHtml = '<i class="bi bi-exclamation-triangle-fill text-danger llm-status-icon"></i>';
-                tooltipText = `Error: ${pairData.llm_decision_details && pairData.llm_decision_details.detail ? pairData.llm_decision_details.detail : 'Failed to get LLM decision.'}`;
-                break;
-            case 'loading': // Should ideally not be 'loading' when re-rendering after all calls
-                iconHtml = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div>';
-                tooltipText = 'LLM Check: Loading...';
                 break;
             default:
-                iconHtml = `<i class="bi bi-slash-circle text-muted llm-status-icon"></i>`;
-                tooltipText = `Status: ${pairData.llm_decision_status}`;
+                break;
         }
 
-        if (pairData.llm_decision_details && pairData.llm_decision_status !== 'error' && pairData.llm_decision_status !== 'loading') {
-            tooltipText += `\nChecked at: ${new Date(pairData.llm_decision_details.decision_at || pairData.llm_decision_details.created_at).toLocaleString()}`;
-            tooltipText += `\nLLM: ${pairData.llm_decision_details.llm_model_name}`;
-        }
 
         newTableBodyHtml += `
             <tr id="${rowId}" class="${rowClass}" onclick="toggleDetails('${detailRowId}')" style="cursor: pointer;" title="Click to see details">
                 <td>
-                    <div>${issue1.external_id || issue1.id.substring(0,8)}</div>
-                    <div>${issue2.external_id || issue2.id.substring(0,8)}</div>
+                    <div><a href="${issue1.url}" target="_blank" rel="noopener noreferrer">${issue1.external_id || issue1.id.substring(0,8)}</a></div>
+                    <div><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">${issue2.external_id || issue2.id.substring(0,8)}</a></div>
                 </td>
                 <td>
                     <div>${truncateText(issue1.title, 50)}</div>
@@ -1084,10 +1065,14 @@ function sortAndReRenderDuplicatesTable() {
             </tr>
             <tr id="${detailRowId}" class="duplicate-details-row" style="display: none;">
                 <td colspan="4">
-                    <h6>Issue 1: ${truncateText(issue1.title, 100)} (${issue1.external_id || issue1.id})</h6>
+                    <h6><a href="${issue1.url}" target="_blank" rel="noopener noreferrer">Issue 1: ${truncateText(issue1.title, 100)}</a> (${issue1.external_id || issue1.id})</h6>
                     <p><strong>Description:</strong><br>${issue1.description ? truncateText(issue1.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
-                    <h6>Issue 2: ${truncateText(issue2.title, 100)} (${issue2.external_id || issue2.id})</h6>
+                    <h6><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">Issue 2: ${truncateText(issue2.title, 100)}</a> (${issue2.external_id || issue2.id})</h6>
                     <p><strong>Description:</strong><br>${issue2.description ? truncateText(issue2.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
+                    <div class="decision-info" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
+                        <p style="margin-bottom: 5px;"><strong>Decision:</strong> ${getLLMCheckIconHTML(pairData.llm_decision_status)} ${pairData.llm_decision_status === 'confirmed' ? 'Confirmed Duplicate' : pairData.llm_decision_status === 'rejected' ? 'Not a Duplicate' : (pairData.llm_decision_status || 'Not yet decided')}</p>
+                        <p style="margin-bottom: 0;"><strong>Reason:</strong> ${ (pairData.llm_decision_details && pairData.llm_decision_details.reason) ? pairData.llm_decision_details.reason : 'No reason provided.' }</p>
+                    </div>
                 </td>
             </tr>
         `;
@@ -1095,6 +1080,65 @@ function sortAndReRenderDuplicatesTable() {
 
     tableBody.innerHTML = newTableBodyHtml;
     initializeTooltips('#duplicatesTableBody [data-bs-toggle="tooltip"]'); // Re-initialize tooltips for the new content
+}
+
+function getLLMCheckIconAndTooltip(decision, details) {
+    let iconHtml = '';
+    let decisionText = decision || 'Not yet decided';
+    if (decision === 'confirmed') {
+        decisionText = 'Confirmed Duplicate';
+    } else if (decision === 'rejected') {
+        decisionText = 'Not a Duplicate';
+    }
+    let tooltipText = `Status: ${decisionText}`;
+
+    switch (decision) {
+        case 'confirmed':
+            iconHtml = '<i class="bi bi-exclamation-triangle-fill text-warning llm-status-icon"></i>';
+            break;
+        case 'rejected':
+            iconHtml = '<i class="bi bi-check-circle-fill text-success llm-status-icon"></i>';
+            break;
+        case 'undecided':
+            iconHtml = '<i class="bi bi-question-circle-fill text-secondary llm-status-icon"></i>';
+            break;
+        case 'error':
+            iconHtml = '<i class="bi bi-exclamation-triangle-fill text-danger llm-status-icon"></i>';
+            break;
+        default:
+            iconHtml = '<i class="bi bi-slash-circle text-muted llm-status-icon"></i>';
+            tooltipText = 'Status: Not yet checked or no decision made.';
+            break;
+    }
+
+    if (details) {
+        if (details.decision_at || details.created_at) {
+            tooltipText += `\nChecked at: ${new Date(details.decision_at || details.created_at).toLocaleString()}`;
+        }
+        if (details.llm_model_name) {
+            tooltipText += `\nLLM: ${details.llm_model_name}`;
+        }
+        if (details.reason) { // Correctly access reason from details
+            tooltipText += `\nReason: ${details.reason}`;
+        }
+    }
+
+    return { iconHtml, tooltipText };
+}
+
+function getLLMCheckIconHTML(decision) {
+    switch (decision) {
+        case 'confirmed':
+            return '<i class="bi bi-exclamation-triangle-fill text-warning llm-status-icon"></i>';
+        case 'rejected':
+            return '<i class="bi bi-check-circle-fill text-success llm-status-icon"></i>';
+        case 'undecided':
+            return '<i class="bi bi-question-circle-fill text-secondary llm-status-icon"></i>';
+        case 'error':
+            return '<i class="bi bi-exclamation-triangle-fill text-danger llm-status-icon"></i>';
+        default:
+            return '<i class="bi bi-slash-circle text-muted llm-status-icon"></i>';
+    }
 }
 
 // Add event listener for project selection dropdown
@@ -1105,8 +1149,10 @@ if (projectSelectElement) {
         if (selectedProjectId) {
             fetchProjectDuplicates(selectedProjectId);
         } else {
-            const resultArea = document.getElementById('duplicatesResultArea');
-            resultArea.innerHTML = '<p class="text-muted text-center">Please select a project.</p>';
+            const resultArea = document.getElementById('duplicates-result-area');
+            if (resultArea) {
+                resultArea.innerHTML = '<div class="text-center p-5"><p class="text-muted">Please select a project to find similar issues.</p></div>';
+            }
         }
     });
 }
@@ -1405,4 +1451,14 @@ function truncateText(text, maxLength) {
         return text;
     }
     return text.substring(0, maxLength) + '...';
+}
+
+function updateDuplicatesSummary() {
+    const summaryElement = document.getElementById('duplicates-summary');
+    if (!summaryElement) return;
+
+    const confirmedCount = projectDuplicatesDataStore.duplicates.filter(p => p.llm_decision_status === 'confirmed').length;
+    const similarCount = projectDuplicatesDataStore.duplicates.length - confirmedCount;
+
+    summaryElement.innerHTML = `<h4 class="fw-normal">Found <strong class="text-primary">${confirmedCount}</strong> Confirmed Duplicates & <strong class="text-info">${similarCount}</strong> Similar Issues</h4>`;
 }

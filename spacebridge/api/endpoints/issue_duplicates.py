@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-DEFAULT_DUPLICATE_ANALYSIS_LLM_NAME = "gpt-4o"
 LLM_DUPLICATE_SYSTEM_PROMPT = "You are an expert issue tracker assistant. Your task is to determine if two issues are duplicates of each other."
 LLM_DUPLICATE_USER_PROMPT_TEMPLATE = """
 Use your expert judgement to determine if the following two issues are duplicates.
@@ -41,9 +40,9 @@ Description:
 
 Based on the information above, is Issue 2 a duplicate of Issue 1?
 
-Respond with ONLY one of the following words:
-DUPLICATE
-NOT_DUPLICATE
+Are these two issues duplicates? Your answer must be only two lines.
+On the first line, write a single word: either 'YES' or 'NO'.
+On the second line, provide a single-sentence reasoning for your decision.
 """
 
 
@@ -94,9 +93,7 @@ def check_or_create_issue_duplicate(
             status_code=500, detail="No default active LLM model configured."
         )
 
-    logger.info(
-        f"Using LLM model '{DEFAULT_DUPLICATE_ANALYSIS_LLM_NAME}' from model '{default_model.model_name}'."
-    )
+    logger.info(f"Using LLM model '{default_model.model_name}'.")
 
     prompt_text = LLM_DUPLICATE_USER_PROMPT_TEMPLATE.format(
         issue1_id=issue1.id,
@@ -132,50 +129,59 @@ def check_or_create_issue_duplicate(
         client = openai.OpenAI(api_key=api_key)
 
         response = client.chat.completions.create(
-            model=DEFAULT_DUPLICATE_ANALYSIS_LLM_NAME,
+            model=default_model.model_name,
             messages=messages,
-            temperature=0.2,
-            max_tokens=50,
         )
         llm_response_text = response.choices[0].message.content.strip()
         logger.info(
             f"LLM response for issues {issue1_id}, {issue2_id}: '{llm_response_text}'"
         )
 
+        response_lines = llm_response_text.split("\n")
+
+        if len(response_lines) < 2:
+            raise HTTPException(
+                status_code=500, detail="LLM response is not in the expected format."
+            )
+
+        decision_word = response_lines[0].strip().upper()
+        reason = response_lines[1].strip()
+
+        if decision_word == "YES":
+            parsed_status = "confirmed"
+        elif decision_word == "NO":
+            parsed_status = "rejected"
+        else:
+            logger.warning(
+                f"LLM returned unexpected status: '{decision_word}'. Defaulting to 'undecided'."
+            )
+            parsed_status = "undecided"
+            reason = llm_response_text
+
+        duplicate_create_data = IssueDuplicateCreate(
+            issue1_id=issue1.id,
+            issue2_id=issue2.id,
+            decision=parsed_status,
+            llm_model_id=default_model.id,
+            llm_model_name=default_model.model_name,
+            reason=reason,
+        )
+
+        new_duplicate_entry = crud_issue_duplicate.create(
+            db, obj_in=duplicate_create_data.model_dump()
+        )
+        logger.info(
+            f"Created new IssueDuplicate entry ID {new_duplicate_entry.id} for issues {issue1_id}, {issue2_id} with status '{parsed_status}'."
+        )
+        return new_duplicate_entry
+
     except openai.APIError as e:
         logger.exception(
-            f"OpenAI API call for model '{DEFAULT_DUPLICATE_ANALYSIS_LLM_NAME}' failed: {e}"
+            f"OpenAI API call for model '{default_model.model_name}' failed: {e}"
         )
-        raise HTTPException(status_code=503, detail=f"LLM invocation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="LLM API error")
     except Exception as e:
         logger.exception(
-            f"An unexpected error occurred during LLM invocation for model '{DEFAULT_DUPLICATE_ANALYSIS_LLM_NAME}': {e}"
+            f"An unexpected error occurred during LLM invocation for model '{default_model.model_name}': {e}"
         )
         raise HTTPException(status_code=500, detail=f"LLM processing error: {str(e)}")
-
-    llm_decision = llm_response_text.upper()
-    if llm_decision == "DUPLICATE":
-        parsed_status = "confirmed"
-    elif llm_decision == "NOT_DUPLICATE":
-        parsed_status = "rejected"
-    else:
-        logger.warning(
-            f"LLM returned unexpected status: '{llm_response_text}'. Defaulting to 'undecided'."
-        )
-        parsed_status = "undecided"
-
-    duplicate_create_data = IssueDuplicateCreate(
-        issue1_id=issue1.id,
-        issue2_id=issue2.id,
-        decision=parsed_status,
-        llm_model_id=default_model.id,
-        llm_model_name=default_model.model_name,
-    )
-
-    new_duplicate_entry = crud_issue_duplicate.create(
-        db, obj_in=duplicate_create_data.model_dump()
-    )
-    logger.info(
-        f"Created new IssueDuplicate entry ID {new_duplicate_entry.id} for issues {issue1_id}, {issue2_id} with status '{parsed_status}'."
-    )
-    return new_duplicate_entry

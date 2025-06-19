@@ -20,16 +20,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# TODO: Change functions to accept flat arguments instead of LLMModelCreate and LLMModelUpdate
-# LLMModel required parameters
-# provider_name: str
-# api_key: str
-# api_url: str
-# model_name: str
-# model_version: Optional[str] = None
-# is_default: Optional[bool] = False
-
-
 def get_account_id_from_user(db: Session, current_user: UserResponse) -> int:
     """Retrieve the account ID for the currently authenticated user."""
     account = (
