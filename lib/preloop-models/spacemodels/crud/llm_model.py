@@ -19,13 +19,14 @@ class CRUDLLMModel(CRUDBase[LLMModel]):
         self,
         db: Session,
         *,
+        name: str,
         provider_name: str,
         api_key: str,
         api_url: str,
         model_name: str,
         model_version: Optional[str] = None,
         is_default: Optional[bool] = False,
-        account_id: int,
+        account_id: Optional[str] = None,
     ) -> LLMModel:
         """Create a new LLMModel linked to an account."""
         if is_default:
@@ -34,6 +35,7 @@ class CRUDLLMModel(CRUDBase[LLMModel]):
             ).update({"is_default": False})
 
         db_obj = self.model(
+            name=name,
             provider_name=provider_name,
             api_key=api_key,
             api_url=api_url,
@@ -47,12 +49,14 @@ class CRUDLLMModel(CRUDBase[LLMModel]):
         db.refresh(db_obj)
         return db_obj
 
-    def get_by_account_id(self, db: Session, *, account_id: int) -> list[LLMModel]:
+    def get_by_account_id(
+        self, db: Session, *, account_id: Optional[str] = None
+    ) -> list[LLMModel]:
         """Get all LLMModels for a specific account."""
         return db.query(self.model).filter(self.model.account_id == account_id).all()
 
     def get_default_by_account_id(
-        self, db: Session, *, account_id: int
+        self, db: Session, *, account_id: Optional[str] = None
     ) -> Optional[LLMModel]:
         """Get the default LLMModel for a specific account."""
         return (
@@ -66,6 +70,7 @@ class CRUDLLMModel(CRUDBase[LLMModel]):
         db: Session,
         *,
         db_obj: LLMModel,
+        name: Optional[str] = None,
         provider_name: Optional[str] = None,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
@@ -77,6 +82,7 @@ class CRUDLLMModel(CRUDBase[LLMModel]):
 
         # Only populate non null update data
         update_data = {
+            "name": name,
             "provider_name": provider_name,
             "api_key": api_key,
             "api_url": api_url,

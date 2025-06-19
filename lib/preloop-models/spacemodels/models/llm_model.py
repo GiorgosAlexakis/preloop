@@ -1,6 +1,6 @@
 """LLM Model model for storing model configurations."""
 
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Dict, Optional
 
 from sqlalchemy import ForeignKey, String, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -12,11 +12,14 @@ if TYPE_CHECKING:
 
 
 class LLMModel(Base):
-    """Stores LLM model configurations linked to an account."""
+    """Stores LLM model configurations, optionally linked to an account."""
 
     __tablename__ = "llm_model"
 
-    account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("account.id"), nullable=True
+    )
     provider_name: Mapped[str] = mapped_column(String(255), nullable=False)
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     model_version: Mapped[str] = mapped_column(String(255), nullable=True)
