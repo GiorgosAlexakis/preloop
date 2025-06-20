@@ -12,6 +12,7 @@ def test_create_llm_model(db_session: Session, create_account):
 
     llm_model = crud_llm_model.create_with_account(
         db=db_session,
+        name="Test OpenAI Model",
         provider_name="openai",
         model_name="gpt-4",
         model_version="1",
@@ -42,6 +43,7 @@ def test_get_llm_models_by_account(db_session: Session, create_account):
 
     crud_llm_model.create_with_account(
         db=db_session,
+        name="Test OpenAI Model Account1",
         provider_name="openai",
         model_name="gpt-4",
         model_version="1",
@@ -52,6 +54,7 @@ def test_get_llm_models_by_account(db_session: Session, create_account):
     )
     crud_llm_model.create_with_account(
         db=db_session,
+        name="Test OpenAI Model Account1",
         provider_name="openai",
         model_name="gpt-4",
         model_version="1",
@@ -61,11 +64,12 @@ def test_get_llm_models_by_account(db_session: Session, create_account):
     )
     crud_llm_model.create_with_account(
         db=db_session,
-        provider_name="openai",
-        model_name="gpt-4",
+        name="Test Anthropic Model Account2",
+        provider_name="anthropic",
+        model_name="claude-2",
         model_version="1",
-        api_url="https://api.openai.com/v1",
-        api_key="test_key_123",
+        api_url="https://api.anthropic.com/v1",
+        api_key="test_key_456",
         account_id=account2.id,
     )
 
@@ -79,7 +83,7 @@ def test_get_llm_models_by_account(db_session: Session, create_account):
     assert len(models_acc1) == 2
     assert len(models_acc2) == 1
     assert models_acc1[0].provider_name in ["openai", "openai"]
-    assert models_acc2[0].provider_name == "openai"
+    assert models_acc2[0].provider_name == "anthropic"
 
 
 def test_update_llm_model_and_default_logic(db_session: Session, create_account):
@@ -87,6 +91,7 @@ def test_update_llm_model_and_default_logic(db_session: Session, create_account)
     account: Account = create_account()
     model1 = crud_llm_model.create_with_account(
         db=db_session,
+        name="Default Test Model",
         provider_name="openai",
         model_name="gpt-4",
         model_version="1",
@@ -97,11 +102,12 @@ def test_update_llm_model_and_default_logic(db_session: Session, create_account)
     )
     model2 = crud_llm_model.create_with_account(
         db=db_session,
-        provider_name="openai",
-        model_name="gpt-4",
+        name="Non-Default Test Model",
+        provider_name="anthropic",
+        model_name="claude-instant-1",
         model_version="1",
-        api_url="https://api.openai.com/v1",
-        api_key="test_key_123",
+        api_url="https://api.anthropic.com/v1",
+        api_key="test_key_456",
         is_default=False,
         account_id=account.id,
     )
@@ -114,7 +120,7 @@ def test_update_llm_model_and_default_logic(db_session: Session, create_account)
     db_session.refresh(model1)  # Refresh m1 to get its updated state from the DB
 
     assert updated_m2.is_default is True
-    assert updated_m2.api_key == "test_key_123"
+    assert updated_m2.api_key == "test_key_456"
     assert model1.is_default is False
 
     # Update m1 to be default again
@@ -136,6 +142,7 @@ def test_get_default_llm_model(db_session: Session, create_account):
     account: Account = create_account()
     crud_llm_model.create_with_account(
         db=db_session,
+        name="Non-Default Model for Get Default Test",
         provider_name="openai",
         model_name="gpt-4",
         model_version="1",
@@ -144,13 +151,14 @@ def test_get_default_llm_model(db_session: Session, create_account):
         is_default=False,
         account_id=account.id,
     )
-    default_model_obj = crud_llm_model.create_with_account(
+    default_model = crud_llm_model.create_with_account(
         db=db_session,
-        provider_name="openai",
-        model_name="gpt-4",
+        name="Actual Default Model for Get Default Test",
+        provider_name="anthropic",
+        model_name="claude-2",
         model_version="1",
-        api_url="https://api.openai.com/v1",
-        api_key="test_key_123",
+        api_url="https://api.anthropic.com/v1",
+        api_key="test_key_456",
         is_default=True,
         account_id=account.id,
     )
@@ -159,8 +167,8 @@ def test_get_default_llm_model(db_session: Session, create_account):
         db=db_session, account_id=account.id
     )
     assert retrieved_default is not None
-    assert retrieved_default.id == default_model_obj.id
-    assert retrieved_default.model_name == "gpt-4"
+    assert retrieved_default.id == default_model.id
+    assert retrieved_default.model_name == "claude-2"
 
     # Test with no default model
     account2: Account = create_account(
@@ -168,6 +176,7 @@ def test_get_default_llm_model(db_session: Session, create_account):
     )
     crud_llm_model.create_with_account(
         db=db_session,
+        name="Non-Default Model for Get Default Test",
         provider_name="openai",
         model_name="gpt-4",
         model_version="1",
@@ -187,6 +196,7 @@ def test_delete_llm_model(db_session: Session, create_account):
     account: Account = create_account()
     model_to_delete = crud_llm_model.create_with_account(
         db=db_session,
+        name="Model to Delete",
         provider_name="openai",
         model_name="gpt-4",
         model_version="1",
@@ -207,6 +217,7 @@ def test_delete_llm_model(db_session: Session, create_account):
     # Ensure other models for the same account are not affected
     surviving_model = crud_llm_model.create_with_account(
         db=db_session,
+        name="Surviving Model",
         provider_name="openai",
         model_name="gpt-4",
         model_version="1",
