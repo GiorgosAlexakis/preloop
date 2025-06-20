@@ -65,34 +65,91 @@ function checkAuthStatus() {
 
 // Set up event listeners
 function setupEventListeners() {
+    const sidebarTabButtons = document.querySelectorAll('.sidebar .nav-link[data-bs-toggle="tab"]');
+    const issuesMainBtn = document.getElementById('issues-main-btn');
+    const issuesSubmenu = document.getElementById('issues-submenu');
+    const issuesSubmenuInstance = issuesSubmenu ? bootstrap.Collapse.getOrCreateInstance(issuesSubmenu) : null;
+    const currentPageTitleEl = document.getElementById('currentPageTitle');
+    const allTabPanes = document.querySelectorAll('#dashboardTabContent .tab-pane'); // Get all tab panes
 
-    // Let Bootstrap handle tab switching, and hook into its event system
-    // to update the page title. This avoids conflicts with the default tab behavior.
-    const tabToggles = document.querySelectorAll('[data-bs-toggle="tab"]');
-    tabToggles.forEach(tabToggle => {
-        tabToggle.addEventListener('shown.bs.tab', event => {
-            // The sub-tabs are in a container with id 'issues-sub-tabs'. Main tabs are not.
-            // We only update the title if the clicked tab is NOT a sub-tab.
-            if (!event.target.closest('#issues-sub-tabs')) {
-                // Correctly extract only the text from the button, ignoring the icon
-                const titleText = Array.from(event.target.childNodes)
+    sidebarTabButtons.forEach(tabButton => {
+        // Event when a tab is ABOUT to be shown
+        tabButton.addEventListener('show.bs.tab', event => {
+            const tabPaneToShowIdAttribute = event.target.getAttribute('data-bs-target') || event.target.getAttribute('href');
+            if (tabPaneToShowIdAttribute) {
+                const tabPaneToShowId = tabPaneToShowIdAttribute.substring(1); // Remove #
+                allTabPanes.forEach(pane => {
+                    if (pane.id !== tabPaneToShowId) {
+                        pane.classList.remove('show', 'active');
+                    }
+                });
+            }
+        });
+
+        tabButton.addEventListener('shown.bs.tab', event => {
+            const newlyShownTabBtn = event.target; // The <button> that triggered the tab show
+            const newlyShownTabId = newlyShownTabBtn.id;
+            let pageTitleText = '';
+
+            // Deactivate all sidebar tab buttons and the main issues button initially
+            sidebarTabButtons.forEach(btn => btn.classList.remove('active'));
+            if (issuesMainBtn) issuesMainBtn.classList.remove('active');
+
+            // Activate the newly shown tab button
+            newlyShownTabBtn.classList.add('active');
+
+            if (newlyShownTabId === 'issues-duplicates-tab-btn' || newlyShownTabId === 'issues-assignments-tab-btn') {
+                // It's a sub-tab under Issues
+                pageTitleText = `Issues / ${newlyShownTabBtn.querySelector('.bi') ? newlyShownTabBtn.textContent.replace(newlyShownTabBtn.querySelector('.bi').textContent, '').trim() : newlyShownTabBtn.textContent.trim()}`;
+                if (issuesMainBtn) {
+                    issuesMainBtn.classList.add('active');
+                    issuesMainBtn.setAttribute('aria-expanded', 'true');
+                }
+                if (issuesSubmenuInstance && !issuesSubmenu.classList.contains('show')) {
+                    issuesSubmenuInstance.show();
+                }
+            } else {
+                // It's a main tab (Dashboard, Trackers, API Usage, Settings)
+                pageTitleText = Array.from(newlyShownTabBtn.childNodes)
                     .filter(node => node.nodeType === Node.TEXT_NODE)
                     .map(node => node.textContent.trim())
                     .join('');
 
-                if (titleText) {
-                    document.getElementById('currentPageTitle').textContent = titleText;
+                if (issuesSubmenuInstance && issuesSubmenu.classList.contains('show')) {
+                    issuesSubmenuInstance.hide();
                 }
-
-                // Store the active tab and timestamp
-                const activeTabData = {
-                    tabId: event.target.id,
-                    timestamp: Date.now()
-                };
-                localStorage.setItem('activeDashboardTab', JSON.stringify(activeTabData));
+                if (issuesMainBtn) {
+                    issuesMainBtn.setAttribute('aria-expanded', 'false');
+                }
             }
+
+            if (pageTitleText && currentPageTitleEl) {
+                currentPageTitleEl.textContent = pageTitleText;
+            }
+
+            localStorage.setItem('activeDashboardTab', JSON.stringify({
+                tabId: newlyShownTabId,
+                timestamp: Date.now()
+            }));
         });
     });
+
+    // Handle click on issues-main-btn (the collapse trigger)
+    if (issuesMainBtn) {
+        issuesMainBtn.addEventListener('click', function() {
+            if (issuesSubmenu && !issuesSubmenu.classList.contains('show')) { // If about to be shown
+                const activeTabData = JSON.parse(localStorage.getItem('activeDashboardTab') || '{}');
+                const isSubTabActive = activeTabData.tabId === 'issues-duplicates-tab-btn' || activeTabData.tabId === 'issues-assignments-tab-btn';
+
+                if (!isSubTabActive) {
+                    const duplicatesBtn = document.getElementById('issues-duplicates-tab-btn');
+                    if (duplicatesBtn) {
+                        bootstrap.Tab.getOrCreateInstance(duplicatesBtn).show();
+                    }
+                }
+            }
+        });
+    }
 
     // Custom date range toggle
     document.getElementById('dateRangeSelector').addEventListener('change', function() {
@@ -217,6 +274,22 @@ function setupEventListeners() {
     document.getElementById('dateRangeSelector').addEventListener('change', fetchApiUsage);
     document.getElementById('startDate').addEventListener('change', fetchApiUsage);
     document.getElementById('endDate').addEventListener('change', fetchApiUsage);
+
+    // Update projectSelect ID for Duplicates tab
+    const projectSelectForDuplicatesElement = document.getElementById('projectSelectForDuplicates');
+    if (projectSelectForDuplicatesElement) {
+        projectSelectForDuplicatesElement.addEventListener('change', function() {
+            const selectedProjectId = this.value;
+            if (selectedProjectId && selectedProjectId !== 'all' && selectedProjectId !== 'Loading projects...') {
+                fetchProjectDuplicates(selectedProjectId);
+            } else {
+                const resultArea = document.getElementById('duplicates-result-area');
+                if (resultArea) {
+                    resultArea.innerHTML = '<div class="duplicates-placeholder text-center p-5"><p class="text-muted">Please select a specific project to find similar issues.</p></div>';
+                }
+            }
+        });
+    }
 }
 
 // Fetch user profile
@@ -640,38 +713,38 @@ function updateDashboardStats() {
 
 // --- Duplicates Tab Logic ---
 async function loadProjectsForDuplicatesTab() {
-    const selectElement = document.getElementById('projectSelect');
-    try {
-        const response = await fetch('/api/v1/projects', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-            }
-        });
-
-        if (response.ok) {
-            const projects = await response.json();
-            selectElement.innerHTML = '<option selected disabled>Select a project...</option>'; // Clear loading text
-            if (projects.length > 0) {
-                projects.forEach(project => {
-                    const option = document.createElement('option');
-                    option.value = project.id;
-                    option.textContent = project.name;
-                    selectElement.appendChild(option);
-                });
-            } else {
-                selectElement.innerHTML = '<option selected disabled>No projects found</option>';
-            }
-        } else if (response.status === 401) {
-            await refreshToken();
-            await loadProjectsForDuplicatesTab(); // Retry
-        } else {
-            selectElement.innerHTML = '<option selected disabled>Error loading projects</option>';
-            console.error('Failed to load projects for duplicates tab');
+    fetch('/api/v1/projects', {
+        headers: {
+            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         }
-    } catch (error) {
-        selectElement.innerHTML = '<option selected disabled>Error loading projects</option>';
-        console.error('Error fetching projects:', error);
-    }
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Failed to load projects');
+        return response.json();
+    })
+    .then(projects => {
+        const projectSelect = document.getElementById('projectSelectForDuplicates'); // Updated ID
+        if (!projectSelect) return;
+
+        projectSelect.innerHTML = '<option value="" selected>Select a project...</option>'; // Default empty option
+        if (projects && projects.length > 0) {
+            projects.forEach(project => {
+                const option = document.createElement('option');
+                option.value = project.id;
+                option.textContent = project.name;
+                projectSelect.appendChild(option);
+            });
+        } else {
+            projectSelect.innerHTML = '<option value="" selected>No projects found</option>';
+        }
+    })
+    .catch(error => {
+        console.error('Error loading projects for duplicates tab:', error);
+        const projectSelect = document.getElementById('projectSelectForDuplicates'); // Updated ID
+        if (projectSelect) {
+            projectSelect.innerHTML = '<option selected>Error loading projects</option>';
+        }
+    });
 }
 
 // --- Fetch and Render Project Duplicates ---
@@ -760,8 +833,8 @@ function renderDuplicates(data) {
                     <div><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">${issue2.external_id || issue2.id.substring(0,8)}</a></div>
                 </td>
                 <td>
-                    <div>${truncateText(issue1.title, 50)}</div>
-                    <div>${truncateText(issue2.title, 50)}</div>
+                    <div>${truncateTextWithEllipsis(issue1.title, 50)}</div>
+                    <div>${truncateTextWithEllipsis(issue2.title, 50)}</div>
                 </td>
                 <td>${(pairData.similarity * 100).toFixed(2)}%</td>
                 <td id="${llmCellId}" class="text-center align-middle">
@@ -770,12 +843,12 @@ function renderDuplicates(data) {
             </tr>
             <tr id="${detailRowId}" class="duplicate-details-row" style="display: none;">
                 <td colspan="4">
-                    <h6><a href="${issue1.url}" target="_blank" rel="noopener noreferrer">Issue 1: ${truncateText(issue1.title, 100)}</a> (${issue1.external_id || issue1.id})</h6>
-                    <p><strong>Description:</strong><br>${issue1.description ? truncateText(issue1.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
-                    <h6><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">Issue 2: ${truncateText(issue2.title, 100)}</a> (${issue2.external_id || issue2.id})</h6>
-                    <p><strong>Description:</strong><br>${issue2.description ? truncateText(issue2.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
+                    <h6><a href="${issue1.url}" target="_blank" rel="noopener noreferrer">Issue 1: ${truncateTextWithEllipsis(issue1.title, 100)}</a> (${issue1.external_id || issue1.id})</h6>
+                    <p><strong>Description:</strong><br>${issue1.description ? truncateTextWithEllipsis(issue1.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
+                    <h6><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">Issue 2: ${truncateTextWithEllipsis(issue2.title, 100)}</a> (${issue2.external_id || issue2.id})</h6>
+                    <p><strong>Description:</strong><br>${issue2.description ? truncateTextWithEllipsis(issue2.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
                     <div class="decision-info" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
-                        <p style="margin-bottom: 5px;"><strong>Decision:</strong> ${getLLMCheckIconHTML(pairData.llm_decision_status)} ${pairData.llm_decision_status === 'confirmed' ? 'Confirmed Duplicate' : pairData.llm_decision_status === 'rejected' ? 'Not a Duplicate' : (pairData.llm_decision_status || 'Not yet decided')}</p>
+                        <p style="margin-bottom: 5px;"><strong>Decision:</strong> ${getLLMCheckIconHTML(pairData.llm_decision_status)} ${pairData.llm_decision_status === 'confirmed' ? 'Potential Duplicate' : pairData.llm_decision_status === 'rejected' ? 'Not a Duplicate' : (pairData.llm_decision_status || 'Not yet decided')}</p>
                         <p style="margin-bottom: 0;"><strong>Reason:</strong> ${ (pairData.llm_decision_details && pairData.llm_decision_details.reason) ? pairData.llm_decision_details.reason : 'No reason provided.' }</p>
                     </div>
                 </td>
@@ -932,8 +1005,8 @@ function sortAndReRenderDuplicatesTable() {
                     <div><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">${issue2.external_id || issue2.id.substring(0,8)}</a></div>
                 </td>
                 <td>
-                    <div>${truncateText(issue1.title, 50)}</div>
-                    <div>${truncateText(issue2.title, 50)}</div>
+                    <div>${truncateTextWithEllipsis(issue1.title, 50)}</div>
+                    <div>${truncateTextWithEllipsis(issue2.title, 50)}</div>
                 </td>
                 <td>${(pairData.similarity * 100).toFixed(2)}%</td>
                 <td class="text-center align-middle">
@@ -942,12 +1015,12 @@ function sortAndReRenderDuplicatesTable() {
             </tr>
             <tr id="${detailRowId}" class="duplicate-details-row" style="display: none;">
                 <td colspan="4">
-                    <h6><a href="${issue1.url}" target="_blank" rel="noopener noreferrer">Issue 1: ${truncateText(issue1.title, 100)}</a> (${issue1.external_id || issue1.id})</h6>
-                    <p><strong>Description:</strong><br>${issue1.description ? truncateText(issue1.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
-                    <h6><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">Issue 2: ${truncateText(issue2.title, 100)}</a> (${issue2.external_id || issue2.id})</h6>
-                    <p><strong>Description:</strong><br>${issue2.description ? truncateText(issue2.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
+                    <h6><a href="${issue1.url}" target="_blank" rel="noopener noreferrer">Issue 1: ${truncateTextWithEllipsis(issue1.title, 100)}</a> (${issue1.external_id || issue1.id})</h6>
+                    <p><strong>Description:</strong><br>${issue1.description ? truncateTextWithEllipsis(issue1.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
+                    <h6><a href="${issue2.url}" target="_blank" rel="noopener noreferrer">Issue 2: ${truncateTextWithEllipsis(issue2.title, 100)}</a> (${issue2.external_id || issue2.id})</h6>
+                    <p><strong>Description:</strong><br>${issue2.description ? truncateTextWithEllipsis(issue2.description.replace(/\n/g, '<br>'), 300) : 'No description'}</p>
                     <div class="decision-info" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
-                        <p style="margin-bottom: 5px;"><strong>Decision:</strong> ${getLLMCheckIconHTML(pairData.llm_decision_status)} ${pairData.llm_decision_status === 'confirmed' ? 'Confirmed Duplicate' : pairData.llm_decision_status === 'rejected' ? 'Not a Duplicate' : (pairData.llm_decision_status || 'Not yet decided')}</p>
+                        <p style="margin-bottom: 5px;"><strong>Decision:</strong> ${getLLMCheckIconHTML(pairData.llm_decision_status)} ${pairData.llm_decision_status === 'confirmed' ? 'Potential Duplicate' : pairData.llm_decision_status === 'rejected' ? 'Not a Duplicate' : (pairData.llm_decision_status || 'Not yet decided')}</p>
                         <p style="margin-bottom: 0;"><strong>Reason:</strong> ${ (pairData.llm_decision_details && pairData.llm_decision_details.reason) ? pairData.llm_decision_details.reason : 'No reason provided.' }</p>
                     </div>
                 </td>
@@ -963,7 +1036,7 @@ function getLLMCheckIconAndTooltip(decision, details) {
     let iconHtml = '';
     let decisionText = decision || 'Not yet decided';
     if (decision === 'confirmed') {
-        decisionText = 'Confirmed Duplicate';
+        decisionText = 'Potential Duplicate';
     } else if (decision === 'rejected') {
         decisionText = 'Not a Duplicate';
     }
@@ -1016,22 +1089,6 @@ function getLLMCheckIconHTML(decision) {
         default:
             return '<i class="bi bi-slash-circle text-muted llm-status-icon"></i>';
     }
-}
-
-// Add event listener for project selection dropdown
-const projectSelectElement = document.getElementById('projectSelect');
-if (projectSelectElement) {
-    projectSelectElement.addEventListener('change', function() {
-        const selectedProjectId = this.value;
-        if (selectedProjectId) {
-            fetchProjectDuplicates(selectedProjectId);
-        } else {
-            const resultArea = document.getElementById('duplicates-result-area');
-            if (resultArea) {
-                resultArea.innerHTML = '<div class="text-center p-5"><p class="text-muted">Please select a project to find similar issues.</p></div>';
-            }
-        }
-    });
 }
 
 function toggleDetails(detailsRowId) {
@@ -1285,44 +1342,25 @@ const EXPIRATION_TIME_MS = 2 * 60 * 1000; // 2 minutes
 
 // Restore last active tab from localStorage if not expired
 function loadLastActiveTab() {
-    try {
-        const storedTabData = localStorage.getItem('activeDashboardTab');
-        const { tabId, timestamp } = JSON.parse(storedTabData);
+    const activeTabData = JSON.parse(localStorage.getItem('activeDashboardTab') || '{}');
+    // const EXPIRATION_TIME_MS is already defined globally or should be
 
-        const timeSinceStored = Date.now() - timestamp;
-        const isExpired = timeSinceStored >= EXPIRATION_TIME_MS;
-
-        if (tabId && timestamp && !isExpired) {
-            const tabButton = document.getElementById(tabId);
-
-            if (tabButton) {
-                if (!tabButton.classList.contains('active')) {
-                    const tab = new bootstrap.Tab(tabButton);
-                    tab.show(); // This should trigger 'shown.bs.tab' which also updates title
-                } else {
-                    document.getElementById('currentPageTitle').textContent = tabButton.textContent.trim();
-                }
-            } else {
-                localStorage.removeItem('activeDashboardTab'); // Clean up invalid entry
-            }
-        } else {
-            showDefaultTab();
+    if (activeTabData.tabId && (Date.now() - activeTabData.timestamp < EXPIRATION_TIME_MS)) {
+        const tabToActivate = document.getElementById(activeTabData.tabId);
+        if (tabToActivate && tabToActivate.dataset.bsToggle === 'tab') {
+            // Showing the tab will trigger its 'shown.bs.tab' event,
+            // which now handles all necessary UI updates (active states, titles, submenu expansion).
+            bootstrap.Tab.getOrCreateInstance(tabToActivate).show();
+            return; // Successfully loaded the tab
         }
-    } catch (error) {
-        showDefaultTab();
+    }
+    const defaultTabBtn = document.getElementById('dashboard-tab-btn'); // Or your preferred default
+    if (defaultTabBtn) {
+        bootstrap.Tab.getOrCreateInstance(defaultTabBtn).show();
     }
 }
 
-function showDefaultTab() {
-    localStorage.removeItem('activeDashboardTab');
-    const defaultTabButton = document.getElementById('dashboard-tab-btn'); // Assuming this is your default
-    if (defaultTabButton && defaultTabButton.classList.contains('active')) {
-        document.getElementById('currentPageTitle').textContent = defaultTabButton.textContent.trim();
-    }
-}
-
-// Helper function for truncating text (if not already present)
-function truncateText(text, maxLength) {
+function truncateTextWithEllipsis(text, maxLength) {
     if (!text) return '';
     if (text.length <= maxLength) {
         return text;
@@ -1337,5 +1375,5 @@ function updateDuplicatesSummary() {
     const confirmedCount = projectDuplicatesDataStore.duplicates.filter(p => p.llm_decision_status === 'confirmed').length;
     const similarCount = projectDuplicatesDataStore.duplicates.length - confirmedCount;
 
-    summaryElement.innerHTML = `<h4 class="fw-normal">Found <strong class="text-primary">${confirmedCount}</strong> Confirmed Duplicates & <strong class="text-info">${similarCount}</strong> Similar Issues</h4>`;
+    summaryElement.innerHTML = `<h4 class="fw-normal">Found <strong class="text-primary">${confirmedCount}</strong> Potential Duplicates & <strong class="text-info">${similarCount}</strong> Similar Issues</h4>`;
 }

@@ -28,15 +28,38 @@
                     <button class="nav-link" id="trackers-tab-btn" data-bs-target="#trackers-tab" data-bs-toggle="tab" role="tab" aria-controls="trackers-tab" aria-selected="false">
                         <i class="bi bi-hdd-network"></i> Trackers
                     </button>
-                    <button class="nav-link" id="duplicates-tab-btn" data-bs-target="#duplicates-tab" data-bs-toggle="tab" role="tab" aria-controls="duplicates-tab" aria-selected="false">
-                        <i class="bi bi-files"></i> Issues
+                    <button class="nav-link" id="issues-main-btn" data-bs-toggle="collapse" data-bs-target="#issues-submenu" aria-expanded="false" aria-controls="issues-submenu">
+                        <i class="bi bi-files"></i> Issues <i class="bi bi-chevron-down ms-auto"></i>
                     </button>
+                    <div class="collapse" id="issues-submenu">
+                        <div class="d-flex flex-column ms-3">
+                            <button class="nav-link sub-nav-link" id="issues-duplicates-tab-btn" data-bs-target="#issues-duplicates-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="issues-duplicates-tab-pane" aria-selected="false">
+                                <i class="bi bi-copy"></i> Duplicates
+                            </button>
+                            <button class="nav-link sub-nav-link" id="issues-assignments-tab-btn" data-bs-target="#issues-assignments-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="issues-assignments-tab-pane" aria-selected="false">
+                                <i class="bi bi-person-check"></i> Assignments
+                            </button>
+                        </div>
+                    </div>
                     <button class="nav-link" id="api-usage-tab-btn" data-bs-target="#api-usage-tab" data-bs-toggle="tab" role="tab" aria-controls="api-usage-tab" aria-selected="false">
                         <i class="bi bi-graph-up"></i> API Usage
                     </button>
-                    <button class="nav-link" id="settings-tab-btn" data-bs-target="#settings-tab" data-bs-toggle="tab" role="tab" aria-controls="settings-tab" aria-selected="false">
-                        <i class="bi bi-gear"></i> Settings
+                    <button class="nav-link" id="settings-main-btn" data-bs-toggle="collapse" data-bs-target="#settings-submenu" aria-expanded="false" aria-controls="settings-submenu">
+                        <i class="bi bi-gear"></i> Settings <i class="bi bi-chevron-down ms-auto"></i>
                     </button>
+                    <div class="collapse" id="settings-submenu">
+                        <div class="d-flex flex-column ms-3">
+                            <button class="nav-link sub-nav-link" id="settings-account-tab-btn" data-bs-target="#settings-account-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="settings-account-tab-pane" aria-selected="false">
+                                <i class="bi bi-person-circle"></i> Account
+                            </button>
+                            <button class="nav-link sub-nav-link" id="settings-apikeys-tab-btn" data-bs-target="#settings-apikeys-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="settings-apikeys-tab-pane" aria-selected="false">
+                                <i class="bi bi-key-fill"></i> API Keys
+                            </button>
+                            <button class="nav-link sub-nav-link" id="settings-llmmodels-tab-btn" data-bs-target="#settings-llmmodels-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="settings-llmmodels-tab-pane" aria-selected="false">
+                                <i class="bi bi-robot"></i> LLM Models
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="sidebar-copyright text-center mt-auto pt-3">
                     <p class="copyright">&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All rights reserved.</p>
@@ -60,7 +83,7 @@
                 <!-- Tab Content -->
                 <div class="tab-content" id="dashboardTabContent">
                     <!-- Dashboard Tab -->
-                    <div class="tab-pane fade show active" id="dashboard-tab" role="tabpanel" aria-labelledby="dashboard-tab-btn" tabindex="0">
+                    <div class="tab-pane show active" id="dashboard-tab" role="tabpanel" aria-labelledby="dashboard-tab-btn" tabindex="0">
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="stat-card">
@@ -120,7 +143,7 @@
                     </div>
 
                     <!-- Trackers Tab -->
-                    <div class="tab-pane fade" id="trackers-tab" role="tabpanel" aria-labelledby="trackers-tab-btn" tabindex="0">
+                    <div class="tab-pane" id="trackers-tab" role="tabpanel" aria-labelledby="trackers-tab-btn" tabindex="0">
                         <div class="row justify-content-center">
                             <div class="col-xl-8">
                                 <div class="card">
@@ -146,7 +169,7 @@
                     </div>
 
                     <!-- API Usage Tab -->
-                    <div class="tab-pane fade" id="api-usage-tab" role="tabpanel" aria-labelledby="api-usage-tab-btn" tabindex="0">
+                    <div class="tab-pane" id="api-usage-tab" role="tabpanel" aria-labelledby="api-usage-tab-btn" tabindex="0">
                         <div class="card">
                             <!-- <div class="card-header d-flex align-items-center">API Usage Statistics</div> -->
                             <div class="card-body">
@@ -202,58 +225,42 @@
                         </div>
                     </div>
 
-                    <!-- Duplicates Tab -->
-                    <div class="tab-pane fade" id="duplicates-tab" role="tabpanel" aria-labelledby="duplicates-tab-btn" tabindex="0">
-                        <!-- Project Dropdown (remains on top) -->
+                    <!-- Issues - Duplicates Tab Pane -->
+                    <div class="tab-pane" id="issues-duplicates-tab-pane" role="tabpanel" aria-labelledby="issues-duplicates-tab-btn" tabindex="0">
+                        <!-- Project Dropdown -->
                         <div class="row mb-4 justify-content-center">
                             <div class="col-md-5">
-                                <select class="form-select" id="projectSelect">
+                                <select class="form-select" id="projectSelectForDuplicates">
                                     <option selected>Loading projects...</option>
                                 </select>
                             </div>
                         </div>
-
-                        <!-- New Tabs for Duplicates and Assignments -->
-                        <ul class="nav nav-tabs justify-content-center" id="issues-sub-tabs" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="duplicates-tab-btn" data-bs-toggle="tab" data-bs-target="#duplicates-tab-pane" type="button" role="tab" aria-controls="duplicates-tab-pane" aria-selected="true">Duplicates</button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="assignments-tab-btn" data-bs-toggle="tab" data-bs-target="#assignments-tab-pane" type="button" role="tab" aria-controls="assignments-tab-pane" aria-selected="false">Assignments</button>
-                            </li>
-                        </ul>
-
-                        <!-- Tab Content -->
-                        <div class="tab-content" id="issues-sub-tabs-content">
-                            <!-- Duplicates Tab Pane -->
-                            <div class="tab-pane fade show active" id="duplicates-tab-pane" role="tabpanel" aria-labelledby="duplicates-tab-btn">
-                                <div class="row justify-content-center mt-4">
-                                    <div class="col-xl-8">
-                                        <div class="card">
-                                            <div class="card-body">
-                                                <div id="duplicates-result-area">
-                                                    <!-- Duplicate pairs will be loaded here -->
-                                                </div>
-                                            </div>
+                        <div class="row justify-content-center mt-4">
+                            <div class="col-xl-8">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div id="duplicates-result-area">
+                                            <!-- Duplicate pairs will be loaded here -->
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-
-                            <!-- Assignments Tab Pane -->
-                            <div class="tab-pane fade" id="assignments-tab-pane" role="tabpanel" aria-labelledby="assignments-tab-btn">
-                                <div class="text-center p-5 mt-4">
-                                    <h3>Coming Soon</h3>
-                                    <p class="text-muted">This feature is under construction.</p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Settings Tab -->
-                    <div class="tab-pane fade" id="settings-tab" role="tabpanel" aria-labelledby="settings-tab-btn" tabindex="0">
+                    <!-- Issues - Assignments Tab Pane -->
+                    <div class="tab-pane" id="issues-assignments-tab-pane" role="tabpanel" aria-labelledby="issues-assignments-tab-btn" tabindex="0">
+                        <div class="text-center p-5 mt-4">
+                            <h3>Coming Soon</h3>
+                            <p class="text-muted">This feature is under construction.</p>
+                        </div>
+                    </div>
+
+                    <!-- Settings - Account Tab Pane -->
+                    <div class="tab-pane" id="settings-account-tab-pane" role="tabpanel" aria-labelledby="settings-account-tab-btn" tabindex="0">
                         <div class="row justify-content-center">
                             <div class="col-xl-8">
+                                <!-- Account Settings Card -->
                                 <div class="card">
                                     <div class="card-header d-flex align-items-center">Account Settings</div>
                                     <div class="card-body">
@@ -286,8 +293,14 @@
                                     </div>
                                 </div>
 
+                                <!-- Change Password Card -->
                                 <div class="card mt-4">
-                                    <div class="card-header d-flex align-items-center">Change Password</div>
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>Change Password</span>
+                                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+                                            <i class="bi bi-key"></i> Change Password
+                                        </button>
+                                    </div>
                                     <div class="card-body">
                                         <form id="changePasswordForm">
                                             <div class="mb-3 row">
@@ -317,39 +330,16 @@
                                         </form>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
 
-                                <div class="card mt-4" id="llm-models-section">
-                                    <div class="card-header d-flex justify-content-between align-items-center">
-                                        <span>LLM Models</span>
-                                        <button class="btn btn-primary btn-sm" id="addLLMModelBtn" data-bs-toggle="modal" data-bs-target="#llmModelModal">
-                                            <i class="bi bi-plus-lg"></i> Add Model
-                                        </button>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="alert alert-info">
-                                            <i class="bi bi-info-circle"></i>
-                                            LLM models are required to use advanced AI-enabled features like duplicate detection.
-                                        </div>
-                                        <div class="alert alert-info d-none" id="noLLMModelsAlert">
-                                            <i class="bi bi-info-circle"></i> No LLM models configured yet. Click 'Add Model' to get started.
-                                        </div>
-                                        <table class="table table-hover" id="llmModelsTable">
-                                            <thead>
-                                                <tr>
-                                                    <th>Name</th>
-                                                    <th>Provider</th>
-                                                    <th>Model Name</th>
-                                                    <th>Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="llmModelsListBody">
-                                                <!-- LLM Models will be loaded here by JavaScript -->
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-
-                                <div class="card mt-4">
+                    <!-- Settings - API Keys Tab Pane -->
+                    <div class="tab-pane" id="settings-apikeys-tab-pane" role="tabpanel" aria-labelledby="settings-apikeys-tab-btn" tabindex="0">
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <!-- API Keys Card -->
+                                <div class="card mt-0">
                                     <div class="card-header d-flex justify-content-between align-items-center">
                                         <span>API Keys</span>
                                         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createKeyModal">
@@ -382,7 +372,47 @@
                             </div>
                         </div>
                     </div>
-                </div>
+
+                    <!-- Settings - LLM Models Tab Pane -->
+                    <div class="tab-pane" id="settings-llmmodels-tab-pane" role="tabpanel" aria-labelledby="settings-llmmodels-tab-btn" tabindex="0">
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <!-- LLM Models Card -->
+                                <div class="card mt-0" id="llm-models-section">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>LLM Models</span>
+                                        <button class="btn btn-primary btn-sm" id="addLLMModelBtn" data-bs-toggle="modal" data-bs-target="#llmModelModal">
+                                            <i class="bi bi-plus-lg"></i> Add Model
+                                        </button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle"></i>
+                                            LLM models are required to use advanced AI-enabled features like duplicate detection.
+                                        </div>
+                                        <div class="alert alert-info d-none" id="noLLMModelsAlert">
+                                            <i class="bi bi-info-circle"></i> No LLM models configured yet. Click 'Add Model' to get started.
+                                        </div>
+                                        <table class="table table-hover" id="llmModelsTable">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Provider</th>
+                                                    <th>Model Name</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="llmModelsListBody">
+                                                <!-- LLM Models will be loaded here by JavaScript -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div> <!-- End of tab-content -->
             </div>
         </div>
     </div>
