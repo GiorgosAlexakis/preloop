@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "20250612135000"
-down_revision = "52502e04d6ef"  # From user context, assumed latest relevant revision
+down_revision = "52502e04d6ef"  # Fixed: was pointing to non-existent 4a3fe57fc6ba
 branch_labels = None
 depends_on = None
 
