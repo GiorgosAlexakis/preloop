@@ -12,7 +12,6 @@ from ..models import (
     Organization,
     Project,
     Tracker,
-    Organization,
 )
 from .account import CRUDAccount
 from .api_key import CRUDApiKey
