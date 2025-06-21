@@ -463,7 +463,7 @@ async def test_connection_and_list_orgs(
                 f"Connection test failed for user {current_user.username}: {connection_result.message}"
             )
             return TrackerTestResponse(
-                success=False, message=connection_result.message, projects=[]
+                success=False, message=connection_result.message, orgs=[]
             )
 
         logger.info(f"Connection test successful for user {current_user.username}")
@@ -474,7 +474,7 @@ async def test_connection_and_list_orgs(
             for owner_group_data in grouped_repos:
                 owner_login = owner_group_data["owner_login"]
                 organizations.append(
-                    OrganizationGroup(id=owner_login, name=owner_login, projects=[])
+                    OrganizationGroup(id=owner_login, name=owner_login, children=[])
                 )
 
         elif isinstance(client, GitLabClient):
@@ -496,7 +496,7 @@ async def test_connection_and_list_orgs(
         return TrackerTestResponse(
             success=True,
             message="Connection successful!",
-            projects=organizations,
+            orgs=organizations,
         )
 
     except Exception as e:
@@ -504,7 +504,7 @@ async def test_connection_and_list_orgs(
             f"Error during tracker org list for user {current_user.username}: {e}"
         )
         return TrackerTestResponse(
-            success=False, message=f"An unexpected error occurred: {e}", projects=[]
+            success=False, message=f"An unexpected error occurred: {e}", orgs=[]
         )
 
 

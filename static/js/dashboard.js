@@ -17,6 +17,16 @@ let projectDuplicatesDataStore = {
     llmRequestsPending: 0
 };
 
+function switchToNewUI() {
+    // Set the cookie to expire in 30 days
+    const d = new Date();
+    d.setTime(d.getTime() + (30 * 24 * 60 * 60 * 1000));
+    let expires = "expires="+ d.toUTCString();
+    document.cookie = "ui_version=spacelit; " + expires + "; path=/";
+    // Reload the page
+    window.location.reload();
+}
+
 // Helper to initialize tooltips
 function initializeTooltips(selector = '[data-bs-toggle="tooltip"]') {
     const tooltipTriggerList = [].slice.call(document.querySelectorAll(selector));

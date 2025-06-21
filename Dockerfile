@@ -22,6 +22,8 @@ COPY . .
 # Install the application
 RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync && pip install --no-cache-dir -e . && mkdocs build
 
+RUN cd SpaceLit && npm run build:ssr && cd ..
+
 # Expose the port
 EXPOSE 8000
 

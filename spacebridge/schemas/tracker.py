@@ -170,7 +170,7 @@ class TrackerTestResponse(BaseModel):
 
     success: bool = Field(..., description="Whether the connection test was successful")
     message: str = Field(..., description="Connection test result message")
-    projects: Optional[List[OrganizationGroup]] = Field(
+    orgs: Optional[List[OrganizationGroup]] = Field(
         None,
-        description="List of organizations and their projects if connection succeeded",
+        description="List of organizations if connection succeeded",
     )

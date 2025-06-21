@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
+from spacebridge.api.middleware import UIRoutingMiddleware
 from fastapi.encoders import jsonable_encoder
 
 from spacebridge import __version__
@@ -30,6 +31,7 @@ from spacebridge.api.endpoints import (
     organizations,
     projects,
     search,
+    stats,
     trackers,
     version,
     embedding as embedding_router,
@@ -240,7 +242,10 @@ def create_app() -> FastAPI:
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # This should be more restrictive in production
+        allow_origins=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -248,6 +253,7 @@ def create_app() -> FastAPI:
 
     # Add API usage tracking
     app.add_middleware(ApiUsageMiddleware)
+    app.add_middleware(UIRoutingMiddleware)
 
     # --- Static Files Setup ---
     static_dir = base_dir / "static"
@@ -266,53 +272,16 @@ def create_app() -> FastAPI:
 
     # Mount general static files (CSS, JS for landing/auth pages)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-    # --- Mount Lit Frontend ---
-    v2_frontend_dir = base_dir / "SpaceLit" / "dist"
-    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-
-    if dev_mode:
-        import httpx
-
-        logger.info(
-            "DEV_MODE enabled. Proxying /v2 to Vite dev server at http://localhost:5173"
-        )
-        vite_client = httpx.AsyncClient(base_url="http://localhost:5173")
-
-        @app.api_route("/v2/{rest_of_path:path}")
-        async def proxy_to_vite(request: Request, rest_of_path: str):
-            url = httpx.URL(
-                path=request.url.path, query=request.url.query.encode("utf-8")
-            )
-            rp_req = vite_client.build_request(
-                request.method,
-                url,
-                headers=request.headers.raw,
-                content=await request.body(),
-            )
-            rp_resp = await vite_client.send(rp_req, stream=True)
-            return StreamingResponse(
-                rp_resp.aiter_raw(),
-                status_code=rp_resp.status_code,
-                headers=rp_resp.headers,
-                background=rp_resp.aclose,
-            )
-
-    elif v2_frontend_dir.exists() and v2_frontend_dir.is_dir():
-        logger.info(f"Mounting Lit frontend from: {v2_frontend_dir}")
-        app.mount(
-            "/v2/assets",
-            StaticFiles(directory=str(v2_frontend_dir / "assets")),
-            name="v2-assets",
-        )
-
-        @app.get("/v2/{rest_of_path:path}", response_class=HTMLResponse, tags=["Pages"])
-        async def serve_v2_frontend(request: Request):
-            return FileResponse(str(v2_frontend_dir / "index.html"))
-    else:
-        logger.warning(
-            f"Lit frontend directory '{v2_frontend_dir}' not found. The new UI will not be served."
-        )
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(base_dir / "SpaceLit" / "dist" / "assets")),
+        name="spacelit_assets",
+    )
+    app.mount(
+        "/images",
+        StaticFiles(directory=str(base_dir / "SpaceLit" / "public" / "images")),
+        name="spacelit_images",
+    )
 
     # --- Mount MkDocs Site ---
     # Check if the 'site' directory exists (created by 'mkdocs build')
@@ -484,6 +453,12 @@ def create_app() -> FastAPI:
         version.router, prefix="/api/v1", tags=["Version"]
     )  # No auth dependency for version check
     app.include_router(
+        stats.router,
+        prefix="/api/v1",
+        tags=["Stats"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
         webhooks.router, prefix="/api/v1", tags=["Webhooks"]
     )  # No user auth needed for incoming webhooks
 
@@ -575,5 +550,19 @@ def create_app() -> FastAPI:
     async def whatis_mcp_page(request: Request):
         # Placeholder - Implement actual logic if needed
         return templates.TemplateResponse("whatis-mcp.html", {"request": request})
+
+    # --- SPA Static Files (Production) ---
+    # In production, serve the built Lit frontend from the root
+    # This should be mounted *after* all API routes are defined.
+    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
+    if not dev_mode:
+        logger.info("DEV_MODE is false, serving SPA from 'SpaceLit/dist'")
+        app.mount(
+            "/",
+            StaticFiles(directory=str(base_dir / "SpaceLit" / "dist"), html=True),
+            name="spa",
+        )
+    else:
+        logger.info("DEV_MODE is true, SPA is served by the frontend dev server.")
 
     return app

@@ -45,6 +45,21 @@ On the first line, write a single word: either 'YES' or 'NO'.
 On the second line, provide a single-sentence reasoning for your decision.
 """
 
+@router.get(
+    "/issue-duplicates/",
+    response_model=List[IssueDuplicateSchema],
+    tags=["Issue Duplicates"],
+)
+def get_duplicate_issues(
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100,
+) -> Any:
+    """
+    Retrieve confirmed duplicate issues.
+    """
+    duplicates = crud_issue_duplicate.get_multi(db, skip=skip, limit=limit, decision="confirmed")
+    return duplicates
 
 @router.get(
     "/issue-duplicates/check",
