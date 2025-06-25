@@ -8,9 +8,16 @@ from spacemodels.models.tracker_scope_rule import RuleType, ScopeType
 class TrackerScopeRuleBase(BaseModel):
     """Base schema for tracker scope rules."""
 
-    scope_type: ScopeType = Field(..., description="The type of scope (ORGANIZATION or PROJECT).")
-    rule_type: RuleType = Field(..., description="The type of rule (INCLUDE or EXCLUDE).")
-    identifier: str = Field(..., description="The identifier for the scope (e.g., 'my-org' or 'my-org/my-repo').")
+    scope_type: ScopeType = Field(
+        ..., description="The type of scope (ORGANIZATION or PROJECT)."
+    )
+    rule_type: RuleType = Field(
+        ..., description="The type of rule (INCLUDE or EXCLUDE)."
+    )
+    identifier: str = Field(
+        ...,
+        description="The identifier for the scope (e.g., 'my-org' or 'my-org/my-repo').",
+    )
 
 
 class TrackerScopeRuleCreate(TrackerScopeRuleBase):

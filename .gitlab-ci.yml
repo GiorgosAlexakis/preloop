@@ -34,8 +34,8 @@ build:
 
 pre-commit:
   stage: test
-  needs: []
-  image: python:3.11-slim
+  needs: [build]
+  image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
     - apt-get update && apt-get install -y git
     - pip install -U pip pre-commit ruff
@@ -48,8 +48,8 @@ pre-commit:
 
 pytest:
   stage: test
-  needs: []
-  image: python:3.11-slim
+  needs: [build]
+  image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   services:
     - name: pgvector/pgvector:pg13
       alias: postgres

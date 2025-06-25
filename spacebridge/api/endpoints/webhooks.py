@@ -14,7 +14,6 @@ from spacemodels.crud import (
     crud_project,
 )
 from spacemodels.crud.organization import CRUDOrganization
-from spacemodels.crud.tracker import CRUDTracker
 from spacemodels.db.session import get_db_session
 from spacemodels.models.organization import Organization  # Added
 from spacemodels.models.tracker import Tracker
@@ -84,89 +83,51 @@ async def receive_webhook(
     organization_context_for_timestamp: Optional[CRUDOrganization.model] = None
     default_event_list_for_type: List[str] = []
     event_type_header_key: Optional[str] = None
-
-    if tracker_type.lower() in ["github", "gitlab"]:
-        # Use the direct Organization model for querying and joinedload
-        organization_data = (
-            db.query(Organization)
-            .options(joinedload(Organization.tracker))
-            .filter(Organization.identifier == identifier_in_url)
-            .first()
+    # Use the direct Organization model
+    organization_data = (
+        db.query(Organization)
+        .options(joinedload(Organization.tracker))
+        .filter(Organization.identifier == identifier_in_url)
+        .first()
+    )
+    if not organization_data:
+        logger.warning(
+            f"Organization not found for identifier={identifier_in_url}, tracker_type={tracker_type}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
         )
 
-        if not organization_data:
-            logger.warning(
-                f"Organization not found for identifier={identifier_in_url}, tracker_type={tracker_type}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
-            )
-
-        if not organization_data.tracker:
-            logger.error(
-                f"Tracker not found for organization ID {organization_data.id}, identifier {identifier_in_url}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Tracker configuration error",
-            )
-
-        if not organization_data.webhook_secret:  # For GH/GL, secret is on Org model
-            logger.error(
-                f"Webhook secret not configured for organization ID {organization_data.id}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Webhook not configured correctly",
-            )
-
-        resolved_tracker = organization_data.tracker
-        webhook_secret_to_use = organization_data.webhook_secret
-        organization_context_for_timestamp = (
-            organization_data  # Use the fetched organization data
+    if not organization_data.tracker:
+        logger.error(
+            f"Tracker not found for organization ID {organization_data.id}, identifier {identifier_in_url}"
         )
-        if tracker_type.lower() == "github":
-            default_event_list_for_type = DEFAULT_GITHUB_SUBSCRIBED_EVENTS
-            event_type_header_key = "X-GitHub-Event"
-        else:  # gitlab
-            default_event_list_for_type = DEFAULT_GITLAB_SUBSCRIBED_EVENTS
-            event_type_header_key = "X-Gitlab-Event"
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Tracker configuration error",
+        )
 
+    if not organization_data.webhook_secret:  # For GH/GL, secret is on Org model
+        logger.error(
+            f"Webhook secret not configured for organization ID {organization_data.id}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Webhook not configured correctly",
+        )
+
+    resolved_tracker = organization_data.tracker
+    webhook_secret_to_use = organization_data.webhook_secret
+    organization_context_for_timestamp = organization_data
+
+    if tracker_type.lower() == "github":
+        default_event_list_for_type = DEFAULT_GITHUB_SUBSCRIBED_EVENTS
+        event_type_header_key = "X-GitHub-Event"
+    elif tracker_type.lower() == "gitlab":
+        default_event_list_for_type = DEFAULT_GITLAB_SUBSCRIBED_EVENTS
+        event_type_header_key = "X-Gitlab-Event"
     elif tracker_type.lower() == "jira":
-        # For Jira, identifier_in_url is the Tracker.id
-        crud_tracker_instance = CRUDTracker(db)  # CRUD helper needs db session
-        # Fetch tracker ensuring it's a Jira tracker
-        tracker_candidate = (
-            db.query(Tracker)
-            .filter(Tracker.id == identifier_in_url, Tracker.tracker_type == "jira")
-            .first()
-        )
-
-        if not tracker_candidate:
-            logger.warning(
-                f"Jira Tracker not found or type mismatch for id={identifier_in_url}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Jira Tracker not found"
-            )
-
-        resolved_tracker = tracker_candidate
-
-        if (
-            not resolved_tracker.jira_webhook_secret
-        ):  # New field on Tracker model for Jira
-            logger.error(
-                f"Jira webhook secret not configured for Tracker ID {resolved_tracker.id}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Jira webhook not configured correctly",
-            )
-
-        webhook_secret_to_use = resolved_tracker.jira_webhook_secret
         default_event_list_for_type = DEFAULT_JIRA_SUBSCRIBED_EVENTS
-        # Event type for Jira is in payload ("webhookEvent"), not a header.
-
     else:
         logger.error(f"Unsupported tracker_type for webhook: {tracker_type}")
         raise HTTPException(
@@ -174,7 +135,7 @@ async def receive_webhook(
             detail=f"Unsupported tracker_type: {tracker_type}",
         )
 
-    if not resolved_tracker:  # Should have been caught above
+    if not resolved_tracker:
         logger.error(
             f"Failed to resolve tracker for {tracker_type} with identifier {identifier_in_url}"
         )
@@ -310,7 +271,6 @@ async def receive_webhook(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Jira signature verification failed",
             )
-    # Note: No 'else' here as unsupported tracker_types are handled during tracker resolution.
 
     # --- 4. Parse Payload & Determine Event Type ---
     actual_event_type: Optional[str] = None
@@ -339,7 +299,6 @@ async def receive_webhook(
             logger.warning(
                 f"Could not determine event type from header '{event_type_header_key}' for {tracker_type}, tracker ID {resolved_tracker.id}."
             )
-            # Allow to proceed, subscription check might still pass if default allows all or if subscribed_events is empty.
     elif tracker_type.lower() == "jira":
         actual_event_type = parsed_payload.get("webhookEvent")
         if not actual_event_type:

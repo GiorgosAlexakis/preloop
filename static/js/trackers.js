@@ -141,7 +141,7 @@ async function testAndListProjects() {
 
 
     try {
-        const response = await fetch('/api/v1/trackers/test-and-list-projects', {
+        const response = await fetch('/api/v1/trackers/test-and-list-orgs', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

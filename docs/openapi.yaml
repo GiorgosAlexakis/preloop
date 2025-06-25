@@ -2047,6 +2047,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue-duplicates/:
+    get:
+      tags:
+      - Issue Duplicates
+      - Issue Duplicates
+      summary: Get Duplicate Issues
+      description: Retrieve confirmed duplicate issues.
+      operationId: get_duplicate_issues_api_v1_issue_duplicates__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Skip
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IssueDuplicate'
+                title: Response Get Duplicate Issues Api V1 Issue Duplicates  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issue-duplicates/check:
     get:
       tags:
@@ -3772,14 +3813,14 @@ components:
           type: string
           title: Message
           description: Connection test result message
-        projects:
+        orgs:
           anyOf:
           - items:
               $ref: '#/components/schemas/OrganizationGroup'
             type: array
           - type: 'null'
-          title: Projects
-          description: List of organizations and their projects if connection succeeded
+          title: Orgs
+          description: List of organizations if connection succeeded
       type: object
       required:
       - success

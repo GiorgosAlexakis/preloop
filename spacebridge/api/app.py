@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -31,7 +31,6 @@ from spacebridge.api.endpoints import (
     organizations,
     projects,
     search,
-    stats,
     trackers,
     version,
     embedding as embedding_router,
@@ -452,12 +451,6 @@ def create_app() -> FastAPI:
     app.include_router(
         version.router, prefix="/api/v1", tags=["Version"]
     )  # No auth dependency for version check
-    app.include_router(
-        stats.router,
-        prefix="/api/v1",
-        tags=["Stats"],
-        dependencies=[Depends(get_current_active_user)],
-    )
     app.include_router(
         webhooks.router, prefix="/api/v1", tags=["Webhooks"]
     )  # No user auth needed for incoming webhooks
