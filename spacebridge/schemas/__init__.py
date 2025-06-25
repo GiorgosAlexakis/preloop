@@ -39,6 +39,16 @@ from spacebridge.schemas.project import (
     TestConnectionRequest,
     TestConnectionResponse,
 )
+from spacebridge.schemas.duplicates import (
+    DuplicateIssuePair,
+    ProjectDuplicatesResponse,
+)
+from spacebridge.schemas.llm_model import (
+    LLMModelBase,
+    LLMModelCreate,
+    LLMModelRead,
+    LLMModelUpdate,
+)
 
 __all__ = [
     # Auth schemas
@@ -71,4 +81,12 @@ __all__ = [
     "ProjectUpdate",
     "TestConnectionRequest",
     "TestConnectionResponse",
+    # Duplicates schemas
+    "DuplicateIssuePair",
+    "ProjectDuplicatesResponse",
+    # LLMModel schemas
+    "LLMModelBase",
+    "LLMModelCreate",
+    "LLMModelRead",
+    "LLMModelUpdate",
 ]

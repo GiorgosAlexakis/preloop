@@ -1,0 +1,39 @@
+from pydantic import BaseModel, Field
+from typing import List
+
+from .issue import IssueResponse
+
+
+class DuplicateIssuePair(BaseModel):
+    """Represents a pair of issues that are potential duplicates."""
+
+    issue1: IssueResponse = Field(
+        ..., description="The first issue in the duplicate pair."
+    )
+    issue2: IssueResponse = Field(
+        ..., description="The second issue in the duplicate pair."
+    )
+    similarity: float = Field(
+        ..., description="The similarity score between the two issues."
+    )
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectDuplicatesResponse(BaseModel):
+    """Response model for the project duplicates endpoint."""
+
+    project_id: str = Field(..., description="The ID of the project that was scanned.")
+    model_id_used: str = Field(
+        ..., description="The ID of the embedding model used for the similarity search."
+    )
+    threshold_used: float = Field(
+        ..., description="The similarity threshold used for detecting duplicates."
+    )
+    duplicates: List[DuplicateIssuePair] = Field(
+        ..., description="A list of potential duplicate issue pairs."
+    )
+
+    class Config:
+        from_attributes = True

@@ -8,213 +8,10 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
     <link rel="stylesheet" href="/static/css/spacebridge.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
     <link rel="shortcut icon" type="image/png" href="/static/images/favicon.png">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        /* Dashboard specific styles */
-        .sidebar {
-            background-color: var(--dark);
-            color: var(--light);
-            padding: 20px 0;
-            position: fixed;
-            width: 16.666667%;
-            z-index: 100;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
 
-        .sidebar h4 {
-            color: white;
-            letter-spacing: -0.5px;
-        }
-
-        .sidebar .nav-link {
-            color: rgba(255, 255, 255, 0.75);
-            padding: 10px 16px;
-            display: flex;
-            align-items: center;
-            transition: all 0.2s ease;
-        }
-
-        .sidebar .nav-link:hover {
-            color: white;
-            background-color: rgba(255, 255, 255, 0.07);
-        }
-
-        .sidebar .nav-link.active {
-            color: white;
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .sidebar .nav-link i {
-            margin-right: 8px;
-            font-size: 0.95rem;
-        }
-
-        .main-content {
-            padding: 40px;
-            background-color: var(--light);
-        }
-
-        /* Card header with fixed height */
-        .card-header {
-            height: 64px;
-            background-color: white;
-        }
-
-        /* Tracker cards */
-        .tracker-card {
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            margin-bottom: 20px;
-            padding: 20px;
-            transition: all 0.3s ease;
-            border: 1px solid var(--gray-200);
-        }
-
-        .tracker-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-        }
-
-        .tracker-icon {
-            width: 32px;
-            height: 32px;
-            margin-right: 12px;
-        }
-
-        /* Tracker colors */
-        .github-color { color: #24292e; }
-        .gitlab-color { color: #fc6d26; }
-        .jira-color { color: #0052CC; }
-
-        /* Stat cards */
-        .stat-card {
-            background-color: white;
-            border-radius: 8px;
-            padding: 24px;
-            margin-bottom: 24px;
-            text-align: center;
-            border: 1px solid var(--gray-200);
-        }
-
-        .stat-card h3 {
-            font-size: 2rem;
-            margin: 10px 0;
-            color: var(--primary);
-        }
-
-        /* Token table */
-        .token-table th, .token-table td {
-            vertical-align: middle;
-            padding: 12px 16px;
-        }
-
-        /* Navigation tabs */
-        .nav-tabs {
-            border-bottom: 2px solid var(--gray-200);
-            margin-bottom: 24px;
-        }
-
-        .nav-tabs .nav-link {
-            border: none;
-            padding: 12px 20px;
-            margin-right: 8px;
-        }
-
-        .nav-tabs .nav-link.active {
-            color: var(--primary);
-            border-bottom: 2px solid var(--primary);
-        }
-
-        /* Token creation form */
-        .token-creation-form {
-            background-color: var(--gray-100);
-            border-radius: 8px;
-            padding: 24px;
-            margin-bottom: 24px;
-            border: 1px solid var(--gray-200);
-        }
-
-        /* Modal styling */
-        .modal-content {
-            border-radius: 8px;
-            border: none;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        .modal-header {
-            border-bottom: 1px solid var(--gray-200);
-            padding: 16px 24px;
-        }
-
-        .modal-footer {
-            border-top: 1px solid var(--gray-200);
-            padding: 16px 24px;
-        }
-
-        /* Token display */
-        .token-display {
-            background-color: var(--gray-100);
-            border-radius: 6px;
-            padding: 16px;
-            margin: 16px 0;
-            word-break: break-all;
-            font-family: 'Inter', monospace;
-            border: 1px solid var(--gray-200);
-            font-size: 0.9rem;
-        }
-
-        /* Badge styling */
-        .badge-github, .badge-gitlab, .badge-jira {
-            font-weight: 500;
-            padding: 5px 10px;
-            border-radius: 4px;
-        }
-
-        .badge-github {
-            background-color: #24292e;
-            color: white;
-        }
-
-        .badge-gitlab {
-            background-color: #fc6d26;
-            color: white;
-        }
-
-        .badge-jira {
-            background-color: #0052CC;
-            color: white;
-        }
-
-        /* User info styling */
-        .user-info {
-            font-weight: 500;
-        }
-
-        .user-info #username {
-            color: var(--dark);
-        }
-
-        .user-info #email {
-            color: var(--secondary);
-        }
-
-        /* Sidebar copyright styling */
-        .sidebar-copyright {
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.5);
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            margin: 0 15px;
-        }
-
-        .sidebar-copyright .copyright {
-            margin-bottom: 0;
-        }
-    </style>
 </head>
 <body>
     <div class="container-fluid">
@@ -224,22 +21,45 @@
                 <h4 class="text-center mb-4">
                     <img src="/static/images/logo_dark.png" alt="SpaceBridge MCP" height="32" class="mb-1">
                 </h4>
-                <div class="d-flex flex-column flex-grow-1">
-                    <button class="nav-link active" id="dashboard-tab-btn" data-bs-target="#dashboard-tab" data-bs-toggle="tab">
+                <div class="d-flex flex-column flex-grow-1" role="tablist">
+                    <button class="nav-link active" id="dashboard-tab-btn" data-bs-target="#dashboard-tab" data-bs-toggle="tab" role="tab" aria-controls="dashboard-tab" aria-selected="true">
                         <i class="bi bi-speedometer2"></i> Dashboard
                     </button>
-                    <button class="nav-link" id="trackers-tab-btn" data-bs-target="#trackers-tab" data-bs-toggle="tab">
+                    <button class="nav-link" id="trackers-tab-btn" data-bs-target="#trackers-tab" data-bs-toggle="tab" role="tab" aria-controls="trackers-tab" aria-selected="false">
                         <i class="bi bi-hdd-network"></i> Trackers
                     </button>
-                    <button class="nav-link" id="api-usage-tab-btn" data-bs-target="#api-usage-tab" data-bs-toggle="tab">
+                    <button class="nav-link" id="issues-main-btn" data-bs-toggle="collapse" data-bs-target="#issues-submenu" aria-expanded="false" aria-controls="issues-submenu">
+                        <i class="bi bi-files"></i> Issues <i class="bi bi-chevron-down ms-auto"></i>
+                    </button>
+                    <div class="collapse" id="issues-submenu">
+                        <div class="d-flex flex-column ms-3">
+                            <button class="nav-link sub-nav-link" id="issues-duplicates-tab-btn" data-bs-target="#issues-duplicates-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="issues-duplicates-tab-pane" aria-selected="false">
+                                <i class="bi bi-copy"></i> Duplicates
+                            </button>
+                            <button class="nav-link sub-nav-link" id="issues-assignments-tab-btn" data-bs-target="#issues-assignments-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="issues-assignments-tab-pane" aria-selected="false">
+                                <i class="bi bi-person-check"></i> Assignments
+                            </button>
+                        </div>
+                    </div>
+                    <button class="nav-link" id="api-usage-tab-btn" data-bs-target="#api-usage-tab" data-bs-toggle="tab" role="tab" aria-controls="api-usage-tab" aria-selected="false">
                         <i class="bi bi-graph-up"></i> API Usage
                     </button>
-                    <button class="nav-link" id="api-keys-tab-btn" data-bs-target="#api-keys-tab" data-bs-toggle="tab">
-                        <i class="bi bi-key"></i> API Keys
+                    <button class="nav-link" id="settings-main-btn" data-bs-toggle="collapse" data-bs-target="#settings-submenu" aria-expanded="false" aria-controls="settings-submenu">
+                        <i class="bi bi-gear"></i> Settings <i class="bi bi-chevron-down ms-auto"></i>
                     </button>
-                    <button class="nav-link" id="settings-tab-btn" data-bs-target="#settings-tab" data-bs-toggle="tab">
-                        <i class="bi bi-gear"></i> Settings
-                    </button>
+                    <div class="collapse" id="settings-submenu">
+                        <div class="d-flex flex-column ms-3">
+                            <button class="nav-link sub-nav-link" id="settings-account-tab-btn" data-bs-target="#settings-account-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="settings-account-tab-pane" aria-selected="false">
+                                <i class="bi bi-person-circle"></i> Account
+                            </button>
+                            <button class="nav-link sub-nav-link" id="settings-apikeys-tab-btn" data-bs-target="#settings-apikeys-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="settings-apikeys-tab-pane" aria-selected="false">
+                                <i class="bi bi-key-fill"></i> API Keys
+                            </button>
+                            <button class="nav-link sub-nav-link" id="settings-llmmodels-tab-btn" data-bs-target="#settings-llmmodels-tab-pane" data-bs-toggle="tab" role="tab" aria-controls="settings-llmmodels-tab-pane" aria-selected="false">
+                                <i class="bi bi-robot"></i> LLM Models
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="sidebar-copyright text-center mt-auto pt-3">
                     <p class="copyright">&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All rights reserved.</p>
@@ -263,7 +83,7 @@
                 <!-- Tab Content -->
                 <div class="tab-content" id="dashboardTabContent">
                     <!-- Dashboard Tab -->
-                    <div class="tab-pane fade show active" id="dashboard-tab" role="tabpanel" aria-labelledby="dashboard-tab-btn">
+                    <div class="tab-pane show active" id="dashboard-tab" role="tabpanel" aria-labelledby="dashboard-tab-btn" tabindex="0">
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="stat-card">
@@ -303,7 +123,7 @@
                                 <div class="card">
                                     <div class="card-header d-flex justify-content-between align-items-center">
                                         <span>Connected Trackers</span>
-                                        <button type="button" class="btn btn-sm btn-primary" id="dashboardAddTrackerBtn">
+                                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">
                                             <i class="bi bi-plus-lg"></i> Add Tracker
                                         </button>
                                     </div>
@@ -313,9 +133,7 @@
                                             <div class="text-center text-muted py-5">
                                                 <i class="bi bi-hdd-network fs-1 mb-3"></i>
                                                 <p>No trackers connected yet</p>
-                                                <button type="button" class="btn btn-sm btn-outline-primary dashboardAddTrackerBtn">
-                                                    Connect Your First Tracker
-                                                </button>
+                                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">Connect Your First Tracker</button>
                                             </div>
                                         </div>
                                     </div>
@@ -325,24 +143,33 @@
                     </div>
 
                     <!-- Trackers Tab -->
-                    <div class="tab-pane fade" id="trackers-tab" role="tabpanel" aria-labelledby="trackers-tab-btn">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <span>Your Trackers</span>
-                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">
-                                    <i class="bi bi-plus-lg"></i> Add Tracker
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <div id="trackersListFull">
-                                    <!-- Trackers will be loaded here -->
+                    <div class="tab-pane" id="trackers-tab" role="tabpanel" aria-labelledby="trackers-tab-btn" tabindex="0">
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <div class="card">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>Your Trackers</span>
+                                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">
+                                            <i class="bi bi-plus-lg"></i> Add Tracker
+                                        </button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="trackersListFull">
+                                            <!-- Trackers will be loaded here -->
+                                            <div class="text-center text-muted py-5">
+                                                <i class="bi bi-hdd-network fs-1 mb-3"></i>
+                                                <p>No trackers connected yet</p>
+                                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">Connect Your First Tracker</button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- API Usage Tab -->
-                    <div class="tab-pane fade" id="api-usage-tab" role="tabpanel" aria-labelledby="api-usage-tab-btn">
+                    <div class="tab-pane" id="api-usage-tab" role="tabpanel" aria-labelledby="api-usage-tab-btn" tabindex="0">
                         <div class="card">
                             <!-- <div class="card-header d-flex align-items-center">API Usage Statistics</div> -->
                             <div class="card-body">
@@ -398,107 +225,194 @@
                         </div>
                     </div>
 
-                    <!-- API Keys Tab -->
-                    <div class="tab-pane fade" id="api-keys-tab" role="tabpanel" aria-labelledby="api-keys-tab-btn">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <span>API Keys</span>
-                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createKeyModal">
-                                    <i class="bi bi-plus-lg"></i> Create New API Key
-                                </button>
+                    <!-- Issues - Duplicates Tab Pane -->
+                    <div class="tab-pane" id="issues-duplicates-tab-pane" role="tabpanel" aria-labelledby="issues-duplicates-tab-btn" tabindex="0">
+                        <!-- Project Dropdown -->
+                        <div class="row mb-4 justify-content-center">
+                            <div class="col-md-5">
+                                <select class="form-select" id="projectSelectForDuplicates">
+                                    <option selected>Loading projects...</option>
+                                </select>
                             </div>
-                            <div class="card-body">
-                                <div class="alert alert-info">
-                                    <i class="bi bi-info-circle"></i>
-                                    API keys allow you to authenticate requests to the SpaceBridge API.
-                                    Keep your API keys secure and never share them publicly.
+                        </div>
+                        <div class="row justify-content-center mt-4">
+                            <div class="col-xl-8">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div id="duplicates-result-area">
+                                            <!-- Duplicate pairs will be loaded here -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Issues - Assignments Tab Pane -->
+                    <div class="tab-pane" id="issues-assignments-tab-pane" role="tabpanel" aria-labelledby="issues-assignments-tab-btn" tabindex="0">
+                        <div class="text-center p-5 mt-4">
+                            <h3>Coming Soon</h3>
+                            <p class="text-muted">This feature is under construction.</p>
+                        </div>
+                    </div>
+
+                    <!-- Settings - Account Tab Pane -->
+                    <div class="tab-pane" id="settings-account-tab-pane" role="tabpanel" aria-labelledby="settings-account-tab-btn" tabindex="0">
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <!-- Account Settings Card -->
+                                <div class="card">
+                                    <div class="card-header d-flex align-items-center">Account Settings</div>
+                                    <div class="card-body">
+                                        <form id="updateProfileForm">
+                                            <div class="mb-3 row">
+                                                <label for="userUsername" class="col-sm-3 col-form-label">Username</label>
+                                                <div class="col-sm-9">
+                                                    <input type="text" class="form-control" id="userUsername" readonly>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <label for="userEmail" class="col-sm-3 col-form-label">Email</label>
+                                                <div class="col-sm-9">
+                                                    <input type="email" class="form-control" id="userEmail" readonly>
+                                                    <div class="form-text" id="emailVerificationStatus"></div>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <label for="userFullName" class="col-sm-3 col-form-label">Full Name</label>
+                                                <div class="col-sm-9">
+                                                    <input type="text" class="form-control" id="userFullName">
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <div class="col-sm-9 offset-sm-3">
+                                                    <button type="submit" class="btn btn-primary">Update Profile</button>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
                                 </div>
 
-                                <table class="table api-key-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Created</th>
-                                            <th>Last Used</th>
-                                            <th>Expires</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="apiKeysList">
-                                        <!-- API keys will be loaded here -->
-                                    </tbody>
-                                </table>
+                                <!-- Change Password Card -->
+                                <div class="card mt-4">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>Change Password</span>
+                                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+                                            <i class="bi bi-key"></i> Change Password
+                                        </button>
+                                    </div>
+                                    <div class="card-body">
+                                        <form id="changePasswordForm">
+                                            <div class="mb-3 row">
+                                                <label for="currentPassword" class="col-sm-3 col-form-label">Current Password</label>
+                                                <div class="col-sm-9">
+                                                    <input type="password" class="form-control" id="currentPassword" required>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <label for="newPassword" class="col-sm-3 col-form-label">New Password</label>
+                                                <div class="col-sm-9">
+                                                    <input type="password" class="form-control" id="newPassword" required minlength="8">
+                                                    <div class="form-text">Password must be at least 8 characters long.</div>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <label for="confirmNewPassword" class="col-sm-3 col-form-label">Confirm New Password</label>
+                                                <div class="col-sm-9">
+                                                    <input type="password" class="form-control" id="confirmNewPassword" required>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3 row">
+                                                <div class="col-sm-9 offset-sm-3">
+                                                    <button type="submit" class="btn btn-primary">Change Password</button>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Settings Tab -->
-                    <div class="tab-pane fade" id="settings-tab" role="tabpanel" aria-labelledby="settings-tab-btn">
-                        <div class="card">
-                            <div class="card-header d-flex align-items-center">Account Settings</div>
-                            <div class="card-body">
-                                <form id="updateProfileForm">
-                                    <div class="mb-3 row">
-                                        <label for="userUsername" class="col-sm-3 col-form-label">Username</label>
-                                        <div class="col-sm-9">
-                                            <input type="text" class="form-control" id="userUsername" readonly>
-                                        </div>
+                    <!-- Settings - API Keys Tab Pane -->
+                    <div class="tab-pane" id="settings-apikeys-tab-pane" role="tabpanel" aria-labelledby="settings-apikeys-tab-btn" tabindex="0">
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <!-- API Keys Card -->
+                                <div class="card mt-0">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>API Keys</span>
+                                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createKeyModal">
+                                            <i class="bi bi-plus-lg"></i> Create New API Key
+                                        </button>
                                     </div>
-                                    <div class="mb-3 row">
-                                        <label for="userEmail" class="col-sm-3 col-form-label">Email</label>
-                                        <div class="col-sm-9">
-                                            <input type="email" class="form-control" id="userEmail" readonly>
-                                            <div class="form-text" id="emailVerificationStatus"></div>
+                                    <div class="card-body">
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle"></i>
+                                            API keys allow you to authenticate requests to the SpaceBridge API.
+                                            Keep your API keys secure and never share them publicly.
                                         </div>
-                                    </div>
-                                    <div class="mb-3 row">
-                                        <label for="userFullName" class="col-sm-3 col-form-label">Full Name</label>
-                                        <div class="col-sm-9">
-                                            <input type="text" class="form-control" id="userFullName">
-                                        </div>
-                                    </div>
-                                    <div class="mb-3 row">
-                                        <div class="col-sm-9 offset-sm-3">
-                                            <button type="submit" class="btn btn-primary">Update Profile</button>
-                                        </div>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
 
-                        <div class="card mt-4">
-                            <div class="card-header d-flex align-items-center">Change Password</div>
-                            <div class="card-body">
-                                <form id="changePasswordForm">
-                                    <div class="mb-3 row">
-                                        <label for="currentPassword" class="col-sm-3 col-form-label">Current Password</label>
-                                        <div class="col-sm-9">
-                                            <input type="password" class="form-control" id="currentPassword" required>
-                                        </div>
+                                        <table class="table api-key-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Created</th>
+                                                    <th>Last Used</th>
+                                                    <th>Expires</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="apiKeysList">
+                                                <!-- API keys will be loaded here -->
+                                            </tbody>
+                                        </table>
                                     </div>
-                                    <div class="mb-3 row">
-                                        <label for="newPassword" class="col-sm-3 col-form-label">New Password</label>
-                                        <div class="col-sm-9">
-                                            <input type="password" class="form-control" id="newPassword" required minlength="8">
-                                            <div class="form-text">Password must be at least 8 characters long.</div>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3 row">
-                                        <label for="confirmNewPassword" class="col-sm-3 col-form-label">Confirm New Password</label>
-                                        <div class="col-sm-9">
-                                            <input type="password" class="form-control" id="confirmNewPassword" required>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3 row">
-                                        <div class="col-sm-9 offset-sm-3">
-                                            <button type="submit" class="btn btn-primary">Change Password</button>
-                                        </div>
-                                    </div>
-                                </form>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+
+                    <!-- Settings - LLM Models Tab Pane -->
+                    <div class="tab-pane" id="settings-llmmodels-tab-pane" role="tabpanel" aria-labelledby="settings-llmmodels-tab-btn" tabindex="0">
+                        <div class="row justify-content-center">
+                            <div class="col-xl-8">
+                                <!-- LLM Models Card -->
+                                <div class="card mt-0" id="llm-models-section">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>LLM Models</span>
+                                        <button class="btn btn-primary btn-sm" id="addLLMModelBtn" data-bs-toggle="modal" data-bs-target="#llmModelModal">
+                                            <i class="bi bi-plus-lg"></i> Add Model
+                                        </button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle"></i>
+                                            LLM models are required to use advanced AI-enabled features like duplicate detection.
+                                        </div>
+                                        <div class="alert alert-info d-none" id="noLLMModelsAlert">
+                                            <i class="bi bi-info-circle"></i> No LLM models configured yet. Click 'Add Model' to get started.
+                                        </div>
+                                        <table class="table table-hover" id="llmModelsTable">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Provider</th>
+                                                    <th>Model Name</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="llmModelsListBody">
+                                                <!-- LLM Models will be loaded here by JavaScript -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div> <!-- End of tab-content -->
             </div>
         </div>
     </div>
@@ -512,7 +426,6 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- Step Indicator (Optional but helpful) -->
                     <ul class="nav nav-pills nav-fill mb-4 d-none" id="trackerWizardSteps">
                         <li class="nav-item">
                             <a class="nav-link active" data-step="1" href="#">Step 1: Credentials</a>
@@ -523,7 +436,7 @@
                     </ul>
 
                     <form id="trackerForm">
-                        <input type="hidden" id="trackerId" value=""> <!-- For editing -->
+                        <input type="hidden" id="trackerId" value="">
 
                         <!-- Step 1: Credentials -->
                         <div id="trackerStep1">
@@ -720,1699 +633,78 @@
         </div>
     </div>
 
+    <!-- LLM Model Modal -->
+    <div class="modal fade" id="llmModelModal" tabindex="-1" aria-labelledby="llmModelModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="llmModelModalLabel">Add LLM Model</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="llmModelForm">
+                        <input type="hidden" id="llmModelId">
+                        <div class="mb-3">
+                            <label for="llmModelName" class="form-label">Friendly Name</label>
+                            <input type="text" class="form-control" id="llmModelName" required placeholder="e.g., My OpenAI Model">
+                            <div class="form-text">A unique, friendly name for this model configuration.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="llmModelProvider" class="form-label">Provider</label>
+                            <select class="form-select" id="llmModelProvider" required>
+                                <option value="" disabled selected>Select a provider</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="anthropic">Anthropic</option>
+                                <option value="google">Google</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="llmModelIdentifier" class="form-label">Model Name / ID</label>
+                            <input type="text" class="form-control" id="llmModelIdentifier" required placeholder="e.g., gpt-4-turbo">
+                            <div class="form-text">The specific model identifier from the provider (e.g., gpt-4-turbo, claude-3-opus-20240229).</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="llmModelApiUrl" class="form-label">API URL</label>
+                            <input type="url" class="form-control" id="llmModelApiUrl" required placeholder="e.g., https://api.openai.com/v1">
+                            <div class="form-text">The base URL for the provider's API.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="llmModelApiKey" class="form-label">API Key</label>
+                            <input type="password" class="form-control" id="llmModelApiKey" placeholder="Leave blank to keep existing key">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveLLMModelBtn">Save Model</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete LLM Model Confirmation Modal -->
+    <div class="modal fade" id="deleteLLMModelModal" tabindex="-1" aria-labelledby="deleteLLMModelModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteLLMModelModalLabel">Delete LLM Model</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the LLM Model <strong id="llmModelNameToDelete"></strong>? This action cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteLLMModelBtn">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Use full version of Bootstrap 5.3 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
-    <script>
-        // Global variables
-        let currentUser = null;
-        let trackers = [];
-        let apiKeys = [];
-        let apiUsage = null;
-        let activeKeyId = null;
-        let activeTrackerId = null;
-
-        // Check auth status on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            checkAuthStatus();
-            setupEventListeners();
-        });
-
-        // Check if user is authenticated
-        function checkAuthStatus() {
-            const token = localStorage.getItem('accessToken');
-            if (!token) {
-                window.location.href = '/login';
-                return;
-            }
-
-            fetchUserProfile();
-        }
-
-        // Set up event listeners
-        function setupEventListeners() {
-
-// Event delegation for "Add Tracker" buttons/links on dashboard
-            document.body.addEventListener('click', function(event) {
-                const targetButton = event.target.closest('.dashboardAddTrackerBtn');
-                if (targetButton) {
-                    event.preventDefault(); // Prevent default link behavior if it's an <a> tag
-
-                    // Find the actual sidebar tab button for "Trackers"
-                    const trackersTabButton = document.getElementById('trackers-tab-btn');
-                    if (trackersTabButton) {
-                        // Trigger the click on the sidebar button to use the existing manual tab logic
-                        trackersTabButton.click();
-                    } else {
-                        console.error('Trackers tab button (#trackers-tab-btn) not found.');
-                    }
-                }
-            });
-            // Tab switching
-            // Remove event listener setup since we're handling clicks directly
-
-            // Custom date range toggle
-            document.getElementById('dateRangeSelector').addEventListener('change', function() {
-                if (this.value === 'custom') {
-                    document.querySelectorAll('.custom-date-range').forEach(el => el.classList.remove('d-none'));
-                } else {
-                    document.querySelectorAll('.custom-date-range').forEach(el => el.classList.add('d-none'));
-                }
-            });
-
-            // API key expiry toggle
-            document.getElementById('keyExpiry').addEventListener('change', function() {
-                if (this.value === 'custom') {
-                    document.querySelector('.custom-expiry-date').classList.remove('d-none');
-                } else {
-                    document.querySelector('.custom-expiry-date').classList.add('d-none');
-                }
-            });
-
-            // Add handlers for the dashboard "Add Tracker" buttons
-            document.getElementById('dashboardAddTrackerBtn').addEventListener('click', function() {
-                // Show trackers tab
-                document.querySelectorAll('.tab-pane').forEach(tab => {
-                    tab.classList.remove('show', 'active');
-                });
-                document.getElementById('trackers-tab').classList.add('show', 'active');
-
-                // Update active tab button
-                document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-                    btn.classList.remove('active');
-                });
-                document.getElementById('trackers-tab-btn').classList.add('active');
-
-                // Update page title
-                document.getElementById('currentPageTitle').textContent = 'Trackers';
-
-                // Open the add tracker modal
-                const modal = new bootstrap.Modal(document.getElementById('addTrackerModal'));
-                modal.show();
-            });
-
-            // Add handlers for the "Connect Your First Tracker" button
-            document.querySelectorAll('.dashboardAddTrackerBtn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    // Show trackers tab
-                    document.querySelectorAll('.tab-pane').forEach(tab => {
-                        tab.classList.remove('show', 'active');
-                    });
-                    document.getElementById('trackers-tab').classList.add('show', 'active');
-
-                    // Update active tab button
-                    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-                        btn.classList.remove('active');
-                    });
-                    document.getElementById('trackers-tab-btn').classList.add('active');
-
-                    // Update page title
-                    document.getElementById('currentPageTitle').textContent = 'Trackers';
-
-                    // Open the add tracker modal
-                    const modal = new bootstrap.Modal(document.getElementById('addTrackerModal'));
-                    modal.show();
-                });
-            });
-
-            // Tracker type toggle for Jira config and URL auto-population
-            document.getElementById('trackerType').addEventListener('change', function() {
-                const trackerUrlInput = document.getElementById('trackerUrl');
-                const urlHelpText = document.getElementById('urlHelp');
-                const tokenHelpLink = document.getElementById('tokenHelpLink');
-                const jiraConfigSection = document.getElementById('jiraConfigSection');
-                const jiraUsernameInput = document.getElementById('jiraUsername');
-
-                // Handle Jira specific fields
-                if (this.value === 'jira') {
-                    jiraConfigSection.classList.remove('d-none');
-                    jiraUsernameInput.setAttribute('required', 'required');
-                } else {
-                    jiraConfigSection.classList.add('d-none');
-                    jiraUsernameInput.removeAttribute('required');
-                }
-
-                // Auto-populate URL and update help text
-                switch(this.value) {
-                    case 'github':
-                        trackerUrlInput.value = 'https://api.github.com';
-                        urlHelpText.textContent = 'Default GitHub API URL. Edit for GitHub Enterprise.';
-                        tokenHelpLink.href = 'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token';
-                        trackerUrlInput.readOnly = false; // Always allow editing
-                        break;
-                    case 'gitlab':
-                        trackerUrlInput.value = 'https://gitlab.com'; // Base URL, API path handled by backend/client
-                        urlHelpText.textContent = 'Default GitLab URL (gitlab.com). Edit for self-hosted instances.';
-                        tokenHelpLink.href = 'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html';
-                        trackerUrlInput.readOnly = false; // Always allow editing
-                        break;
-                    case 'jira':
-                        // trackerUrlInput.value = ''; // Clear or leave as is for manual input
-                        urlHelpText.textContent = 'Your Jira instance URL, e.g., https://yourcompany.atlassian.net';
-                        tokenHelpLink.href = 'https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/';
-                        trackerUrlInput.readOnly = false; // Always allow editing
-                        break;
-                    default:
-                        // trackerUrlInput.value = ''; // Clear or leave as is
-                        urlHelpText.textContent = 'The base URL of your tracker instance.';
-                        tokenHelpLink.href = '#';
-                        trackerUrlInput.readOnly = false; // Always allow editing
-                }
-            });
-
-            // Add tracker (Event listener for the old button, likely needs removal or update if using wizard)
-            // document.getElementById('addTrackerBtn').addEventListener('click', function() {
-            //     addTracker(); // This function seems deprecated by the wizard logic
-            // });
-            // document.getElementById('addTrackerBtn').addEventListener('click', function() { // Removed listener for non-existent element ID 'addTrackerBtn'
-            //     addTracker();
-            // });
-
-            // Create API key
-            document.getElementById('createKeyBtn').addEventListener('click', function() {
-                createApiKey();
-            });
-
-            // Copy API key
-            document.getElementById('copyKeyBtn').addEventListener('click', function() {
-                const keyValue = document.getElementById('newKeyValue').textContent;
-                navigator.clipboard.writeText(keyValue)
-                    .then(() => {
-                        this.innerHTML = '<i class="bi bi-check"></i> Copied!';
-                        setTimeout(() => {
-                            this.innerHTML = '<i class="bi bi-clipboard"></i> Copy to Clipboard';
-                        }, 2000);
-                    })
-                    .catch(err => {
-                        console.error('Could not copy text: ', err);
-                    });
-            });
-
-            // Confirm delete API key
-            document.getElementById('confirmDeleteKeyBtn').addEventListener('click', function() {
-                if (activeKeyId) {
-                    deleteApiKey(activeKeyId);
-                }
-            });
-
-            // Confirm delete tracker
-            document.getElementById('confirmDeleteTrackerBtn').addEventListener('click', function() {
-                if (activeTrackerId) {
-                    deleteTracker(activeTrackerId);
-                }
-            });
-
-            // Update profile form
-            document.getElementById('updateProfileForm').addEventListener('submit', function(e) {
-                e.preventDefault();
-                updateProfile();
-            });
-
-            // Change password form
-            document.getElementById('changePasswordForm').addEventListener('submit', function(e) {
-                e.preventDefault();
-                changePassword();
-            });
-
-            // Password confirmation validation
-            document.getElementById('confirmNewPassword').addEventListener('input', function() {
-                const newPassword = document.getElementById('newPassword').value;
-                if (this.value !== newPassword) {
-                    this.setCustomValidity('Passwords do not match');
-                } else {
-                    this.setCustomValidity('');
-                }
-            });
-
-            // Update API usage when date range changes
-            document.getElementById('dateRangeSelector').addEventListener('change', fetchApiUsage);
-            document.getElementById('startDate').addEventListener('change', fetchApiUsage);
-            document.getElementById('endDate').addEventListener('change', fetchApiUsage);
-        }
-
-        // Fetch user profile
-        function fetchUserProfile() {
-            fetch('/api/v1/auth/users/me', {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else if (response.status === 401) {
-                    // Try to refresh the token
-                    return refreshToken().then(() => fetchUserProfile());
-                } else {
-                    throw new Error('Failed to fetch user profile');
-                }
-            })
-            .then(data => {
-                currentUser = data;
-
-                // Update UI with user info
-                document.getElementById('username').textContent = data.username;
-                document.getElementById('email').textContent = data.email;
-                document.getElementById('userUsername').value = data.username;
-                document.getElementById('userEmail').value = data.email;
-                document.getElementById('userFullName').value = data.full_name || '';
-
-                const emailVerifiedStatus = document.getElementById('emailVerificationStatus');
-                if (data.email_verified) {
-                    emailVerifiedStatus.textContent = 'Email verified';
-                    emailVerifiedStatus.classList.add('text-success');
-                } else {
-                    emailVerifiedStatus.innerHTML = 'Email not verified. <a href="#" id="resendVerificationLink">Resend verification email</a>';
-                    emailVerifiedStatus.classList.add('text-danger');
-
-                    // Add event listener for resend link
-                    document.getElementById('resendVerificationLink').addEventListener('click', function(e) {
-                        e.preventDefault();
-                        resendVerificationEmail();
-                    });
-                }
-
-                // Load data for dashboard
-                loadDashboardData();
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                logout();
-            });
-        }
-
-        // Refresh token
-        function refreshToken() {
-            const refreshToken = localStorage.getItem('refreshToken');
-            if (!refreshToken) {
-                logout();
-                return Promise.reject('No refresh token available');
-            }
-
-            return fetch('/api/v1/auth/refresh', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ refresh_token: refreshToken })
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else {
-                    throw new Error('Failed to refresh token');
-                }
-            })
-            .then(data => {
-                localStorage.setItem('accessToken', data.access_token);
-                localStorage.setItem('refreshToken', data.refresh_token);
-                localStorage.setItem('tokenExpires', Date.now() + (data.expires_in * 1000));
-                return data;
-            })
-            .catch(error => {
-                console.error('Error refreshing token:', error);
-                logout();
-                return Promise.reject(error);
-            });
-        }
-
-        // Logout
-        function logout() {
-            localStorage.removeItem('accessToken');
-            localStorage.removeItem('refreshToken');
-            localStorage.removeItem('tokenExpires');
-            window.location.href = '/login';
-        }
-
-        // Load all dashboard data
-        function loadDashboardData() {
-            // Initialize tabs
-            // For now we'll use direct link activation instead of Bootstrap's tab system
-            document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    // Get target tab
-                    const targetId = this.getAttribute('data-bs-target');
-
-                    // Update page title
-                    document.getElementById('currentPageTitle').textContent = this.textContent.trim();
-
-                    // Hide all tabs
-                    document.querySelectorAll('.tab-pane').forEach(tab => {
-                        tab.classList.remove('show', 'active');
-                    });
-
-                    // Show target tab
-                    document.querySelector(targetId).classList.add('show', 'active');
-
-                    // Update active state
-                    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-                        btn.classList.remove('active');
-                    });
-                    this.classList.add('active');
-                });
-            });
-
-            // Fetch trackers
-            fetchTrackers();
-
-            // Fetch API tokens
-            fetchApiKeys();
-
-            // Fetch API usage statistics
-            fetchApiUsage();
-        }
-
-        // Fetch trackers
-        function fetchTrackers() {
-            fetch('/api/v1/trackers', {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else if (response.status === 401) {
-                    return refreshToken().then(() => fetchTrackers());
-                } else {
-                    throw new Error('Failed to fetch trackers');
-                }
-            })
-            .then(data => {
-                trackers = data;
-                renderTrackers();
-                updateDashboardStats();
-            })
-            .catch(error => {
-                console.error('Error fetching trackers:', error);
-            });
-        }
-
-        // Render trackers
-        function renderTrackers() {
-            const trackersList = document.getElementById('trackersList');
-            const trackersListFull = document.getElementById('trackersListFull');
-
-            if (trackers.length === 0) {
-                trackersList.innerHTML = `
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-hdd-network fs-1 mb-3"></i>
-                        <p>No trackers connected yet</p>
-                        <a href="#" class="btn btn-sm btn-outline-primary dashboardAddTrackerBtn"> <!-- Removed data-bs-toggle, added class -->
-                            Connect Your First Tracker
-                        </a>
-                    </div>
-                `;
-                trackersListFull.innerHTML = `
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-hdd-network fs-1 mb-3"></i>
-                        <p>No trackers connected yet</p>
-                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackerModal">
-                            <i class="bi bi-plus-lg"></i> Add Your First Tracker
-                        </button>
-                    </div>
-                `;
-                return;
-            }
-
-            // Render summary list for dashboard
-            let trackerItems = '';
-            trackers.slice(0, 3).forEach(tracker => {
-                let iconClass = '';
-                let badgeClass = '';
-
-                switch(tracker.type) {
-                    case 'github':
-                        iconClass = 'github-color';
-                        badgeClass = 'badge-github';
-                        break;
-                    case 'gitlab':
-                        iconClass = 'gitlab-color';
-                        badgeClass = 'badge-gitlab';
-                        break;
-                    case 'jira':
-                        iconClass = 'jira-color';
-                        badgeClass = 'badge-jira';
-                        break;
-                    default:
-                        // Fallback for undefined
-                        iconClass = 'text-secondary';
-                        badgeClass = 'badge-secondary';
-                }
-
-                trackerItems += `
-                    <div class="d-flex align-items-center p-3 border-bottom">
-                        <i class="bi bi-${tracker.type === 'jira' ? 'kanban' : 'git'} fs-4 ${iconClass} me-3"></i>
-                        <div>
-                            <h6 class="mb-0">${tracker.name}</h6>
-                            <span class="badge ${badgeClass}">${tracker.type || 'unknown'}</span>
-                        </div>
-                    </div>
-                `;
-            });
-
-            if (trackers.length > 3) {
-                trackerItems += `
-                    <div class="text-center p-2">
-                        <a href="#trackers-tab" class="btn btn-sm btn-link" data-bs-toggle="tab">
-                            View all ${trackers.length} trackers
-                        </a>
-                    </div>
-                `;
-            }
-
-            trackersList.innerHTML = trackerItems;
-
-            // Render full list for trackers tab
-            let trackerCards = '<div class="row">';
-            trackers.forEach(tracker => {
-                let iconClass = '';
-                let iconName = '';
-
-                switch(tracker.type) {
-                    case 'github':
-                        iconClass = 'github-color';
-                        iconName = 'github';
-                        break;
-                    case 'gitlab':
-                        iconClass = 'gitlab-color';
-                        iconName = 'gitlab';
-                        break;
-                    case 'jira':
-                        iconClass = 'jira-color';
-                        iconName = 'kanban';
-                        break;
-                    default:
-                        // Fallback for undefined
-                        iconClass = 'text-secondary';
-                        iconName = 'gear';
-                }
-
-                trackerCards += `
-                    <div class="col-md-4 mb-4">
-                        <div class="tracker-card p-4">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <div class="d-flex align-items-center">
-                                    <i class="bi bi-${iconName} fs-2 ${iconClass} me-2"></i>
-                                    <h5 class="mb-0">${tracker.name}</h5>
-                                </div>
-                                <span class="badge bg-${tracker.tracker_type === 'github' ? 'dark' : tracker.tracker_type === 'gitlab' ? 'danger' : 'primary'}">${tracker.tracker_type ? tracker.tracker_type.charAt(0).toUpperCase() + tracker.tracker_type.slice(1) : 'Unknown'}</span>
-                            </div>
-                            <p class="text-muted mb-3 small">${tracker.url}</p>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <small class="text-muted">Created: ${tracker.created ? new Date(tracker.created).toLocaleDateString() : 'Unknown'}</small>
-                                <div>
-                                    <button class="btn btn-sm btn-outline-secondary edit-tracker-btn me-1" data-tracker-id="${tracker.id}">
-                                        <i class="bi bi-pencil"></i> Edit
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger delete-tracker-btn" data-tracker-id="${tracker.id}" data-tracker-name="${tracker.name}">
-                                        <i class="bi bi-trash"></i> Delete
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            trackerCards += '</div>';
-
-            trackersListFull.innerHTML = trackerCards;
-
-            // Add event listeners to delete buttons
-            document.querySelectorAll('.delete-tracker-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    activeTrackerId = this.getAttribute('data-tracker-id');
-                    const trackerName = this.getAttribute('data-tracker-name');
-                    document.getElementById('deleteTrackerName').textContent = trackerName;
-                    const deleteModal = new bootstrap.Modal(document.getElementById('deleteTrackerModal'));
-                    deleteModal.show();
-                });
-            });
-        }
-
-        // Fetch API keys
-        function fetchApiKeys() {
-            fetch('/api/v1/auth/api-keys', {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else if (response.status === 401) {
-                    return refreshToken().then(() => fetchApiKeys());
-                } else {
-                    throw new Error('Failed to fetch API keys');
-                }
-            })
-            .then(data => {
-                apiKeys = data;
-                renderApiKeys();
-            })
-            .catch(error => {
-                console.error('Error fetching API keys:', error);
-            });
-        }
-
-        // Render API keys
-        function renderApiKeys() {
-            const keysList = document.getElementById('apiKeysList');
-
-            if (apiKeys.length === 0) {
-                keysList.innerHTML = `
-                    <tr>
-                        <td colspan="5" class="text-center py-4">
-                            <p class="text-muted mb-0">No API keys created yet</p>
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-
-            let keyRows = '';
-            apiKeys.forEach(key => {
-                const createdDate = new Date(key.created_at).toLocaleDateString();
-                const lastUsed = key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never used';
-                const expires = key.expires_at ? new Date(key.expires_at).toLocaleDateString() : 'Never';
-
-                keyRows += `
-                    <tr>
-                        <td>${key.name}</td>
-                        <td>${createdDate}</td>
-                        <td>${lastUsed}</td>
-                        <td>${expires}</td>
-                        <td>
-                            <button class="btn btn-sm btn-outline-danger delete-key-btn" data-key-id="${key.id}" data-key-name="${key.name}">
-                                <i class="bi bi-trash"></i> Revoke
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            keysList.innerHTML = keyRows;
-
-            // Add event listeners to delete buttons
-            document.querySelectorAll('.delete-key-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    activeKeyId = this.getAttribute('data-key-id');
-                    const keyName = this.getAttribute('data-key-name');
-                    document.getElementById('deleteKeyName').textContent = keyName;
-                    const deleteModal = new bootstrap.Modal(document.getElementById('deleteKeyModal'));
-                    deleteModal.show();
-                });
-            });
-        }
-
-        // Fetch API usage statistics
-        function fetchApiUsage() {
-            // Get date range parameters
-            let params = new URLSearchParams();
-            const dateRange = document.getElementById('dateRangeSelector').value;
-
-            if (dateRange === 'custom') {
-                const startDate = document.getElementById('startDate').value;
-                const endDate = document.getElementById('endDate').value;
-
-                if (startDate) {
-                    params.append('start_date', new Date(startDate).toISOString());
-                }
-                if (endDate) {
-                    params.append('end_date', new Date(endDate + 'T23:59:59').toISOString());
-                }
-            } else {
-                // Calculate start date based on selected range
-                const now = new Date();
-                let startDate = new Date();
-
-                switch(dateRange) {
-                    case '7days':
-                        startDate.setDate(now.getDate() - 7);
-                        break;
-                    case '30days':
-                        startDate.setDate(now.getDate() - 30);
-                        break;
-                    case '90days':
-                        startDate.setDate(now.getDate() - 90);
-                        break;
-                }
-
-                params.append('start_date', startDate.toISOString());
-                params.append('end_date', now.toISOString());
-            }
-
-            fetch(`/api/v1/auth/api-usage?${params.toString()}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else if (response.status === 401) {
-                    return refreshToken().then(() => fetchApiUsage());
-                } else {
-                    throw new Error('Failed to fetch API usage');
-                }
-            })
-            .then(data => {
-                apiUsage = data;
-                renderApiUsageStats();
-                updateDashboardStats();
-            })
-            .catch(error => {
-                console.error('Error fetching API usage:', error);
-            });
-        }
-
-        // Render API usage statistics
-        function renderApiUsageStats() {
-            if (!apiUsage) return;
-
-            // Render endpoints list
-            const endpointsList = document.getElementById('endpointsList');
-            const endpoints = Object.entries(apiUsage.requests_by_endpoint)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 5);
-
-            if (endpoints.length === 0) {
-                endpointsList.innerHTML = '<p class="text-muted text-center">No API usage data available</p>';
-                return;
-            }
-
-            let endpointsHtml = '';
-            endpoints.forEach(([endpoint, count]) => {
-                // Simplify endpoint path
-                const simplifiedEndpoint = endpoint.split('/').slice(-2).join('/');
-
-                endpointsHtml += `
-                    <div class="d-flex justify-content-between mb-2">
-                        <small title="${endpoint}">${simplifiedEndpoint}</small>
-                        <span class="badge bg-primary">${count}</span>
-                    </div>
-                `;
-            });
-
-            endpointsList.innerHTML = endpointsHtml;
-
-            // Render usage chart
-            renderUsageCharts();
-        }
-
-        // Render usage charts
-        function renderUsageCharts() {
-            if (!apiUsage) return;
-
-            // Main dashboard chart
-            const dashboardChartCtx = document.getElementById('apiUsageChart').getContext('2d');
-
-            // Sort dates
-            const sortedDates = Object.keys(apiUsage.requests_by_date).sort();
-            const data = sortedDates.map(date => apiUsage.requests_by_date[date]);
-
-            // Dashboard chart
-            if (window.dashboardChart) {
-                window.dashboardChart.destroy();
-            }
-
-            window.dashboardChart = new Chart(dashboardChartCtx, {
-                type: 'line',
-                data: {
-                    labels: sortedDates,
-                    datasets: [{
-                        label: 'API Requests',
-                        data: data,
-                        borderColor: '#4a86e8',
-                        backgroundColor: 'rgba(74, 134, 232, 0.1)',
-                        borderWidth: 2,
-                        tension: 0.3,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                precision: 0
-                            }
-                        }
-                    }
-                }
-            });
-
-            // Detailed usage chart
-            const detailChartCtx = document.getElementById('apiUsageDetailChart').getContext('2d');
-
-            if (window.detailChart) {
-                window.detailChart.destroy();
-            }
-
-            window.detailChart = new Chart(detailChartCtx, {
-                type: 'bar',
-                data: {
-                    labels: sortedDates,
-                    datasets: [{
-                        label: 'API Requests',
-                        data: data,
-                        backgroundColor: '#4a86e8'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        title: {
-                            display: true,
-                            text: 'API Requests by Date'
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                precision: 0
-                            }
-                        }
-                    }
-                }
-            });
-
-            // Issue actions chart
-            const issueActionsCtx = document.getElementById('issueActionsChart').getContext('2d');
-
-            if (window.issueActionsChart && typeof window.issueActionsChart.destroy === 'function') {
-                window.issueActionsChart.destroy();
-            }
-
-            window.issueActionsChart = new Chart(issueActionsCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Created', 'Updated', 'Closed'],
-                    datasets: [{
-                        data: [
-                            apiUsage.issues_created,
-                            apiUsage.issues_updated,
-                            apiUsage.issues_closed
-                        ],
-                        backgroundColor: [
-                            '#4CAF50',
-                            '#2196F3',
-                            '#F44336'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        }
-                    }
-                }
-            });
-        }
-
-        // Update dashboard statistics
-        function updateDashboardStats() {
-            document.getElementById('totalTrackers').textContent = trackers.length;
-
-            if (apiUsage) {
-                document.getElementById('totalRequests').textContent = apiUsage.total_requests;
-                const totalIssues = apiUsage.issues_created + apiUsage.issues_updated + apiUsage.issues_closed;
-                document.getElementById('totalIssues').textContent = totalIssues;
-            }
-        }
-
-        // --- Tracker Wizard Logic ---
-        let currentStep = 1;
-        let isEditing = false;
-        let projectData = null; // To store fetched projects/orgs
-
-        function resetTrackerModal() {
-            currentStep = 1;
-            isEditing = false;
-            projectData = null;
-            document.getElementById('trackerForm').reset();
-            document.getElementById('trackerId').value = '';
-            document.getElementById('trackerModalLabel').textContent = 'Add New Tracker';
-            document.getElementById('trackerStep1').classList.remove('d-none');
-            document.getElementById('trackerStep2').classList.add('d-none');
-            document.getElementById('trackerWizardPrevBtn').classList.add('d-none');
-            document.getElementById('trackerWizardNextBtn').classList.remove('d-none');
-            document.getElementById('trackerSubmitBtn').classList.add('d-none');
-            document.getElementById('trackerWizardSteps').classList.add('d-none'); // Hide steps for now
-            document.getElementById('projectSelectionTree').innerHTML = '<p class="text-muted">Enter credentials and click Next to load projects.</p>';
-            document.getElementById('projectSelectionError').textContent = '';
-            document.getElementById('testConnectionStatus').innerHTML = '';
-            document.getElementById('trackerType').disabled = false; // Re-enable type selection
-            document.getElementById('trackerUrl').disabled = false; // Re-enable URL
-            document.getElementById('trackerToken').placeholder = ''; // Reset placeholder
-            document.getElementById('trackerToken').required = true; // Reset required status
-        }
-
-        function showStep(step) {
-            currentStep = step;
-            document.querySelectorAll('#trackerForm [id^="trackerStep"]').forEach(el => el.classList.add('d-none'));
-            document.getElementById(`trackerStep${step}`).classList.remove('d-none');
-
-            // Update step indicator (optional)
-            document.querySelectorAll('#trackerWizardSteps .nav-link').forEach(link => {
-                link.classList.remove('active');
-                if (parseInt(link.getAttribute('data-step')) === step) {
-                    link.classList.add('active');
-                }
-            });
-
-            // Update buttons
-            document.getElementById('trackerWizardPrevBtn').classList.toggle('d-none', step === 1);
-            document.getElementById('trackerWizardNextBtn').classList.toggle('d-none', step === 2);
-            document.getElementById('trackerSubmitBtn').classList.toggle('d-none', step !== 2);
-        }
-
-        // Event listener for modal opening (to reset)
-        const trackerModalElement = document.getElementById('addTrackerModal'); // Use the correct ID
-        trackerModalElement.addEventListener('show.bs.modal', () => {
-            // Reset only if not editing (edit function will populate)
-            if (!isEditing) {
-                resetTrackerModal();
-            }
-        });
-        trackerModalElement.addEventListener('hidden.bs.modal', () => {
-             // Always fully reset when hidden, clearing edit state
-            isEditing = false;
-            resetTrackerModal();
-        });
-
-
-        // Event listener for Next button
-        document.getElementById('trackerWizardNextBtn').addEventListener('click', async () => {
-            if (currentStep === 1) {
-                // Validate Step 1 form before proceeding
-                const form = document.getElementById('trackerForm');
-                const step2Inputs = document.querySelectorAll('#trackerStep2 input, #trackerStep2 select');
-                step2Inputs.forEach(input => input.disabled = true); // Disable step 2 for step 1 validation
-
-                let isValid = form.checkValidity();
-                if (!isValid) {
-                    form.reportValidity();
-                }
-                step2Inputs.forEach(input => input.disabled = false); // Re-enable step 2 inputs
-
-                if (isValid) {
-                    if (isEditing) {
-                        // If editing, just move to step 2 without testing connection again
-                        // Project list rendering happens in openEditTrackerModal based on saved scope
-                        showStep(2);
-                    } else {
-                        // If adding, test connection and fetch projects
-                        await testAndListProjects();
-                    }
-                }
-            }
-        });
-
-        // Event listener for Previous button
-        document.getElementById('trackerWizardPrevBtn').addEventListener('click', () => {
-            if (currentStep === 2) {
-                showStep(1);
-            }
-        });
-
-        // Event listener for Submit button
-        document.getElementById('trackerSubmitBtn').addEventListener('click', () => {
-            saveTracker();
-        });
-
-        // Function to test connection and list projects
-        async function testAndListProjects() {
-            const name = document.getElementById('trackerName').value; // Needed for context, though not sent
-            const type = document.getElementById('trackerType').value;
-            const url = document.getElementById('trackerUrl').value;
-            const token = document.getElementById('trackerToken').value;
-            const trackerIdForTest = document.getElementById('trackerId').value; // Get ID if editing
-            let config = null;
-            if (type === 'jira') {
-                config = { username: document.getElementById('jiraUsername').value };
-            }
-
-            const nextButton = document.getElementById('trackerWizardNextBtn');
-            const statusDiv = document.getElementById('testConnectionStatus');
-            const projectTree = document.getElementById('projectSelectionTree');
-            const projectError = document.getElementById('projectSelectionError');
-
-            nextButton.disabled = true;
-            nextButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Testing...';
-            statusDiv.innerHTML = '<div class="text-info"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Testing connection...</div>';
-            projectTree.innerHTML = '<p class="text-muted">Testing connection and fetching projects...</p>';
-            projectError.textContent = '';
-
-            // Construct payload: Use tracker_id if editing and token is blank, otherwise send credentials
-            const payload = { tracker_type: type, url, connection_details: config }; // Corrected keys
-            if (isEditing && trackerIdForTest && !token) {
-                 payload.tracker_id = trackerIdForTest; // Signal backend to use saved creds
-            } else if (token) {
-                 payload.api_key = token; // Corrected key
-            } else {
-                 // If adding and no token, it's an error (should be caught by validation, but double-check)
-                 statusDiv.innerHTML = `<div class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Access token is required.</div>`;
-                 nextButton.disabled = false;
-                 nextButton.innerHTML = 'Next: Test & Select Projects';
-                 return;
-            }
-
-
-            try {
-                const response = await fetch('/api/v1/trackers/test-and-list-projects', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                const data = await response.json();
-
-                if (response.ok && data.success) {
-                    statusDiv.innerHTML = `<div class="text-success"><i class="bi bi-check-circle-fill"></i> ${data.message || 'Connection successful!'}</div>`;
-                    projectData = data.projects || []; // Store project data
-
-                    // If editing, use existing scope settings, otherwise default to true
-                    const existingTracker = isEditing ? trackers.find(t => t.id === trackerIdForTest) : null;
-                    const initialIncludeFuture = existingTracker ? existingTracker.include_future_projects : true;
-                    const initialSelected = existingTracker ? existingTracker.included_project_identifiers || [] : [];
-
-                    renderProjectSelectionTree(projectData, initialSelected, initialIncludeFuture);
-                    showStep(2); // Move to next step on success
-                } else if (response.status === 401) {
-                    await refreshToken();
-                    await testAndListProjects(); // Retry after refresh
-                    return; // Prevent further execution in this try block
-                } else {
-                    statusDiv.innerHTML = `<div class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> ${data.message || 'Connection failed.'}</div>`;
-                    projectTree.innerHTML = '<p class="text-danger">Could not fetch projects. Please check credentials and try again.</p>';
-                    projectError.textContent = data.message || 'Connection failed.';
-                }
-            } catch (error) {
-                console.error('Error testing connection:', error);
-                statusDiv.innerHTML = `<div class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> An error occurred while testing the connection.</div>`;
-                projectTree.innerHTML = '<p class="text-danger">An error occurred. Please try again.</p>';
-                projectError.textContent = 'An error occurred.';
-            } finally {
-                nextButton.disabled = false;
-                nextButton.innerHTML = isEditing ? 'Next: Configure Project Scope' : 'Next: Test & Select Projects';
-            }
-        }
-
-        // Function to render the project selection tree
-        function renderProjectSelectionTree(projects, selectedIdentifiers = [], includeFuture = true) {
-            const treeContainer = document.getElementById('projectSelectionTree');
-            const includeFutureCheckbox = document.getElementById('includeFutureProjects');
-            const selectAllCheckbox = document.getElementById('selectAllProjects');
-            includeFutureCheckbox.checked = includeFuture; // Set initial state
-
-            if (!projects || projects.length === 0) {
-                treeContainer.innerHTML = '<p class="text-muted">No projects or organizations found for this tracker.</p>';
-                selectAllCheckbox.checked = false;
-                selectAllCheckbox.disabled = true; // Disable select all if no projects
-                addTreeEventListeners();
-                return;
-            } else {
-                 selectAllCheckbox.disabled = false; // Enable if projects exist
-            }
-
-            let treeHtml = '<ul class="list-unstyled">';
-            let allInitiallyChecked = true; // Assume all are checked initially
-
-            projects.forEach(org => {
-                const orgId = `org-${org.id}`;
-                const childrenListId = `children-${org.id}`;
-                // Default to checked unless editing and specific identifiers were provided
-                let isOrgChecked = true;
-                let someChildrenSelected = false; // Track for indeterminate state
-
-                // If editing (selectedIdentifiers has values), determine state based on that
-                if (selectedIdentifiers.length > 0) {
-                     const orgProjects = org.children.map(p => p.identifier);
-                     const selectedOrgProjects = orgProjects.filter(id => selectedIdentifiers.includes(id));
-                     isOrgChecked = selectedOrgProjects.length === orgProjects.length && orgProjects.length > 0;
-                     someChildrenSelected = !isOrgChecked && selectedOrgProjects.length > 0;
-                     if (!isOrgChecked) allInitiallyChecked = false; // If any org isn't fully checked, not all are checked
-                }
-
-
-                treeHtml += `
-                    <li>
-                        <div class="d-flex align-items-center">
-                             <i class="bi bi-chevron-right me-1 expand-icon" style="cursor: pointer;" data-target="#${childrenListId}"></i>
-                            <div class="form-check flex-grow-1">
-                                <input class="form-check-input org-checkbox" type="checkbox" value="${org.id}" id="${orgId}" data-org-id="${org.id}" ${isOrgChecked ? 'checked' : ''} ${someChildrenSelected ? 'data-indeterminate="true"' : ''}>
-                                <label class="form-check-label fw-bold" for="${orgId}">
-                                    ${org.name} (Organization)
-                                </label>
-                            </div>
-                        </div>
-                        <ul class="list-unstyled ms-4 d-none" id="${childrenListId}">`; // Initially hidden
-
-                org.children.forEach(proj => {
-                    const projId = `proj-${proj.identifier}`;
-                    // Default to checked unless editing and specific identifiers were provided
-                    let isProjChecked = true;
-                    if (selectedIdentifiers.length > 0) {
-                        isProjChecked = selectedIdentifiers.includes(proj.identifier);
-                        if (!isProjChecked) allInitiallyChecked = false; // If any project isn't checked, not all are checked
-                    }
-
-                    treeHtml += `
-                        <li>
-                            <div class="form-check">
-                                <input class="form-check-input project-checkbox" type="checkbox" value="${proj.identifier}" id="${projId}" data-org-id="${org.id}" ${isProjChecked ? 'checked' : ''}>
-                                <label class="form-check-label" for="${projId}">
-                                    ${proj.name} (${proj.identifier})
-                                </label>
-                            </div>
-                        </li>`;
-                });
-
-                treeHtml += `</ul></li>`;
-            });
-
-            treeHtml += '</ul>';
-            treeContainer.innerHTML = treeHtml;
-
-            // Set initial indeterminate state after rendering
-            document.querySelectorAll('.org-checkbox[data-indeterminate="true"]').forEach(cb => {
-                cb.indeterminate = true;
-            });
-
-            // Set initial state for "Select All" checkbox
-            selectAllCheckbox.checked = allInitiallyChecked;
-            selectAllCheckbox.indeterminate = !allInitiallyChecked && Array.from(treeContainer.querySelectorAll('.project-checkbox')).some(cb => cb.checked);
-
-
-            // Add event listeners after rendering
-            addTreeEventListeners();
-        }
-
-        // Add event listeners for tree checkboxes, expand/collapse, and select all
-        function addTreeEventListeners() {
-            // Remove previous listeners to avoid duplicates on re-render
-            document.querySelectorAll('.org-checkbox').forEach(checkbox => {
-                checkbox.removeEventListener('change', handleOrgCheckboxChange);
-                checkbox.addEventListener('change', handleOrgCheckboxChange);
-            });
-
-            document.querySelectorAll('.project-checkbox').forEach(checkbox => {
-                checkbox.removeEventListener('change', handleProjectCheckboxChange);
-                checkbox.addEventListener('change', handleProjectCheckboxChange);
-            });
-
-            document.querySelectorAll('.expand-icon').forEach(icon => {
-                icon.removeEventListener('click', handleExpandCollapse);
-                icon.addEventListener('click', handleExpandCollapse);
-            });
-
-            const selectAllCheckbox = document.getElementById('selectAllProjects');
-            selectAllCheckbox.removeEventListener('change', handleSelectAllChange);
-            selectAllCheckbox.addEventListener('change', handleSelectAllChange);
-
-            // No listener needed for includeFutureProjects regarding tree disabling
-        }
-
-        // REMOVED: toggleProjectSelectionAvailability function (Req 2)
-
-
-        // Handle expand/collapse icon clicks
-        function handleExpandCollapse(event) {
-            const icon = event.target;
-            const targetId = icon.getAttribute('data-target');
-            const targetList = document.querySelector(targetId);
-
-            if (targetList) {
-                targetList.classList.toggle('d-none');
-                icon.classList.toggle('bi-chevron-right');
-                icon.classList.toggle('bi-chevron-down');
-            }
-        }
-
-        // Handle organization checkbox changes
-        function handleOrgCheckboxChange(event) {
-            const orgId = event.target.dataset.orgId;
-            const isChecked = event.target.checked;
-            // Find projects within the specific UL associated with this org
-            const orgLi = event.target.closest('li');
-            if (!orgLi) return;
-            const projectList = orgLi.querySelector(`ul#children-${orgId}`);
-            if (!projectList) return;
-
-            projectList.querySelectorAll(`.project-checkbox[data-org-id="${orgId}"]`).forEach(projCheckbox => {
-                projCheckbox.checked = isChecked;
-            });
-            // Reset indeterminate state when org checkbox is explicitly clicked
-            event.target.indeterminate = false;
-        }
-
-        // Handle individual project checkbox changes
-        function handleProjectCheckboxChange(event) {
-            const orgId = event.target.dataset.orgId;
-            const orgCheckbox = document.getElementById(`org-${orgId}`);
-            if (!orgCheckbox) return; // Safety check
-
-            const orgLi = event.target.closest('li').closest('ul').closest('li'); // Find parent org LI
-             if (!orgLi) return;
-            const projectList = orgLi.querySelector(`ul#children-${orgId}`);
-             if (!projectList) return;
-
-            const projectCheckboxes = projectList.querySelectorAll(`.project-checkbox[data-org-id="${orgId}"]`);
-            const allProjectsChecked = Array.from(projectCheckboxes).every(cb => cb.checked);
-            const someProjectsChecked = Array.from(projectCheckboxes).some(cb => cb.checked);
-
-            orgCheckbox.checked = allProjectsChecked;
-            // Set indeterminate state visually if some but not all are checked
-            orgCheckbox.indeterminate = !allProjectsChecked && someProjectsChecked;
-        }
-
-        // Handle Select All / Deselect All checkbox changes
-        function handleSelectAllChange(event) {
-            const isChecked = event.target.checked;
-            const treeContainer = document.getElementById('projectSelectionTree');
-            treeContainer.querySelectorAll('.org-checkbox, .project-checkbox').forEach(checkbox => {
-                checkbox.checked = isChecked;
-                checkbox.indeterminate = false; // Clear indeterminate state
-            });
-        }
-
-
-        // Save (Add or Update) a tracker
-        async function saveTracker() {
-            const form = document.getElementById('trackerForm');
-             // Temporarily disable step 1 validation if needed
-            const step1Inputs = document.querySelectorAll('#trackerStep1 input:not([type=hidden]), #trackerStep1 select');
-            // Check validity of the whole form
-            if (!form.checkValidity()) {
-                form.reportValidity();
-                return; // Don't submit if basic validation fails
-            }
-
-            const trackerId = document.getElementById('trackerId').value;
-            const name = document.getElementById('trackerName').value;
-            const type = document.getElementById('trackerType').value; // Need type even for edit payload structure
-            const url = document.getElementById('trackerUrl').value; // Need url even for edit payload structure
-            const tokenInput = document.getElementById('trackerToken');
-            const token = tokenInput.value; // Might be empty if editing and not changing
-
-            let config = null;
-            if (type === 'jira') {
-                const usernameInput = document.getElementById('jiraUsername');
-                 if (!usernameInput.value && usernameInput.required) {
-                     alert('Jira username is required.');
-                     usernameInput.focus();
-                     return;
-                 }
-                config = { username: usernameInput.value };
-            }
-
-            // --- Project Scope Data ---
-            const includeFutureProjects = document.getElementById('includeFutureProjects').checked;
-            let includedProjectIdentifiers = null; // Initialize as null
-            let excludedProjectIdentifiers = null; // Initialize as null
-
-            // Get all project identifiers currently rendered in the tree
-            const allProjectCheckboxes = document.querySelectorAll('.project-checkbox');
-            const allProjectIdentifiers = Array.from(allProjectCheckboxes).map(cb => cb.value);
-
-            // Get checked project identifiers
-            const checkedProjectCheckboxes = document.querySelectorAll('.project-checkbox:checked');
-            const checkedProjectIdentifiers = Array.from(checkedProjectCheckboxes).map(cb => cb.value);
-
-            if (includeFutureProjects) {
-                // If including future, calculate EXCLUDED identifiers (all minus checked)
-                excludedProjectIdentifiers = allProjectIdentifiers.filter(id => !checkedProjectIdentifiers.includes(id));
-                // includedProjectIdentifiers remains null
-            } else {
-                // If NOT including future, use the INCLUDED (checked) identifiers
-                includedProjectIdentifiers = checkedProjectIdentifiers;
-                // excludedProjectIdentifiers remains null
-            }
-            // --- End Project Scope Data ---
-
-
-            const basePayload = {
-                name,
-                include_future_projects: includeFutureProjects,
-                included_project_identifiers: includedProjectIdentifiers, // Use calculated value
-                excluded_project_identifiers: excludedProjectIdentifiers  // Use calculated value
-            };
-
-            // Add fields specific to add or edit
-            let payload;
-            let method;
-            let endpoint;
-
-            if (isEditing) {
-                method = 'PUT';
-                endpoint = `/api/v1/trackers/${trackerId}`;
-                payload = { ...basePayload };
-                // Only send token if a new one was provided
-                if (token) {
-                    payload.token = token;
-                }
-                // Only send config if Jira and username was editable and potentially changed
-                if (type === 'jira' && document.getElementById('jiraUsername').disabled === false) {
-                     payload.config = config;
-                 }
-            } else {
-                // Adding a new tracker
-                method = 'POST';
-                endpoint = '/api/v1/trackers';
-                payload = {
-                    ...basePayload,
-                    type,
-                    url,
-                    config, // Will be null if not Jira
-                    token // Token is required for adding
-                };
-            }
-
-            const submitButton = document.getElementById('trackerSubmitBtn');
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
-
-
-            try {
-                const response = await fetch(endpoint, {
-                    method: method,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                if (response.ok) {
-                    const modal = bootstrap.Modal.getInstance(trackerModalElement);
-                    modal.hide(); // This should trigger the 'hidden.bs.modal' event to reset
-                    fetchTrackers(); // Refresh list
-                    console.log(`Tracker ${isEditing ? 'updated' : 'added'} successfully!`);
-                } else if (response.status === 401) {
-                    await refreshToken();
-                    await saveTracker(); // Retry after refresh
-                } else {
-                    const err = await response.json();
-                    throw new Error(err.detail || `Failed to ${isEditing ? 'update' : 'add'} tracker`);
-                }
-            } catch (error) {
-                console.error(`Error ${isEditing ? 'updating' : 'adding'} tracker:`, error);
-                alert(`Error: ${error.message}`);
-            } finally {
-                 submitButton.disabled = false;
-                 submitButton.innerHTML = isEditing ? 'Update Tracker' : 'Save Tracker';
-            }
-        }
-
-        // --- Edit Tracker Logic ---
-        async function openEditTrackerModal(trackerId) {
-            // Set editing flag *before* showing modal to prevent reset
-            isEditing = true;
-            activeTrackerId = trackerId; // Store the ID for saving
-
-            // Fetch tracker details
-            try {
-                const response = await fetch(`/api/v1/trackers/${trackerId}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` }
-                });
-
-                 if (!response.ok) {
-                     if (response.status === 401) {
-                         await refreshToken();
-                         await openEditTrackerModal(trackerId); // Retry
-                         return; // Stop execution here
-                     } else {
-                         const errText = await response.text();
-                         throw new Error(`Failed to fetch tracker details: ${response.status} ${errText}`);
-                     }
-                 }
-
-                const tracker = await response.json();
-
-                // REMOVED check for essential tracker data to bypass potential issue
-                // console.log("Tracker data received:", tracker); // Optional: Add logging to see the data
-
-                // --- Populate Step 1 ---
-                document.getElementById('trackerId').value = tracker.id;
-                document.getElementById('trackerName').value = tracker.name;
-                document.getElementById('trackerType').value = tracker.tracker_type; // Use correct field name
-                document.getElementById('trackerUrl').value = tracker.url;
-                // Don't show existing token, prompt for new one if needed
-                const tokenInput = document.getElementById('trackerToken');
-                tokenInput.value = '';
-                tokenInput.placeholder = 'Enter new token to update, leave blank to keep existing';
-                tokenInput.required = false; // Not required for edit unless changing
-
-                // Handle Jira config
-                const jiraSection = document.getElementById('jiraConfigSection');
-                const jiraUsernameInput = document.getElementById('jiraUsername');
-                if (tracker.tracker_type === 'jira') { // Use correct field name
-                    jiraSection.classList.remove('d-none');
-                    jiraUsernameInput.value = tracker.connection_details?.username || ''; // Use connection_details from response
-                    // Jira username might be required depending on backend logic for updates
-                    // Let's assume it's required if the section is visible.
-                    jiraUsernameInput.required = true;
-                    jiraUsernameInput.disabled = false; // Assume username can be edited
-                } else {
-                    jiraSection.classList.add('d-none');
-                    jiraUsernameInput.required = false;
-                }
-
-                // Disable type/URL editing
-                document.getElementById('trackerType').disabled = true;
-                document.getElementById('trackerUrl').disabled = true; // Keep URL disabled as it's not meant to change on edit
-                document.getElementById('testConnectionStatus').innerHTML = ''; // Clear previous status
-
-
-                // --- Render Project Scope (Step 2) based on fetched tracker data ---
-                // NOTE: We are NOT calling testAndListProjects here for edit flow anymore
-                // This means the project list might not be up-to-date and won't have names/structure
-                // We can only render based on the saved identifiers. This is a limitation.
-                const projectTree = document.getElementById('projectSelectionTree');
-                const projectError = document.getElementById('projectSelectionError');
-                projectError.textContent = ''; // Clear any previous error
-
-                // Since we don't have the project list structure (orgs/children),
-                // we cannot render the tree accurately for editing scope.
-                // Display a message indicating this limitation.
-                projectTree.innerHTML = `
-                    <div class="alert alert-warning small">
-                        <i class="bi bi-exclamation-triangle"></i>
-                        Project list cannot be displayed or modified during edit without re-entering credentials (functionality not yet implemented).
-                        Scope settings (Include Future Projects, specific selections) will be saved based on their current state.
-                    </div>
-                `;
-                 // Populate the 'Include Future Projects' checkbox based on saved value
-                 document.getElementById('includeFutureProjects').checked = tracker.include_future_projects;
-                 // Disable the tree and select all as we can't interact with it meaningfully
-                 document.getElementById('projectSelectionTreeContainer').style.opacity = 0.7;
-                 document.getElementById('selectAllProjects').disabled = true;
-                 document.getElementById('selectAllProjects').checked = false; // Uncheck select all
-
-
-                // --- Configure Modal for Editing ---
-                document.getElementById('trackerModalLabel').textContent = `Edit Tracker: ${tracker.name}`;
-                showStep(1); // Start at step 1 for editing basic info
-                document.getElementById('trackerWizardNextBtn').textContent = 'Next: Configure Project Scope'; // Change button text
-                document.getElementById('trackerSubmitBtn').textContent = 'Update Tracker'; // Change final button text
-
-                // Show the modal *after* populating
-                const modal = new bootstrap.Modal(trackerModalElement);
-                modal.show();
-
-            } catch (error) {
-                console.error('Error opening edit tracker modal:', error);
-                alert(`Could not load tracker details: ${error.message}`);
-                isEditing = false; // Reset editing state on error
-            }
-        }
-
-        // Add event listeners for edit and delete buttons (needs to be done after rendering trackers)
-        function addTrackerActionEventListeners() {
-             // Edit buttons
-             document.querySelectorAll('.edit-tracker-btn').forEach(btn => {
-                const newBtn = btn.cloneNode(true); // Clone to remove listeners easily
-                btn.parentNode.replaceChild(newBtn, btn);
-                newBtn.addEventListener('click', handleEditClick);
-            });
-
-            // Delete buttons
-            document.querySelectorAll('.delete-tracker-btn').forEach(btn => {
-                const newBtn = btn.cloneNode(true); // Clone to remove listeners easily
-                btn.parentNode.replaceChild(newBtn, btn);
-                newBtn.addEventListener('click', handleDeleteClick);
-            });
-        }
-
-
-        function handleEditClick(event) {
-            const trackerId = event.currentTarget.getAttribute('data-tracker-id');
-            openEditTrackerModal(trackerId);
-        }
-
-        function handleDeleteClick(event) {
-            const trackerId = event.currentTarget.getAttribute('data-tracker-id'); // Get ID locally
-            const trackerName = event.currentTarget.getAttribute('data-tracker-name');
-            const confirmBtn = document.getElementById('confirmDeleteTrackerBtn');
-            const deleteModalElement = document.getElementById('deleteTrackerModal');
-            const deleteModal = bootstrap.Modal.getOrCreateInstance(deleteModalElement); // Use getOrCreateInstance
-
-            document.getElementById('deleteTrackerName').textContent = trackerName;
-
-            // Remove any old listener and add a new one specifically for this deletion
-            const newConfirmBtn = confirmBtn.cloneNode(true); // Clone to remove old listeners
-            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
-
-            newConfirmBtn.addEventListener('click', () => {
-                 // Disable button to prevent double clicks
-                newConfirmBtn.disabled = true;
-                newConfirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Deleting...';
-
-                deleteTracker(trackerId) // Call delete with the specific ID
-                    .catch(error => {
-                        // Re-enable button on error
-                        console.error("Error during delete confirmation:", error);
-                        alert(`Failed to delete tracker: ${error.message}`);
-                        newConfirmBtn.disabled = false;
-                        newConfirmBtn.textContent = 'Delete Tracker';
-                    });
-                    // Note: Success handling (closing modal, refreshing list) is inside deleteTracker function
-            }, { once: true }); // Use { once: true } to ensure listener runs only once per modal show
-
-            deleteModal.show();
-        }
-
-
-        // Modify fetchTrackers to call addTrackerActionEventListeners after rendering
-        function fetchTrackers() {
-            // Clear existing listeners before fetching to avoid duplicates if fetch fails partially
-             document.querySelectorAll('.edit-tracker-btn, .delete-tracker-btn').forEach(btn => {
-                 const newBtn = btn.cloneNode(true);
-                 btn.parentNode.replaceChild(newBtn, btn);
-            });
-
-
-            fetch('/api/v1/trackers', {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else if (response.status === 401) {
-                    return refreshToken().then(() => fetchTrackers());
-                } else {
-                    throw new Error('Failed to fetch trackers');
-                }
-            })
-            .then(data => {
-                trackers = data;
-                renderTrackers(); // Renders the list (which contains the buttons)
-                addTrackerActionEventListeners(); // Add listeners AFTER rendering
-                updateDashboardStats();
-            })
-            .catch(error => {
-                console.error('Error fetching trackers:', error);
-                // Optionally display an error to the user in the UI
-            });
-        }
-
-
-        // Delete a tracker (Returns a promise)
-        async function deleteTracker(trackerId) {
-            // Note: Button state handling (spinner, disabling) is now done in handleDeleteClick listener
-            try {
-                const response = await fetch(`/api/v1/trackers/${trackerId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                    }
-                });
-
-                if (response.ok) {
-                    // Close modal
-                    const modalElement = document.getElementById('deleteTrackerModal');
-                    const modal = bootstrap.Modal.getInstance(modalElement);
-                    if (modal) { // Check if modal instance exists
-                         modal.hide();
-                         // Reset button state in case modal is reused without full page reload
-                         const confirmBtn = document.getElementById('confirmDeleteTrackerBtn');
-                         if (confirmBtn) {
-                             confirmBtn.disabled = false;
-                             confirmBtn.textContent = 'Delete Tracker';
-                         }
-                    }
-
-
-                    // Refresh trackers list
-                    fetchTrackers(); // This will re-render and re-attach listeners
-
-                } else if (response.status === 401) {
-                    await refreshToken();
-                    await deleteTracker(trackerId); // Retry after refresh
-                } else {
-                    const err = await response.json();
-                    throw new Error(err.detail || 'Failed to delete tracker');
-                }
-            } catch (error) {
-                 console.error('Error deleting tracker:', error);
-                 // Re-throw the error so the caller (handleDeleteClick) can catch it
-                 throw error;
-            }
-        }
-
-        // Create a new API key
-        function createApiKey() {
-            const name = document.getElementById('keyName').value;
-            const expiryType = document.getElementById('keyExpiry').value;
-
-            let expiresAt = null;
-            if (expiryType !== 'never') {
-                const now = new Date();
-
-                switch(expiryType) {
-                    case '7days':
-                        expiresAt = new Date(now.setDate(now.getDate() + 7));
-                        break;
-                    case '30days':
-                        expiresAt = new Date(now.setDate(now.getDate() + 30));
-                        break;
-                    case '90days':
-                        expiresAt = new Date(now.setDate(now.getDate() + 90));
-                        break;
-                    case '1year':
-                        expiresAt = new Date(now.setFullYear(now.getFullYear() + 1));
-                        break;
-                    case 'custom':
-                        const customDate = document.getElementById('customExpiryDate').value;
-                        if (customDate) {
-                            expiresAt = new Date(customDate + 'T23:59:59');
-                        }
-                        break;
-                }
-            }
-
-            fetch('/api/v1/auth/api-keys', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                },
-                body: JSON.stringify({
-                    name,
-                    expires_at: expiresAt ? expiresAt.toISOString() : null,
-                    scopes: []
-                })
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else if (response.status === 401) {
-                    return refreshToken().then(() => createApiKey());
-                } else {
-                    return response.json().then(err => {
-                        throw new Error(err.detail || 'Failed to create API key');
-                    });
-                }
-            })
-            .then(data => {
-                // Close create modal
-                const createModal = bootstrap.Modal.getInstance(document.getElementById('createKeyModal'));
-                createModal.hide();
-
-                // Reset form
-                document.getElementById('createKeyForm').reset();
-
-                // Show API key in modal
-                document.getElementById('newKeyValue').textContent = data.key;
-                const keyCreatedModal = new bootstrap.Modal(document.getElementById('keyCreatedModal'));
-                keyCreatedModal.show();
-
-                // Refresh API keys list
-                fetchApiKeys();
-            })
-            .catch(error => {
-                console.error('Error creating API key:', error);
-                alert(error.message);
-            });
-        }
-
-        // Delete an API key
-        function deleteApiKey(keyId) {
-            fetch(`/api/v1/auth/api-keys/${keyId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    // Close modal
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteKeyModal'));
-                    modal.hide();
-
-                    // Refresh API keys list
-                    fetchApiKeys();
-
-                    // Reset active key ID
-                    activeKeyId = null;
-                } else if (response.status === 401) {
-                    return refreshToken().then(() => deleteApiKey(keyId));
-                } else {
-                    return response.json().then(err => {
-                        throw new Error(err.detail || 'Failed to delete API key');
-                    });
-                }
-            })
-            .catch(error => {
-                console.error('Error deleting API key:', error);
-                alert(error.message);
-            });
-        }
-
-        // Update user profile
-        function updateProfile() {
-            const fullName = document.getElementById('userFullName').value;
-
-            // This endpoint doesn't exist yet, but would be implemented
-            alert('Profile update functionality not implemented yet.');
-        }
-
-        // Change password
-        function changePassword() {
-            const currentPassword = document.getElementById('currentPassword').value;
-            const newPassword = document.getElementById('newPassword').value;
-
-            // This endpoint doesn't exist yet, but would be implemented
-            alert('Password change functionality not implemented yet.');
-        }
-
-        // Resend verification email
-        function resendVerificationEmail() {
-            // This endpoint doesn't exist yet, but would be implemented
-            alert('Verification email has been resent. Please check your inbox.');
-        }
-    </script>
-    <!-- Footer removed and moved to sidebar -->
+    <script src="/static/js/trackers.js"></script>
+    <script src="/static/js/dashboard.js"></script>
 </body>
 </html>

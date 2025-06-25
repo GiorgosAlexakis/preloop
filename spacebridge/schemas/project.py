@@ -45,7 +45,7 @@ class ProjectResponse(ProjectBase):
     class Config:
         """Pydantic model configuration."""
 
-        from_attributes = True  # Modern way of saying orm_mode = True
+        from_attributes = True
 
 
 class TestConnectionRequest(BaseModel):

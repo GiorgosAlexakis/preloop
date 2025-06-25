@@ -5,15 +5,15 @@
 ### Core Infrastructure
 - [x] Project setup and configuration
 - [x] Database schema design and implementation
-- [ ] PGVector integration
-- [ ] RESTful API server implementation with FastAPI
+- [x] PGVector integration
+- [x] RESTful API server implementation with FastAPI
 - [x] Authentication and authorization framework
 - [x] Logging and monitoring setup
 
 ### Organization and Project Management
 - [x] Organization CRUD operations
 - [x] Project CRUD operations
-- [ ] Basic user management
+- [x] Basic user management
 - [x] Issue tracker credential management
 
 ### Initial Integration
@@ -24,24 +24,24 @@
 ## Phase 2: Core Functionality (Q2 2025)
 
 ### REST API Development
-- [ ] Complete OpenAPI specification
-- [ ] Endpoint implementation for organizations, projects, and issues
-- [ ] JWT authentication integration
-- [ ] Request validation with Pydantic models
-- [ ] Comprehensive error handling
-- [ ] API versioning strategy
+- [x] Complete OpenAPI specification
+- [x] Endpoint implementation for organizations, projects, and issues
+- [x] JWT authentication integration
+- [x] Request validation with Pydantic models
+- [x] Comprehensive error handling
+- [x] API versioning strategy
 
 ### Issue Management
-- [ ] Basic issue search (direct API queries)
-- [ ] Issue creation across platforms
-- [ ] Issue updating across platforms
-- [ ] Cross-platform issue linking
+- [x] Basic issue search (direct API queries)
+- [x] Issue creation across platforms
+- [x] Issue updating across platforms
+- [x] Cross-platform issue linking
 
 ### Vector Search
-- [ ] Embedding generation for issues
-- [ ] Vector similarity search implementation
-- [ ] Hybrid search combining vector and metadata
-- [ ] Batch indexing mechanism
+- [x] Embedding generation for issues
+- [x] Vector similarity search implementation
+- [x] Hybrid search combining vector and metadata
+- [x] Batch indexing mechanism
 
 ### SpaceBridge-MCP (Companion MCP Server)
 - [ ] Minimal MCP server implementation with stdio transport
@@ -53,7 +53,7 @@
 ## Phase 3: Advanced Features (Q3 2025)
 
 ### Enhanced Issue Management
-- [ ] Intelligent duplicate detection
+- [x] Intelligent duplicate detection
 - [ ] Assignee suggestion
 - [ ] Issue effort estimation
 - [ ] Issue prioritization
@@ -70,6 +70,15 @@
 - [ ] Caching layer implementation
 - [ ] Bulk operations for efficiency
 - [ ] Rate limit optimization strategies
+
+### Explore: Issue Tracker Visualization
+- [ ] **Frontend:** Implement a new 'Explore' route and view component within the SpaceBridge dashboard.
+- [ ] **Backend API:** Develop an API endpoint to serve raw embeddings for issues (and later, comments, MRs).
+- [ ] **Frontend Dimensionality Reduction:** Integrate modular JavaScript libraries (e.g., UMAP-JS, tSNE-JS, scikit-learn.js for PCA) for client-side dimensionality reduction of fetched embeddings.
+- [ ] **Frontend Caching:** Implement browser-side caching (e.g., IndexedDB or localStorage) for storing and retrieving computed dimensionality reduction results to optimize performance.
+- [ ] **Frontend Visualization:** Utilize `deck.gl` to implement a 2D/3D scatter plot visualization layer for the client-side reduced embedding data within the 'Explore' view.
+- [ ] **Interactive Navigation:** Configure `deck.gl` controllers for zoom, pan, and data point inspection (e.g., displaying issue details on hover/click).
+- [ ] **Data Scope:** Initially support visualization of issue embeddings; design data pipelines and API for future inclusion of comment and MR embeddings.
 
 ## Phase 4: Enterprise Readiness (Q4 2025)
 
@@ -115,8 +124,8 @@
 ## Ongoing Activities
 
 ### Documentation
-- [ ] API documentation
-- [ ] User guides
+- [x] API documentation
+- [x] User guides
 - [ ] Integration guides
 - [ ] Architecture documentation updates
 

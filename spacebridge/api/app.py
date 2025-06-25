@@ -28,9 +28,12 @@ from spacebridge.api.endpoints import (
     issues,
     organizations,
     projects,
-    search,  # Add search endpoint
+    search,
     trackers,
     version,
+    embedding as embedding_router,
+    llm_models,
+    issue_duplicates,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -320,8 +323,15 @@ def create_app() -> FastAPI:
     app.openapi = custom_openapi
 
     # Add routers
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
     app.include_router(health.router, prefix="/api/v1", tags=["Health"])
-    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+    app.include_router(version.router, prefix="/api/v1", tags=["Version"])
+    app.include_router(
+        trackers.router,
+        prefix="/api/v1",
+        tags=["Trackers"],
+        dependencies=[Depends(get_current_active_user)],
+    )
     app.include_router(
         organizations.router,
         prefix="/api/v1",
@@ -347,20 +357,29 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        trackers.router,
-        prefix="/api/v1",
-        tags=["Trackers"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        search.router,  # Add search router
+        search.router,
         prefix="/api/v1",
         tags=["Search"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        version.router, prefix="/api/v1", tags=["Version"]
-    )  # No auth dependency for version check
+        embedding_router.router,
+        prefix="/api/v1",
+        tags=["Embeddings"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        llm_models.router,
+        prefix="/api/v1",
+        tags=["LLM Models"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        issue_duplicates.router,
+        prefix="/api/v1",
+        tags=["Issue Duplicates"],
+        dependencies=[Depends(get_current_active_user)],
+    )
 
     # --- HTML Page Routes ---
     templates = Jinja2Templates(directory=str(templates_dir))
@@ -427,6 +446,11 @@ def create_app() -> FastAPI:
     async def dashboard_page(request: Request):
         # Placeholder - Requires auth
         return templates.TemplateResponse("dashboard.html", {"request": request})
+
+    @app.get("/explore", response_class=HTMLResponse, tags=["Pages"])
+    async def explore_page(request: Request):
+        # Placeholder - Requires auth
+        return templates.TemplateResponse("explore.html", {"request": request})
 
     @app.get("/trackers", response_class=HTMLResponse, tags=["Pages"])
     async def trackers_page(request: Request):

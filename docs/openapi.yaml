@@ -4,27 +4,10 @@ info:
   description: REST API for SpaceBridge issue tracking management
   version: 0.1.0
 paths:
-  /api/v1/health:
-    get:
-      tags:
-      - Health
-      summary: Health Check
-      description: Health check endpoint.
-      operationId: health_check_api_v1_health_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                additionalProperties:
-                  type: string
-                type: object
-                title: Response Health Check Api V1 Health Get
   /api/v1/auth/register:
     post:
       tags:
-      - Authentication
+      - Auth
       summary: Register
       description: "Register a new user.\n\nArgs:\n    user_data: User creation data.\n\
         \    background_tasks: Background tasks for sending emails.\n\nReturns:\n\
@@ -53,7 +36,7 @@ paths:
   /api/v1/auth/verify-email:
     post:
       tags:
-      - Authentication
+      - Auth
       summary: Verify Email
       description: "Verify a user's email address.\n\nArgs:\n    verification_data:\
         \ Email verification data with token.\n\nReturns:\n    Success message.\n\n\
@@ -84,7 +67,7 @@ paths:
   /api/v1/auth/forgot-password:
     post:
       tags:
-      - Authentication
+      - Auth
       summary: Forgot Password
       description: "Send a password reset email.\n\nArgs:\n    reset_data: Password\
         \ reset request with email.\n    background_tasks: Background tasks for sending\
@@ -115,7 +98,7 @@ paths:
   /api/v1/auth/reset-password:
     post:
       tags:
-      - Authentication
+      - Auth
       summary: Reset Password
       description: "Reset a user's password.\n\nArgs:\n    reset_data: Password reset\
         \ confirmation with token and new password.\n\nReturns:\n    Success message.\n\
@@ -147,7 +130,7 @@ paths:
   /api/v1/auth/token:
     post:
       tags:
-      - Authentication
+      - Auth
       summary: Login Form
       description: "Login to get an access token using form data (required for OAuth2\
         \ flow).\n\nArgs:\n    form_data: OAuth2 password request form.\n\nReturns:\n\
@@ -176,7 +159,7 @@ paths:
   /api/v1/auth/token/json:
     post:
       tags:
-      - Authentication
+      - Auth
       summary: Login Json
       description: "Login to get an access token using JSON data.\n\nArgs:\n    request:\
         \ Login request with username and password.\n\nReturns:\n    Access token.\n\
@@ -204,7 +187,7 @@ paths:
   /api/v1/auth/refresh:
     post:
       tags:
-      - Authentication
+      - Auth
       summary: Refresh Token
       description: "Refresh an access token using a refresh token.\n\nArgs:\n    request:\
         \ Refresh token request.\n\nReturns:\n    New access token.\n\nRaises:\n \
@@ -232,7 +215,7 @@ paths:
   /api/v1/auth/users/me:
     get:
       tags:
-      - Authentication
+      - Auth
       summary: Read Users Me
       description: "Get the current user.\n\nArgs:\n    current_user: The current\
         \ user.\n\nReturns:\n    The current user."
@@ -249,7 +232,7 @@ paths:
   /api/v1/auth/api-keys:
     get:
       tags:
-      - Authentication
+      - Auth
       summary: List Api Keys
       description: "List all API keys for the current user.\n\nArgs:\n    current_user:\
         \ The current authenticated user.\n\nReturns:\n    List of API keys."
@@ -268,7 +251,7 @@ paths:
       - OAuth2PasswordBearer: []
     post:
       tags:
-      - Authentication
+      - Auth
       summary: Create Api Key
       description: "Create a new API key.\n\nArgs:\n    key_data: The key creation\
         \ data.\n    current_user: The current authenticated user.\n\nReturns:\n \
@@ -298,7 +281,7 @@ paths:
   /api/v1/auth/api-keys/debug:
     get:
       tags:
-      - Authentication
+      - Auth
       summary: Debug Api Keys
       description: "Debug endpoint to get API keys with their values (admin only).\n\
         \nArgs:\n    username: The username to get keys for\n    api_key: Optional\
@@ -341,7 +324,7 @@ paths:
   /api/v1/auth/api-keys/{key_id}:
     delete:
       tags:
-      - Authentication
+      - Auth
       summary: Delete Api Key
       description: "Delete an API key.\n\nArgs:\n    key_id: The ID of the key to\
         \ delete.\n    current_user: The current authenticated user.\n\nRaises:\n\
@@ -369,7 +352,7 @@ paths:
   /api/v1/auth/api-usage:
     get:
       tags:
-      - Authentication
+      - Auth
       summary: Get Api Usage
       description: "Get API usage statistics for the current user.\n\nArgs:\n    start_date:\
         \ Optional start date for filtering.\n    end_date: Optional end date for\
@@ -410,6 +393,278 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/health:
+    get:
+      tags:
+      - Health
+      summary: Health Check
+      description: Health check endpoint.
+      operationId: health_check_api_v1_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Health Check Api V1 Health Get
+  /api/v1/version:
+    get:
+      tags:
+      - Version
+      summary: Get Version Info
+      description: 'Returns the server version information and logs the client version.
+
+
+        Accepts an optional `X-Client-Version` header from the client.
+
+        If an `Authorization: Bearer <token>` header is provided and valid,
+
+        the associated account ID will also be logged.'
+      operationId: get_version_info_api_v1_version_get
+      parameters:
+      - name: X-Client-Version
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Client-Version
+      - name: X-Client-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Client-Organization
+      - name: X-Client-Project
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Client-Project
+      - name: X-Additional-Info
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Additional-Info
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionInfo'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/trackers/debug:
+    post:
+      tags:
+      - Trackers
+      summary: Debug Tracker Request
+      description: Debug endpoint to see raw request data
+      operationId: debug_tracker_request_api_v1_trackers_debug_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearerAuth: []
+  /api/v1/trackers:
+    get:
+      tags:
+      - Trackers
+      summary: List Trackers
+      description: List all non-deleted trackers for the current user.
+      operationId: list_trackers_api_v1_trackers_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/TrackerResponse'
+                type: array
+                title: Response List Trackers Api V1 Trackers Get
+      security:
+      - bearerAuth: []
+    post:
+      tags:
+      - Trackers
+      summary: Register Tracker
+      description: "Register a new issue tracker.\n\nArgs:\n    tracker_data: Tracker\
+        \ registration data.\n    background_tasks: Background tasks for sending emails.\n\
+        \    current_user: The current authenticated user.\n\nReturns:\n    The registered\
+        \ tracker ID.\n\nRaises:\n    HTTPException: If registration fails."
+      operationId: register_tracker_api_v1_trackers_post
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Register Tracker Api V1 Trackers Post
+      security:
+      - bearerAuth: []
+  /api/v1/trackers/{tracker_id}:
+    get:
+      tags:
+      - Trackers
+      summary: Get Tracker
+      description: Get a non-deleted tracker by ID, ensuring it belongs to the current
+        user.
+      operationId: get_tracker_api_v1_trackers__tracker_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: tracker_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid4
+          title: Tracker Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackerResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Trackers
+      summary: Update Tracker
+      description: Update an existing tracker.
+      operationId: update_tracker_api_v1_trackers__tracker_id__put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: tracker_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid4
+          title: Tracker Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackerUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackerResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Trackers
+      summary: Delete Tracker
+      description: Delete a tracker by ID (soft delete by default, hard delete if
+        specified).
+      operationId: delete_tracker_api_v1_trackers__tracker_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: tracker_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid4
+          title: Tracker Id
+      - name: hard_delete
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Hard Delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Delete Tracker Api V1 Trackers  Tracker Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/trackers/test-and-list-projects:
+    post:
+      tags:
+      - Trackers
+      summary: Test Connection And List Projects
+      description: "Tests connection to a tracker with provided credentials and lists\
+        \ accessible projects.\nDoes not save the tracker configuration.\n\nArgs:\n\
+        \    test_data: Temporary tracker connection details.\n    current_user: The\
+        \ authenticated user performing the test.\n\nReturns:\n    TrackerTestResponse\
+        \ indicating success/failure and the project list if successful."
+      operationId: test_connection_and_list_projects_api_v1_trackers_test_and_list_projects_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackerTestRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackerTestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/organizations:
     post:
       tags:
@@ -869,6 +1124,58 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/projects/{project_id}/duplicates:
+    get:
+      tags:
+      - Projects
+      summary: Find Project Duplicates
+      description: Finds potential duplicate issues within a project using semantic
+        similarity.
+      operationId: find_project_duplicates_api_v1_projects__project_id__duplicates_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: similarity_threshold
+        in: query
+        required: false
+        schema:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          description: Similarity threshold for considering issues as duplicates.
+          default: 0.7
+          title: Similarity Threshold
+        description: Similarity threshold for considering issues as duplicates.
+      - name: limit_per_issue
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 20
+          minimum: 1
+          description: Maximum number of duplicates to find for each issue.
+          default: 5
+          title: Limit Per Issue
+        description: Maximum number of duplicates to find for each issue.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDuplicatesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issues/search:
     get:
       tags:
@@ -1365,199 +1672,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/trackers/debug:
-    post:
-      tags:
-      - Trackers
-      summary: Debug Tracker Request
-      description: Debug endpoint to see raw request data
-      operationId: debug_tracker_request_api_v1_trackers_debug_post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - bearerAuth: []
-  /api/v1/trackers:
-    get:
-      tags:
-      - Trackers
-      summary: List Trackers
-      description: List all non-deleted trackers for the current user.
-      operationId: list_trackers_api_v1_trackers_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/TrackerResponse'
-                type: array
-                title: Response List Trackers Api V1 Trackers Get
-      security:
-      - bearerAuth: []
-    post:
-      tags:
-      - Trackers
-      summary: Register Tracker
-      description: "Register a new issue tracker.\n\nArgs:\n    tracker_data: Tracker\
-        \ registration data.\n    background_tasks: Background tasks for sending emails.\n\
-        \    current_user: The current authenticated user.\n\nReturns:\n    The registered\
-        \ tracker ID.\n\nRaises:\n    HTTPException: If registration fails."
-      operationId: register_tracker_api_v1_trackers_post
-      responses:
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                additionalProperties:
-                  type: string
-                type: object
-                title: Response Register Tracker Api V1 Trackers Post
-      security:
-      - bearerAuth: []
-  /api/v1/trackers/{tracker_id}:
-    get:
-      tags:
-      - Trackers
-      summary: Get Tracker
-      description: Get a non-deleted tracker by ID, ensuring it belongs to the current
-        user.
-      operationId: get_tracker_api_v1_trackers__tracker_id__get
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: tracker_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid4
-          title: Tracker Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TrackerResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    put:
-      tags:
-      - Trackers
-      summary: Update Tracker
-      description: Update an existing tracker.
-      operationId: update_tracker_api_v1_trackers__tracker_id__put
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: tracker_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid4
-          title: Tracker Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TrackerUpdate'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TrackerResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    delete:
-      tags:
-      - Trackers
-      summary: Delete Tracker
-      description: Delete a tracker by ID (soft delete by default, hard delete if
-        specified).
-      operationId: delete_tracker_api_v1_trackers__tracker_id__delete
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: tracker_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid4
-          title: Tracker Id
-      - name: hard_delete
-        in: query
-        required: false
-        schema:
-          type: boolean
-          default: false
-          title: Hard Delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties:
-                  type: string
-                title: Response Delete Tracker Api V1 Trackers  Tracker Id  Delete
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/trackers/test-and-list-projects:
-    post:
-      tags:
-      - Trackers
-      summary: Test Connection And List Projects
-      description: "Tests connection to a tracker with provided credentials and lists\
-        \ accessible projects.\nDoes not save the tracker configuration.\n\nArgs:\n\
-        \    test_data: Temporary tracker connection details.\n    current_user: The\
-        \ authenticated user performing the test.\n\nReturns:\n    TrackerTestResponse\
-        \ indicating success/failure and the project list if successful."
-      operationId: test_connection_and_list_projects_api_v1_trackers_test_and_list_projects_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TrackerTestRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TrackerTestResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - bearerAuth: []
   /api/v1/search:
     get:
       tags:
@@ -1688,60 +1802,123 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/version:
+  /api/v1/projects/{project_name}/embeddings:
     get:
       tags:
-      - Version
-      summary: Get Version Info
-      description: 'Returns the server version information and logs the client version.
+      - Embeddings
+      - projects
+      - embeddings
+      summary: Get all issue embeddings for a project
+      description: 'API endpoint to fetch raw embedding vectors for issues, with optional
+        filtering.
 
 
-        Accepts an optional `X-Client-Version` header from the client.
-
-        If an `Authorization: Bearer <token>` header is provided and valid,
-
-        the associated account ID will also be logged.'
-      operationId: get_version_info_api_v1_version_get
+        This endpoint is designed to provide data for frontend visualizations like
+        deck.gl.'
+      operationId: get_raw_embeddings_api_v1_projects__project_name__embeddings_get
+      security:
+      - bearerAuth: []
       parameters:
-      - name: X-Client-Version
-        in: header
+      - name: project_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Name
+      - name: embedding_model_id
+        in: query
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          title: X-Client-Version
-      - name: X-Client-Organization
-        in: header
+          description: The ID of the embedding model to use.
+          title: Embedding Model Id
+        description: The ID of the embedding model to use.
+      - name: organization_name
+        in: query
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          title: X-Client-Organization
-      - name: X-Client-Project
-        in: header
+          description: Filter embeddings by organization name.
+          title: Organization Name
+        description: Filter embeddings by organization name.
+      - name: skip
+        in: query
         required: false
         schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Project
-      - name: X-Additional-Info
-        in: header
+          type: integer
+          minimum: 0
+          description: Number of records to skip for pagination.
+          default: 0
+          title: Skip
+        description: Number of records to skip for pagination.
+      - name: limit
+        in: query
         required: false
         schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Additional-Info
+          type: integer
+          maximum: 2000
+          minimum: 1
+          description: Maximum number of records to return.
+          default: 1000
+          title: Limit
+        description: Maximum number of records to return.
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VersionInfo'
+                $ref: '#/components/schemas/EmbeddingRawResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/llm-models:
+    get:
+      tags:
+      - LLM Models
+      - LLM Models
+      summary: List LLM Models
+      description: List all LLM Models associated with the authenticated user's account.
+      operationId: list_llm_models_api_v1_llm_models_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/LLMModelRead'
+                type: array
+                title: Response List Llm Models Api V1 Llm Models Get
+      security:
+      - bearerAuth: []
+    post:
+      tags:
+      - LLM Models
+      - LLM Models
+      summary: Create LLM Model
+      description: Create a new LLM Model for the authenticated user's account.
+      operationId: create_llm_model_api_v1_llm_models_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LLMModelCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LLMModelRead'
         '422':
           description: Validation Error
           content:
@@ -1750,6 +1927,131 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/llm-models/{model_id}:
+    get:
+      tags:
+      - LLM Models
+      - LLM Models
+      summary: Get LLM Model by ID
+      description: Retrieve a specific LLM Model by its ID.
+      operationId: get_llm_model_api_v1_llm_models__model_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LLMModelRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - LLM Models
+      - LLM Models
+      summary: Update LLM Model
+      description: Update an existing LLM Model by its ID.
+      operationId: update_llm_model_api_v1_llm_models__model_id__put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LLMModelUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LLMModelRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - LLM Models
+      - LLM Models
+      summary: Delete LLM Model
+      description: Delete an LLM Model by its ID.
+      operationId: delete_llm_model_api_v1_llm_models__model_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue-duplicates/check:
+    get:
+      tags:
+      - Issue Duplicates
+      - Issue Duplicates
+      summary: Check Or Create Issue Duplicate
+      operationId: check_or_create_issue_duplicate_api_v1_issue_duplicates_check_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: issue1_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Issue1 Id
+      - name: issue2_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Issue2 Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicate'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /:
     get:
       tags:
@@ -1849,6 +2151,21 @@ paths:
       - Pages
       summary: Dashboard Page
       operationId: dashboard_page_dashboard_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            text/html:
+              schema:
+                type: string
+      security:
+      - bearerAuth: []
+  /explore:
+    get:
+      tags:
+      - Pages
+      summary: Explore Page
+      operationId: explore_page_explore_get
       responses:
         '200':
           description: Successful Response
@@ -2074,6 +2391,7 @@ components:
           title: Username
         password:
           type: string
+          format: password
           title: Password
         scope:
           type: string
@@ -2088,6 +2406,7 @@ components:
           anyOf:
           - type: string
           - type: 'null'
+          format: password
           title: Client Secret
       type: object
       required:
@@ -2210,6 +2529,25 @@ components:
       - query
       title: CommentSearchResults
       description: Response model for comment search results.
+    DuplicateIssuePair:
+      properties:
+        issue1:
+          $ref: '#/components/schemas/IssueResponse'
+          description: The first issue in the duplicate pair.
+        issue2:
+          $ref: '#/components/schemas/IssueResponse'
+          description: The second issue in the duplicate pair.
+        similarity:
+          type: number
+          title: Similarity
+          description: The similarity score between the two issues.
+      type: object
+      required:
+      - issue1
+      - issue2
+      - similarity
+      title: DuplicateIssuePair
+      description: Represents a pair of issues that are potential duplicates.
     EmailVerificationRequest:
       properties:
         token:
@@ -2220,6 +2558,57 @@ components:
       - token
       title: EmailVerificationRequest
       description: Model for email verification requests.
+    EmbeddingRawDataItem:
+      properties:
+        issue_id:
+          type: string
+          title: Issue Id
+        embedding:
+          items:
+            type: number
+          type: array
+          title: Embedding
+        issue_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Issue Title
+        issue_labels:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Issue Labels
+        issue_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Issue Type
+        issue_created_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Issue Created At
+      type: object
+      required:
+      - issue_id
+      - embedding
+      title: EmbeddingRawDataItem
+      description: Individual data item in the raw embedding response.
+    EmbeddingRawResponse:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/EmbeddingRawDataItem'
+          type: array
+          title: Data
+      type: object
+      required:
+      - data
+      title: EmbeddingRawResponse
+      description: Response model for the raw embeddings endpoint.
     HTTPValidationError:
       properties:
         detail:
@@ -2315,6 +2704,58 @@ components:
       - title
       title: IssueCreate
       description: Model for creating a new issue.
+    IssueDuplicate:
+      properties:
+        issue1_id:
+          type: string
+          title: Issue1 Id
+        issue2_id:
+          type: string
+          title: Issue2 Id
+        decision:
+          type: string
+          title: Decision
+        decision_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Decision At
+        llm_model_id:
+          type: string
+          title: Llm Model Id
+        llm_model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Llm Model Name
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        id:
+          type: string
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - issue1_id
+      - issue2_id
+      - decision
+      - llm_model_id
+      - id
+      - created_at
+      - updated_at
+      title: IssueDuplicate
+      description: Schema for returning an IssueDuplicate.
     IssueResponse:
       properties:
         title:
@@ -2461,6 +2902,139 @@ components:
       type: object
       title: IssueUpdate
       description: Model for updating an issue.
+    LLMModelCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        provider_name:
+          type: string
+          title: Provider Name
+        api_key:
+          type: string
+          title: Api Key
+        api_url:
+          type: string
+          title: Api Url
+        model_name:
+          type: string
+          title: Model Name
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
+        is_default:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Default
+          default: false
+      type: object
+      required:
+      - name
+      - provider_name
+      - api_key
+      - api_url
+      - model_name
+      title: LLMModelCreate
+      description: Schema for creating a new LLMModel entry.
+    LLMModelRead:
+      properties:
+        name:
+          type: string
+          title: Name
+        provider_name:
+          type: string
+          title: Provider Name
+        api_key:
+          type: string
+          title: Api Key
+        api_url:
+          type: string
+          title: Api Url
+        model_name:
+          type: string
+          title: Model Name
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
+        is_default:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Default
+          default: false
+        id:
+          type: string
+          title: Id
+        account_id:
+          type: string
+          title: Account Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - name
+      - provider_name
+      - api_key
+      - api_url
+      - model_name
+      - id
+      - account_id
+      - created_at
+      - updated_at
+      title: LLMModelRead
+      description: Schema for reading LLMModel entries, including timestamps.
+    LLMModelUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        api_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key
+        api_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Url
+        model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Name
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
+        is_default:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Default
+      type: object
+      title: LLMModelUpdate
+      description: Schema for updating an existing LLMModel entry. All fields are
+        optional.
     LoginRequest:
       properties:
         username:
@@ -2678,6 +3252,34 @@ components:
       - organization_id
       title: ProjectCreate
       description: Model for creating a new project.
+    ProjectDuplicatesResponse:
+      properties:
+        project_id:
+          type: string
+          title: Project Id
+          description: The ID of the project that was scanned.
+        model_id_used:
+          type: string
+          title: Model Id Used
+          description: The ID of the embedding model used for the similarity search.
+        threshold_used:
+          type: number
+          title: Threshold Used
+          description: The similarity threshold used for detecting duplicates.
+        duplicates:
+          items:
+            $ref: '#/components/schemas/DuplicateIssuePair'
+          type: array
+          title: Duplicates
+          description: A list of potential duplicate issue pairs.
+      type: object
+      required:
+      - project_id
+      - model_id_used
+      - threshold_used
+      - duplicates
+      title: ProjectDuplicatesResponse
+      description: Response model for the project duplicates endpoint.
     ProjectIdentifier:
       properties:
         id:

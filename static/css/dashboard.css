@@ -1,0 +1,272 @@
+/* Dashboard specific styles */
+.sidebar {
+    background-color: var(--dark);
+    color: var(--light);
+    padding: 20px 0;
+    position: fixed;
+    width: 16.666667%;
+    z-index: 100;
+    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.sidebar h4 {
+    color: white;
+    letter-spacing: -0.5px;
+}
+
+.sidebar .nav-link {
+    color: rgba(255, 255, 255, 0.75);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s ease;
+}
+
+.sidebar .nav-link:hover {
+    color: white;
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.sidebar .nav-link.active {
+    color: white;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar .nav-link i {
+    margin-right: 8px;
+    font-size: 0.95rem;
+}
+
+.main-content {
+    padding: 40px;
+    background-color: var(--light);
+}
+
+/* Card header with fixed height */
+.card-header {
+    height: 64px;
+    background-color: white;
+}
+
+/* Tracker cards */
+.tracker-card {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+    padding: 20px;
+    transition: all 0.3s ease;
+    border: 1px solid var(--gray-200);
+}
+
+.tracker-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+}
+
+.tracker-icon {
+    width: 32px;
+    height: 32px;
+    margin-right: 12px;
+}
+
+/* Tracker colors */
+.github-color { color: #24292e; }
+.gitlab-color { color: #fc6d26; }
+.jira-color { color: #0052CC; }
+
+/* Stat cards */
+.stat-card {
+    background-color: white;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+    text-align: center;
+    border: 1px solid var(--gray-200);
+}
+
+.stat-card h3 {
+    font-size: 2rem;
+    margin: 10px 0;
+    color: var(--primary);
+}
+
+/* Token table */
+.token-table th, .token-table td {
+    vertical-align: middle;
+    padding: 12px 16px;
+}
+
+/* Navigation tabs */
+.nav-tabs {
+    border-bottom: 2px solid var(--gray-200);
+    margin-bottom: 24px;
+}
+
+.nav-tabs .nav-link {
+    border: none;
+    padding: 12px 20px;
+    margin-right: 8px;
+}
+
+.nav-tabs .nav-link.active {
+    color: var(--primary);
+    border-bottom: 2px solid var(--primary);
+}
+
+/* Token creation form */
+.token-creation-form {
+    background-color: var(--gray-100);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+    border: 1px solid var(--gray-200);
+}
+
+/* Modal styling */
+.modal-content {
+    border-radius: 8px;
+    border: none;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.modal-header {
+    border-bottom: 1px solid var(--gray-200);
+    padding: 16px 24px;
+}
+
+.modal-footer {
+    border-top: 1px solid var(--gray-200);
+    padding: 16px 24px;
+}
+
+/* Token display */
+.token-display {
+    background-color: var(--gray-100);
+    border-radius: 6px;
+    padding: 16px;
+    margin: 16px 0;
+    word-break: break-all;
+    font-family: 'Inter', monospace;
+    border: 1px solid var(--gray-200);
+    font-size: 0.9rem;
+}
+
+/* Badge styling */
+.badge-github, .badge-gitlab, .badge-jira {
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 4px;
+}
+
+.badge-github {
+    background-color: #24292e;
+    color: white;
+}
+
+.badge-gitlab {
+    background-color: #fc6d26;
+    color: white;
+}
+
+.badge-jira {
+    background-color: #0052CC;
+    color: white;
+}
+
+/* User info styling */
+.user-info {
+    font-weight: 500;
+}
+
+.user-info #username {
+    color: var(--dark);
+}
+
+.user-info #email {
+    color: var(--secondary);
+}
+
+/* Duplicates Tab */
+
+.duplicates-placeholder p {
+    margin: 0;
+}
+
+#duplicates-result-area td {
+    padding: 1em .25em;
+}
+
+.duplicate-details-row {
+    background-color: transparent !important;
+    border: none !important;
+    font-size: 0.9rem;
+    display: none;
+}
+
+.duplicate-details-row td {
+    padding: 2em !important;
+    border-top: 1px solid #e9ecef;
+}
+
+.duplicate-details-row p {
+    margin-bottom: 8px;
+    color: #495057;
+}
+
+.duplicate-details-row p strong {
+    color: #212529;
+}
+
+.duplicate-details-row .description-text {
+    margin-top: 5px;
+    margin-bottom: 15px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
+    color: #495057;
+}
+
+.duplicate-details-row hr.my-2 {
+    border-top: 1px solid #dee2e6;
+    margin-top: 15px !important;
+    margin-bottom: 15px !important;
+}
+
+#duplicates-result-area .table tbody tr[onclick] {
+    cursor: pointer;
+}
+
+/* Add to static/css/dashboard.css */
+.issue-rejected {
+    opacity: 0.4; /* Make it less prominent */
+}
+
+.issue-rejected:hover {
+    opacity: 1; /* Full opacity on hover if desired */
+}
+
+.llm-status-icon {
+    font-size: 1.1rem; /* Adjust as needed */
+    cursor: help; /* Indicate tooltip availability */
+}
+
+/* Ensure spinners in table cells are vertically aligned */
+.duplicates-table td .spinner-border {
+    vertical-align: middle;
+}
+
+/* Sidebar copyright styling */
+.sidebar-copyright {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 0 15px;
+}
+
+.sidebar-copyright .copyright {
+    margin-bottom: 0;
+}
