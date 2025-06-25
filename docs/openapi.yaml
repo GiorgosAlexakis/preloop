@@ -2391,6 +2391,7 @@ components:
           title: Username
         password:
           type: string
+          format: password
           title: Password
         scope:
           type: string
@@ -2405,6 +2406,7 @@ components:
           anyOf:
           - type: string
           - type: 'null'
+          format: password
           title: Client Secret
       type: object
       required:
