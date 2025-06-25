@@ -2,13 +2,16 @@
 
 import json
 from datetime import datetime
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from ..models.comment import Comment
 from ..models.issue import Issue, IssueEmbedding, EmbeddingModel
+from ..models.organization import Organization
+from ..models.project import Project
+from ..models.tracker import Tracker
 from .base import CRUDBase
 
 # Import optional pgvector functionality
@@ -89,6 +92,67 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             .limit(limit)
             .all()
         )
+
+    def get_raw_embeddings(
+        self,
+        db: Session,
+        *,
+        embedding_model_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        tracker_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
+        organization_name: Optional[str] = None,
+        account_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 1000,  # Default to a higher limit for raw data
+    ) -> List[Tuple[str, List[float], str, Optional[str], Optional[datetime]]]:
+        """
+        Get raw embedding vectors for issues, with optional filtering.
+        Returns a list of (issue_id, embedding_vector, issue_title, issue_type, issue_last_updated_external) tuples.
+        """
+        query = db.query(
+            IssueEmbedding.issue_id,
+            IssueEmbedding.embedding,
+            Issue.title,
+            # Issue.labels,
+            Issue.issue_type,
+            Issue.last_updated_external,
+        ).join(Issue, IssueEmbedding.issue_id == Issue.id)
+
+        if embedding_model_id:
+            query = query.filter(
+                IssueEmbedding.embedding_model_id == embedding_model_id
+            )
+
+        if project_id:
+            query = query.filter(Issue.project_id == project_id)
+
+        if project_name:
+            query = query.join(Project, Issue.project_id == Project.id).filter(
+                func.lower(Project.name) == func.lower(project_name)
+            )
+
+        if tracker_id:
+            query = query.filter(Issue.tracker_id == tracker_id)
+
+        if organization_id:
+            # Join with Project table to filter by organization_id
+            query = query.join(Project, Issue.project_id == Project.id)
+            query = query.filter(Project.organization_id == organization_id)
+
+        if organization_name:
+            query = (
+                query.join(Project, Issue.project_id == Project.id)
+                .join(Organization, Project.organization_id == Organization.id)
+                .filter(func.lower(Organization.name) == func.lower(organization_name))
+            )
+
+        if account_id:
+            query = query.join(Tracker, Issue.tracker_id == Tracker.id)
+            query = query.filter(Tracker.account_id == account_id)
+
+        return query.offset(skip).limit(limit).all()
 
     def create_embeddings(
         self,
