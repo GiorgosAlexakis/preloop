@@ -1,10 +1,13 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
-import { fetchApi } from '../api.js';
-import '@material/web/button/filled-button.js';
+import { fetchWithAuth } from '../api.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import './tracker-item.ts';
-import './add-tracker-form.ts';
+import './add-tracker-modal.ts';
 import type { Tracker } from './tracker-item.ts';
 
 @customElement('tracker-list')
@@ -33,7 +36,11 @@ export class TrackerList extends LitElement {
     this.isLoading = true;
     this.error = null;
     try {
-      this.trackers = await fetchApi('/api/v1/trackers');
+      const response = await fetchWithAuth('/api/v1/trackers');
+      if (!response.ok) {
+        throw new Error('Failed to fetch trackers');
+      }
+      this.trackers = await response.json();
     } catch (error) {
       this.error =
         error instanceof Error ? error.message : 'An unknown error occurred';
@@ -67,9 +74,12 @@ export class TrackerList extends LitElement {
   private async _handleTrackerDeleted(event: CustomEvent) {
     const { id } = event.detail;
     try {
-      await fetchApi(`/api/v1/trackers/${id}`, {
+      const response = await fetchWithAuth(`/api/v1/trackers/${id}`, {
         method: 'DELETE',
       });
+      if (!response.ok) {
+        throw new Error('Failed to delete tracker');
+      }
       await this.fetchTrackers();
     } catch (error) {
       this.error =
@@ -84,41 +94,49 @@ export class TrackerList extends LitElement {
       margin: 0 auto;
       padding: 2rem;
     }
-    .error {
-      color: var(--md-sys-color-error);
-    }
     .controls {
+      display: flex;
+      justify-content: flex-end;
       margin-bottom: 1rem;
+    }
+    .loading-indicator {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100px;
     }
   `;
 
   render() {
     if (this.isLoading) {
-      return html`<p>Loading...</p>`;
+      return html`<div class="loading-indicator"><sl-spinner></sl-spinner></div>`;
     }
 
     if (this.error) {
-      return html`<p class="error">Error: ${this.error}</p>`;
+      return html`<sl-alert variant="danger" open>
+        <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+        <strong>Error:</strong> ${this.error}
+      </sl-alert>`;
     }
 
     return html`
       <div>
         <div class="controls">
-          <md-filled-button @click=${this._toggleAddTrackerForm}>
+          <sl-button variant="primary" @click=${this._toggleAddTrackerForm}>
             ${this.isAddingTracker ? 'Cancel' : 'Add New Tracker'}
-          </md-filled-button>
+          </sl-button>
         </div>
 
         ${this.isAddingTracker
-          ? html`<add-tracker-form
+          ? html`<add-tracker-modal
               @tracker-added=${this._handleTrackerAdded}
-            ></add-tracker-form>`
+            ></add-tracker-modal>`
           : ''}
         ${this.editingTracker
-          ? html`<add-tracker-form
+          ? html`<add-tracker-modal
               .tracker=${this.editingTracker}
               @tracker-updated=${this._handleTrackerUpdated}
-            ></add-tracker-form>`
+            ></add-tracker-modal>`
           : ''}
         ${repeat(
           this.trackers,

@@ -1,8 +1,8 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import { router } from '../../router';
+import { customElement } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
-import '@vaadin/tabs';
+import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
+import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 
 @customElement('issues-view')
 export class IssuesView extends LitElement {
@@ -11,50 +11,66 @@ export class IssuesView extends LitElement {
       display: block;
       padding: var(--lumo-space-m);
     }
-    a {
-      text-decoration: none;
+    sl-tab-group::part(tabs) {
+      border-bottom: none;
     }
   `;
 
-  @state()
-  private selectedTab = 0;
-
   private tabs = [
-    { label: 'Duplicates', path: '/issues/duplicates' },
-    { label: 'Suggested', path: '/issues/suggested' },
+    { panel: 'duplicates', label: 'Duplicates', path: '/issues/duplicates' },
+    { panel: 'assignments', label: 'Assignments', path: '/issues/assignments' },
   ];
 
   connectedCallback() {
     super.connectedCallback();
-    this.updateSelectedTab();
+    this.updateActiveTab();
+    window.addEventListener(
+      'vaadin-router-location-changed',
+      this.handleLocationChanged
+    );
   }
 
-  updateSelectedTab() {
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener(
+      'vaadin-router-location-changed',
+      this.handleLocationChanged
+    );
+  }
+
+  handleLocationChanged = () => {
+    this.updateActiveTab();
+  };
+
+  async updateActiveTab() {
+    await this.updateComplete;
+    const tabGroup = this.shadowRoot?.querySelector('sl-tab-group');
+    if (!tabGroup) return;
+
     const currentPath = window.location.pathname;
-    const activeTabIndex = this.tabs.findIndex((tab) =>
+    const activeTab = this.tabs.find((tab) =>
       currentPath.startsWith(tab.path)
     );
-    if (activeTabIndex !== -1) {
-      this.selectedTab = activeTabIndex;
+
+    if (activeTab) {
+      tabGroup.show(activeTab.panel);
     }
   }
 
   handleTabChange(e: CustomEvent) {
-    const selectedIndex = e.detail.value;
-    if (this.selectedTab !== selectedIndex) {
-      this.selectedTab = selectedIndex;
-      Router.go(this.tabs[selectedIndex].path);
+    const tab = this.tabs.find((t) => t.panel === e.detail.name);
+    if (tab && !window.location.pathname.startsWith(tab.path)) {
+      Router.go(tab.path);
     }
   }
 
   render() {
     return html`
-      <vaadin-tabs
-        .selected=${this.selectedTab}
-        @selected-changed=${this.handleTabChange}
-      >
-        ${this.tabs.map((tab) => html`<vaadin-tab>${tab.label}</vaadin-tab>`)}
-      </vaadin-tabs>
+      <sl-tab-group @sl-tab-show=${this.handleTabChange}>
+        ${this.tabs.map(
+          (tab) => html`<sl-tab panel=${tab.panel}>${tab.label}</sl-tab>`
+        )}
+      </sl-tab-group>
       <slot></slot>
     `;
   }

@@ -3,13 +3,12 @@ import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApiKeys, createApiKey, deleteApiKey, ApiKey } from '../../../api';
-import '@vaadin/button';
-import '@vaadin/dialog';
-import '@vaadin/text-field';
-import '@vaadin/select';
-import '@vaadin/list-box';
-import '@vaadin/item';
-import '@vaadin/date-picker';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
+import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
 
 @customElement('api-keys-view')
 export class ApiKeysView extends LitElement {
@@ -91,12 +90,11 @@ export class ApiKeysView extends LitElement {
     render() {
         return html`
             <div class="container">
-                <div class="card">
-                    <div class="card-header">
+                <sl-card>
+                    <div slot="header" class="card-header">
                         <h3>API Keys</h3>
-                        <vaadin-button theme="primary" @click=${() => { this.isCreateModalOpen = true; }}>Create New API Key</vaadin-button>
+                        <sl-button variant="primary" @click=${() => { this.isCreateModalOpen = true; }}>Create New API Key</sl-button>
                     </div>
-                    <div class="card-body">
                         ${when(
                             this.isLoading,
                             () => html`<p>Loading...</p>`,
@@ -122,7 +120,7 @@ export class ApiKeysView extends LitElement {
                                                     <td>${key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never'}</td>
                                                     <td>${key.expires_at ? new Date(key.expires_at).toLocaleDateString() : 'Never'}</td>
                                                     <td>
-                                                        <vaadin-button theme="error" @click=${() => this.handleDeleteApiKey(key.id)}>Revoke</vaadin-button>
+                                                        <sl-button variant="danger" @click=${() => this.handleDeleteApiKey(key.id)}>Revoke</sl-button>
                                                     </td>
                                                 </tr>
                                             `
@@ -131,68 +129,42 @@ export class ApiKeysView extends LitElement {
                                 </table>
                             `
                         )}
-                    </div>
-                </div>
+                </sl-card>
             </div>
 
-            <vaadin-dialog
-                header-title="Create API Key"
-                .opened=${this.isCreateModalOpen}
-                @opened-changed=${(e: CustomEvent) => this.isCreateModalOpen = e.detail.value}
-                .renderer=${(root: HTMLElement) => {
-                    root.innerHTML = `
-                        <div>
-                            <vaadin-text-field label="Key Name" .value=${this.newKeyName} @value-changed=${(e: CustomEvent) => this.newKeyName = e.detail.value}></vaadin-text-field>
-                            <vaadin-select label="Expiration" .value=${this.newKeyExpiry} @value-changed=${(e: CustomEvent) => this.newKeyExpiry = e.detail.value}>
-                                <vaadin-list-box>
-                                    <vaadin-item value="never">Never</vaadin-item>
-                                    <vaadin-item value="7days">7 Days</vaadin-item>
-                                    <vaadin-item value="30days">30 Days</vaadin-item>
-                                    <vaadin-item value="90days">90 Days</vaadin-item>
-                                    <vaadin-item value="custom">Custom Date</vaadin-item>
-                                </vaadin-list-box>
-                            </vaadin-select>
-                            ${this.newKeyExpiry === 'custom' ?
-                                `<vaadin-date-picker label="Custom Expiry Date" .value=${this.newCustomExpiry} @value-changed=${(e: CustomEvent) => this.newCustomExpiry = e.detail.value}></vaadin-date-picker>` : ''
-                            }
-                        </div>
-                    `;
-                }}
-                .footerRenderer=${(root: HTMLElement) => {
-                    root.innerHTML = `
-                        <vaadin-button @click=${() => { this.isCreateModalOpen = false; }}>Cancel</vaadin-button>
-                        <vaadin-button theme="primary" @click=${this.handleCreateApiKey}>Create</vaadin-button>
-                    `;
-                }}
-            ></vaadin-dialog>
+            <sl-dialog
+                label="Create API Key"
+                .open=${this.isCreateModalOpen}
+                @sl-hide=${() => this.isCreateModalOpen = false}>
+                <sl-input style="margin-bottom: 1rem;" label="Key Name" .value=${this.newKeyName} @sl-input=${(e: Event) => this.newKeyName = (e.target as HTMLInputElement).value}></sl-input>
+                <sl-select style="margin-bottom: 1rem;" label="Expiration" .value=${this.newKeyExpiry} @sl-change=${(e: { target: { value: string; } }) => this.newKeyExpiry = e.target.value}>
+                    <sl-menu-item value="never">Never</sl-menu-item>
+                    <sl-menu-item value="7days">7 Days</sl-menu-item>
+                    <sl-menu-item value="30days">30 Days</sl-menu-item>
+                    <sl-menu-item value="90days">90 Days</sl-menu-item>
+                    <sl-menu-item value="custom">Custom Date</sl-menu-item>
+                </sl-select>
+                ${when(this.newKeyExpiry === 'custom', () => html`
+                    <sl-input type="date" label="Custom Expiry Date" .value=${this.newCustomExpiry} @sl-change=${(e: { target: { value: string; } }) => this.newCustomExpiry = e.target.value}></sl-input>
+                `)}
+                <sl-button slot="footer" @click=${() => { this.isCreateModalOpen = false; }}>Cancel</sl-button>
+                <sl-button slot="footer" variant="primary" @click=${this.handleCreateApiKey}>Create</sl-button>
+            </sl-dialog>
 
-            <vaadin-dialog
-                header-title="API Key Created"
-                .opened=${this.isShowKeyModalOpen && this.newlyCreatedKey}
-                @opened-changed=${(e: CustomEvent) => this.isShowKeyModalOpen = e.detail.value}
-                .renderer=${(root: HTMLElement) => {
-                    root.innerHTML = `
-                        <div>
-                            <p>Here is your new API key. Please copy it now, you will not be able to see it again.</p>
-                            <pre><code>${this.newlyCreatedKey?.key}</code></pre>
-                        </div>
-                    `;
-                }}
-                .footerRenderer=${(root: HTMLElement) => {
-                    root.innerHTML = `
-                        <vaadin-button theme="primary" @click=${() => { this.isShowKeyModalOpen = false; }}>Close</vaadin-button>
-                    `;
-                }}
-            ></vaadin-dialog>
+            <sl-dialog
+                label="API Key Created"
+                .open=${this.isShowKeyModalOpen && this.newlyCreatedKey}
+                @sl-hide=${() => this.isShowKeyModalOpen = false}>
+                <p>Here is your new API key. Please copy it now, you will not be able to see it again.</p>
+                <pre><code>${this.newlyCreatedKey?.key}</code></pre>
+                <sl-button slot="footer" variant="primary" @click=${() => { this.isShowKeyModalOpen = false; }}>Close</sl-button>
+            </sl-dialog>
         `;
     }
 
     static styles = css`
         .container {
             padding: 2rem;
-        }
-        .card {
-            margin-top: 1rem;
         }
         .card-header {
             display: flex;

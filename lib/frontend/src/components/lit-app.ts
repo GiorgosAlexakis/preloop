@@ -23,11 +23,13 @@ import './app-footer.ts';
 export class LitApp extends LitElement {
   static styles = css`
     :host {
-      display: block;
+      display: flex;
+      flex-direction: column;
       height: 100vh;
     }
     main {
-      height: 100%;
+      flex: 1;
+      overflow-y: auto;
     }
   `;
 
@@ -71,6 +73,8 @@ export class LitApp extends LitElement {
   }
 
   render() {
-    return html` <main></main> `;
+    return html`
+      <main></main>
+    `;
   }
 }

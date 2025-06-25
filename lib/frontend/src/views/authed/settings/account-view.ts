@@ -6,9 +6,8 @@ import {
   changePassword,
 } from '../../../api';
 import { formStyles } from '../../../styles/form-styles';
-import '@vaadin/text-field';
-import '@vaadin/password-field';
-import '@vaadin/button';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
 
 @customElement('account-view')
 export class AccountView extends LitElement {
@@ -92,25 +91,23 @@ export class AccountView extends LitElement {
           </div>
           <div class="card-body">
             <form @submit="${this.handleUpdateProfile}">
-              <vaadin-text-field
+              <sl-input
                 label="Username"
                 .value="${this.user?.username || ''}"
                 readonly
-              ></vaadin-text-field>
-              <vaadin-text-field
+              ></sl-input>
+              <sl-input
                 label="Email"
                 .value="${this.user?.email || ''}"
                 readonly
-              ></vaadin-text-field>
-              <vaadin-text-field
+              ></sl-input>
+              <sl-input
                 label="Full Name"
                 .value="${this.fullName}"
-                @value-changed="${(e: CustomEvent) =>
-                  (this.fullName = e.detail.value)}"
-              ></vaadin-text-field>
-              <vaadin-button theme="primary" type="submit"
-                >Update Profile</vaadin-button
-              >
+                @sl-input="${(e: Event) =>
+                  (this.fullName = (e.target as HTMLInputElement).value)}"
+              ></sl-input>
+              <sl-button variant="primary" type="submit">Update Profile</sl-button>
               ${this.updateProfileMessage
                 ? html`<p>${this.updateProfileMessage}</p>`
                 : ''}
@@ -124,30 +121,38 @@ export class AccountView extends LitElement {
           </div>
           <div class="card-body">
             <form @submit="${this.handleChangePassword}">
-              <vaadin-password-field
+              <sl-input
+                type="password"
                 label="Current Password"
                 .value="${this.currentPassword}"
-                @value-changed="${(e: CustomEvent) =>
-                  (this.currentPassword = e.detail.value)}"
+                @sl-input="${(e: Event) =>
+                  (this.currentPassword = (e.target as HTMLInputElement).value)}"
                 required
-              ></vaadin-password-field>
-              <vaadin-password-field
+                password-toggle
+              ></sl-input>
+              <sl-input
+                type="password"
                 label="New Password"
                 .value="${this.newPassword}"
-                @value-changed="${(e: CustomEvent) =>
-                  (this.newPassword = e.detail.value)}"
+                @sl-input="${(e: Event) =>
+                  (this.newPassword = (e.target as HTMLInputElement).value)}"
                 required
                 minlength="8"
-              ></vaadin-password-field>
-              <vaadin-password-field
+                password-toggle
+              ></sl-input>
+              <sl-input
+                type="password"
                 label="Confirm New Password"
                 .value="${this.confirmNewPassword}"
-                @value-changed="${(e: CustomEvent) =>
-                  (this.confirmNewPassword = e.detail.value)}"
+                @sl-input="${(e: Event) =>
+                  (this.confirmNewPassword = (
+                    e.target as HTMLInputElement
+                  ).value)}"
                 required
-              ></vaadin-password-field>
-              <vaadin-button theme="primary" type="submit"
-                >Change Password</vaadin-button
+                password-toggle
+              ></sl-input>
+              <sl-button variant="primary" type="submit"
+                >Change Password</sl-button
               >
               ${this.changePasswordMessage
                 ? html`<p>${this.changePasswordMessage}</p>`

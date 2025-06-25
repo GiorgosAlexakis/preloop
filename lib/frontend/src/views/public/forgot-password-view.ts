@@ -2,6 +2,10 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { formStyles } from '../../styles/form-styles';
 import { post } from '../../api';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 @customElement('forgot-password-view')
 export class ForgotPasswordView extends LitElement {
@@ -35,18 +39,31 @@ export class ForgotPasswordView extends LitElement {
       <div class="form-container">
         <h2>Forgot Password</h2>
         ${this.message
-          ? html`<div class="success-message">${this.message}</div>`
+          ? html`<sl-alert
+              variant="success"
+              open
+              closable
+              @sl-after-hide=${() => (this.message = '')}
+            >
+              <sl-icon slot="icon" name="check-circle"></sl-icon>
+              ${this.message}
+            </sl-alert>`
           : ''}
         ${this.error
-          ? html`<div class="error-message">${this.error}</div>`
+          ? html`<sl-alert
+              variant="danger"
+              open
+              closable
+              @sl-after-hide=${() => (this.error = '')}
+            >
+              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+              ${this.error}
+            </sl-alert>`
           : ''}
         <form @submit=${this.handleForgotPassword}>
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input type="email" id="email" name="email" required />
-          </div>
+          <sl-input type="email" label="Email" name="email" required></sl-input>
           <div class="form-actions">
-            <button type="submit">Send Reset Link</button>
+            <sl-button type="submit" variant="primary">Send Reset Link</sl-button>
           </div>
           <div class="form-links">
             <a href="/login">Back to Login</a>

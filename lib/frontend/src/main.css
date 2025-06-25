@@ -1,3 +1,4 @@
+@import '@shoelace-style/shoelace/dist/themes/light.css';
 :root {
     --primary: #2d5fac;
     --primary-light: #f0f5fc;

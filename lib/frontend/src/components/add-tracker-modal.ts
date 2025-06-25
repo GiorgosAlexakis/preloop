@@ -3,17 +3,17 @@ import {
   validateTrackerToken,
   listProjectsForOrg,
 } from '../api';
-import { LitElement, html, css, render as litRender, TemplateResult } from 'lit';
+import { LitElement, html, css, TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import '@vaadin/dialog';
-import '@vaadin/form-layout';
-import '@vaadin/text-field';
-import '@vaadin/password-field';
-import '@vaadin/select';
-import '@vaadin/button';
-import '@vaadin/checkbox';
-import '@vaadin/progress-bar';
-import '@vaadin/details';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
+import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
+import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
+import '@shoelace-style/shoelace/dist/components/details/details.js';
+import { SlDialog } from '@shoelace-style/shoelace';
 
 interface Project {
   id: string;
@@ -92,7 +92,7 @@ export class AddTrackerModal extends LitElement {
     .error-message {
       color: var(--lumo-error-text-color);
     }
-    vaadin-details {
+    sl-details {
       margin-bottom: 0.5rem;
     }
   `;
@@ -109,93 +109,81 @@ export class AddTrackerModal extends LitElement {
 
   render() {
     return html`
-      <vaadin-dialog
-        header-title="${this.step === 1
+      <sl-dialog
+        label="${this.step === 1
           ? 'Add New Tracker: Credentials'
           : 'Add New Tracker: Project Scope'}"
-        .opened="${this.opened}"
-        @opened-changed="${(e: CustomEvent) => {
-          if (!e.detail.value) this.reset();
-          this.opened = e.detail.value;
-        }}"
-        .renderer="${this.renderForm}"
-      ></vaadin-dialog>
-    `;
-  }
-
-  private renderForm = (root: HTMLElement) => {
-    litRender(
-      html`
+        .open="${this.opened}"
+        @sl-hide="${() => (this.opened = false)}"
+        @sl-after-hide="${() => this.reset()}"
+      >
         <div class="form-container">
           ${this.isConnecting || this.isSaving
-            ? html`<vaadin-progress-bar indeterminate></vaadin-progress-bar>`
+            ? html`<sl-progress-bar indeterminate></sl-progress-bar>`
             : ''}
           ${this.step === 1 ? this.renderStep1() : this.renderStep2()}
           ${this.errorMessage ? html`<div class="error-message">${this.errorMessage}</div>` : ''}
-          <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
-            <vaadin-button @click="${() => (this.opened = false)}">Cancel</vaadin-button>
-            ${this.step > 1
-              ? html`<vaadin-button @click="${() => (this.step = 1)}">Previous</vaadin-button>`
-              : ''}
-            <vaadin-button
-              theme="primary"
-              @click="${this.handleNextOrSave}"
-              .disabled="${this.step === 1
-                ? this.isStep1Invalid || this.isConnecting
-                : this.isSaving}"
-            >
-              ${this.isConnecting
-                ? 'Connecting...'
-                : this.step === 1
-                ? 'Next'
-                : 'Save'}
-            </vaadin-button>
-          </div>
         </div>
-      `,
-      root
-    );
-  };
+        <sl-button slot="footer" @click="${() => (this.opened = false)}">Cancel</sl-button>
+        ${this.step > 1
+          ? html`<sl-button slot="footer" @click="${() => (this.step = 1)}">Previous</sl-button>`
+          : ''}
+        <sl-button
+          slot="footer"
+          variant="primary"
+          @click="${this.handleNextOrSave}"
+          .disabled="${this.step === 1
+            ? this.isStep1Invalid || this.isConnecting
+            : this.isSaving}"
+          .loading="${this.isConnecting || this.isSaving}"
+        >
+          ${this.step === 1 ? 'Next' : 'Save'}
+        </sl-button>
+      </sl-dialog>
+    `;
+  }
 
   private renderStep1(): TemplateResult {
     return html`
-      <vaadin-text-field
+      <sl-input
         label="Tracker Name"
         .value="${this.trackerName}"
-        @value-changed="${(e: CustomEvent) => (this.trackerName = e.detail.value)}"
+        @sl-input="${(e: Event) => (this.trackerName = (e.target as HTMLInputElement).value)}"
         required
-      ></vaadin-text-field>
-      <vaadin-select
+      ></sl-input>
+      <sl-select
         label="Tracker Type"
-        .items="${[
-          { label: 'GitHub', value: 'github' },
-          { label: 'GitLab', value: 'gitlab' },
-          { label: 'Jira', value: 'jira' },
-        ]}"
         .value="${this.trackerType}"
-        @value-changed="${(e: CustomEvent) => (this.trackerType = e.detail.value)}"
+        @sl-change="${(e: CustomEvent) => (this.trackerType = e.detail.item.value)}"
         required
-      ></vaadin-select>
-      <vaadin-text-field
+      >
+        <sl-menu-item value="github">GitHub</sl-menu-item>
+        <sl-menu-item value="gitlab">GitLab</sl-menu-item>
+        <sl-menu-item value="jira">Jira</sl-menu-item>
+      </sl-select>
+      <sl-input
         label="Tracker URL"
         .value="${this.trackerUrl}"
-        @value-changed="${(e: CustomEvent) => (this.trackerUrl = e.detail.value)}"
+        @sl-input="${(e: Event) => (this.trackerUrl = (e.target as HTMLInputElement).value)}"
         required
-      ></vaadin-text-field>
-      <vaadin-password-field
+      ></sl-input>
+      <sl-input
+        type="password"
         label="Access Token"
         .value="${this.trackerToken}"
-        @value-changed="${(e: CustomEvent) => (this.trackerToken = e.detail.value)}"
+        @sl-input="${(e: Event) => (this.trackerToken = (e.target as HTMLInputElement).value)}"
         required
-      ></vaadin-password-field>
+        password-toggle
+      ></sl-input>
       ${this.trackerType === 'jira'
         ? html`
-            <vaadin-text-field
+            <sl-input
               label="Jira Username"
               .value="${this.jiraUsername}"
-              @value-changed="${(e: CustomEvent) => (this.jiraUsername = e.detail.value)}"
+              @sl-input="${(e: Event) =>
+                (this.jiraUsername = (e.target as HTMLInputElement).value)}"
               required
-            ></vaadin-text-field>
+            ></sl-input>
           `
         : ''}
     `;
@@ -206,51 +194,52 @@ export class AddTrackerModal extends LitElement {
       <div class="project-tree">
         ${this.orgs.map(
           (org, index) => html`
-            <vaadin-details
-              @opened-changed="${(e: CustomEvent) => {
-                if (e.detail.value) this.loadProjectsForOrg(index);
-              }}"
+            <sl-details
+              summary="${org.name}"
+              @sl-show="${() => this.loadProjectsForOrg(index)}"
             >
               <div slot="summary" class="org-header">
-                <vaadin-checkbox
+                <sl-checkbox
                   .checked="${this.isOrgSelected(org)}"
                   .indeterminate="${this.isOrgIndeterminate(org)}"
                   @click="${(e: Event) => e.stopPropagation()}"
-                  @change="${(e: Event) => {
+                  @sl-change="${(e: Event) => {
                     this.toggleOrg(org, (e.target as HTMLInputElement).checked);
                   }}"
-                ></vaadin-checkbox>
+                ></sl-checkbox>
                 <span>${org.name}</span>
               </div>
               ${org.loading
-                ? html`<vaadin-progress-bar indeterminate></vaadin-progress-bar>`
+                ? html`<sl-progress-bar indeterminate></sl-progress-bar>`
                 : html`
                     <div class="project-list">
                       ${org.children.map(
                         proj => html`
                           <div class="project-item">
-                            <vaadin-checkbox
+                            <sl-checkbox
                               .checked="${this.selectedProjects.has(
                                 proj.identifier
                               )}"
-                              @change="${() => this.toggleProject(proj)}"
-                              .label="${proj.name}"
-                            ></vaadin-checkbox>
+                              @sl-change="${() => this.toggleProject(proj)}"
+                            >
+                              ${proj.name}
+                            </sl-checkbox>
                           </div>
                         `
                       )}
                     </div>
                   `}
-            </vaadin-details>
+            </sl-details>
           `
         )}
       </div>
-      <vaadin-checkbox
+      <sl-checkbox
         .checked="${this.includeFutureProjects}"
-        @change="${(e: Event) =>
+        @sl-change="${(e: Event) =>
           (this.includeFutureProjects = (e.target as HTMLInputElement).checked)}"
-        label="Automatically include new projects created in the future"
-      ></vaadin-checkbox>
+      >
+        Automatically include new projects created in the future
+      </sl-checkbox>
     `;
   }
 

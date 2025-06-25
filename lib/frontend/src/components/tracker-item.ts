@@ -1,5 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
 
 export interface Tracker {
   id: string;
@@ -13,31 +15,8 @@ export class TrackerItem extends LitElement {
   tracker?: Tracker;
 
   static styles = css`
-    :host {
-      display: block;
-      border: 1px solid #ccc;
-      padding: 16px;
-      margin-bottom: 8px;
-      border-radius: 4px;
-    }
-    button {
-      background-color: #ff4d4d;
-      color: white;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-      margin-top: 8px;
-      margin-right: 8px;
-    }
-    button:hover {
-      background-color: #e60000;
-    }
-    .edit-button {
-      background-color: #4d4dff;
-    }
-    .edit-button:hover {
-      background-color: #0000e6;
+    sl-card {
+      margin-bottom: 1rem;
     }
   `;
 
@@ -67,10 +46,18 @@ export class TrackerItem extends LitElement {
     }
 
     return html`
-      <div><strong>Name:</strong> ${this.tracker.name}</div>
-      <div><strong>Type:</strong> ${this.tracker.tracker_type}</div>
-      <button @click=${this._deleteTracker}>Delete</button>
-      <button class="edit-button" @click=${this._editTracker}>Edit</button>
+      <sl-card>
+        <div slot="header">${this.tracker.name}</div>
+        <div><strong>Type:</strong> ${this.tracker.tracker_type}</div>
+        <div slot="footer">
+          <sl-button variant="primary" @click=${this._editTracker}
+            >Edit</sl-button
+          >
+          <sl-button variant="danger" @click=${this._deleteTracker}
+            >Delete</sl-button
+          >
+        </div>
+      </sl-card>
     `;
   }
 }

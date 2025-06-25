@@ -2,6 +2,8 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import { router } from '../../router';
+import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
+import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 
 @customElement('settings-view')
 export class SettingsView extends LitElement {
@@ -10,7 +12,7 @@ export class SettingsView extends LitElement {
       display: block;
       padding: var(--lumo-space-l);
     }
-    vaadin-tabs {
+    sl-tab-group {
       margin-bottom: var(--lumo-space-l);
     }
   `;
@@ -24,27 +26,19 @@ export class SettingsView extends LitElement {
     { path: '/settings/llm-models', label: 'LLM Models' },
   ];
 
-  private get selectedTab() {
-    return this.tabs.findIndex((tab) =>
-      this.location.pathname.startsWith(tab.path)
-    );
-  }
-
   private onTabSelected(e: CustomEvent) {
-    const tab = this.tabs[e.detail.value];
-    if (tab) {
-      Router.go(tab.path);
-    }
+    const tab = e.detail.tab;
+    Router.go(tab.panel);
   }
 
   render() {
     return html`
-      <vaadin-tabs
-        .selected=${this.selectedTab}
-        @selected-changed=${this.onTabSelected}
-      >
-        ${this.tabs.map((tab) => html`<vaadin-tab>${tab.label}</vaadin-tab>`)}
-      </vaadin-tabs>
+      <sl-tab-group @sl-tab-select=${this.onTabSelected}>
+        ${this.tabs.map(
+          (tab) =>
+            html`<sl-tab panel=${tab.path}>${tab.label}</sl-tab>`
+        )}
+      </sl-tab-group>
       <slot></slot>
     `;
   }

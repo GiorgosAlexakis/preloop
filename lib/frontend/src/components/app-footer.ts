@@ -1,5 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/divider/divider.js';
+import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 
 @customElement('app-footer')
 export class AppFooter extends LitElement {
@@ -32,6 +35,26 @@ export class AppFooter extends LitElement {
         text-align: right;
       }
 
+      .footer-nav ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .footer-nav sl-button::part(label) {
+        font-size: 0.9rem;
+      }
+
+      .footer-nav sl-button {
+        color: var(--gray-200);
+        transition: color 0.2s ease;
+        margin-bottom: 10px;
+      }
+
+      .footer-nav sl-button:hover {
+        color: white;
+      }
+
       h5 {
         color: white;
         font-size: 1.1rem;
@@ -39,8 +62,7 @@ export class AppFooter extends LitElement {
         font-weight: 600;
       }
 
-      p,
-      li {
+      p {
         font-size: 0.9rem;
         margin-bottom: 10px;
       }
@@ -55,9 +77,9 @@ export class AppFooter extends LitElement {
         color: white;
       }
 
-      hr {
+      sl-divider {
         margin: 30px 0;
-        opacity: 0.1;
+        --color: rgba(255, 255, 255, 0.1);
       }
 
       .footer-bottom {
@@ -71,30 +93,21 @@ export class AppFooter extends LitElement {
         font-size: 0.85rem;
       }
 
-      .copyright-text a,
-      .linkedin-icon-footer {
+      .copyright-text a {
         color: inherit;
         text-decoration: none;
       }
 
-      .copyright-text a:hover,
-      .linkedin-icon-footer:hover {
+      .copyright-text a:hover {
         text-decoration: underline;
       }
 
-      .linkedin-icon-footer svg {
-        fill: currentColor;
-        vertical-align: middle;
-      }
-      .btn-link {
-        background: none;
-        border: none;
-        padding: 0;
+      sl-icon-button {
         color: var(--gray-200);
-        text-decoration: none;
-        cursor: pointer;
+        font-size: 1.25rem;
+        transition: color 0.2s ease;
       }
-      .btn-link:hover {
+      sl-icon-button:hover {
         color: white;
       }
     `,
@@ -127,46 +140,51 @@ export class AppFooter extends LitElement {
             </p>
           </div>
           <nav class="footer-nav">
-            <ul style="list-style: none; padding: 0; margin: 0;">
-              <li><a href="/docs">API Documentation</a></li>
-              <li><a href="/register">Register</a></li>
-              <li><a href="/login">Login</a></li>
-              <li><a href="/privacy">Privacy Policy</a></li>
-              <li><a href="/terms">Terms of Service</a></li>
-              <li><a href="/whatis-mcp" target="_blank">What is MCP?</a></li>
+            <ul>
               <li>
-                <button class="btn-link" @click=${this.switchToOldUI}>
+                <sl-button variant="text" href="/docs"
+                  >API Documentation</sl-button
+                >
+              </li>
+              <li>
+                <sl-button variant="text" href="/register">Register</sl-button>
+              </li>
+              <li><sl-button variant="text" href="/login">Login</sl-button></li>
+              <li>
+                <sl-button variant="text" href="/privacy"
+                  >Privacy Policy</sl-button
+                >
+              </li>
+              <li>
+                <sl-button variant="text" href="/terms"
+                  >Terms of Service</sl-button
+                >
+              </li>
+              <li>
+                <sl-button variant="text" href="/whatis-mcp" target="_blank"
+                  >What is MCP?</sl-button
+                >
+              </li>
+              <li>
+                <sl-button variant="text" @click=${this.switchToOldUI}>
                   Switch to the old UI
-                </button>
+                </sl-button>
               </li>
             </ul>
           </nav>
         </div>
-        <hr />
+        <sl-divider></sl-divider>
         <div class="footer-bottom">
           <span class="copyright-text"
             >&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All
             rights reserved.</span
           >
-          <a
+          <sl-icon-button
+            name="linkedin"
+            label="LinkedIn"
             href="https://www.linkedin.com/company/spacecode-ai/"
             target="_blank"
-            rel="noopener noreferrer"
-            title="LinkedIn"
-            class="linkedin-icon-footer"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path
-                d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.761 0 5-2.239 5-5v-14c0-2.761-2.239-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"
-              />
-            </svg>
-          </a>
+          ></sl-icon-button>
         </div>
       </div>
     `;

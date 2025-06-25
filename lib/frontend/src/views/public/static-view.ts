@@ -3,6 +3,9 @@ import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { unsafeStatic } from 'lit/static-html.js';
 import { marked } from 'marked';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 @customElement('static-view')
 export class StaticView extends LitElement {
@@ -34,14 +37,20 @@ export class StaticView extends LitElement {
         this.content = marked(markdown) as string;
       } catch (error) {
         console.error('Error fetching static content:', error);
-        this.content = '<p>Error loading content.</p>';
+        this.content = `
+          <sl-alert variant="danger" open>
+            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+            <strong>Error loading content.</strong><br />
+            There was an issue fetching the content from the specified source.
+          </sl-alert>
+        `;
       }
     }
   }
 
   render() {
     if (this.content === null) {
-      return html`<p>Loading...</p>`;
+      return html`<sl-spinner></sl-spinner>`;
     }
     return html`${unsafeHTML(this.content)}`;
   }

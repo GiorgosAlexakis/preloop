@@ -3,6 +3,8 @@ import { customElement, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import { post } from '../../api';
 import { formStyles } from '../../styles/form-styles';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
 
 @customElement('login-view')
 export class LoginView extends LitElement {
@@ -54,15 +56,27 @@ export class LoginView extends LitElement {
           : ''}
         <form @submit=${this.handleLogin}>
           <div class="form-group">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" required />
+            <sl-input
+              label="Username"
+              id="username"
+              name="username"
+              required
+            ></sl-input>
           </div>
           <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required />
+            <sl-input
+              type="password"
+              label="Password"
+              id="password"
+              name="password"
+              required
+              password-toggle
+            ></sl-input>
           </div>
           <div class="form-actions">
-            <button type="submit">Login</button>
+            <sl-button type="submit" variant="primary" style="width: 100%;"
+              >Login</sl-button
+            >
           </div>
           <div class="form-links">
             <a href="/forgot-password">Forgot Password?</a> |

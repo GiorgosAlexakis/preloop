@@ -4,6 +4,9 @@ import { Router } from '@vaadin/router';
 import { post } from '../../api';
 import { formStyles } from '../../styles/form-styles';
 
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+
 @customElement('register-view')
 export class RegisterView extends LitElement {
   @state()
@@ -41,19 +44,23 @@ export class RegisterView extends LitElement {
           : ''}
         <form @submit=${this.handleRegister}>
           <div class="form-group">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" required />
+            <sl-input label="Username" id="username" name="username" required></sl-input>
           </div>
           <div class="form-group">
-            <label for="email">Email</label>
-            <input type="email" id="email" name="email" required />
+            <sl-input type="email" label="Email" id="email" name="email" required></sl-input>
           </div>
           <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required />
+            <sl-input
+              type="password"
+              label="Password"
+              id="password"
+              name="password"
+              required
+              password-toggle
+            ></sl-input>
           </div>
           <div class="form-actions">
-            <button type="submit">Register</button>
+            <sl-button type="submit" variant="primary">Register</sl-button>
           </div>
           <div class="form-links">
             <span>Already have an account? </span>

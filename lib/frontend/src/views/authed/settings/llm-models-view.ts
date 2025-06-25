@@ -4,13 +4,14 @@ import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
 import * as api from '../../../api';
 import { LlmModel } from '../../../types';
-import '@vaadin/button';
-import '@vaadin/dialog';
-import '@vaadin/text-field';
-import '@vaadin/password-field';
-import '@vaadin/select';
-import '@vaadin/list-box';
-import '@vaadin/item';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
+import '@shoelace-style/shoelace/dist/components/option/option.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 
 @customElement('llm-models-view')
 export class LlmModelsView extends LitElement {
@@ -29,6 +30,12 @@ export class LlmModelsView extends LitElement {
   @state()
   private currentModel: Partial<LlmModel> = {};
 
+  @state()
+  private isDeleteConfirmOpen = false;
+
+  @state()
+  private modelToDelete: LlmModel | null = null;
+
   static styles = css`
     .container {
       padding: 2rem;
@@ -37,6 +44,30 @@ export class LlmModelsView extends LitElement {
       display: flex;
       justify-content: space-between;
       align-items: center;
+    }
+    sl-card::part(base) {
+      margin-bottom: 1rem;
+    }
+    .model-card-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 1rem;
+      align-items: center;
+    }
+    .actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    sl-dialog::part(panel) {
+      max-width: 600px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    .form-grid .full-width {
+      grid-column: 1 / -1;
     }
   `;
 
@@ -59,97 +90,163 @@ export class LlmModelsView extends LitElement {
   render() {
     return html`
       <div class="container">
-        <div class="card">
-          <div class="card-header">
+        <sl-card>
+          <div slot="header" class="card-header">
             <span>LLM Models</span>
-            <vaadin-button theme="primary small" @click=${this.openAddModelModal}>
-              <i class="bi bi-plus-lg"></i> Add Model
-            </vaadin-button>
+            <sl-button
+              variant="primary"
+              size="small"
+              @click=${this.openAddModelModal}
+            >
+              <sl-icon slot="prefix" name="plus-lg"></sl-icon> Add Model
+            </sl-button>
           </div>
-          <div class="card-body">
-            ${when(
-              this.isLoading,
-              () => html`<p>Loading...</p>`,
-              () => this.renderModelsTable()
-            )}
-          </div>
-        </div>
+          ${when(
+            this.isLoading,
+            () =>
+              html`<div
+                style="display: flex; justify-content: center; padding: 2rem;"
+              >
+                <sl-spinner></sl-spinner>
+              </div>`,
+            () => this.renderModelsList()
+          )}
+        </sl-card>
       </div>
-      ${this.renderModal()}
+      ${this.renderModal()} ${this.renderDeleteConfirm()}
     `;
   }
 
-  renderModelsTable() {
+  renderModelsList() {
     if (this.models.length === 0) {
-      return html`<p>No LLM models configured yet. Click 'Add Model' to get started.</p>`;
+      return html`<p>
+        No LLM models configured yet. Click 'Add Model' to get started.
+      </p>`;
     }
 
     return html`
-      <table class="table table-hover">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Provider</th>
-            <th>Model Name</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${repeat(
-            this.models,
-            (model) => model.id,
-            (model) => html`
-              <tr>
-                <td>${model.name}</td>
-                <td>${model.provider_name}</td>
-                <td>${model.model_name}</td>
-                <td>
-                  <vaadin-button theme="tertiary-inline small" @click=${() => this.openEditModal(model)}>
-                    <i class="bi bi-pencil"></i>
-                  </vaadin-button>
-                  <vaadin-button theme="tertiary-inline small error" @click=${() => this.deleteModel(model.id)}>
-                    <i class="bi bi-trash"></i>
-                  </vaadin-button>
-                </td>
-              </tr>
-            `
-          )}
-        </tbody>
-      </table>
+      <div>
+        ${repeat(
+          this.models,
+          (model) => model.id,
+          (model) => html`
+            <sl-card>
+              <div class="model-card-body">
+                <div><strong>Name:</strong> ${model.name}</div>
+                <div><strong>Provider:</strong> ${model.provider_name}</div>
+                <div><strong>Model:</strong> ${model.model_name}</div>
+                <div class="actions">
+                  <sl-button
+                    size="small"
+                    circle
+                    @click=${() => this.openEditModal(model)}
+                  >
+                    <sl-icon name="pencil"></sl-icon>
+                  </sl-button>
+                  <sl-button
+                    variant="danger"
+                    size="small"
+                    circle
+                    @click=${() => this.openDeleteConfirm(model)}
+                  >
+                    <sl-icon name="trash"></sl-icon>
+                  </sl-button>
+                </div>
+              </div>
+            </sl-card>
+          `
+        )}
+      </div>
     `;
   }
 
   renderModal() {
     return html`
-      <vaadin-dialog
-        header-title="${this.isEditing ? 'Edit' : 'Add'} LLM Model"
-        .opened=${this.isModalOpen}
-        @opened-changed=${(e: CustomEvent) => this.isModalOpen = e.detail.value}
-        .renderer=${(root: HTMLElement) => {
-          root.innerHTML = `
-            <div>
-              <vaadin-text-field label="Friendly Name" .value=${this.currentModel.name || ''} @value-changed=${(e: CustomEvent) => this.currentModel.name = e.detail.value} required></vaadin-text-field>
-              <vaadin-select label="Provider" .value=${this.currentModel.provider_name || ''} @value-changed=${(e: CustomEvent) => this.currentModel.provider_name = e.detail.value} required>
-                <vaadin-list-box>
-                  <vaadin-item value="openai">OpenAI</vaadin-item>
-                  <vaadin-item value="anthropic">Anthropic</vaadin-item>
-                  <vaadin-item value="google">Google</vaadin-item>
-                  <vaadin-item value="custom">Custom</vaadin-item>
-                </vaadin-list-box>
-              </vaadin-select>
-              <vaadin-text-field label="Model Name / ID" .value=${this.currentModel.model_name || ''} @value-changed=${(e: CustomEvent) => this.currentModel.model_name = e.detail.value} required></vaadin-text-field>
-              <vaadin-text-field label="API URL" .value=${this.currentModel.api_url || ''} @value-changed=${(e: CustomEvent) => this.currentModel.api_url = e.detail.value} required></vaadin-text-field>
-              <vaadin-password-field label="API Key" @value-changed=${(e: CustomEvent) => this.currentModel.api_key = e.detail.value} placeholder=${this.isEditing ? 'Leave blank to keep existing key' : ''}></vaadin-password-field>
-            </div>
-          `;
-        }}
-        .footerRenderer=${(root: HTMLElement) => {
-          root.innerHTML = `
-            <vaadin-button @click=${this.closeModal}>Cancel</vaadin-button>
-            <vaadin-button theme="primary" @click=${this.handleFormSubmit}>Save</vaadin-button>
-          `;
-        }}
-      ></vaadin-dialog>
+      <sl-dialog
+        label="${this.isEditing ? 'Edit' : 'Add'} LLM Model"
+        .open=${this.isModalOpen}
+        @sl-hide=${this.closeModal}
+      >
+        <div class="form-grid">
+          <sl-input
+            class="full-width"
+            label="Friendly Name"
+            .value=${this.currentModel.name || ''}
+            @sl-input=${(e: Event) =>
+              (this.currentModel.name = (e.target as HTMLInputElement).value)}
+            required
+          ></sl-input>
+          <sl-select
+            label="Provider"
+            .value=${this.currentModel.provider_name || ''}
+            @sl-change=${(e: CustomEvent) =>
+              (this.currentModel.provider_name = (
+                e.target as HTMLSelectElement
+              ).value)}
+            required
+          >
+            <sl-option value="openai">OpenAI</sl-option>
+            <sl-option value="anthropic">Anthropic</sl-option>
+            <sl-option value="google">Google</sl-option>
+            <sl-option value="custom">Custom</sl-option>
+          </sl-select>
+          <sl-input
+            label="Model Name / ID"
+            .value=${this.currentModel.model_name || ''}
+            @sl-input=${(e: Event) =>
+              (this.currentModel.model_name = (
+                e.target as HTMLInputElement
+              ).value)}
+            required
+          ></sl-input>
+          <sl-input
+            class="full-width"
+            label="API URL"
+            .value=${this.currentModel.api_url || ''}
+            @sl-input=${(e: Event) =>
+              (this.currentModel.api_url = (e.target as HTMLInputElement).value)}
+            required
+          ></sl-input>
+          <sl-input
+            class="full-width"
+            type="password"
+            label="API Key"
+            @sl-input=${(e: Event) =>
+              (this.currentModel.api_key = (e.target as HTMLInputElement).value)}
+            placeholder=${this.isEditing
+              ? 'Leave blank to keep existing key'
+              : ''}
+          ></sl-input>
+        </div>
+        <sl-button slot="footer" @click=${this.closeModal}>Cancel</sl-button>
+        <sl-button
+          slot="footer"
+          variant="primary"
+          @click=${this.handleFormSubmit}
+          >Save</sl-button
+        >
+      </sl-dialog>
+    `;
+  }
+
+  renderDeleteConfirm() {
+    return html`
+      <sl-dialog
+        label="Delete Model"
+        .open=${this.isDeleteConfirmOpen}
+        @sl-hide=${() => (this.isDeleteConfirmOpen = false)}
+      >
+        Are you sure you want to delete the model
+        "${this.modelToDelete?.name}"?
+        <sl-button
+          slot="footer"
+          @click=${() => (this.isDeleteConfirmOpen = false)}
+          >Cancel</sl-button
+        >
+        <sl-button slot="footer" variant="danger" @click=${this.deleteModel}
+          >Delete</sl-button
+        >
+      </sl-dialog>
     `;
   }
 
@@ -171,6 +268,18 @@ export class LlmModelsView extends LitElement {
 
   async handleFormSubmit(e: Event) {
     e.preventDefault();
+    // Basic validation
+    if (
+      !this.currentModel.name ||
+      !this.currentModel.provider_name ||
+      !this.currentModel.model_name ||
+      !this.currentModel.api_url
+    ) {
+      // In a real app, show a user-friendly error.
+      console.error('Validation failed');
+      return;
+    }
+
     if (this.isEditing) {
       await api.updateLlmModel(this.currentModel.id!, this.currentModel);
     } else {
@@ -180,10 +289,17 @@ export class LlmModelsView extends LitElement {
     await this.fetchModels();
   }
 
-  async deleteModel(id: string) {
-    if (confirm('Are you sure you want to delete this model?')) {
-      await api.deleteLlmModel(id);
+  openDeleteConfirm(model: LlmModel) {
+    this.modelToDelete = model;
+    this.isDeleteConfirmOpen = true;
+  }
+
+  async deleteModel() {
+    if (this.modelToDelete) {
+      await api.deleteLlmModel(this.modelToDelete.id);
       await this.fetchModels();
     }
+    this.isDeleteConfirmOpen = false;
+    this.modelToDelete = null;
   }
 }

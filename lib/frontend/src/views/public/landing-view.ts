@@ -1,7 +1,7 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
-import '@vaadin/button';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
 
 type IdeTab = 'claude-code' | 'cursor' | 'windsurf';
 
@@ -63,19 +63,20 @@ export class LandingView extends LitElement {
                 coding.
               </p>
               <div class="hero-buttons">
-                <vaadin-button
-                  theme="primary large"
+                <sl-button
+                  variant="primary"
+                  size="large"
                   @click=${() => (window.location.href = '/register')}
-                  >Get Started</vaadin-button
+                  >Get Started</sl-button
                 >
-                <vaadin-button
-                  theme="tertiary"
+                <sl-button
+                  variant="text"
                   @click=${() =>
                     window.open(
                       'https://github.com/SpaceBridge/spacebridge',
                       '_blank'
                     )}
-                  >What is MCP?</vaadin-button
+                  >What is MCP?</sl-button
                 >
               </div>
             </div>
@@ -393,10 +394,11 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
         <section class="final-cta">
           <div class="section-container">
             <h2>Ready to Supercharge your AI Workflow?</h2>
-            <vaadin-button
-              theme="primary large"
+            <sl-button
+              variant="primary"
+              size="large"
               @click=${() => (window.location.href = '/register')}
-              >Get Started For Free</vaadin-button
+              >Get Started For Free</sl-button
             >
           </div>
         </section>

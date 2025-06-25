@@ -3,6 +3,10 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import { getAccountDetails } from '../api';
 
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+
 interface User {
   username: string;
   email: string;
@@ -36,35 +40,13 @@ export class AppHeader extends LitElement {
     nav {
       display: flex;
       align-items: center;
-    }
-    nav a,
-    nav button {
-      color: var(--gray-700);
-      text-decoration: none;
-      margin-left: 1.5rem;
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 1rem;
-      font-family: inherit;
-      transition: color 0.2s ease-in-out;
-    }
-    nav a:hover {
-      color: var(--primary-color);
+      gap: 0.5rem;
     }
     .logo img {
       height: 32px;
     }
-    .signup-button {
-      border: 1px solid var(--gray-300);
-      border-radius: 0.375rem;
-      padding: 0.5rem 1rem;
-      color: var(--primary-color);
-      font-weight: 500;
-    }
-    .signup-button:hover {
-      background-color: var(--primary-light);
-      border-color: var(--primary-color);
+    sl-icon-button::part(base) {
+      font-size: 1.5rem;
     }
   `;
 
@@ -72,16 +54,12 @@ export class AppHeader extends LitElement {
     super.connectedCallback();
     this.checkAuth();
     window.addEventListener('auth-change', () => this.checkAuth());
-    window.addEventListener('vaadin-router-location-changed', () =>
-      this.requestUpdate()
-    );
+    window.addEventListener('vaadin-router-location-changed', () => this.requestUpdate());
   }
 
   disconnectedCallback() {
     window.removeEventListener('auth-change', () => this.checkAuth());
-    window.removeEventListener('vaadin-router-location-changed', () =>
-      this.requestUpdate()
-    );
+    window.removeEventListener('vaadin-router-location-changed', () => this.requestUpdate());
     super.disconnectedCallback();
   }
 
@@ -119,25 +97,35 @@ export class AppHeader extends LitElement {
         <div class="header-container">
           <div class="flex items-center">
             ${this.showDrawerToggle
-              ? html`<vaadin-drawer-toggle></vaadin-drawer-toggle>`
+              ? html`<sl-icon-button
+                  name="menu"
+                  @click=${() =>
+                    this.dispatchEvent(
+                      new CustomEvent('toggle-drawer', {
+                        bubbles: true,
+                        composed: true,
+                      })
+                    )}
+                ></sl-icon-button>`
               : html`<div class="logo">
-              <a href="/">
-                <img src="/images/logo.png" alt="SpaceBridge Logo" />
-              </a>
-            </div>`}
-            
+                  <a href="/">
+                    <img src="/images/logo.png" alt="SpaceBridge Logo" />
+                  </a>
+                </div>`}
           </div>
           <nav>
-            <a href="/docs">Docs</a>
+            <sl-button href="/docs" variant="text">Docs</sl-button>
             ${this.isAuthenticated && this.user
               ? html`
                   ${window.location.pathname === '/'
-                    ? html`<a href="/console">Console</a>`
-                    : html`<button @click=${this.logout}>Logout</button>`}
+                    ? html`<sl-button href="/console">Console</sl-button>`
+                    : html`<sl-button @click=${this.logout}>Logout</sl-button>`}
                 `
               : html`
-                  <a href="/login">Login</a>
-                  <a href="/register" class="signup-button">Sign Up</a>
+                  <sl-button href="/login" variant="text">Login</sl-button>
+                  <sl-button href="/register" variant="primary"
+                    >Sign Up</sl-button
+                  >
                 `}
           </nav>
         </div>

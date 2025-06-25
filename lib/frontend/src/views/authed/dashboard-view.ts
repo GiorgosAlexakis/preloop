@@ -1,5 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import * as api from '../../api';
 import { AuthedElement } from '../../api';
 import {
@@ -91,11 +93,11 @@ export class DashboardView extends AuthedElement {
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 1rem;
     }
-    .stat-card {
-      background-color: var(--lumo-base-color);
-      border-radius: var(--lumo-border-radius);
-      padding: 1rem;
+    sl-card {
       text-align: center;
+    }
+    .chart-container {
+      margin-top: 2rem;
     }
   `;
 
@@ -158,7 +160,7 @@ export class DashboardView extends AuthedElement {
 
   render() {
     if (this.isLoading) {
-      return html`<p>Loading...</p>`;
+      return html`<sl-spinner></sl-spinner>`;
     }
 
     const totalIssuesProcessed =
@@ -168,20 +170,20 @@ export class DashboardView extends AuthedElement {
 
     return html`
       <div class="stats-grid">
-        <div class="stat-card">
+        <sl-card>
           <h3>${this.trackers.length}</h3>
           <p>Connected Trackers</p>
-        </div>
-        <div class="stat-card">
+        </sl-card>
+        <sl-card>
           <h3>${this.apiUsage?.total_requests}</h3>
           <p>Total API Requests</p>
-        </div>
-        <div class="stat-card">
+        </sl-card>
+        <sl-card>
           <h3>${totalIssuesProcessed}</h3>
           <p>Issues Processed</p>
-        </div>
+        </sl-card>
       </div>
-      <div class="chart-container" style="margin-top: 2rem;">
+      <div class="chart-container">
         <canvas id="apiUsageChart"></canvas>
       </div>
     `;
