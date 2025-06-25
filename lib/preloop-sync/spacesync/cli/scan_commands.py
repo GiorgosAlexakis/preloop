@@ -42,20 +42,17 @@ def scan_all_cmd(verbose: bool, force_update: bool):
 
     click.echo("Scanning all accounts and trackers...")
 
-    # Scan all accounts (pass verbose and force_update)
-    stats = scan_all_accounts(db, verbose, force_update)
+    # Scan all accounts (pass force_update)
+    stats = scan_all_accounts(db, force_update=force_update)
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
-    click.echo(f"Accounts scanned: {stats['accounts_scanned']}")
-    click.echo(f"Accounts with errors: {stats['accounts_with_errors']}")
-    click.echo(f"Total trackers scanned: {stats['total_trackers_scanned']}")
-    click.echo(f"Total trackers with errors: {stats['total_trackers_with_errors']}")
-    click.echo(f"Total organizations: {stats['total_organizations']}")
-    click.echo(f"Total projects: {stats['total_projects']}")
-    click.echo(f"Total issues: {stats['total_issues']}")
-    click.echo(f"Total embeddings updated: {stats['total_embeddings_updated']}")
-    click.echo(f"Total duration: {stats['total_duration_seconds']:.2f} seconds")
+    click.echo(f"Accounts scanned: {stats['accounts']}")
+    click.echo(f"Total trackers scanned: {stats['trackers']}")
+    click.echo(f"Total organizations: {stats['organizations']}")
+    click.echo(f"Total projects: {stats['projects']}")
+    click.echo(f"Total issues: {stats['issues']}")
+    click.echo(f"Total embeddings updated: {stats['embeddings_updated']}")
 
     db.close()
 
@@ -87,7 +84,7 @@ def scan_account_cmd(account_id: str, verbose: bool, force_update: bool):
     click.echo(f"Scanning account: {account.username} (ID: {account.id})...")
 
     # Scan the account (pass force_update)
-    stats = scan_account(db, account_id, verbose, force_update) # Pass force_update
+    stats = scan_account(db, account_id, force_update=force_update)
 
     # Print summary
     click.echo("\n=== Scan Complete ===")

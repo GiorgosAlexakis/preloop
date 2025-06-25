@@ -248,6 +248,8 @@ class BaseTracker(ABC):
                 "url": comment_data.get("url"),
                 "source": "spacesync",
             },
+            "updated_at": comment_data.get("updated_at"),
+            "created_at": comment_data.get("created_at"),
         }
 
     @abstractmethod

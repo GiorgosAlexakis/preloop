@@ -91,7 +91,6 @@ def update_tracker(tracker_id: str):
                     org=org,
                     since=since,
                     force_update=force_update,
-                    polling_threshold=POLLING_THRESHOLD,
                 )
 
                 # Aggregate stats

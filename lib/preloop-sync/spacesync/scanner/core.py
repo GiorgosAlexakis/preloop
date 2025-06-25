@@ -19,7 +19,7 @@ from spacemodels.crud import (
     crud_project,
     crud_comment,
 )
-from spacemodels.models import Issue, Organization, Project, Tracker
+from spacemodels.models import Issue, Organization, Project, Tracker, TrackerScopeRule
 
 from ..config import logger
 
@@ -76,27 +76,56 @@ class TrackerClient:
             logger.error(f"Failed to get projects from tracker for org {organization.name}: {e}")
             return []
 
-        included_list = set(self.tracker.included_project_identifiers or [])
-        excluded_list = set(self.tracker.excluded_project_identifiers or [])
-        include_future = self.tracker.include_future_projects
-        has_includes = bool(included_list)
+        rules = db.query(TrackerScopeRule).filter(TrackerScopeRule.tracker_id == self.tracker.id).all()
 
-        filtered_proj_data_list = []
-        for proj_data in proj_data_list:
-            identifier = proj_data.get("id")
-            if not identifier:
-                continue
+        if not rules:
+            # No rules, include everything
+            processed_projects = []
+            for proj_data in proj_data_list:
+                try:
+                    proj_create_data = self.client.transform_project(proj_data, organization.id)
+                    project_identifier = proj_create_data.get("identifier")
+                    if not project_identifier:
+                        continue
 
-            if identifier in excluded_list:
-                continue
+                    existing_project = crud_project.get_by_slug_or_identifier(
+                        db, slug_or_identifier=project_identifier, organization_id=organization.id
+                    )
+                    if existing_project:
+                        project = crud_project.update(db, db_obj=existing_project, obj_in=proj_create_data)
+                    else:
+                        project = crud_project.create(db, obj_in=proj_create_data)
+                    processed_projects.append(project)
+                except Exception as e:
+                    logger.error(f"Error processing project data {proj_data.get('name', 'N/A')}: {e}", exc_info=True)
+            return processed_projects
 
-            if has_includes and identifier not in included_list:
-                continue
+        # Apply rules
+        included_projects = set()
+        excluded_projects = set()
 
-            filtered_proj_data_list.append(proj_data)
+        # Get all project identifiers from the API response
+        all_project_identifiers = {p.get("id") for p in proj_data_list if p.get("id")}
+
+        for rule in rules:
+            if rule.scope_type == "ORGANIZATION":
+                if rule.rule_type == "INCLUDE":
+                    included_projects.update(all_project_identifiers)
+                elif rule.rule_type == "EXCLUDE":
+                    excluded_projects.update(all_project_identifiers)
+            elif rule.scope_type == "PROJECT":
+                if rule.rule_type == "INCLUDE":
+                    included_projects.add(rule.identifier)
+                elif rule.rule_type == "EXCLUDE":
+                    excluded_projects.add(rule.identifier)
+
+        final_project_ids = included_projects - excluded_projects
 
         processed_projects = []
-        for proj_data in filtered_proj_data_list:
+        for proj_data in proj_data_list:
+            identifier = proj_data.get("id")
+            if identifier not in final_project_ids:
+                continue
             try:
                 proj_create_data = self.client.transform_project(proj_data, organization.id)
                 project_identifier = proj_create_data.get("identifier")
@@ -109,8 +138,6 @@ class TrackerClient:
                 if existing_project:
                     project = crud_project.update(db, db_obj=existing_project, obj_in=proj_create_data)
                 else:
-                    if not include_future and has_includes and project_identifier not in included_list:
-                        continue
                     project = crud_project.create(db, obj_in=proj_create_data)
                 processed_projects.append(project)
             except Exception as e:
@@ -178,7 +205,6 @@ def _process_organization(
     org: Organization,
     since: datetime.datetime,
     force_update: bool,
-    polling_threshold: timedelta,
 ) -> Tuple[Dict[str, Any], bool]:
     """Processes a single organization."""
     org_stats = {"projects": 0, "issues": 0, "embeddings_updated": 0, "errors": 0}
@@ -238,7 +264,7 @@ def _process_organization(
     return org_stats, False
 
 def scan_tracker(
-    db: Session, tracker: Tracker, force_update: bool = False
+    db: Session, tracker: Tracker, force_update: bool = False, since: Optional[datetime.datetime] = None
 ) -> Dict[str, Any]:
     """Scan a single tracker."""
     logger.info(f"Scanning tracker {tracker.id} ({tracker.tracker_type})")
@@ -249,9 +275,8 @@ def scan_tracker(
         organizations = client.scan_organizations(db)
         stats["organizations"] = len(organizations)
 
-        since = datetime.datetime.now(datetime.timezone.utc) - POLLING_THRESHOLD
         for org in organizations:
-            org_stats, skipped = _process_organization(db, client, org, since, force_update, POLLING_THRESHOLD)
+            org_stats, skipped = _process_organization(db, client, org, since, force_update)
             for key in stats:
                 stats[key] += org_stats.get(key, 0)
     except Exception as e:
@@ -261,7 +286,7 @@ def scan_tracker(
     return stats
 
 def scan_account(
-    db: Session, account_id: str, force_update: bool = False
+    db: Session, account_id: str, force_update: bool = False, since: Optional[datetime.datetime] = None
 ) -> Dict[str, Any]:
     """Scan all trackers for a given account."""
     account = crud_account.get(db, id=account_id)
@@ -273,16 +298,15 @@ def scan_account(
     for tracker in account.trackers:
         if tracker.is_active:
             total_stats["trackers"] += 1
-            tracker_stats = scan_tracker(db, tracker, force_update)
+            tracker_stats = scan_tracker(db, tracker, force_update, since)
             for key in total_stats:
                 total_stats[key] += tracker_stats.get(key, 0)
     return total_stats
 
-def scan_all_accounts(db: Session, verbose: bool = False, force_update: bool = False) -> Dict[str, Any]:
+def scan_all_accounts(db: Session, force_update: bool = False) -> Dict[str, Any]:
     """Scan all active accounts and their trackers."""
     accounts = crud_account.get_multi(db, skip=0, limit=1000)
     logger.info(f"Found {len(accounts)} accounts to scan.")
-
     overall_stats = {"accounts": 0, "trackers": 0, "organizations": 0, "projects": 0, "issues": 0, "embeddings_updated": 0, "errors": 0}
     for account in accounts:
         if account.is_active:
