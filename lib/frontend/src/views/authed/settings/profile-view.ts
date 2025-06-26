@@ -47,11 +47,10 @@ export class ProfileView extends LitElement {
 
   render() {
     return html`
-    <div class="p-4">
-          <h1 class="text-2xl font-bold mb-4">Profile Settings</h1>
-        </div>
       <div class="container">
-        
+        <div class="header">
+          <h1 class="title">Profile</h1>
+        </div>
 
         <div class="card">
           <div class="card-header">

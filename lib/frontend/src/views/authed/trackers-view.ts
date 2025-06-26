@@ -7,19 +7,27 @@ export class TrackersView extends LitElement {
   static styles = css`
     :host {
       display: block;
-      padding: 1rem;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--sl-spacing-large);
     }
 
     .container {
         max-width: var(--console-container-max-width);
-        padding: 2rem;
-      }
+        padding: var(--sl-spacing-x-large);
+    }
   `;
 
   render() {
     return html`
-      <div class="p-4">
-        <h1 class="text-2xl font-bold mb-4">Trackers</h1>
+      <div class="container">
+      <div class="header">
+          <h1 class="title">Trackers</h1>
+        </div>
         <tracker-list></tracker-list>
       </div>
     `;

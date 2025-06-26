@@ -48,10 +48,6 @@ export class LlmModelsView extends LitElement {
       align-items: center;
       margin-bottom: var(--sl-spacing-large);
     }
-    .title {
-      font-size: var(--sl-font-size-x-large);
-      font-weight: var(--sl-font-weight-bold);
-    }
     .table-card {
     width: 100%;
       --padding: 0;
@@ -107,6 +103,9 @@ export class LlmModelsView extends LitElement {
     .empty-state a:hover {
       text-decoration: underline;
     }
+    .info-header {
+      margin-bottom: var(--sl-spacing-large);
+    }
   `;
 
   async connectedCallback() {
@@ -153,6 +152,10 @@ export class LlmModelsView extends LitElement {
 
   renderModelsList() {
     return html`
+      <sl-alert class="info-header" variant="primary" open>
+        <sl-icon slot="icon" name="info-circle"></sl-icon>
+        LLMs enable advanced AI features such as duplicate issue detection.
+      </sl-alert>
       <sl-card class="table-card">
         ${when(this.models.length === 0,
           () => html`

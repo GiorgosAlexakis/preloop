@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
+import { getDuplicateIssues } from '../../api';
 import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
 import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 
@@ -11,19 +12,32 @@ export class IssuesView extends LitElement {
       display: block;
       padding: var(--lumo-space-m);
     }
-    sl-tab-group::part(tabs) {
-      border-bottom: none;
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--sl-spacing-large);
+    }
+
+    .container {
+        max-width: var(--console-container-max-width);
+        padding: var(--sl-spacing-x-large);
     }
   `;
+
+  @state()
+  private issues: any[] = [];
 
   private tabs = [
     { panel: 'duplicates', label: 'Duplicates', path: '/issues/duplicates' },
     { panel: 'assignments', label: 'Assignments', path: '/issues/assignments' },
   ];
 
-  connectedCallback() {
+  async connectedCallback() {
     super.connectedCallback();
     this.updateActiveTab();
+    this.issues = await getDuplicateIssues();
     window.addEventListener(
       'vaadin-router-location-changed',
       this.handleLocationChanged
@@ -41,6 +55,8 @@ export class IssuesView extends LitElement {
   handleLocationChanged = () => {
     this.updateActiveTab();
   };
+
+    
 
   async updateActiveTab() {
     await this.updateComplete;
@@ -66,7 +82,25 @@ export class IssuesView extends LitElement {
 
   render() {
     return html`
-      <slot></slot>
+      <div class="container">
+        <div class="header">
+          <h1 class="title">Issues Dashboard</h1>
+        </div>
+      ${this.issues.length > 0
+        ? html`
+            <sl-menu>
+              ${this.issues.map(
+                (issue) => html`<sl-menu-item>${issue.title}</sl-menu-item>`
+              )}
+            </sl-menu>
+          `
+        : html`
+            <sl-alert variant="primary" open>
+              <sl-icon slot="icon" name="info-circle"></sl-icon>
+              No duplicate issues found.
+            </sl-alert>
+          `}
+    </div>
     `;
   }
 }

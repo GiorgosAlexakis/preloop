@@ -13,9 +13,16 @@ export class DuplicatesView extends LitElement {
       display: block;
     }
 
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--sl-spacing-large);
+    }
+
     .container {
-      max-width: var(--console-container-max-width);
-      padding: 2rem;
+        max-width: var(--console-container-max-width);
+        padding: var(--sl-spacing-x-large);
     }
   `;
 
@@ -29,9 +36,10 @@ export class DuplicatesView extends LitElement {
 
   render() {
     return html`
-      <div class="p-4">
-        <h1 class="text-2xl font-bold mb-4">Duplicate Issues</h1>
-      </div>
+    <div class="container">
+      <div class="header">
+          <h1 class="title">Issues Dashboard</h1>
+        </div>
       <div class="container">
       ${this.issues.length > 0
         ? html`
@@ -48,6 +56,7 @@ export class DuplicatesView extends LitElement {
             </sl-alert>
           `}
       </div>
+    </div>
     `;
   }
 }

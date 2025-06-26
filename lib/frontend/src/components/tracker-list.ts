@@ -88,12 +88,6 @@ export class TrackerList extends LitElement {
   }
 
   static styles = css`
-    :host {
-      display: block;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 2rem;
-    }
     .controls {
       display: flex;
       justify-content: flex-end;

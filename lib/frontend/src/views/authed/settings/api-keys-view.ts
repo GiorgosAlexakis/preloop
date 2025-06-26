@@ -174,10 +174,6 @@ export class ApiKeysView extends LitElement {
             align-items: center;
             margin-bottom: var(--sl-spacing-large);
         }
-        .title {
-            font-size: var(--sl-font-size-x-large);
-            font-weight: var(--sl-font-weight-bold);
-        }
         .table-card {
             width: 100%;
             --padding: 0;
