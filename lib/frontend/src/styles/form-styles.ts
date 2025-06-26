@@ -57,4 +57,8 @@ export const formStyles = css`
   .form-links a:hover {
     text-decoration: underline;
   }
+
+  sl-alert {
+    margin-bottom: 1rem;
+  }
 `;

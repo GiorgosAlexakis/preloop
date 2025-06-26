@@ -36,6 +36,9 @@ export class ForgotPasswordView extends LitElement {
 
   render() {
     return html`
+      <div class="logo">
+        <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
+      </div>
       <div class="form-container">
         <h2>Forgot Password</h2>
         ${this.message
@@ -68,7 +71,7 @@ export class ForgotPasswordView extends LitElement {
             >
           </div>
           <div class="form-links">
-            <a href="/login">Back to Login</a>
+            <a href="/login">Back to Sign in</a>
           </div>
         </form>
       </div>
