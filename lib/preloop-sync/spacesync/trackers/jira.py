@@ -13,6 +13,8 @@ from jira import JIRA, JIRAError # type: ignore
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import crud_webhook
+from spacemodels.models.issue import DESCRIPTION_MAX_LENGTH
+
 from ..exceptions import (
     TrackerAuthenticationError,
     TrackerConnectionError,
@@ -20,6 +22,8 @@ from ..exceptions import (
 )
 from ..utils import retry
 from .base import BaseTracker
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +237,71 @@ class JiraTracker(BaseTracker):
 
     def transform_issue(self, issue_data: Dict[str, Any], project: "Project") -> Dict[str, Any]:
         """Transforms Jira issue data into a standardized format."""
-        transformed_data = super().transform_issue(issue_data, project)
+        # Get issue status from data or default to "open"
+        status = issue_data['fields'].get('status',{}).get('name')
+        # Map common status values to standardized ones
+        if status.lower() in ["closed", "done", "completed", "fixed"]:
+            status = "closed"
+        elif status.lower() in ["open", "new", "todo", "to do"]:
+            status = "open"
+        # Add more mappings as needed
+
+        # Get issue type or default to "task"
+        issue_type = issue_data['fields'].get('issuetype',{}).get('name')
+        # Map common types to standardized ones
+        if issue_type.lower() in ["bug", "defect", "error"]:
+            issue_type = "bug"
+        elif issue_type.lower() in ["feature", "enhancement", "improvement"]:
+            issue_type = "feature"
+
+        # Convert datetime objects to ISO format strings for JSON serialization
+        last_updated = issue_data['fields'].get("updated")
+        if isinstance(last_updated, datetime):
+            last_updated = last_updated.isoformat()
+
+        created_at = issue_data['fields'].get("created")
+        if isinstance(created_at, datetime):
+            created_at = created_at.isoformat()
+
+        # Get description and truncate if necessary to avoid DB errors
+        description = issue_data['fields'].get("description", "")
+        original_length = len(description) if description else 0
+
+        if description and len(description) > DESCRIPTION_MAX_LENGTH:
+            # Truncate to the max length, with an indicator
+            description = (
+                description[: DESCRIPTION_MAX_LENGTH - 25] + "... [content truncated]"
+            )
+            logger.info(
+                f"Truncated issue description from {original_length} to {len(description)} characters. "
+                f"Set ISSUE_DESCRIPTION_MAX_LENGTH env var to increase (current: {DESCRIPTION_MAX_LENGTH})"
+            )
+
+        transformed_data = {
+            "project_id": project.id,
+            "external_id": issue_data.get("id", issue_data.get("external_id")),
+            "key": issue_data.get("key"),
+            "title": issue_data["fields"]["summary"],
+            "description": description,
+            "status": status,
+            "issue_type": issue_type,
+            "priority": issue_data.get("priority", None),
+            "updated_at": last_updated,
+            "last_updated_external": last_updated,
+            "last_synced": datetime.now(),
+            "meta_data": {
+                "labels": issue_data['fields'].get("labels", []),
+                "assignees": issue_data['fields'].get("assignee", {}).get("displayName", []),
+                "url": issue_data.get("url", ""),
+                "external_url": issue_data.get("url", ""),
+                "external_created_at": created_at,
+                "external_updated_at": last_updated,
+                "source": "spacesync",
+            },
+            "tracker_id": self.tracker_id,
+            "comments": issue_data.get("comments", []),
+        }
+
         if "external_id" not in transformed_data:
             transformed_data["external_id"] = issue_data.get("id")
         return transformed_data
@@ -274,7 +342,6 @@ class JiraTracker(BaseTracker):
 
         parsed_url = urllib.parse.urlparse(webhook_url)
         query_params = urllib.parse.parse_qs(parsed_url.query)
-        query_params['secret'] = [secret]
         query_params['project_key'] = [project_key]
         new_query_string = urllib.parse.urlencode(query_params, doseq=True)
         url_with_secret_and_project = parsed_url._replace(query=new_query_string).geturl()
@@ -291,6 +358,7 @@ class JiraTracker(BaseTracker):
                     "events": actual_events,
                     "jqlFilter": jql_filter,
                     "excludeIssueDetails": False,
+                    "secret": secret,
                 },
             )
             response.raise_for_status()

@@ -5,7 +5,6 @@ Core scanning functionality for SpaceSync.
 import datetime
 from datetime import timedelta
 import os
-import secrets
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
@@ -215,7 +214,7 @@ def _process_organization(
         try:
             webhook_target_path = f"/api/v1/private/webhooks/{client.tracker_type}/{org.identifier}"
             webhook_target_url = urljoin(spacebridge_url_str, webhook_target_path)
-            current_secret_to_use = org.webhook_secret or secrets.token_hex(32)
+            current_secret_to_use = org.webhook_secret
 
             if client.tracker_type == "jira":
                 projects = crud_project.get_for_organization(db, organization_id=org.id)
