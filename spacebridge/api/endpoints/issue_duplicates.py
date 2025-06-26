@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from typing import Any, List, Dict
+from sqlalchemy.orm import Session, joinedload
+from typing import Any, List, Dict, Optional, Tuple
 import logging
 import openai
 import os
@@ -24,6 +24,7 @@ from spacemodels.models.account import Account  # Import Account model
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.issue import Issue
+from spacemodels.models.tracker import Tracker
 
 from spacebridge.api.auth import get_current_active_user  # Import user dependency
 
@@ -61,7 +62,7 @@ On the second line, provide a single-sentence reasoning for your decision.
 
 
 @router.get(
-    "/issue-duplicates/",
+    "/issue-duplicates/confirmed",
     response_model=List[IssueDuplicateSchema],
     tags=["Issue Duplicates"],
 )
@@ -222,7 +223,18 @@ def check_or_create_issue_duplicate(
 
 @router.get("/issue-duplicates", response_model=ProjectDuplicatesResponse)
 def find_issue_duplicates(
-    project_ids: List[str],
+    project_ids: Optional[List[str]] = Query(
+        None,
+        description=(
+            "Optional list of project IDs to search within. "
+            "If not provided, searches across all accessible projects."
+        ),
+    ),
+    limit: int = Query(
+        5,
+        ge=1,
+        description="Maximum number of duplicates to return.",
+    ),
     similarity_threshold: float = Query(
         0.7,
         ge=0.0,
@@ -238,26 +250,34 @@ def find_issue_duplicates(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
-    """Finds potential duplicate issues using semantic similarity."""
-    projects = (
+    """
+    Finds potential duplicate issues using semantic similarity.
+    If project_ids is provided, the search is limited to those projects.
+    Otherwise, it searches across all projects accessible by the user.
+    """
+    project_query = (
         db.query(Project)
         .options(joinedload(Project.organization).joinedload(Organization.tracker))
-        .filter(Project.id.in_(project_ids))
-        .all()
+        .join(Project.organization)
+        .join(Organization.tracker)
+        .filter(Tracker.account_id == current_user.id)
     )
+
+    if project_ids:
+        project_query = project_query.filter(Project.id.in_(project_ids))
+
+    projects = project_query.all()
+
     if not projects:
-        raise HTTPException(status_code=404, detail="Project not found")
+        detail = (
+            "The specified project(s) were not found or you do not have access."
+            if project_ids
+            else "No projects found for the current user."
+        )
+        raise HTTPException(status_code=404, detail=detail)
 
-    # Authorization check: Ensure user has access to the project's tracker
-    for project in projects:
-        if (
-            not project.organization
-            or not project.organization.tracker
-            or project.organization.tracker.account_id != current_user.id
-        ):
-            raise HTTPException(status_code=403, detail="Access denied to this project")
+    accessible_project_ids = [str(p.id) for p in projects]
 
-    # Get the active embedding model
     active_models = crud_embedding_model.get_active(db)
     if not active_models:
         logger.error(
@@ -269,70 +289,67 @@ def find_issue_duplicates(
         )
     model = active_models[0]
 
-    # Fetch all issues for the project and eagerly load their embeddings to avoid N+1 queries.
     issues = (
         db.query(Issue)
         .options(selectinload(Issue.embeddings))
-        .filter(Issue.project_id.in_(project_ids))
+        .filter(Issue.project_id.in_(accessible_project_ids))
         .all()
     )
 
     if not issues:
         return ProjectDuplicatesResponse(
-            project_ids=project_ids,
+            project_ids=accessible_project_ids,
             model_id_used=model.id,
             threshold_used=similarity_threshold,
             duplicates=[],
         )
 
     all_duplicates_pairs: List[DuplicateIssuePair] = []
-    # Use a set of frozensets of issue IDs to track pairs and avoid (A,B) and (B,A) and (A,A)
     reported_pairs = set()
 
     for current_issue_obj in issues:
-        # Find the embedding vector for the current issue corresponding to the active model.
-        query_embedding_vector = None
-        for emb in current_issue_obj.embeddings:
-            if emb.embedding_model_id == model.id:
-                query_embedding_vector = emb.embedding
-                break
+        if len(all_duplicates_pairs) >= limit:
+            break
 
-        # If no embedding exists for this issue with the current model, we can't find duplicates.
+        query_embedding_vector = next(
+            (
+                emb.embedding
+                for emb in current_issue_obj.embeddings
+                if emb.embedding_model_id == model.id
+            ),
+            None,
+        )
+
         if query_embedding_vector is None:
             continue
 
-        # Perform similarity search using the issue's own embedding vector.
         similar_issue_score_tuples: List[Tuple[Issue, float]] = (
             crud_issue_embedding.similarity_search(
                 db=db,
                 model_id=model.id,
-                query_vector=query_embedding_vector,  # Correctly use the vector for the search
-                limit=limit_per_issue
-                + 1,  # Fetch one extra in case the source issue itself is returned
-                project_ids=[project_id],  # Explicitly scope to the current project
-                embedding_type="issue",  # Specify we are comparing issue embeddings
+                query_vector=query_embedding_vector,
+                limit=limit_per_issue + 1,
+                project_ids=accessible_project_ids,
+                embedding_type="issue",
             )
         )
 
         for similar_issue_obj, score in similar_issue_score_tuples:
-            # Manually filter by similarity_threshold
+            if len(all_duplicates_pairs) >= limit:
+                break
+
             if score < similarity_threshold:
                 continue
 
-            # Ensure we are not pairing an issue with itself
             if similar_issue_obj.id == current_issue_obj.id:
                 continue
 
-            # Create a canonical representation of the pair to avoid (A,B) and (B,A) duplicates
-            # Ensure IDs are consistently typed (e.g., str) for the frozenset key
             id1_str = str(current_issue_obj.id)
             id2_str = str(similar_issue_obj.id)
             pair_key = frozenset([id1_str, id2_str])
 
             if pair_key not in reported_pairs:
                 try:
-                    # Manually construct data for IssueResponse to match its existing schema
-                    # (as per IssueResponse definition in Step 140)
                     issue1_data = {
                         "id": str(current_issue_obj.id),
                         "external_id": current_issue_obj.external_id,
@@ -343,14 +360,18 @@ def find_issue_duplicates(
                         "created_at": current_issue_obj.created_at,
                         "updated_at": current_issue_obj.updated_at,
                         "title": current_issue_obj.title,
-                        "description": current_issue_obj.description,
-                        "status": current_issue_obj.status,
-                        "priority": current_issue_obj.priority,
-                        # Add other fields from IssueBase if necessary
-                        # Ensure all non-optional fields in IssueResponse are covered
+                        "description": current_issue_obj.description or "",
+                        "status": current_issue_obj.status or "",
+                        "priority": current_issue_obj.priority or "",
+                        "author": "",
+                        "assignees": [],
+                        "labels": [],
+                        "comments": [],
+                        "project_id": str(current_issue_obj.project_id),
+                        "organization_id": str(
+                            current_issue_obj.project.organization_id
+                        ),
                     }
-                    issue1_response = IssueResponse(**issue1_data)
-
                     issue2_data = {
                         "id": str(similar_issue_obj.id),
                         "external_id": similar_issue_obj.external_id,
@@ -361,29 +382,35 @@ def find_issue_duplicates(
                         "created_at": similar_issue_obj.created_at,
                         "updated_at": similar_issue_obj.updated_at,
                         "title": similar_issue_obj.title,
-                        "description": similar_issue_obj.description,
-                        "status": similar_issue_obj.status,
-                        "priority": similar_issue_obj.priority,
+                        "description": similar_issue_obj.description or "",
+                        "status": similar_issue_obj.status or "",
+                        "priority": similar_issue_obj.priority or "",
+                        "author": "",
+                        "assignees": [],
+                        "labels": [],
+                        "comments": [],
+                        "project_id": str(similar_issue_obj.project_id),
+                        "organization_id": str(
+                            similar_issue_obj.project.organization_id
+                        ),
                     }
-                    issue2_response = IssueResponse(**issue2_data)
-
                     all_duplicates_pairs.append(
                         DuplicateIssuePair(
-                            issue1=issue1_response,
-                            issue2=issue2_response,
+                            issue1=IssueResponse(**issue1_data),
+                            issue2=IssueResponse(**issue2_data),
                             similarity=score,
                         )
                     )
                     reported_pairs.add(pair_key)
                 except Exception as e:
                     logger.error(
-                        f"Error processing duplicate pair ({current_issue_obj.id}, {similar_issue_obj.id}): {e}",
-                        exc_info=True,
+                        f"Error creating issue response for duplicate pair: {e}"
                     )
+                    continue
 
     return ProjectDuplicatesResponse(
-        project_ids=project_ids,
-        model_id_used=str(model.id),
+        project_ids=accessible_project_ids,
+        model_id_used=model.id,
         threshold_used=similarity_threshold,
         duplicates=all_duplicates_pairs,
     )
