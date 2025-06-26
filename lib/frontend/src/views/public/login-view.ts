@@ -14,6 +14,15 @@ export class LoginView extends LitElement {
   static styles = [
     formStyles,
     css`
+      .logo {
+        text-align: center;
+        padding: 2rem;
+      }
+
+      .logo img {
+        max-width: 150px;
+      }
+
       .error-message {
         color: var(--sl-color-danger-700);
         margin-bottom: 1rem;
@@ -49,6 +58,9 @@ export class LoginView extends LitElement {
 
   render() {
     return html`
+      <div class="logo">
+        <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
+      </div>
       <div class="form-container">
         <h2>Login</h2>
         ${this.error
@@ -79,7 +91,7 @@ export class LoginView extends LitElement {
             >
           </div>
           <div class="form-links">
-            <a href="/forgot-password">Forgot Password?</a> |
+            <a href="/forgot-password">Forgot Password?</a> &middot;
             <a href="/register">Sign Up</a>
           </div>
         </form>

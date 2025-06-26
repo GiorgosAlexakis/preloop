@@ -6,8 +6,6 @@ export const formStyles = css`
     max-width: 400px;
     margin: 2rem auto;
     padding: 2rem;
-    background-color: #f9f9f9;
-    border: 1px solid #ddd;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
@@ -15,7 +13,11 @@ export const formStyles = css`
   .form-container h2 {
     text-align: center;
     margin-bottom: 1.5rem;
-    color: #333;
+    color: var(--sl-color-neutral-800);
+  }
+
+  .form-group {
+    margin-bottom: 1rem;
   }
 
   .form-actions {
@@ -26,7 +28,7 @@ export const formStyles = css`
   .form-actions button {
     width: 100%;
     padding: 0.75rem;
-    background-color: #007bff;
+    background-color: var(--sl-color-primary-600);
     color: white;
     border: none;
     border-radius: 4px;
@@ -35,16 +37,17 @@ export const formStyles = css`
   }
 
   .form-actions button:hover {
-    background-color: #0056b3;
+    background-color: var(--sl-color-primary-700);
   }
 
   .form-links {
     margin-top: 1rem;
     text-align: center;
+    color: var(--sl-color-primary-600);
   }
 
   .form-links a {
-    color: #007bff;
+    color: var(--sl-color-primary-600);
     text-decoration: none;
   }
 

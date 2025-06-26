@@ -195,7 +195,7 @@ export async function getDuplicateIssues() {
 }
 
 export async function post(url: string, body: any) {
-  const response = await fetch(url, {
+  const response = await window.fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
