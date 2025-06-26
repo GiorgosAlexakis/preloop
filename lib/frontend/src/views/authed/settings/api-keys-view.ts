@@ -89,49 +89,48 @@ export class ApiKeysView extends LitElement {
 
     render() {
         return html`
-            <div class="p-4">
-                <h1 class="text-2xl font-bold mb-4">API Keys</h1>
-            </div>
             <div class="container">
-                <sl-card>
-                    <div slot="header" class="card-header">
-                        <sl-button variant="primary" @click=${() => { this.isCreateModalOpen = true; }}>Create New API Key</sl-button>
-                    </div>
-                        ${when(
-                            this.isLoading,
-                            () => html`<p>Loading...</p>`,
-                            () => html`
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Created</th>
-                                            <th>Last Used</th>
-                                            <th>Expires</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${repeat(
-                                            this.apiKeys,
-                                            (key) => key.id,
-                                            (key) => html`
-                                                <tr>
-                                                    <td>${key.name}</td>
-                                                    <td>${new Date(key.created_at).toLocaleDateString()}</td>
-                                                    <td>${key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never'}</td>
-                                                    <td>${key.expires_at ? new Date(key.expires_at).toLocaleDateString() : 'Never'}</td>
-                                                    <td>
-                                                        <sl-button variant="danger" @click=${() => this.handleDeleteApiKey(key.id)}>Revoke</sl-button>
-                                                    </td>
-                                                </tr>
-                                            `
-                                        )}
-                                    </tbody>
-                                </table>
-                            `
-                        )}
-                </sl-card>
+                <div class="header">
+                    <h1 class="title">API Keys</h1>
+                    <sl-button variant="primary" @click=${() => { this.isCreateModalOpen = true; }}>Create New API Key</sl-button>
+                </div>
+
+                ${when(
+                    this.isLoading,
+                    () => html`<sl-card><p>Loading...</p></sl-card>`,
+                    () => html`
+                        <sl-card class="table-card">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Created</th>
+                                        <th>Last Used</th>
+                                        <th>Expires</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${repeat(
+                                        this.apiKeys,
+                                        (key) => key.id,
+                                        (key) => html`
+                                            <tr>
+                                                <td>${key.name}</td>
+                                                <td>${new Date(key.created_at).toLocaleDateString()}</td>
+                                                <td>${key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never'}</td>
+                                                <td>${key.expires_at ? new Date(key.expires_at).toLocaleDateString() : 'Never'}</td>
+                                                <td>
+                                                    <sl-button variant="danger" size="small" @click=${() => this.handleDeleteApiKey(key.id)}>Revoke</sl-button>
+                                                </td>
+                                            </tr>
+                                        `
+                                    )}
+                                </tbody>
+                            </table>
+                        </sl-card>
+                    `
+                )}
             </div>
 
             <sl-dialog
@@ -167,12 +166,45 @@ export class ApiKeysView extends LitElement {
     static styles = css`
         .container {
             max-width: var(--console-container-max-width);
-            padding: 2rem;
+            padding: var(--sl-spacing-x-large);
         }
-        .card-header {
+        .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: var(--sl-spacing-large);
+        }
+        .title {
+            font-size: var(--sl-font-size-x-large);
+            font-weight: var(--sl-font-weight-bold);
+        }
+        .table-card {
+            width: 100%;
+            --padding: 0;
+        }
+        .table-card::part(body) {
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th,
+        td {
+            padding: var(--sl-spacing-medium);
+            text-align: left;
+            border-bottom: 1px solid var(--sl-color-neutral-200);
+        }
+        th {
+            background-color: var(--sl-color-neutral-50);
+            font-weight: var(--sl-font-weight-semibold);
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        th:last-child,
+        td:last-child {
+            text-align: right;
         }
     `;
 }
