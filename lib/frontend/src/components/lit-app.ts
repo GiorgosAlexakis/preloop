@@ -13,9 +13,10 @@ import '../views/authed/issues/duplicates-view.ts';
 import '../views/authed/issues/assignments-view.ts';
 import '../views/authed/api-usage-view.ts';
 import '../views/authed/settings-view.ts';
-import '../views/authed/settings/account-view.ts';
 import '../views/authed/settings/api-keys-view.ts';
 import '../views/authed/settings/llm-models-view.ts';
+import '../views/authed/settings/profile-view.ts';
+import '../views/authed/settings/security-view.ts';
 import './app-header.ts';
 import './app-footer.ts';
 
@@ -62,7 +63,8 @@ export class LitApp extends LitElement {
             path: 'settings',
             children: [
               { path: '', component: 'settings-view' },
-              { path: 'account', component: 'account-view' },
+              { path: 'profile', component: 'profile-view' },
+              { path: 'security', component: 'security-view' },
               { path: 'api-keys', component: 'api-keys-view' },
               { path: 'llm-models', component: 'llm-models-view' },
             ],

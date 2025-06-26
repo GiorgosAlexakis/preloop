@@ -89,10 +89,12 @@ export class ApiKeysView extends LitElement {
 
     render() {
         return html`
+            <div class="p-4">
+                <h1 class="text-2xl font-bold mb-4">API Keys</h1>
+            </div>
             <div class="container">
                 <sl-card>
                     <div slot="header" class="card-header">
-                        <h3>API Keys</h3>
                         <sl-button variant="primary" @click=${() => { this.isCreateModalOpen = true; }}>Create New API Key</sl-button>
                     </div>
                         ${when(
@@ -164,6 +166,7 @@ export class ApiKeysView extends LitElement {
 
     static styles = css`
         .container {
+            max-width: var(--console-container-max-width);
             padding: 2rem;
         }
         .card-header {

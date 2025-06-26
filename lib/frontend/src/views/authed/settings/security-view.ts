@@ -1,23 +1,12 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import {
-  getAccountDetails,
-  updateAccountDetails,
-  changePassword,
-} from '../../../api';
+import { changePassword } from '../../../api';
 import { formStyles } from '../../../styles/form-styles';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 
-@customElement('account-view')
-export class AccountView extends LitElement {
-  @state()
-  private user: { username: string; email: string; full_name: string } | null =
-    null;
-
-  @state()
-  private fullName = '';
-
+@customElement('security-view')
+export class SecurityView extends LitElement {
   @state()
   private currentPassword = '';
 
@@ -28,35 +17,7 @@ export class AccountView extends LitElement {
   private confirmNewPassword = '';
 
   @state()
-  private updateProfileMessage = '';
-
-  @state()
   private changePasswordMessage = '';
-
-  async connectedCallback() {
-    super.connectedCallback();
-    await this.loadAccountDetails();
-  }
-
-  async loadAccountDetails() {
-    try {
-      this.user = await getAccountDetails();
-      this.fullName = this.user?.full_name || '';
-    } catch (error) {
-      console.error('Failed to load account details', error);
-      this.updateProfileMessage = 'Failed to load account details.';
-    }
-  }
-
-  async handleUpdateProfile(event: Event) {
-    event.preventDefault();
-    try {
-      await updateAccountDetails({ full_name: this.fullName });
-      this.updateProfileMessage = 'Profile updated successfully.';
-    } catch (error) {
-      this.updateProfileMessage = 'Failed to update profile.';
-    }
-  }
 
   async handleChangePassword(event: Event) {
     event.preventDefault();
@@ -82,38 +43,11 @@ export class AccountView extends LitElement {
 
   render() {
     return html`
-      <div class="container">
-        <h2>Account Settings</h2>
-
-        <div class="card">
-          <div class="card-header">
-            <h3>Update Profile</h3>
-          </div>
-          <div class="card-body">
-            <form @submit="${this.handleUpdateProfile}">
-              <sl-input
-                label="Username"
-                .value="${this.user?.username || ''}"
-                readonly
-              ></sl-input>
-              <sl-input
-                label="Email"
-                .value="${this.user?.email || ''}"
-                readonly
-              ></sl-input>
-              <sl-input
-                label="Full Name"
-                .value="${this.fullName}"
-                @sl-input="${(e: Event) =>
-                  (this.fullName = (e.target as HTMLInputElement).value)}"
-              ></sl-input>
-              <sl-button variant="primary" type="submit">Update Profile</sl-button>
-              ${this.updateProfileMessage
-                ? html`<p>${this.updateProfileMessage}</p>`
-                : ''}
-            </form>
-          </div>
+    <div class="p-4">
+          <h1 class="text-2xl font-bold mb-4">Security Settings</h1>
         </div>
+      <div class="container">
+       
 
         <div class="card">
           <div class="card-header">
@@ -168,8 +102,7 @@ export class AccountView extends LitElement {
     formStyles,
     css`
       .container {
-        max-width: 800px;
-        margin: 0 auto;
+        max-width: var(--console-container-max-width);
         padding: 2rem;
       }
       .card {
@@ -192,6 +125,10 @@ export class AccountView extends LitElement {
         display: flex;
         flex-direction: column;
         gap: 1rem;
+      }
+
+      sl-button {
+      width: 12em;
       }
     `,
   ];

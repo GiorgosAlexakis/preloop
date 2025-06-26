@@ -66,11 +66,6 @@ export class IssuesView extends LitElement {
 
   render() {
     return html`
-      <sl-tab-group @sl-tab-show=${this.handleTabChange}>
-        ${this.tabs.map(
-          (tab) => html`<sl-tab panel=${tab.panel}>${tab.label}</sl-tab>`
-        )}
-      </sl-tab-group>
       <slot></slot>
     `;
   }

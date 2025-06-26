@@ -9,6 +9,11 @@ export class TrackersView extends LitElement {
       display: block;
       padding: 1rem;
     }
+
+    .container {
+        max-width: var(--console-container-max-width);
+        padding: 2rem;
+      }
   `;
 
   render() {

@@ -12,6 +12,11 @@ export class DuplicatesView extends LitElement {
     :host {
       display: block;
     }
+
+    .container {
+      max-width: var(--console-container-max-width);
+      padding: 2rem;
+    }
   `;
 
   @state()
@@ -24,7 +29,10 @@ export class DuplicatesView extends LitElement {
 
   render() {
     return html`
-      <h1>Duplicate Issues</h1>
+      <div class="p-4">
+        <h1 class="text-2xl font-bold mb-4">Duplicate Issues</h1>
+      </div>
+      <div class="container">
       ${this.issues.length > 0
         ? html`
             <sl-menu>
@@ -39,6 +47,7 @@ export class DuplicatesView extends LitElement {
               No duplicate issues found.
             </sl-alert>
           `}
+      </div>
     `;
   }
 }
