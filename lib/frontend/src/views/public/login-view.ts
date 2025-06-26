@@ -40,8 +40,11 @@ export class LoginView extends LitElement {
 
   render() {
     return html`
+    <div class="container">
       <div class="logo">
-        <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
+        <a href="/">
+          <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
+        </a>
       </div>
       <div class="form-container">
         <h2>Sign in to Spacebridge</h2>
@@ -78,6 +81,7 @@ export class LoginView extends LitElement {
           </div>
         </form>
       </div>
+    </div>
     `;
   }
 }

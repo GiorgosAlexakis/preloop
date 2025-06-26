@@ -37,49 +37,53 @@ export class RegisterView extends LitElement {
 
   render() {
     return html`
-      <div class="logo">
-        <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
-      </div>
-      <div class="form-container">
-        <h2>Create a Spacebridge account</h2>
-        ${this.error
-          ? html`<div class="error-message">${this.error}</div>`
-          : ''}
-        <form @submit=${this.handleRegister}>
-          <div class="form-group">
-            <sl-input
-              label="Username"
-              id="username"
-              name="username"
-              required
-            ></sl-input>
-          </div>
-          <div class="form-group">
-            <sl-input
-              type="email"
-              label="Email"
-              id="email"
-              name="email"
-              required
-            ></sl-input>
-          </div>
-          <div class="form-group">
-            <sl-input
-              type="password"
-              label="Password"
-              id="password"
-              name="password"
-              required
-              password-toggle
-            ></sl-input>
-          </div>
-          <div class="form-actions">
-            <sl-button type="submit" variant="primary">Create account</sl-button>
-          </div>
-          <div class="form-links">
-            <a href="/login">Already have an account? Sign In</a>
-          </div>
-        </form>
+      <div class="container">
+        <div class="logo">
+          <a href="/">
+            <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
+          </a>
+        </div>
+        <div class="form-container">
+          <h2>Create a Spacebridge account</h2>
+          ${this.error
+            ? html`<div class="error-message">${this.error}</div>`
+            : ''}
+          <form @submit=${this.handleRegister}>
+            <div class="form-group">
+              <sl-input
+                label="Username"
+                id="username"
+                name="username"
+                required
+              ></sl-input>
+            </div>
+            <div class="form-group">
+              <sl-input
+                type="email"
+                label="Email"
+                id="email"
+                name="email"
+                required
+              ></sl-input>
+            </div>
+            <div class="form-group">
+              <sl-input
+                type="password"
+                label="Password"
+                id="password"
+                name="password"
+                required
+                password-toggle
+              ></sl-input>
+            </div>
+            <div class="form-actions">
+              <sl-button type="submit" variant="primary">Create account</sl-button>
+            </div>
+            <div class="form-links">
+              <a href="/login">Already have an account? Sign In</a>
+            </div>
+          </form>
+        </div>
       </div>
     `;
   }

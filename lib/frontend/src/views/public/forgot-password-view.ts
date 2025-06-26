@@ -36,44 +36,48 @@ export class ForgotPasswordView extends LitElement {
 
   render() {
     return html`
-      <div class="logo">
-        <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
-      </div>
-      <div class="form-container">
-        <h2>Forgot Password</h2>
-        ${this.message
-          ? html`<sl-alert
-              variant="success"
-              open
-              closable
-              @sl-after-hide=${() => (this.message = '')}
-            >
-              <sl-icon slot="icon" name="check-circle"></sl-icon>
-              ${this.message}
-            </sl-alert>`
-          : ''}
-        ${this.error
-          ? html`<sl-alert
-              variant="danger"
-              open
-              closable
-              @sl-after-hide=${() => (this.error = '')}
-            >
-              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-              ${this.error}
-            </sl-alert>`
-          : ''}
-        <form @submit=${this.handleForgotPassword}>
-          <sl-input type="email" label="Email" name="email" required></sl-input>
-          <div class="form-actions">
-            <sl-button type="submit" variant="primary"
-              >Send Reset Link</sl-button
-            >
-          </div>
-          <div class="form-links">
-            <a href="/login">Back to Sign in</a>
-          </div>
-        </form>
+      <div class="container">
+        <div class="logo">
+          <a href="/">
+            <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
+          </a>
+        </div>
+        <div class="form-container">
+          <h2>Forgot Password</h2>
+          ${this.message
+            ? html`<sl-alert
+                variant="success"
+                open
+                closable
+                @sl-after-hide=${() => (this.message = '')}
+              >
+                <sl-icon slot="icon" name="check-circle"></sl-icon>
+                ${this.message}
+              </sl-alert>`
+            : ''}
+          ${this.error
+            ? html`<sl-alert
+                variant="danger"
+                open
+                closable
+                @sl-after-hide=${() => (this.error = '')}
+              >
+                <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                ${this.error}
+              </sl-alert>`
+            : ''}
+          <form @submit=${this.handleForgotPassword}>
+            <sl-input type="email" label="Email" name="email" required></sl-input>
+            <div class="form-actions">
+              <sl-button type="submit" variant="primary"
+                >Send Reset Link</sl-button
+              >
+            </div>
+            <div class="form-links">
+              <a href="/login">Back to Sign in</a>
+            </div>
+          </form>
+        </div>
       </div>
     `;
   }
