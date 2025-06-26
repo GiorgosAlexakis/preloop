@@ -1,7 +1,7 @@
 """Delete placeholder organizations with specific naming patterns
 
 Revision ID: 20250612135000_delete_placeholder_organizations
-Revises: 52502e04d6ef
+Revises: dbd4003e5eef
 Create Date: 2025-06-12 13:50:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "20250612135000"
-down_revision = "52502e04d6ef"  # Fixed: was pointing to non-existent 4a3fe57fc6ba
+down_revision = "dbd4003e5eef"  # Fixed: was pointing to non-existent 4a3fe57fc6ba
 branch_labels = None
 depends_on = None
 

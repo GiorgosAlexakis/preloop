@@ -12,6 +12,7 @@ from ..models import (
     Organization,
     Project,
     Tracker,
+    Webhook,
 )
 from .account import CRUDAccount
 from .api_key import CRUDApiKey
@@ -25,7 +26,7 @@ from .organization import CRUDOrganization  # Removed create_organization import
 from .project import CRUDProject
 from .tracker import CRUDTracker
 from .llm_model import CRUDLLMModel
-
+from .webhook import CRUDWebhook
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)
@@ -38,6 +39,7 @@ crud_api_key = CRUDApiKey(ApiKey)
 crud_api_usage = CRUDApiUsage(ApiUsage)
 crud_llm_model = CRUDLLMModel(LLMModel)  # Instantiate crud_llm_model
 # crud_comment is already instantiated in its own file
+crud_webhook = CRUDWebhook(Webhook)
 crud_flow = CRUDFlow()  # Instantiate CRUDFlow
 
 __all__ = [
@@ -66,5 +68,6 @@ __all__ = [
     "crud_api_usage",
     "crud_comment",
     "crud_llm_model",
+    "crud_webhook",
     "crud_flow",
 ]

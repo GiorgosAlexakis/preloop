@@ -1,19 +1,22 @@
 """Refactor tracker scoping
 
 Revision ID: 20250617145000
-Revises: b2102d58db12
+Revises: 20250612135000
 Create Date: 2025-06-17 14:50:00.000000
 
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+import logging
+from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision = "20250617145000"
-down_revision = "b2102d58db12"
+down_revision = "20250612135000"
 branch_labels = None
 depends_on = None
+logger = logging.getLogger(__name__)
 
 
 def upgrade():
@@ -41,10 +44,10 @@ def upgrade():
             comment="e.g., 'my-org' or 'my-org/my-repo'",
         ),
         sa.Column(
-            "created", sa.DateTime(), server_default=sa.text("now()"), nullable=False
+            "created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False
         ),
         sa.Column(
-            "last_updated",
+            "updated_at",
             sa.DateTime(),
             server_default=sa.text("now()"),
             nullable=False,
@@ -52,58 +55,15 @@ def upgrade():
         sa.ForeignKeyConstraint(["tracker_id"], ["tracker.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-
-    # Data migration
-    conn = op.get_bind()
-    res = conn.execute(
-        sa.text(
-            "SELECT id, included_project_identifiers, excluded_project_identifiers, include_future_projects FROM tracker"
-        )
-    )
-    results = res.fetchall()
-
-    for r_id, included, excluded, include_future in results:
-        if include_future or not included:
-            # Default is include all, so we only care about exclusions
-            if excluded:
-                for identifier in excluded:
-                    op.execute(
-                        tracker_scope_rule_table.insert().values(
-                            id=sa.text("uuid_generate_v4()"),
-                            tracker_id=r_id,
-                            scope_type="PROJECT",
-                            rule_type="EXCLUDE",
-                            identifier=identifier,
-                        )
-                    )
-        else:
-            # Only specific projects are included
-            if included:
-                for identifier in included:
-                    op.execute(
-                        tracker_scope_rule_table.insert().values(
-                            id=sa.text("uuid_generate_v4()"),
-                            tracker_id=r_id,
-                            scope_type="PROJECT",
-                            rule_type="INCLUDE",
-                            identifier=identifier,
-                        )
-                    )
-            if excluded:
-                for identifier in excluded:
-                    op.execute(
-                        tracker_scope_rule_table.insert().values(
-                            id=sa.text("uuid_generate_v4()"),
-                            tracker_id=r_id,
-                            scope_type="PROJECT",
-                            rule_type="EXCLUDE",
-                            identifier=identifier,
-                        )
-                    )
-
-    op.drop_column("tracker", "included_project_identifiers")
-    op.drop_column("tracker", "excluded_project_identifiers")
-    op.drop_column("tracker", "include_future_projects")
+    bind = op.get_context().bind
+    insp = inspect(bind)
+    columns = insp.get_columns("tracker")
+    if any(c["name"] == "included_project_identifiers" for c in columns):
+        op.drop_column("tracker", "included_project_identifiers")
+    if any(c["name"] == "excluded_project_identifiers" for c in columns):
+        op.drop_column("tracker", "excluded_project_identifiers")
+    if any(c["name"] == "include_future_projects" for c in columns):
+        op.drop_column("tracker", "include_future_projects")
     # ### end Alembic commands ###
 
 

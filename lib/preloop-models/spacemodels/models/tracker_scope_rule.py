@@ -2,9 +2,8 @@
 
 import enum
 
-from sqlalchemy import ForeignKey, String, func
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import DateTime
 
 from .base import Base
 
@@ -46,14 +45,6 @@ class TrackerScopeRule(Base):
         String(255),
         nullable=False,
         comment="e.g., 'my-org' or 'my-org/my-repo'",
-    )
-
-    # Timestamps
-    created: Mapped[DateTime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
-    )
-    last_updated: Mapped[DateTime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     tracker: Mapped["Tracker"] = relationship("Tracker", back_populates="scope_rules")

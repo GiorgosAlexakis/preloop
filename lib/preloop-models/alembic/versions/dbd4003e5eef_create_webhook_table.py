@@ -1,7 +1,7 @@
 """create webhook table
 
 Revision ID: dbd4003e5eef
-Revises: 20250612135000
+Revises: 52502e04d6ef
 Create Date: 2025-06-14 21:14:45.289313
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "dbd4003e5eef"
-down_revision: Union[str, None] = "20250612135000"
+down_revision: Union[str, None] = "52502e04d6ef"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
