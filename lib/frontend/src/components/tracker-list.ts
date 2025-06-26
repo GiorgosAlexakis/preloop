@@ -3,11 +3,9 @@ import { customElement, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { fetchWithAuth } from '../api.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import './tracker-item.ts';
-import './add-tracker-modal.ts';
 import type { Tracker } from './tracker-item.ts';
 
 @customElement('tracker-list')
@@ -20,12 +18,6 @@ export class TrackerList extends LitElement {
 
   @state()
   private error: string | null = null;
-
-  @state()
-  private isAddingTracker = false;
-
-  @state()
-  private editingTracker: Tracker | null = null;
 
   connectedCallback() {
     super.connectedCallback();
@@ -49,26 +41,14 @@ export class TrackerList extends LitElement {
     }
   }
 
-  private _toggleAddTrackerForm() {
-    this.isAddingTracker = !this.isAddingTracker;
-    if (this.isAddingTracker) {
-      this.editingTracker = null;
-    }
-  }
-
-  private async _handleTrackerAdded() {
-    this.isAddingTracker = false;
-    await this.fetchTrackers();
-  }
-
-  private async _handleTrackerUpdated() {
-    this.editingTracker = null;
-    await this.fetchTrackers();
-  }
-
   private _handleTrackerEdit(event: CustomEvent) {
-    this.editingTracker = event.detail.tracker;
-    this.isAddingTracker = false;
+    this.dispatchEvent(
+      new CustomEvent('tracker-edit', {
+        detail: event.detail,
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private async _handleTrackerDeleted(event: CustomEvent) {
@@ -88,11 +68,6 @@ export class TrackerList extends LitElement {
   }
 
   static styles = css`
-    .controls {
-      display: flex;
-      justify-content: flex-end;
-      margin-bottom: 1rem;
-    }
     .loading-indicator {
       display: flex;
       justify-content: center;
@@ -115,23 +90,6 @@ export class TrackerList extends LitElement {
 
     return html`
       <div>
-        <div class="controls">
-          <sl-button variant="primary" @click=${this._toggleAddTrackerForm}>
-            ${this.isAddingTracker ? 'Cancel' : 'Add New Tracker'}
-          </sl-button>
-        </div>
-
-        ${this.isAddingTracker
-          ? html`<add-tracker-modal
-              @tracker-added=${this._handleTrackerAdded}
-            ></add-tracker-modal>`
-          : ''}
-        ${this.editingTracker
-          ? html`<add-tracker-modal
-              .tracker=${this.editingTracker}
-              @tracker-updated=${this._handleTrackerUpdated}
-            ></add-tracker-modal>`
-          : ''}
         ${repeat(
           this.trackers,
           (tracker) => tracker.id,

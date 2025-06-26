@@ -11,7 +11,6 @@ import './tracker-list';
 import type { TrackerList } from './tracker-list';
 import type { TrackerItem } from './tracker-item';
 import type { Tracker } from './tracker-item';
-import { AddTrackerForm } from './add-tracker-form';
 
 describe('TrackerList', () => {
   let fetchStub: sinon.SinonStub;
@@ -43,14 +42,14 @@ describe('TrackerList', () => {
     expect(items[1].tracker).to.deep.equal(trackers[1]);
   });
 
-  it('displays a loading message', async () => {
+  it('displays a loading spinner', async () => {
     fetchStub.returns(new Promise(() => {})); // Never resolves
 
     const el = await fixture<TrackerList>(html`<tracker-list></tracker-list>`);
     await el.updateComplete;
 
-    const loadingElement = el.shadowRoot!.querySelector('p');
-    expect(loadingElement).to.contain.text('Loading...');
+    const spinner = el.shadowRoot!.querySelector('sl-spinner');
+    expect(spinner).to.exist;
   });
 
   it('displays an error message on fetch failure', async () => {
@@ -60,88 +59,9 @@ describe('TrackerList', () => {
     await el.updateComplete;
     await aTimeout(0);
 
-    const errorElement = el.shadowRoot!.querySelector('.error');
-    expect(errorElement).to.contain.text('Error: Failed to fetch');
-  });
-
-  it('toggles the add tracker form', async () => {
-    fetchStub.resolves(new Response(JSON.stringify([]), { status: 200 }));
-
-    const el = await fixture<TrackerList>(html`<tracker-list></tracker-list>`);
-    await el.updateComplete;
-
-    let form = el.shadowRoot!.querySelector<AddTrackerForm>('add-tracker-form');
-    expect(form).to.not.exist;
-
-    await aTimeout(100);
-    const button = el.shadowRoot!.querySelector('md-filled-button');
-    if (button) {
-      (button as HTMLElement).click();
-      await el.updateComplete;
-    }
-
-    form = el.shadowRoot!.querySelector<AddTrackerForm>('add-tracker-form');
-    expect(form).to.exist;
-
-    if (button) {
-      button.click();
-    }
-    await el.updateComplete;
-
-    form = el.shadowRoot!.querySelector<AddTrackerForm>('add-tracker-form');
-    expect(form).to.not.exist;
-  });
-
-  it('refreshes the list when a tracker is added', async () => {
-    const initialTrackers: Tracker[] = [
-      { id: '1', name: 'Tracker 1', tracker_type: 'github' },
-    ];
-    const newTracker: Tracker = {
-      id: '2',
-      name: 'New Tracker',
-      tracker_type: 'gitlab',
-    };
-
-    fetchStub
-      .onFirstCall()
-      .resolves(new Response(JSON.stringify(initialTrackers), { status: 200 }));
-    fetchStub.onSecondCall().resolves(
-      new Response(JSON.stringify([...initialTrackers, newTracker]), {
-        status: 200,
-      })
-    );
-
-    const el = await fixture<TrackerList>(html`<tracker-list></tracker-list>`);
-    await el.updateComplete;
-    await aTimeout(0);
-
-    let items = el.shadowRoot!.querySelectorAll<TrackerItem>('tracker-item');
-    expect(items.length).to.equal(1);
-
-    await aTimeout(100);
-    const button = el.shadowRoot!.querySelector('md-filled-button');
-    if (button) {
-      (button as HTMLElement).click();
-      await el.updateComplete;
-    }
-
-    const form =
-      el.shadowRoot!.querySelector<AddTrackerForm>('add-tracker-form')!;
-    const trackerAddedPromise = oneEvent(el, 'tracker-added');
-    form.dispatchEvent(
-      new CustomEvent('tracker-added', { bubbles: true, composed: true })
-    );
-    await trackerAddedPromise;
-    await el.updateComplete;
-    await aTimeout(0);
-
-    items = el.shadowRoot!.querySelectorAll<TrackerItem>('tracker-item');
-    expect(items.length).to.equal(2);
-    expect(items[1].tracker).to.deep.equal(newTracker);
-
-    const formAfterAdd =
-      el.shadowRoot!.querySelector<AddTrackerForm>('add-tracker-form');
-    expect(formAfterAdd).to.not.exist;
+    const alertElement = el.shadowRoot!.querySelector('sl-alert');
+    expect(alertElement).to.exist;
+    expect(alertElement!.textContent).to.include('Error: Failed to fetch');
   });
 
   it('deletes a tracker and refreshes the list', async () => {
@@ -182,7 +102,8 @@ describe('TrackerList', () => {
     expect(items.length).to.equal(1);
     expect(items[0].tracker).to.deep.equal(trackers[1]);
   });
-  it('shows the edit form when a tracker-edit event is dispatched', async () => {
+
+  it('dispatches a tracker-edit event when a child item emits it', async () => {
     const trackers: Tracker[] = [
       { id: '1', name: 'Tracker 1', tracker_type: 'github' },
     ];
@@ -190,73 +111,21 @@ describe('TrackerList', () => {
 
     const el = await fixture<TrackerList>(html`<tracker-list></tracker-list>`);
     await el.updateComplete;
-    await aTimeout(0);
+    await aTimeout(0); // wait for render
 
-    let form = el.shadowRoot!.querySelector<AddTrackerForm>('add-tracker-form');
-    expect(form).to.not.exist;
+    const trackerItem = el.shadowRoot!.querySelector<TrackerItem>('tracker-item')!;
+    const listener = oneEvent(el, 'tracker-edit');
 
-    const item = el.shadowRoot!.querySelector<TrackerItem>('tracker-item')!;
-    item.dispatchEvent(
+    trackerItem.dispatchEvent(
       new CustomEvent('tracker-edit', {
         detail: { tracker: trackers[0] },
         bubbles: true,
         composed: true,
       })
     );
-    await el.updateComplete;
 
-    form = el.shadowRoot!.querySelector<AddTrackerForm>('add-tracker-form');
-    expect(form).to.exist;
-    expect(form!.tracker).to.deep.equal(trackers[0]);
-  });
-
-  it('refreshes the list when a tracker is updated', async () => {
-    const initialTrackers: Tracker[] = [
-      { id: '1', name: 'Tracker 1', tracker_type: 'github' },
-    ];
-    const updatedTracker: Tracker = {
-      id: '1',
-      name: 'Updated Tracker',
-      tracker_type: 'github',
-    };
-
-    fetchStub
-      .onFirstCall()
-      .resolves(new Response(JSON.stringify(initialTrackers), { status: 200 }));
-    fetchStub
-      .onSecondCall()
-      .resolves(
-        new Response(JSON.stringify([updatedTracker]), { status: 200 })
-      );
-
-    const el = await fixture<TrackerList>(html`<tracker-list></tracker-list>`);
-    await el.updateComplete;
-    await aTimeout(0);
-
-    const item = el.shadowRoot!.querySelector<TrackerItem>('tracker-item')!;
-    item.dispatchEvent(
-      new CustomEvent('tracker-edit', {
-        detail: { tracker: initialTrackers[0] },
-        bubbles: true,
-        composed: true,
-      })
-    );
-    await el.updateComplete;
-
-    const form =
-      el.shadowRoot!.querySelector<AddTrackerForm>('add-tracker-form')!;
-    form.dispatchEvent(
-      new CustomEvent('tracker-updated', { bubbles: true, composed: true })
-    );
-    await el.updateComplete;
-    await aTimeout(0);
-
-    const items = el.shadowRoot!.querySelectorAll<TrackerItem>('tracker-item');
-    expect(items.length).to.equal(1);
-    expect(items[0].tracker).to.deep.equal(updatedTracker);
-
-    const formAfterUpdate =
-      el.shadowRoot!.querySelector<AddTrackerForm>('add-tracker-form');
-    expect(formAfterUpdate).to.not.exist;
+    const event = await listener;
+    expect(event).to.exist;
+    expect(event.detail.tracker).to.deep.equal(trackers[0]);
   });
 });
