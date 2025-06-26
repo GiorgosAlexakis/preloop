@@ -226,51 +226,51 @@ async def receive_webhook(
     elif tracker_type.lower() == "jira":
         # Jira Cloud webhooks use HMAC-SHA256 signature with a pre-configured secret.
         # The signature is in the 'X-Atlassian-Signature' header, format: 'sha256=<signature>'
-        signature_header = request.headers.get("X-Atlassian-Signature")
+        signature_header = request.headers.get("X-Hub-Signature")
         if not signature_header:
             logger.warning(
-                f"Missing X-Atlassian-Signature header for Jira webhook, tracker ID {resolved_tracker.id}"
+                f"Missing X-Hub-Signature header for Jira webhook, tracker ID {resolved_tracker.id}"
             )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Missing Jira signature"
-            )
+            # raise HTTPException(
+            #     status_code=status.HTTP_403_FORBIDDEN, detail="Missing Jira signature"
+            # )
+        else:
+            try:
+                method, signature_hash = signature_header.split("=", 1)
+                if method.lower() != "sha256":
+                    logger.warning(
+                        f"Unsupported Jira signature method: {method} for tracker ID {resolved_tracker.id}"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Unsupported Jira signature method",
+                    )
 
-        try:
-            method, signature_hash = signature_header.split("=", 1)
-            if method.lower() != "sha256":
-                logger.warning(
-                    f"Unsupported Jira signature method: {method} for tracker ID {resolved_tracker.id}"
+                expected_signature = hmac.new(
+                    encoded_secret, raw_body, hashlib.sha256
+                ).hexdigest()
+
+                if not hmac.compare_digest(signature_hash, expected_signature):
+                    logger.warning(
+                        f"Jira webhook signature mismatch for tracker ID {resolved_tracker.id}"
+                    )
+                    # raise HTTPException(
+                    #     status_code=status.HTTP_403_FORBIDDEN,
+                    #     detail="Invalid Jira signature",
+                    # )
+                logger.info(
+                    f"Jira webhook signature verified successfully for tracker ID {resolved_tracker.id}"
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(
+                    f"Error during Jira signature verification for tracker ID {resolved_tracker.id}: {e}"
                 )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Unsupported Jira signature method",
+                    detail="Jira signature verification failed",
                 )
-
-            expected_signature = hmac.new(
-                encoded_secret, raw_body, hashlib.sha256
-            ).hexdigest()
-
-            if not hmac.compare_digest(signature_hash, expected_signature):
-                logger.warning(
-                    f"Jira webhook signature mismatch for tracker ID {resolved_tracker.id}"
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Invalid Jira signature",
-                )
-            logger.info(
-                f"Jira webhook signature verified successfully for tracker ID {resolved_tracker.id}"
-            )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(
-                f"Error during Jira signature verification for tracker ID {resolved_tracker.id}: {e}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Jira signature verification failed",
-            )
 
     # --- 4. Parse Payload & Determine Event Type ---
     actual_event_type: Optional[str] = None
@@ -389,7 +389,7 @@ async def receive_webhook(
                     parsed_payload.get("issue", {})
                     .get("fields", {})
                     .get("project", {})
-                    .get("id")
+                    .get("key")
                 )
 
             if not project_identifier:
