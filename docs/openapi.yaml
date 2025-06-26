@@ -1995,14 +1995,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/issue-duplicates/:
+  /api/v1/issue-duplicates/confirmed:
     get:
       tags:
       - Issue Duplicates
       - Issue Duplicates
       summary: Get Duplicate Issues
       description: Retrieve confirmed duplicate issues.
-      operationId: get_duplicate_issues_api_v1_issue_duplicates__get
+      operationId: get_duplicate_issues_api_v1_issue_duplicates_confirmed_get
       security:
       - bearerAuth: []
       parameters:
@@ -2029,7 +2029,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/IssueDuplicate'
-                title: Response Get Duplicate Issues Api V1 Issue Duplicates  Get
+                title: Response Get Duplicate Issues Api V1 Issue Duplicates Confirmed
+                  Get
         '422':
           description: Validation Error
           content:
@@ -2076,11 +2077,39 @@ paths:
       tags:
       - Issue Duplicates
       summary: Find Issue Duplicates
-      description: Finds potential duplicate issues using semantic similarity.
+      description: 'Finds potential duplicate issues using semantic similarity.
+
+        If project_ids is provided, the search is limited to those projects.
+
+        Otherwise, it searches across all projects accessible by the user.'
       operationId: find_issue_duplicates_api_v1_issue_duplicates_get
       security:
       - bearerAuth: []
       parameters:
+      - name: project_ids
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              type: string
+          - type: 'null'
+          description: Optional list of project IDs to search within. If not provided,
+            searches across all accessible projects.
+          title: Project Ids
+        description: Optional list of project IDs to search within. If not provided,
+          searches across all accessible projects.
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          description: Maximum number of duplicates to return.
+          default: 5
+          title: Limit
+        description: Maximum number of duplicates to return.
       - name: similarity_threshold
         in: query
         required: false
@@ -2103,15 +2132,6 @@ paths:
           default: 5
           title: Limit Per Issue
         description: Maximum number of duplicates to find for each issue.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                type: string
-              title: Project Ids
       responses:
         '200':
           description: Successful Response
@@ -2503,7 +2523,6 @@ components:
           title: Username
         password:
           type: string
-          format: password
           title: Password
         scope:
           type: string
@@ -2518,7 +2537,6 @@ components:
           anyOf:
           - type: string
           - type: 'null'
-          format: password
           title: Client Secret
       type: object
       required:
