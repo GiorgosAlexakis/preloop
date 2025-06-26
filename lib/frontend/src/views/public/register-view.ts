@@ -30,15 +30,18 @@ export class RegisterView extends LitElement {
       });
       Router.go('/login');
     } catch (error) {
-      this.error = 'Failed to register';
-      console.error('Registration failed', error);
+      this.error = 'Failed to create an account';
+      console.error('Create account failed', error);
     }
   }
 
   render() {
     return html`
+      <div class="logo">
+        <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
+      </div>
       <div class="form-container">
-        <h2>Register</h2>
+        <h2>Create a Spacebridge account</h2>
         ${this.error
           ? html`<div class="error-message">${this.error}</div>`
           : ''}
@@ -71,11 +74,10 @@ export class RegisterView extends LitElement {
             ></sl-input>
           </div>
           <div class="form-actions">
-            <sl-button type="submit" variant="primary">Register</sl-button>
+            <sl-button type="submit" variant="primary">Create account</sl-button>
           </div>
           <div class="form-links">
-            <span>Already have an account? </span>
-            <a href="/login">Login</a>
+            <a href="/login">Already have an account? Sign In</a>
           </div>
         </form>
       </div>

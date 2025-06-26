@@ -11,25 +11,7 @@ export class LoginView extends LitElement {
   @state()
   private error = '';
 
-  static styles = [
-    formStyles,
-    css`
-      .logo {
-        text-align: center;
-        padding: 2rem;
-      }
-
-      .logo img {
-        max-width: 150px;
-      }
-
-      .error-message {
-        color: var(--sl-color-danger-700);
-        margin-bottom: 1rem;
-        text-align: center;
-      }
-    `,
-  ];
+  static styles = [formStyles];
 
   private async handleLogin(event: SubmitEvent) {
     event.preventDefault();
@@ -52,7 +34,7 @@ export class LoginView extends LitElement {
       Router.go('/console');
     } catch (error) {
       this.error = 'Invalid username or password';
-      console.error('Login failed', error);
+      console.error('Sign in failed', error);
     }
   }
 
@@ -62,7 +44,7 @@ export class LoginView extends LitElement {
         <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
       </div>
       <div class="form-container">
-        <h2>Login</h2>
+        <h2>Sign in to Spacebridge</h2>
         ${this.error
           ? html`<div class="error-message">${this.error}</div>`
           : ''}
@@ -87,12 +69,12 @@ export class LoginView extends LitElement {
           </div>
           <div class="form-actions">
             <sl-button type="submit" variant="primary" style="width: 100%;"
-              >Login</sl-button
+              >Sign in</sl-button
             >
           </div>
           <div class="form-links">
             <a href="/forgot-password">Forgot Password?</a> &middot;
-            <a href="/register">Sign Up</a>
+            <a href="/register">Create Account</a>
           </div>
         </form>
       </div>
