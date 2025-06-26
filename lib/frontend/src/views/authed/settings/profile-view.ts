@@ -90,13 +90,13 @@ export class ProfileView extends LitElement {
     css`
       .container {
         max-width: var(--console-container-max-width);
-        padding: 2rem;
+        padding: var(--sl-spacing-x-large);
       }
       .card {
         background-color: var(--lumo-base-color);
         border-radius: var(--lumo-border-radius);
-        padding: 1.5rem;
-        margin-bottom: 2rem;
+        padding: var(--sl-spacing-x-large);
+        margin-bottom: var(--sl-spacing-x-large);
         box-shadow: var(--lumo-box-shadow-s);
       }
       .card-header {
