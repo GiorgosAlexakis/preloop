@@ -3,12 +3,15 @@ import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApiKeys, createApiKey, deleteApiKey, ApiKey } from '../../../api';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 @customElement('api-keys-view')
 export class ApiKeysView extends LitElement {
@@ -17,6 +20,9 @@ export class ApiKeysView extends LitElement {
 
     @state()
     private isLoading = true;
+
+    @state()
+    private error: string | null = null;
 
     @state()
     private isCreateModalOpen = false;
@@ -43,10 +49,11 @@ export class ApiKeysView extends LitElement {
 
     async fetchApiKeys() {
         this.isLoading = true;
+        this.error = null;
         try {
             this.apiKeys = await getApiKeys();
         } catch (error) {
-            console.error('Failed to fetch API keys:', error);
+            this.error = error instanceof Error ? error.message : 'Failed to fetch API keys';
         } finally {
             this.isLoading = false;
         }
@@ -88,6 +95,52 @@ export class ApiKeysView extends LitElement {
     }
 
     render() {
+        const renderContent = () => {
+            if (this.isLoading) {
+                return html`<div class="loading-indicator"><sl-spinner></sl-spinner></div>`;
+            }
+            if (this.error) {
+                return html`
+                    <sl-alert variant="danger" open>
+                        <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                        <strong>Error:</strong> ${this.error}
+                    </sl-alert>
+                `;
+            }
+            return html`
+                <sl-card class="table-card">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Created</th>
+                                <th>Last Used</th>
+                                <th>Expires</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${repeat(
+                                this.apiKeys,
+                                (key) => key.id,
+                                (key) => html`
+                                    <tr>
+                                        <td>${key.name}</td>
+                                        <td>${new Date(key.created_at).toLocaleDateString()}</td>
+                                        <td>${key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never'}</td>
+                                        <td>${key.expires_at ? new Date(key.expires_at).toLocaleDateString() : 'Never'}</td>
+                                        <td>
+                                            <sl-button variant="danger" size="small" @click=${() => this.handleDeleteApiKey(key.id)}>Revoke</sl-button>
+                                        </td>
+                                    </tr>
+                                `
+                            )}
+                        </tbody>
+                    </table>
+                </sl-card>
+            `;
+        };
+
         return html`
             <div class="container">
                 <div class="header">
@@ -95,42 +148,7 @@ export class ApiKeysView extends LitElement {
                     <sl-button variant="primary" @click=${() => { this.isCreateModalOpen = true; }}>Create New API Key</sl-button>
                 </div>
 
-                ${when(
-                    this.isLoading,
-                    () => html`<sl-card><p>Loading...</p></sl-card>`,
-                    () => html`
-                        <sl-card class="table-card">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Created</th>
-                                        <th>Last Used</th>
-                                        <th>Expires</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${repeat(
-                                        this.apiKeys,
-                                        (key) => key.id,
-                                        (key) => html`
-                                            <tr>
-                                                <td>${key.name}</td>
-                                                <td>${new Date(key.created_at).toLocaleDateString()}</td>
-                                                <td>${key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never'}</td>
-                                                <td>${key.expires_at ? new Date(key.expires_at).toLocaleDateString() : 'Never'}</td>
-                                                <td>
-                                                    <sl-button variant="danger" size="small" @click=${() => this.handleDeleteApiKey(key.id)}>Revoke</sl-button>
-                                                </td>
-                                            </tr>
-                                        `
-                                    )}
-                                </tbody>
-                            </table>
-                        </sl-card>
-                    `
-                )}
+                ${renderContent()}
             </div>
 
             <sl-dialog
@@ -173,6 +191,12 @@ export class ApiKeysView extends LitElement {
             justify-content: space-between;
             align-items: center;
             margin-bottom: var(--sl-spacing-large);
+        }
+        .loading-indicator {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100px;
         }
         .table-card {
             width: 100%;

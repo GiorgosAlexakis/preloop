@@ -13,6 +13,7 @@ import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 
 @customElement('llm-models-view')
 export class LlmModelsView extends LitElement {
@@ -21,6 +22,9 @@ export class LlmModelsView extends LitElement {
 
   @state()
   private isLoading = true;
+
+  @state()
+  private error: string | null = null;
 
   @state()
   private isModalOpen = false;
@@ -115,16 +119,40 @@ export class LlmModelsView extends LitElement {
 
   async fetchModels() {
     this.isLoading = true;
+    this.error = null;
     try {
       this.models = await api.getLlmModels();
     } catch (error) {
-      console.error('Failed to fetch LLM models:', error);
+      this.error =
+        error instanceof Error ? error.message : 'Failed to fetch LLM models';
     } finally {
       this.isLoading = false;
     }
   }
 
   render() {
+    const renderContent = () => {
+      if (this.isLoading) {
+        return html`<sl-card
+          ><div
+            style="display: flex; justify-content: center; padding: 2rem;"
+          >
+            <sl-spinner></sl-spinner></div
+        ></sl-card>`;
+      }
+
+      if (this.error) {
+        return html`
+          <sl-alert variant="danger" open>
+            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+            <strong>Error:</strong> ${this.error}
+          </sl-alert>
+        `;
+      }
+
+      return this.renderModelsList();
+    };
+
     return html`
       <div class="container">
         <div class="header">
@@ -137,14 +165,7 @@ export class LlmModelsView extends LitElement {
           </sl-button>
         </div>
 
-        ${when(
-          this.isLoading,
-          () =>
-            html`<sl-card><div style="display: flex; justify-content: center; padding: 2rem;">
-              <sl-spinner></sl-spinner>
-            </div></sl-card>`,
-          () => this.renderModelsList()
-        )}
+        ${renderContent()}
       </div>
       ${this.renderModal()} ${this.renderDeleteConfirm()}
     `;
