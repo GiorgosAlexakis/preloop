@@ -78,7 +78,9 @@ export class TrackerList extends LitElement {
 
   render() {
     if (this.isLoading) {
-      return html`<div class="loading-indicator"><sl-spinner></sl-spinner></div>`;
+      return html`<div class="loading-indicator">
+        <sl-spinner></sl-spinner>
+      </div>`;
     }
 
     if (this.error) {

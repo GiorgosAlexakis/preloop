@@ -21,8 +21,8 @@ export class IssuesView extends LitElement {
     }
 
     .container {
-        max-width: var(--console-container-max-width);
-        padding: var(--sl-spacing-x-large);
+      max-width: var(--console-container-max-width);
+      padding: var(--sl-spacing-x-large);
     }
   `;
 
@@ -56,17 +56,13 @@ export class IssuesView extends LitElement {
     this.updateActiveTab();
   };
 
-    
-
   async updateActiveTab() {
     await this.updateComplete;
     const tabGroup = this.shadowRoot?.querySelector('sl-tab-group');
     if (!tabGroup) return;
 
     const currentPath = window.location.pathname;
-    const activeTab = this.tabs.find((tab) =>
-      currentPath.startsWith(tab.path)
-    );
+    const activeTab = this.tabs.find((tab) => currentPath.startsWith(tab.path));
 
     if (activeTab) {
       tabGroup.show(activeTab.panel);
@@ -86,21 +82,21 @@ export class IssuesView extends LitElement {
         <div class="header">
           <h1 class="title">Issues Dashboard</h1>
         </div>
-      ${this.issues.length > 0
-        ? html`
-            <sl-menu>
-              ${this.issues.map(
-                (issue) => html`<sl-menu-item>${issue.title}</sl-menu-item>`
-              )}
-            </sl-menu>
-          `
-        : html`
-            <sl-alert variant="primary" open>
-              <sl-icon slot="icon" name="info-circle"></sl-icon>
-              No duplicate issues found.
-            </sl-alert>
-          `}
-    </div>
+        ${this.issues.length > 0
+          ? html`
+              <sl-menu>
+                ${this.issues.map(
+                  (issue) => html`<sl-menu-item>${issue.title}</sl-menu-item>`
+                )}
+              </sl-menu>
+            `
+          : html`
+              <sl-alert variant="primary" open>
+                <sl-icon slot="icon" name="info-circle"></sl-icon>
+                No duplicate issues found.
+              </sl-alert>
+            `}
+      </div>
     `;
   }
 }

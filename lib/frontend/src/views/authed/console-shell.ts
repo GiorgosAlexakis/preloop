@@ -6,7 +6,6 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/details/details.js';
 @customElement('console-shell')
 export class ConsoleShell extends LitElement {
-
   static styles = css`
     :host {
       display: block;
@@ -98,13 +97,15 @@ export class ConsoleShell extends LitElement {
 
             <a href="/console/issues">
               <sl-menu-item>
-                <sl-icon name="file-text" style="padding-right: 6px;"></sl-icon> Issues
+                <sl-icon name="file-text" style="padding-right: 6px;"></sl-icon>
+                Issues
               </sl-menu-item>
             </a>
 
             <sl-details>
               <span slot="summary">
-                <sl-icon name="gear" style="padding-right: 6px;"></sl-icon> Settings
+                <sl-icon name="gear" style="padding-right: 6px;"></sl-icon>
+                Settings
               </span>
               <sl-menu>
                 <a href="/console/settings/profile">

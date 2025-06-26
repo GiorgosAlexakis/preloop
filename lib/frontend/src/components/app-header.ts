@@ -54,12 +54,16 @@ export class AppHeader extends LitElement {
     super.connectedCallback();
     this.checkAuth();
     window.addEventListener('auth-change', () => this.checkAuth());
-    window.addEventListener('vaadin-router-location-changed', () => this.requestUpdate());
+    window.addEventListener('vaadin-router-location-changed', () =>
+      this.requestUpdate()
+    );
   }
 
   disconnectedCallback() {
     window.removeEventListener('auth-change', () => this.checkAuth());
-    window.removeEventListener('vaadin-router-location-changed', () => this.requestUpdate());
+    window.removeEventListener('vaadin-router-location-changed', () =>
+      this.requestUpdate()
+    );
     super.disconnectedCallback();
   }
 

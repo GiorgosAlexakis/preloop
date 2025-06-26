@@ -63,7 +63,9 @@ export class TrackersView extends LitElement {
           <h1 class="title">Trackers</h1>
           <sl-button variant="primary" @click=${this._toggleAddTrackerForm}>
             <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-            ${this.isAddingTracker || this.editingTracker ? 'Cancel' : 'Add New Tracker'}
+            ${this.isAddingTracker || this.editingTracker
+              ? 'Cancel'
+              : 'Add New Tracker'}
           </sl-button>
         </div>
         ${this.isAddingTracker

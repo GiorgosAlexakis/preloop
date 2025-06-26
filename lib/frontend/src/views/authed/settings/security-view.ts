@@ -59,7 +59,9 @@ export class SecurityView extends LitElement {
                 label="Current Password"
                 .value="${this.currentPassword}"
                 @sl-input="${(e: Event) =>
-                  (this.currentPassword = (e.target as HTMLInputElement).value)}"
+                  (this.currentPassword = (
+                    e.target as HTMLInputElement
+                  ).value)}"
                 required
                 password-toggle
               ></sl-input>
@@ -127,7 +129,7 @@ export class SecurityView extends LitElement {
       }
 
       sl-button {
-      width: 12em;
+        width: 12em;
       }
     `,
   ];

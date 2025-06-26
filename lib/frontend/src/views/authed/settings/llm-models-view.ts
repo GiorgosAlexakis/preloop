@@ -53,7 +53,7 @@ export class LlmModelsView extends LitElement {
       margin-bottom: var(--sl-spacing-large);
     }
     .table-card {
-    width: 100%;
+      width: 100%;
       --padding: 0;
     }
     .table-card::part(body) {
@@ -134,9 +134,7 @@ export class LlmModelsView extends LitElement {
     const renderContent = () => {
       if (this.isLoading) {
         return html`<sl-card
-          ><div
-            style="display: flex; justify-content: center; padding: 2rem;"
-          >
+          ><div style="display: flex; justify-content: center; padding: 2rem;">
             <sl-spinner></sl-spinner></div
         ></sl-card>`;
       }
@@ -157,10 +155,7 @@ export class LlmModelsView extends LitElement {
       <div class="container">
         <div class="header">
           <h1 class="title">LLM Models</h1>
-          <sl-button
-            variant="primary"
-            @click=${this.openAddModelModal}
-          >
+          <sl-button variant="primary" @click=${this.openAddModelModal}>
             <sl-icon slot="prefix" name="plus-lg"></sl-icon> Add Model
           </sl-button>
         </div>
@@ -178,11 +173,19 @@ export class LlmModelsView extends LitElement {
         LLMs enable advanced AI features such as duplicate issue detection.
       </sl-alert>
       <sl-card class="table-card">
-        ${when(this.models.length === 0,
-          () => html`
-            <p class="empty-state">
+        ${when(
+          this.models.length === 0,
+          () =>
+            html` <p class="empty-state">
               No LLM models configured yet.
-              <a href="#" @click=${(e: Event) => { e.preventDefault(); this.openAddModelModal(); }}>Add a Model</a>
+              <a
+                href="#"
+                @click=${(e: Event) => {
+                  e.preventDefault();
+                  this.openAddModelModal();
+                }}
+                >Add a Model</a
+              >
             </p>`,
           () => html`
             <table>
@@ -207,7 +210,10 @@ export class LlmModelsView extends LitElement {
                       <td>
                         ${when(
                           model.is_default,
-                          () => html`<sl-badge variant="success" pill>Default</sl-badge>`,
+                          () =>
+                            html`<sl-badge variant="success" pill
+                              >Default</sl-badge
+                            >`,
                           () => html`
                             <sl-button
                               size="small"
@@ -285,14 +291,18 @@ export class LlmModelsView extends LitElement {
             label="API URL"
             .value=${this.currentModel.api_url || ''}
             @sl-input=${(e: Event) =>
-              (this.currentModel.api_url = (e.target as HTMLInputElement).value)}
+              (this.currentModel.api_url = (
+                e.target as HTMLInputElement
+              ).value)}
           ></sl-input>
           <sl-input
             class="full-width"
             type="password"
             label="API Key"
             @sl-input=${(e: Event) =>
-              (this.currentModel.api_key = (e.target as HTMLInputElement).value)}
+              (this.currentModel.api_key = (
+                e.target as HTMLInputElement
+              ).value)}
             placeholder=${this.isEditing
               ? 'Leave blank to keep existing key'
               : ''}
@@ -316,8 +326,7 @@ export class LlmModelsView extends LitElement {
         .open=${this.isDeleteConfirmOpen}
         @sl-hide=${() => (this.isDeleteConfirmOpen = false)}
       >
-        Are you sure you want to delete the model
-        "${this.modelToDelete?.name}"?
+        Are you sure you want to delete the model "${this.modelToDelete?.name}"?
         <sl-button
           slot="footer"
           @click=${() => (this.isDeleteConfirmOpen = false)}

@@ -75,8 +75,6 @@ export class LitApp extends LitElement {
   }
 
   render() {
-    return html`
-      <main></main>
-    `;
+    return html` <main></main> `;
   }
 }

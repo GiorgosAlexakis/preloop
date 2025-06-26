@@ -35,8 +35,7 @@ export class SettingsView extends LitElement {
     return html`
       <sl-tab-group @sl-tab-select=${this.onTabSelected}>
         ${this.tabs.map(
-          (tab) =>
-            html`<sl-tab panel=${tab.path}>${tab.label}</sl-tab>`
+          (tab) => html`<sl-tab panel=${tab.path}>${tab.label}</sl-tab>`
         )}
       </sl-tab-group>
       <slot></slot>

@@ -168,15 +168,20 @@ export async function listProjectsForOrg(
     payload.connection_details = { username };
   }
 
-  const response = await fetchWithAuth('/api/v1/trackers/list-projects-for-org', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetchWithAuth(
+    '/api/v1/trackers/list-projects-for-org',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || 'Failed to list projects for organization');
+    throw new Error(
+      errorData.message || 'Failed to list projects for organization'
+    );
   }
   return response.json();
 }
@@ -235,21 +240,19 @@ export async function changePassword(passwords: {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      errorData.detail || 'Failed to change password'
-    );
+    throw new Error(errorData.detail || 'Failed to change password');
   }
   return response.json();
 }
 
 // API Keys
 export interface ApiKey {
-    id: string;
-    name: string;
-    created_at: string;
-    last_used_at: string | null;
-    expires_at: string | null;
-    key?: string;
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  key?: string;
 }
 
 export async function getApiKeys(): Promise<ApiKey[]> {
@@ -260,7 +263,10 @@ export async function getApiKeys(): Promise<ApiKey[]> {
   return response.json();
 }
 
-export async function createApiKey(name: string, expires_at: string | null): Promise<ApiKey> {
+export async function createApiKey(
+  name: string,
+  expires_at: string | null
+): Promise<ApiKey> {
   const body = { name, expires_at };
   const response = await fetchWithAuth('/api/v1/auth/api-keys', {
     method: 'POST',

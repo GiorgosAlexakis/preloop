@@ -44,10 +44,21 @@ export class RegisterView extends LitElement {
           : ''}
         <form @submit=${this.handleRegister}>
           <div class="form-group">
-            <sl-input label="Username" id="username" name="username" required></sl-input>
+            <sl-input
+              label="Username"
+              id="username"
+              name="username"
+              required
+            ></sl-input>
           </div>
           <div class="form-group">
-            <sl-input type="email" label="Email" id="email" name="email" required></sl-input>
+            <sl-input
+              type="email"
+              label="Email"
+              id="email"
+              name="email"
+              required
+            ></sl-input>
           </div>
           <div class="form-group">
             <sl-input

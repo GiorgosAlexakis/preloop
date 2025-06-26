@@ -1,8 +1,4 @@
-import {
-  addTracker,
-  validateTrackerToken,
-  listProjectsForOrg,
-} from '../api';
+import { addTracker, validateTrackerToken, listProjectsForOrg } from '../api';
 import { LitElement, html, css, TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
@@ -98,7 +94,12 @@ export class AddTrackerModal extends LitElement {
   `;
 
   private get isStep1Invalid() {
-    if (!this.trackerName || !this.trackerType || !this.trackerUrl || !this.trackerToken) {
+    if (
+      !this.trackerName ||
+      !this.trackerType ||
+      !this.trackerUrl ||
+      !this.trackerToken
+    ) {
       return true;
     }
     if (this.trackerType === 'jira' && !this.jiraUsername) {
@@ -122,11 +123,17 @@ export class AddTrackerModal extends LitElement {
             ? html`<sl-progress-bar indeterminate></sl-progress-bar>`
             : ''}
           ${this.step === 1 ? this.renderStep1() : this.renderStep2()}
-          ${this.errorMessage ? html`<div class="error-message">${this.errorMessage}</div>` : ''}
+          ${this.errorMessage
+            ? html`<div class="error-message">${this.errorMessage}</div>`
+            : ''}
         </div>
-        <sl-button slot="footer" @click="${() => (this.opened = false)}">Cancel</sl-button>
+        <sl-button slot="footer" @click="${() => (this.opened = false)}"
+          >Cancel</sl-button
+        >
         ${this.step > 1
-          ? html`<sl-button slot="footer" @click="${() => (this.step = 1)}">Previous</sl-button>`
+          ? html`<sl-button slot="footer" @click="${() => (this.step = 1)}"
+              >Previous</sl-button
+            >`
           : ''}
         <sl-button
           slot="footer"
@@ -148,13 +155,15 @@ export class AddTrackerModal extends LitElement {
       <sl-input
         label="Tracker Name"
         .value="${this.trackerName}"
-        @sl-input="${(e: Event) => (this.trackerName = (e.target as HTMLInputElement).value)}"
+        @sl-input="${(e: Event) =>
+          (this.trackerName = (e.target as HTMLInputElement).value)}"
         required
       ></sl-input>
       <sl-select
         label="Tracker Type"
         .value="${this.trackerType}"
-        @sl-change="${(e: CustomEvent) => (this.trackerType = e.detail.item.value)}"
+        @sl-change="${(e: CustomEvent) =>
+          (this.trackerType = e.detail.item.value)}"
         required
       >
         <sl-menu-item value="github">GitHub</sl-menu-item>
@@ -164,14 +173,16 @@ export class AddTrackerModal extends LitElement {
       <sl-input
         label="Tracker URL"
         .value="${this.trackerUrl}"
-        @sl-input="${(e: Event) => (this.trackerUrl = (e.target as HTMLInputElement).value)}"
+        @sl-input="${(e: Event) =>
+          (this.trackerUrl = (e.target as HTMLInputElement).value)}"
         required
       ></sl-input>
       <sl-input
         type="password"
         label="Access Token"
         .value="${this.trackerToken}"
-        @sl-input="${(e: Event) => (this.trackerToken = (e.target as HTMLInputElement).value)}"
+        @sl-input="${(e: Event) =>
+          (this.trackerToken = (e.target as HTMLInputElement).value)}"
         required
         password-toggle
       ></sl-input>
@@ -214,7 +225,7 @@ export class AddTrackerModal extends LitElement {
                 : html`
                     <div class="project-list">
                       ${org.children.map(
-                        proj => html`
+                        (proj) => html`
                           <div class="project-item">
                             <sl-checkbox
                               .checked="${this.selectedProjects.has(
@@ -236,7 +247,9 @@ export class AddTrackerModal extends LitElement {
       <sl-checkbox
         .checked="${this.includeFutureProjects}"
         @sl-change="${(e: Event) =>
-          (this.includeFutureProjects = (e.target as HTMLInputElement).checked)}"
+          (this.includeFutureProjects = (
+            e.target as HTMLInputElement
+          ).checked)}"
       >
         Automatically include new projects created in the future
       </sl-checkbox>
@@ -253,7 +266,12 @@ export class AddTrackerModal extends LitElement {
   };
 
   private async testConnection() {
-    if (!this.trackerName || !this.trackerType || !this.trackerUrl || !this.trackerToken) {
+    if (
+      !this.trackerName ||
+      !this.trackerType ||
+      !this.trackerUrl ||
+      !this.trackerToken
+    ) {
       this.errorMessage = 'Please fill in all required fields.';
       return;
     }
@@ -284,16 +302,25 @@ export class AddTrackerModal extends LitElement {
 
   private async handleSave() {
     this.isSaving = true;
-    const allProjectIdentifiers = this.orgs.flatMap(org => org.children.map(p => p.identifier));
-    const includedProjectIdentifiers = this.includeFutureProjects ? null : Array.from(this.selectedProjects);
-    const excludedProjectIdentifiers = this.includeFutureProjects ? allProjectIdentifiers.filter(id => !this.selectedProjects.has(id)) : null;
+    const allProjectIdentifiers = this.orgs.flatMap((org) =>
+      org.children.map((p) => p.identifier)
+    );
+    const includedProjectIdentifiers = this.includeFutureProjects
+      ? null
+      : Array.from(this.selectedProjects);
+    const excludedProjectIdentifiers = this.includeFutureProjects
+      ? allProjectIdentifiers.filter((id) => !this.selectedProjects.has(id))
+      : null;
 
     const trackerData = {
       name: this.trackerName,
       type: this.trackerType,
       url: this.trackerUrl,
       token: this.trackerToken,
-      config: this.trackerType === 'jira' ? { username: this.jiraUsername } : undefined,
+      config:
+        this.trackerType === 'jira'
+          ? { username: this.jiraUsername }
+          : undefined,
       include_future_projects: this.includeFutureProjects,
       included_project_identifiers: includedProjectIdentifiers,
       excluded_project_identifiers: excludedProjectIdentifiers,
@@ -328,9 +355,10 @@ export class AddTrackerModal extends LitElement {
       org.children = response.projects || [];
       org.projectsLoaded = true;
       // Add all newly fetched projects to the selection by default
-      org.children.forEach(p => this.selectedProjects.add(p.identifier));
+      org.children.forEach((p) => this.selectedProjects.add(p.identifier));
     } catch (error: any) {
-      this.errorMessage = error.message || `Failed to fetch projects for ${org.name}.`;
+      this.errorMessage =
+        error.message || `Failed to fetch projects for ${org.name}.`;
     } finally {
       org.loading = false;
       this.requestUpdate();
@@ -339,12 +367,14 @@ export class AddTrackerModal extends LitElement {
 
   private isOrgSelected(org: Organization): boolean {
     if (!org.projectsLoaded || org.children.length === 0) return false;
-    return org.children.every(p => this.selectedProjects.has(p.identifier));
+    return org.children.every((p) => this.selectedProjects.has(p.identifier));
   }
 
   private isOrgIndeterminate(org: Organization): boolean {
     if (!org.projectsLoaded) return false;
-    const selectedCount = org.children.filter(p => this.selectedProjects.has(p.identifier)).length;
+    const selectedCount = org.children.filter((p) =>
+      this.selectedProjects.has(p.identifier)
+    ).length;
     return selectedCount > 0 && selectedCount < org.children.length;
   }
 
@@ -354,7 +384,7 @@ export class AddTrackerModal extends LitElement {
       // You might want to load them here if they aren't already
       return;
     }
-    org.children.forEach(p => {
+    org.children.forEach((p) => {
       if (checked) {
         this.selectedProjects.add(p.identifier);
       } else {

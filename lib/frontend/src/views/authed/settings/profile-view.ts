@@ -1,9 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import {
-  getAccountDetails,
-  updateAccountDetails,
-} from '../../../api';
+import { getAccountDetails, updateAccountDetails } from '../../../api';
 import { formStyles } from '../../../styles/form-styles';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -74,7 +71,9 @@ export class ProfileView extends LitElement {
                 @sl-input="${(e: Event) =>
                   (this.fullName = (e.target as HTMLInputElement).value)}"
               ></sl-input>
-              <sl-button variant="primary" type="submit">Update Profile</sl-button>
+              <sl-button variant="primary" type="submit"
+                >Update Profile</sl-button
+              >
               ${this.updateProfileMessage
                 ? html`<p>${this.updateProfileMessage}</p>`
                 : ''}
@@ -115,7 +114,7 @@ export class ProfileView extends LitElement {
       }
 
       sl-button {
-      width: 12em;
+        width: 12em;
       }
     `,
   ];

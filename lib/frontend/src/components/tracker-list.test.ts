@@ -113,7 +113,8 @@ describe('TrackerList', () => {
     await el.updateComplete;
     await aTimeout(0); // wait for render
 
-    const trackerItem = el.shadowRoot!.querySelector<TrackerItem>('tracker-item')!;
+    const trackerItem =
+      el.shadowRoot!.querySelector<TrackerItem>('tracker-item')!;
     const listener = oneEvent(el, 'tracker-edit');
 
     trackerItem.dispatchEvent(
