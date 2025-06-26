@@ -5,11 +5,10 @@ import uuid
 from typing import List, Optional  # Added Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session
 
 from spacebridge.api.auth import get_current_active_user  # Import user dependency
 
-from spacebridge.schemas.issue import IssueResponse
 from spacebridge.schemas.project import (
     ProjectCreate,
     ProjectResponse,

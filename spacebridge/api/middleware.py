@@ -25,7 +25,7 @@ class UIRoutingMiddleware(BaseHTTPMiddleware):
         ui_version = request.cookies.get("ui_version")
         dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
 
-        if ui_version == "spacelit":
+        if ui_version != "spacebridge":
             if dev_mode:
                 vite_client = httpx.AsyncClient(base_url="http://localhost:5173")
                 url = httpx.URL(

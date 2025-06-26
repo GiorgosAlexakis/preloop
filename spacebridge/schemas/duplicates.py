@@ -24,7 +24,9 @@ class DuplicateIssuePair(BaseModel):
 class ProjectDuplicatesResponse(BaseModel):
     """Response model for the project duplicates endpoint."""
 
-    project_ids: List[str] = Field(..., description="The IDs of the projects that were scanned.")
+    project_ids: List[str] = Field(
+        ..., description="The IDs of the projects that were scanned."
+    )
     model_id_used: str = Field(
         ..., description="The ID of the embedding model used for the similarity search."
     )

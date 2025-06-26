@@ -41,6 +41,7 @@ pre-commit:
     - pip install -U pip pre-commit ruff
     - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
     - pip install -e ".[dev]"
+    - cp -r /app/SpaceLit/dist ./SpaceLit/dist
   script:
     - pre-commit install
     - ruff check

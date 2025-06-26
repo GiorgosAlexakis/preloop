@@ -10,7 +10,7 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateCreate,
 )
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import Query
 from SpaceModels.spacemodels.crud.issue_duplicate import crud_issue_duplicate
 from spacemodels.crud import crud_issue, crud_llm_model
 from spacemodels.db.session import get_db_session as get_db
@@ -20,8 +20,6 @@ from spacebridge.schemas.duplicates import (
     DuplicateIssuePair,
 )
 
-from spacebridge.trackers.factory import TrackerFactory
-from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.account import Account  # Import Account model
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
@@ -222,9 +220,7 @@ def check_or_create_issue_duplicate(
         raise HTTPException(status_code=500, detail=f"LLM processing error: {str(e)}")
 
 
-@router.get(
-    "/issue-duplicates", response_model=ProjectDuplicatesResponse
-)
+@router.get("/issue-duplicates", response_model=ProjectDuplicatesResponse)
 def find_issue_duplicates(
     project_ids: List[str],
     similarity_threshold: float = Query(

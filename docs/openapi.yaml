@@ -1154,58 +1154,6 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/projects/{project_id}/duplicates:
-    get:
-      tags:
-      - Projects
-      summary: Find Project Duplicates
-      description: Finds potential duplicate issues within a project using semantic
-        similarity.
-      operationId: find_project_duplicates_api_v1_projects__project_id__duplicates_get
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: project_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Project Id
-      - name: similarity_threshold
-        in: query
-        required: false
-        schema:
-          type: number
-          maximum: 1.0
-          minimum: 0.0
-          description: Similarity threshold for considering issues as duplicates.
-          default: 0.7
-          title: Similarity Threshold
-        description: Similarity threshold for considering issues as duplicates.
-      - name: limit_per_issue
-        in: query
-        required: false
-        schema:
-          type: integer
-          maximum: 20
-          minimum: 1
-          description: Maximum number of duplicates to find for each issue.
-          default: 5
-          title: Limit Per Issue
-        description: Maximum number of duplicates to find for each issue.
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectDuplicatesResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issues/search:
     get:
       tags:
@@ -2117,6 +2065,60 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IssueDuplicate'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue-duplicates:
+    get:
+      tags:
+      - Issue Duplicates
+      summary: Find Issue Duplicates
+      description: Finds potential duplicate issues using semantic similarity.
+      operationId: find_issue_duplicates_api_v1_issue_duplicates_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: similarity_threshold
+        in: query
+        required: false
+        schema:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          description: Similarity threshold for considering issues as duplicates.
+          default: 0.7
+          title: Similarity Threshold
+        description: Similarity threshold for considering issues as duplicates.
+      - name: limit_per_issue
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 20
+          minimum: 1
+          description: Maximum number of duplicates to find for each issue.
+          default: 5
+          title: Limit Per Issue
+        description: Maximum number of duplicates to find for each issue.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+              title: Project Ids
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDuplicatesResponse'
         '422':
           description: Validation Error
           content:
@@ -3364,10 +3366,12 @@ components:
       description: Model for creating a new project.
     ProjectDuplicatesResponse:
       properties:
-        project_id:
-          type: string
-          title: Project Id
-          description: The ID of the project that was scanned.
+        project_ids:
+          items:
+            type: string
+          type: array
+          title: Project Ids
+          description: The IDs of the projects that were scanned.
         model_id_used:
           type: string
           title: Model Id Used
@@ -3384,7 +3388,7 @@ components:
           description: A list of potential duplicate issue pairs.
       type: object
       required:
-      - project_id
+      - project_ids
       - model_id_used
       - threshold_used
       - duplicates
