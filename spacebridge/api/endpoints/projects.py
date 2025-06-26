@@ -2,12 +2,12 @@
 
 import logging
 import uuid
-from typing import List, Optional  # Added Dict, Any
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from spacebridge.api.auth import get_current_active_user  # Import user dependency
+from spacebridge.api.auth import get_current_active_user
 
 from spacebridge.schemas.project import (
     ProjectCreate,
@@ -19,14 +19,14 @@ from spacebridge.schemas.project import (
 from spacebridge.trackers.factory import TrackerFactory
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
-from spacemodels.crud.tracker import CRUDTracker  # Import tracker CRUD
+from spacemodels.crud.tracker import CRUDTracker
 from spacemodels.crud.issue import CRUDIssue
 from spacemodels.crud.embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
 from spacemodels.db.session import get_db_session as get_db
-from spacemodels.models.account import Account  # Import Account model
+from spacemodels.models.account import Account
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
-from spacemodels.models.tracker import Tracker  # Import Tracker model
+from spacemodels.models.tracker import Tracker
 from spacemodels.models.issue import Issue
 from spacemodels.models.issue import IssueEmbedding, EmbeddingModel
 
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 crud_project = CRUDProject(Project)
 crud_organization = CRUDOrganization(Organization)
-crud_tracker = CRUDTracker(Tracker)  # Instantiate tracker CRUD
+crud_tracker = CRUDTracker(Tracker)
 crud_issue = CRUDIssue(Issue)
 crud_issue_embedding = CRUDIssueEmbedding(IssueEmbedding)
 crud_embedding_model = CRUDEmbeddingModel(EmbeddingModel)
