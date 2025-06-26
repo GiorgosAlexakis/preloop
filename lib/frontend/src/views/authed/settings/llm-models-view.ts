@@ -12,6 +12,7 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 
 @customElement('llm-models-view')
 export class LlmModelsView extends LitElement {
@@ -39,28 +40,53 @@ export class LlmModelsView extends LitElement {
   static styles = css`
     .container {
       max-width: var(--console-container-max-width);
-      padding: 2rem;
+      padding: var(--sl-spacing-x-large);
     }
-    .card-header {
+    .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      margin-bottom: var(--sl-spacing-large);
     }
-    sl-card::part(base) {
-      margin-bottom: 1rem;
+    .title {
+      font-size: var(--sl-font-size-x-large);
+      font-weight: var(--sl-font-weight-bold);
     }
-    .model-card-body {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr auto;
-      gap: 1rem;
-      align-items: center;
+    .table-card {
+    width: 100%;
+      --padding: 0;
+    }
+    .table-card::part(body) {
+      padding: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th,
+    td {
+      padding: var(--sl-spacing-medium);
+      text-align: left;
+      border-bottom: 1px solid var(--sl-color-neutral-200);
+    }
+    th {
+      background-color: var(--sl-color-neutral-50);
+      font-weight: var(--sl-font-weight-semibold);
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    th:last-child,
+    td:last-child {
+      text-align: right;
     }
     .actions {
       display: flex;
-      gap: 0.5rem;
+      gap: var(--sl-spacing-x-small);
+      justify-content: flex-end;
     }
     sl-dialog::part(panel) {
-      max-width: 600px;
+      width: 620px;
     }
     .form-grid {
       display: grid;
@@ -69,6 +95,17 @@ export class LlmModelsView extends LitElement {
     }
     .form-grid .full-width {
       grid-column: 1 / -1;
+    }
+    .empty-state {
+      padding: var(--sl-spacing-large);
+    }
+    .empty-state a {
+      color: var(--sl-color-primary-600);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .empty-state a:hover {
+      text-decoration: underline;
     }
   `;
 
@@ -90,77 +127,100 @@ export class LlmModelsView extends LitElement {
 
   render() {
     return html`
-    <div class="p-4">
-          <h1 class="text-2xl font-bold mb-4">LLM Models</h1>
-        </div>
       <div class="container">
-        <sl-card>
-          <div slot="header" class="card-header">
-            <span>LLM Models</span>
-            <sl-button
-              variant="primary"
-              size="small"
-              @click=${this.openAddModelModal}
-            >
-              <sl-icon slot="prefix" name="plus-lg"></sl-icon> Add Model
-            </sl-button>
-          </div>
-          ${when(
-            this.isLoading,
-            () =>
-              html`<div
-                style="display: flex; justify-content: center; padding: 2rem;"
-              >
-                <sl-spinner></sl-spinner>
-              </div>`,
-            () => this.renderModelsList()
-          )}
-        </sl-card>
+        <div class="header">
+          <h1 class="title">LLM Models</h1>
+          <sl-button
+            variant="primary"
+            @click=${this.openAddModelModal}
+          >
+            <sl-icon slot="prefix" name="plus-lg"></sl-icon> Add Model
+          </sl-button>
+        </div>
+
+        ${when(
+          this.isLoading,
+          () =>
+            html`<sl-card><div style="display: flex; justify-content: center; padding: 2rem;">
+              <sl-spinner></sl-spinner>
+            </div></sl-card>`,
+          () => this.renderModelsList()
+        )}
       </div>
       ${this.renderModal()} ${this.renderDeleteConfirm()}
     `;
   }
 
   renderModelsList() {
-    if (this.models.length === 0) {
-      return html`<p>
-        No LLM models configured yet. Click 'Add Model' to get started.
-      </p>`;
-    }
-
     return html`
-      <div>
-        ${repeat(
-          this.models,
-          (model) => model.id,
-          (model) => html`
-            <sl-card>
-              <div class="model-card-body">
-                <div><strong>Name:</strong> ${model.name}</div>
-                <div><strong>Provider:</strong> ${model.provider_name}</div>
-                <div><strong>Model:</strong> ${model.model_name}</div>
-                <div class="actions">
-                  <sl-button
-                    size="small"
-                    circle
-                    @click=${() => this.openEditModal(model)}
-                  >
-                    <sl-icon name="pencil"></sl-icon>
-                  </sl-button>
-                  <sl-button
-                    variant="danger"
-                    size="small"
-                    circle
-                    @click=${() => this.openDeleteConfirm(model)}
-                  >
-                    <sl-icon name="trash"></sl-icon>
-                  </sl-button>
-                </div>
-              </div>
-            </sl-card>
+      <sl-card class="table-card">
+        ${when(this.models.length === 0,
+          () => html`
+            <p class="empty-state">
+              No LLM models configured yet.
+              <a href="#" @click=${(e: Event) => { e.preventDefault(); this.openAddModelModal(); }}>Add a Model</a>
+            </p>`,
+          () => html`
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Provider</th>
+                  <th>Model</th>
+                  <th>Default</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${repeat(
+                  this.models,
+                  (model) => model.id,
+                  (model) => html`
+                    <tr>
+                      <td>${model.name}</td>
+                      <td>${model.provider_name}</td>
+                      <td>${model.model_name}</td>
+                      <td>
+                        ${when(
+                          model.is_default,
+                          () => html`<sl-badge variant="success" pill>Default</sl-badge>`,
+                          () => html`
+                            <sl-button
+                              size="small"
+                              @click=${() => this.handleSetDefault(model)}
+                            >
+                              Set as default
+                            </sl-button>
+                          `
+                        )}
+                      </td>
+                      <td>
+                        <div class="actions">
+                          <sl-button
+                            size="small"
+                            circle
+                            @click=${() => this.openEditModal(model)}
+                          >
+                            <sl-icon name="pencil"></sl-icon>
+                          </sl-button>
+                          <sl-button
+                            variant="danger"
+                            size="small"
+                            circle
+                            @click=${() => this.openDeleteConfirm(model)}
+                          >
+                            <sl-icon name="trash"></sl-icon>
+                          </sl-button>
+                        </div>
+                      </td>
+                    </tr>
+                  `
+                )}
+              </tbody>
+            </table>
           `
         )}
-      </div>
+      </sl-card>
     `;
   }
 
@@ -169,7 +229,6 @@ export class LlmModelsView extends LitElement {
       <sl-dialog
         label="${this.isEditing ? 'Edit' : 'Add'} LLM Model"
         .open=${this.isModalOpen}
-        @sl-hide=${this.closeModal}
       >
         <div class="form-grid">
           <sl-input
@@ -178,16 +237,11 @@ export class LlmModelsView extends LitElement {
             .value=${this.currentModel.name || ''}
             @sl-input=${(e: Event) =>
               (this.currentModel.name = (e.target as HTMLInputElement).value)}
-            required
           ></sl-input>
           <sl-select
             label="Provider"
             .value=${this.currentModel.provider_name || ''}
-            @sl-change=${(e: CustomEvent) =>
-              (this.currentModel.provider_name = (
-                e.target as HTMLSelectElement
-              ).value)}
-            required
+            @sl-change=${this.handleProviderChange}
           >
             <sl-option value="openai">OpenAI</sl-option>
             <sl-option value="anthropic">Anthropic</sl-option>
@@ -201,7 +255,6 @@ export class LlmModelsView extends LitElement {
               (this.currentModel.model_name = (
                 e.target as HTMLInputElement
               ).value)}
-            required
           ></sl-input>
           <sl-input
             class="full-width"
@@ -209,7 +262,6 @@ export class LlmModelsView extends LitElement {
             .value=${this.currentModel.api_url || ''}
             @sl-input=${(e: Event) =>
               (this.currentModel.api_url = (e.target as HTMLInputElement).value)}
-            required
           ></sl-input>
           <sl-input
             class="full-width"
@@ -270,6 +322,23 @@ export class LlmModelsView extends LitElement {
     this.isModalOpen = false;
   }
 
+  handleProviderChange(e: CustomEvent) {
+    e.stopPropagation();
+    const provider = (e.target as HTMLSelectElement).value;
+
+    const defaultUrls: { [key: string]: string } = {
+      openai: 'https://api.openai.com/v1',
+      anthropic: 'https://api.anthropic.com/v1',
+      google: 'https://generativelanguage.googleapis.com/v1beta',
+    };
+
+    this.currentModel = {
+      ...this.currentModel,
+      provider_name: provider,
+      api_url: defaultUrls[provider] || '',
+    };
+  }
+
   async handleFormSubmit(e: Event) {
     e.preventDefault();
     // Basic validation
@@ -296,6 +365,15 @@ export class LlmModelsView extends LitElement {
   openDeleteConfirm(model: LlmModel) {
     this.modelToDelete = model;
     this.isDeleteConfirmOpen = true;
+  }
+
+  async handleSetDefault(model: LlmModel) {
+    try {
+      await api.updateLlmModel(model.id, { is_default: true });
+      await this.fetchModels();
+    } catch (error) {
+      console.error('Failed to set default model:', error);
+    }
   }
 
   async deleteModel() {
