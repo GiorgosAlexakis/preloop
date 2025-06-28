@@ -26,8 +26,6 @@ export class AppHeader extends LitElement {
   static styles = css`
     :host {
       display: block;
-      background: white;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.03);
     }
     .header-container {
       display: flex;
@@ -113,7 +111,7 @@ export class AppHeader extends LitElement {
                 ></sl-icon-button>`
               : html`<div class="logo">
                   <a href="/">
-                    <img src="/images/logo.png" alt="SpaceBridge Logo" />
+                    <img src="/images/logo_dark.png" alt="SpaceBridge Logo" />
                   </a>
                 </div>`}
           </div>

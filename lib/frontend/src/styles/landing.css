@@ -1,7 +1,6 @@
 :host {
   display: block;
   font-family: 'Inter', sans-serif;
-  color: #374151; /* var(--gray-700) */
 }
 
 .section-container {
@@ -10,9 +9,12 @@
   padding: 0 1rem;
 }
 
+.main-section {
+  padding: 70px 0;
+}
+
 /* Hero Section */
 .hero {
-  padding: 120px 0 100px;
   position: relative;
   overflow: hidden;
   background: radial-gradient(circle at 90% 50%, var(--primary-light) 0%, transparent 40%);
@@ -35,12 +37,10 @@
   font-weight: 700;
   line-height: 1.1;
   margin-bottom: 1.8rem;
-  color: #111827; /* var(--gray-900) */
 }
 
 .hero-content .lead {
   font-size: 1.4rem;
-  color: #404b5a; /* var(--secondary) */
   margin-bottom: 2.8rem;
 }
 
@@ -62,9 +62,7 @@
 
 /* Feature Section */
 .feature-section {
-  padding: 80px 0;
   text-align: center;
-  background-color: white;
 }
 
 .feature-grid {
@@ -77,7 +75,6 @@
   flex: 1;
   padding: 32px 30px;
   border-radius: 8px;
-  background-color: white;
   text-align: left;
 }
 
@@ -93,18 +90,16 @@
   margin-bottom: 0.5rem;
 }
 
-/* Video Section */
-.video-section {
-  padding: 80px 0;
-}
-
 .video-wrapper {
   position: relative;
   padding-bottom: 56.25%; /* 16:9 aspect ratio */
   height: 0;
   overflow: hidden;
 }
+
 .video-wrapper iframe {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   position: absolute;
   top: 0;
   left: 0;
@@ -115,28 +110,59 @@
 
 /* Get Started / CTA Section */
 .cta-section {
-  padding: 60px 0;
   background-color: var(--primary-light);
+}
+
+.main-section h2 {
+  position: relative;
+  text-align: left;
+  font-size: 2.2rem;
+  font-weight: 300;
+  margin-bottom: 2.5rem;
+  padding-bottom: 15px;
+}
+
+.main-section h2::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 70px;
+  height: 4px;
+  background: var(--sl-color-primary-600);
+  border-radius: 2px;
+}
+
+.cta-section .btn-primary:hover {
+  background-color: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+
+.special-cta {
   text-align: center;
 }
 
-.cta-section h2 {
-  font-size: 2rem;
-  margin-bottom: 2rem;
+.special-cta h2 {
+  text-align: center;
+}
+
+.special-cta h2::after {
+  display: none;
 }
 
 .get-started-container {
   display: flex;
-  background-color: white;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   overflow: hidden;
+  background: linear-gradient(45deg, #d35400, #6c3483, #1f618d);
+  color: #fff;
 }
 
 .ide-tabs {
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #e5e7eb; /* var(--gray-200) */
+  border-right: 1px solid rgba(0, 0, 0, 0.2);
 }
 
 .ide-logo-container {
@@ -149,24 +175,22 @@
   height: 80px;
 }
 
-.ide-logo-container:hover {
-  background-color: #f9fafb; /* var(--gray-50) */
-}
+
 
 .ide-logo-container.active {
-  background-color: #e5e7eb; /* var(--gray-200) */
-  border-left: 3px solid #2d5fac; /* var(--primary) */
+  background-color: rgba(255, 255, 255, 0.1);
+  border-left: 3px solid #fff;
 }
 
 .ide-logo-container img {
   max-width: 100px;
-  filter: grayscale(100%);
-  opacity: 0.6;
+  filter: brightness(0) invert(1);
+  opacity: 0.7;
   transition: all 0.2s ease;
 }
 
 .ide-logo-container.active img {
-  filter: grayscale(0%);
+  /* filter: none; */
   opacity: 1;
 }
 
@@ -177,6 +201,7 @@
 }
 
 .tab-content h4 {
+  margin-top: 1rem;
   font-size: 1.5rem;
   margin-bottom: 1rem;
 }
@@ -189,9 +214,9 @@
 
 .code-container {
   position: relative;
-  background-color: #f3f4f6; /* var(--gray-100) */
   border-radius: 6px;
   margin: 1rem 0;
+  background-color: rgba(0, 0, 0, 0.2);
 }
 
 .code-container pre {
@@ -201,6 +226,7 @@
   word-break: break-all;
   font-family: 'Fira Code', monospace;
   font-size: 0.9rem;
+  color: #fff;
 }
 
 .copy-btn {
@@ -210,30 +236,17 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: #6b7280; /* var(--gray-500) */
   padding: 0.25rem;
   border-radius: 4px;
 }
-.copy-btn:hover {
-  color: #111827; /* var(--gray-900) */
-  background-color: #e5e7eb;
-}
+
 
 /* FAQ Section */
 .faq-section {
-  padding: 80px 0;
   background-color: var(--gray-100);
 }
 
-.faq-section h2 {
-  text-align: center;
-  font-size: 2rem;
-  margin-bottom: 2rem;
-}
-
 .faq-item {
-  border-bottom: 1px solid #e5e7eb; /* var(--gray-200) */
-}
 
 .faq-question {
   display: flex;
@@ -262,13 +275,7 @@
 
 /* Final CTA */
 .final-cta {
-  text-align: center;
   padding: 60px 0;
-}
-
-.final-cta h2 {
-  font-size: 2rem;
-  margin-bottom: 1.5rem;
 }
 
 app-footer {
@@ -301,7 +308,6 @@ app-footer {
   .ide-tabs {
     flex-direction: row;
     border-right: none;
-    border-bottom: 1px solid #e5e7eb; /* var(--gray-200) */
   }
 
   .ide-logo-container {
@@ -310,6 +316,6 @@ app-footer {
 
   .ide-logo-container.active {
     border-left: none;
-    border-bottom: 3px solid #2d5fac; /* var(--primary) */
+    border-bottom: 3px solid #fff;
   }
 }

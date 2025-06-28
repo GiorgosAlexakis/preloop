@@ -46,7 +46,7 @@ export class LandingView extends LitElement {
     return html`
       <app-header></app-header>
       <main>
-        <section class="hero">
+        <section class="hero main-section">
           <div class="section-container hero-inner">
             <div class="hero-content">
               <h1 class="fw-bold">
@@ -90,7 +90,7 @@ export class LandingView extends LitElement {
           </div>
         </section>
 
-        <section class="feature-section" id="features">
+        <section class="feature-section main-section" id="features">
           <div class="section-container">
             <div class="feature-grid">
               <div class="feature-box">
@@ -127,24 +127,7 @@ export class LandingView extends LitElement {
           </div>
         </section>
 
-        <section class="video-section">
-          <div class="section-container">
-            <div class="video-wrapper">
-              <iframe
-                width="560"
-                height="315"
-                src="https://www.youtube.com/embed/videoseries?si=qPHwJWgW3yW63Rzr&amp;list=PLr2Jp0c-Qn2itxlxK4vz8fDr7xCAUiDZw"
-                title="YouTube video player"
-                frameborder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                referrerpolicy="strict-origin-when-cross-origin"
-                allowfullscreen=""
-              ></iframe>
-            </div>
-          </div>
-        </section>
-
-        <section class="cta-section" id="get-started">
+        <section class="cta-section main-section" id="get-started">
           <div class="section-container">
             <h2>Get Started</h2>
             <div class="get-started-container">
@@ -240,7 +223,9 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>
-                        <p>First, install the SpaceBridge package:</p>
+                        <p>
+                          First, install the SpaceBridge package:
+                        </p>
                         <div class="code-container">
                           <pre><code>pip install spacebridge-mcp</code></pre>
                           <button class="copy-btn" @click=${this._copyCode}>
@@ -307,7 +292,9 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>
-                        <p>First, install the SpaceBridge package:</p>
+                        <p>
+                          First, install the SpaceBridge package:
+                        </p>
                         <div class="code-container">
                           <pre><code>pip install spacebridge-mcp</code></pre>
                           <button class="copy-btn" @click=${this._copyCode}>
@@ -328,7 +315,9 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                             </svg>
                           </button>
                         </div>
-                        <p>Then configure via JSON configuration file:</p>
+                        <p>
+                          Then configure via JSON configuration file:
+                        </p>
                         <div class="code-container">
                           <pre><code>{
   "mcpServers": {
@@ -368,14 +357,32 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
           </div>
         </section>
 
-        <section class="faq-section">
+        <section class="video-section main-section">
+          <div class="section-container">
+            <h2>Spacebridge MCP Server Demo</h2>
+            <div class="video-wrapper">
+              <iframe
+                width="560"
+                height="315"
+                src="https://www.youtube.com/embed/videoseries?si=qPHwJWgW3yW63Rzr&amp;list=PLr2Jp0c-Qn2itxlxK4vz8fDr7xCAUiDZw"
+                title="YouTube video player"
+                frameborder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerpolicy="strict-origin-when-cross-origin"
+                allowfullscreen=""
+              ></iframe>
+            </div>
+          </div>
+        </section>
+
+        <section class="faq-section main-section">
           <div class="section-container">
             <h2>FAQs</h2>
             <div class="faq-container">
               ${this.renderFaqItem(
                 0,
                 'What is SpaceBridge?',
-                'SpaceBridge is an open-source Master Control Program (MCP) server designed to unify your issue trackers (like Jira, GitHub Issues, GitLab Issues) and enhance them with AI-powered features like similarity search for duplicate detection. It provides a consistent API for AI agents and developers to interact with issue data.'
+                'SpaceBridge is an open-source Model Context Protocol (MCP) server designed to unify your issue trackers (like Jira, GitHub Issues, GitLab Issues) and enhance them with AI-powered features like similarity search for duplicate detection. It provides a consistent API for AI agents and developers to interact with issue data.'
               )}
               ${this.renderFaqItem(
                 1,
@@ -391,7 +398,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
           </div>
         </section>
 
-        <section class="final-cta">
+        <section class="final-cta main-section special-cta">
           <div class="section-container">
             <h2>Ready to Supercharge your AI Workflow?</h2>
             <sl-button

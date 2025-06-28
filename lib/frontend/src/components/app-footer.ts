@@ -1,8 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/divider/divider.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
+import { router } from '../router';
 
 @customElement('app-footer')
 export class AppFooter extends LitElement {
@@ -41,25 +39,20 @@ export class AppFooter extends LitElement {
         margin: 0;
       }
 
-      .footer-nav sl-button::part(label) {
-        font-size: 0.9rem;
-      }
-
-      .footer-nav sl-button {
-        color: var(--gray-200);
-        transition: color 0.2s ease;
+      .footer-nav li {
         margin-bottom: 10px;
       }
 
-      .footer-nav sl-button:hover {
-        color: white;
+      .footer-nav a {
+        font-size: 0.9rem;
+        color: var(--gray-200);
+        transition: color 0.2s ease;
+        text-decoration: none;
+        cursor: pointer;
       }
 
-      h5 {
+      .footer-nav a:hover {
         color: white;
-        font-size: 1.1rem;
-        margin-bottom: 20px;
-        font-weight: 600;
       }
 
       p {
@@ -67,19 +60,9 @@ export class AppFooter extends LitElement {
         margin-bottom: 10px;
       }
 
-      a {
-        color: var(--gray-200);
-        text-decoration: none;
-        transition: color 0.2s ease;
-      }
-
-      a:hover {
-        color: white;
-      }
-
-      sl-divider {
+      .divider {
         margin: 30px 0;
-        --color: rgba(255, 255, 255, 0.1);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
       }
 
       .footer-bottom {
@@ -101,19 +84,20 @@ export class AppFooter extends LitElement {
       .copyright-text a:hover {
         text-decoration: underline;
       }
-
-      sl-icon-button {
-        color: var(--gray-200);
-        font-size: 1.25rem;
-        transition: color 0.2s ease;
-      }
-      sl-icon-button:hover {
-        color: white;
-      }
     `,
   ];
 
-  switchToOldUI() {
+  handleLinkClick(event: MouseEvent) {
+    event.preventDefault();
+    const target = event.target as HTMLAnchorElement;
+    const path = target.getAttribute('href');
+    if (path) {
+      router.navigate(path);
+    }
+  }
+
+  switchToOldUI(event: MouseEvent) {
+    event.preventDefault();
     // Set the cookie to expire in 30 days
     const d = new Date();
     d.setTime(d.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -141,39 +125,17 @@ export class AppFooter extends LitElement {
           </div>
           <nav class="footer-nav">
             <ul>
-              <li>
-                <sl-button variant="text" href="/docs"
-                  >API Documentation</sl-button
-                >
-              </li>
-              <li>
-                <sl-button variant="text" href="/register">Register</sl-button>
-              </li>
-              <li><sl-button variant="text" href="/login">Login</sl-button></li>
-              <li>
-                <sl-button variant="text" href="/privacy"
-                  >Privacy Policy</sl-button
-                >
-              </li>
-              <li>
-                <sl-button variant="text" href="/terms"
-                  >Terms of Service</sl-button
-                >
-              </li>
-              <li>
-                <sl-button variant="text" href="/whatis-mcp" target="_blank"
-                  >What is MCP?</sl-button
-                >
-              </li>
-              <li>
-                <sl-button variant="text" @click=${this.switchToOldUI}>
-                  Switch to the old UI
-                </sl-button>
-              </li>
+              <li><a href="/docs">API Documentation</a></li>
+              <li><a href="/register">Register</a></li>
+              <li><a href="/login">Login</a></li>
+              <li><a href="/privacy">Privacy Policy</a></li>
+              <li><a href="/terms">Terms of Service</a></li>
+              <li><a href="/whatis-mcp" target="_blank">What is MCP?</a></li>
+              <li><a href="#" @click=${this.switchToOldUI}>Switch to the old UI</a></li>
             </ul>
           </nav>
         </div>
-        <sl-divider></sl-divider>
+        <div class="divider"></div>
         <div class="footer-bottom">
           <span class="copyright-text"
             >&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All
