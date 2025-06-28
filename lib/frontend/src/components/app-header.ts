@@ -41,7 +41,7 @@ export class AppHeader extends LitElement {
       gap: 0.5rem;
     }
     .logo img {
-      height: 32px;
+      height: 36px;
     }
     sl-icon-button::part(base) {
       font-size: 1.5rem;
