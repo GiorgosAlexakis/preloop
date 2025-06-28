@@ -1,4 +1,5 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, state } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -185,7 +186,7 @@ export class LandingView extends LitElement {
           </div>
         </section>
 
-        <section class="cta-section main-section" id="get-started">
+        <section class="feature-section main-section" id="get-started">
           <div class="section-container">
           <div class="title-container">
             <h2>SpaceBridge MCP Server</h2>
@@ -468,22 +469,50 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
 
         <section class="faq-section main-section">
           <div class="section-container">
-            <h2>FAQs</h2>
-            <div class="faq-container">
-              ${this.renderFaqItem(
-                0,
-                'What is SpaceBridge?',
-                'SpaceBridge is an open-source Model Context Protocol (MCP) server designed to unify your issue trackers (like Jira, GitHub Issues, GitLab Issues) and enhance them with AI-powered features like similarity search for duplicate detection. It provides a consistent API for AI agents and developers to interact with issue data.'
-              )}
-              ${this.renderFaqItem(
-                1,
-                'How does SpaceBridge help with AI development?',
-                "SpaceBridge provides a standardized MCP interface, allowing AI agents (like those in Claude Code, Cursor, or Windsurf) to easily access and manipulate issue tracker data. This augments the AI's context, enabling it to perform tasks like automated issue creation, updates, and intelligent searches more effectively."
-              )}
-              ${this.renderFaqItem(
-                2,
-                'Is SpaceBridge free to use?',
-                'Yes, the SpaceBridge MCP server software is open-source (MIT License) and free to self-host. We also offer a free tier for our hosted REST API service, which is perfect for individual developers and small teams to get started.'
+            <h2 class="text-center">Frequently Asked Questions</h2>
+            <div class="faq-list">
+              ${[
+                {
+                  q: 'What is SpaceBridge?',
+                  a: 'SpaceBridge is a smart layer that connects to your existing software development tools (like Jira, GitHub, and GitLab). It helps your team work more efficiently by automating complex tasks and providing a safety net for critical operations, all powered by AI.',
+                },
+                {
+                  q: 'Do I need to replace my issue tracker like Jira or GitHub?',
+                  a: 'Absolutely not. SpaceBridge integrates <strong>with</strong> your existing tools. You keep your current workflow, and SpaceBridge enhances it with intelligent features and cross-platform automation, acting as a central hub.',
+                },
+                {
+                  q: 'What can the Intelligent Automation actually do for me?',
+                  a: 'It handles tedious but important tasks. For example, it can automatically find and suggest merging duplicate issues across trackers, provide AI-based time estimates for new tickets, or check if a new pull request is missing documentation updates and flag it for review.',
+                },
+                {
+                  q: 'How does the Preloop™ safety feature work?',
+                  a: "Preloop™ is a human approval step for your most critical automations. If an automated process wants to do something high-stakes, like roll back a production server, you can create a policy that requires two senior engineers to approve it via Slack or email before the action proceeds. It prevents costly mistakes by ensuring a human is always in the loop for key decisions.",
+                },
+                {
+                  q: 'Is it secure to connect my development tools to SpaceBridge?',
+                  a: 'Security is our top priority. SpaceBridge uses industry-standard encryption for all data. We connect to your tools via secure, permission-scoped API tokens and OAuth, ensuring our platform only has the minimum access it needs to function.',
+                },
+              ].map(
+                (faq, index) => html`
+                  <div class="faq-item">
+                    <div
+                      class="faq-question"
+                      @click=${() => this._toggleFaq(index)}
+                    >
+                      <span>${faq.q}</span>
+                      <sl-icon
+                        name=${this._openFaq === index
+                          ? 'chevron-up'
+                          : 'chevron-down'}
+                      ></sl-icon>
+                    </div>
+                    <div
+                      class="faq-answer ${this._openFaq === index ? 'open' : ''}"
+                    >
+                      <p>${unsafeHTML(faq.a)}</p>
+                    </div>
+                  </div>
+                `
               )}
             </div>
           </div>
