@@ -3,6 +3,10 @@
   font-family: 'Inter', sans-serif;
 }
 
+p {
+  line-height: 1.6;
+}
+
 .section-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -10,7 +14,23 @@
 }
 
 .main-section {
-  padding: 70px 0;
+  padding: 3rem 0;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-center h2::after {
+  left: 50%;
+}
+
+.text-center .lead {
+  margin: 0 auto;
+}
+
+p.lead {
+  font-size: 1.2rem;
 }
 
 /* Hero Section */
@@ -23,13 +43,14 @@
 .hero-inner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 2rem;
 }
 
 .hero-content {
   flex: 1;
-  max-width: 50%;
+  max-width: 960px;
+  text-align: center;
 }
 
 .hero-content h1 {
@@ -42,12 +63,14 @@
 .hero-content .lead {
   font-size: 1.4rem;
   margin-bottom: 2.8rem;
+  margin: 0 auto 2rem auto;
 }
 
 .hero-buttons {
   display: flex;
   gap: 1rem;
   align-items: center;
+  justify-content: center;
 }
 
 .hero-image {
@@ -58,6 +81,31 @@
 .hero-image .img-fluid {
   max-width: 100%;
   height: auto;
+}
+
+.gradient-faster,
+.gradient-safer {
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-fill-color: transparent;
+  display: inline-block; /* Ensures the gradient is applied correctly */
+}
+
+.gradient-faster {
+  background-image: linear-gradient(
+    45deg,
+    hsl(211, 100%, 50%),
+    hsl(195, 100%, 50%)
+  );
+}
+
+.gradient-safer {
+  background-image: linear-gradient(
+    45deg,
+    hsl(220, 80%, 60%),
+    hsl(260, 80%, 70%)
+  );
 }
 
 /* Feature Section */
@@ -73,9 +121,18 @@
 
 .feature-box {
   flex: 1;
-  padding: 32px 30px;
+  padding: 2rem;
   border-radius: 8px;
   text-align: left;
+}
+
+.feature-icon {
+  margin-bottom: 1.5rem;
+}
+
+.feature-icon sl-icon {
+  font-size: 3rem;
+  color: var(--sl-color-primary-500);
 }
 
 .feature-icon img {
@@ -85,7 +142,7 @@
 }
 
 .feature-box h3 {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
 }
@@ -240,6 +297,22 @@
   border-radius: 4px;
 }
 
+.title-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.title-container .main-link {
+  color: var(--sl-color-primary-600);
+  text-decoration: none;
+  position: relative;
+  top: -7px;
+}
+
+.title-container h2 {
+}
 
 /* FAQ Section */
 .faq-section {

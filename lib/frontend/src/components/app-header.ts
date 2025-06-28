@@ -33,7 +33,7 @@ export class AppHeader extends LitElement {
       align-items: center;
       max-width: 1200px;
       margin: 0 auto;
-      padding: 1rem;
+      padding: 1.5rem 1rem;
     }
     nav {
       display: flex;

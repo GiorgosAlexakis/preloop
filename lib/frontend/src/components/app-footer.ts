@@ -8,11 +8,14 @@ export class AppFooter extends LitElement {
     css`
       :host {
         display: block;
-        background-color: var(--gray-900);
-        color: var(--gray-200);
+        color: var(--sl-color-neutral-700);
         padding: 48px 0;
         margin-top: auto;
         flex-shrink: 0;
+      }
+
+      p {
+        line-height: 1.6;
       }
 
       .footer-container {
@@ -45,7 +48,7 @@ export class AppFooter extends LitElement {
 
       .footer-nav a {
         font-size: 0.9rem;
-        color: var(--gray-200);
+        color: var(--sl-color-neutral-700);
         transition: color 0.2s ease;
         text-decoration: none;
         cursor: pointer;
@@ -53,11 +56,6 @@ export class AppFooter extends LitElement {
 
       .footer-nav a:hover {
         color: white;
-      }
-
-      p {
-        font-size: 0.9rem;
-        margin-bottom: 10px;
       }
 
       .divider {
@@ -119,8 +117,7 @@ export class AppFooter extends LitElement {
               style="margin-bottom: 16px"
             />
             <p>
-              MCP Server for unified issue tracker<br />management and
-              AI-powered collaboration.
+              The AI co-pilot for your entire team.<br />Ship faster and safer.
             </p>
           </div>
           <nav class="footer-nav">

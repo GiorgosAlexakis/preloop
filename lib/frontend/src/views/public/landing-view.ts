@@ -48,19 +48,16 @@ export class LandingView extends LitElement {
       <main>
         <section class="hero main-section">
           <div class="section-container hero-inner">
-            <div class="hero-content">
+            <div class="hero-content text-center">
               <h1 class="fw-bold">
-                Turbocharge your<br />
-                <span
-                  style="display: inline-block; min-width: 220px; background: linear-gradient(to right, #ff7e5f, #feb47b, #d76d77, #9370DB); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700;"
-                  >Vibe Coding</span
-                ><br />
-                with Automated Issue Tracking
+                Ship <span class="gradient-faster">Faster</span> and
+                <span class="gradient-safer">Safer</span> with an AI Co-pilot for
+                Your Entire Team.
               </h1>
               <p class="lead">
-                SpaceBridge provides an open source MCP server and a free REST
-                API that can keep your issue tracker updated while you focus on
-                coding.
+                SpaceBridge.io integrates with your existing tools (GitHub, Jira,
+                GitLab) to intelligently manage issues, automate routine tasks,
+                and put a human safety net around your most critical operations.
               </p>
               <div class="hero-buttons">
                 <sl-button
@@ -69,58 +66,119 @@ export class LandingView extends LitElement {
                   @click=${() => (window.location.href = '/register')}
                   >Get Started</sl-button
                 >
-                <sl-button
-                  variant="text"
-                  @click=${() =>
-                    window.open(
-                      'https://github.com/SpaceBridge/spacebridge',
-                      '_blank'
-                    )}
-                  >What is MCP?</sl-button
-                >
               </div>
-            </div>
-            <div class="hero-image">
-              <img
-                src="/images/diagram.png"
-                alt="SpaceBridge Diagram"
-                class="img-fluid"
-              />
             </div>
           </div>
         </section>
 
-        <section class="feature-section main-section" id="features">
-          <div class="section-container">
+        <section class="feature-section main-section">
+          <div class="section-container text-center">
+            <h2>Agentic Flows</h2>
             <div class="feature-grid">
               <div class="feature-box">
                 <div class="feature-icon">
-                  <img src="/images/similarity.png" alt="Similarity Icon" />
+                  <sl-icon name="plug-fill"></sl-icon>
                 </div>
-                <h3>Smart Duplicate Detection</h3>
+                <h3>Seamless Access</h3>
                 <p>
-                  Intelligent similarity search finds and prevents duplicate
-                  issues, even when terminology varies.
+                  Empower AI agents with direct access to your development
+                  workflows.
                 </p>
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
-                  <img src="/images/context.png" alt="Context Icon" />
+                  <sl-icon name="gear-wide-connected"></sl-icon>
                 </div>
-                <h3>Augment your LLM context</h3>
+                <h3>Robust Systems</h3>
                 <p>
-                  Seamless issue data access that supercharges your AI tools'
-                  effectiveness
+                  Build autonomous systems that can manage issues and report
+                  progress.
                 </p>
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
-                  <img src="/images/ide.png" alt="IDE Icon" />
+                  <sl-icon name="people"></sl-icon>
                 </div>
-                <h3>Cursor, Windsurf, Claude Code Ready</h3>
+                <h3>Team Collaboration</h3>
                 <p>
-                  Streamlined setup process. Use with any agentic system that
-                  supports MCP.
+                  Enable agents to collaborate with your team by creating and
+                  updating tasks.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="feature-section main-section">
+          <div class="section-container text-center">
+            <h2>Preloop™, HITL Safety Layer</h2>
+            <div class="feature-grid">
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="sliders"></sl-icon>
+                </div>
+                <h3>Full Control</h3>
+                <p>
+                  Maintain full control with our human-in-the-loop safety
+                  layer.
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="eye"></sl-icon>
+                </div>
+                <h3>Intercept & Review</h3>
+                <p>
+                  Intercept, review, and approve any AI-driven action before
+                  it's executed.
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="shield-check"></sl-icon>
+                </div>
+                <h3>Ensure Safety</h3>
+                <p>
+                  Guarantee that your AI co-pilot operates safely and to your
+                  standards.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="feature-section main-section">
+          <div class="section-container text-center">
+            <h2>Intelligent Automation</h2>
+            <div class="feature-grid">
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="intersect"></sl-icon>
+                </div>
+                <h3>Merge Duplicates</h3>
+                <p>
+                  Find and merge duplicate issues to reduce clutter and save
+                  time.
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="clock-history"></sl-icon>
+                </div>
+                <h3>Auto-Estimate Effort</h3>
+                <p>
+                  Get consistent, AI-powered effort estimates to improve
+                  planning.
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="flag"></sl-icon>
+                </div>
+                <h3>Flag Unready Tickets</h3>
+                <p>
+                  Ensure tickets meet your 'Definition of Ready' before
+                  assignment.
                 </p>
               </div>
             </div>
@@ -129,7 +187,43 @@ export class LandingView extends LitElement {
 
         <section class="cta-section main-section" id="get-started">
           <div class="section-container">
-            <h2>Get Started</h2>
+          <div class="title-container">
+            <h2>SpaceBridge MCP Server</h2>
+            <a class="main-link" href="/whatis-mcp">What is MCP?</a>
+          </div>
+            
+              <div class="feature-grid">
+                <div class="feature-box">
+                  <div class="feature-icon">
+                    <sl-icon name="search"></sl-icon>
+                  </div>
+                  <h3>Smart Duplicate Detection</h3>
+                  <p>
+                    Intelligent similarity search finds and prevents duplicate
+                    issues, even when terminology varies.
+                  </p>
+                </div>
+                <div class="feature-box">
+                  <div class="feature-icon">
+                    <sl-icon name="journal-plus"></sl-icon>
+                  </div>
+                  <h3>Augment your LLM context</h3>
+                  <p>
+                    Seamless issue data access that supercharges your AI tools'
+                    effectiveness
+                  </p>
+                </div>
+                <div class="feature-box">
+                  <div class="feature-icon">
+                    <sl-icon name="code-slash"></sl-icon>
+                  </div>
+                  <h3>Cursor, Windsurf, Claude Code Ready</h3>
+                  <p>
+                    Streamlined setup process. Use with any agentic system that
+                    supports MCP.
+                  </p>
+                </div>
+              </div>
             <div class="get-started-container">
               <div class="ide-tabs">
                 <div
@@ -166,12 +260,11 @@ export class LandingView extends LitElement {
                   />
                 </div>
               </div>
-
+              
               <div class="tab-content">
                 ${this._activeIdeTab === 'claude-code'
                   ? html`
                       <div>
-                        <h4>Install SpaceBridge for Claude Code</h4>
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
@@ -215,7 +308,6 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                 ${this._activeIdeTab === 'cursor'
                   ? html`
                       <div>
-                        <h4>Install SpaceBridge for Cursor</h4>
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
@@ -284,7 +376,6 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                 ${this._activeIdeTab === 'windsurf'
                   ? html`
                       <div>
-                        <h4>Install SpaceBridge for Windsurf</h4>
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
@@ -359,7 +450,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
 
         <section class="video-section main-section">
           <div class="section-container">
-            <h2>Spacebridge MCP Server Demo</h2>
+            <h2>Demo</h2>
             <div class="video-wrapper">
               <iframe
                 width="560"
