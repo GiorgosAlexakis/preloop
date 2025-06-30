@@ -175,7 +175,7 @@ export class LandingView extends LitElement {
             <img
               src="/images/ui_1.png"
               alt="SpaceBridge UI showing intelligent issue management"
-              width="960"
+              width="1200"
               height="224"
               class="ui-shot"
             />
