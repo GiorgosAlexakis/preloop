@@ -49,12 +49,18 @@ export class ConsoleShell extends LitElement {
       flex-grow: 1;
       border-width: 0;
       background-color: var(--sl-color-neutral-100);
+      padding: 0;
     }
 
     sl-details::part(base) {
       width: 100%;
       border-width: 0;
       background-color: var(--sl-color-neutral-100);
+    }
+
+    sl-details::part(content) {
+      padding-top: 0;
+      padding-left: 1.5rem;
     }
 
     sl-menu-item {
