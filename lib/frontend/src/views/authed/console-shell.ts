@@ -111,7 +111,7 @@ export class ConsoleShell extends LitElement {
     // We can also make a request to the server's /logout endpoint.
     // This can be useful for server-side session cleanup or logging.
     // We'll do this in the background and not let it block the redirect.
-    fetch('/logout', { method: 'GET' }).catch(error => {
+    fetch('/logout', { method: 'GET' }).catch((error) => {
       console.error('Logout request to server failed:', error);
     });
   }

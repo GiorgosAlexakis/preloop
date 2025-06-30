@@ -1,77 +1,42 @@
-# GitLab CI/CD configuration for SpaceLit frontend
+image: node:22-alpine
 
-image: node:18
-
-# Global variables
 variables:
-  NODE_ENV: test
-  npm_config_cache: '$CI_PROJECT_DIR/.npm'
+  CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/spacelit
 
-# Cache node_modules for faster builds
-cache:
-  paths:
-    - .npm/
-    - node_modules/
-
-# Pipeline stages
 stages:
-  - install
-  - validate
-  - test
   - build
+  - test
 
-# Install dependencies
-install:
-  stage: install
-  script:
-    - npm ci --cache .npm --prefer-offline
-  artifacts:
-    paths:
-      - node_modules/
-    expire_in: 1 hour
-
-# Validate code formatting
-format-check:
-  stage: validate
-  needs: ['install']
-  script:
-    - npm run format:check
-  allow_failure: false
-
-# Run tests
-test:
-  stage: test
-  needs: ['install']
-  script:
-    - npm run test
-  artifacts:
-    reports:
-      junit: test-results.xml
-    when: always
-  # Tests run in headless mode in CI
-  variables:
-    CI: 'true'
-
-# Build the application to ensure it compiles
 build:
   stage: build
-  needs: ['install']
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
   script:
-    - npm run build
-  artifacts:
-    paths:
-      - dist/
-    expire_in: 1 week
-  only:
-    - main
-    - develop
-    - merge_requests
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64)\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR
+      --dockerfile $CI_PROJECT_DIR/Dockerfile
+      --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+      --destination $CI_REGISTRY_IMAGE:latest
+      --registry-mirror registry.spacecode.ai
+      --registry-mirror $CI_REGISTRY
 
-# Optional: Deploy job for specific branches
-# deploy:
-#   stage: deploy
-#   needs: ['build', 'test']
-#   script:
-#     - echo "Deploy to staging/production"
-#   only:
-#     - main
+format-check:
+  stage: test
+  needs: []
+  before_script:
+    - npm install
+  script:
+    - npm run format:check
+
+unit-tests:
+  stage: test
+  needs: []
+  image: mcr.microsoft.com/playwright:v1.53.1-noble
+  before_script:
+    - npm install
+  script:
+    - npm run test
+
