@@ -231,9 +231,9 @@ async def receive_webhook(
             logger.warning(
                 f"Missing X-Hub-Signature header for Jira webhook, tracker ID {resolved_tracker.id}"
             )
-            # raise HTTPException(
-            #     status_code=status.HTTP_403_FORBIDDEN, detail="Missing Jira signature"
-            # )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Missing Jira signature"
+            )
         else:
             try:
                 method, signature_hash = signature_header.split("=", 1)
@@ -478,10 +478,10 @@ async def receive_webhook(
                 project_identifier = str(project_data["id"])
             elif tracker_type.lower() == "jira":
                 project_identifier = (
-                    parsed_payload.get("comment", {})
-                    .get("self", "")
-                    .split("/rest/api/2/issue/")[1]
-                    .split("/")[0]
+                    parsed_payload.get("issue", {})
+                    .get("fields", {})
+                    .get("project", {})
+                    .get("key", "")
                 )
 
             if not project_identifier:
@@ -509,7 +509,10 @@ async def receive_webhook(
             if not issue:
                 raise HTTPException(status_code=404, detail="Issue not found")
 
-            comment_data = parsed_payload.get("object_attributes")
+            if tracker_type.lower() == "jira":
+                comment_data = parsed_payload.get("comment")
+            else:
+                comment_data = parsed_payload.get("object_attributes")
             transformed_comment = tracker_client.client.transform_comment(
                 comment_data, issue.id
             )
