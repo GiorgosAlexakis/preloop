@@ -47,7 +47,7 @@ p.lead {
     hsl(190, 45%, 20%) 100%
   );
   background-size: 400% 400%;
-  animation: moveGradient 15s ease infinite;
+  animation: moveGradient 30s ease infinite;
   padding: 7rem 0;
 }
 
