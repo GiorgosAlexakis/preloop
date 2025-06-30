@@ -40,48 +40,48 @@ export class LoginView extends LitElement {
 
   render() {
     return html`
-    <div class="container">
-      <div class="logo">
-        <a href="/">
-          <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
-        </a>
+      <div class="container">
+        <div class="logo">
+          <a href="/">
+            <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
+          </a>
+        </div>
+        <div class="form-container">
+          <h2>Sign in to Spacebridge</h2>
+          ${this.error
+            ? html`<div class="error-message">${this.error}</div>`
+            : ''}
+          <form @submit=${this.handleLogin}>
+            <div class="form-group">
+              <sl-input
+                label="Username"
+                id="username"
+                name="username"
+                required
+              ></sl-input>
+            </div>
+            <div class="form-group">
+              <sl-input
+                type="password"
+                label="Password"
+                id="password"
+                name="password"
+                required
+                password-toggle
+              ></sl-input>
+            </div>
+            <div class="form-actions">
+              <sl-button type="submit" variant="primary" style="width: 100%;"
+                >Sign in</sl-button
+              >
+            </div>
+            <div class="form-links">
+              <a href="/forgot-password">Forgot Password?</a> &middot;
+              <a href="/register">Create Account</a>
+            </div>
+          </form>
+        </div>
       </div>
-      <div class="form-container">
-        <h2>Sign in to Spacebridge</h2>
-        ${this.error
-          ? html`<div class="error-message">${this.error}</div>`
-          : ''}
-        <form @submit=${this.handleLogin}>
-          <div class="form-group">
-            <sl-input
-              label="Username"
-              id="username"
-              name="username"
-              required
-            ></sl-input>
-          </div>
-          <div class="form-group">
-            <sl-input
-              type="password"
-              label="Password"
-              id="password"
-              name="password"
-              required
-              password-toggle
-            ></sl-input>
-          </div>
-          <div class="form-actions">
-            <sl-button type="submit" variant="primary" style="width: 100%;"
-              >Sign in</sl-button
-            >
-          </div>
-          <div class="form-links">
-            <a href="/forgot-password">Forgot Password?</a> &middot;
-            <a href="/register">Create Account</a>
-          </div>
-        </form>
-      </div>
-    </div>
     `;
   }
 }

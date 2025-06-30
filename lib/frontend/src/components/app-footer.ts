@@ -128,7 +128,11 @@ export class AppFooter extends LitElement {
               <li><a href="/privacy">Privacy Policy</a></li>
               <li><a href="/terms">Terms of Service</a></li>
               <li><a href="/whatis-mcp" target="_blank">What is MCP?</a></li>
-              <li><a href="#" @click=${this.switchToOldUI}>Switch to the old UI</a></li>
+              <li>
+                <a href="#" @click=${this.switchToOldUI}
+                  >Switch to the old UI</a
+                >
+              </li>
             </ul>
           </nav>
         </div>

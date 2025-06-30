@@ -77,7 +77,9 @@ export class RegisterView extends LitElement {
               ></sl-input>
             </div>
             <div class="form-actions">
-              <sl-button type="submit" variant="primary">Create account</sl-button>
+              <sl-button type="submit" variant="primary"
+                >Create account</sl-button
+              >
             </div>
             <div class="form-links">
               <a href="/login">Already have an account? Sign In</a>

@@ -50,11 +50,11 @@ export class LandingView extends LitElement {
         <section class="hero main-section">
           <div class="section-container hero-inner">
             <div class="hero-content text-center">
-              <h1 class="fw-bold">
-                The Trust Layer for Your AI Workforce
-              </h1>
+              <h1 class="fw-bold">The Trust Layer for Your AI Workforce</h1>
               <p class="lead">
-                SpaceBridge governs your AI agents, closing the alignment gap between autonomous operations and critical business context. Deploy AI with confidence.
+                SpaceBridge governs your AI agents, closing the alignment gap
+                between autonomous operations and critical business context.
+                Deploy AI with confidence.
               </p>
               <div class="hero-buttons">
                 <sl-button
@@ -78,7 +78,8 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>A Single Source of Truth</h3>
                 <p>
-                  Our hub syncs with Jira, GitHub, and GitLab to create a flawless source of 'ground truth' for your AI agents.
+                  Our hub syncs with Jira, GitHub, and GitLab to create a
+                  flawless source of 'ground truth' for your AI agents.
                 </p>
               </div>
               <div class="feature-box">
@@ -87,7 +88,9 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>Prevent Context Drift</h3>
                 <p>
-                  We provide the AI with a long-term memory of business goals, ensuring it solves the right problem, not just the technical one.
+                  We provide the AI with a long-term memory of business goals,
+                  ensuring it solves the right problem, not just the technical
+                  one.
                 </p>
               </div>
               <div class="feature-box">
@@ -96,7 +99,8 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>Deeper Understanding</h3>
                 <p>
-                  By de-duplicating issues and understanding project history, the AI operates with full context.
+                  By de-duplicating issues and understanding project history,
+                  the AI operates with full context.
                 </p>
               </div>
             </div>
@@ -122,7 +126,8 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>High-Value, Low-Risk Tasks</h3>
                 <p>
-                  With grounded context, our agentic flows can safely handle routine work, like drafting documentation.
+                  With grounded context, our agentic flows can safely handle
+                  routine work, like drafting documentation.
                 </p>
               </div>
               <div class="feature-box">
@@ -131,7 +136,8 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>Initial Diagnostics</h3>
                 <p>
-                  Automatically run initial diagnostics on a service outage or suggest test coverage for a new feature.
+                  Automatically run initial diagnostics on a service outage or
+                  suggest test coverage for a new feature.
                 </p>
               </div>
               <div class="feature-box">
@@ -140,7 +146,8 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>Free Up Your Best People</h3>
                 <p>
-                  Deliver immediate productivity wins and free up your senior developers from tedious toil, building trust in the system.
+                  Deliver immediate productivity wins and free up your senior
+                  developers from tedious toil, building trust in the system.
                 </p>
               </div>
             </div>
@@ -193,44 +200,44 @@ export class LandingView extends LitElement {
 
         <section class="feature-section main-section" id="get-started">
           <div class="section-container">
-          <div class="title-container">
-            <h2>SpaceBridge MCP Server</h2>
-            <a class="main-link" href="/whatis-mcp">What is MCP?</a>
-          </div>
-            
-              <div class="feature-grid">
-                <div class="feature-box">
-                  <div class="feature-icon">
-                    <sl-icon name="search"></sl-icon>
-                  </div>
-                  <h3>Smart Duplicate Detection</h3>
-                  <p>
-                    Intelligent similarity search finds and prevents duplicate
-                    issues, even when terminology varies.
-                  </p>
+            <div class="title-container">
+              <h2>SpaceBridge MCP Server</h2>
+              <a class="main-link" href="/whatis-mcp">What is MCP?</a>
+            </div>
+
+            <div class="feature-grid">
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="search"></sl-icon>
                 </div>
-                <div class="feature-box">
-                  <div class="feature-icon">
-                    <sl-icon name="journal-plus"></sl-icon>
-                  </div>
-                  <h3>Augment your LLM context</h3>
-                  <p>
-                    Seamless issue data access that supercharges your AI tools'
-                    effectiveness
-                  </p>
-                </div>
-                <div class="feature-box">
-                  <div class="feature-icon">
-                    <sl-icon name="code-slash"></sl-icon>
-                  </div>
-                  <h3>Cursor, Windsurf, Claude Code Ready</h3>
-                  <p>
-                    Streamlined setup process. Use with any agentic system that
-                    supports MCP.
-                  </p>
-                </div>
+                <h3>Smart Duplicate Detection</h3>
+                <p>
+                  Intelligent similarity search finds and prevents duplicate
+                  issues, even when terminology varies.
+                </p>
               </div>
-              <h3> Get Started with MCP</h3>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="journal-plus"></sl-icon>
+                </div>
+                <h3>Augment your LLM context</h3>
+                <p>
+                  Seamless issue data access that supercharges your AI tools'
+                  effectiveness
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="code-slash"></sl-icon>
+                </div>
+                <h3>Cursor, Windsurf, Claude Code Ready</h3>
+                <p>
+                  Streamlined setup process. Use with any agentic system that
+                  supports MCP.
+                </p>
+              </div>
+            </div>
+            <h3>Get Started with MCP</h3>
             <div class="get-started-container">
               <div class="ide-tabs">
                 <div
@@ -267,7 +274,7 @@ export class LandingView extends LitElement {
                   />
                 </div>
               </div>
-              
+
               <div class="tab-content">
                 ${this._activeIdeTab === 'claude-code'
                   ? html`
@@ -322,9 +329,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>
-                        <p>
-                          First, install the SpaceBridge package:
-                        </p>
+                        <p>First, install the SpaceBridge package:</p>
                         <div class="code-container">
                           <pre><code>pip install spacebridge-mcp</code></pre>
                           <button class="copy-btn" @click=${this._copyCode}>
@@ -390,9 +395,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>
-                        <p>
-                          First, install the SpaceBridge package:
-                        </p>
+                        <p>First, install the SpaceBridge package:</p>
                         <div class="code-container">
                           <pre><code>pip install spacebridge-mcp</code></pre>
                           <button class="copy-btn" @click=${this._copyCode}>
@@ -413,9 +416,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                             </svg>
                           </button>
                         </div>
-                        <p>
-                          Then configure via JSON configuration file:
-                        </p>
+                        <p>Then configure via JSON configuration file:</p>
                         <div class="code-container">
                           <pre><code>{
   "mcpServers": {
@@ -492,7 +493,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                 },
                 {
                   q: 'How does the Preloop™ safety feature work?',
-                  a: "Preloop™ is a human approval step for your most critical automations. If an automated process wants to do something high-stakes, like roll back a production server, you can create a policy that requires two senior engineers to approve it via Slack or email before the action proceeds. It prevents costly mistakes by ensuring a human is always in the loop for key decisions.",
+                  a: 'Preloop™ is a human approval step for your most critical automations. If an automated process wants to do something high-stakes, like roll back a production server, you can create a policy that requires two senior engineers to approve it via Slack or email before the action proceeds. It prevents costly mistakes by ensuring a human is always in the loop for key decisions.',
                 },
                 {
                   q: 'Is it secure to connect my development tools to SpaceBridge?',
@@ -513,7 +514,9 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                       ></sl-icon>
                     </div>
                     <div
-                      class="faq-answer ${this._openFaq === index ? 'open' : ''}"
+                      class="faq-answer ${this._openFaq === index
+                        ? 'open'
+                        : ''}"
                     >
                       <p>${unsafeHTML(faq.a)}</p>
                     </div>
