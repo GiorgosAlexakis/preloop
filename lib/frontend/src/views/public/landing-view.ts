@@ -114,41 +114,6 @@ export class LandingView extends LitElement {
 
         <section class="feature-section main-section">
           <div class="section-container text-center">
-            <h2>Safeguard Every Critical Action</h2>
-            <div class="feature-grid">
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="sliders"></sl-icon>
-                </div>
-                <h3>The Ultimate Safety Switch</h3>
-                <p>
-                  For any high-risk action, our Preloop™ Human Approval Layer intercepts the command before it executes.
-                </p>
-              </div>
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="eye"></sl-icon>
-                </div>
-                <h3>Intelligent Notifications</h3>
-                <p>
-                  The right people are instantly notified on Slack, SMS, or our app to provide a simple 'Approve/Deny'.
-                </p>
-              </div>
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="shield-check"></sl-icon>
-                </div>
-                <h3>Solve the Judgment Deficit</h3>
-                <p>
-                  Preloop™ makes it possible to use AI for high-stakes tasks like server rollbacks, with complete human oversight.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="feature-section main-section">
-          <div class="section-container text-center">
             <h2>Automate Routine Work with Confidence</h2>
             <div class="feature-grid">
               <div class="feature-box">
@@ -188,6 +153,41 @@ export class LandingView extends LitElement {
               height="224"
               class="ui-shot"
             />
+          </div>
+        </section>
+
+        <section class="feature-section main-section">
+          <div class="section-container text-center">
+            <h2>Safeguard Every Critical Action</h2>
+            <div class="feature-grid">
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="sliders"></sl-icon>
+                </div>
+                <h3>The Ultimate Safety Switch</h3>
+                <p>
+                  For any high-risk action, our Preloop™ Human Approval Layer intercepts the command before it executes.
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="eye"></sl-icon>
+                </div>
+                <h3>Intelligent Notifications</h3>
+                <p>
+                  The right people are instantly notified on Slack, SMS, or our app to provide a simple 'Approve/Deny'.
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="shield-check"></sl-icon>
+                </div>
+                <h3>Solve the Judgment Deficit</h3>
+                <p>
+                  Preloop™ makes it possible to use AI for high-stakes tasks like server rollbacks, with complete human oversight.
+                </p>
+              </div>
+            </div>
           </div>
         </section>
 
