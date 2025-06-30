@@ -5,14 +5,19 @@ import { LoginView } from './login-view';
 
 describe('LoginView', () => {
   let element: LoginView;
-  const sandbox = sinon.createSandbox();
+  let fetchStub: any;
 
   beforeEach(async () => {
     element = await fixture(html`<login-view></login-view>`);
+    // Clear localStorage before each test
+    localStorage.clear();
+    // Stub fetch before each test
+    fetchStub = sinon.stub(window, 'fetch');
   });
 
   afterEach(() => {
-    sandbox.restore();
+    // Restore fetch after each test
+    fetchStub.restore();
   });
 
   it('should render the login form', () => {
@@ -22,22 +27,28 @@ describe('LoginView', () => {
     expect(usernameInput).to.exist;
     const passwordInput = element.shadowRoot?.querySelector('#password');
     expect(passwordInput).to.exist;
-    const loginButton = element.shadowRoot?.querySelector('sl-button[type="submit"]');
+    const loginButton = element.shadowRoot?.querySelector(
+      'sl-button[type="submit"]'
+    );
     expect(loginButton).to.exist;
   });
 
   it('should show an error message on failed login', async () => {
-    // Stub window.fetch to simulate a failed login
-    const fetchStub = sandbox.stub(window, 'fetch');
-    fetchStub.resolves(
-      new Response(null, {
-        status: 401,
-        statusText: 'Unauthorized',
-      })
-    );
+    // Stub fetch to simulate a failed login
+    fetchStub.resolves(new Response(JSON.stringify({}), { status: 401 }));
 
-    const form = element.shadowRoot?.querySelector('form');
-    form?.dispatchEvent(new Event('submit'));
+    // Fill in the form fields
+    const usernameInput = element.shadowRoot?.querySelector<any>('#username');
+    const passwordInput = element.shadowRoot?.querySelector<any>('#password');
+    usernameInput.value = 'testuser';
+    passwordInput.value = 'wrongpassword';
+
+    const form = element.shadowRoot?.querySelector('form') as HTMLFormElement;
+    const submitEvent = new SubmitEvent('submit', {
+      bubbles: true,
+      cancelable: true,
+    });
+    form.dispatchEvent(submitEvent);
 
     // Wait until the error message appears in the DOM
     await waitUntil(
@@ -47,37 +58,52 @@ describe('LoginView', () => {
 
     const errorMessage = element.shadowRoot?.querySelector('.error-message');
     expect(errorMessage).to.exist;
-    expect(errorMessage?.textContent).to.contain('Invalid username or password');
+    expect(errorMessage?.textContent).to.contain(
+      'Invalid username or password'
+    );
     expect(fetchStub).to.have.been.calledOnce;
   });
 
   it('should not show an error message on successful login', async () => {
-    // Stub window.fetch to simulate a successful login
-    const fetchStub = sandbox.stub(window, 'fetch');
+    // Stub fetch to simulate a successful login
     fetchStub.resolves(
-      new Response('{"access_token":"test_token"}', { status: 200 })
+      new Response(JSON.stringify({ access_token: 'test_token' }), {
+        status: 200,
+      })
     );
 
-    const usernameInput =
-      element.shadowRoot?.querySelector<HTMLInputElement>('#username');
-    usernameInput!.value = 'testuser';
-    const passwordInput =
-      element.shadowRoot?.querySelector<HTMLInputElement>('#password');
-    passwordInput!.value = 'correctpassword';
+    // Fill in the form fields
+    const usernameInput = element.shadowRoot?.querySelector<any>('#username');
+    const passwordInput = element.shadowRoot?.querySelector<any>('#password');
+    usernameInput.value = 'testuser';
+    passwordInput.value = 'correctpassword';
 
-    const form = element.shadowRoot?.querySelector('form');
-    form?.dispatchEvent(new Event('submit'));
+    const form = element.shadowRoot?.querySelector('form') as HTMLFormElement;
+    const submitEvent = new SubmitEvent('submit', {
+      bubbles: true,
+      cancelable: true,
+    });
+    form.dispatchEvent(submitEvent);
 
+    // Wait for the async operation to complete
+    await new Promise((resolve) => setTimeout(resolve, 100));
     await element.updateComplete;
 
+    // Check that no error message appears
     const errorMessage = element.shadowRoot?.querySelector('.error-message');
     expect(errorMessage).to.not.exist;
+
+    // Verify fetch was called
     expect(fetchStub).to.have.been.calledOnce;
+
+    // Verify token was stored in localStorage
+    expect(localStorage.getItem('accessToken')).to.equal('test_token');
   });
 
   it('should have links for password reset and registration', () => {
-    const forgotPasswordLink =
-      element.shadowRoot?.querySelector('a[href="/forgot-password"]');
+    const forgotPasswordLink = element.shadowRoot?.querySelector(
+      'a[href="/forgot-password"]'
+    );
     expect(forgotPasswordLink).to.exist;
     const signUpLink = element.shadowRoot?.querySelector('a[href="/register"]');
     expect(signUpLink).to.exist;

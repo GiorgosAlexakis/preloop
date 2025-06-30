@@ -5,14 +5,17 @@ import { RegisterView } from './register-view';
 
 describe('RegisterView', () => {
   let element: RegisterView;
-  const sandbox = sinon.createSandbox();
+  let fetchStub: any;
 
   beforeEach(async () => {
     element = await fixture(html`<register-view></register-view>`);
+    // Stub fetch before each test
+    fetchStub = sinon.stub(window, 'fetch');
   });
 
   afterEach(() => {
-    sandbox.restore();
+    // Restore fetch after each test
+    fetchStub.restore();
   });
 
   it('should render the registration form', () => {
@@ -31,12 +34,23 @@ describe('RegisterView', () => {
   });
 
   it('should show an error message on failed registration', async () => {
-    // Stub window.fetch to simulate a failed registration
-    const fetchStub = sandbox.stub(window, 'fetch');
-    fetchStub.resolves(new Response(null, { status: 400 }));
+    // Stub fetch to simulate a failed registration - provide valid JSON even for error responses
+    fetchStub.resolves(new Response(JSON.stringify({}), { status: 400 }));
 
-    const form = element.shadowRoot?.querySelector('form');
-    form?.dispatchEvent(new Event('submit'));
+    // Fill in the form fields
+    const usernameInput = element.shadowRoot?.querySelector<any>('#username');
+    const emailInput = element.shadowRoot?.querySelector<any>('#email');
+    const passwordInput = element.shadowRoot?.querySelector<any>('#password');
+    usernameInput.value = 'testuser';
+    emailInput.value = 'test@example.com';
+    passwordInput.value = 'password123';
+
+    const form = element.shadowRoot?.querySelector('form') as HTMLFormElement;
+    const submitEvent = new SubmitEvent('submit', {
+      bubbles: true,
+      cancelable: true,
+    });
+    form.dispatchEvent(submitEvent);
 
     // Wait until the error message appears
     await waitUntil(
@@ -51,23 +65,41 @@ describe('RegisterView', () => {
   });
 
   it('should not show an error message on successful registration', async () => {
-    // Stub window.fetch to simulate a successful registration
-    const fetchStub = sandbox.stub(window, 'fetch');
-    fetchStub.resolves(new Response(null, { status: 200 }));
+    // Stub fetch to simulate a successful registration
+    fetchStub.resolves(new Response(JSON.stringify({}), { status: 200 }));
 
-    const form = element.shadowRoot?.querySelector('form');
-    form?.dispatchEvent(new Event('submit'));
+    // Fill in the form fields
+    const usernameInput = element.shadowRoot?.querySelector<any>('#username');
+    const emailInput = element.shadowRoot?.querySelector<any>('#email');
+    const passwordInput = element.shadowRoot?.querySelector<any>('#password');
+    usernameInput.value = 'testuser';
+    emailInput.value = 'test@example.com';
+    passwordInput.value = 'password123';
 
+    const form = element.shadowRoot?.querySelector('form') as HTMLFormElement;
+    const submitEvent = new SubmitEvent('submit', {
+      bubbles: true,
+      cancelable: true,
+    });
+    form.dispatchEvent(submitEvent);
+
+    // Wait for the async operation to complete
+    await new Promise((resolve) => setTimeout(resolve, 100));
     await element.updateComplete;
 
+    // Check that no error message appears
     const errorMessage = element.shadowRoot?.querySelector('.error-message');
     expect(errorMessage).to.not.exist;
+
+    // Verify fetch was called
     expect(fetchStub).to.have.been.calledOnce;
   });
 
   it('should have a link to the login page', () => {
     const loginLink = element.shadowRoot?.querySelector('a[href="/login"]');
     expect(loginLink).to.exist;
-    expect(loginLink?.textContent).to.contain('Already have an account? Sign In');
+    expect(loginLink?.textContent).to.contain(
+      'Already have an account? Sign In'
+    );
   });
 });

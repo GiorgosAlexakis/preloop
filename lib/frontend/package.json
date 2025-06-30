@@ -9,6 +9,7 @@
     "build": "vite build",
     "test": "web-test-runner \"src/**/*.test.{ts,js}\"",
     "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
     "prepare": "cd .. && husky install SpaceLit/.husky"
   },
   "dependencies": {

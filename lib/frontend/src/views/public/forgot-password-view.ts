@@ -67,7 +67,12 @@ export class ForgotPasswordView extends LitElement {
               </sl-alert>`
             : ''}
           <form @submit=${this.handleForgotPassword}>
-            <sl-input type="email" label="Email" name="email" required></sl-input>
+            <sl-input
+              type="email"
+              label="Email"
+              name="email"
+              required
+            ></sl-input>
             <div class="form-actions">
               <sl-button type="submit" variant="primary"
                 >Send Reset Link</sl-button
