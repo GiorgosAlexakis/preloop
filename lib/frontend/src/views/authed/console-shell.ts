@@ -4,6 +4,7 @@ import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/details/details.js';
+
 @customElement('console-shell')
 export class ConsoleShell extends LitElement {
   static styles = css`
@@ -23,6 +24,20 @@ export class ConsoleShell extends LitElement {
       flex-shrink: 0;
       display: flex;
       flex-direction: column;
+    }
+
+    .sign-out-menu {
+      flex-grow: 0;
+    }
+
+    .sign-out-menu sl-menu-item::part(base) {
+      background-color: var(--sl-color-neutral-100);
+      color: var(--sl-color-primary-500);
+    }
+
+    .sign-out-menu sl-menu-item:hover::part(base) {
+      background-color: var(--sl-color-neutral-100);
+      color: var(--sl-color-primary-700);
     }
 
     a {
@@ -80,6 +95,27 @@ export class ConsoleShell extends LitElement {
     window.location.reload();
   }
 
+  async signOut() {
+    // The primary sign-out action is to remove the tokens from local storage.
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+
+    // Dispatch an event to let other parts of the app know the user has signed out.
+    window.dispatchEvent(
+      new CustomEvent('auth-change', { bubbles: true, composed: true })
+    );
+
+    // Redirect to the landing page.
+    window.location.href = '/';
+
+    // We can also make a request to the server's /logout endpoint.
+    // This can be useful for server-side session cleanup or logging.
+    // We'll do this in the background and not let it block the redirect.
+    fetch('/logout', { method: 'GET' }).catch(error => {
+      console.error('Logout request to server failed:', error);
+    });
+  }
+
   render() {
     return html`
       <div class="console-container">
@@ -128,6 +164,13 @@ export class ConsoleShell extends LitElement {
                 </a>
               </sl-menu>
             </sl-details>
+          </sl-menu>
+
+          <sl-menu class="sign-out-menu">
+            <sl-menu-item @click=${this.signOut}>
+              <sl-icon name="box-arrow-right" slot="prefix"></sl-icon>
+              Sign Out
+            </sl-menu-item>
           </sl-menu>
         </div>
 
