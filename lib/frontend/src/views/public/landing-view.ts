@@ -51,21 +51,17 @@ export class LandingView extends LitElement {
           <div class="section-container hero-inner">
             <div class="hero-content text-center">
               <h1 class="fw-bold">
-                Ship <span class="gradient-faster">Faster</span> and
-                <span class="gradient-safer">Safer</span> with an AI Co-pilot for
-                Your Entire Team.
+                The Trust Layer for Your AI Workforce
               </h1>
               <p class="lead">
-                SpaceBridge.io integrates with your existing tools (GitHub, Jira,
-                GitLab) to intelligently manage issues, automate routine tasks,
-                and put a human safety net around your most critical operations.
+                SpaceBridge governs your AI agents, closing the alignment gap between autonomous operations and critical business context. Deploy AI with confidence.
               </p>
               <div class="hero-buttons">
                 <sl-button
                   variant="primary"
                   size="large"
-                  @click=${() => (window.location.href = '/register')}
-                  >Get Started</sl-button
+                  @click=${() => (window.location.href = '/contact')}
+                  >Request a Demo</sl-button
                 >
               </div>
             </div>
@@ -74,36 +70,33 @@ export class LandingView extends LitElement {
 
         <section class="feature-section main-section">
           <div class="section-container text-center">
-            <h2>Agentic Flows</h2>
+            <h2>Ground Your AI with Context</h2>
             <div class="feature-grid">
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="plug-fill"></sl-icon>
                 </div>
-                <h3>Seamless Access</h3>
+                <h3>A Single Source of Truth</h3>
                 <p>
-                  Empower AI agents with direct access to your development
-                  workflows.
+                  Our hub syncs with Jira, GitHub, and GitLab to create a flawless source of 'ground truth' for your AI agents.
                 </p>
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="gear-wide-connected"></sl-icon>
                 </div>
-                <h3>Robust Systems</h3>
+                <h3>Prevent Context Drift</h3>
                 <p>
-                  Build autonomous systems that can manage issues and report
-                  progress.
+                  We provide the AI with a long-term memory of business goals, ensuring it solves the right problem, not just the technical one.
                 </p>
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="people"></sl-icon>
                 </div>
-                <h3>Team Collaboration</h3>
+                <h3>Deeper Understanding</h3>
                 <p>
-                  Enable agents to collaborate with your team by creating and
-                  updating tasks.
+                  By de-duplicating issues and understanding project history, the AI operates with full context.
                 </p>
               </div>
             </div>
@@ -112,36 +105,33 @@ export class LandingView extends LitElement {
 
         <section class="feature-section main-section">
           <div class="section-container text-center">
-            <h2>Preloop™, HITL Safety Layer</h2>
+            <h2>Safeguard Every Critical Action</h2>
             <div class="feature-grid">
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="sliders"></sl-icon>
                 </div>
-                <h3>Full Control</h3>
+                <h3>The Ultimate Safety Switch</h3>
                 <p>
-                  Maintain full control with our human-in-the-loop safety
-                  layer.
+                  For any high-risk action, our Preloop™ Human Approval Layer intercepts the command before it executes.
                 </p>
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="eye"></sl-icon>
                 </div>
-                <h3>Intercept & Review</h3>
+                <h3>Intelligent Notifications</h3>
                 <p>
-                  Intercept, review, and approve any AI-driven action before
-                  it's executed.
+                  The right people are instantly notified on Slack, SMS, or our app to provide a simple 'Approve/Deny'.
                 </p>
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="shield-check"></sl-icon>
                 </div>
-                <h3>Ensure Safety</h3>
+                <h3>Solve the Judgment Deficit</h3>
                 <p>
-                  Guarantee that your AI co-pilot operates safely and to your
-                  standards.
+                  Preloop™ makes it possible to use AI for high-stakes tasks like server rollbacks, with complete human oversight.
                 </p>
               </div>
             </div>
@@ -150,39 +140,45 @@ export class LandingView extends LitElement {
 
         <section class="feature-section main-section">
           <div class="section-container text-center">
-            <h2>Intelligent Automation</h2>
+            <h2>Automate Routine Work with Confidence</h2>
             <div class="feature-grid">
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="intersect"></sl-icon>
                 </div>
-                <h3>Merge Duplicates</h3>
+                <h3>High-Value, Low-Risk Tasks</h3>
                 <p>
-                  Find and merge duplicate issues to reduce clutter and save
-                  time.
+                  With grounded context, our agentic flows can safely handle routine work, like drafting documentation.
                 </p>
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="clock-history"></sl-icon>
                 </div>
-                <h3>Auto-Estimate Effort</h3>
+                <h3>Initial Diagnostics</h3>
                 <p>
-                  Get consistent, AI-powered effort estimates to improve
-                  planning.
+                  Automatically run initial diagnostics on a service outage or suggest test coverage for a new feature.
                 </p>
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="flag"></sl-icon>
                 </div>
-                <h3>Flag Unready Tickets</h3>
+                <h3>Free Up Your Best People</h3>
                 <p>
-                  Ensure tickets meet your 'Definition of Ready' before
-                  assignment.
+                  Deliver immediate productivity wins and free up your senior developers from tedious toil, building trust in the system.
                 </p>
               </div>
             </div>
+          </div>
+          <div class="section-container">
+            <img
+              src="/images/ui_1.png"
+              alt="SpaceBridge UI showing intelligent issue management"
+              width="960"
+              height="224"
+              class="ui-shot"
+            />
           </div>
         </section>
 
@@ -225,6 +221,7 @@ export class LandingView extends LitElement {
                   </p>
                 </div>
               </div>
+              <h3> Get Started with MCP</h3>
             <div class="get-started-container">
               <div class="ide-tabs">
                 <div
@@ -520,12 +517,12 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
 
         <section class="final-cta main-section special-cta">
           <div class="section-container">
-            <h2>Ready to Supercharge your AI Workflow?</h2>
+            <h2>Your Foundation for Enterprise-Grade AI</h2>
             <sl-button
               variant="primary"
               size="large"
-              @click=${() => (window.location.href = '/register')}
-              >Get Started For Free</sl-button
+              @click=${() => (window.location.href = '/contact')}
+              >Request a Demo</sl-button
             >
           </div>
         </section>
