@@ -28,7 +28,7 @@ export class RegisterView extends LitElement {
         email,
         password,
       });
-      Router.go('/login');
+      Router.go('/login?registered=true');
     } catch (error) {
       this.error = 'Failed to create an account';
       console.error('Create account failed', error);

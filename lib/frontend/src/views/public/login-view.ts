@@ -11,7 +11,35 @@ export class LoginView extends LitElement {
   @state()
   private error = '';
 
-  static styles = [formStyles];
+  @state()
+  private successMessage = '';
+
+  static styles = [
+    formStyles,
+    css`
+      .success-message {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+        padding: 0.75rem 1.25rem;
+        margin-bottom: 1rem;
+        border-radius: 0.25rem;
+        text-align: center;
+      }
+    `,
+  ];
+
+  connectedCallback() {
+    super.connectedCallback();
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('registered')) {
+      this.successMessage =
+        'Your account has been created successfully. Please sign in.';
+      const url = new URL(window.location.href);
+      url.searchParams.delete('registered');
+      window.history.replaceState({}, document.title, url.pathname);
+    }
+  }
 
   private async handleLogin(event: SubmitEvent) {
     event.preventDefault();
@@ -28,6 +56,7 @@ export class LoginView extends LitElement {
 
       localStorage.setItem('accessToken', data.access_token);
       this.error = '';
+      this.successMessage = '';
       window.dispatchEvent(
         new CustomEvent('auth-change', { bubbles: true, composed: true })
       );
@@ -48,6 +77,9 @@ export class LoginView extends LitElement {
         </div>
         <div class="form-container">
           <h2>Sign in to Spacebridge</h2>
+          ${this.successMessage
+            ? html`<div class="success-message">${this.successMessage}</div>`
+            : ''}
           ${this.error
             ? html`<div class="error-message">${this.error}</div>`
             : ''}
