@@ -196,6 +196,15 @@ export class LandingView extends LitElement {
               </div>
             </div>
           </div>
+          <div class="section-container">
+            <img
+              src="/images/ui_3.png"
+              alt="SpaceBridge UI showing intelligent issue management"
+              width="1200"
+              height="264"
+              class="ui-shot"
+            />
+          </div>
         </section>
 
         <section class="feature-section main-section" id="get-started">
