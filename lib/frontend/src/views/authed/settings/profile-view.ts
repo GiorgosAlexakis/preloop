@@ -55,22 +55,22 @@ export class ProfileView extends LitElement {
           </div>
           <div class="card-body">
             <form @submit="${this.handleUpdateProfile}">
-              <sl-input
-                label="Username"
-                .value="${this.user?.username || ''}"
-                readonly
-              ></sl-input>
-              <sl-input
-                label="Email"
-                .value="${this.user?.email || ''}"
-                readonly
-              ></sl-input>
-              <sl-input
-                label="Full Name"
-                .value="${this.fullName}"
-                @sl-input="${(e: Event) =>
-                  (this.fullName = (e.target as HTMLInputElement).value)}"
-              ></sl-input>
+                <sl-input
+                  label="Username"
+                  .value="${this.user?.username || ''}"
+                  readonly
+                ></sl-input>
+                <sl-input
+                  label="Email"
+                  .value="${this.user?.email || ''}"
+                  readonly
+                ></sl-input>
+                <sl-input
+                  label="Full Name"
+                  .value="${this.fullName}"
+                  @sl-input="${(e: Event) =>
+                    (this.fullName = (e.target as HTMLInputElement).value)}"
+                ></sl-input>
               <sl-button variant="primary" type="submit"
                 >Update Profile</sl-button
               >
@@ -111,6 +111,19 @@ export class ProfileView extends LitElement {
         display: flex;
         flex-direction: column;
         gap: 1rem;
+      }
+
+      .form-group {
+        margin-bottom: 1rem;
+      }
+
+      sl-input[readonly]::part(base) {
+        background-color: var(--sl-color-neutral-100);
+        color: var(--sl-color-neutral-500);
+      }
+
+      sl-input[readonly]::part(input) {
+        cursor: not-allowed;
       }
 
       sl-button {
