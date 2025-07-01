@@ -64,6 +64,7 @@ export async function fetchWithAuth(
       response = await fetch(url, options);
     } else {
       // If refresh fails, the refreshToken function will handle redirection
+      Router.go('/login');
       throw new Error('Failed to refresh token, redirecting to login.');
     }
   }
@@ -113,22 +114,39 @@ export async function addTracker(trackerData: any) {
   }
   return response.json();
 }
+export async function updateTracker(trackerId: string, trackerData: any) {
+  const response = await fetchWithAuth(`/api/v1/trackers/${trackerId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(trackerData),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update tracker');
+  }
+  return response.json();
+}
 
 export async function validateTrackerToken(
+  id?: string,
   type: string,
   token: string,
   url?: string,
   username?: string
 ) {
+  console.log('Validating tracker token', type, token, url, username);
   const payload: {
     tracker_type: string;
     api_key: string;
     url?: string;
     connection_details?: { username?: string };
+    id?: string;
   } = {
     tracker_type: type,
     api_key: token,
   };
+  if (id) {
+    payload.id = id;
+  }
   if (url) {
     payload.url = url;
   }

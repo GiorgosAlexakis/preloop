@@ -23,7 +23,8 @@ export class SecurityView extends LitElement {
     event.preventDefault();
 
     if (this.newPassword.length < 8) {
-      this.changePasswordMessage = 'New password must be at least 8 characters.';
+      this.changePasswordMessage =
+        'New password must be at least 8 characters.';
       return;
     }
 
