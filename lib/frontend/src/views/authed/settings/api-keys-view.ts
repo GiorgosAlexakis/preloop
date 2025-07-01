@@ -7,11 +7,13 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
+import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import type { SlMenuItem } from '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
 
 @customElement('api-keys-view')
 export class ApiKeysView extends LitElement {
@@ -34,7 +36,16 @@ export class ApiKeysView extends LitElement {
   private newKeyName = '';
 
   @state()
+  private newKeyExpiry = 'never';
+
+  @state()
+  private newKeyExpiryLabel = 'Never';
+
+  @state()
   private newlyCreatedKey: ApiKey | null = null;
+
+  @state()
+  private isSelectOpen = false;
 
   async connectedCallback() {
     super.connectedCallback();
@@ -59,12 +70,22 @@ export class ApiKeysView extends LitElement {
       return;
     }
 
+    let expires_at: string | null = null;
+    if (this.newKeyExpiry !== 'never') {
+      const now = new Date();
+      const days = parseInt(this.newKeyExpiry.replace('days', ''));
+      now.setDate(now.getDate() + days);
+      expires_at = now.toISOString();
+    }
+
     try {
-      const newKey = await createApiKey(this.newKeyName, null);
+      const newKey = await createApiKey(this.newKeyName, expires_at);
       this.newlyCreatedKey = newKey;
       this.isCreateModalOpen = false;
       this.isShowKeyModalOpen = true;
       this.newKeyName = ''; // Reset for next time
+      this.newKeyExpiry = 'never'; // Reset for next time
+      this.newKeyExpiryLabel = 'Never'; // Reset for next time
       await this.fetchApiKeys();
     } catch (error) {
       console.error('Failed to create API key:', error);
@@ -98,6 +119,12 @@ export class ApiKeysView extends LitElement {
         });
       }
     }
+  }
+
+  private _handleExpirySelect(e: CustomEvent) {
+    const item = e.detail.item as SlMenuItem;
+    this.newKeyExpiry = item.value;
+    this.newKeyExpiryLabel = item.textContent?.trim() ?? 'Never';
   }
 
   render() {
@@ -181,7 +208,6 @@ export class ApiKeysView extends LitElement {
       <sl-dialog
         label="Create API Key"
         .open=${this.isCreateModalOpen}
-        @sl-hide=${() => (this.isCreateModalOpen = false)}
       >
         <sl-input
           autofocus
@@ -197,6 +223,16 @@ export class ApiKeysView extends LitElement {
             }
           }}
         ></sl-input>
+        <label class="form-label">Key Expiry</label>
+        <sl-dropdown class="expiry-dropdown">
+          <sl-button slot="trigger" caret>${this.newKeyExpiryLabel}</sl-button>
+          <sl-menu @sl-select=${this._handleExpirySelect}>
+            <sl-menu-item value="never">Never</sl-menu-item>
+            <sl-menu-item value="7days">7 Days</sl-menu-item>
+            <sl-menu-item value="30days">30 Days</sl-menu-item>
+            <sl-menu-item value="90days">90 Days</sl-menu-item>
+          </sl-menu>
+        </sl-dropdown>
         <sl-button
           slot="footer"
           @click=${() => {
@@ -269,7 +305,24 @@ export class ApiKeysView extends LitElement {
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100px;
+      height: 200px;
+    }
+    .form-label {
+      font-size: var(--sl-input-label-font-size-medium);
+      display: inline-block;
+      color: var(--sl-input-label-color);
+      margin-bottom: var(--sl-spacing-3x-small);
+    }
+    .expiry-dropdown {
+      display: block;
+      margin-bottom: 1rem;
+    }
+    .expiry-dropdown::part(trigger) {
+      width: 100%;
+    }
+    .expiry-dropdown sl-button {
+      width: 100%;
+      text-align: left;
     }
     .table-card {
       width: 100%;
