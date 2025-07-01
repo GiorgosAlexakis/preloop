@@ -10,7 +10,12 @@
     "test": "web-test-runner \"src/**/*.test.{ts,js}\"",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "prepare": "cd .. && husky install SpaceLit/.husky"
+    "prepare": "cd .. && husky install SpaceLit/.husky",
+    "docker:dev": "./docker-run.sh dev",
+    "docker:prod": "./docker-run.sh prod",
+    "docker:mock": "./docker-run.sh mock",
+    "docker:build": "./docker-run.sh build",
+    "docker:test": "./docker-run.sh test"
   },
   "dependencies": {
     "@shoelace-style/shoelace": "^2.20.1",

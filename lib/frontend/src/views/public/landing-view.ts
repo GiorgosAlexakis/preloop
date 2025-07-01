@@ -173,7 +173,8 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>The Ultimate Safety Switch</h3>
                 <p>
-                  For any high-risk action, our Preloop™ Human Approval Layer intercepts the command before it executes.
+                  For any high-risk action, our Preloop™ Human Approval Layer
+                  intercepts the command before it executes.
                 </p>
               </div>
               <div class="feature-box">
@@ -182,7 +183,8 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>Intelligent Notifications</h3>
                 <p>
-                  The right people are instantly notified on Slack, SMS, or our app to provide a simple 'Approve/Deny'.
+                  The right people are instantly notified on Slack, SMS, or our
+                  app to provide a simple 'Approve/Deny'.
                 </p>
               </div>
               <div class="feature-box">
@@ -191,7 +193,8 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>Solve the Judgment Deficit</h3>
                 <p>
-                  Preloop™ makes it possible to use AI for high-stakes tasks like server rollbacks, with complete human oversight.
+                  Preloop™ makes it possible to use AI for high-stakes tasks
+                  like server rollbacks, with complete human oversight.
                 </p>
               </div>
             </div>

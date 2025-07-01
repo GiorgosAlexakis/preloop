@@ -31,6 +31,14 @@ npm run test
 
 # Format code
 npm run format
+npm run format:check
+
+# Docker commands
+npm run docker:dev    # Development with HMR
+npm run docker:prod   # Production with real API
+npm run docker:mock   # Production with mock API
+npm run docker:build  # Build production image
+npm run docker:test   # Run tests in container
 ```
 
 ## Architecture
@@ -95,12 +103,38 @@ npm run format
 - Use `experimentalDecorators` for Lit decorators
 
 ### CI/CD
-- GitLab CI configured in `.gitlab-ci.yml`
-- Pipeline stages: install → validate → test → build
+- GitLab CI configured in `.gitlab-ci.yml` with Docker-based pipeline
+- Pipeline stages: test → build → deploy
+- **Container-based testing**: Tests run in Docker containers for consistency
 - **Format validation**: `npm run format:check` ensures code follows Prettier standards
-- **Automated testing**: Tests run in headless mode in CI, headed mode locally
-- **Build verification**: Ensures TypeScript compiles and Vite build succeeds
-- Artifacts: Build output saved for 1 week, test results as JUnit reports
+- **Docker image builds**: Separate dev and production images pushed to GitLab registry
+- **Security scanning**: Trivy scans for vulnerabilities in production images
+- **Manual deployments**: Staging and production deployments with environment protection
+- **Alternative config**: `.gitlab-ci.simple.yml` available for simpler setups without registry
+
+### Docker Support
+- **Production**: Multi-stage build with nginx serving static files (`Dockerfile`)
+- **Development**: Vite dev server with HMR for live debugging (`Dockerfile.dev`)
+- **API Flexibility**: Easy switching between real API and mock API for testing
+- **Management Script**: `./docker-run.sh` provides simple commands for all Docker operations
+
+#### Docker Quick Start
+```bash
+# Development with live debugging
+npm run docker:dev     # or ./docker-run.sh dev
+
+# Production with real API
+npm run docker:prod    # or ./docker-run.sh prod  
+
+# Production with mock API (testing)
+npm run docker:mock    # or ./docker-run.sh mock
+```
+
+#### Docker Environments
+- **Development** (`docker-compose.dev.yml`): Vite dev server on :5173, mock API on :8000
+- **Production** (`docker-compose.yml`): Nginx on :3000, expects real API backend
+- **Mock Testing** (`docker-compose.mock.yml`): Nginx on :3000, mock API on :8000
+- **Environment Variables**: `API_URL` and `MOCK_API` control backend routing
 
 ## Key Files
 - `src/components/lit-app.ts:39-74` - Route definitions
