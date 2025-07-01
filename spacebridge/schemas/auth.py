@@ -57,6 +57,12 @@ class UserCreate(BaseModel):
         return v
 
 
+class UserUpdate(BaseModel):
+    """User update model."""
+
+    full_name: Optional[str] = None
+
+
 class UserResponse(BaseModel):
     """Response model for user data."""
 

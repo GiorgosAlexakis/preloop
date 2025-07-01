@@ -4,7 +4,7 @@ import logging
 import secrets
 import string
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from uuid import UUID
 
 from fastapi import (
@@ -18,7 +18,10 @@ from fastapi import (
 )
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 from sqlalchemy.future import select
+
+from spacemodels.crud import crud_account
 
 from spacebridge.api.auth.jwt import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -42,6 +45,7 @@ from spacebridge.schemas.auth import (
     User,
     UserCreate,
     UserResponse,
+    UserUpdate,
 )
 from spacebridge.utils.email import (
     send_password_reset_email,
@@ -496,6 +500,18 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)) -
         The current user.
     """
     return current_user
+
+
+@router.put("/users/me", response_model=UserResponse)
+async def update_user_me(
+    *,
+    db: Session = Depends(get_db_session),
+    user_update: UserUpdate,
+    current_user: Account = Depends(get_current_active_user),
+) -> Any:
+    """Update own user."""
+    user = crud_account.update(db, db_obj=current_user, obj_in=user_update)
+    return user
 
 
 @router.post("/api-keys", response_model=ApiKeyResponse)
