@@ -24,13 +24,18 @@ class CRUDAccount(CRUDBase[Account]):
         return super().create(db=db, obj_in=obj_data)
 
     def update(
-        self, db: Session, *, db_obj: Account, obj_in: Dict[str, Any]
+        self, db: Session, *, db_obj: Account, obj_in: Any
     ) -> Account:
         """Update account and its last_updated timestamp."""
-        # Update last_updated field
-        obj_in["last_updated"] = datetime.now(timezone.utc)
+        if isinstance(obj_in, dict):
+            update_data = obj_in
+        else:
+            update_data = obj_in.model_dump(exclude_unset=True)
 
-        return super().update(db=db, db_obj=db_obj, obj_in=obj_in)
+        # Update last_updated field
+        update_data["last_updated"] = datetime.now(timezone.utc)
+
+        return super().update(db=db, db_obj=db_obj, obj_in=update_data)
 
     def get_by_email(self, db: Session, *, email: str) -> Optional[Account]:
         """Get account by email."""
