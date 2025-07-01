@@ -124,7 +124,7 @@ export class AppFooter extends LitElement {
             <ul>
               <li><a href="/docs">API Documentation</a></li>
               <li><a href="/register">Register</a></li>
-              <li><a href="/login">Login</a></li>
+              <li><a href="/login">Sign in</a></li>
               <li><a href="/privacy">Privacy Policy</a></li>
               <li><a href="/terms">Terms of Service</a></li>
               <li><a href="/whatis-mcp" target="_blank">What is MCP?</a></li>

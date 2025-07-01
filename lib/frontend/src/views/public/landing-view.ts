@@ -60,6 +60,12 @@ export class LandingView extends LitElement {
                 <sl-button
                   variant="primary"
                   size="large"
+                  href="/register"
+                  >Get Started</sl-button
+                >
+                <sl-button
+                  variant="text"
+                  size="large"
                   @click=${() => (window.location.href = '/contact')}
                   >Request a Demo</sl-button
                 >
@@ -198,15 +204,6 @@ export class LandingView extends LitElement {
                 </p>
               </div>
             </div>
-          </div>
-          <div class="section-container">
-            <img
-              src="/images/ui_3.png"
-              alt="SpaceBridge UI showing intelligent issue management"
-              width="1200"
-              height="264"
-              class="ui-shot"
-            />
           </div>
         </section>
 
@@ -542,12 +539,20 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
         <section class="final-cta main-section special-cta">
           <div class="section-container">
             <h2>Your Foundation for Enterprise-Grade AI</h2>
-            <sl-button
-              variant="primary"
-              size="large"
-              @click=${() => (window.location.href = '/contact')}
-              >Request a Demo</sl-button
-            >
+            <div class="hero-buttons">
+              <sl-button
+                variant="primary"
+                size="large"
+                href="/register"
+                >Get Started</sl-button
+              >
+              <sl-button
+                variant="text"
+                size="large"
+                @click=${() => (window.location.href = '/contact')}
+                >Request a Demo</sl-button
+              >
+            </div>
           </div>
         </section>
       </main>
