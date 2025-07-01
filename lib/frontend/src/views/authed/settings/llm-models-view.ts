@@ -2,10 +2,12 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
-import * as api from '../../../api';
-import { LlmModel } from '../../../types';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
+import { LlmModel, getLlmModels, updateLlmModel, createLlmModel, deleteLlmModel } from '../../../api';
+import type { SlSelect } from '@shoelace-style/shoelace/dist/components/select/select.js';
+import type { SlInput } from '@shoelace-style/shoelace/dist/components/input/input.js';
+
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
@@ -40,6 +42,12 @@ export class LlmModelsView extends LitElement {
 
   @state()
   private modelToDelete: LlmModel | null = null;
+
+  @state()
+  private modelSuggestions: string[] = [];
+
+  @state()
+  private isOtherModel = false;
 
   static styles = css`
     .container {
@@ -121,7 +129,7 @@ export class LlmModelsView extends LitElement {
     this.isLoading = true;
     this.error = null;
     try {
-      this.models = await api.getLlmModels();
+      this.models = await getLlmModels();
     } catch (error) {
       this.error =
         error instanceof Error ? error.message : 'Failed to fetch LLM models';
@@ -170,7 +178,7 @@ export class LlmModelsView extends LitElement {
     return html`
       <sl-alert class="info-header" variant="primary" open>
         <sl-icon slot="icon" name="info-circle"></sl-icon>
-        LLMs enable advanced AI features such as duplicate issue detection.
+        LLMs enable advanced AI features such as improved duplicate issue detection accuracy.
       </sl-alert>
       <sl-card class="table-card">
         ${when(
@@ -278,14 +286,33 @@ export class LlmModelsView extends LitElement {
             <sl-option value="google">Google</sl-option>
             <sl-option value="custom">Custom</sl-option>
           </sl-select>
-          <sl-input
+          <sl-select
             label="Model Name / ID"
-            .value=${this.currentModel.model_name || ''}
-            @sl-input=${(e: Event) =>
-              (this.currentModel.model_name = (
-                e.target as HTMLInputElement
-              ).value)}
-          ></sl-input>
+            .value=${this.isOtherModel
+              ? 'other'
+              : this.currentModel.model_name || ''}
+            @sl-change=${this._handleModelNameChange}
+          >
+            ${repeat(
+              this.modelSuggestions,
+              s => s,
+              s => html`<sl-option value="${s}">${s}</sl-option>`
+            )}
+            <sl-option value="other">Other...</sl-option>
+          </sl-select>
+
+          ${when(
+            this.isOtherModel,
+            () => html`
+              <sl-input
+                label="Custom Model Name / ID"
+                placeholder="Enter custom model name"
+                .value=${this.currentModel.model_name || ''}
+                @sl-input=${this._handleCustomModelInput}
+              ></sl-input>
+            `
+          )}
+
           <sl-input
             class="full-width"
             label="API URL"
@@ -299,6 +326,7 @@ export class LlmModelsView extends LitElement {
             class="full-width"
             type="password"
             label="API Key"
+            .value=${this.currentModel.api_key || ''}
             @sl-input=${(e: Event) =>
               (this.currentModel.api_key = (
                 e.target as HTMLInputElement
@@ -342,12 +370,20 @@ export class LlmModelsView extends LitElement {
   openAddModelModal() {
     this.isEditing = false;
     this.currentModel = {};
+    this.modelSuggestions = [];
+    this.isOtherModel = false;
     this.isModalOpen = true;
   }
 
   openEditModal(model: LlmModel) {
     this.isEditing = true;
     this.currentModel = { ...model };
+    this.modelSuggestions = this.getModelSuggestionsForProvider(
+      this.currentModel.provider_name || ''
+    );
+    this.isOtherModel = !this.modelSuggestions.includes(
+      this.currentModel.model_name || ''
+    );
     this.isModalOpen = true;
   }
 
@@ -355,9 +391,44 @@ export class LlmModelsView extends LitElement {
     this.isModalOpen = false;
   }
 
-  handleProviderChange(e: CustomEvent) {
-    e.stopPropagation();
-    const provider = (e.target as HTMLSelectElement).value;
+  private _handleModelNameChange(e: Event) {
+    const selectedValue = (e.target as SlSelect).value;
+    if (selectedValue === 'other') {
+      this.isOtherModel = true;
+      this.currentModel.model_name = '';
+    } else {
+      this.isOtherModel = false;
+      this.currentModel.model_name = selectedValue;
+    }
+  }
+
+  private _handleCustomModelInput(e: Event) {
+    this.currentModel.model_name = (e.target as SlInput).value;
+  }
+
+  private getModelSuggestionsForProvider(provider: string): string[] {
+    switch (provider) {
+      case 'openai':
+        return ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+      case 'anthropic':
+        return [
+          'claude-3-opus-20240229',
+          'claude-3-sonnet-20240229',
+          'claude-3-haiku-20240307',
+        ];
+      case 'google':
+        return [
+          'gemini-1.5-pro-latest',
+          'gemini-1.0-pro',
+          'gemini-1.5-flash-latest',
+        ];
+      default:
+        return [];
+    }
+  }
+
+  handleProviderChange(e: Event) {
+    const provider = (e.target as SlSelect).value;
 
     const defaultUrls: { [key: string]: string } = {
       openai: 'https://api.openai.com/v1',
@@ -369,7 +440,11 @@ export class LlmModelsView extends LitElement {
       ...this.currentModel,
       provider_name: provider,
       api_url: defaultUrls[provider] || '',
+      model_name: '',
     };
+    this.modelSuggestions = this.getModelSuggestionsForProvider(provider);
+    this.isOtherModel = false;
+    this.requestUpdate();
   }
 
   async handleFormSubmit(e: Event) {
@@ -387,9 +462,9 @@ export class LlmModelsView extends LitElement {
     }
 
     if (this.isEditing) {
-      await api.updateLlmModel(this.currentModel.id!, this.currentModel);
+      await updateLlmModel(this.currentModel.id!, this.currentModel);
     } else {
-      await api.createLlmModel(this.currentModel);
+      await createLlmModel(this.currentModel);
     }
     this.closeModal();
     await this.fetchModels();
@@ -402,7 +477,7 @@ export class LlmModelsView extends LitElement {
 
   async handleSetDefault(model: LlmModel) {
     try {
-      await api.updateLlmModel(model.id, { is_default: true });
+      await updateLlmModel(model.id, { is_default: true });
       await this.fetchModels();
     } catch (error) {
       console.error('Failed to set default model:', error);
@@ -411,7 +486,7 @@ export class LlmModelsView extends LitElement {
 
   async deleteModel() {
     if (this.modelToDelete) {
-      await api.deleteLlmModel(this.modelToDelete.id);
+      await deleteLlmModel(this.modelToDelete.id);
       await this.fetchModels();
     }
     this.isDeleteConfirmOpen = false;
