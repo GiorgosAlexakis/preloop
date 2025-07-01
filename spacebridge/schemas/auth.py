@@ -104,6 +104,13 @@ class PasswordResetConfirmRequest(BaseModel):
     new_password: str = Field(..., min_length=8)
 
 
+class PasswordChangeRequest(BaseModel):
+    """Password change request schema."""
+
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+
+
 class ApiKeyCreate(BaseModel):
     """Model for API key creation."""
 
