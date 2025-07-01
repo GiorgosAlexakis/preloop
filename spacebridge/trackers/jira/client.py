@@ -492,6 +492,12 @@ class JiraClient(TrackerInterface):
             priorities=priorities,
             url=f"{self.base_url}/projects/{project_key}",
         )
+    async def get_organizations(self) -> List[Dict[str, Any]]:
+        """Get organizations from Jira."""
+        import re
+        domain_match = re.search(r"https?://([^/]+)", self.base_url)
+        org_name = domain_match.group(1) if domain_match else "Jira Instance"
+        return [{"id": org_name, "name": org_name, "url": self.base_url}]
 
     async def search_issues(
         self,
@@ -897,7 +903,7 @@ class JiraClient(TrackerInterface):
             logger.exception(f"Failed to add issue relation: {e}")
             return False
 
-    async def list_projects(self) -> List[ProjectIdentifier]:
+    async def list_projects(self, org_id: str = None) -> List[ProjectIdentifier]:
         """List all accessible projects in Jira.
 
         Returns:

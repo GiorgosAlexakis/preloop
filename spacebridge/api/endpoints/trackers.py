@@ -3,7 +3,7 @@
 import logging
 from typing import Dict, List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status, Query
 from pydantic import UUID4
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -327,9 +327,24 @@ async def update_tracker(
             detail="Tracker not found or access denied",
         )
 
-    update_data = tracker_update.dict(exclude_unset=True)
+    update_data = tracker_update.model_dump(exclude_unset=True)
 
-    # Update fields
+    # Handle scope_rules separately
+    if "scope_rules" in update_data:
+        # Delete existing scope rules
+        db.query(TrackerScopeRule).filter(
+            TrackerScopeRule.tracker_id == tracker.id
+        ).delete(synchronize_session=False)
+
+        # Create new scope rules from the payload
+        new_scope_rules_data = update_data.pop("scope_rules")
+        if new_scope_rules_data is not None:
+            new_scope_rules = [
+                TrackerScopeRule(**rule_data) for rule_data in new_scope_rules_data
+            ]
+            tracker.scope_rules = new_scope_rules
+
+    # Update other fields
     for field, value in update_data.items():
         setattr(tracker, field, value)
 
@@ -469,6 +484,25 @@ async def test_connection_and_list_orgs(
         logger.info(f"Connection test successful for user {current_user.username}")
 
         organizations: List[OrganizationGroup] = []
+
+        orgs = await client.get_organizations()
+        if len(orgs) == 1:
+            projects = await client.list_projects(orgs[0]["id"])
+            orgs[0]["projects"] = [ProjectIdentifier(id=p.id, name=p.name, identifier=p.id, type="project") for p in projects]
+        for org in orgs:
+            organizations.append(
+                OrganizationGroup(
+                    id=org["id"],
+                    name=org["name"],
+                    children=org["projects"],
+                )
+            )
+        return TrackerTestResponse(
+            success=True,
+            message="Connection successful!",
+            orgs=organizations,
+        )
+
         if isinstance(client, GitHubClient):
             grouped_repos = await client.get_repositories_grouped_by_owner()
             for owner_group_data in grouped_repos:
@@ -512,6 +546,7 @@ async def test_connection_and_list_orgs(
 async def list_projects_for_org(
     test_data: TrackerTestRequest,
     current_user: UserResponse = Depends(get_current_active_user),
+    org_id: str = Query(..., description="Organization ID"),
 ) -> List[ProjectIdentifier]:
     """
     Lists projects for a specific organization/group within a tracker.
@@ -520,7 +555,6 @@ async def list_projects_for_org(
         f"User {current_user.username} listing projects for org {test_data.organization_identifier} "
         f"in tracker type {test_data.tracker_type.value}"
     )
-
     try:
         client = await create_tracker_client(
             tracker_type=test_data.tracker_type.value,
@@ -534,6 +568,7 @@ async def list_projects_for_org(
             )
 
         projects: List[ProjectIdentifier] = []
+        grouped_data = await client.get_groups()
         if isinstance(client, GitLabClient):
             # The 'get_groups_and_projects' method returns all groups and projects.
             # We need to find the specific group and return its projects.
@@ -550,7 +585,23 @@ async def list_projects_for_org(
                         )
                     break  # Found the group, no need to continue
 
-        # Add similar logic for GitHub and Jira if needed
+        elif isinstance(client, GitHubClient):
+            pass
+        elif isinstance(client, JiraClient):
+            # The 'get_groups_and_projects' method returns all groups and projects.
+            # We need to find the specific group and return its projects.
+            grouped_data = await client.get_groups_and_projects()
+            for group_data in grouped_data:
+                if group_data["group_path"] == test_data.organization_identifier:
+                    for proj in group_data["projects"]:
+                        projects.append(
+                            ProjectIdentifier(
+                                id=str(proj["id"]),
+                                name=proj["path_with_namespace"],
+                                identifier=str(proj["id"]),
+                            )
+                        )
+                    break  # Found the group, no need to continue
 
         return projects
 

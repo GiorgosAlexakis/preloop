@@ -224,6 +224,14 @@ class GitLabClient(TrackerInterface):
             url=project_data["web_url"],
         )
 
+    async def get_projects_for_group(self, group_path: str) -> List[Dict[str, Any]]:
+        """Fetch projects for a specific group."""
+        return await self._request("GET", f"groups/{group_path}/projects")
+
+    async def get_groups(self) -> List[Dict[str, Any]]:
+        """Fetch groups the user has access to."""
+        return await self._request("GET", "groups")
+
     async def get_groups_and_projects(self) -> List[Dict[str, Any]]:
         """Fetch groups and projects the user has access to, structured for UI."""
         results = []
