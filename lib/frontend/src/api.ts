@@ -234,15 +234,17 @@ export async function changePassword(passwords: {
   new_password: string;
 }) {
   const response = await fetchWithAuth('/api/v1/auth/users/me/password', {
-    method: 'POST',
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(passwords),
   });
+  if (response.status === 204) {
+    return;
+  }
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Failed to change password');
   }
-  return response.json();
 }
 
 // API Keys

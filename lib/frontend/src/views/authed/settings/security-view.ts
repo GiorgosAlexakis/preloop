@@ -21,6 +21,12 @@ export class SecurityView extends LitElement {
 
   async handleChangePassword(event: Event) {
     event.preventDefault();
+
+    if (this.newPassword.length < 8) {
+      this.changePasswordMessage = 'New password must be at least 8 characters.';
+      return;
+    }
+
     if (this.newPassword !== this.confirmNewPassword) {
       this.changePasswordMessage = 'New passwords do not match.';
       return;
