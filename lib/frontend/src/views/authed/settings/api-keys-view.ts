@@ -34,12 +34,6 @@ export class ApiKeysView extends LitElement {
   private newKeyName = '';
 
   @state()
-  private newKeyExpiry = 'never';
-
-  @state()
-  private newCustomExpiry = '';
-
-  @state()
   private newlyCreatedKey: ApiKey | null = null;
 
   async connectedCallback() {
@@ -61,23 +55,16 @@ export class ApiKeysView extends LitElement {
   }
 
   async handleCreateApiKey() {
-    let expires_at: string | null = null;
-    if (this.newKeyExpiry !== 'never') {
-      const now = new Date();
-      if (this.newKeyExpiry === 'custom') {
-        expires_at = new Date(this.newCustomExpiry).toISOString();
-      } else {
-        const days = parseInt(this.newKeyExpiry.replace('days', ''));
-        now.setDate(now.getDate() + days);
-        expires_at = now.toISOString();
-      }
+    if (!this.newKeyName) {
+      return;
     }
 
     try {
-      const newKey = await createApiKey(this.newKeyName, expires_at);
+      const newKey = await createApiKey(this.newKeyName, null);
       this.newlyCreatedKey = newKey;
       this.isCreateModalOpen = false;
       this.isShowKeyModalOpen = true;
+      this.newKeyName = ''; // Reset for next time
       await this.fetchApiKeys();
     } catch (error) {
       console.error('Failed to create API key:', error);
@@ -91,6 +78,24 @@ export class ApiKeysView extends LitElement {
         await this.fetchApiKeys();
       } catch (error) {
         console.error('Failed to delete API key:', error);
+      }
+    }
+  }
+
+  private _copyKey(e: Event) {
+    const button = e.currentTarget as HTMLElement;
+    const pre = button.previousElementSibling;
+    if (pre && pre.tagName === 'PRE') {
+      const code = pre.querySelector('code');
+      if (code) {
+        navigator.clipboard.writeText(code.innerText).then(() => {
+          const originalHTML = button.innerHTML;
+          button.innerHTML =
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check" viewBox="0 0 16 16"><path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/></svg>';
+          setTimeout(() => {
+            button.innerHTML = originalHTML;
+          }, 2000);
+        });
       }
     }
   }
@@ -179,37 +184,19 @@ export class ApiKeysView extends LitElement {
         @sl-hide=${() => (this.isCreateModalOpen = false)}
       >
         <sl-input
+          autofocus
           style="margin-bottom: 1rem;"
           label="Key Name"
+          placeholder="Enter a name for your key"
           .value=${this.newKeyName}
           @sl-input=${(e: Event) =>
             (this.newKeyName = (e.target as HTMLInputElement).value)}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === 'Enter' && this.newKeyName) {
+              this.handleCreateApiKey();
+            }
+          }}
         ></sl-input>
-        <sl-select
-          style="margin-bottom: 1rem;"
-          label="Expiration"
-          .value=${this.newKeyExpiry}
-          @sl-change=${(e: { target: { value: string } }) =>
-            (this.newKeyExpiry = e.target.value)}
-        >
-          <sl-menu-item value="never">Never</sl-menu-item>
-          <sl-menu-item value="7days">7 Days</sl-menu-item>
-          <sl-menu-item value="30days">30 Days</sl-menu-item>
-          <sl-menu-item value="90days">90 Days</sl-menu-item>
-          <sl-menu-item value="custom">Custom Date</sl-menu-item>
-        </sl-select>
-        ${when(
-          this.newKeyExpiry === 'custom',
-          () => html`
-            <sl-input
-              type="date"
-              label="Custom Expiry Date"
-              .value=${this.newCustomExpiry}
-              @sl-change=${(e: { target: { value: string } }) =>
-                (this.newCustomExpiry = e.target.value)}
-            ></sl-input>
-          `
-        )}
         <sl-button
           slot="footer"
           @click=${() => {
@@ -221,6 +208,7 @@ export class ApiKeysView extends LitElement {
           slot="footer"
           variant="primary"
           @click=${this.handleCreateApiKey}
+          .disabled=${!this.newKeyName}
           >Create</sl-button
         >
       </sl-dialog>
@@ -230,18 +218,37 @@ export class ApiKeysView extends LitElement {
         .open=${this.isShowKeyModalOpen && this.newlyCreatedKey}
         @sl-hide=${() => (this.isShowKeyModalOpen = false)}
       >
-        <p>
-          Here is your new API key. Please copy it now, you will not be able to
-          see it again.
-        </p>
-        <pre><code>${this.newlyCreatedKey?.key}</code></pre>
+        <p>Here is your new API key:</p>
+        <div class="code-container">
+          <pre><code>${this.newlyCreatedKey?.key}</code></pre>
+          <button class="copy-btn" @click=${this._copyKey}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              class="bi bi-clipboard"
+              viewBox="0 0 16 16"
+            >
+              <path
+                d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
+              />
+              <path
+                d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="warning-text">
+          <sl-icon name="exclamation-triangle"></sl-icon>
+          <span>Please copy it now. You will not be able to see it again.</span>
+        </div>
         <sl-button
           slot="footer"
           variant="primary"
-          @click=${() => {
-            this.isShowKeyModalOpen = false;
-          }}
-          >Close</sl-button
+          autofocus
+          @click=${() => (this.isShowKeyModalOpen = false)}
+          >I have copied my key</sl-button
         >
       </sl-dialog>
     `;
@@ -291,6 +298,40 @@ export class ApiKeysView extends LitElement {
     th:last-child,
     td:last-child {
       text-align: right;
+    }
+    .code-container {
+      position: relative;
+      background-color: var(--sl-color-neutral-100);
+      border-radius: var(--sl-border-radius-medium);
+      margin: 1rem 0;
+    }
+    .code-container pre {
+      margin: 0;
+      padding: var(--sl-spacing-medium);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .copy-btn {
+      position: absolute;
+      top: var(--sl-spacing-x-small);
+      right: var(--sl-spacing-x-small);
+      background: none;
+      border: none;
+      color: var(--sl-color-neutral-600);
+      cursor: pointer;
+      padding: var(--sl-spacing-2x-small);
+      border-radius: var(--sl-border-radius-circle);
+    }
+    .copy-btn:hover {
+      background-color: var(--sl-color-neutral-200);
+    }
+    .warning-text {
+      display: flex;
+      align-items: center;
+      gap: var(--sl-spacing-x-small);
+      color: var(--sl-color-neutral-600);
+      margin-top: var(--sl-spacing-medium);
+      font-size: var(--sl-font-size-small);
     }
   `;
 }
