@@ -56,16 +56,23 @@ export class IssuesView extends LitElement {
   private _pageSize = 10;
 
   @state()
-  private _hasMorePages = false;
+  private _hasMorePages = true;
+
+  @state()
+  private _expandedRowKey: string | null = null;
 
   // WARNING: Do not hardcode tokens in production. This is for demonstration purposes only.
   // In a real application, the token should be retrieved from a secure storage like localStorage or a state management solution.
   private _apiToken = 'qybJSX1eCvHFTUvmcXpX3rmVX93uzXjAjDJbtqpz';
 
   static styles = css`
-  sl-card::part(body) {
+    .container {
+      max-width: var(--console-container-large-max-width);
+      padding: var(--sl-spacing-x-large);
+    }
+    sl-card::part(body) {
       padding: 0;
-  }
+    }
     .styled-table th,
     .styled-table td {
       padding: var(--sl-spacing-medium);
@@ -79,8 +86,7 @@ export class IssuesView extends LitElement {
     .styled-table tr:last-child td {
       border-bottom: none;
     }
-    .styled-table th:last-child,
-    .styled-table td:last-child {
+    .styled-table th:last-child {
       text-align: right;
     }
 
@@ -104,7 +110,44 @@ export class IssuesView extends LitElement {
     .actions-container {
       display: flex;
     }
-  `; 
+
+    .clickable-row {
+      cursor: pointer;
+    }
+
+    .detail-row > td {
+      padding: 0;
+      border-top: none;
+    }
+
+    .detail-view-card {
+      background-color: var(--sl-color-neutral-50);
+      border: 1px solid var(--sl-color-neutral-200);
+      padding: var(--sl-spacing-large);
+      margin: var(--sl-spacing-x-small) 0;
+    }
+
+    .detail-grid {
+      margin-bottom: var(--sl-spacing-large);
+    }
+
+    .detail-section h3 {
+      font-size: var(--sl-font-size-medium);
+      margin-top: 0;
+      margin-bottom: var(--sl-spacing-small);
+    }
+
+    .issue-description {
+      background-color: var(--sl-color-neutral-100);
+      border: 1px solid var(--sl-color-neutral-200);
+      border-radius: var(--sl-border-radius-medium);
+      padding: var(--sl-spacing-medium);
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+  `;
 
   connectedCallback() {
     super.connectedCallback();
@@ -187,9 +230,54 @@ export class IssuesView extends LitElement {
     }
   }
 
+  private _toggleRow(pairKey: string) {
+    if (this._expandedRowKey === pairKey) {
+      this._expandedRowKey = null;
+    } else {
+      this._expandedRowKey = pairKey;
+    }
+  }
+
+  private _renderDetailView(
+    pair: DuplicatePair,
+    verdict: LlmVerdict | undefined
+  ) {
+    return html`
+      <tr class="detail-row">
+        <td colspan="5">
+          <div class="detail-view-card">
+            <div class="detail-section">
+              <h3>${pair.issue1.key}: ${pair.issue1.title}</h3>
+              <p class="issue-description">${pair.issue1.description}</p>
+            </div>
+            <div class="detail-section">
+              <h3>${pair.issue2.key}: ${pair.issue2.title}</h3>
+              <p class="issue-description">${pair.issue2.description}</p>
+            </div>
+            ${verdict
+              ? html`
+                  <div class="detail-section">
+                    <h3>LLM Review</h3>
+                    <p>
+                      <strong>Status:</strong>
+                      ${this.renderVerdict(pair)}
+                    </p>
+                    <p>
+                      <strong>Reasoning:</strong>
+                      ${verdict.reason || 'No reasoning provided.'}
+                    </p>
+                  </div>
+                `
+              : ''}
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
   render() {
     return html`
-      <div class="page-container">
+      <div class="container">
         <div class="page-header">
           <h1>Issue Clusters</h1>
         </div>
@@ -225,9 +313,10 @@ export class IssuesView extends LitElement {
 
                           return html`
                             <tr
-                              class=${verdict?.decision === 'rejected'
+                              class="clickable-row ${verdict?.decision === 'rejected'
                                 ? 'faint-row'
-                                : ''}
+                                : ''}"
+                              @click=${() => this._toggleRow(pairKey)}
                             >
                               <td>
                                 <div class="issue-key">${pair.issue1.key}</div>
@@ -246,12 +335,12 @@ export class IssuesView extends LitElement {
                               </td>
                               <td class="text-right" id="verdict-${pair.issue1.id}-${pair.issue2.id}">
                                 ${pair.similarity >= 0.999
-                                    ? html`<sl-badge
-                                          variant="success"
-                                          style="--sl-color-success-text: var(--sl-color-cyan-50); --sl-color-success-600: var(--sl-color-cyan-600);"
-                                          >Identical</sl-badge
-                                      >`
-                                    : this.renderVerdict(pair)}
+                                  ? html`<sl-badge
+                                      variant="warning"
+                                      style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
+                                      >Identical</sl-badge
+                                    >`
+                                  : this.renderVerdict(pair)}
                               </td>
                               <td class="text-right">
                                 <div class="actions-container">
@@ -266,6 +355,9 @@ export class IssuesView extends LitElement {
                                 </div>
                               </td>
                             </tr>
+                            ${this._expandedRowKey === pairKey
+                              ? this._renderDetailView(pair, verdict)
+                              : ''}
                           `;
                         })}
                       </tbody>
@@ -314,18 +406,23 @@ export class IssuesView extends LitElement {
     const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
     const verdict = this._llmVerdicts[pairKey];
 
-    if (!verdict || verdict.decision === 'checking') {
-      return html`<span>Checking...</span>`;
+    if (verdict) {
+      if (verdict.decision === 'confirmed') {
+        return html`<sl-badge
+          variant="warning"
+          style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-600);"
+          >Confirmed</sl-badge
+        >`;
+      } else if (verdict.decision === 'rejected') {
+        return html`<sl-badge
+          variant="success"
+          style="--sl-color-success-text: var(--sl-color-cyan-50); --sl-color-success-600: var(--sl-color-cyan-600);"
+          >Rejected</sl-badge
+        >`;
+      }
     }
 
-    switch (verdict.decision) {
-      case 'confirmed':
-        return html`<sl-badge variant="success">Confirmed</sl-badge>`;
-      case 'rejected':
-        return html`<sl-badge variant="danger">Rejected</sl-badge>`;
-      default:
-        return html`<sl-badge variant="neutral">Undecided</sl-badge>`;
-    }
+    return html`<span>Checking...</span>`;
   }
 }
 

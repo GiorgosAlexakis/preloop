@@ -8,13 +8,6 @@ html {
   --console-container-large-max-width: 1200px;
 }
 
-/* Shared Page Styles */
-.page-container {
-  max-width: var(--console-container-large-max-width);
-  margin: 0 auto;
-  padding: var(--sl-spacing-x-large);
-}
-
 .page-header {
   display: flex;
   justify-content: space-between;
