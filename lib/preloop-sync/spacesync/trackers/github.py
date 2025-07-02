@@ -16,6 +16,7 @@ from ..exceptions import (
 from ..utils import retry
 from .base import BaseTracker
 from ..config import logger
+from spacemodels.models.project import Project
 
 class GitHubTracker(BaseTracker):
     """GitHub tracker implementation."""
@@ -268,7 +269,7 @@ class GitHubTracker(BaseTracker):
         return processed_issues
 
     def transform_issue(
-        self, issue_data: Dict[str, Any], project: "Project"
+        self, issue_data: Dict[str, Any], project: Project
     ) -> Dict[str, Any]:
         """
         Transforms GitHub issue data into a standardized format.
