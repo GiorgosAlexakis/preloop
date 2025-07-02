@@ -63,9 +63,9 @@ export class IssuesView extends LitElement {
   private _apiToken = 'qybJSX1eCvHFTUvmcXpX3rmVX93uzXjAjDJbtqpz';
 
   static styles = css`
-  sl-card::part(body) {
+    sl-card::part(body) {
       padding: 0;
-  }
+    }
     .styled-table th,
     .styled-table td {
       padding: var(--sl-spacing-medium);
@@ -104,7 +104,7 @@ export class IssuesView extends LitElement {
     .actions-container {
       display: flex;
     }
-  `; 
+  `;
 
   connectedCallback() {
     super.connectedCallback();
@@ -136,7 +136,8 @@ export class IssuesView extends LitElement {
       this._hasMorePages = data.duplicates.length === this._pageSize;
       this.fetchLlmVerdicts(); // Fetch verdicts after getting duplicates
     } catch (error) {
-      this._error = error instanceof Error ? error.message : 'An unknown error occurred.';
+      this._error =
+        error instanceof Error ? error.message : 'An unknown error occurred.';
       console.error('Failed to fetch duplicate issues:', error);
     } finally {
       this._loading = false;
@@ -177,7 +178,10 @@ export class IssuesView extends LitElement {
             },
           };
         } catch (error) {
-          console.error(`Failed to fetch LLM verdict for pair ${pairKey}:`, error);
+          console.error(
+            `Failed to fetch LLM verdict for pair ${pairKey}:`,
+            error
+          );
           this._llmVerdicts = {
             ...this._llmVerdicts,
             [pairKey]: { decision: 'undecided', reason: 'Failed to load' },
@@ -202,97 +206,98 @@ export class IssuesView extends LitElement {
           this._error,
           () => html`<div class="error">Error: ${this._error}</div>`
         )}
-        ${when(
-          !this._loading && !this._error,
-          () =>
-            this._duplicates.length > 0
-              ? html`
-                  <sl-card class="table-card">
-                    <table class="styled-table">
-                      <thead>
-                        <tr>
-                          <th>Issue 1</th>
-                          <th>Issue 2</th>
-                          <th class="text-right">Similarity</th>
-                          <th class="text-right">LLM Review</th>
-                          <th class="text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${this._duplicates.map((pair) => {
-                          const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-                          const verdict = this._llmVerdicts[pairKey];
+        ${when(!this._loading && !this._error, () =>
+          this._duplicates.length > 0
+            ? html`
+                <sl-card class="table-card">
+                  <table class="styled-table">
+                    <thead>
+                      <tr>
+                        <th>Issue 1</th>
+                        <th>Issue 2</th>
+                        <th class="text-right">Similarity</th>
+                        <th class="text-right">LLM Review</th>
+                        <th class="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${this._duplicates.map((pair) => {
+                        const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+                        const verdict = this._llmVerdicts[pairKey];
 
-                          return html`
-                            <tr
-                              class=${verdict?.decision === 'rejected'
-                                ? 'faint-row'
-                                : ''}
+                        return html`
+                          <tr
+                            class=${verdict?.decision === 'rejected'
+                              ? 'faint-row'
+                              : ''}
+                          >
+                            <td>
+                              <div class="issue-key">${pair.issue1.key}</div>
+                              <div class="issue-title">
+                                ${pair.issue1.title}
+                              </div>
+                            </td>
+                            <td>
+                              <div class="issue-key">${pair.issue2.key}</div>
+                              <div class="issue-title">
+                                ${pair.issue2.title}
+                              </div>
+                            </td>
+                            <td class="text-right">
+                              ${(pair.similarity * 100).toFixed(2)}%
+                            </td>
+                            <td
+                              class="text-right"
+                              id="verdict-${pair.issue1.id}-${pair.issue2.id}"
                             >
-                              <td>
-                                <div class="issue-key">${pair.issue1.key}</div>
-                                <div class="issue-title">
-                                  ${pair.issue1.title}
-                                </div>
-                              </td>
-                              <td>
-                                <div class="issue-key">${pair.issue2.key}</div>
-                                <div class="issue-title">
-                                  ${pair.issue2.title}
-                                </div>
-                              </td>
-                              <td class="text-right">
-                                ${(pair.similarity * 100).toFixed(2)}%
-                              </td>
-                              <td class="text-right" id="verdict-${pair.issue1.id}-${pair.issue2.id}">
-                                ${pair.similarity >= 0.999
-                                    ? html`<sl-badge
-                                          variant="success"
-                                          style="--sl-color-success-text: var(--sl-color-cyan-50); --sl-color-success-600: var(--sl-color-cyan-600);"
-                                          >Identical</sl-badge
-                                      >`
-                                    : this.renderVerdict(pair)}
-                              </td>
-                              <td class="text-right">
-                                <div class="actions-container">
-                                  <sl-button
-                                    size="small"
-                                    variant=${verdict?.decision === 'rejected'
-                                      ? 'default'
-                                      : 'primary'}
-                                    >Resolve...</sl-button
-                                  >
-                                  <sl-button size="small">Dismiss</sl-button>
-                                </div>
-                              </td>
-                            </tr>
-                          `;
-                        })}
-                      </tbody>
-                    </table>
-                  </sl-card>
-                  <div class="pagination-controls">
-                    <sl-button
-                      size="small"
-                      @click=${this._previousPage}
-                      ?disabled=${this._currentPage === 1}
-                      >Previous</sl-button
-                    >
-                    <span>Page ${this._currentPage}</span>
-                    <sl-button
-                      size="small"
-                      @click=${this._nextPage}
-                      ?disabled=${!this._hasMorePages}
-                      >Next</sl-button
-                    >
-                  </div>
-                `
-              : html`
-                  <sl-alert variant="primary" open>
-                    <sl-icon slot="icon" name="info-circle"></sl-icon>
-                    No duplicate issues found.
-                  </sl-alert>
-                `
+                              ${pair.similarity >= 0.999
+                                ? html`<sl-badge
+                                    variant="success"
+                                    style="--sl-color-success-text: var(--sl-color-cyan-50); --sl-color-success-600: var(--sl-color-cyan-600);"
+                                    >Identical</sl-badge
+                                  >`
+                                : this.renderVerdict(pair)}
+                            </td>
+                            <td class="text-right">
+                              <div class="actions-container">
+                                <sl-button
+                                  size="small"
+                                  variant=${verdict?.decision === 'rejected'
+                                    ? 'default'
+                                    : 'primary'}
+                                  >Resolve...</sl-button
+                                >
+                                <sl-button size="small">Dismiss</sl-button>
+                              </div>
+                            </td>
+                          </tr>
+                        `;
+                      })}
+                    </tbody>
+                  </table>
+                </sl-card>
+                <div class="pagination-controls">
+                  <sl-button
+                    size="small"
+                    @click=${this._previousPage}
+                    ?disabled=${this._currentPage === 1}
+                    >Previous</sl-button
+                  >
+                  <span>Page ${this._currentPage}</span>
+                  <sl-button
+                    size="small"
+                    @click=${this._nextPage}
+                    ?disabled=${!this._hasMorePages}
+                    >Next</sl-button
+                  >
+                </div>
+              `
+            : html`
+                <sl-alert variant="primary" open>
+                  <sl-icon slot="icon" name="info-circle"></sl-icon>
+                  No duplicate issues found.
+                </sl-alert>
+              `
         )}
       </div>
     `;
