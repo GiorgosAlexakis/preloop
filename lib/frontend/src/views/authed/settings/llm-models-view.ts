@@ -77,21 +77,21 @@ export class LlmModelsView extends LitElement {
       width: 100%;
       border-collapse: collapse;
     }
-    th,
-    td {
+    .styled-table th,
+    .styled-table td {
       padding: var(--sl-spacing-medium);
       text-align: left;
       border-bottom: 1px solid var(--sl-color-neutral-200);
     }
-    th {
+    .styled-table th {
       background-color: var(--sl-color-neutral-50);
       font-weight: var(--sl-font-weight-semibold);
     }
-    tr:last-child td {
+    .styled-table tr:last-child td {
       border-bottom: none;
     }
-    th:last-child,
-    td:last-child {
+    .styled-table th:last-child,
+    .styled-table td:last-child {
       text-align: right;
     }
     .actions {
@@ -203,7 +203,7 @@ export class LlmModelsView extends LitElement {
               >
             </p>`,
           () => html`
-            <table>
+            <table class="styled-table">
               <thead>
                 <tr>
                   <th>Name</th>
