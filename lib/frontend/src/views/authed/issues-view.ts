@@ -179,7 +179,8 @@ export class IssuesView extends LitElement {
       this._hasMorePages = data.duplicates.length === this._pageSize;
       this.fetchLlmVerdicts(); // Fetch verdicts after getting duplicates
     } catch (error) {
-      this._error = error instanceof Error ? error.message : 'An unknown error occurred.';
+      this._error =
+        error instanceof Error ? error.message : 'An unknown error occurred.';
       console.error('Failed to fetch duplicate issues:', error);
     } finally {
       this._loading = false;
@@ -220,7 +221,10 @@ export class IssuesView extends LitElement {
             },
           };
         } catch (error) {
-          console.error(`Failed to fetch LLM verdict for pair ${pairKey}:`, error);
+          console.error(
+            `Failed to fetch LLM verdict for pair ${pairKey}:`,
+            error
+          );
           this._llmVerdicts = {
             ...this._llmVerdicts,
             [pairKey]: { decision: 'undecided', reason: 'Failed to load' },
@@ -290,26 +294,24 @@ export class IssuesView extends LitElement {
           this._error,
           () => html`<div class="error">Error: ${this._error}</div>`
         )}
-        ${when(
-          !this._loading && !this._error,
-          () =>
-            this._duplicates.length > 0
-              ? html`
-                  <sl-card class="table-card">
-                    <table class="styled-table">
-                      <thead>
-                        <tr>
-                          <th>Issue 1</th>
-                          <th>Issue 2</th>
-                          <th class="text-right">Similarity</th>
-                          <th class="text-right">LLM Review</th>
-                          <th class="text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${this._duplicates.map((pair) => {
-                          const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-                          const verdict = this._llmVerdicts[pairKey];
+        ${when(!this._loading && !this._error, () =>
+          this._duplicates.length > 0
+            ? html`
+                <sl-card class="table-card">
+                  <table class="styled-table">
+                    <thead>
+                      <tr>
+                        <th>Issue 1</th>
+                        <th>Issue 2</th>
+                        <th class="text-right">Similarity</th>
+                        <th class="text-right">LLM Review</th>
+                        <th class="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${this._duplicates.map((pair) => {
+                        const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+                        const verdict = this._llmVerdicts[pairKey];
 
                           return html`
                             <tr

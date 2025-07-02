@@ -34,7 +34,7 @@ export class AddTrackerModal extends LitElement {
   private trackerType = 'github';
 
   @state()
-  private trackerUrl = '';
+  private trackerUrl = 'https://api.github.com';
 
   @state()
   private trackerToken = '';
@@ -186,7 +186,28 @@ export class AddTrackerModal extends LitElement {
         label="Type"
         name="type"
         .value=${this.trackerType}
-        @sl-change=${(e: any) => (this.trackerType = e.target.value)}
+        @sl-change=${(e: any) => {
+          this.trackerType = e.target.value;
+          const urlInput = this.shadowRoot?.querySelector(
+            'sl-input[name="url"]'
+          ) as HTMLInputElement;
+          if (this.trackerType === 'gitlab') {
+            this.trackerUrl = 'https://gitlab.com';
+            if (urlInput) {
+              urlInput.placeholder = 'e.g., https://gitlab.example.com';
+            }
+          } else if (this.trackerType === 'github') {
+            this.trackerUrl = 'https://github.com';
+            if (urlInput) {
+              urlInput.placeholder = 'e.g., https://github.example.com';
+            }
+          } else {
+            this.trackerUrl = '';
+            if (urlInput) {
+              urlInput.placeholder = 'e.g., https://your-team.atlassian.net';
+            }
+          }
+        }}
       >
         <sl-option value="github">GitHub</sl-option>
         <sl-option value="gitlab">GitLab</sl-option>
@@ -197,7 +218,7 @@ export class AddTrackerModal extends LitElement {
         name="url"
         .value=${this.trackerUrl}
         @sl-input=${(e: any) => (this.trackerUrl = e.target.value)}
-        placeholder="e.g., https://gitlab.com"
+        placeholder="e.g., https://github.example.com"
       ></sl-input>
       ${this.trackerType === 'jira'
         ? html`
@@ -329,6 +350,32 @@ export class AddTrackerModal extends LitElement {
         const orgId = response.orgs[0].id;
         this.projects = { [orgId]: response.orgs[0].children };
         this.selectedOrgs = { [orgId]: true };
+        this.selectedProjects = { [orgId]: {} };
+        if (this.tracker?.scope_rules?.length > 0) {
+          this.projects[orgId].forEach((proj: any) => {
+            if (
+              this.tracker.scope_rules.filter(
+                (x: any) =>
+                  x.scope_type == 'PROJECT' &&
+                  x.rule_type == 'INCLUDE' &&
+                  x.identifier == proj.id
+              ).length ||
+              (this.includeFutureProjects &&
+                !this.tracker.scope_rules.filter(
+                  (x: any) =>
+                    x.scope_type == 'PROJECT' &&
+                    x.rule_type == 'EXCLUDE' &&
+                    x.identifier == proj.id
+                ).length)
+            ) {
+              this.selectedProjects[orgId][proj.id] = true;
+            }
+          });
+        } else {
+          this.projects[orgId].forEach((proj: any) => {
+            this.selectedProjects[orgId][proj.id] = true;
+          });
+        }
       } else {
         this.singleOrgWithProjects = false;
       }
