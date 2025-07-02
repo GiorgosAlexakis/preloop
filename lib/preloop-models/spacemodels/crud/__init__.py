@@ -12,6 +12,7 @@ from ..models import (
     Organization,
     Project,
     Tracker,
+    TrackerScopeRule,
     Webhook,
 )
 from .account import CRUDAccount
@@ -25,6 +26,7 @@ from .issue import CRUDIssue
 from .organization import CRUDOrganization  # Removed create_organization import
 from .project import CRUDProject
 from .tracker import CRUDTracker
+from .tracker_scope_rule import CRUDTrackerScopeRule
 from .llm_model import CRUDLLMModel
 from .webhook import CRUDWebhook
 
@@ -41,11 +43,13 @@ crud_llm_model = CRUDLLMModel(LLMModel)  # Instantiate crud_llm_model
 # crud_comment is already instantiated in its own file
 crud_webhook = CRUDWebhook(Webhook)
 crud_flow = CRUDFlow()  # Instantiate CRUDFlow
+crud_tracker_scope_rule = CRUDTrackerScopeRule(TrackerScopeRule)
 
 __all__ = [
     "CRUDBase",
     "CRUDAccount",
     "CRUDTracker",
+    "CRUDTrackerScopeRule",
     "CRUDOrganization",
     # "crud_create_organization", # Removed export
     "CRUDProject",
@@ -59,6 +63,7 @@ __all__ = [
     "CRUDFlow",
     "crud_account",
     "crud_tracker",
+    "crud_tracker_scope_rule",
     "crud_organization",
     "crud_project",
     "crud_issue",

@@ -31,7 +31,7 @@ def upgrade():
     1. Have a name ending with " Organization".
     2. Have an identifier starting with the username of the associated account.
     """
-    bind = op.get_bind()
+    connection = op.get_bind()
     meta = sa.MetaData()
 
     # Define table structures for the query and delete operation

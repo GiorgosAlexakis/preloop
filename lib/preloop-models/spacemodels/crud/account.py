@@ -23,9 +23,7 @@ class CRUDAccount(CRUDBase[Account]):
 
         return super().create(db=db, obj_in=obj_data)
 
-    def update(
-        self, db: Session, *, db_obj: Account, obj_in: Any
-    ) -> Account:
+    def update(self, db: Session, *, db_obj: Account, obj_in: Any) -> Account:
         """Update account and its last_updated timestamp."""
         if isinstance(obj_in, dict):
             update_data = obj_in

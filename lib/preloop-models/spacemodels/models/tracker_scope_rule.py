@@ -47,4 +47,4 @@ class TrackerScopeRule(Base):
         comment="e.g., 'my-org' or 'my-org/my-repo'",
     )
 
-    tracker: Mapped["Tracker"] = relationship("Tracker", back_populates="scope_rules")
+    tracker: Mapped["Tracker"] = relationship("Tracker", back_populates="scope_rules")  # noqa: F821

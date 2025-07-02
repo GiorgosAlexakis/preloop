@@ -3,6 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum as PydanticEnum
+from .tracker_scope_rule import TrackerScopeRule
 
 
 class TrackerTypeSchema(str, PydanticEnum):
@@ -21,13 +22,11 @@ class TrackerBase(BaseModel):
     is_deleted: bool = False
     is_owner_managed: bool = True
     connection_details: Optional[Dict[str, Any]] = None
-    included_project_identifiers: Optional[List[str]] = None
-    excluded_project_identifiers: Optional[List[str]] = None
-    include_future_projects: bool = True
     meta_data: Optional[Dict[str, Any]] = None
     subscribed_events: Optional[List[str]] = None
     jira_webhook_id: Optional[str] = None
     jira_webhook_secret: Optional[str] = None  # In Pydantic V2, consider SecretStr
+    scope_rules: Optional[List[TrackerScopeRule]] = Field(default_factory=list)
 
 
 class TrackerCreate(TrackerBase):
@@ -43,13 +42,11 @@ class TrackerUpdate(BaseModel):
     is_deleted: Optional[bool] = None
     is_owner_managed: Optional[bool] = None
     connection_details: Optional[Dict[str, Any]] = None
-    included_project_identifiers: Optional[List[str]] = None
-    excluded_project_identifiers: Optional[List[str]] = None
-    include_future_projects: Optional[bool] = None
     meta_data: Optional[Dict[str, Any]] = None
     subscribed_events: Optional[List[str]] = None
     jira_webhook_id: Optional[str] = None
     jira_webhook_secret: Optional[str] = None
+    scope_rules: Optional[List[TrackerScopeRule]] = Field(default_factory=list)
 
 
 class Tracker(TrackerBase):
