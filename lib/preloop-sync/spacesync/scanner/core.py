@@ -77,60 +77,49 @@ class TrackerClient:
 
         rules = db.query(TrackerScopeRule).filter(TrackerScopeRule.tracker_id == self.tracker.id).all()
 
-        if not rules:
-            # No rules, include everything
-            processed_projects = []
-            for proj_data in proj_data_list:
-                try:
-                    proj_create_data = self.client.transform_project(proj_data, organization.id)
-                    project_identifier = proj_create_data.get("identifier")
-                    if not project_identifier:
-                        continue
+        # 1. Separate rules into four sets for efficient lookup
+        org_inclusions = {r.identifier for r in rules if r.scope_type == "ORGANIZATION" and r.rule_type == "INCLUDE"}
+        project_inclusions = {r.identifier for r in rules if r.scope_type == "PROJECT" and r.rule_type == "INCLUDE"}
+        project_exclusions = {r.identifier for r in rules if r.scope_type == "PROJECT" and r.rule_type == "EXCLUDE"}
+        # 2. Check if the organization is explicitly included. This is a precondition for scanning any projects.
+        if organization.identifier not in org_inclusions:
+            logger.info(
+                f"Skipping organization {organization.name} ({organization.identifier}) because it is not in the "
+                f"explicit inclusion list for tracker {self.tracker.id}."
+            )
+            return []
 
-                    existing_project = crud_project.get_by_slug_or_identifier(
-                        db, slug_or_identifier=project_identifier, organization_id=organization.id
-                    )
-                    if existing_project:
-                        project = crud_project.update(db, db_obj=existing_project, obj_in=proj_create_data)
-                    else:
-                        project = crud_project.create(db, obj_in=proj_create_data)
-                    processed_projects.append(project)
-                except Exception as e:
-                    logger.error(f"Error processing project data {proj_data.get('name', 'N/A')}: {e}", exc_info=True)
-            return processed_projects
-
-        # Apply rules
-        included_projects = set()
-        excluded_projects = set()
-
-        # Get all project identifiers from the API response
-        all_project_identifiers = {p.get("id") for p in proj_data_list if p.get("id")}
-
-        for rule in rules:
-            if rule.scope_type == "ORGANIZATION":
-                if rule.rule_type == "INCLUDE":
-                    included_projects.update(all_project_identifiers)
-                elif rule.rule_type == "EXCLUDE":
-                    excluded_projects.update(all_project_identifiers)
-            elif rule.scope_type == "PROJECT":
-                if rule.rule_type == "INCLUDE":
-                    included_projects.add(rule.identifier)
-                elif rule.rule_type == "EXCLUDE":
-                    excluded_projects.add(rule.identifier)
-
-        final_project_ids = included_projects - excluded_projects
+        logger.info(f"Organization {organization.name} ({organization.identifier}) is included. Fetching and filtering projects.")
 
         processed_projects = []
         for proj_data in proj_data_list:
-            identifier = proj_data.get("id")
-            if identifier not in final_project_ids:
-                continue
             try:
                 proj_create_data = self.client.transform_project(proj_data, organization.id)
                 project_identifier = proj_create_data.get("identifier")
+                project_name = proj_create_data.get("name", "N/A")
+
                 if not project_identifier:
+                    logger.warning(f"Skipping project with missing identifier in org {organization.name}.")
                     continue
 
+                # Apply project-level filtering logic
+                # Condition 2: The project's identifier is not in project_exclusions.
+                if project_identifier in project_exclusions:
+                    logger.info(
+                        f"Skipping project {project_name} ({project_identifier}) because it is in the exclusion list."
+                    )
+                    continue
+
+                # Condition 3: Either there are no project_inclusions rules, OR the project's identifier is in project_inclusions.
+                if project_inclusions and project_identifier not in project_inclusions:
+                    logger.info(
+                        f"Skipping project {project_name} ({project_identifier}) because it is not in the "
+                        f"project inclusion list, and one is defined."
+                    )
+                    continue
+
+                # If all checks pass, the project is included.
+                logger.info(f"Project {project_name} ({project_identifier}) passed filters. Processing.")
                 existing_project = crud_project.get_by_slug_or_identifier(
                     db, slug_or_identifier=project_identifier, organization_id=organization.id
                 )
@@ -140,7 +129,8 @@ class TrackerClient:
                     project = crud_project.create(db, obj_in=proj_create_data)
                 processed_projects.append(project)
             except Exception as e:
-                logger.error(f"Error processing project data {proj_data.get('name', 'N/A')}: {e}", exc_info=True)
+                logger.error(f"Error processing project data for {proj_data.get('name', 'N/A')}: {e}", exc_info=True)
+
         return processed_projects
 
     def scan_issues(
@@ -306,13 +296,20 @@ def scan_all_accounts(db: Session, force_update: bool = False) -> Dict[str, Any]
     """Scan all active accounts and their trackers."""
     accounts = crud_account.get_multi(db, skip=0, limit=1000)
     logger.info(f"Found {len(accounts)} accounts to scan.")
-    overall_stats = {"accounts": 0, "trackers": 0, "organizations": 0, "projects": 0, "issues": 0, "embeddings_updated": 0, "errors": 0}
+    overall_stats = {"accounts_scanned": 0, "accounts_with_errors": 0, "total_trackers_scanned": 0, "total_trackers_with_errors": 0, "total_organizations": 0, "total_projects": 0, "total_issues": 0, "total_embeddings_updated": 0, "total_duration_seconds": 0.0}
     for account in accounts:
         if account.is_active:
-            overall_stats["accounts"] += 1
+            overall_stats["accounts_scanned"] += 1
             account_stats = scan_account(db, account.id, force_update)
-            for key in overall_stats:
-                overall_stats[key] += account_stats.get(key, 0)
+            if account_stats.get("errors", 0) > 0:
+                overall_stats["accounts_with_errors"] += 1
+            overall_stats["total_trackers_scanned"] += account_stats.get("trackers", 0)
+            overall_stats["total_organizations"] += account_stats.get("organizations", 0)
+            overall_stats["total_projects"] += account_stats.get("projects", 0)
+            overall_stats["total_issues"] += account_stats.get("issues", 0)
+            overall_stats["total_embeddings_updated"] += account_stats.get("embeddings_updated", 0)
+            # Note: duration is not summed up from individual accounts.
+            # This would require more complex logic to run scans in parallel and measure total time.
 
     logger.info(f"Finished scanning all accounts. Stats: {overall_stats}")
     return overall_stats

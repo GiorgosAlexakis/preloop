@@ -53,7 +53,7 @@ class TestScanCommands(unittest.TestCase):
             # Check that the core scan function was called correctly
             # Check that the core scan function was called correctly
             # The actual call uses the result of __next__ for the db session
-            mock_scan_all_accounts.assert_called_once_with(mock_db, False, False)
+            mock_scan_all_accounts.assert_called_once_with(db=mock_db, verbose=False, force_update=False)
 
             # Check that the database session context manager was used
             mock_get_db.assert_called_once()
@@ -89,7 +89,7 @@ class TestScanCommands(unittest.TestCase):
             result = self.runner.invoke(scan, ["all", "--verbose"])
 
             self.assertEqual(result.exit_code, 0, msg=f"Command failed: {result.output}")
-            mock_scan_all_accounts.assert_called_once_with(mock_db, True, False)
+            mock_scan_all_accounts.assert_called_once_with(db=mock_db, verbose=True, force_update=False)
             self.assertIn("=== Scan Complete ===", result.output) # Match actual output format
 
     @patch("spacesync.cli.scan_commands.scan_all_accounts")
@@ -111,7 +111,7 @@ class TestScanCommands(unittest.TestCase):
             result = self.runner.invoke(scan, ["all", "--force-update"])
 
             self.assertEqual(result.exit_code, 0, msg=f"Command failed: {result.output}")
-            mock_scan_all_accounts.assert_called_once_with(mock_db, False, True)
+            mock_scan_all_accounts.assert_called_once_with(db=mock_db, verbose=False, force_update=True)
             self.assertIn("=== Scan Complete ===", result.output) # Match actual output format
 
     @patch("spacesync.cli.scan_commands.scan_account")
@@ -153,7 +153,7 @@ class TestScanCommands(unittest.TestCase):
 
             # Verify our mock was called with the account ID
             # Assert call includes db, account_id, verbose=False, force_update=False
-            mock_scan_account.assert_called_once_with(mock_db, "test-account-id", False, False)
+            mock_scan_account.assert_called_once_with(db=mock_db, account_id="test-account-id", verbose=False, force_update=False)
 
     @patch("spacesync.cli.scan_commands.scan_tracker_func")
     @patch("spacesync.cli.scan_commands.crud_tracker")
@@ -198,4 +198,4 @@ class TestScanCommands(unittest.TestCase):
 
             # Verify our mock was called with the tracker
             # Assert call includes db, tracker object, verbose=False, force_update=False
-            mock_scan_tracker_func.assert_called_once_with(mock_db, mock_tracker, False, False)
+            mock_scan_tracker_func.assert_called_once_with(db=mock_db, tracker=mock_tracker, verbose=False, force_update=False)
