@@ -9,6 +9,7 @@ import logging
 
 # Import the configurable max length from the Issue model
 from spacemodels.models.issue import DESCRIPTION_MAX_LENGTH
+from spacemodels.models.project import Project
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,7 @@ class BaseTracker(ABC):
         }
 
     def transform_issue(
-        self, issue_data: Dict[str, Any], project: "Project"
+        self, issue_data: Dict[str, Any], project: Project
     ) -> Dict[str, Any]:
         """
         Transform issue data to a format that can be stored in the database.

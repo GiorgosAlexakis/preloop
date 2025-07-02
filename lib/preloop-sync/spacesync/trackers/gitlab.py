@@ -17,7 +17,7 @@ from ..exceptions import (
 )
 from ..utils import retry
 from .base import BaseTracker
-
+from spacemodels.models.project import Project
 
 class GitLabTracker(BaseTracker):
     """GitLab tracker implementation using python-gitlab."""
@@ -314,7 +314,7 @@ class GitLabTracker(BaseTracker):
         return issue_list_with_comments
 
     def transform_issue(
-        self, issue_data: Dict[str, Any], project: "Project"
+        self, issue_data: Dict[str, Any], project: Project
     ) -> Dict[str, Any]:
         """
         Transforms GitLab issue data into a standardized format.

@@ -22,8 +22,7 @@ from ..exceptions import (
 )
 from ..utils import retry
 from .base import BaseTracker
-
-
+from spacemodels.models.project import Project
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +234,67 @@ class JiraTracker(BaseTracker):
             )
         return processed_issues
 
-    def transform_issue(self, issue_data: Dict[str, Any], project: "Project") -> Dict[str, Any]:
+    def transform_issue(self, issue_data: Dict[str, Any], project: Project) -> Dict[str, Any]:
+        """Transforms Jira issue data into a standardized format."""
+        # Get issue status from data or default to "open"
+        status = issue_data.get('state','open')
+
+        # Map common status values to standardized ones
+        if status.lower() in ["closed", "done", "completed", "fixed"]:
+            status = "closed"
+        elif status.lower() in ["open", "new", "todo", "to do"]:
+            status = "open"
+
+
+
+        # Convert datetime objects to ISO format strings for JSON serialization
+        last_updated = issue_data.get("updated_at")
+        if isinstance(last_updated, datetime):
+            last_updated = last_updated.isoformat()
+
+        created_at = issue_data.get("created_at")
+        if isinstance(created_at, datetime):
+            created_at = created_at.isoformat()
+
+        # Get description and truncate if necessary to avoid DB errors
+        description = issue_data.get("description", "")
+        original_length = len(description) if description else 0
+
+        if description and len(description) > DESCRIPTION_MAX_LENGTH:
+            # Truncate to the max length, with an indicator
+            description = (
+                description[: DESCRIPTION_MAX_LENGTH - 25] + "... [content truncated]"
+            )
+            logger.info(
+                f"Truncated issue description from {original_length} to {len(description)} characters. "
+                f"Set ISSUE_DESCRIPTION_MAX_LENGTH env var to increase (current: {DESCRIPTION_MAX_LENGTH})"
+            )
+
+        transformed_data = {
+            "project_id": project.id,
+            "external_id": issue_data.get("id", issue_data.get("external_id")),
+            "key": issue_data.get("key"),
+            "title": issue_data.get("title"),
+            "description": description,
+            "status": status,
+            "priority": issue_data.get("priority", None),
+            "updated_at": last_updated,
+            "last_synced": datetime.now(),
+            "meta_data": {
+                "labels": issue_data.get("labels", []),
+                "assignees": issue_data.get("assignees", []),
+                "url": issue_data.get("url", ""),
+                "external_url": issue_data.get("url", ""),
+                "source": "spacesync",
+            },
+            "tracker_id": self.tracker_id,
+            "comments": issue_data.get("comments", []),
+        }
+
+        return transformed_data
+
+
+    def transform_issue_webhook(self, issue_data: Dict[str, Any], project: Project) -> Dict[str, Any]:
         """Transforms Jira issue data into a standardized format."""
         # Get issue status from data or default to "open"
         status = issue_data['fields'].get('status',{}).get('name')
