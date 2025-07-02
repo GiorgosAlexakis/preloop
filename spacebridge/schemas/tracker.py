@@ -93,7 +93,7 @@ class TrackerUpdate(BaseModel):
     """Model for updating an existing tracker."""
 
     name: Optional[str] = Field(None, description="New name for the tracker")
-    url: Optional[HttpUrl] = Field(None, description="New URL for the tracker instance")
+    url: Optional[str] = Field(None, description="New URL for the tracker instance")
     api_key: Optional[str] = Field(
         None, description="New API key or token for the tracker"
     )
@@ -140,8 +140,11 @@ class TrackerResponse(TrackerBase):
 class TrackerTestRequest(BaseModel):
     """Model for testing tracker connection and listing projects."""
 
+    tracker_id: Optional[str] = Field(
+        None, description="Tracker unique identifier (UUID)"
+    )
     tracker_type: TrackerType = Field(..., description="Type of the issue tracker")
-    url: Optional[HttpUrl] = Field(None, description="URL of the tracker instance")
+    url: Optional[str] = Field(None, description="URL of the tracker instance")
     api_key: str = Field(..., description="API key or token for the tracker")
     connection_details: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Tracker-specific connection details"

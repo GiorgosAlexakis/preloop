@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from pydantic import BaseModel, Field
 
+from spacebridge.schemas.tracker import OrganizationGroup, ProjectIdentifier
 from spacebridge.trackers.base import (
     Issue,
     IssueComment,
@@ -226,11 +227,48 @@ class GitLabClient(TrackerInterface):
 
     async def get_projects_for_group(self, group_path: str) -> List[Dict[str, Any]]:
         """Fetch projects for a specific group."""
-        return await self._request("GET", f"groups/{group_path}/projects")
+        return await self._request("GET", f"/groups/{group_path}/projects")
 
     async def get_groups(self) -> List[Dict[str, Any]]:
         """Fetch groups the user has access to."""
-        return await self._request("GET", "groups")
+        return await self._request("GET", "/groups")
+
+    async def get_organizations(self) -> List[OrganizationGroup]:
+        """
+        Get organizations (groups) from GitLab.
+
+        Returns:
+            List of organization data dictionaries.
+        """
+        # For GitLab, organizations are groups
+        groups = await self._request("GET", "/groups")
+
+        organizations = []
+        for group in groups:
+            organizations.append(
+                OrganizationGroup(
+                    id=str(group["id"]),
+                    name=group["name"],
+                    identifier=str(group["id"]),
+                    type="organization",
+                    children=[],
+                )
+            )
+
+        return organizations
+
+    async def list_projects(self, org_id: str = None) -> List[ProjectIdentifier]:
+        """List all accessible projects in a GitLab group."""
+        projects = await self._request("GET", f"/groups/{org_id}/projects")
+        return [
+            ProjectIdentifier(
+                id=str(project["id"]),
+                name=project["name"],
+                identifier=project["path_with_namespace"],
+                type="project",
+            )
+            for project in projects
+        ]
 
     async def get_groups_and_projects(self) -> List[Dict[str, Any]]:
         """Fetch groups and projects the user has access to, structured for UI."""

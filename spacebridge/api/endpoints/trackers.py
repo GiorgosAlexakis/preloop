@@ -3,7 +3,7 @@
 import logging
 from typing import Dict, List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import UUID4
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,12 +17,8 @@ from spacebridge.schemas.tracker import (
     TrackerTestRequest,
 )
 from spacebridge.schemas.tracker import (
-    OrganizationGroup,
     ProjectIdentifier,
 )  # Corrected import location
-from spacebridge.trackers.github.client import GitHubClient  # Added import
-from spacebridge.trackers.gitlab.client import GitLabClient
-from spacebridge.trackers.jira.client import JiraClient
 from spacebridge.trackers.factory import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
 from spacemodels.db.session import get_db_session
@@ -326,7 +322,6 @@ async def update_tracker(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tracker not found or access denied",
         )
-
     update_data = tracker_update.model_dump(exclude_unset=True)
 
     # Handle scope_rules separately
@@ -359,7 +354,8 @@ async def update_tracker(
         )
 
     try:
-        db.add(tracker)
+        logger.info(f"Updating tracker {tracker_id} with data: {update_data}")
+        db.merge(tracker)
         db.commit()
         db.refresh(tracker)
         return tracker
@@ -451,6 +447,7 @@ async def delete_tracker(
 async def test_connection_and_list_orgs(
     test_data: TrackerTestRequest,
     current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
 ) -> TrackerTestResponse:
     """
     Tests connection to a tracker and lists accessible organizations/groups.
@@ -459,7 +456,19 @@ async def test_connection_and_list_orgs(
     logger.info(
         f"User {current_user.username} testing tracker connection for type {test_data.tracker_type.value}"
     )
-
+    if test_data.tracker_id:
+        tracker = (
+            db.query(Tracker)
+            .filter(Tracker.account_id == current_user.id)
+            .filter(Tracker.id == test_data.tracker_id)
+            .first()
+        )
+        if not tracker:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tracker not found or access denied",
+            )
+        test_data.api_key = tracker.api_key
     try:
         client = await create_tracker_client(
             tracker_type=test_data.tracker_type.value,
@@ -483,54 +492,17 @@ async def test_connection_and_list_orgs(
 
         logger.info(f"Connection test successful for user {current_user.username}")
 
-        organizations: List[OrganizationGroup] = []
-
         orgs = await client.get_organizations()
         if len(orgs) == 1:
-            projects = await client.list_projects(orgs[0]["id"])
-            orgs[0]["projects"] = [ProjectIdentifier(id=p.id, name=p.name, identifier=p.id, type="project") for p in projects]
-        for org in orgs:
-            organizations.append(
-                OrganizationGroup(
-                    id=org["id"],
-                    name=org["name"],
-                    children=org["projects"],
-                )
-            )
+            projects = await client.list_projects(orgs[0].id)
+            orgs[0].children = [
+                ProjectIdentifier(id=p.id, name=p.name, identifier=p.id, type="project")
+                for p in projects
+            ]
         return TrackerTestResponse(
             success=True,
             message="Connection successful!",
-            orgs=organizations,
-        )
-
-        if isinstance(client, GitHubClient):
-            grouped_repos = await client.get_repositories_grouped_by_owner()
-            for owner_group_data in grouped_repos:
-                owner_login = owner_group_data["owner_login"]
-                organizations.append(
-                    OrganizationGroup(id=owner_login, name=owner_login, children=[])
-                )
-
-        elif isinstance(client, GitLabClient):
-            grouped_data = await client.get_groups_and_projects()
-            for group_data in grouped_data:
-                organizations.append(
-                    OrganizationGroup(
-                        id=group_data["group_path"],
-                        name=group_data["group_name"],
-                        projects=[],
-                    )
-                )
-
-        elif isinstance(client, JiraClient):
-            organizations.append(
-                OrganizationGroup(id="jira-projects", name="Jira Projects", projects=[])
-            )
-
-        return TrackerTestResponse(
-            success=True,
-            message="Connection successful!",
-            orgs=organizations,
+            orgs=orgs,
         )
 
     except Exception as e:
@@ -546,7 +518,7 @@ async def test_connection_and_list_orgs(
 async def list_projects_for_org(
     test_data: TrackerTestRequest,
     current_user: UserResponse = Depends(get_current_active_user),
-    org_id: str = Query(..., description="Organization ID"),
+    db: Session = Depends(get_db_session),
 ) -> List[ProjectIdentifier]:
     """
     Lists projects for a specific organization/group within a tracker.
@@ -555,7 +527,23 @@ async def list_projects_for_org(
         f"User {current_user.username} listing projects for org {test_data.organization_identifier} "
         f"in tracker type {test_data.tracker_type.value}"
     )
+    if test_data.tracker_id:
+        tracker = (
+            db.query(Tracker)
+            .filter(Tracker.account_id == current_user.id)
+            .filter(Tracker.id == test_data.tracker_id)
+            .first()
+        )
+        if not tracker:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tracker not found or access denied",
+            )
+        test_data.api_key = tracker.api_key
+
     try:
+        if test_data.url and not test_data.url.endswith("/"):
+            test_data.url = test_data.url + "/"
         client = await create_tracker_client(
             tracker_type=test_data.tracker_type.value,
             base_url=str(test_data.url) if test_data.url else None,
@@ -566,44 +554,7 @@ async def list_projects_for_org(
             raise HTTPException(
                 status_code=400, detail="Could not create tracker client"
             )
-
-        projects: List[ProjectIdentifier] = []
-        grouped_data = await client.get_groups()
-        if isinstance(client, GitLabClient):
-            # The 'get_groups_and_projects' method returns all groups and projects.
-            # We need to find the specific group and return its projects.
-            grouped_data = await client.get_groups_and_projects()
-            for group_data in grouped_data:
-                if group_data["group_path"] == test_data.organization_identifier:
-                    for proj in group_data["projects"]:
-                        projects.append(
-                            ProjectIdentifier(
-                                id=str(proj["id"]),
-                                name=proj["path_with_namespace"],
-                                identifier=str(proj["id"]),
-                            )
-                        )
-                    break  # Found the group, no need to continue
-
-        elif isinstance(client, GitHubClient):
-            pass
-        elif isinstance(client, JiraClient):
-            # The 'get_groups_and_projects' method returns all groups and projects.
-            # We need to find the specific group and return its projects.
-            grouped_data = await client.get_groups_and_projects()
-            for group_data in grouped_data:
-                if group_data["group_path"] == test_data.organization_identifier:
-                    for proj in group_data["projects"]:
-                        projects.append(
-                            ProjectIdentifier(
-                                id=str(proj["id"]),
-                                name=proj["path_with_namespace"],
-                                identifier=str(proj["id"]),
-                            )
-                        )
-                    break  # Found the group, no need to continue
-
-        return projects
+        return await client.list_projects(test_data.organization_identifier)
 
     except Exception as e:
         logger.exception(

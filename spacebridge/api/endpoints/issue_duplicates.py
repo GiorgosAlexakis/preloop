@@ -14,7 +14,12 @@ from spacebridge.schemas.issue import IssueResponse
 
 from fastapi import Query
 from SpaceModels.spacemodels.crud.issue_duplicate import crud_issue_duplicate
-from spacemodels.crud import crud_issue_embedding, crud_embedding_model, crud_issue, crud_llm_model
+from spacemodels.crud import (
+    crud_issue_embedding,
+    crud_embedding_model,
+    crud_issue,
+    crud_llm_model,
+)
 from spacemodels.db.session import get_db_session as get_db
 
 from spacebridge.schemas.duplicates import (
@@ -295,9 +300,7 @@ def find_issue_duplicates(
         )
     model = active_models[0]
 
-    issues_query = (
-        db.query(Issue).filter(Issue.project_id.in_(accessible_project_ids))
-    )
+    issues_query = db.query(Issue).filter(Issue.project_id.in_(accessible_project_ids))
 
     if status != "all":
         issues_query = issues_query.filter(Issue.status == status)

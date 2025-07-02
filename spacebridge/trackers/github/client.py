@@ -20,6 +20,7 @@ from spacebridge.trackers.base import (
     TrackerConnection,
     TrackerInterface,
 )
+from spacebridge.schemas.tracker import ProjectIdentifier, OrganizationGroup
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,52 @@ class GitHubClient(TrackerInterface):
                 connected=False,
                 message=f"Failed to connect to GitHub: {str(e)}",
             )
+
+    async def get_organizations(self) -> List[Dict[str, Any]]:
+        """Fetch organizations accessible by the authenticated user.
+
+        Returns:
+            List of dictionaries, each representing an organization.
+        """
+        try:
+            orgs_path = "/user/orgs"
+            orgs_data = await self._request("GET", orgs_path)
+            orgs = [
+                OrganizationGroup(
+                    id=str(org["id"]),
+                    name=org["login"],
+                    identifier=str(org["id"]),
+                    type="organization",
+                    children=[],
+                )
+                for org in orgs_data
+            ]
+            return orgs
+        except Exception as e:
+            logger.exception("Failed to fetch organizations from GitHub")
+            return []
+
+    async def list_projects(self, org_id: int) -> List[ProjectIdentifier]:
+        """Fetch projects accessible by the authenticated user.
+
+        Returns:
+            List of dictionaries, each representing a project."""
+        try:
+            projects_path = f"/orgs/{org_id}/repos"
+            projects_data = await self._request("GET", projects_path)
+            projects = [
+                ProjectIdentifier(
+                    id=str(p["id"]),
+                    name=p["name"],
+                    identifier=p["full_name"],
+                    type="project",
+                )
+                for p in projects_data
+            ]
+            return projects
+        except Exception as e:
+            logger.exception("Failed to fetch projects from GitHub")
+            return []
 
     async def get_repositories_grouped_by_owner(self) -> List[Dict[str, Any]]:
         """Fetch repositories accessible by the authenticated user, grouped by owner.

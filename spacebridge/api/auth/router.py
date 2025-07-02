@@ -455,7 +455,7 @@ async def refresh_token(request: RefreshRequest) -> Dict[str, str]:
         token_data = decode_token(request.refresh_token)
 
         # Check if it's a refresh token
-        if not token_data.get("refresh", False):
+        if not token_data.refresh:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token",
@@ -513,6 +513,7 @@ async def update_user_me(
     """Update own user."""
     user = crud_account.update(db, db_obj=current_user, obj_in=user_update)
     return user
+
 
 @router.put("/users/me/password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_current_user_password(

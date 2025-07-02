@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
-from spacebridge.schemas.tracker import ProjectIdentifier
+from spacebridge.schemas.tracker import ProjectIdentifier, OrganizationGroup
 from spacebridge.trackers.base import (
     TrackerInterface,
     TrackerConnection,
@@ -492,12 +492,18 @@ class JiraClient(TrackerInterface):
             priorities=priorities,
             url=f"{self.base_url}/projects/{project_key}",
         )
-    async def get_organizations(self) -> List[Dict[str, Any]]:
+
+    async def get_organizations(self) -> List[OrganizationGroup]:
         """Get organizations from Jira."""
         import re
+
         domain_match = re.search(r"https?://([^/]+)", self.base_url)
         org_name = domain_match.group(1) if domain_match else "Jira Instance"
-        return [{"id": org_name, "name": org_name, "url": self.base_url}]
+        return [
+            OrganizationGroup(
+                id=org_name, name=org_name, type="organization", children=[]
+            )
+        ]
 
     async def search_issues(
         self,
@@ -940,6 +946,7 @@ class JiraClient(TrackerInterface):
                 break
 
         mapped_projects: List[ProjectIdentifier] = []
+
         for proj_data in projects_data:
             project_id = str(proj_data.get("id"))
             project_key = proj_data.get("key")

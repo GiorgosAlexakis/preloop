@@ -83,6 +83,21 @@ async def receive_webhook(
     organization_context_for_timestamp: Optional[CRUDOrganization.model] = None
     default_event_list_for_type: List[str] = []
     event_type_header_key: Optional[str] = None
+
+    if tracker_type.lower() == "github":
+        default_event_list_for_type = DEFAULT_GITHUB_SUBSCRIBED_EVENTS
+        event_type_header_key = "X-GitHub-Event"
+    elif tracker_type.lower() == "gitlab":
+        default_event_list_for_type = DEFAULT_GITLAB_SUBSCRIBED_EVENTS
+        event_type_header_key = "X-Gitlab-Event"
+    elif tracker_type.lower() == "jira":
+        default_event_list_for_type = DEFAULT_JIRA_SUBSCRIBED_EVENTS
+    else:
+        logger.error(f"Unsupported tracker_type for webhook: {tracker_type}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported tracker_type: {tracker_type}",
+        )
     # Use the direct Organization model
     organization_data = (
         db.query(Organization)
@@ -119,21 +134,6 @@ async def receive_webhook(
     resolved_tracker = organization_data.tracker
     webhook_secret_to_use = organization_data.webhook_secret
     organization_context_for_timestamp = organization_data
-
-    if tracker_type.lower() == "github":
-        default_event_list_for_type = DEFAULT_GITHUB_SUBSCRIBED_EVENTS
-        event_type_header_key = "X-GitHub-Event"
-    elif tracker_type.lower() == "gitlab":
-        default_event_list_for_type = DEFAULT_GITLAB_SUBSCRIBED_EVENTS
-        event_type_header_key = "X-Gitlab-Event"
-    elif tracker_type.lower() == "jira":
-        default_event_list_for_type = DEFAULT_JIRA_SUBSCRIBED_EVENTS
-    else:
-        logger.error(f"Unsupported tracker_type for webhook: {tracker_type}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported tracker_type: {tracker_type}",
-        )
 
     if not resolved_tracker:
         logger.error(
@@ -436,7 +436,7 @@ async def receive_webhook(
                             detail="Missing data to construct GitHub issue key.",
                         )
 
-            transformed_issue = tracker_client.client.transform_issue(
+            transformed_issue = tracker_client.client.transform_issue_webhook(
                 issue_data, project
             )
 

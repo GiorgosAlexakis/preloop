@@ -229,6 +229,57 @@ paths:
                 $ref: '#/components/schemas/UserResponse'
       security:
       - OAuth2PasswordBearer: []
+    put:
+      tags:
+      - Auth
+      summary: Update User Me
+      description: Update own user.
+      operationId: update_user_me_api_v1_auth_users_me_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/auth/users/me/password:
+    put:
+      tags:
+      - Auth
+      summary: Change Current User Password
+      description: Change current user's password.
+      operationId: change_current_user_password_api_v1_auth_users_me_password_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
   /api/v1/auth/api-keys:
     get:
       tags:
@@ -2077,11 +2128,7 @@ paths:
       tags:
       - Issue Duplicates
       summary: Find Issue Duplicates
-      description: 'Finds potential duplicate issues using semantic similarity.
-
-        If project_ids is provided, the search is limited to those projects.
-
-        Otherwise, it searches across all projects accessible by the user.'
+      description: Finds potential duplicate issues within specified projects.
       operationId: find_issue_duplicates_api_v1_issue_duplicates_get
       security:
       - bearerAuth: []
@@ -2110,6 +2157,16 @@ paths:
           default: 5
           title: Limit
         description: Maximum number of duplicates to return.
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of duplicates to skip for pagination.
+          default: 0
+          title: Skip
+        description: Number of duplicates to skip for pagination.
       - name: similarity_threshold
         in: query
         required: false
@@ -2132,6 +2189,19 @@ paths:
           default: 5
           title: Limit Per Issue
         description: Maximum number of duplicates to find for each issue.
+      - name: status
+        in: query
+        required: false
+        schema:
+          enum:
+          - opened
+          - closed
+          - all
+          type: string
+          description: Filter issues by status.
+          default: opened
+          title: Status
+        description: Filter issues by status.
       responses:
         '200':
           description: Successful Response
@@ -3317,6 +3387,21 @@ components:
       type: object
       title: OrganizationUpdate
       description: Model for updating an organization.
+    PasswordChangeRequest:
+      properties:
+        current_password:
+          type: string
+          title: Current Password
+        new_password:
+          type: string
+          minLength: 8
+          title: New Password
+      type: object
+      required:
+      - current_password
+      - new_password
+      title: PasswordChangeRequest
+      description: Password change request schema.
     PasswordResetConfirmRequest:
       properties:
         token:
@@ -3792,15 +3877,18 @@ components:
       description: Schema for responding with tracker scope rule details.
     TrackerTestRequest:
       properties:
+        tracker_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tracker Id
+          description: Tracker unique identifier (UUID)
         tracker_type:
           $ref: '#/components/schemas/TrackerType'
           description: Type of the issue tracker
         url:
           anyOf:
           - type: string
-            maxLength: 2083
-            minLength: 1
-            format: uri
           - type: 'null'
           title: Url
           description: URL of the tracker instance
@@ -3870,9 +3958,6 @@ components:
         url:
           anyOf:
           - type: string
-            maxLength: 2083
-            minLength: 1
-            format: uri
           - type: 'null'
           title: Url
           description: New URL for the tracker instance
@@ -3984,6 +4069,16 @@ components:
       - email_verified
       title: UserResponse
       description: Response model for user data.
+    UserUpdate:
+      properties:
+        full_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Full Name
+      type: object
+      title: UserUpdate
+      description: User update model.
     ValidationError:
       properties:
         loc:

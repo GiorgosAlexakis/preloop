@@ -271,16 +271,19 @@ def create_app() -> FastAPI:
 
     # Mount general static files (CSS, JS for landing/auth pages)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-    app.mount(
-        "/assets",
-        StaticFiles(directory=str(base_dir / "SpaceLit" / "dist" / "assets")),
-        name="spacelit_assets",
-    )
-    app.mount(
-        "/images",
-        StaticFiles(directory=str(base_dir / "SpaceLit" / "public" / "images")),
-        name="spacelit_images",
-    )
+    try:
+        app.mount(
+            "/assets",
+            StaticFiles(directory=str(base_dir / "SpaceLit" / "dist" / "assets")),
+            name="spacelit_assets",
+        )
+        app.mount(
+            "/images",
+            StaticFiles(directory=str(base_dir / "SpaceLit" / "public" / "images")),
+            name="spacelit_images",
+        )
+    except Exception as e:
+        logger.error(f"Failed to mount SpaceLit static files: {e}")
 
     # --- Mount MkDocs Site ---
     # Check if the 'site' directory exists (created by 'mkdocs build')
@@ -550,11 +553,14 @@ def create_app() -> FastAPI:
     dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
     if not dev_mode:
         logger.info("DEV_MODE is false, serving SPA from 'SpaceLit/dist'")
-        app.mount(
-            "/",
-            StaticFiles(directory=str(base_dir / "SpaceLit" / "dist"), html=True),
-            name="spa",
-        )
+        try:
+            app.mount(
+                "/",
+                StaticFiles(directory=str(base_dir / "SpaceLit" / "dist"), html=True),
+                name="spa",
+            )
+        except Exception as e:
+            logger.error(f"Failed to mount SPA static files: {e}")
     else:
         logger.info("DEV_MODE is true, SPA is served by the frontend dev server.")
 
