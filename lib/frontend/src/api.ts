@@ -135,17 +135,17 @@ export async function validateTrackerToken(
 ) {
   console.log('Validating tracker token', type, token, url, username);
   const payload: {
+    tracker_id?: string;
     tracker_type: string;
     api_key: string;
     url?: string;
     connection_details?: { username?: string };
-    id?: string;
   } = {
     tracker_type: type,
     api_key: token,
   };
   if (id) {
-    payload.id = id;
+    payload.tracker_id = id;
   }
   if (url) {
     payload.url = url;
@@ -168,6 +168,7 @@ export async function validateTrackerToken(
 }
 
 export async function listProjectsForOrg(
+  trackerId: string,
   trackerType: string,
   token: string,
   orgId: string,
@@ -175,9 +176,10 @@ export async function listProjectsForOrg(
   username?: string
 ) {
   const payload: any = {
+    tracker_id: trackerId,
     tracker_type: trackerType,
     api_key: token,
-    organization_id: orgId,
+    organization_identifier: orgId,
   };
   if (url) {
     payload.url = url;

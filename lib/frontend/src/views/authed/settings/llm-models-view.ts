@@ -2,7 +2,13 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
-import { LlmModel, getLlmModels, updateLlmModel, createLlmModel, deleteLlmModel } from '../../../api';
+import {
+  LlmModel,
+  getLlmModels,
+  updateLlmModel,
+  createLlmModel,
+  deleteLlmModel,
+} from '../../../api';
 import type { SlSelect } from '@shoelace-style/shoelace/dist/components/select/select.js';
 import type { SlInput } from '@shoelace-style/shoelace/dist/components/input/input.js';
 
@@ -178,7 +184,8 @@ export class LlmModelsView extends LitElement {
     return html`
       <sl-alert class="info-header" variant="primary" open>
         <sl-icon slot="icon" name="info-circle"></sl-icon>
-        LLMs enable advanced AI features such as improved duplicate issue detection accuracy.
+        LLMs enable advanced AI features such as improved duplicate issue
+        detection accuracy.
       </sl-alert>
       <sl-card class="table-card">
         ${when(
@@ -295,8 +302,8 @@ export class LlmModelsView extends LitElement {
           >
             ${repeat(
               this.modelSuggestions,
-              s => s,
-              s => html`<sl-option value="${s}">${s}</sl-option>`
+              (s) => s,
+              (s) => html`<sl-option value="${s}">${s}</sl-option>`
             )}
             <sl-option value="other">Other...</sl-option>
           </sl-select>

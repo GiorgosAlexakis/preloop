@@ -57,10 +57,7 @@ export class LandingView extends LitElement {
                 Deploy AI with confidence.
               </p>
               <div class="hero-buttons">
-                <sl-button
-                  variant="primary"
-                  size="large"
-                  href="/register"
+                <sl-button variant="primary" size="large" href="/register"
                   >Get Started</sl-button
                 >
                 <sl-button
@@ -540,10 +537,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
           <div class="section-container">
             <h2>Your Foundation for Enterprise-Grade AI</h2>
             <div class="hero-buttons">
-              <sl-button
-                variant="primary"
-                size="large"
-                href="/register"
+              <sl-button variant="primary" size="large" href="/register"
                 >Get Started</sl-button
               >
               <sl-button

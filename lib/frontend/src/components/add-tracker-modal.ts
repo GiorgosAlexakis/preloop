@@ -78,7 +78,15 @@ export class AddTrackerModal extends LitElement {
       margin-bottom: 1rem;
     }
     .projects {
-      padding-left: 2rem;
+      padding-left: 4rem;
+    }
+    .select-all {
+      margin-bottom: 1rem;
+      margin-left: 0.5rem;
+    }
+    .include-future {
+      margin-left: 0.5rem;
+      margin-top: 1rem;
     }
   `;
 
@@ -90,8 +98,6 @@ export class AddTrackerModal extends LitElement {
       this.trackerUrl = this.tracker.url;
       this.trackerToken = 'unchanged';
       this.trackerUsername = this.tracker.connection_details?.username;
-      this.orgs = this.tracker.scope_rules.organizations;
-      this.projects = this.tracker.scope_rules.projects;
       this.selectedOrgs = this.tracker.scope_rules
         .filter(
           (x: any) => x.rule_type == 'INCLUDE' && x.scope_type == 'ORGANIZATION'
@@ -100,19 +106,23 @@ export class AddTrackerModal extends LitElement {
           acc[x.identifier] = true;
           return acc;
         }, {});
-      this.selectedProjects = this.tracker.scope_rules
-        .filter(
-          (x: any) => x.rule_type == 'EXCLUDE' && x.scope_type == 'PROJECT'
-        )
-        .reduce((acc: any, x: any) => {
-          acc[x.identifier] = false;
-          return acc;
-        }, {});
-      this.includeFutureProjects =
-        this.tracker.scope_rules.filter(
-          (x: any) => x.rule_type == 'INCLUDE' && x.scope_type == 'PROJECT'
-        ).length > 0;
+      this.selectedProjects = {};
+      // Object.keys(this.selectedOrgs).forEach((orgId: any) => {
+      //   this.selectedProjects[orgId] = {};
+      //   this.projects[orgId]?.forEach((project: any) => {
+      //     if (this.tracker.scope_rules.filter((x: any) => x.scope_type == 'PROJECT' && x.rule_type == 'INCLUDE' && x.identifier == project.id).length ||
+      //         !this.tracker.scope_rules.filter((x: any) => x.scope_type == 'PROJECT' && x.rule_type == 'EXCLUDE' && x.identifier == project.id).length) {
+      //       this.selectedProjects[orgId][project.id] = true;
+      //     }
+      //   });
+      // });
+      this.includeFutureProjects = !this.tracker.scope_rules.filter(
+        (x: any) => x.rule_type == 'INCLUDE' && x.scope_type == 'PROJECT'
+      ).length;
       // Token is not pre-filled for security reasons
+      if (this.tracker) {
+        this.trackerToken = 'unchanged';
+      }
     }
   }
   firstUpdated() {
@@ -218,6 +228,7 @@ export class AddTrackerModal extends LitElement {
         <sl-checkbox
           .checked=${this.areAllProjectsSelected}
           @sl-change=${this.toggleSelectAll}
+          class="select-all"
         >
           Select All
         </sl-checkbox>
@@ -230,6 +241,7 @@ export class AddTrackerModal extends LitElement {
           .checked=${this.includeFutureProjects}
           @sl-change=${(e: any) =>
             (this.includeFutureProjects = e.target.checked)}
+          class="include-future"
         >
           Include future projects
         </sl-checkbox>
@@ -263,20 +275,22 @@ export class AddTrackerModal extends LitElement {
         (org: any) => html`
           <div>
             <sl-icon-button
-              .name=${this.projects[org.id] ? 'chevron-down' : 'chevron-right'}
+              .name=${this.projects?.[org.id]
+                ? 'chevron-down'
+                : 'chevron-right'}
               @click=${() => this.loadProjects(org.id)}
             ></sl-icon-button>
             <sl-checkbox
               .checked=${this.selectedOrgs[org.id]}
-              @sl-change=${() => this.toggleOrg(org.id)}
+              @sl-change=${async () => await this.toggleOrg(org.id)}
             >
               ${org.name}
             </sl-checkbox>
 
-            ${this.projects[org.id]
+            ${this.projects?.[org.id]
               ? html`
                   <div class="projects">
-                    ${this.projects[org.id].map(
+                    ${this.projects?.[org.id].map(
                       (proj: any) => html`
                         <div>
                           <sl-checkbox
@@ -334,6 +348,7 @@ export class AddTrackerModal extends LitElement {
     this.isLoading = true;
     try {
       const projects = await listProjectsForOrg(
+        this.tracker?.id,
         this.trackerType,
         this.trackerToken,
         orgId,
@@ -341,6 +356,37 @@ export class AddTrackerModal extends LitElement {
         this.trackerUsername
       );
       this.projects = { ...this.projects, [orgId]: projects };
+      if (this.selectedOrgs[orgId]) {
+        if (!this.includeFutureProjects) {
+          this.selectedProjects[orgId] = projects.reduce(
+            (acc, proj) => {
+              acc[proj.id] =
+                this.tracker.scope_rules.filter(
+                  (x: any) =>
+                    x.rule_type == 'INCLUDE' &&
+                    x.scope_type == 'PROJECT' &&
+                    x.identifier == proj.id
+                ).length > 0;
+              return acc;
+            },
+            {} as Record<string, boolean>
+          );
+        } else {
+          this.selectedProjects[orgId] = projects.reduce(
+            (acc, proj) => {
+              acc[proj.id] =
+                this.tracker.scope_rules.filter(
+                  (x: any) =>
+                    x.rule_type == 'EXCLUDE' &&
+                    x.scope_type == 'PROJECT' &&
+                    x.identifier == proj.id
+                ).length == 0;
+              return acc;
+            },
+            {} as Record<string, boolean>
+          );
+        }
+      }
     } catch (error: any) {
       this.errorMessage = error.message;
     } finally {
@@ -348,14 +394,22 @@ export class AddTrackerModal extends LitElement {
     }
   }
 
-  toggleOrg(orgId: string) {
+  async toggleOrg(orgId: string) {
     const isSelected = !this.selectedOrgs[orgId];
     this.selectedOrgs = {
       ...this.selectedOrgs,
       [orgId]: isSelected,
     };
     if (isSelected && !this.projects[orgId]) {
-      this.loadProjects(orgId);
+      await this.loadProjects(orgId);
+    } else {
+      this.selectedProjects[orgId] = this.projects[orgId].reduce(
+        (acc, proj) => {
+          acc[proj.id] = isSelected;
+          return acc;
+        },
+        {} as Record<string, boolean>
+      );
     }
     // When an org is toggled, we might need to update the "Select All" status
     this.updateSelectAllState();
@@ -371,6 +425,10 @@ export class AddTrackerModal extends LitElement {
       ...this.selectedProjects,
       [orgId]: newOrgProjects,
     };
+
+    this.selectedOrgs[orgId] = !Object.values(newOrgProjects).every(
+      (x) => x != true
+    );
     this.updateSelectAllState();
   }
 
@@ -385,6 +443,7 @@ export class AddTrackerModal extends LitElement {
           newSelectedProjects[org.id][proj.id] = this.areAllProjectsSelected;
         }
       }
+      this.selectedOrgs[org.id] = this.areAllProjectsSelected;
     }
     this.selectedProjects = newSelectedProjects;
   }
@@ -412,7 +471,6 @@ export class AddTrackerModal extends LitElement {
     this.errorMessage = '';
 
     const scopeRules = [];
-    debugger;
     for (const org of this.orgs) {
       if (this.selectedOrgs[org.id]) {
         scopeRules.push({
@@ -420,25 +478,25 @@ export class AddTrackerModal extends LitElement {
           scope_type: 'ORGANIZATION',
           identifier: org.id,
         });
-      }
-      if (this.includeFutureProjects) {
-        for (const proj of this.selectedOrgs[org.id]?.children || []) {
-          if (!this.selectedProjects[org.id]?.[proj.id]) {
-            scopeRules.push({
-              rule_type: 'EXCLUDE',
-              scope_type: 'PROJECT',
-              identifier: proj.id,
-            });
+        if (this.includeFutureProjects) {
+          for (const proj of this.projects[org.id] || []) {
+            if (!this.selectedProjects[org.id]?.[proj.id]) {
+              scopeRules.push({
+                rule_type: 'EXCLUDE',
+                scope_type: 'PROJECT',
+                identifier: proj.id,
+              });
+            }
           }
-        }
-      } else {
-        for (const proj of this.selectedOrgs[org.id]?.children || []) {
-          if (this.selectedProjects[org.id]?.[proj.id]) {
-            scopeRules.push({
-              rule_type: 'INCLUDE',
-              scope_type: 'PROJECT',
-              identifier: proj.id,
-            });
+        } else {
+          for (const proj of this.projects[org.id] || []) {
+            if (this.selectedProjects[org.id]?.[proj.id]) {
+              scopeRules.push({
+                rule_type: 'INCLUDE',
+                scope_type: 'PROJECT',
+                identifier: proj.id,
+              });
+            }
           }
         }
       }
@@ -458,14 +516,24 @@ export class AddTrackerModal extends LitElement {
     try {
       if (this.tracker) {
         await updateTracker(this.tracker.id, trackerData);
+        this.dispatchEvent(
+          new CustomEvent('tracker-updated', {
+            detail: { tracker: trackerData },
+          })
+        );
       } else {
         await addTracker(trackerData);
+        this.dispatchEvent(
+          new CustomEvent('tracker-added', {
+            detail: { tracker: trackerData },
+          })
+        );
       }
-      this.closeModal(true);
     } catch (error: any) {
       this.errorMessage = error.message;
     } finally {
       this.isLoading = false;
+      this.closeModal(true);
     }
   }
 
@@ -479,5 +547,6 @@ export class AddTrackerModal extends LitElement {
       detail: { success },
     });
     this.dispatchEvent(event);
+    this.opened = false;
   }
 }

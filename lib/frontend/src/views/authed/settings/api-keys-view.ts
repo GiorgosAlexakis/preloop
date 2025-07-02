@@ -205,10 +205,7 @@ export class ApiKeysView extends LitElement {
         ${renderContent()}
       </div>
 
-      <sl-dialog
-        label="Create API Key"
-        .open=${this.isCreateModalOpen}
-      >
+      <sl-dialog label="Create API Key" .open=${this.isCreateModalOpen}>
         <sl-input
           autofocus
           style="margin-bottom: 1rem;"

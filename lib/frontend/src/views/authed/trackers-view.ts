@@ -34,11 +34,14 @@ export class TrackersView extends LitElement {
     }
   `;
 
-  private _toggleAddTrackerForm(success: boolean) {
-    this.isAddingTracker = !this.isAddingTracker;
-    if (this.isAddingTracker) {
-      this.editingTracker = null;
-    }
+  private _openAddTrackerForm() {
+    this.isAddingTracker = true;
+    this.editingTracker = null;
+  }
+
+  private _closeAddTrackerForm() {
+    this.isAddingTracker = false;
+    this.editingTracker = null;
   }
 
   private async _handleTrackerAdded() {
@@ -61,7 +64,7 @@ export class TrackersView extends LitElement {
       <div class="container">
         <div class="header">
           <h1 class="title">Trackers</h1>
-          <sl-button variant="primary" @click=${this._toggleAddTrackerForm}>
+          <sl-button variant="primary" @click=${this._openAddTrackerForm}>
             <sl-icon slot="prefix" name="plus-lg"></sl-icon>
             Add New Tracker
           </sl-button>
@@ -69,14 +72,14 @@ export class TrackersView extends LitElement {
         ${this.isAddingTracker
           ? html`<add-tracker-modal
               @tracker-added=${this._handleTrackerAdded}
-              @close-modal=${this._toggleAddTrackerForm}
+              @close-modal=${this._closeAddTrackerForm}
             ></add-tracker-modal>`
           : ''}
         ${this.editingTracker
           ? html`<add-tracker-modal
               .tracker=${this.editingTracker}
               @tracker-updated=${this._handleTrackerUpdated}
-              @close-modal=${this._toggleAddTrackerForm}
+              @close-modal=${this._closeAddTrackerForm}
             ></add-tracker-modal>`
           : ''}
         <tracker-list @tracker-edit=${this._handleTrackerEdit}></tracker-list>
