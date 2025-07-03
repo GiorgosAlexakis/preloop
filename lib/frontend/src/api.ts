@@ -390,3 +390,39 @@ export async function listOrganizations(): Promise<Organization[]> {
   const data: Paginated<Organization> = await response.json();
   return data.items;
 }
+
+// Add interfaces for the issue duplicates endpoint
+export interface Issue {
+  id: string;
+  key: string;
+  title: string;
+  description: string;
+  status: string;
+  url: string;
+  similarity?: number; // Optional, as it's added in some contexts
+}
+
+export interface DuplicatePair {
+  issue1: Issue;
+  issue2: Issue;
+  similarity: number;
+}
+
+export interface DuplicatesResponse {
+  duplicates: DuplicatePair[];
+}
+
+export async function listIssueDuplicates(options: { limit?: number; skip?: number; project_ids?: string[] } = {}): Promise<DuplicatesResponse> {
+  const params = new URLSearchParams();
+  if (options.limit) params.append('limit', options.limit.toString());
+  if (options.skip) params.append('skip', options.skip.toString());
+  if (options.project_ids) {
+    options.project_ids.forEach(id => params.append('project_ids', id));
+  }
+
+  const response = await fetchWithAuth(`/api/v1/issue-duplicates?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}

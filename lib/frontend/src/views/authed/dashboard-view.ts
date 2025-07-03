@@ -2,28 +2,12 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 import * as api from '../../api';
 import { AuthedElement } from '../../api';
-import {
-  Chart,
-  LineController,
-  LineElement,
-  PointElement,
-  LinearScale,
-  CategoryScale,
-  Tooltip,
-  Legend,
-} from 'chart.js';
-
-Chart.register(
-  LineController,
-  LineElement,
-  PointElement,
-  LinearScale,
-  CategoryScale,
-  Tooltip,
-  Legend
-);
+import '../../components/similar-issues-widget.ts';
 
 interface Tracker {
   id: string;
@@ -60,8 +44,6 @@ export class DashboardView extends AuthedElement {
   @state()
   private isLoading = true;
 
-  private chart?: Chart;
-
   async connectedCallback() {
     super.connectedCallback();
     this.fetchDashboardData();
@@ -88,75 +70,110 @@ export class DashboardView extends AuthedElement {
   }
 
   static styles = css`
-    .stats-grid {
+    .container {
+      padding: var(--sl-spacing-large);
+    }
+    h1 {
+      margin-bottom: var(--sl-spacing-large);
+    }
+    .overview-layout {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1rem;
+      grid-template-columns: 2fr 1fr;
+      gap: var(--sl-spacing-large);
+      align-items: start;
     }
-    sl-card {
-      text-align: center;
+    .main-column,
+    .side-column {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sl-spacing-large);
     }
-    .chart-container {
-      margin-top: 2rem;
+    .side-column {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sl-spacing-large);
+    }
+    .summary-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .summary-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--sl-spacing-small) 0;
+      border-bottom: 1px solid var(--sl-color-neutral-200);
+    }
+    .summary-item:last-child {
+      border-bottom: none;
+    }
+    .dor-item {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sl-spacing-x-small);
+    }
+    .dor-label {
+      display: flex;
+      justify-content: space-between;
+    }
+    .dor-suggestion-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .dor-suggestion-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--sl-spacing-x-small) 0;
+      border-bottom: 1px solid var(--sl-color-neutral-200);
+    }
+    .dor-suggestion-item:last-child {
+      border-bottom: none;
+    }
+    .dor-suggestion-item .issue-title {
+      font-size: var(--sl-font-size-small);
+    }
+    .dor-suggestion-item .fail-reason {
+      font-size: var(--sl-font-size-small);
+      color: var(--sl-color-danger-600);
+    }
+    .flows-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--sl-font-size-small);
+    }
+    .flows-table th,
+    .flows-table td {
+      padding: var(--sl-spacing-small);
+      text-align: left;
+      border-bottom: 1px solid var(--sl-color-neutral-200);
+      vertical-align: top;
+    }
+    .flows-table th {
+      font-weight: 600;
+    }
+    .flows-table .prompt-cell {
+      max-width: 350px;
+      white-space: normal;
+      word-break: break-word;
+    }
+    .flows-table .tools-cell sl-tag {
+      margin-right: var(--sl-spacing-2x-small);
+      margin-bottom: var(--sl-spacing-2x-small);
+    }
+    .flows-table .actions-cell {
+      display: flex;
+      gap: var(--sl-spacing-x-small);
+      white-space: nowrap;
+    }
+    @media (max-width: 992px) {
+      .overview-layout {
+        grid-template-columns: 1fr;
+      }
     }
   `;
-
-  updated(changedProperties: Map<string, any>) {
-    if (
-      changedProperties.has('apiUsageStats') &&
-      this.apiUsageStats.length > 0
-    ) {
-      this.renderChart();
-    }
-  }
-
-  renderChart() {
-    const canvas = this.renderRoot.querySelector(
-      '#apiUsageChart'
-    ) as HTMLCanvasElement;
-    if (!canvas) return;
-
-    const labels = this.apiUsageStats.map((stat) =>
-      new Date(stat.date).toLocaleDateString()
-    );
-    const data = {
-      labels: labels,
-      datasets: [
-        {
-          label: 'Total API Requests',
-          data: this.apiUsageStats.map((stat) => stat.total_requests),
-          borderColor: 'rgba(75, 192, 192, 1)',
-          tension: 0.1,
-        },
-      ],
-    };
-
-    if (this.chart) {
-      this.chart.destroy();
-    }
-
-    this.chart = new Chart(canvas, {
-      type: 'line',
-      data: data,
-      options: {
-        responsive: true,
-        plugins: {
-          legend: {
-            position: 'top',
-          },
-          tooltip: {
-            mode: 'index',
-            intersect: false,
-          },
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-          },
-        },
-      },
-    });
-  }
 
   render() {
     if (this.isLoading) {
@@ -169,22 +186,90 @@ export class DashboardView extends AuthedElement {
       (this.apiUsage?.issues_closed || 0);
 
     return html`
-      <div class="stats-grid">
-        <sl-card>
-          <h3>${this.trackers.length}</h3>
-          <p>Connected Trackers</p>
-        </sl-card>
-        <sl-card>
-          <h3>${this.apiUsage?.total_requests}</h3>
-          <p>Total API Requests</p>
-        </sl-card>
-        <sl-card>
-          <h3>${totalIssuesProcessed}</h3>
-          <p>Issues Processed</p>
-        </sl-card>
-      </div>
-      <div class="chart-container">
-        <canvas id="apiUsageChart"></canvas>
+      <div class="container">
+        <h1>Overview</h1>
+        <div class="overview-layout">
+          <div class="main-column">
+            <similar-issues-widget></similar-issues-widget>
+            <sl-card>
+              <div slot="header">Needs Attention: Definition of Ready</div>
+              <ul class="dor-suggestion-list">
+                <li class="dor-suggestion-item">
+                  <span class="issue-title"><strong>PROJ-123:</strong> Login button unresponsive</span>
+                  <span class="fail-reason">No priority or labels set</span>
+                </li>
+                <li class="dor-suggestion-item">
+                  <span class="issue-title"><strong>PROJ-125:</strong> User profile page crashes</span>
+                  <span class="fail-reason">Missing description</span>
+                </li>
+                <li class="dor-suggestion-item">
+                  <span class="issue-title"><strong>PROJ-128:</strong> API returns 500 error</span>
+                  <span class="fail-reason">No priority set</span>
+                </li>
+              </ul>
+            </sl-card>
+            <sl-card>
+              <div slot="header">Active Flows</div>
+              <table class="flows-table">
+                <thead>
+                  <tr>
+                    <th>Triggers</th>
+                    <th>Prompt</th>
+                    <th>Tools</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>New Issue Created</td>
+                    <td class="prompt-cell">
+                      Summarize the issue, check for duplicates, and if none are
+                      found, add the 'needs-triage' label.
+                    </td>
+                    <td class="tools-cell">
+                      <sl-tag size="small">spacebridge.search_issues</sl-tag>
+                      <sl-tag size="small">spacebridge.update_issue</sl-tag>
+                    </td>
+                    <td class="actions-cell">
+                      <sl-button size="small">Edit</sl-button>
+                      <sl-button size="small" variant="danger">Deactivate</sl-button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Comment added with "@release-bot"</td>
+                    <td class="prompt-cell">
+                      Generate a release note snippet based on the issue title and
+                      description.
+                    </td>
+                    <td class="tools-cell">
+                      <sl-tag size="small">spacebridge.get_issue</sl-tag>
+                    </td>
+                    <td class="actions-cell">
+                      <sl-button size="small">Edit</sl-button>
+                      <sl-button size="small" variant="danger">Deactivate</sl-button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </sl-card>
+            <!-- Future widgets can be added here -->
+          </div>
+          <div class="side-column">
+            <sl-card>
+              <div slot="header">Key Metrics</div>
+              <ul class="summary-list">
+                <li class="summary-item">
+                  <span>Connected Trackers</span>
+                  <strong>${this.trackers.length}</strong>
+                </li>
+                <li class="summary-item">
+                  <span>Total API Requests</span>
+                  <strong>${this.apiUsage?.total_requests || 0}</strong>
+                </li>
+              </ul>
+            </sl-card>
+          </div>
+        </div>
       </div>
     `;
   }

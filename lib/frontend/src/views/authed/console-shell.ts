@@ -123,11 +123,11 @@ export class ConsoleShell extends LitElement {
           <div class="logo">
             <img src="/static/images/logo_dark.png" alt="SpaceBridge MCP" />
           </div>
-          <sl-menu>
+          <sl-menu style="font-size: 16px;">
             <a href="/console">
               <sl-menu-item>
                 <sl-icon name="house" slot="prefix"></sl-icon>
-                Dashboard
+                Overview
               </sl-menu-item>
             </a>
             <a href="/console/trackers">
