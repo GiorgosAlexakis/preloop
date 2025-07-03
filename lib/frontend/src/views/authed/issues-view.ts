@@ -396,12 +396,18 @@ export class IssuesView extends LitElement {
     return html`
       <div class="container">
         <div class="header">
-          <h1>Issue Clusters</h1>
+          <h1>Similar Issues</h1>
           <sl-button @click=${this._openFilterModal}>
             <sl-icon slot="prefix" name="filter"></sl-icon>
             Filter
           </sl-button>
         </div>
+
+        <sl-alert variant="primary" open style="margin-bottom: var(--sl-spacing-large);">
+          <sl-icon slot="icon" name="info-circle"></sl-icon>
+          <strong>Find  similar issues and resolve duplicates</strong><br />
+          This view uses AI to identify similar and potential duplicate issues across your projects. Review each suggested pair, check the similarity score, and use the LLM review to resolve or dismiss the suggestion.
+        </sl-alert>
 
         ${this._renderActiveFilters()}
 
