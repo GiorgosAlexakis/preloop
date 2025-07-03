@@ -1,11 +1,14 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, state, property } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import '@shoelace-style/shoelace/dist/components/tag/tag.js';
+import '../../components/project-filter-modal.ts';
+import { listProjects, Project } from '../../api';
 
 // Define the structure of an issue and a duplicate pair based on the API response
 interface Issue {
@@ -61,6 +64,15 @@ export class IssuesView extends LitElement {
   @state()
   private _expandedRowKey: string | null = null;
 
+  @state()
+  private _isFilterModalOpen = false;
+
+  @state()
+  private _selectedProjectIds: string[] = [];
+
+  @state()
+  private _allProjects: Project[] = [];
+
   // WARNING: Do not hardcode tokens in production. This is for demonstration purposes only.
   // In a real application, the token should be retrieved from a secure storage like localStorage or a state management solution.
   private _apiToken = 'qybJSX1eCvHFTUvmcXpX3rmVX93uzXjAjDJbtqpz';
@@ -69,6 +81,12 @@ export class IssuesView extends LitElement {
     .container {
       max-width: var(--console-container-large-max-width);
       padding: var(--sl-spacing-x-large);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--sl-spacing-large);
     }
     sl-card::part(body) {
       padding: 0;
@@ -137,6 +155,11 @@ export class IssuesView extends LitElement {
       margin-bottom: var(--sl-spacing-small);
     }
 
+    .detail-issue-key {
+      color: var(--sl-color-neutral-600);
+      font-weight: normal;
+    }
+
     .issue-description {
       background-color: var(--sl-color-neutral-100);
       border: 1px solid var(--sl-color-neutral-200);
@@ -147,11 +170,43 @@ export class IssuesView extends LitElement {
       max-height: 200px;
       overflow-y: auto;
     }
+
+    .active-filters {
+      display: flex;
+      align-items: center;
+      gap: var(--sl-spacing-x-small);
+      padding: var(--sl-spacing-small) 0;
+      flex-wrap: wrap;
+    }
+
+    .active-filters span {
+      font-size: var(--sl-font-size-small);
+      color: var(--sl-color-neutral-600);
+      margin-right: var(--sl-spacing-x-small);
+    }
+
+    .card-actions {
+      display: flex;
+      gap: var(--sl-spacing-x-small);
+    }
   `;
 
   connectedCallback() {
     super.connectedCallback();
+    this.fetchInitialData();
+  }
+
+  async fetchInitialData() {
     this.fetchDuplicates();
+    this.fetchProjects();
+  }
+
+  async fetchProjects() {
+    try {
+      this._allProjects = await listProjects();
+    } catch (error) {
+      console.error('Failed to fetch project list:', error);
+    }
   }
 
   async fetchDuplicates() {
@@ -160,8 +215,20 @@ export class IssuesView extends LitElement {
     const skip = (this._currentPage - 1) * this._pageSize;
 
     try {
+      const params = new URLSearchParams({
+        limit: this._pageSize.toString(),
+        skip: skip.toString(),
+        similarity_threshold: '0.8',
+      });
+
+      this._selectedProjectIds.forEach(id => {
+        params.append('project_ids', id);
+      });
+
+      const url = `/api/v1/issue-duplicates?${params.toString()}`;
+
       const response = await fetch(
-        `http://127.0.0.1:8000/api/v1/issue-duplicates?limit=${this._pageSize}&skip=${skip}&similarity_threshold=0.8`,
+        url,
         {
           headers: {
             Authorization: `Bearer ${this._apiToken}`,
@@ -179,8 +246,7 @@ export class IssuesView extends LitElement {
       this._hasMorePages = data.duplicates.length === this._pageSize;
       this.fetchLlmVerdicts(); // Fetch verdicts after getting duplicates
     } catch (error) {
-      this._error =
-        error instanceof Error ? error.message : 'An unknown error occurred.';
+      this._error = error instanceof Error ? error.message : 'An unknown error occurred.';
       console.error('Failed to fetch duplicate issues:', error);
     } finally {
       this._loading = false;
@@ -199,7 +265,7 @@ export class IssuesView extends LitElement {
 
         try {
           const response = await fetch(
-            `http://127.0.0.1:8000/api/v1/issue-duplicates/check?issue1_id=${pair.issue1.id}&issue2_id=${pair.issue2.id}`,
+            `/api/v1/issue-duplicates/check?issue1_id=${pair.issue1.id}&issue2_id=${pair.issue2.id}`,
             {
               headers: {
                 Authorization: `Bearer ${this._apiToken}`,
@@ -221,10 +287,7 @@ export class IssuesView extends LitElement {
             },
           };
         } catch (error) {
-          console.error(
-            `Failed to fetch LLM verdict for pair ${pairKey}:`,
-            error
-          );
+          console.error(`Failed to fetch LLM verdict for pair ${pairKey}:`, error);
           this._llmVerdicts = {
             ...this._llmVerdicts,
             [pairKey]: { decision: 'undecided', reason: 'Failed to load' },
@@ -251,11 +314,11 @@ export class IssuesView extends LitElement {
         <td colspan="5">
           <div class="detail-view-card">
             <div class="detail-section">
-              <h3>${pair.issue1.key}: ${pair.issue1.title}</h3>
+              <h3><span class="detail-issue-key">${pair.issue1.key}</span><br />${pair.issue1.title}</h3>
               <p class="issue-description">${pair.issue1.description}</p>
             </div>
             <div class="detail-section">
-              <h3>${pair.issue2.key}: ${pair.issue2.title}</h3>
+              <h3><span class="detail-issue-key">${pair.issue2.key}</span><br />${pair.issue2.title}</h3>
               <p class="issue-description">${pair.issue2.description}</p>
             </div>
             ${verdict
@@ -279,12 +342,68 @@ export class IssuesView extends LitElement {
     `;
   }
 
+  private _openFilterModal() {
+    this._isFilterModalOpen = true;
+  }
+
+  private _closeFilterModal() {
+    this._isFilterModalOpen = false;
+  }
+
+  private _handleProjectsSelected(event: CustomEvent) {
+    this._selectedProjectIds = event.detail.projectIds;
+    this._isFilterModalOpen = false;
+    this.fetchDuplicates(); // Re-fetch data with the new filter
+  }
+
+  private _removeProjectFilter(projectIdToRemove: string) {
+    this._selectedProjectIds = this._selectedProjectIds.filter(id => id !== projectIdToRemove);
+    this.fetchDuplicates();
+  }
+
+  private _clearAllFilters() {
+    this._selectedProjectIds = [];
+    this.fetchDuplicates();
+  }
+
+  private _renderActiveFilters() {
+    if (this._selectedProjectIds.length === 0) {
+      return html``;
+    }
+
+    const selectedProjects = this._selectedProjectIds.map(id =>
+      this._allProjects.find(p => p.id.toString() === id)
+    ).filter(Boolean) as Project[];
+
+    return html`
+      <div class="active-filters">
+        <span>Filtered by:</span>
+        ${selectedProjects.map(project => html`
+          <sl-tag
+            size="medium"
+            removable
+            @sl-remove=${() => this._removeProjectFilter(project.id.toString())}
+          >
+            ${project.name}
+          </sl-tag>
+        `)}
+        <sl-button size="small" pill @click=${this._clearAllFilters}>Clear all</sl-button>
+      </div>
+    `;
+  }
+
   render() {
     return html`
       <div class="container">
-        <div class="page-header">
+        <div class="header">
           <h1>Issue Clusters</h1>
+          <sl-button @click=${this._openFilterModal}>
+            <sl-icon slot="prefix" name="filter"></sl-icon>
+            Filter
+          </sl-button>
         </div>
+
+        ${this._renderActiveFilters()}
 
         ${when(
           this._loading,
@@ -294,24 +413,26 @@ export class IssuesView extends LitElement {
           this._error,
           () => html`<div class="error">Error: ${this._error}</div>`
         )}
-        ${when(!this._loading && !this._error, () =>
-          this._duplicates.length > 0
-            ? html`
-                <sl-card class="table-card">
-                  <table class="styled-table">
-                    <thead>
-                      <tr>
-                        <th>Issue 1</th>
-                        <th>Issue 2</th>
-                        <th class="text-right">Similarity</th>
-                        <th class="text-right">LLM Review</th>
-                        <th class="text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${this._duplicates.map((pair) => {
-                        const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-                        const verdict = this._llmVerdicts[pairKey];
+        ${when(
+          !this._loading && !this._error,
+          () =>
+            this._duplicates.length > 0
+              ? html`
+                  <sl-card class="table-card">
+                    <table class="styled-table">
+                      <thead>
+                        <tr>
+                          <th>Issue 1</th>
+                          <th>Issue 2</th>
+                          <th class="text-right">Similarity</th>
+                          <th class="text-right">LLM Review</th>
+                          <th class="text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${this._duplicates.map((pair) => {
+                          const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+                          const verdict = this._llmVerdicts[pairKey];
 
                           return html`
                             <tr
@@ -345,7 +466,7 @@ export class IssuesView extends LitElement {
                                   : this.renderVerdict(pair)}
                               </td>
                               <td class="text-right">
-                                <div class="actions-container">
+                                <div class="card-actions">
                                   <sl-button
                                     size="small"
                                     variant=${verdict?.decision === 'rejected'
@@ -389,6 +510,12 @@ export class IssuesView extends LitElement {
                 `
         )}
       </div>
+      <project-filter-modal
+        .open=${this._isFilterModalOpen}
+        .initialSelectedProjectIds=${this._selectedProjectIds}
+        @projects-selected=${this._handleProjectsSelected}
+        @close-modal=${() => (this._isFilterModalOpen = false)}
+      ></project-filter-modal>
     `;
   }
 

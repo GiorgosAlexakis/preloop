@@ -87,6 +87,7 @@ export class AuthedElement extends LitElement {
     }
   }
 }
+
 export async function getApiUsageStats() {
   const response = await fetchWithAuth('/api/v1/auth/api-usage');
   if (!response.ok) {
@@ -114,6 +115,7 @@ export async function addTracker(trackerData: any) {
   }
   return response.json();
 }
+
 export async function updateTracker(trackerId: string, trackerData: any) {
   const response = await fetchWithAuth(`/api/v1/trackers/${trackerId}`, {
     method: 'PUT',
@@ -228,6 +230,7 @@ export async function post(url: string, body: any) {
   }
   return response.json();
 }
+
 // Account
 export async function getAccountDetails() {
   const response = await fetchWithAuth('/api/v1/auth/users/me');
@@ -350,4 +353,40 @@ export async function deleteLlmModel(modelId: string) {
   if (!response.ok) {
     throw new Error('Failed to delete LLM model');
   }
+}
+
+export interface Project {
+  id: number;
+  name: string;
+  identifier: string;
+  organization_id: number;
+}
+
+export interface Organization {
+  id: number;
+  name: string;
+}
+
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function listProjects(): Promise<Project[]> {
+  const response = await fetchWithAuth('/api/v1/projects');
+  if (!response.ok) {
+    throw new Error('Failed to fetch projects');
+  }
+  return response.json();
+}
+
+export async function listOrganizations(): Promise<Organization[]> {
+  const response = await fetchWithAuth('/api/v1/organizations');
+  if (!response.ok) {
+    throw new Error('Failed to fetch organizations');
+  }
+  const data: Paginated<Organization> = await response.json();
+  return data.items;
 }
