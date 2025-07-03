@@ -137,12 +137,17 @@ export class ConsoleShell extends LitElement {
               </sl-menu-item>
             </a>
 
-            <a href="/console/issues">
-              <sl-menu-item>
-                <sl-icon name="file-text" style="padding-right: 6px;"></sl-icon>
+            <sl-details>
+              <span slot="summary">
+                <sl-icon name="kanban" style="padding-right: 6px;"></sl-icon>
                 Issues
-              </sl-menu-item>
-            </a>
+              </span>
+              <sl-menu>
+                <a href="/console/issues">
+                  <sl-menu-item>Similar Issues</sl-menu-item>
+                </a>
+              </sl-menu>
+            </sl-details>
 
             <sl-details>
               <span slot="summary">
