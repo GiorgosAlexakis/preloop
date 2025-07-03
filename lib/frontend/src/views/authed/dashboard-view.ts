@@ -108,6 +108,13 @@ export class DashboardView extends AuthedElement {
     .summary-item:last-child {
       border-bottom: none;
     }
+    .summary-item a {
+      color: var(--sl-color-primary-600);
+      text-decoration: none;
+    }
+    .summary-item a:hover {
+      text-decoration: underline;
+    }
     .dor-item {
       display: flex;
       flex-direction: column;
@@ -259,11 +266,11 @@ export class DashboardView extends AuthedElement {
               <div slot="header">Key Metrics</div>
               <ul class="summary-list">
                 <li class="summary-item">
-                  <span>Connected Trackers</span>
+                  <a href="/console/trackers">Connected Trackers</a>
                   <strong>${this.trackers.length}</strong>
                 </li>
                 <li class="summary-item">
-                  <span>Total API Requests</span>
+                  <a href="/console/settings/api-keys">Total API Requests</a>
                   <strong>${this.apiUsage?.total_requests || 0}</strong>
                 </li>
               </ul>
