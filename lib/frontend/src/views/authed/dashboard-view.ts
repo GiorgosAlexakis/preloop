@@ -108,11 +108,11 @@ export class DashboardView extends AuthedElement {
     .summary-item:last-child {
       border-bottom: none;
     }
-    .summary-item a {
+    a {
       color: var(--sl-color-primary-600);
       text-decoration: none;
     }
-    .summary-item a:hover {
+    a:hover {
       text-decoration: underline;
     }
     .dor-item {

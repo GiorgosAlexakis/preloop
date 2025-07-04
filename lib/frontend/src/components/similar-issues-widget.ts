@@ -17,6 +17,13 @@ export class SimilarIssuesWidget extends LitElement {
     :host {
       display: flex; /* Use flexbox to control child layout */
     }
+    a {
+      color: var(--sl-color-primary-600);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
     sl-card {
       flex-grow: 1; /* Allow the card to grow and fill the available space */
     }
@@ -57,7 +64,7 @@ export class SimilarIssuesWidget extends LitElement {
   async fetchTopSuggestions() {
     this._loading = true;
     try {
-      const response = await listIssueDuplicates({ limit: 100 }); // Fetch a decent number to get a good sample
+      const response = await listIssueDuplicates({ limit: 101 }); // Fetch 101 to check for >100
       const allPairs = response.duplicates;
 
       allPairs.sort((a, b) => b.similarity - a.similarity);
@@ -84,7 +91,7 @@ export class SimilarIssuesWidget extends LitElement {
         ${when(this._error, () => html`<div>${this._error}</div>`)}
 
         ${when(!this._loading && !this._error, () => html`
-          <p>You have <strong>${this._totalSuggestions}</strong> unresolved suggestions. Here are the top 3:</p>
+          <p>You have <a href="/console/issues"><strong>${this._totalSuggestions > 100 ? '100+' : this._totalSuggestions}</strong> unresolved suggestions</a>. Here are the top 3:</p>
           <ul class="suggestion-list">
             ${this._topSuggestions.map(pair => html`
               <li class="suggestion-item">
