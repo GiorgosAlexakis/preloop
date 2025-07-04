@@ -271,6 +271,8 @@ class JiraTracker(BaseTracker):
                 f"Set ISSUE_DESCRIPTION_MAX_LENGTH env var to increase (current: {DESCRIPTION_MAX_LENGTH})"
             )
 
+        issue_url = issue_data.get("url", "")
+
         transformed_data = {
             "project_id": project.id,
             "external_id": issue_data.get("id", issue_data.get("external_id")),
@@ -279,13 +281,14 @@ class JiraTracker(BaseTracker):
             "description": description,
             "status": status,
             "priority": issue_data.get("priority", None),
+            "external_url": issue_url,
             "updated_at": last_updated,
             "last_synced": datetime.now(),
             "meta_data": {
                 "labels": issue_data.get("labels", []),
                 "assignees": issue_data.get("assignees", []),
-                "url": issue_data.get("url", ""),
-                "external_url": issue_data.get("url", ""),
+                "url": issue_url,
+                "external_url": issue_url,
                 "source": "spacesync",
             },
             "tracker_id": self.tracker_id,
@@ -336,6 +339,8 @@ class JiraTracker(BaseTracker):
                 f"Set ISSUE_DESCRIPTION_MAX_LENGTH env var to increase (current: {DESCRIPTION_MAX_LENGTH})"
             )
 
+        issue_url = issue_data.get("url", "")
+
         transformed_data = {
             "project_id": project.id,
             "external_id": issue_data.get("id", issue_data.get("external_id")),
@@ -351,8 +356,8 @@ class JiraTracker(BaseTracker):
             "meta_data": {
                 "labels": issue_data['fields'].get("labels", []),
                 "assignees": issue_data['fields'].get("assignee", {}).get("displayName", []),
-                "url": issue_data.get("url", ""),
-                "external_url": issue_data.get("url", ""),
+                "url": issue_url,
+                "external_url": issue_url,
                 "external_created_at": created_at,
                 "external_updated_at": last_updated,
                 "source": "spacesync",

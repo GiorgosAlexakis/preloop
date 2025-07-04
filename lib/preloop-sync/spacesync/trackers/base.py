@@ -193,6 +193,8 @@ class BaseTracker(ABC):
                 f"Set ISSUE_DESCRIPTION_MAX_LENGTH env var to increase (current: {DESCRIPTION_MAX_LENGTH})"
             )
 
+        issue_url = issue_data.get("url", "")
+
         transformed = {
             "project_id": project.id,
             "external_id": issue_data.get("id", issue_data.get("external_id")),
@@ -206,12 +208,13 @@ class BaseTracker(ABC):
             "last_updated_external": issue_data.get(
                 "updated_at"
             ),
+            "external_url": issue_url,
             "last_synced": datetime.now(),
             "meta_data": {
                 "labels": issue_data.get("labels", []),
                 "assignees": issue_data.get("assignees", []),
-                "url": issue_data.get("url", ""),
-                "external_url": issue_data.get("url", ""),
+                "url": issue_url,
+                "external_url": issue_url,
                 "external_created_at": created_at,
                 "external_updated_at": last_updated,
                 "source": "spacesync",
