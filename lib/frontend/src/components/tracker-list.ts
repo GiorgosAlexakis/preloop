@@ -68,6 +68,13 @@ export class TrackerList extends LitElement {
   }
 
   static styles = css`
+    .tracker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: var(--sl-spacing-large);
+      padding-top: var(--sl-spacing-medium);
+    }
+
     .loading-indicator {
       display: flex;
       justify-content: center;
@@ -91,7 +98,7 @@ export class TrackerList extends LitElement {
     }
 
     return html`
-      <div>
+      <div class="tracker-grid">
         ${repeat(
           this.trackers,
           (tracker) => tracker.id,
