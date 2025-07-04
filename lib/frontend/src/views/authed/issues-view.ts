@@ -12,12 +12,16 @@ import { listProjects, Project } from '../../api';
 
 // Define the structure of an issue and a duplicate pair based on the API response
 interface Issue {
+  project_id: string;
   id: string;
   title: string;
   description: string;
   key: string;
   status: string;
+  created_at: string;
+  updated_at: string;
   url: string;
+  meta_data?: { [key: string]: any };
 }
 
 interface DuplicatePair {
@@ -139,10 +143,7 @@ export class IssuesView extends LitElement {
     }
 
     .detail-view-card {
-      background-color: var(--sl-color-neutral-50);
-      border: 1px solid var(--sl-color-neutral-200);
       padding: var(--sl-spacing-large);
-      margin: var(--sl-spacing-x-small) 0;
     }
 
     .detail-grid {
@@ -188,6 +189,19 @@ export class IssuesView extends LitElement {
     .card-actions {
       display: flex;
       gap: var(--sl-spacing-x-small);
+    }
+
+    .issue-id-link {
+      color: var(--sl-color-primary-600);
+      text-decoration: none;
+    }
+
+    .issue-id-link:hover {
+      text-decoration: underline;
+    }
+
+    .issue-id {
+      font-weight: 400;
     }
   `;
 
@@ -406,7 +420,7 @@ export class IssuesView extends LitElement {
         <sl-alert variant="primary" open style="margin-bottom: var(--sl-spacing-large);">
           <sl-icon slot="icon" name="info-circle"></sl-icon>
           <strong>Find  similar issues and resolve duplicates</strong><br />
-          This view uses AI to identify similar and potential duplicate issues across your projects. Review each suggested pair, check the similarity score, and use the LLM review to resolve or dismiss the suggestion.
+          Identify similar and potential duplicate issues across your projects. Review each suggested pair, check the similarity score, and use the LLM review to resolve or dismiss the suggestion.
         </sl-alert>
 
         ${this._renderActiveFilters()}
@@ -448,19 +462,35 @@ export class IssuesView extends LitElement {
                               @click=${() => this._toggleRow(pairKey)}
                             >
                               <td>
-                                <div class="issue-key">${pair.issue1.key}</div>
+                                <a
+                                  href="${pair.issue1.meta_data?.url || pair.issue1.url}"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  class="issue-id-link"
+                                  @click=${(e: Event) => e.stopPropagation()}
+                                >
+                                  <strong class="issue-id">${pair.issue1.key}</strong>
+                                </a>
                                 <div class="issue-title">
                                   ${pair.issue1.title}
                                 </div>
                               </td>
                               <td>
-                                <div class="issue-key">${pair.issue2.key}</div>
+                                <a
+                                  href="${pair.issue2.meta_data?.url || pair.issue2.url}"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  class="issue-id-link"
+                                  @click=${(e: Event) => e.stopPropagation()}
+                                >
+                                  <strong class="issue-id">${pair.issue2.key}</strong>
+                                </a>
                                 <div class="issue-title">
                                   ${pair.issue2.title}
                                 </div>
                               </td>
                               <td class="text-right">
-                                ${(pair.similarity * 100).toFixed(2)}%
+                                ${(pair.similarity * 100).toFixed(0)}%
                               </td>
                               <td class="text-right" id="verdict-${pair.issue1.id}-${pair.issue2.id}">
                                 ${pair.similarity >= 0.999
