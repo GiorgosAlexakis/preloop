@@ -14,6 +14,11 @@ export default defineConfig({
   plugins: [
     cssInjectedByJsPlugin(),
   ],
+  resolve: {
+    alias: {
+      events: 'events',
+    },
+  },
   server: {
     hmr: {
       clientPort: 5173,

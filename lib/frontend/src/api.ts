@@ -382,6 +382,37 @@ export async function listProjects(): Promise<Project[]> {
   return response.json();
 }
 
+export interface IssueEmbedding {
+  issue_id: string;
+  project_id: string;
+  issue_key: string;
+  issue_title: string;
+  issue_created_at: string;
+  embedding: number[];
+}
+
+export async function getEmbeddingsForProjects(projectIds: string[]): Promise<{ data: IssueEmbedding[] } | null> {
+    const params = new URLSearchParams();
+    if (projectIds.length > 0) {
+        params.append('project_ids', projectIds.join(','));
+    }
+
+    const queryString = params.toString();
+    const url = queryString ? `/api/v1/embeddings?${queryString}` : '/api/v1/embeddings';
+
+    try {
+        const response = await fetchWithAuth(url);
+        if (!response.ok) {
+            console.error('Failed to fetch embeddings:', response.statusText);
+            throw new Error('Failed to fetch embeddings for projects');
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Error in getEmbeddingsForProjects:', error);
+        return null;
+    }
+}
+
 export async function listOrganizations(): Promise<Organization[]> {
   const response = await fetchWithAuth('/api/v1/organizations');
   if (!response.ok) {

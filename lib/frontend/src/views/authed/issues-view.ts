@@ -8,6 +8,7 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 import '../../components/project-filter-modal.ts';
+import '../../components/embedding-viewer.ts';
 import { listProjects, Project } from '../../api';
 
 // Define the structure of an issue and a duplicate pair based on the API response
@@ -203,6 +204,24 @@ export class IssuesView extends LitElement {
     .issue-id {
       font-weight: 400;
     }
+
+    .embedding-card {
+      width: 100%;
+      margin-bottom: var(--sl-spacing-large);
+    }
+    .embedding-card::part(body) {
+      padding: 0;
+      height: 160px;
+    }
+    .loading-overlay {
+          color: white;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          gap: var(--sl-spacing-medium);
+          z-index: 10000;
+      }
   `;
 
   connectedCallback() {
@@ -425,9 +444,20 @@ export class IssuesView extends LitElement {
 
         ${this._renderActiveFilters()}
 
+        ${(() => {
+          return html`
+            <sl-card class="embedding-card">
+              <embedding-viewer project-ids=${this._selectedProjectIds.join(',')}></embedding-viewer>
+            </sl-card>
+          `;
+        })()}
+
         ${when(
           this._loading,
-          () => html`<div class="loading">Loading issues...</div>`
+          () => html`<div class="loading-overlay">
+                    <sl-spinner></sl-spinner>
+                    <span>Loading issues...</span>
+                </div>`
         )}
         ${when(
           this._error,
