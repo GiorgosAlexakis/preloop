@@ -511,3 +511,21 @@ export async function getProjectDuplicateStats(
   }
   return response.json();
 }
+
+export async function executeResolution(
+  actionId: string,
+  issue1Id: string,
+  issue2Id: string
+): Promise<{ success: boolean }> {
+  console.log(
+    `Executing resolution '${actionId}' for issues ${issue1Id} and ${issue2Id}`
+  );
+
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 1500));
+
+  // In a real implementation, you would make a call to your backend here
+  // to perform the action (e.g., using a tool to update the issues).
+
+  return Promise.resolve({ success: true });
+}

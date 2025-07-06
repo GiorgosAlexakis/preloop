@@ -9,6 +9,7 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 import '../../components/project-filter-modal.ts';
 import '../../components/duplicate-stats-chart.ts';
+import '../../components/resolve-issue-modal.ts';
 import {
   listProjects,
   Project,
@@ -74,6 +75,12 @@ export class IssuesView extends LitElement {
 
   @state()
   private _isFilterModalOpen = false;
+
+  @state()
+  private _isResolveModalOpen = false;
+
+  @state()
+  private _selectedPair: DuplicatePair | null = null;
 
   @state()
   private _selectedProjectIds: string[] = [];
@@ -307,6 +314,23 @@ export class IssuesView extends LitElement {
     }
   }
 
+  private _openResolveModal(pair: DuplicatePair) {
+    this._selectedPair = pair;
+    this._isResolveModalOpen = true;
+  }
+
+  private _handleModalClose() {
+    this._isResolveModalOpen = false;
+    this._selectedPair = null;
+  }
+
+  private _handleResolved() {
+    this._isResolveModalOpen = false;
+    this._selectedPair = null;
+    // Refresh the data
+    this.fetchDuplicates();
+  }
+
   private _renderDetailView(
     pair: DuplicatePair,
     verdict: LlmVerdict | undefined
@@ -501,7 +525,7 @@ export class IssuesView extends LitElement {
                                 </div>
                               </td>
                               <td class="text-right">
-                                ${(pair.similarity * 100).toFixed(0)}%
+                                ${(pair.similarity * 100).toFixed(2)}%
                               </td>
                               <td class="text-right" id="verdict-${pair.issue1.id}-${pair.issue2.id}">
                                 ${pair.similarity >= 0.999
@@ -512,17 +536,8 @@ export class IssuesView extends LitElement {
                                     >`
                                   : renderVerdict(verdict)}
                               </td>
-                              <td class="text-right">
-                                <div class="card-actions">
-                                  <sl-button
-                                    size="small"
-                                    variant=${verdict?.decision === 'rejected'
-                                      ? 'default'
-                                      : 'primary'}
-                                    >Resolve...</sl-button
-                                  >
-                                  <sl-button size="small">Dismiss</sl-button>
-                                </div>
+                              <td style="text-align: right;">
+                                <sl-button size="small" variant="primary" @click=${(e: Event) => { e.stopPropagation(); this._openResolveModal(pair); }}>Resolve</sl-button>
                               </td>
                             </tr>
                             ${this._expandedRowKey === pairKey
@@ -563,6 +578,12 @@ export class IssuesView extends LitElement {
         @projects-selected=${this._handleProjectsSelected}
         @close-modal=${() => (this._isFilterModalOpen = false)}
       ></project-filter-modal>
+      <resolve-issue-modal
+        .open=${this._isResolveModalOpen}
+        .duplicatePair=${this._selectedPair}
+        @closed=${this._handleModalClose}
+        @resolved=${this._handleResolved}
+      ></resolve-issue-modal>
     `;
   }
 
