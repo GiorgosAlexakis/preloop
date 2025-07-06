@@ -1,6 +1,11 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Chart, registerables } from 'chart.js';
+import {
+  getProjectDuplicateStats,
+  ProjectStats,
+  DuplicateStatsResponse,
+} from '../api';
 
 Chart.register(...registerables);
 
@@ -21,6 +26,8 @@ export class DuplicateStatsChart extends LitElement {
 
   @property({ type: Boolean, reflect: true, attribute: 'no-padding' })
   noPadding = false;
+
+  @property({ type: Boolean }) interactive = false;
 
   @state()
   private _loading = false;
@@ -72,24 +79,7 @@ export class DuplicateStatsChart extends LitElement {
     this._statsData = null; // Clear previous stats
 
     try {
-      const params = new URLSearchParams();
-      this.projectIds.forEach(id => params.append('project_ids', id));
-      const url = `/api/v1/project-duplicate-stats?${params.toString()}`;
-
-      // TODO: Replace with proper token management
-      const response = await fetch(url, {
-        headers: {
-          Authorization: 'Bearer qybJSX1eCvHFTUvmcXpX3rmVX93uzXjAjDJbtqpz',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: DuplicateStatsResponse = await response.json();
-      console.log('Received duplicate stats data from API:', JSON.stringify(data, null, 2));
-
+      const data = await getProjectDuplicateStats(this.projectIds);
       // Guard against a missing projects property to prevent crashes
       if (data && data.projects) {
         this._statsData = data.projects;
@@ -97,7 +87,8 @@ export class DuplicateStatsChart extends LitElement {
         this._statsData = {}; // Set empty stats to trigger render
       }
     } catch (error) {
-      this._error = error instanceof Error ? error.message : 'An unknown error occurred.';
+      this._error =
+        error instanceof Error ? error.message : 'An unknown error occurred.';
       console.error('Failed to fetch duplicate stats:', error);
     } finally {
       this._loading = false;
@@ -163,6 +154,29 @@ export class DuplicateStatsChart extends LitElement {
         interaction: {
           mode: 'index',
           intersect: false,
+        },
+        onClick: (event, elements) => {
+          if (!this.interactive || elements.length === 0) {
+            return;
+          }
+          const element = elements[0];
+          const index = element.index;
+          const clickedStat = sortedStats[index];
+          if (clickedStat) {
+            this.dispatchEvent(
+              new CustomEvent('project-selected', {
+                detail: { projectId: clickedStat.project_id },
+                bubbles: true,
+                composed: true,
+              })
+            );
+          }
+        },
+        onHover: (event, chartElement) => {
+          const target = event.native?.target as HTMLCanvasElement;
+          if (target) {
+            target.style.cursor = this.interactive && chartElement[0] ? 'pointer' : 'default';
+          }
         },
         responsive: true,
         maintainAspectRatio: false,

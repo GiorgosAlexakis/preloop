@@ -487,3 +487,27 @@ export async function checkLlmVerdict(issue1_id: string, issue2_id: string) {
   }
   return response.json();
 }
+
+export interface ProjectStats {
+  project_id: string;
+  project_name: string;
+  total: number;
+  duplicates: number;
+}
+
+export interface DuplicateStatsResponse {
+  projects: { [key: string]: ProjectStats };
+}
+
+export async function getProjectDuplicateStats(
+  projectIds: string[]
+): Promise<DuplicateStatsResponse> {
+  const params = new URLSearchParams();
+  projectIds.forEach(id => params.append('project_ids', id));
+  const url = `/api/v1/project-duplicate-stats?${params.toString()}`;
+  const response = await fetchWithAuth(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch project duplicate stats');
+  }
+  return response.json();
+}

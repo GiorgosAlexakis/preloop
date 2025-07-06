@@ -17,6 +17,7 @@ import {
   DuplicatePair,
   DuplicatesResponse,
 } from '../../api';
+import { LlmVerdict, renderVerdict } from '../../utils/verdict';
 
 // Define the structure of an issue and a duplicate pair based on the API response
 interface Issue {
@@ -43,11 +44,6 @@ interface DuplicatesResponse {
   model_id_used: string;
   threshold_used: number;
   duplicates: DuplicatePair[];
-}
-
-interface LlmVerdict {
-  decision: 'confirmed' | 'rejected' | 'undecided' | 'checking';
-  reason?: string;
 }
 
 @customElement('issues-view')
@@ -333,7 +329,7 @@ export class IssuesView extends LitElement {
                     <h3>LLM Review</h3>
                     <p>
                       <strong>Status:</strong>
-                      ${this.renderVerdict(pair)}
+                      ${renderVerdict(verdict)}
                     </p>
                     <p>
                       <strong>Reasoning:</strong>
@@ -370,6 +366,14 @@ export class IssuesView extends LitElement {
   private _clearAllFilters() {
     this._selectedProjectIds = [];
     this.fetchDuplicates();
+  }
+
+  private _handleProjectSelectedFromChart(event: CustomEvent) {
+    const { projectId } = event.detail;
+    if (projectId && !this._selectedProjectIds.includes(projectId)) {
+      this._selectedProjectIds = [...this._selectedProjectIds, projectId];
+      this.fetchDuplicates();
+    }
   }
 
   private _renderActiveFilters() {
@@ -420,7 +424,11 @@ export class IssuesView extends LitElement {
         ${(() => {
           return html`
             <sl-card class="embedding-card">
-              <duplicate-stats-chart .projectIds=${this._selectedProjectIds}></duplicate-stats-chart>
+              <duplicate-stats-chart
+                .projectIds=${this._selectedProjectIds}
+                .interactive=${true}
+                @project-selected=${this._handleProjectSelectedFromChart}
+              ></duplicate-stats-chart>
             </sl-card>
           `;
         })()}
@@ -502,7 +510,7 @@ export class IssuesView extends LitElement {
                                       style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
                                       >Identical</sl-badge
                                     >`
-                                  : this.renderVerdict(pair)}
+                                  : renderVerdict(verdict)}
                               </td>
                               <td class="text-right">
                                 <div class="card-actions">
@@ -568,29 +576,6 @@ export class IssuesView extends LitElement {
   private _nextPage() {
     this._currentPage++;
     this.fetchDuplicates();
-  }
-
-  renderVerdict(pair: DuplicatePair) {
-    const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-    const verdict = this._llmVerdicts[pairKey];
-
-    if (verdict) {
-      if (verdict.decision === 'confirmed') {
-        return html`<sl-badge
-          variant="warning"
-          style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-600);"
-          >Confirmed</sl-badge
-        >`;
-      } else if (verdict.decision === 'rejected') {
-        return html`<sl-badge
-          variant="success"
-          style="--sl-color-success-text: var(--sl-color-cyan-50); --sl-color-success-600: var(--sl-color-cyan-600);"
-          >Rejected</sl-badge
-        >`;
-      }
-    }
-
-    return html`<span>Checking...</span>`;
   }
 }
 
