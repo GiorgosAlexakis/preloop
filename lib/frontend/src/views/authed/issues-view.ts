@@ -8,7 +8,7 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 import '../../components/project-filter-modal.ts';
-import '../../components/embedding-viewer.ts';
+import '../../components/duplicate-stats-chart.ts';
 import { listProjects, Project } from '../../api';
 
 // Define the structure of an issue and a duplicate pair based on the API response
@@ -447,7 +447,7 @@ export class IssuesView extends LitElement {
         ${(() => {
           return html`
             <sl-card class="embedding-card">
-              <embedding-viewer project-ids=${this._selectedProjectIds.join(',')}></embedding-viewer>
+              <duplicate-stats-chart .projectIds=${this._selectedProjectIds}></duplicate-stats-chart>
             </sl-card>
           `;
         })()}
