@@ -7,6 +7,8 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
+import '@shoelace-style/shoelace/dist/components/button-group/button-group.js';
+import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '../../components/project-filter-modal.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/resolve-issue-modal.ts';
@@ -15,6 +17,7 @@ import {
   Project,
   listIssueDuplicates,
   checkLlmVerdict,
+  dismissDuplicatePair,
   DuplicatePair,
   DuplicatesResponse,
 } from '../../api';
@@ -138,6 +141,9 @@ export class IssuesView extends LitElement {
 
     .actions-container {
       display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: var(--sl-spacing-x-small);
     }
 
     .clickable-row {
@@ -317,6 +323,24 @@ export class IssuesView extends LitElement {
   private _openResolveModal(pair: DuplicatePair) {
     this._selectedPair = pair;
     this._isResolveModalOpen = true;
+  }
+
+  private async _handleDismiss(pair: DuplicatePair) {
+    // Optimistically remove the pair from the list for a responsive UI
+    const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+    const originalDuplicates = [...this._duplicates];
+    this._duplicates = this._duplicates.filter(
+      p => `${p.issue1.id}-${p.issue2.id}` !== pairKey
+    );
+
+    try {
+      await dismissDuplicatePair(pair.issue1.id, pair.issue2.id);
+    } catch (error) {
+      console.error('Failed to dismiss pair:', error);
+      // If the API call fails, revert the UI change
+      this._duplicates = originalDuplicates;
+      // Optionally, show an error toast to the user here
+    }
   }
 
   private _handleModalClose() {
@@ -536,8 +560,11 @@ export class IssuesView extends LitElement {
                                     >`
                                   : renderVerdict(verdict)}
                               </td>
-                              <td style="text-align: right;">
-                                <sl-button size="small" variant="primary" @click=${(e: Event) => { e.stopPropagation(); this._openResolveModal(pair); }}>Resolve</sl-button>
+                              <td>
+                                <div class="actions-container">
+                                  <sl-button size="small" variant="primary" @click=${(e: Event) => { e.stopPropagation(); this._openResolveModal(pair); }}>Resolve</sl-button>
+                                  <sl-icon-button name="x-circle" label="Dismiss" @click=${(e: Event) => { e.stopPropagation(); this._handleDismiss(pair); }}></sl-icon-button>
+                                </div>
                               </td>
                             </tr>
                             ${this._expandedRowKey === pairKey

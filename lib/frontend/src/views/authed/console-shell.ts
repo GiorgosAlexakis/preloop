@@ -121,7 +121,7 @@ export class ConsoleShell extends LitElement {
       <div class="console-container">
         <div class="sidebar">
           <div class="logo">
-            <img src="/static/images/logo_dark.png" alt="SpaceBridge MCP" />
+            <img src="/static/images/logo_dark.png" alt="SpaceBridge.io" />
           </div>
           <sl-menu style="font-size: 16px;">
             <a href="/console">

@@ -529,3 +529,18 @@ export async function executeResolution(
 
   return Promise.resolve({ success: true });
 }
+
+export async function dismissDuplicatePair(
+  issue1Id: string,
+  issue2Id: string
+): Promise<{ success: boolean }> {
+  console.log(`Dismissing duplicate pair: ${issue1Id} and ${issue2Id}`);
+
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  // In a real implementation, you would make a call to your backend here
+  // to record the dismissal.
+
+  return Promise.resolve({ success: true });
+}
