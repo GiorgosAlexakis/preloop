@@ -98,11 +98,11 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         db: Session,
         *,
         embedding_model_id: Optional[str] = None,
-        project_id: Optional[str] = None,
-        project_name: Optional[str] = None,
+        project_ids: Optional[List[str]] = None,
+        project_names: Optional[List[str]] = None,
         tracker_id: Optional[str] = None,
-        organization_id: Optional[str] = None,
-        organization_name: Optional[str] = None,
+        organization_ids: Optional[List[str]] = None,
+        organization_names: Optional[List[str]] = None,
         account_id: Optional[str] = None,
         skip: int = 0,
         limit: int = 1000,  # Default to a higher limit for raw data
@@ -115,7 +115,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             IssueEmbedding.issue_id,
             IssueEmbedding.embedding,
             Issue.title,
-            # Issue.labels,
+            Issue.project_id,
             Issue.issue_type,
             Issue.last_updated_external,
         ).join(Issue, IssueEmbedding.issue_id == Issue.id)
@@ -125,27 +125,29 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 IssueEmbedding.embedding_model_id == embedding_model_id
             )
 
-        if project_id:
-            query = query.filter(Issue.project_id == project_id)
+        if project_ids:
+            query = query.filter(Issue.project_id.in_(project_ids))
 
-        if project_name:
+        if project_names:
+            lowercase_project_names = [name.lower() for name in project_names]
             query = query.join(Project, Issue.project_id == Project.id).filter(
-                func.lower(Project.name) == func.lower(project_name)
+                func.lower(Project.name).in_(lowercase_project_names)
             )
 
         if tracker_id:
             query = query.filter(Issue.tracker_id == tracker_id)
 
-        if organization_id:
+        if organization_ids:
             # Join with Project table to filter by organization_id
             query = query.join(Project, Issue.project_id == Project.id)
-            query = query.filter(Project.organization_id == organization_id)
+            query = query.filter(Project.organization_id.in_(organization_ids))
 
-        if organization_name:
+        if organization_names:
+            lowercase_org_names = [name.lower() for name in organization_names]
             query = (
                 query.join(Project, Issue.project_id == Project.id)
                 .join(Organization, Project.organization_id == Organization.id)
-                .filter(func.lower(Organization.name) == func.lower(organization_name))
+                .filter(func.lower(Organization.name).in_(lowercase_org_names))
             )
 
         if account_id:

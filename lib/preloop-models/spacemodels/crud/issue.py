@@ -3,6 +3,7 @@
 from datetime import datetime, timezone  # Import timezone
 from typing import Dict, List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..models.issue import Issue
@@ -103,6 +104,30 @@ class CRUDIssue(CRUDBase[Issue]):
             query = query.filter(Issue.issue_type == issue_type)
 
         return query.order_by(Issue.created_at.desc()).offset(skip).limit(limit).all()
+
+    def get_issue_counts_per_project(
+        self, db: Session, *, project_ids: Optional[List[str]] = None
+    ) -> Dict[str, Dict[str, int]]:
+        """
+        Get the number of issues for each project.
+
+        Args:
+            db: The database session.
+            project_ids: An optional list of project IDs to filter by. If None,
+                         counts issues for all projects.
+
+        Returns:
+            A dictionary mapping project_id to the number of issues.
+        """
+        query = db.query(Issue.project_id, func.count(Issue.id))
+
+        if project_ids is not None:
+            if not project_ids:
+                return {}
+            query = query.filter(Issue.project_id.in_(project_ids))
+
+        result = query.group_by(Issue.project_id).all()
+        return {project_id: {"total": count} for project_id, count in result}
 
     def get_for_tracker(
         self, db: Session, *, tracker_id: str, skip: int = 0, limit: int = 100
