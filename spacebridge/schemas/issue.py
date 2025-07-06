@@ -102,6 +102,7 @@ class IssueResponse(IssueBase):
     key: str = Field(..., description="Human-readable issue key (e.g., PROJ-123)")
     organization: str = Field(..., description="Organization name")
     project: str = Field(..., description="Project name")
+    project_id: str = Field(..., description="Project ID")
     url: str = Field(..., description="URL to the issue in the original tracker")
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")

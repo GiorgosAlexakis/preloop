@@ -1,69 +1,70 @@
-from typing import Optional
-
+from typing import Optional, List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from spacemodels.db.session import get_db_session as get_db
-from spacebridge.schemas.embedding import (
-    EmbeddingRawDataItem,
-    EmbeddingRawResponse,
-)
 from spacemodels.crud.embedding import CRUDIssueEmbedding
-from spacebridge.api.auth import get_current_active_user
+from spacebridge.schemas.embedding import EmbeddingRawResponse, EmbeddingRawDataItem
 from spacemodels.models.account import Account
+
+from spacebridge.api.auth import get_current_active_user
+
 
 router = APIRouter()
 
 
 @router.get(
-    "/projects/{project_name}/embeddings",
+    "/embeddings",
     response_model=EmbeddingRawResponse,
-    summary="Get all issue embeddings for a project",
-    tags=["projects", "embeddings"],
+    summary="Get all issue embeddings",
+    tags=["embeddings"],
 )
 def get_raw_embeddings(
-    project_name: str,
-    embedding_model_id: Optional[str] = Query(
-        None, description="The ID of the embedding model to use."
-    ),
-    organization_name: Optional[str] = Query(
-        None, description="Filter embeddings by organization name."
-    ),
-    skip: int = Query(0, ge=0, description="Number of records to skip for pagination."),
-    limit: int = Query(
-        1000, ge=1, le=2000, description="Maximum number of records to return."
-    ),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
+    embedding_model_id: Optional[str] = Query(None, description="The ID of the embedding model to use."),
+    project_ids: Optional[str] = Query(None, description="Comma-separated list of project IDs."),
+    project_names: Optional[str] = Query(None, description="Comma-separated list of project names."),
+    organization_ids: Optional[str] = Query(None, description="Comma-separated list of organization IDs."),
+    organization_names: Optional[str] = Query(None, description="Comma-separated list of organization names."),
+    skip: int = Query(0, ge=0, description="Number of records to skip for pagination."),
+    limit: int = Query(1000, ge=1, le=2000, description="Maximum number of records to return."),
 ):
     """
     API endpoint to fetch raw embedding vectors for issues, with optional filtering.
-
     This endpoint is designed to provide data for frontend visualizations like deck.gl.
     """
     crud_embedding = CRUDIssueEmbedding(db)
+
+    project_id_list = project_ids.split(',') if project_ids else None
+    project_name_list = project_names.split(',') if project_names else None
+    organization_id_list = organization_ids.split(',') if organization_ids else None
+    organization_name_list = organization_names.split(',') if organization_names else None
+
     raw_data = crud_embedding.get_raw_embeddings(
         db=db,
-        project_name=project_name,
+        account_id=str(current_user.id),
         embedding_model_id=embedding_model_id,
-        organization_name=organization_name,
+        project_ids=project_id_list,
+        project_names=project_name_list,
+        organization_ids=organization_id_list,
+        organization_names=organization_name_list,
         skip=skip,
         limit=limit,
-        # Pass current_user's account_id to enforce data access restrictions
-        account_id=str(current_user.id),
     )
 
     # Transform the list of tuples into a list of EmbeddingRawDataItem objects
-    response_data = [
+    formatted_data = [
         EmbeddingRawDataItem(
             issue_id=item[0],
             embedding=item[1],
             issue_title=item[2],
-            # issue_labels=item[3],
-            issue_type=item[3],
-            issue_created_at=item[4],
+            project_id=item[3],
+            issue_type=item[4],
+            issue_created_at=item[5],
         )
         for item in raw_data
     ]
 
-    return EmbeddingRawResponse(data=response_data)
+    return EmbeddingRawResponse(data=formatted_data)

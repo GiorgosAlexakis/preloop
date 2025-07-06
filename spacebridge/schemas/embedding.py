@@ -18,6 +18,7 @@ class EmbeddingRawDataItem(BaseModel):
     """Individual data item in the raw embedding response."""
 
     issue_id: str
+    project_id: str
     embedding: List[float]
     issue_title: Optional[str] = None
     issue_labels: Optional[List[str]] = None
