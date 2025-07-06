@@ -9,7 +9,14 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 import '../../components/project-filter-modal.ts';
 import '../../components/duplicate-stats-chart.ts';
-import { listProjects, Project } from '../../api';
+import {
+  listProjects,
+  Project,
+  listIssueDuplicates,
+  checkLlmVerdict,
+  DuplicatePair,
+  DuplicatesResponse,
+} from '../../api';
 
 // Define the structure of an issue and a duplicate pair based on the API response
 interface Issue {
@@ -77,10 +84,6 @@ export class IssuesView extends LitElement {
 
   @state()
   private _allProjects: Project[] = [];
-
-  // WARNING: Do not hardcode tokens in production. This is for demonstration purposes only.
-  // In a real application, the token should be retrieved from a secure storage like localStorage or a state management solution.
-  private _apiToken = 'qybJSX1eCvHFTUvmcXpX3rmVX93uzXjAjDJbtqpz';
 
   static styles = css`
     .container {
@@ -248,33 +251,13 @@ export class IssuesView extends LitElement {
     const skip = (this._currentPage - 1) * this._pageSize;
 
     try {
-      const params = new URLSearchParams({
-        limit: this._pageSize.toString(),
-        skip: skip.toString(),
-        similarity_threshold: '0.8',
+      const data: DuplicatesResponse = await listIssueDuplicates({
+        limit: this._pageSize,
+        skip: skip,
+        project_ids: this._selectedProjectIds,
+        similarity_threshold: 0.8,
       });
 
-      this._selectedProjectIds.forEach(id => {
-        params.append('project_ids', id);
-      });
-
-      const url = `/api/v1/issue-duplicates?${params.toString()}`;
-
-      const response = await fetch(
-        url,
-        {
-          headers: {
-            Authorization: `Bearer ${this._apiToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: DuplicatesResponse = await response.json();
       this._duplicates = data.duplicates;
       this._hasMorePages = data.duplicates.length === this._pageSize;
       this.fetchLlmVerdicts(); // Fetch verdicts after getting duplicates
@@ -297,21 +280,11 @@ export class IssuesView extends LitElement {
         };
 
         try {
-          const response = await fetch(
-            `/api/v1/issue-duplicates/check?issue1_id=${pair.issue1.id}&issue2_id=${pair.issue2.id}`,
-            {
-              headers: {
-                Authorization: `Bearer ${this._apiToken}`,
-                'Content-Type': 'application/json',
-              },
-            }
+          const verdictData = await checkLlmVerdict(
+            pair.issue1.id,
+            pair.issue2.id
           );
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-
-          const verdictData = await response.json();
           this._llmVerdicts = {
             ...this._llmVerdicts,
             [pairKey]: {

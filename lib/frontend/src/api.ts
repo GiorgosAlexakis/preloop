@@ -424,13 +424,16 @@ export async function listOrganizations(): Promise<Organization[]> {
 
 // Add interfaces for the issue duplicates endpoint
 export interface Issue {
+  project_id: string;
   id: string;
-  key: string;
   title: string;
   description: string;
+  key: string;
   status: string;
+  created_at: string;
+  updated_at: string;
   url: string;
-  similarity?: number; // Optional, as it's added in some contexts
+  meta_data?: { [key: string]: any };
 }
 
 export interface DuplicatePair {
@@ -440,20 +443,47 @@ export interface DuplicatePair {
 }
 
 export interface DuplicatesResponse {
+  project_ids: string[];
+  model_id_used: string;
+  threshold_used: number;
   duplicates: DuplicatePair[];
 }
 
-export async function listIssueDuplicates(options: { limit?: number; skip?: number; project_ids?: string[] } = {}): Promise<DuplicatesResponse> {
+export async function listIssueDuplicates(
+  options: {
+    limit?: number;
+    skip?: number;
+    project_ids?: string[];
+    similarity_threshold?: number;
+  } = {}
+): Promise<DuplicatesResponse> {
   const params = new URLSearchParams();
   if (options.limit) params.append('limit', options.limit.toString());
   if (options.skip) params.append('skip', options.skip.toString());
   if (options.project_ids) {
     options.project_ids.forEach(id => params.append('project_ids', id));
   }
-
-  const response = await fetchWithAuth(`/api/v1/issue-duplicates?${params.toString()}`);
+  if (options.similarity_threshold) {
+    params.append(
+      'similarity_threshold',
+      options.similarity_threshold.toString()
+    );
+  }
+  const response = await fetchWithAuth(
+    `/api/v1/issue-duplicates?${params.toString()}`
+  );
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    throw new Error('Failed to fetch duplicate issues');
+  }
+  return response.json();
+}
+
+export async function checkLlmVerdict(issue1_id: string, issue2_id: string) {
+  const response = await fetchWithAuth(
+    `/api/v1/issue-duplicates/check?issue1_id=${issue1_id}&issue2_id=${issue2_id}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch LLM verdict');
   }
   return response.json();
 }
