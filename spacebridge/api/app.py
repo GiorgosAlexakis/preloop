@@ -455,8 +455,8 @@ def create_app() -> FastAPI:
     app.include_router(
         version.router, prefix="/api/v1", tags=["Version"]
     )  # No auth dependency for version check
-    app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["Webhooks"])
-    # app.include_router(flows.router, prefix="/api/v1/flows", tags=["Flows"])
+    app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
+    # app.include_router(flows.router, prefix="/api/v1", tags=["Flows"])
 
     # --- HTML Page Routes ---
     templates = Jinja2Templates(directory=str(templates_dir))
