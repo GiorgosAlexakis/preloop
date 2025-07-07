@@ -297,12 +297,11 @@ def _find_issue_duplicates_logic(
                     limit=limit_per_issue + 1,
                     project_ids=[project_id],
                     embedding_type="issue",
+                    similarity=similarity_threshold,
                 )
             )
 
             for similar_issue_obj, score in similar_issue_score_tuples:
-                if score < similarity_threshold:
-                    continue
 
                 if similar_issue_obj.id == current_issue_obj.id:
                     continue
