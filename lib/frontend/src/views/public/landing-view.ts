@@ -10,6 +10,32 @@ type IdeTab = 'claude-code' | 'cursor' | 'windsurf';
 export class LandingView extends LitElement {
   @state() private _activeIdeTab: IdeTab = 'claude-code';
   @state() private _openFaq: number | null = null;
+  @state() private _faqs = [
+    {
+      q: 'What is Spacebridge?',
+      a: 'Spacebridge is an AI platform that connects to your existing project management tools like Jira, GitHub, and GitLab. It acts as a trust and governance layer, enabling you to automate product management tasks, gain deep insights into your backlog, and safely delegate work to AI agents.',
+    },
+    {
+      q: 'Which issue tracking and project management platforms does Spacebridge support?',
+      a: 'Spacebridge offers native integrations with Jira, GitHub, and GitLab. We are continuously expanding our support for other platforms based on customer needs.',
+    },
+    {
+      q: 'How does AI-Assisted Product Management help my team?',
+      a: 'It helps you manage your backlog more effectively. By identifying duplicate issues, detecting thematic overlap, and providing data-driven insights on issue readiness, Spacebridge allows your team to focus on high-impact work and strategic planning.',
+    },
+    {
+      q: 'How can I automate routine work with confidence?',
+      a: 'Spacebridge allows you to build automated workflows for low-risk, high-value tasks. For any sensitive action, our Preloop approval layer ensures a human is always in the loop, giving you the perfect balance of speed and safety.',
+    },
+    {
+      q: 'What is the Preloop Human Approval Layer?',
+      a: 'Preloop is a human-in-the-loop security feature that intercepts potentially high-risk actions initiated by AI agents. Before any critical command is executed—like a server rollback or a major code merge—it requires explicit approval from a designated human operator, ensuring complete oversight and control.',
+    },
+    {
+      q: 'Is it secure to connect my development tools to Spacebridge?',
+      a: 'Security is our top priority. Spacebridge uses industry-standard encryption for all data. We connect to your tools via secure, permission-scoped API tokens and OAuth, ensuring our platform only has the minimum access it needs to function.',
+    },
+  ];
 
   static styles = [
     css`
@@ -53,7 +79,7 @@ export class LandingView extends LitElement {
               <h1 class="fw-bold">Drive your Product with AI</h1>
               <p class="lead">
                 Spacebridge curates your backlog, automates high value, low-risk
-                work, and safeguards the critical
+                work, and safeguards the critical.
               </p>
               <div class="hero-buttons">
                 <sl-button variant="primary" size="large" href="/register"
@@ -92,9 +118,8 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>Efficient Backlog Management</h3>
                 <p>
-                  By de-duplicating issues, detecting issue overlap and
-                  streamlining resolution, Spacebridge helps you manage your
-                  product backlog more efficiently.
+                  By de-duplicating, detecting issue overlap and
+                  streamlining resolution, Spacebridge helps you optimize your backlog and roadmap.
                 </p>
               </div>
 
@@ -104,8 +129,9 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>Actionable Product Intelligence</h3>
                 <p>
-                  Go beyond basic reports. Get actionable metrics on issue readiness, estimated effort, and backlog health to make data-driven product
-                  decisions.
+                  Go beyond basic reports. Get actionable metrics on issue
+                  readiness, estimated effort, and backlog health to make
+                  data-driven product decisions.
                 </p>
               </div>
             </div>
@@ -486,28 +512,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
           <div class="section-container">
             <h2 class="text-center">Frequently Asked Questions</h2>
             <div class="faq-list">
-              ${[
-                {
-                  q: 'What is SpaceBridge?',
-                  a: 'SpaceBridge is a smart layer that connects to your existing software development tools (like Jira, GitHub, and GitLab). It helps your team work more efficiently by automating complex tasks and providing a safety net for critical operations, all powered by AI.',
-                },
-                {
-                  q: 'Do I need to replace my issue tracker like Jira or GitHub?',
-                  a: 'Absolutely not. SpaceBridge integrates <strong>with</strong> your existing tools. You keep your current workflow, and SpaceBridge enhances it with intelligent features and cross-platform automation, acting as a central hub.',
-                },
-                {
-                  q: 'What can the Intelligent Automation actually do for me?',
-                  a: 'It handles tedious but important tasks. For example, it can automatically find and suggest merging duplicate issues across trackers, provide AI-based time estimates for new tickets, or check if a new pull request is missing documentation updates and flag it for review.',
-                },
-                {
-                  q: 'How does the Preloop™ safety feature work?',
-                  a: 'Preloop™ is a human approval step for your most critical automations. If an automated process wants to do something high-stakes, like roll back a production server, you can create a policy that requires two senior engineers to approve it via Slack or email before the action proceeds. It prevents costly mistakes by ensuring a human is always in the loop for key decisions.',
-                },
-                {
-                  q: 'Is it secure to connect my development tools to SpaceBridge?',
-                  a: 'Security is our top priority. SpaceBridge uses industry-standard encryption for all data. We connect to your tools via secure, permission-scoped API tokens and OAuth, ensuring our platform only has the minimum access it needs to function.',
-                },
-              ].map(
+              ${this._faqs.map(
                 (faq, index) => html`
                   <div class="faq-item">
                     <div
@@ -537,7 +542,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
 
         <section class="final-cta main-section special-cta">
           <div class="section-container">
-            <h2>Your Foundation for Enterprise-Grade AI</h2>
+            <h2>The Trust Layer for Enterprise AI</h2>
             <div class="hero-buttons">
               <sl-button variant="primary" size="large" href="/register"
                 >Get Started</sl-button

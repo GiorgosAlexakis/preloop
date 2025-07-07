@@ -116,9 +116,7 @@ export class AppFooter extends LitElement {
               height="40"
               style="margin-bottom: 16px"
             />
-            <p>
-              The AI co-pilot for your entire team.<br />Ship faster and safer.
-            </p>
+
           </div>
           <nav class="footer-nav">
             <ul>
