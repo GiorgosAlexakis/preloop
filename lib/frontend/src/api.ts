@@ -208,8 +208,8 @@ export async function listProjectsForOrg(
   return response.json();
 }
 
-export async function getDuplicateIssues() {
-  const response = await fetchWithAuth('/api/v1/issue-duplicates/');
+export async function getDuplicateIssues(status: 'opened' | 'closed' | 'all' = 'opened') {
+  const response = await fetchWithAuth(`/api/v1/issue-duplicates/?status=${status}`);
   if (!response.ok) {
     throw new Error('Failed to fetch duplicate issues');
   }
@@ -455,6 +455,7 @@ export async function listIssueDuplicates(
     skip?: number;
     project_ids?: string[];
     similarity_threshold?: number;
+    status?: 'opened' | 'closed' | 'all';
   } = {}
 ): Promise<DuplicatesResponse> {
   const params = new URLSearchParams();
@@ -469,6 +470,7 @@ export async function listIssueDuplicates(
       options.similarity_threshold.toString()
     );
   }
+  params.append('status', options.status ?? 'opened');
   const response = await fetchWithAuth(
     `/api/v1/issue-duplicates?${params.toString()}`
   );
@@ -499,11 +501,14 @@ export interface DuplicateStatsResponse {
   projects: { [key: string]: ProjectStats };
 }
 
-export async function getProjectDuplicateStats(
-  projectIds: string[]
-): Promise<DuplicateStatsResponse> {
+export async function getProjectDuplicateStats(options: {
+  project_ids?: string[];
+  status?: 'opened' | 'closed' | 'all';
+}): Promise<DuplicateStatsResponse> {
+  const { project_ids = [], status = 'opened' } = options;
   const params = new URLSearchParams();
-  projectIds.forEach(id => params.append('project_ids', id));
+  project_ids.forEach(id => params.append('project_ids', id));
+  params.append('status', status);
   const url = `/api/v1/project-duplicate-stats?${params.toString()}`;
   const response = await fetchWithAuth(url);
   if (!response.ok) {
@@ -543,4 +548,9 @@ export async function dismissDuplicatePair(
   // to record the dismissal.
 
   return Promise.resolve({ success: true });
+}
+
+export interface SimilarIssue {
+  id: number;
+  title: string;
 }

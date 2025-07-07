@@ -24,6 +24,8 @@ interface DuplicateStatsResponse {
 export class DuplicateStatsChart extends LitElement {
   @property({ type: Array }) projectIds: string[] = [];
 
+  @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+
   @property({ type: Boolean, reflect: true, attribute: 'no-padding' })
   noPadding = false;
 
@@ -63,7 +65,10 @@ export class DuplicateStatsChart extends LitElement {
   }
 
   updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has('projectIds')) {
+    if (
+      changedProperties.has('projectIds') ||
+      changedProperties.has('selectedStatus')
+    ) {
       this.fetchData();
     }
 
@@ -79,7 +84,10 @@ export class DuplicateStatsChart extends LitElement {
     this._statsData = null; // Clear previous stats
 
     try {
-      const data = await getProjectDuplicateStats(this.projectIds);
+      const data = await getProjectDuplicateStats({
+        project_ids: this.projectIds,
+        status: this.selectedStatus,
+      });
       // Guard against a missing projects property to prevent crashes
       if (data && data.projects) {
         this._statsData = data.projects;

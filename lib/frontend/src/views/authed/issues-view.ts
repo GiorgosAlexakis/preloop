@@ -20,6 +20,8 @@ import {
   dismissDuplicatePair,
   DuplicatePair,
   DuplicatesResponse,
+  listOrganizations,
+  Organization,
 } from '../../api';
 import { LlmVerdict, renderVerdict } from '../../utils/verdict';
 
@@ -89,7 +91,13 @@ export class IssuesView extends LitElement {
   private _selectedProjectIds: string[] = [];
 
   @state()
+  private _selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+
+  @state()
   private _allProjects: Project[] = [];
+
+  @state()
+  private _organizations: Organization[] = [];
 
   static styles = css`
     .container {
@@ -244,6 +252,7 @@ export class IssuesView extends LitElement {
   async fetchInitialData() {
     this.fetchDuplicates();
     this.fetchProjects();
+    this.fetchOrganizations();
   }
 
   async fetchProjects() {
@@ -251,6 +260,14 @@ export class IssuesView extends LitElement {
       this._allProjects = await listProjects();
     } catch (error) {
       console.error('Failed to fetch project list:', error);
+    }
+  }
+
+  async fetchOrganizations() {
+    try {
+      this._organizations = await listOrganizations();
+    } catch (error) {
+      console.error('Failed to fetch organization list:', error);
     }
   }
 
@@ -264,6 +281,7 @@ export class IssuesView extends LitElement {
         limit: this._pageSize,
         skip: skip,
         project_ids: this._selectedProjectIds,
+        status: this._selectedStatus,
         similarity_threshold: 0.8,
       });
 
@@ -425,7 +443,7 @@ export class IssuesView extends LitElement {
   }
 
   private _renderActiveFilters() {
-    if (this._selectedProjectIds.length === 0) {
+    if (this._selectedProjectIds.length === 0 && this._selectedStatus === 'opened') {
       return html``;
     }
 
@@ -445,9 +463,19 @@ export class IssuesView extends LitElement {
             ${project.name}
           </sl-tag>
         `)}
+        ${this._selectedStatus !== 'opened' ? html`
+          <sl-tag size="medium" removable @sl-remove=${() => this._clearStatusFilter()}>
+            ${this._selectedStatus === 'closed' ? 'Closed' : 'All'}
+          </sl-tag>
+        ` : ''}
         <sl-button size="small" pill @click=${this._clearAllFilters}>Clear all</sl-button>
       </div>
     `;
+  }
+
+  private _clearStatusFilter() {
+    this._selectedStatus = 'opened';
+    this.fetchDuplicates();
   }
 
   render() {
@@ -469,17 +497,14 @@ export class IssuesView extends LitElement {
 
         ${this._renderActiveFilters()}
 
-        ${(() => {
-          return html`
-            <sl-card class="embedding-card">
-              <duplicate-stats-chart
-                .projectIds=${this._selectedProjectIds}
-                .interactive=${true}
-                @project-selected=${this._handleProjectSelectedFromChart}
-              ></duplicate-stats-chart>
-            </sl-card>
-          `;
-        })()}
+        <sl-card class="embedding-card">
+          <duplicate-stats-chart
+            .projectIds=${this._selectedProjectIds}
+            .selectedStatus=${this._selectedStatus}
+            .interactive=${true}
+            @project-selected=${this._handleProjectSelectedFromChart}
+          ></duplicate-stats-chart>
+        </sl-card>
 
         ${when(
           this._loading,
@@ -601,9 +626,18 @@ export class IssuesView extends LitElement {
       </div>
       <project-filter-modal
         .open=${this._isFilterModalOpen}
-        .initialSelectedProjectIds=${this._selectedProjectIds}
-        @projects-selected=${this._handleProjectsSelected}
+        .organizations=${this._organizations}
+        .projects=${this._allProjects}
+        .selectedProjectIds=${this._selectedProjectIds}
+        .selectedStatus=${this._selectedStatus}
         @close-modal=${() => (this._isFilterModalOpen = false)}
+        @apply-filters=${(event: CustomEvent) => {
+          const { selectedProjectIds, selectedStatus } = event.detail;
+          this._selectedProjectIds = selectedProjectIds;
+          this._selectedStatus = selectedStatus;
+          this.fetchDuplicates(); // Re-fetch data with new filters
+          this._isFilterModalOpen = false;
+        }}
       ></project-filter-modal>
       <resolve-issue-modal
         .open=${this._isResolveModalOpen}
