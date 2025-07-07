@@ -50,11 +50,9 @@ export class LandingView extends LitElement {
         <section class="hero main-section">
           <div class="section-container hero-inner">
             <div class="hero-content text-center">
-              <h1 class="fw-bold">The Trust Layer for Your AI Workforce</h1>
+              <h1 class="fw-bold">The AI Bridge To Product Management</h1>
               <p class="lead">
-                SpaceBridge governs your AI agents, closing the alignment gap
-                between autonomous operations and critical business context.
-                Deploy AI with confidence.
+                Spacebridge curates your backlog, automates high value, low-risk work, and safeguards the critical
               </p>
               <div class="hero-buttons">
                 <sl-button variant="primary" size="large" href="/register"
@@ -73,7 +71,7 @@ export class LandingView extends LitElement {
 
         <section class="feature-section main-section">
           <div class="section-container text-center">
-            <h2>Ground Your AI with Context</h2>
+            <h2>Drive your Product with AI</h2>
             <div class="feature-grid">
               <div class="feature-box">
                 <div class="feature-icon">
@@ -81,29 +79,30 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>A Single Source of Truth</h3>
                 <p>
-                  Our hub syncs with Jira, GitHub, and GitLab to create a
-                  flawless source of 'ground truth' for your AI agents.
+                  Our hub syncs with Jira, GitHub, and GitLab and indexes your issues, comments and pull requests, to create a
+                  single source of truth for your AI agents.
                 </p>
               </div>
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="gear-wide-connected"></sl-icon>
-                </div>
-                <h3>Prevent Context Drift</h3>
-                <p>
-                  We provide the AI with a long-term memory of business goals,
-                  ensuring it solves the right problem, not just the technical
-                  one.
-                </p>
-              </div>
+              
               <div class="feature-box">
                 <div class="feature-icon">
                   <sl-icon name="people"></sl-icon>
                 </div>
-                <h3>Deeper Understanding</h3>
+                <h3>AI Assisted Product Management </h3>
                 <p>
-                  By de-duplicating issues and understanding project history,
-                  the AI operates with full context.
+                  By de-duplicating issues, detecting issue overlap and streamlining resolution, Spacebridge helps you manage your product backlog more efficiently.
+                </p>
+              </div>
+
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="clipboard-data"></sl-icon>
+                </div>
+                <h3>From Data to Decisions</h3>
+                <p>
+                  Go beyond basic reports. Get actionable metrics on issue
+                  cost, cycle time, and backlog health to make data-driven
+                  product decisions.
                 </p>
               </div>
             </div>
@@ -176,8 +175,7 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>The Ultimate Safety Switch</h3>
                 <p>
-                  For any high-risk action, our Preloop™ Human Approval Layer
-                  intercepts the command before it executes.
+                  Our Preloop Human Approval Layer makes it possible to use AI for high-stakes tasks, intercepting commands before they execute.
                 </p>
               </div>
               <div class="feature-box">
@@ -187,18 +185,11 @@ export class LandingView extends LitElement {
                 <h3>Intelligent Notifications</h3>
                 <p>
                   The right people are instantly notified on Slack, SMS, or our
-                  app to provide a simple 'Approve/Deny'.
+                  app, to provide a simple Approve/Deny.
                 </p>
               </div>
               <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="shield-check"></sl-icon>
-                </div>
-                <h3>Solve the Judgment Deficit</h3>
-                <p>
-                  Preloop™ makes it possible to use AI for high-stakes tasks
-                  like server rollbacks, with complete human oversight.
-                </p>
+                <img src="/images/ui_4.png" alt="SpaceBridge UI showing intelligent issue management" width="300" height="320" class="ui-shot" />
               </div>
             </div>
           </div>
