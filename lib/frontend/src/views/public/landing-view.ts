@@ -85,10 +85,7 @@ export class LandingView extends LitElement {
                 <sl-button variant="primary" size="large" href="/register"
                   >Get Started</sl-button
                 >
-                <sl-button
-                  variant="text"
-                  size="large"
-                  href="/request-demo"
+                <sl-button variant="text" size="large" href="/request-demo"
                   >Request a Demo</sl-button
                 >
               </div>
@@ -548,10 +545,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
               <sl-button variant="primary" size="large" href="/register"
                 >Get Started</sl-button
               >
-              <sl-button
-                variant="text"
-                size="large"
-                href="/request-demo"
+              <sl-button variant="text" size="large" href="/request-demo"
                 >Request a Demo</sl-button
               >
             </div>

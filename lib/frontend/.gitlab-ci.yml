@@ -20,6 +20,7 @@ build:
       --dockerfile $CI_PROJECT_DIR/Dockerfile
       --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
       --destination $CI_REGISTRY_IMAGE:latest
+      --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
       --registry-mirror registry.spacecode.ai
       --registry-mirror $CI_REGISTRY
 

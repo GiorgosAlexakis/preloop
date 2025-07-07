@@ -30,7 +30,8 @@ export class RequestDemoView extends LitElement {
         text-align: center;
         margin-bottom: 2rem;
       }
-      sl-input, sl-select {
+      sl-input,
+      sl-select {
         margin: 1rem 0;
       }
       .tracker-group {
@@ -54,7 +55,7 @@ export class RequestDemoView extends LitElement {
     if (checkbox.checked) {
       this._trackers = [...this._trackers, checkbox.value];
     } else {
-      this._trackers = this._trackers.filter(t => t !== checkbox.value);
+      this._trackers = this._trackers.filter((t) => t !== checkbox.value);
     }
   }
 
@@ -75,15 +76,29 @@ export class RequestDemoView extends LitElement {
       comments: this._comments,
     });
 
-    // Simulate a network request
-    await new Promise(res => setTimeout(res, 1500));
+    const response = await fetch('https://spacecode.ai/api/v1/leads', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: this._name,
+        email: this._email,
+        role: this._role,
+        org: this._organization,
+        headcount: this._headcount,
+        trackers: this._trackers,
+        comments: this._comments,
+        source: 'request-demo spacebridge',
+      }),
+    });
 
-    // Simulate a successful submission
+    if (!response.ok) {
+      throw new Error('Network response was not ok');
+    }
+
     this._submitting = false;
     this._success = true;
-
-    // In case of an error, you would set this._error
-    // this._error = 'There was an error submitting your request. Please try again.';
   }
 
   render() {
@@ -108,72 +123,92 @@ export class RequestDemoView extends LitElement {
         </div>
         <div class="form-container">
           <h2>Request a Demo</h2>
-            <form @submit=${this._handleSubmit}>
+          <form @submit=${this._handleSubmit}>
             <sl-input
-                label="Full Name"
-                required
-                .value=${this._name}
-                @sl-input=${(e: any) => (this._name = e.target.value)}
+              label="Full Name"
+              required
+              .value=${this._name}
+              @sl-input=${(e: any) => (this._name = e.target.value)}
             ></sl-input>
 
             <sl-input
-                label="Work Email"
-                type="email"
-                required
-                .value=${this._email}
-                @sl-input=${(e: any) => (this._email = e.target.value)}
+              label="Work Email"
+              type="email"
+              required
+              .value=${this._email}
+              @sl-input=${(e: any) => (this._email = e.target.value)}
             ></sl-input>
 
             <sl-input
-                label="Role"
-                required
-                .value=${this._role}
-                @sl-input=${(e: any) => (this._role = e.target.value)}
+              label="Role"
+              required
+              .value=${this._role}
+              @sl-input=${(e: any) => (this._role = e.target.value)}
             ></sl-input>
 
             <sl-input
-                label="Organization"
-                required
-                .value=${this._organization}
-                @sl-input=${(e: any) => (this._organization = e.target.value)}
+              label="Organization"
+              required
+              .value=${this._organization}
+              @sl-input=${(e: any) => (this._organization = e.target.value)}
             ></sl-input>
 
             <sl-select
-                label="Company Headcount"
-                required
-                .value=${this._headcount}
-                @sl-change=${(e: any) => (this._headcount = e.target.value)}
+              label="Company Headcount"
+              required
+              .value=${this._headcount}
+              @sl-change=${(e: any) => (this._headcount = e.target.value)}
             >
-                <sl-option value="1-50">1-50</sl-option>
-                <sl-option value="51-200">51-200</sl-option>
-                <sl-option value="201-1000">201-1,000</sl-option>
-                <sl-option value="1001-5000">1,001-5,000</sl-option>
-                <sl-option value="5000+">5,000+</sl-option>
+              <sl-option value="1-50">1-50</sl-option>
+              <sl-option value="51-200">51-200</sl-option>
+              <sl-option value="201-1000">201-1,000</sl-option>
+              <sl-option value="1001-5000">1,001-5,000</sl-option>
+              <sl-option value="5000+">5,000+</sl-option>
             </sl-select>
 
             <div class="tracker-group">
-                <label>Trackers Used</label>
-                <sl-checkbox value="GitHub" @sl-change=${this._handleTrackerChange}>GitHub</sl-checkbox>
-                <sl-checkbox value="GitLab" @sl-change=${this._handleTrackerChange}>GitLab</sl-checkbox>
-                <sl-checkbox value="Jira" @sl-change=${this._handleTrackerChange}>Jira</sl-checkbox>
-                <sl-checkbox value="Linear" @sl-change=${this._handleTrackerChange}>Linear</sl-checkbox>
+              <label>Trackers Used</label>
+              <sl-checkbox
+                value="GitHub"
+                @sl-change=${this._handleTrackerChange}
+                >GitHub</sl-checkbox
+              >
+              <sl-checkbox
+                value="GitLab"
+                @sl-change=${this._handleTrackerChange}
+                >GitLab</sl-checkbox
+              >
+              <sl-checkbox value="Jira" @sl-change=${this._handleTrackerChange}
+                >Jira</sl-checkbox
+              >
+              <sl-checkbox
+                value="Linear"
+                @sl-change=${this._handleTrackerChange}
+                >Linear</sl-checkbox
+              >
             </div>
 
             <sl-textarea
-                label="Additional Comments"
-                resize="auto"
-                .value=${this._comments}
-                @sl-input=${(e: any) => (this._comments = e.target.value)}
+              label="Additional Comments"
+              resize="auto"
+              .value=${this._comments}
+              @sl-input=${(e: any) => (this._comments = e.target.value)}
             ></sl-textarea>
 
-            ${this._error ? html`<sl-alert variant="danger" open>${this._error}</sl-alert>` : ''}
+            ${this._error
+              ? html`<sl-alert variant="danger" open>${this._error}</sl-alert>`
+              : ''}
 
-            <sl-button type="submit" variant="primary" ?loading=${this._submitting}>
-                Request Demo
+            <sl-button
+              type="submit"
+              variant="primary"
+              ?loading=${this._submitting}
+            >
+              Request Demo
             </sl-button>
-            </form>
+          </form>
         </div>
-    </div>
+      </div>
     `;
   }
 }
