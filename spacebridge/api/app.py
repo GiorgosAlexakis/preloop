@@ -37,7 +37,7 @@ from spacebridge.api.endpoints import (
     llm_models,
     issue_duplicates,
     webhooks,
-    flows,
+    # flows,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -456,7 +456,7 @@ def create_app() -> FastAPI:
         version.router, prefix="/api/v1", tags=["Version"]
     )  # No auth dependency for version check
     app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["Webhooks"])
-    app.include_router(flows.router, prefix="/api/v1/flows", tags=["Flows"])
+    # app.include_router(flows.router, prefix="/api/v1/flows", tags=["Flows"])
 
     # --- HTML Page Routes ---
     templates = Jinja2Templates(directory=str(templates_dir))
