@@ -2295,7 +2295,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/webhooks/private/webhooks/{tracker_type}/{identifier_in_url}:
+  /api/v1/private/webhooks/{tracker_type}/{identifier_in_url}:
     post:
       tags:
       - Webhooks
@@ -2306,7 +2306,7 @@ paths:
         Parses the payload to identify the organization and updates its
 
         last_webhook_update timestamp.'
-      operationId: receive_webhook_api_v1_webhooks_private_webhooks__tracker_type___identifier_in_url__post
+      operationId: receive_webhook_api_v1_private_webhooks__tracker_type___identifier_in_url__post
       parameters:
       - name: tracker_type
         in: path

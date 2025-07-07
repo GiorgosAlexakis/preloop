@@ -145,12 +145,22 @@ spec:
             - name: SMTP_FROM_NAME
               value: {{ .Values.config.smtp.fromName | quote }}
             {{- end }}
+        - name: spacelit
+          image: "{{ .Values.spacelit.repository }}:{{ .Values.spacelit.tag }}"
+          imagePullPolicy: {{ .Values.spacelit.pullPolicy }}
           ports:
             - name: http
-              containerPort: 8000
+              containerPort: 80
               protocol: TCP
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/templates
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: {{ include "spacebridge.fullname" . }}-nginx
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

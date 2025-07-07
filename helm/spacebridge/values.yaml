@@ -6,8 +6,13 @@ replicaCount: 1
 # Image configuration
 image:
   repository: registry.spacecode.ai/spacecode/spacebridge
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
   tag: "latest"  # Overrides the image tag
+
+spacelit:
+  repository: registry.spacecode.ai/spacecode/spacelit
+  tag: "shoelace"
+  pullPolicy: Always
 
 # Image pull secrets
 imagePullSecrets: []
