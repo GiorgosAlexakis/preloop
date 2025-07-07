@@ -51,11 +51,13 @@ class PaginatedIssueDuplicateResponse(BaseModel):
     page: int
     size: int
 
+
 class IssueDuplicateProjectStats(BaseModel):
     project_id: str
     project_name: str
     total: int
     duplicates: int
+
 
 class IssueDuplicateStats(BaseModel):
     projects: Dict[str, IssueDuplicateProjectStats]

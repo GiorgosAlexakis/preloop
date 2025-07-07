@@ -302,7 +302,6 @@ def _find_issue_duplicates_logic(
             )
 
             for similar_issue_obj, score in similar_issue_score_tuples:
-
                 if similar_issue_obj.id == current_issue_obj.id:
                     continue
 
@@ -452,7 +451,10 @@ def get_projects_duplicate_stats(
         description="A list of project IDs to filter the statistics by. If not provided, stats for all accessible projects will be returned.",
     ),
     similarity_threshold: float = Query(
-        0.95, ge=0.0, le=1.0, description="Similarity threshold for considering issues as duplicates."
+        0.95,
+        ge=0.0,
+        le=1.0,
+        description="Similarity threshold for considering issues as duplicates.",
     ),
     status: Optional[str] = Query(None, description="Filter issues by status."),
     db: Session = Depends(get_db),
@@ -484,20 +486,24 @@ def get_projects_duplicate_stats(
 
     accessible_project_ids = [str(p.id) for p in projects]
 
-    issue_counts = crud_issue.get_issue_counts_per_project(db, project_ids=accessible_project_ids)
-    
+    issue_counts = crud_issue.get_issue_counts_per_project(
+        db, project_ids=accessible_project_ids
+    )
+
     duplicate_issue_list, _ = _find_issue_duplicates_logic(
         db=db,
         accessible_project_ids=accessible_project_ids,
         similarity_threshold=similarity_threshold,
         limit=1000,  # A large enough number to get all duplicates for stats
         skip=0,
-        limit_per_issue=100, # A large enough number
+        limit_per_issue=100,  # A large enough number
         status=status,
     )
 
     stats: Dict[str, IssueDuplicateProjectStats] = {
-        project.id: IssueDuplicateProjectStats(project_id=project.id, project_name=project.name, total=0, duplicates=0)
+        project.id: IssueDuplicateProjectStats(
+            project_id=project.id, project_name=project.name, total=0, duplicates=0
+        )
         for project in projects
     }
 

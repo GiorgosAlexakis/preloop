@@ -1,7 +1,6 @@
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.crud.embedding import CRUDIssueEmbedding
@@ -23,13 +22,25 @@ router = APIRouter()
 def get_raw_embeddings(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
-    embedding_model_id: Optional[str] = Query(None, description="The ID of the embedding model to use."),
-    project_ids: Optional[str] = Query(None, description="Comma-separated list of project IDs."),
-    project_names: Optional[str] = Query(None, description="Comma-separated list of project names."),
-    organization_ids: Optional[str] = Query(None, description="Comma-separated list of organization IDs."),
-    organization_names: Optional[str] = Query(None, description="Comma-separated list of organization names."),
+    embedding_model_id: Optional[str] = Query(
+        None, description="The ID of the embedding model to use."
+    ),
+    project_ids: Optional[str] = Query(
+        None, description="Comma-separated list of project IDs."
+    ),
+    project_names: Optional[str] = Query(
+        None, description="Comma-separated list of project names."
+    ),
+    organization_ids: Optional[str] = Query(
+        None, description="Comma-separated list of organization IDs."
+    ),
+    organization_names: Optional[str] = Query(
+        None, description="Comma-separated list of organization names."
+    ),
     skip: int = Query(0, ge=0, description="Number of records to skip for pagination."),
-    limit: int = Query(1000, ge=1, le=2000, description="Maximum number of records to return."),
+    limit: int = Query(
+        1000, ge=1, le=2000, description="Maximum number of records to return."
+    ),
 ):
     """
     API endpoint to fetch raw embedding vectors for issues, with optional filtering.
@@ -37,10 +48,12 @@ def get_raw_embeddings(
     """
     crud_embedding = CRUDIssueEmbedding(db)
 
-    project_id_list = project_ids.split(',') if project_ids else None
-    project_name_list = project_names.split(',') if project_names else None
-    organization_id_list = organization_ids.split(',') if organization_ids else None
-    organization_name_list = organization_names.split(',') if organization_names else None
+    project_id_list = project_ids.split(",") if project_ids else None
+    project_name_list = project_names.split(",") if project_names else None
+    organization_id_list = organization_ids.split(",") if organization_ids else None
+    organization_name_list = (
+        organization_names.split(",") if organization_names else None
+    )
 
     raw_data = crud_embedding.get_raw_embeddings(
         db=db,

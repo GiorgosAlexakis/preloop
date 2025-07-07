@@ -16,10 +16,10 @@ crud_flow = CRUDFlow()
 
 @router.post("/", response_model=schemas.FlowResponse)
 def create_flow(
-    *, 
+    *,
     db: Session = Depends(get_db),
     flow_in: schemas.FlowCreate,
-    current_user: Account = Depends(get_current_active_user)
+    current_user: Account = Depends(get_current_active_user),
 ):
     """Create new flow."""
     if not current_user.organization_id:

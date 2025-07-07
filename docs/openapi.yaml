@@ -1831,29 +1831,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/projects/{project_name}/embeddings:
+  /api/v1/embeddings:
     get:
       tags:
       - Embeddings
-      - projects
       - embeddings
-      summary: Get all issue embeddings for a project
+      summary: Get all issue embeddings
       description: 'API endpoint to fetch raw embedding vectors for issues, with optional
         filtering.
 
-
         This endpoint is designed to provide data for frontend visualizations like
         deck.gl.'
-      operationId: get_raw_embeddings_api_v1_projects__project_name__embeddings_get
+      operationId: get_raw_embeddings_api_v1_embeddings_get
       security:
       - bearerAuth: []
       parameters:
-      - name: project_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Project Name
       - name: embedding_model_id
         in: query
         required: false
@@ -1864,16 +1856,46 @@ paths:
           description: The ID of the embedding model to use.
           title: Embedding Model Id
         description: The ID of the embedding model to use.
-      - name: organization_name
+      - name: project_ids
         in: query
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          description: Filter embeddings by organization name.
-          title: Organization Name
-        description: Filter embeddings by organization name.
+          description: Comma-separated list of project IDs.
+          title: Project Ids
+        description: Comma-separated list of project IDs.
+      - name: project_names
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Comma-separated list of project names.
+          title: Project Names
+        description: Comma-separated list of project names.
+      - name: organization_ids
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Comma-separated list of organization IDs.
+          title: Organization Ids
+        description: Comma-separated list of organization IDs.
+      - name: organization_names
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Comma-separated list of organization names.
+          title: Organization Names
+        description: Comma-separated list of organization names.
       - name: skip
         in: query
         required: false
@@ -2215,7 +2237,65 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/private/webhooks/{tracker_type}/{identifier_in_url}:
+  /api/v1/project-duplicate-stats:
+    get:
+      tags:
+      - Issue Duplicates
+      summary: Get Projects Duplicate Stats
+      description: Get statistics about duplicate issues for specified projects.
+      operationId: get_projects_duplicate_stats_api_v1_project_duplicate_stats_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_ids
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              type: string
+          - type: 'null'
+          description: A list of project IDs to filter the statistics by. If not provided,
+            stats for all accessible projects will be returned.
+          title: Project Ids
+        description: A list of project IDs to filter the statistics by. If not provided,
+          stats for all accessible projects will be returned.
+      - name: similarity_threshold
+        in: query
+        required: false
+        schema:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          description: Similarity threshold for considering issues as duplicates.
+          default: 0.95
+          title: Similarity Threshold
+        description: Similarity threshold for considering issues as duplicates.
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter issues by status.
+          title: Status
+        description: Filter issues by status.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicateStats'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/webhooks/private/webhooks/{tracker_type}/{identifier_in_url}:
     post:
       tags:
       - Webhooks
@@ -2226,7 +2306,7 @@ paths:
         Parses the payload to identify the organization and updates its
 
         last_webhook_update timestamp.'
-      operationId: receive_webhook_api_v1_private_webhooks__tracker_type___identifier_in_url__post
+      operationId: receive_webhook_api_v1_webhooks_private_webhooks__tracker_type___identifier_in_url__post
       parameters:
       - name: tracker_type
         in: path
@@ -2254,6 +2334,167 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/flows/:
+    post:
+      tags:
+      - Flows
+      summary: Create Flow
+      description: Create new flow.
+      operationId: create_flow_api_v1_flows__post
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowCreate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Flows
+      summary: Read Flows
+      description: Retrieve flows for the user's organization.
+      operationId: read_flows_api_v1_flows__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Skip
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FlowResponse'
+                title: Response Read Flows Api V1 Flows  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/{flow_id}:
+    get:
+      tags:
+      - Flows
+      summary: Read Flow
+      description: Get flow by ID.
+      operationId: read_flow_api_v1_flows__flow_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Flows
+      summary: Update Flow
+      description: Update a flow.
+      operationId: update_flow_api_v1_flows__flow_id__put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Flows
+      summary: Delete Flow
+      description: Delete a flow.
+      operationId: delete_flow_api_v1_flows__flow_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /:
     get:
       tags:
@@ -2765,6 +3006,9 @@ components:
         issue_id:
           type: string
           title: Issue Id
+        project_id:
+          type: string
+          title: Project Id
         embedding:
           items:
             type: number
@@ -2796,6 +3040,7 @@ components:
       type: object
       required:
       - issue_id
+      - project_id
       - embedding
       title: EmbeddingRawDataItem
       description: Individual data item in the raw embedding response.
@@ -2811,6 +3056,273 @@ components:
       - data
       title: EmbeddingRawResponse
       description: Response model for the raw embeddings endpoint.
+    FlowCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        trigger_event_source:
+          type: string
+          title: Trigger Event Source
+        trigger_event_type:
+          type: string
+          title: Trigger Event Type
+        trigger_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Trigger Config
+        prompt_template:
+          type: string
+          title: Prompt Template
+        model_configuration_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Model Configuration Id
+        openhands_agent_config:
+          additionalProperties: true
+          type: object
+          title: Openhands Agent Config
+        allowed_mcp_servers:
+          items:
+            type: string
+          type: array
+          title: Allowed Mcp Servers
+          default: []
+        allowed_mcp_tools:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Allowed Mcp Tools
+          default: []
+        is_preset:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Preset
+          default: false
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+          default: true
+        created_by_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Created By User Id
+        organization_id:
+          type: string
+          format: uuid
+          title: Organization Id
+      type: object
+      required:
+      - name
+      - trigger_event_source
+      - trigger_event_type
+      - prompt_template
+      - openhands_agent_config
+      - organization_id
+      title: FlowCreate
+    FlowResponse:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        trigger_event_source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Event Source
+        trigger_event_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Event Type
+        trigger_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Trigger Config
+        prompt_template:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Template
+        model_configuration_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Model Configuration Id
+        openhands_agent_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Openhands Agent Config
+        allowed_mcp_servers:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Allowed Mcp Servers
+        allowed_mcp_tools:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Allowed Mcp Tools
+        is_preset:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Preset
+          default: false
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+          default: true
+        created_by_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Created By User Id
+        organization_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Organization Id
+        id:
+          type: string
+          format: uuid
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - created_at
+      - updated_at
+      title: FlowResponse
+    FlowUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        trigger_event_source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Event Source
+        trigger_event_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Event Type
+        trigger_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Trigger Config
+        prompt_template:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Template
+        model_configuration_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Model Configuration Id
+        openhands_agent_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Openhands Agent Config
+        allowed_mcp_servers:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Allowed Mcp Servers
+        allowed_mcp_tools:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Allowed Mcp Tools
+        is_preset:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Preset
+          default: false
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+          default: true
+        created_by_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Created By User Id
+        organization_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Organization Id
+      type: object
+      title: FlowUpdate
     HTTPValidationError:
       properties:
         detail:
@@ -2958,6 +3470,38 @@ components:
       - updated_at
       title: IssueDuplicate
       description: Schema for returning an IssueDuplicate.
+    IssueDuplicateProjectStats:
+      properties:
+        project_id:
+          type: string
+          title: Project Id
+        project_name:
+          type: string
+          title: Project Name
+        total:
+          type: integer
+          title: Total
+        duplicates:
+          type: integer
+          title: Duplicates
+      type: object
+      required:
+      - project_id
+      - project_name
+      - total
+      - duplicates
+      title: IssueDuplicateProjectStats
+    IssueDuplicateStats:
+      properties:
+        projects:
+          additionalProperties:
+            $ref: '#/components/schemas/IssueDuplicateProjectStats'
+          type: object
+          title: Projects
+      type: object
+      required:
+      - projects
+      title: IssueDuplicateStats
     IssueResponse:
       properties:
         title:
@@ -3023,6 +3567,10 @@ components:
           type: string
           title: Project
           description: Project name
+        project_id:
+          type: string
+          title: Project Id
+          description: Project ID
         url:
           type: string
           title: Url
@@ -3049,6 +3597,7 @@ components:
       - key
       - organization
       - project
+      - project_id
       - url
       - created_at
       - updated_at
