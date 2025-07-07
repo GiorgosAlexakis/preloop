@@ -1,7 +1,7 @@
 // /Users/yanconst/Projects/spacebridge/SpaceLit/src/workers/tsne.worker.ts
 import * as tsnejs from 'tsne-js';
 
-self.onmessage = e => {
+self.onmessage = (e) => {
   const { vectors, options, iterations } = e.data;
 
   const modelOptions = {

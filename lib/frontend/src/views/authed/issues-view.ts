@@ -234,14 +234,14 @@ export class IssuesView extends LitElement {
       height: 160px;
     }
     .loading-overlay {
-          color: white;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          gap: var(--sl-spacing-medium);
-          z-index: 10000;
-      }
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: var(--sl-spacing-medium);
+      z-index: 10000;
+    }
   `;
 
   connectedCallback() {
@@ -289,7 +289,8 @@ export class IssuesView extends LitElement {
       this._hasMorePages = data.duplicates.length === this._pageSize;
       this.fetchLlmVerdicts(); // Fetch verdicts after getting duplicates
     } catch (error) {
-      this._error = error instanceof Error ? error.message : 'An unknown error occurred.';
+      this._error =
+        error instanceof Error ? error.message : 'An unknown error occurred.';
       console.error('Failed to fetch duplicate issues:', error);
     } finally {
       this._loading = false;
@@ -320,7 +321,10 @@ export class IssuesView extends LitElement {
             },
           };
         } catch (error) {
-          console.error(`Failed to fetch LLM verdict for pair ${pairKey}:`, error);
+          console.error(
+            `Failed to fetch LLM verdict for pair ${pairKey}:`,
+            error
+          );
           this._llmVerdicts = {
             ...this._llmVerdicts,
             [pairKey]: { decision: 'undecided', reason: 'Failed to load' },
@@ -348,7 +352,7 @@ export class IssuesView extends LitElement {
     const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
     const originalDuplicates = [...this._duplicates];
     this._duplicates = this._duplicates.filter(
-      p => `${p.issue1.id}-${p.issue2.id}` !== pairKey
+      (p) => `${p.issue1.id}-${p.issue2.id}` !== pairKey
     );
 
     try {
@@ -382,11 +386,17 @@ export class IssuesView extends LitElement {
         <td colspan="5">
           <div class="detail-view-card">
             <div class="detail-section">
-              <h3><span class="detail-issue-key">${pair.issue1.key}</span><br />${pair.issue1.title}</h3>
+              <h3>
+                <span class="detail-issue-key">${pair.issue1.key}</span
+                ><br />${pair.issue1.title}
+              </h3>
               <p class="issue-description">${pair.issue1.description}</p>
             </div>
             <div class="detail-section">
-              <h3><span class="detail-issue-key">${pair.issue2.key}</span><br />${pair.issue2.title}</h3>
+              <h3>
+                <span class="detail-issue-key">${pair.issue2.key}</span
+                ><br />${pair.issue2.title}
+              </h3>
               <p class="issue-description">${pair.issue2.description}</p>
             </div>
             ${verdict
@@ -425,7 +435,9 @@ export class IssuesView extends LitElement {
   }
 
   private _removeProjectFilter(projectIdToRemove: string) {
-    this._selectedProjectIds = this._selectedProjectIds.filter(id => id !== projectIdToRemove);
+    this._selectedProjectIds = this._selectedProjectIds.filter(
+      (id) => id !== projectIdToRemove
+    );
     this.fetchDuplicates();
   }
 
@@ -443,32 +455,46 @@ export class IssuesView extends LitElement {
   }
 
   private _renderActiveFilters() {
-    if (this._selectedProjectIds.length === 0 && this._selectedStatus === 'opened') {
+    if (
+      this._selectedProjectIds.length === 0 &&
+      this._selectedStatus === 'opened'
+    ) {
       return html``;
     }
 
-    const selectedProjects = this._selectedProjectIds.map(id =>
-      this._allProjects.find(p => p.id.toString() === id)
-    ).filter(Boolean) as Project[];
+    const selectedProjects = this._selectedProjectIds
+      .map((id) => this._allProjects.find((p) => p.id.toString() === id))
+      .filter(Boolean) as Project[];
 
     return html`
       <div class="active-filters">
         <span>Filtered by:</span>
-        ${selectedProjects.map(project => html`
-          <sl-tag
-            size="medium"
-            removable
-            @sl-remove=${() => this._removeProjectFilter(project.id.toString())}
-          >
-            ${project.name}
-          </sl-tag>
-        `)}
-        ${this._selectedStatus !== 'opened' ? html`
-          <sl-tag size="medium" removable @sl-remove=${() => this._clearStatusFilter()}>
-            ${this._selectedStatus === 'closed' ? 'Closed' : 'All'}
-          </sl-tag>
-        ` : ''}
-        <sl-button size="small" pill @click=${this._clearAllFilters}>Clear all</sl-button>
+        ${selectedProjects.map(
+          (project) => html`
+            <sl-tag
+              size="medium"
+              removable
+              @sl-remove=${() =>
+                this._removeProjectFilter(project.id.toString())}
+            >
+              ${project.name}
+            </sl-tag>
+          `
+        )}
+        ${this._selectedStatus !== 'opened'
+          ? html`
+              <sl-tag
+                size="medium"
+                removable
+                @sl-remove=${() => this._clearStatusFilter()}
+              >
+                ${this._selectedStatus === 'closed' ? 'Closed' : 'All'}
+              </sl-tag>
+            `
+          : ''}
+        <sl-button size="small" pill @click=${this._clearAllFilters}
+          >Clear all</sl-button
+        >
       </div>
     `;
   }
@@ -489,10 +515,16 @@ export class IssuesView extends LitElement {
           </sl-button>
         </div>
 
-        <sl-alert variant="primary" open style="margin-bottom: var(--sl-spacing-large);">
+        <sl-alert
+          variant="primary"
+          open
+          style="margin-bottom: var(--sl-spacing-large);"
+        >
           <sl-icon slot="icon" name="info-circle"></sl-icon>
-          <strong>Find  similar issues and resolve duplicates</strong><br />
-          Identify similar and potential duplicate issues across your projects. Review each suggested pair, check the similarity score, and use the LLM review to resolve or dismiss the suggestion.
+          <strong>Find similar issues and resolve duplicates</strong><br />
+          Identify similar and potential duplicate issues across your projects.
+          Review each suggested pair, check the similarity score, and use the
+          LLM review to resolve or dismiss the suggestion.
         </sl-alert>
 
         ${this._renderActiveFilters()}
@@ -508,120 +540,144 @@ export class IssuesView extends LitElement {
 
         ${when(
           this._loading,
-          () => html`<div class="loading-overlay">
-                    <sl-spinner></sl-spinner>
-                    <span>Loading issues...</span>
-                </div>`
+          () =>
+            html`<div class="loading-overlay">
+              <sl-spinner></sl-spinner>
+              <span>Loading issues...</span>
+            </div>`
         )}
         ${when(
           this._error,
           () => html`<div class="error">Error: ${this._error}</div>`
         )}
-        ${when(
-          !this._loading && !this._error,
-          () =>
-            this._duplicates.length > 0
-              ? html`
-                  <sl-card class="table-card">
-                    <table class="styled-table">
-                      <thead>
-                        <tr>
-                          <th>Issue 1</th>
-                          <th>Issue 2</th>
-                          <th class="text-right">Similarity</th>
-                          <th class="text-right">LLM Review</th>
-                          <th class="text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${this._duplicates.map((pair) => {
-                          const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-                          const verdict = this._llmVerdicts[pairKey];
+        ${when(!this._loading && !this._error, () =>
+          this._duplicates.length > 0
+            ? html`
+                <sl-card class="table-card">
+                  <table class="styled-table">
+                    <thead>
+                      <tr>
+                        <th>Issue 1</th>
+                        <th>Issue 2</th>
+                        <th class="text-right">Similarity</th>
+                        <th class="text-right">LLM Review</th>
+                        <th class="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${this._duplicates.map((pair) => {
+                        const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+                        const verdict = this._llmVerdicts[pairKey];
 
-                          return html`
-                            <tr
-                              class="clickable-row ${verdict?.decision === 'rejected'
-                                ? 'faint-row'
-                                : ''}"
-                              @click=${() => this._toggleRow(pairKey)}
+                        return html`
+                          <tr
+                            class="clickable-row ${verdict?.decision ===
+                            'rejected'
+                              ? 'faint-row'
+                              : ''}"
+                            @click=${() => this._toggleRow(pairKey)}
+                          >
+                            <td>
+                              <a
+                                href="${pair.issue1.meta_data?.url ||
+                                pair.issue1.url}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="issue-id-link"
+                                @click=${(e: Event) => e.stopPropagation()}
+                              >
+                                <strong class="issue-id"
+                                  >${pair.issue1.key}</strong
+                                >
+                              </a>
+                              <div class="issue-title">
+                                ${pair.issue1.title}
+                              </div>
+                            </td>
+                            <td>
+                              <a
+                                href="${pair.issue2.meta_data?.url ||
+                                pair.issue2.url}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="issue-id-link"
+                                @click=${(e: Event) => e.stopPropagation()}
+                              >
+                                <strong class="issue-id"
+                                  >${pair.issue2.key}</strong
+                                >
+                              </a>
+                              <div class="issue-title">
+                                ${pair.issue2.title}
+                              </div>
+                            </td>
+                            <td class="text-right">
+                              ${(pair.similarity * 100).toFixed(2)}%
+                            </td>
+                            <td
+                              class="text-right"
+                              id="verdict-${pair.issue1.id}-${pair.issue2.id}"
                             >
-                              <td>
-                                <a
-                                  href="${pair.issue1.meta_data?.url || pair.issue1.url}"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  class="issue-id-link"
-                                  @click=${(e: Event) => e.stopPropagation()}
+                              ${pair.similarity >= 0.999
+                                ? html`<sl-badge
+                                    variant="warning"
+                                    style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
+                                    >Identical</sl-badge
+                                  >`
+                                : renderVerdict(verdict)}
+                            </td>
+                            <td>
+                              <div class="actions-container">
+                                <sl-button
+                                  size="small"
+                                  variant="primary"
+                                  @click=${(e: Event) => {
+                                    e.stopPropagation();
+                                    this._openResolveModal(pair);
+                                  }}
+                                  >Resolve</sl-button
                                 >
-                                  <strong class="issue-id">${pair.issue1.key}</strong>
-                                </a>
-                                <div class="issue-title">
-                                  ${pair.issue1.title}
-                                </div>
-                              </td>
-                              <td>
-                                <a
-                                  href="${pair.issue2.meta_data?.url || pair.issue2.url}"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  class="issue-id-link"
-                                  @click=${(e: Event) => e.stopPropagation()}
-                                >
-                                  <strong class="issue-id">${pair.issue2.key}</strong>
-                                </a>
-                                <div class="issue-title">
-                                  ${pair.issue2.title}
-                                </div>
-                              </td>
-                              <td class="text-right">
-                                ${(pair.similarity * 100).toFixed(2)}%
-                              </td>
-                              <td class="text-right" id="verdict-${pair.issue1.id}-${pair.issue2.id}">
-                                ${pair.similarity >= 0.999
-                                  ? html`<sl-badge
-                                      variant="warning"
-                                      style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
-                                      >Identical</sl-badge
-                                    >`
-                                  : renderVerdict(verdict)}
-                              </td>
-                              <td>
-                                <div class="actions-container">
-                                  <sl-button size="small" variant="primary" @click=${(e: Event) => { e.stopPropagation(); this._openResolveModal(pair); }}>Resolve</sl-button>
-                                  <sl-icon-button name="x-circle" label="Dismiss" @click=${(e: Event) => { e.stopPropagation(); this._handleDismiss(pair); }}></sl-icon-button>
-                                </div>
-                              </td>
-                            </tr>
-                            ${this._expandedRowKey === pairKey
-                              ? this._renderDetailView(pair, verdict)
-                              : ''}
-                          `;
-                        })}
-                      </tbody>
-                    </table>
-                  </sl-card>
-                  <div class="pagination-controls">
-                    <sl-button
-                      size="small"
-                      @click=${this._previousPage}
-                      ?disabled=${this._currentPage === 1}
-                      >Previous</sl-button
-                    >
-                    <span>Page ${this._currentPage}</span>
-                    <sl-button
-                      size="small"
-                      @click=${this._nextPage}
-                      ?disabled=${!this._hasMorePages}
-                      >Next</sl-button
-                    >
-                  </div>
-                `
-              : html`
-                  <sl-alert variant="primary" open>
-                    <sl-icon slot="icon" name="info-circle"></sl-icon>
-                    No duplicate issues found.
-                  </sl-alert>
-                `
+                                <sl-icon-button
+                                  name="x-circle"
+                                  label="Dismiss"
+                                  @click=${(e: Event) => {
+                                    e.stopPropagation();
+                                    this._handleDismiss(pair);
+                                  }}
+                                ></sl-icon-button>
+                              </div>
+                            </td>
+                          </tr>
+                          ${this._expandedRowKey === pairKey
+                            ? this._renderDetailView(pair, verdict)
+                            : ''}
+                        `;
+                      })}
+                    </tbody>
+                  </table>
+                </sl-card>
+                <div class="pagination-controls">
+                  <sl-button
+                    size="small"
+                    @click=${this._previousPage}
+                    ?disabled=${this._currentPage === 1}
+                    >Previous</sl-button
+                  >
+                  <span>Page ${this._currentPage}</span>
+                  <sl-button
+                    size="small"
+                    @click=${this._nextPage}
+                    ?disabled=${!this._hasMorePages}
+                    >Next</sl-button
+                  >
+                </div>
+              `
+            : html`
+                <sl-alert variant="primary" open>
+                  <sl-icon slot="icon" name="info-circle"></sl-icon>
+                  No duplicate issues found.
+                </sl-alert>
+              `
         )}
       </div>
       <project-filter-modal

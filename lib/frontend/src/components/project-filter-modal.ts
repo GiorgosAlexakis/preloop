@@ -49,8 +49,8 @@ export class ProjectFilterModal extends LitElement {
   handleSelect(event: CustomEvent) {
     const selectedItems = event.detail.selection as HTMLElement[];
     const projectIds = selectedItems
-      .map(item => item.dataset.projectId)
-      .filter(id => id); // Filter out undefined from parent items
+      .map((item) => item.dataset.projectId)
+      .filter((id) => id); // Filter out undefined from parent items
 
     this.draftSelectedProjectIds = [...new Set(projectIds)] as string[];
   }
@@ -89,15 +89,18 @@ export class ProjectFilterModal extends LitElement {
         .open=${this.open}
         @sl-hide=${() => this.dispatchEvent(new CustomEvent('close-modal'))}
       >
-                <div class="filter-section" style="margin-top: var(--sl-spacing-medium);">
+        <div
+          class="filter-section"
+          style="margin-top: var(--sl-spacing-medium);"
+        >
           <label class="filter-label">Projects</label>
           <sl-tree
             selection="multiple"
             @sl-selection-change=${this.handleSelect}
           >
-            ${this.organizations.map(org => {
+            ${this.organizations.map((org) => {
               const projectsInOrg = projectsByOrg.get(org.id) || [];
-              const selectedProjectsInOrg = projectsInOrg.filter(p =>
+              const selectedProjectsInOrg = projectsInOrg.filter((p) =>
                 this.draftSelectedProjectIds.includes(p.id.toString())
               );
 
@@ -115,7 +118,7 @@ export class ProjectFilterModal extends LitElement {
                 >
                   ${org.name}
                   ${projectsInOrg.map(
-                    proj =>
+                    (proj) =>
                       html`<sl-tree-item
                         data-project-id="${proj.id}"
                         ?selected=${this.draftSelectedProjectIds.includes(

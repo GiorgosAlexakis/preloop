@@ -24,7 +24,8 @@ interface DuplicateStatsResponse {
 export class DuplicateStatsChart extends LitElement {
   @property({ type: Array }) projectIds: string[] = [];
 
-  @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+  @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' =
+    'opened';
 
   @property({ type: Boolean, reflect: true, attribute: 'no-padding' })
   noPadding = false;
@@ -108,9 +109,9 @@ export class DuplicateStatsChart extends LitElement {
       .sort((a, b) => b.duplicates - a.duplicates)
       .slice(0, 5);
 
-    const labels = sortedStats.map(s => s.project_name);
-    const duplicateData = sortedStats.map(s => s.duplicates);
-    const otherData = sortedStats.map(s => s.total - s.duplicates);
+    const labels = sortedStats.map((s) => s.project_name);
+    const duplicateData = sortedStats.map((s) => s.duplicates);
+    const otherData = sortedStats.map((s) => s.total - s.duplicates);
 
     const canvas = this.shadowRoot?.querySelector('canvas');
     if (!canvas) return;
@@ -119,7 +120,11 @@ export class DuplicateStatsChart extends LitElement {
 
     const alarmingColor = 'hsl(350, 70%, 60%)';
     const alarmingBgColor = 'hsl(350, 70%, 65%)';
-    const duplicatePattern = this._createDiagonalPattern(ctx, alarmingColor, alarmingBgColor);
+    const duplicatePattern = this._createDiagonalPattern(
+      ctx,
+      alarmingColor,
+      alarmingBgColor
+    );
 
     if (this.chart) {
       this.chart.destroy();
@@ -183,7 +188,8 @@ export class DuplicateStatsChart extends LitElement {
         onHover: (event, chartElement) => {
           const target = event.native?.target as HTMLCanvasElement;
           if (target) {
-            target.style.cursor = this.interactive && chartElement[0] ? 'pointer' : 'default';
+            target.style.cursor =
+              this.interactive && chartElement[0] ? 'pointer' : 'default';
           }
         },
         responsive: true,
@@ -220,12 +226,12 @@ export class DuplicateStatsChart extends LitElement {
             callbacks: {
               title: () => null, // Hide title
               label: () => '', // Use footer for all info
-              footer: tooltipItems => {
+              footer: (tooltipItems) => {
                 const similarItem = tooltipItems.find(
-                  item => item.dataset.label === 'Similar Issues'
+                  (item) => item.dataset.label === 'Similar Issues'
                 );
                 const uniqueItem = tooltipItems.find(
-                  item => item.dataset.label === 'Unique Issues'
+                  (item) => item.dataset.label === 'Unique Issues'
                 );
 
                 const similarCount = similarItem?.parsed.y || 0;
@@ -264,15 +270,15 @@ export class DuplicateStatsChart extends LitElement {
 
     patternCtx.strokeStyle = color;
     patternCtx.lineWidth = 3;
-    
+
     patternCtx.beginPath();
-    patternCtx.moveTo(-2, size/2-2);
-    patternCtx.lineTo(size/2+2, size+2);
+    patternCtx.moveTo(-2, size / 2 - 2);
+    patternCtx.lineTo(size / 2 + 2, size + 2);
     patternCtx.stroke();
 
     patternCtx.beginPath();
-    patternCtx.moveTo(size/2-2, 0-2);
-    patternCtx.lineTo(size+2, size/2+2);
+    patternCtx.moveTo(size / 2 - 2, 0 - 2);
+    patternCtx.lineTo(size + 2, size / 2 + 2);
     patternCtx.stroke();
 
     return chartCtx.createPattern(patternCanvas, 'repeat') || color;

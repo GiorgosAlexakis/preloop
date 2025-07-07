@@ -26,7 +26,10 @@ export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
           style="--sl-color-success-text: var(--sl-color-pink-50); --sl-color-success-600: var(--sl-color-pink-600);"
           pill
         >
-          <sl-icon name="check-circle" style="margin-right: var(--sl-spacing-2x-small);"></sl-icon>
+          <sl-icon
+            name="check-circle"
+            style="margin-right: var(--sl-spacing-2x-small);"
+          ></sl-icon>
           Confirmed
         </sl-badge>
       `;
@@ -37,7 +40,10 @@ export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
           style="--sl-color-danger-text: var(--sl-color-cyan-50); --sl-color-danger-600: var(--sl-color-cyan-600);"
           pill
         >
-          <sl-icon name="x-circle" style="margin-right: var(--sl-spacing-2x-small);"></sl-icon>
+          <sl-icon
+            name="x-circle"
+            style="margin-right: var(--sl-spacing-2x-small);"
+          ></sl-icon>
           Rejected
         </sl-badge>
       `;

@@ -138,10 +138,7 @@ export class TrackerItem extends LitElement {
       >
         Are you sure you want to delete the tracker "${this.tracker?.name}"?
         <sl-button slot="footer" @click=${this._cancelDelete}>Cancel</sl-button>
-        <sl-button
-          slot="footer"
-          variant="danger"
-          @click=${this._confirmDelete}
+        <sl-button slot="footer" variant="danger" @click=${this._confirmDelete}
           >Delete</sl-button
         >
       </sl-dialog>
@@ -153,14 +150,14 @@ export class TrackerItem extends LitElement {
             name=${icon.name}
             library=${icon.library}
           ></sl-icon>
-          <h3 class="tracker-name">
-            ${this.tracker.name}
-          </h3>
+          <h3 class="tracker-name">${this.tracker.name}</h3>
           <p class="tracker-type">${this.tracker.tracker_type}</p>
           <div class="tracker-created">Created: ${createdAt}</div>
         </div>
         <div slot="footer">
-          <sl-button size="small" @click=${this._editTracker} pill>Edit</sl-button>
+          <sl-button size="small" @click=${this._editTracker} pill
+            >Edit</sl-button
+          >
           <sl-button
             size="small"
             variant="danger"

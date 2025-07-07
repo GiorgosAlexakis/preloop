@@ -1,11 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
-import {
-  listIssueDuplicates,
-  DuplicatePair,
-  checkLlmVerdict,
-} from '../api';
+import { listIssueDuplicates, DuplicatePair, checkLlmVerdict } from '../api';
 import { LlmVerdict, renderVerdict } from '../utils/verdict';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -110,9 +106,12 @@ export class SimilarIssuesWidget extends LitElement {
     this._llmVerdicts = initialVerdicts;
 
     // 2. Create an array of promises for all the API calls.
-    const verdictPromises = pairsToFetch.map(pair =>
-      checkLlmVerdict(pair.issue1.id, pair.issue2.id).catch(error => {
-        console.error(`[similar-issues-widget] fetchLlmVerdicts: API call failed for pair ${pair.issue1.id}-${pair.issue2.id}`, error);
+    const verdictPromises = pairsToFetch.map((pair) =>
+      checkLlmVerdict(pair.issue1.id, pair.issue2.id).catch((error) => {
+        console.error(
+          `[similar-issues-widget] fetchLlmVerdicts: API call failed for pair ${pair.issue1.id}-${pair.issue2.id}`,
+          error
+        );
         // Return a specific error object so Promise.all doesn't fail completely
         return { error: true, pairKey: `${pair.issue1.id}-${pair.issue2.id}` };
       })
@@ -132,7 +131,10 @@ export class SimilarIssuesWidget extends LitElement {
       const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
 
       if (result.error) {
-        finalVerdicts[pairKey] = { decision: 'undecided', reason: 'Failed to load' };
+        finalVerdicts[pairKey] = {
+          decision: 'undecided',
+          reason: 'Failed to load',
+        };
       } else {
         finalVerdicts[pairKey] = {
           decision: result.decision || 'undecided',
@@ -147,44 +149,60 @@ export class SimilarIssuesWidget extends LitElement {
   render() {
     return html`
       <sl-card>
-        <div slot="header">
-          Similar Issue Suggestions
-        </div>
+        <div slot="header">Similar Issue Suggestions</div>
 
         ${when(this._loading, () => html`<div>Loading...</div>`)}
         ${when(this._error, () => html`<div>${this._error}</div>`)}
-
-        ${when(!this._loading && !this._error, () => html`
-          <p>You have <a href="/console/issues"><strong>${this._totalSuggestions > 100 ? '100+' : this._totalSuggestions}</strong> unresolved suggestions</a>. Here are the top 3:</p>
-          <ul class="suggestion-list">
-            ${this._topSuggestions.map(pair => {
-              const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-              return html`
-                <li class="suggestion-item">
-                  <div class="issue-titles" title="${pair.issue1.title} vs ${pair.issue2.title}">
-                    <strong>${pair.issue1.key}</strong> vs <strong>${pair.issue2.key}</strong>
-                  </div>
-                  <div>
-                    <sl-badge variant="neutral">${(pair.similarity * 100).toFixed(0)}%</sl-badge>
-                    <div class="verdict-container">
-                      ${pair.similarity > 0.999
-                        ? html`<sl-badge
-                            variant="warning"
-                            style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
-                            pill
-                            >Identical</sl-badge
-                          >`
-                        : renderVerdict(this._llmVerdicts[pairKey])}
+        ${when(
+          !this._loading && !this._error,
+          () => html`
+            <p>
+              You have
+              <a href="/console/issues"
+                ><strong
+                  >${this._totalSuggestions > 100
+                    ? '100+'
+                    : this._totalSuggestions}</strong
+                >
+                unresolved suggestions</a
+              >. Here are the top 3:
+            </p>
+            <ul class="suggestion-list">
+              ${this._topSuggestions.map((pair) => {
+                const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+                return html`
+                  <li class="suggestion-item">
+                    <div
+                      class="issue-titles"
+                      title="${pair.issue1.title} vs ${pair.issue2.title}"
+                    >
+                      <strong>${pair.issue1.key}</strong> vs
+                      <strong>${pair.issue2.key}</strong>
                     </div>
-                  </div>
-                </li>
-              `;
-            })}
-          </ul>
-          <div class="see-all-container">
-            <a href="/console/issues">See all...</a>
-          </div>
-        `)}
+                    <div>
+                      <sl-badge variant="neutral"
+                        >${(pair.similarity * 100).toFixed(0)}%</sl-badge
+                      >
+                      <div class="verdict-container">
+                        ${pair.similarity > 0.999
+                          ? html`<sl-badge
+                              variant="warning"
+                              style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
+                              pill
+                              >Identical</sl-badge
+                            >`
+                          : renderVerdict(this._llmVerdicts[pairKey])}
+                      </div>
+                    </div>
+                  </li>
+                `;
+              })}
+            </ul>
+            <div class="see-all-container">
+              <a href="/console/issues">See all...</a>
+            </div>
+          `
+        )}
       </sl-card>
     `;
   }

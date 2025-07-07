@@ -80,7 +80,9 @@ export class ResolveIssueModal extends LitElement {
 
   private _close() {
     this.open = false;
-    this.dispatchEvent(new CustomEvent('closed', { bubbles: true, composed: true }));
+    this.dispatchEvent(
+      new CustomEvent('closed', { bubbles: true, composed: true })
+    );
   }
 
   private async _handleResolve() {
@@ -93,7 +95,9 @@ export class ResolveIssueModal extends LitElement {
         this.duplicatePair.issue1.id,
         this.duplicatePair.issue2.id
       );
-      this.dispatchEvent(new CustomEvent('resolved', { bubbles: true, composed: true }));
+      this.dispatchEvent(
+        new CustomEvent('resolved', { bubbles: true, composed: true })
+      );
       this._close();
     } catch (error) {
       console.error('Failed to execute resolution:', error);
@@ -143,7 +147,7 @@ export class ResolveIssueModal extends LitElement {
         >
           <div class="suggestions-group">
             ${actions.map(
-              action => html`
+              (action) => html`
                 <sl-radio value=${action.action_id}>
                   <span class="suggestion-title">${action.title}</span>
                   <span class="suggestion-description"

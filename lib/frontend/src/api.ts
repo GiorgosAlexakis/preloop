@@ -208,8 +208,12 @@ export async function listProjectsForOrg(
   return response.json();
 }
 
-export async function getDuplicateIssues(status: 'opened' | 'closed' | 'all' = 'opened') {
-  const response = await fetchWithAuth(`/api/v1/issue-duplicates/?status=${status}`);
+export async function getDuplicateIssues(
+  status: 'opened' | 'closed' | 'all' = 'opened'
+) {
+  const response = await fetchWithAuth(
+    `/api/v1/issue-duplicates/?status=${status}`
+  );
   if (!response.ok) {
     throw new Error('Failed to fetch duplicate issues');
   }
@@ -355,6 +359,70 @@ export async function deleteLlmModel(modelId: string) {
   }
 }
 
+// Flows
+export interface Flow {
+  id: string;
+  name: string;
+  description: string;
+  trigger_event_source: string;
+  trigger_event_type: string;
+  trigger_config: any;
+  prompt_template: string;
+  model_configuration_id: string;
+  openhands_agent_config: any;
+  allowed_mcp_servers: string[];
+  allowed_mcp_tools: any[];
+  is_preset: boolean;
+  is_enabled: boolean;
+  created_by_user_id: string;
+  organization_id: string;
+  created_at: string;
+}
+
+export async function getFlows(): Promise<Flow[]> {
+  const response = await fetchWithAuth('/api/v1/flows');
+  if (!response.ok) {
+    throw new Error('Failed to fetch flows');
+  }
+  return response.json();
+}
+
+export async function createFlow(flow: Partial<Flow>): Promise<Flow> {
+  const response = await fetchWithAuth('/api/v1/flows', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(flow),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to create flow');
+  }
+  return response.json();
+}
+
+export async function updateFlow(
+  flowId: string,
+  flow: Partial<Flow>
+): Promise<Flow> {
+  const response = await fetchWithAuth(`/api/v1/flows/${flowId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(flow),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update flow');
+  }
+  return response.json();
+}
+
+export async function deleteFlow(flowId: string) {
+  const response = await fetchWithAuth(`/api/v1/flows/${flowId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete flow');
+  }
+}
+
 export interface Project {
   id: number;
   name: string;
@@ -391,26 +459,30 @@ export interface IssueEmbedding {
   embedding: number[];
 }
 
-export async function getEmbeddingsForProjects(projectIds: string[]): Promise<{ data: IssueEmbedding[] } | null> {
-    const params = new URLSearchParams();
-    if (projectIds.length > 0) {
-        params.append('project_ids', projectIds.join(','));
-    }
+export async function getEmbeddingsForProjects(
+  projectIds: string[]
+): Promise<{ data: IssueEmbedding[] } | null> {
+  const params = new URLSearchParams();
+  if (projectIds.length > 0) {
+    params.append('project_ids', projectIds.join(','));
+  }
 
-    const queryString = params.toString();
-    const url = queryString ? `/api/v1/embeddings?${queryString}` : '/api/v1/embeddings';
+  const queryString = params.toString();
+  const url = queryString
+    ? `/api/v1/embeddings?${queryString}`
+    : '/api/v1/embeddings';
 
-    try {
-        const response = await fetchWithAuth(url);
-        if (!response.ok) {
-            console.error('Failed to fetch embeddings:', response.statusText);
-            throw new Error('Failed to fetch embeddings for projects');
-        }
-        return await response.json();
-    } catch (error) {
-        console.error('Error in getEmbeddingsForProjects:', error);
-        return null;
+  try {
+    const response = await fetchWithAuth(url);
+    if (!response.ok) {
+      console.error('Failed to fetch embeddings:', response.statusText);
+      throw new Error('Failed to fetch embeddings for projects');
     }
+    return await response.json();
+  } catch (error) {
+    console.error('Error in getEmbeddingsForProjects:', error);
+    return null;
+  }
 }
 
 export async function listOrganizations(): Promise<Organization[]> {
@@ -462,7 +534,7 @@ export async function listIssueDuplicates(
   if (options.limit) params.append('limit', options.limit.toString());
   if (options.skip) params.append('skip', options.skip.toString());
   if (options.project_ids) {
-    options.project_ids.forEach(id => params.append('project_ids', id));
+    options.project_ids.forEach((id) => params.append('project_ids', id));
   }
   if (options.similarity_threshold) {
     params.append(
@@ -507,7 +579,7 @@ export async function getProjectDuplicateStats(options: {
 }): Promise<DuplicateStatsResponse> {
   const { project_ids = [], status = 'opened' } = options;
   const params = new URLSearchParams();
-  project_ids.forEach(id => params.append('project_ids', id));
+  project_ids.forEach((id) => params.append('project_ids', id));
   params.append('status', status);
   const url = `/api/v1/project-duplicate-stats?${params.toString()}`;
   const response = await fetchWithAuth(url);
@@ -527,7 +599,7 @@ export async function executeResolution(
   );
 
   // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 1500));
+  await new Promise((resolve) => setTimeout(resolve, 1500));
 
   // In a real implementation, you would make a call to your backend here
   // to perform the action (e.g., using a tool to update the issues).
@@ -542,7 +614,7 @@ export async function dismissDuplicatePair(
   console.log(`Dismissing duplicate pair: ${issue1Id} and ${issue2Id}`);
 
   // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 500));
 
   // In a real implementation, you would make a call to your backend here
   // to record the dismissal.
