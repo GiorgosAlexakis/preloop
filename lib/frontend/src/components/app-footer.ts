@@ -116,7 +116,6 @@ export class AppFooter extends LitElement {
               height="40"
               style="margin-bottom: 16px"
             />
-
           </div>
           <nav class="footer-nav">
             <ul>

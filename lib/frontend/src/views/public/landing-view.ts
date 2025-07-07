@@ -88,7 +88,7 @@ export class LandingView extends LitElement {
                 <sl-button
                   variant="text"
                   size="large"
-                  @click=${() => (window.location.href = '/contact')}
+                  href="/request-demo"
                   >Request a Demo</sl-button
                 >
               </div>
@@ -118,8 +118,9 @@ export class LandingView extends LitElement {
                 </div>
                 <h3>Efficient Backlog Management</h3>
                 <p>
-                  By de-duplicating, detecting issue overlap and
-                  streamlining resolution, Spacebridge helps you optimize your backlog and roadmap.
+                  By de-duplicating, detecting issue overlap and streamlining
+                  resolution, Spacebridge helps you optimize your backlog and
+                  roadmap.
                 </p>
               </div>
 
@@ -550,7 +551,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
               <sl-button
                 variant="text"
                 size="large"
-                @click=${() => (window.location.href = '/contact')}
+                href="/request-demo"
                 >Request a Demo</sl-button
               >
             </div>
