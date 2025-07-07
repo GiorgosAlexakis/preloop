@@ -5,6 +5,7 @@ Revises: dbd4003e5eef
 Create Date: 2025-06-12 13:50:00.000000
 
 """
+
 import logging
 from alembic import op
 import sqlalchemy as sa
