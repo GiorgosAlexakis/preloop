@@ -40,7 +40,7 @@ export class RegisterView extends LitElement {
       <div class="container">
         <div class="logo">
           <a href="/">
-            <img src="/public/images/logo_dark.png" alt="SpaceBridge MCP" />
+            <img src="/images/logo_dark.png" alt="SpaceBridge MCP" />
           </a>
         </div>
         <div class="form-container">
