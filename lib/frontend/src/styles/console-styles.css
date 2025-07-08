@@ -7,6 +7,12 @@ a:hover {
     text-decoration: underline;
 }
 
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sl-spacing-large);
+}
+
 .container.large {
     max-width: var(--console-container-max-width);
     padding: var(--sl-spacing-x-large);

@@ -29,9 +29,6 @@ export class DuplicateStatsChart extends LitElement {
 
   @property({ type: Number }) similarityThreshold = 0.8;
 
-  @property({ type: Boolean, reflect: true, attribute: 'no-padding' })
-  noPadding = false;
-
   @property({ type: Boolean }) interactive = false;
 
   @state()
@@ -43,22 +40,41 @@ export class DuplicateStatsChart extends LitElement {
   @state()
   private _statsData: { [key: string]: ProjectStats } | null = null;
 
-  private chart: Chart | null = null;
+  private charts: Chart[] = [];
 
   static styles = css`
-    :host {
-      display: block;
-      height: 140px;
-      padding: var(--sl-spacing-small);
+    #chart-container {
+      display: flex;
+      justify-content: space-around;
+      align-items: flex-start;
+      height: 100%;
+      width: 100%;
+      gap: var(--sl-spacing-medium);
     }
 
-    :host([no-padding]) {
-      padding: 0;
+    .chart-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      max-width: 120px; /* Limit width of each chart item */
     }
 
     canvas {
       width: 100% !important;
-      height: 100% !important;
+      height: auto !important;
+      aspect-ratio: 1 / 1;
+    }
+
+    .project-label {
+      margin-top: var(--sl-spacing-x-small);
+      font-size: var(--sl-font-size-small);
+      color: var(--sl-color-neutral-400);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+      text-align: center;
     }
   `;
 
@@ -76,9 +92,9 @@ export class DuplicateStatsChart extends LitElement {
       this.fetchData();
     }
 
-    // Re-render the chart if the stats data is updated
+    // Re-render the charts if the stats data is updated
     if (this._statsData && changedProperties.has('_statsData')) {
-      this.renderChart(this._statsData);
+      this.renderCharts(this._statsData);
     }
   }
 
@@ -108,151 +124,102 @@ export class DuplicateStatsChart extends LitElement {
     }
   }
 
-  renderChart(stats: { [key: string]: ProjectStats }) {
+  renderCharts(stats: { [key: string]: ProjectStats }) {
+    this.charts.forEach(chart => chart.destroy());
+    this.charts = [];
+
+    const container = this.shadowRoot?.querySelector('#chart-container');
+    if (!container) return;
+    container.innerHTML = ''; // Clear previous charts
+
     const sortedStats = Object.values(stats)
       .sort((a, b) => b.duplicates - a.duplicates)
       .slice(0, 5);
 
-    const labels = sortedStats.map((s) => s.project_name);
-    const duplicateData = sortedStats.map((s) => s.duplicates);
-    const otherData = sortedStats.map((s) => s.total - s.duplicates);
-
-    const canvas = this.shadowRoot?.querySelector('canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
     const alarmingColor = 'hsl(350, 70%, 60%)';
     const alarmingBgColor = 'hsl(350, 70%, 65%)';
-    const duplicatePattern = this._createDiagonalPattern(
-      ctx,
-      alarmingColor,
-      alarmingBgColor
-    );
 
-    if (this.chart) {
-      this.chart.destroy();
-    }
+    sortedStats.forEach(stat => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'chart-wrapper';
 
-    this.chart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: 'Similar Issues',
-            data: duplicateData,
-            backgroundColor: duplicatePattern,
-            hoverBackgroundColor: 'hsl(350, 70%, 50%)',
-            borderRadius: {
-              topLeft: 0,
-              topRight: 0,
-              bottomLeft: 4,
-              bottomRight: 4,
+      const canvas = document.createElement('canvas');
+      const label = document.createElement('div');
+      label.className = 'project-label';
+      label.textContent = stat.project_name;
+      label.title = stat.project_name;
+
+      wrapper.appendChild(canvas);
+      wrapper.appendChild(label);
+      container.appendChild(wrapper);
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const duplicatePattern = this._createDiagonalPattern(
+        ctx,
+        alarmingColor,
+        alarmingBgColor
+      );
+
+      const chart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: ['Similar', 'Unique'],
+          datasets: [
+            {
+              data: [stat.duplicates, stat.total - stat.duplicates],
+              backgroundColor: [duplicatePattern, 'hsl(210, 60%, 55%)'],
+              hoverBackgroundColor: [
+                'hsl(350, 70%, 50%)',
+                'hsl(210, 60%, 65%)',
+              ],
+              borderColor: 'var(--sl-color-neutral-1000)',
+              borderWidth: 1,
+              hoverOffset: 8,
             },
-            borderSkipped: false,
+          ],
+        },
+        options: {
+          onClick: () => {
+            if (this.interactive) {
+              this.dispatchEvent(
+                new CustomEvent('project-selected', {
+                  detail: { projectId: stat.project_id },
+                  bubbles: true,
+                  composed: true,
+                })
+              );
+            }
           },
-          {
-            label: 'Unique Issues',
-            data: otherData,
-            backgroundColor: 'hsl(210, 60%, 55%)',
-            hoverBackgroundColor: 'hsl(210, 60%, 65%)',
-            borderRadius: {
-              topLeft: 4,
-              topRight: 4,
-              bottomLeft: 0,
-              bottomRight: 0,
-            },
-            borderSkipped: false,
+          onHover: (event, chartElement) => {
+            const target = event.native?.target as HTMLCanvasElement;
+            if (target) {
+              target.style.cursor = this.interactive && chartElement[0] ? 'pointer' : 'default';
+            }
           },
-        ],
-      },
-      options: {
-        interaction: {
-          mode: 'index',
-          intersect: false,
-        },
-        onClick: (event, elements) => {
-          if (!this.interactive || elements.length === 0) {
-            return;
-          }
-          const element = elements[0];
-          const index = element.index;
-          const clickedStat = sortedStats[index];
-          if (clickedStat) {
-            this.dispatchEvent(
-              new CustomEvent('project-selected', {
-                detail: { projectId: clickedStat.project_id },
-                bubbles: true,
-                composed: true,
-              })
-            );
-          }
-        },
-        onHover: (event, chartElement) => {
-          const target = event.native?.target as HTMLCanvasElement;
-          if (target) {
-            target.style.cursor =
-              this.interactive && chartElement[0] ? 'pointer' : 'default';
-          }
-        },
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            stacked: true,
-            display: true,
-            grid: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
               display: false,
             },
-            ticks: {
-              color: 'white',
-            },
-            border: {
-              display: false,
-            },
-          },
-          y: {
-            stacked: true,
-            display: false,
-            beginAtZero: true,
-          },
-        },
-        plugins: {
-          legend: {
-            display: false,
-          },
-          tooltip: {
-            backgroundColor: 'var(--sl-color-neutral-1000)',
-            titleColor: 'var(--sl-color-neutral-0)',
-            bodyColor: 'var(--sl-color-neutral-0)',
-            displayColors: false,
-            callbacks: {
-              title: () => null, // Hide title
-              label: () => '', // Use footer for all info
-              footer: (tooltipItems) => {
-                const similarItem = tooltipItems.find(
-                  (item) => item.dataset.label === 'Similar Issues'
-                );
-                const uniqueItem = tooltipItems.find(
-                  (item) => item.dataset.label === 'Unique Issues'
-                );
-
-                const similarCount = similarItem?.parsed.y || 0;
-                const uniqueCount = uniqueItem?.parsed.y || 0;
-                const total = similarCount + uniqueCount;
-
-                return [
-                  `Similar: ${similarCount}`,
-                  `Unique: ${uniqueCount}`,
-                  ``,
-                  `Total: ${total}`,
-                ];
+            tooltip: {
+              backgroundColor: 'var(--sl-color-neutral-1000)',
+              displayColors: false,
+              callbacks: {
+                title: () => stat.project_name,
+                label: (context) => {
+                  const label = context.label || '';
+                  const value = context.parsed || 0;
+                  return `${label}: ${value}`;
+                },
               },
             },
           },
         },
-      },
+      });
+      this.charts.push(chart);
     });
   }
 
@@ -295,7 +262,7 @@ export class DuplicateStatsChart extends LitElement {
     if (this._error) {
       return html`<div>Error: ${this._error}</div>`;
     }
-    return html`<canvas></canvas>`;
+    return html`<div id="chart-container"></div>`;
   }
 }
 

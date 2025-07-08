@@ -205,7 +205,6 @@ export class DashboardView extends AuthedElement {
                     <div slot="header">Similar Issues per Project</div>
                     <duplicate-stats-chart
                       .similarityThreshold=${DEFAULT_SIMILARITY_THRESHOLD}
-                      ?no-padding=${true}
                     ></duplicate-stats-chart>
                   </sl-card>
                 `

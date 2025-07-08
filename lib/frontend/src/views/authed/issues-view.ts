@@ -110,9 +110,6 @@ export class IssuesView extends LitElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
-      sl-card::part(body) {
-        padding: 0;
-      }
       .styled-table th,
       .styled-table td {
         padding: var(--sl-spacing-medium);
@@ -139,7 +136,6 @@ export class IssuesView extends LitElement {
         justify-content: flex-end;
         align-items: center;
         gap: var(--sl-spacing-medium);
-        margin-top: var(--sl-spacing-large);
       }
 
       .faint-row {
@@ -167,14 +163,9 @@ export class IssuesView extends LitElement {
         padding: var(--sl-spacing-large);
       }
 
-      .detail-grid {
-        margin-bottom: var(--sl-spacing-large);
-      }
-
       .detail-section h3 {
         font-size: var(--sl-font-size-medium);
         margin-top: 0;
-        margin-bottom: var(--sl-spacing-small);
       }
 
       .detail-issue-key {
@@ -231,14 +222,6 @@ export class IssuesView extends LitElement {
         text-transform: uppercase;
       }
 
-      .embedding-card {
-        width: 100%;
-        margin-bottom: var(--sl-spacing-large);
-      }
-      .embedding-card::part(body) {
-        padding: 0;
-        height: 160px;
-      }
       .loading-overlay {
         color: white;
         display: flex;
@@ -540,7 +523,6 @@ export class IssuesView extends LitElement {
         <sl-alert
           variant="primary"
           open
-          style="margin-bottom: var(--sl-spacing-large);"
         >
           <sl-icon slot="icon" name="info-circle"></sl-icon>
           <strong>Find similar issues and resolve duplicates</strong><br />
@@ -572,7 +554,6 @@ export class IssuesView extends LitElement {
                     .selectedStatus=${this._selectedStatus}
                     .similarityThreshold=${this._similarityThreshold}
                     ?interactive=${true}
-                    ?no-padding=${true}
                     @project-selected=${this._handleProjectSelectedFromChart}
                   ></duplicate-stats-chart>
                 </sl-card>
