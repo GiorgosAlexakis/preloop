@@ -156,6 +156,8 @@ class TrackerClient:
             current_issue_model = crud_issue.get_by_external_id(db, external_id=xformed_issue_data["external_id"], project_id=project.id)
 
             issue_changed = False
+            if not isinstance(xformed_issue_data["updated_at"], datetime.datetime):
+                xformed_issue_data["updated_at"] = datetime.datetime.fromisoformat(xformed_issue_data["updated_at"])
             if current_issue_model:
                 if current_issue_model.updated_at < xformed_issue_data["updated_at"]:
                     issue_changed = True
@@ -199,6 +201,8 @@ def _process_organization(
     org_stats = {"projects": 0, "issues": 0, "embeddings_updated": 0, "errors": 0}
     now = datetime.datetime.now(datetime.timezone.utc)
 
+    projects = client.scan_projects(db, org)
+    org_stats["projects"] = len(projects)
     spacebridge_url_str = os.getenv("SPACEBRIDGE_URL")
     if spacebridge_url_str:
         try:
@@ -207,7 +211,6 @@ def _process_organization(
             current_secret_to_use = org.webhook_secret
 
             if client.tracker_type == "jira":
-                projects = crud_project.get_for_organization(db, organization_id=org.id)
                 for project in projects:
                     try:
                         client.client.register_webhook(
@@ -230,6 +233,28 @@ def _process_organization(
                 except Exception as e:
                     logger.error(f"Error registering webhook for GitHub organization {org.identifier}: {e}", exc_info=True)
                     org_stats["errors"] += 1
+            elif client.tracker_type == "gitlab":
+                try:
+                    result = client.client.register_group_webhook(
+                        organization=org,
+                        webhook_url=webhook_target_url,
+                        secret=current_secret_to_use,
+                    )
+                    if result == "group_hooks_not_supported":
+                        logger.warning(f"Group hooks are not supported for GitLab organization {org.identifier}.")
+                        for project in projects:
+                            try:
+                                client.client.register_project_webhook(
+                                    project=project,
+                                    webhook_url=webhook_target_url,
+                                    secret=current_secret_to_use,
+                                )
+                            except Exception as e:
+                                logger.error(f"Error registering webhook for GitLab project {project.identifier}: {e}", exc_info=True)
+                                org_stats["errors"] += 1
+                except Exception as e:
+                    logger.error(f"Error registering webhook for GitLab organization {org.identifier}: {e}", exc_info=True)
+                    org_stats["errors"] += 1
             else:
                 # Handle other tracker types here if necessary
                 pass
@@ -242,8 +267,6 @@ def _process_organization(
             org_stats["errors"] += 1
 
     # Polling logic
-    projects = client.scan_projects(db, org)
-    org_stats["projects"] = len(projects)
     for project in projects:
         issues, embeddings_updated = client.scan_issues(db, org, project, since, force_update)
         org_stats["issues"] += len(issues)
