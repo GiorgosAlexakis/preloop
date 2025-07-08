@@ -1,6 +1,5 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApiKeys, createApiKey, deleteApiKey, ApiKey } from '../../../api';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
@@ -14,6 +13,7 @@ import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
+import consoleStyles from '../../../styles/console-styles.css?inline';
 
 @customElement('api-keys-view')
 export class ApiKeysView extends LitElement {
@@ -190,7 +190,7 @@ export class ApiKeysView extends LitElement {
     };
 
     return html`
-      <div class="container">
+      <div class="container large">
         <div class="header">
           <h1 class="title">API Keys</h1>
           <sl-button
@@ -287,17 +287,7 @@ export class ApiKeysView extends LitElement {
     `;
   }
 
-  static styles = css`
-    .container {
-      max-width: var(--console-container-max-width);
-      padding: var(--sl-spacing-x-large);
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: var(--sl-spacing-large);
-    }
+  static styles = [unsafeCSS(consoleStyles), css`
     .loading-indicator {
       display: flex;
       justify-content: center;
@@ -383,5 +373,5 @@ export class ApiKeysView extends LitElement {
       margin-top: var(--sl-spacing-medium);
       font-size: var(--sl-font-size-small);
     }
-  `;
+  `];
 }

@@ -1,9 +1,9 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { getAccountDetails, updateAccountDetails } from '../../../api';
-import { formStyles } from '../../../styles/form-styles';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
+import consoleStyles from '../../../styles/console-styles.css?inline';
 
 @customElement('profile-view')
 export class ProfileView extends LitElement {
@@ -44,15 +44,12 @@ export class ProfileView extends LitElement {
 
   render() {
     return html`
-      <div class="container">
+      <div class="container large">
         <div class="header">
           <h1 class="title">Profile</h1>
         </div>
 
         <div class="card">
-          <div class="card-header">
-            <h3>Update Profile</h3>
-          </div>
           <div class="card-body">
             <form @submit="${this.handleUpdateProfile}">
               <sl-input
@@ -85,24 +82,8 @@ export class ProfileView extends LitElement {
   }
 
   static styles = [
-    formStyles,
+    unsafeCSS(consoleStyles),
     css`
-      .container {
-        max-width: var(--console-container-max-width);
-        padding: var(--sl-spacing-x-large);
-      }
-      .card {
-        background-color: var(--lumo-base-color);
-        border-radius: var(--lumo-border-radius);
-        padding: var(--sl-spacing-x-large);
-        margin-bottom: var(--sl-spacing-x-large);
-        box-shadow: var(--lumo-box-shadow-s);
-      }
-      .card-header {
-        border-bottom: 1px solid var(--lumo-contrast-10pct);
-        padding-bottom: 1rem;
-        margin-bottom: 1rem;
-      }
       h2,
       h3 {
         margin: 0;
@@ -111,10 +92,6 @@ export class ProfileView extends LitElement {
         display: flex;
         flex-direction: column;
         gap: 1rem;
-      }
-
-      .form-group {
-        margin-bottom: 1rem;
       }
 
       sl-input[readonly]::part(base) {

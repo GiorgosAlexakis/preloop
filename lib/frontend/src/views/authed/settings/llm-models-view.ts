@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
@@ -22,6 +22,7 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import consoleStyles from '../../../styles/console-styles.css?inline';
 
 @customElement('llm-models-view')
 export class LlmModelsView extends LitElement {
@@ -55,17 +56,7 @@ export class LlmModelsView extends LitElement {
   @state()
   private isOtherModel = false;
 
-  static styles = css`
-    .container {
-      max-width: var(--console-container-max-width);
-      padding: var(--sl-spacing-x-large);
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: var(--sl-spacing-large);
-    }
+  static styles = [unsafeCSS(consoleStyles), css`
     .table-card {
       width: 100%;
       --padding: 0;
@@ -124,7 +115,7 @@ export class LlmModelsView extends LitElement {
     .info-header {
       margin-bottom: var(--sl-spacing-large);
     }
-  `;
+  `];
 
   async connectedCallback() {
     super.connectedCallback();
@@ -166,7 +157,7 @@ export class LlmModelsView extends LitElement {
     };
 
     return html`
-      <div class="container">
+      <div class="container large">
         <div class="header">
           <h1 class="title">LLM Models</h1>
           <sl-button variant="primary" @click=${this.openAddModelModal}>

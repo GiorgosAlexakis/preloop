@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
@@ -26,6 +26,7 @@ import {
 } from '../../api';
 import { DEFAULT_SIMILARITY_THRESHOLD } from '../../config';
 import { LlmVerdict, renderVerdict } from '../../utils/verdict';
+import consoleStyles from '../../styles/console-styles.css?inline';
 
 // Define the structure of an issue and a duplicate pair based on the API response
 interface Issue {
@@ -106,24 +107,7 @@ export class IssuesView extends LitElement {
   @state()
   private _organizations: Organization[] = [];
 
-  static styles = css`
-    .container {
-      max-width: var(--console-container-large-max-width);
-      padding: var(--sl-spacing-x-large);
-    }
-    a {
-      color: var(--sl-color-primary-600);
-      text-decoration: none;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: var(--sl-spacing-large);
-    }
+  static styles = [unsafeCSS(consoleStyles), css`
     sl-card::part(body) {
       padding: 0;
     }
@@ -262,7 +246,7 @@ export class IssuesView extends LitElement {
       gap: var(--sl-spacing-medium);
       z-index: 10000;
     }
-  `;
+  `];
 
   connectedCallback() {
     super.connectedCallback();
@@ -541,7 +525,7 @@ export class IssuesView extends LitElement {
 
   render() {
     return html`
-      <div class="container">
+      <div class="container x-large">
         <div class="header">
           <h1>Similar Issues</h1>
           <sl-button @click=${this._openFilterModal}>

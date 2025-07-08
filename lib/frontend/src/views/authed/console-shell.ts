@@ -1,13 +1,19 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, query } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/details/details.js';
+import consoleStyles from '../../styles/console-styles.css?inline';
+
+// static styles = [formStyles, css`
+//     h2 {}
+    
+//     `];
 
 @customElement('console-shell')
 export class ConsoleShell extends LitElement {
-  static styles = css`
+  static styles = [unsafeCSS(consoleStyles), css`
     :host {
       display: block;
       height: 100vh;
@@ -38,10 +44,6 @@ export class ConsoleShell extends LitElement {
     .sign-out-menu sl-menu-item:hover::part(base) {
       background-color: var(--sl-color-neutral-100);
       color: var(--sl-color-primary-700);
-    }
-
-    a {
-      text-decoration: none;
     }
 
     .main-content {
@@ -85,7 +87,7 @@ export class ConsoleShell extends LitElement {
     sl-details {
       padding-left: 1em;
     }
-  `;
+  `];
 
   switchToOldUI() {
     // Clear the cookie

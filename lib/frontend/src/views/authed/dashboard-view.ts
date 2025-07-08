@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
@@ -12,6 +12,7 @@ import { AuthedElement } from '../../api';
 import '../../components/similar-issues-widget.ts';
 import '../../components/duplicate-stats-chart.ts';
 import { DEFAULT_SIMILARITY_THRESHOLD } from '../../config';
+import consoleStyles from '../../styles/console-styles.css?inline';
 
 interface Tracker {
   id: string;
@@ -73,7 +74,7 @@ export class DashboardView extends AuthedElement {
     }
   }
 
-  static styles = css`
+  static styles = [unsafeCSS(consoleStyles), css`
     .container {
       padding: var(--sl-spacing-large);
     }
@@ -111,13 +112,6 @@ export class DashboardView extends AuthedElement {
     }
     .summary-item:last-child {
       border-bottom: none;
-    }
-    a {
-      color: var(--sl-color-primary-600);
-      text-decoration: none;
-    }
-    a:hover {
-      text-decoration: underline;
     }
     .dor-item {
       display: flex;
@@ -184,7 +178,7 @@ export class DashboardView extends AuthedElement {
         grid-template-columns: 1fr;
       }
     }
-  `;
+  `];
 
   render() {
     if (this.isLoading) {

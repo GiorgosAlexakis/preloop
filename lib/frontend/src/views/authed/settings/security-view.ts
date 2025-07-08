@@ -1,9 +1,9 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { changePassword } from '../../../api';
-import { formStyles } from '../../../styles/form-styles';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
+import consoleStyles from '../../../styles/console-styles.css?inline';
 
 @customElement('security-view')
 export class SecurityView extends LitElement {
@@ -50,7 +50,7 @@ export class SecurityView extends LitElement {
 
   render() {
     return html`
-      <div class="container">
+      <div class="container large">
         <div class="header">
           <h1 class="title">Security</h1>
         </div>
@@ -107,21 +107,9 @@ export class SecurityView extends LitElement {
   }
 
   static styles = [
-    formStyles,
+    unsafeCSS(consoleStyles),
     css`
-      .container {
-        max-width: var(--console-container-max-width);
-        padding: var(--sl-spacing-x-large);
-      }
-      .card {
-        background-color: var(--lumo-base-color);
-        border-radius: var(--lumo-border-radius);
-        padding: var(--sl-spacing-x-large);
-        margin-bottom: var(--sl-spacing-x-large);
-        box-shadow: var(--lumo-box-shadow-s);
-      }
       .card-header {
-        border-bottom: 1px solid var(--lumo-contrast-10pct);
         padding-bottom: 1rem;
         margin-bottom: 1rem;
       }

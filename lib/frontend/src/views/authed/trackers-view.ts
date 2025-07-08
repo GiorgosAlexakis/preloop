@@ -1,9 +1,10 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state, query } from 'lit/decorators.js';
 import '../../components/tracker-list.ts';
 import '../../components/add-tracker-modal.ts';
 import type { Tracker } from '../../components/tracker-item.ts';
 import type { TrackerList } from '../../components/tracker-list.ts';
+import consoleStyles from '../../styles/console-styles.css?inline';
 
 @customElement('trackers-view')
 export class TrackersView extends LitElement {
@@ -16,23 +17,7 @@ export class TrackersView extends LitElement {
   @query('tracker-list')
   private trackerListElement: TrackerList | undefined;
 
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: var(--sl-spacing-large);
-    }
-
-    .container {
-      max-width: var(--console-container-max-width);
-      padding: var(--sl-spacing-x-large);
-    }
-  `;
+  static styles = [unsafeCSS(consoleStyles)];
 
   private _openAddTrackerForm() {
     this.isAddingTracker = true;
@@ -61,7 +46,7 @@ export class TrackersView extends LitElement {
 
   render() {
     return html`
-      <div class="container">
+      <div class="container large">
         <div class="header">
           <h1 class="title">Trackers</h1>
           <sl-button variant="primary" @click=${this._openAddTrackerForm}>
