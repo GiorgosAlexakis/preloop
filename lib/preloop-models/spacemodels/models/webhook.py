@@ -26,7 +26,14 @@ class Webhook(Base):
     project_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("project.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+
+    organization_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("organization.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
 
