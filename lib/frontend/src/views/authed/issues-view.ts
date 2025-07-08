@@ -23,6 +23,7 @@ import {
   listOrganizations,
   Organization,
 } from '../../api';
+import { DEFAULT_SIMILARITY_THRESHOLD } from '../../config';
 import { LlmVerdict, renderVerdict } from '../../utils/verdict';
 
 // Define the structure of an issue and a duplicate pair based on the API response
@@ -92,6 +93,8 @@ export class IssuesView extends LitElement {
 
   @state()
   private _selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+
+  private _similarityThreshold = DEFAULT_SIMILARITY_THRESHOLD;
 
   @state()
   private _allProjects: Project[] = [];
@@ -223,6 +226,12 @@ export class IssuesView extends LitElement {
 
     .issue-id {
       font-weight: 400;
+      margin-right: var(--sl-spacing-x-small);
+    }
+
+    .issue-status {
+      font-size: var(--sl-font-size-x-small);
+      text-transform: uppercase;
     }
 
     .embedding-card {
@@ -282,7 +291,7 @@ export class IssuesView extends LitElement {
         skip: skip,
         project_ids: this._selectedProjectIds,
         status: this._selectedStatus,
-        similarity_threshold: 0.8,
+        similarity_threshold: this._similarityThreshold,
       });
 
       this._duplicates = data.duplicates;
@@ -504,6 +513,19 @@ export class IssuesView extends LitElement {
     this.fetchDuplicates();
   }
 
+  private getStatusVariant(
+    status: string
+  ): 'primary' | 'success' | 'neutral' | 'warning' | 'danger' {
+    const lowerCaseStatus = status.toLowerCase();
+    if (['closed', 'done', 'resolved'].includes(lowerCaseStatus)) {
+      return 'success';
+    }
+    if (['open', 'opened', 'to do', 'in progress'].includes(lowerCaseStatus)) {
+      return 'primary';
+    }
+    return 'neutral';
+  }
+
   render() {
     return html`
       <div class="container">
@@ -533,7 +555,9 @@ export class IssuesView extends LitElement {
           <duplicate-stats-chart
             .projectIds=${this._selectedProjectIds}
             .selectedStatus=${this._selectedStatus}
-            .interactive=${true}
+            .similarityThreshold=${this._similarityThreshold}
+            ?interactive=${true}
+            ?no-padding=${true}
             @project-selected=${this._handleProjectSelectedFromChart}
           ></duplicate-stats-chart>
         </sl-card>
@@ -589,6 +613,13 @@ export class IssuesView extends LitElement {
                                 <strong class="issue-id"
                                   >${pair.issue1.key}</strong
                                 >
+                                <sl-badge
+                                  pill
+                                  variant=${this.getStatusVariant(
+                                    pair.issue1.status
+                                  )}
+                                  >${pair.issue1.status}</sl-badge
+                                >
                               </a>
                               <div class="issue-title">
                                 ${pair.issue1.title}
@@ -605,6 +636,13 @@ export class IssuesView extends LitElement {
                               >
                                 <strong class="issue-id"
                                   >${pair.issue2.key}</strong
+                                >
+                                <sl-badge
+                                  pill
+                                  variant=${this.getStatusVariant(
+                                    pair.issue2.status
+                                  )}
+                                  >${pair.issue2.status}</sl-badge
                                 >
                               </a>
                               <div class="issue-title">

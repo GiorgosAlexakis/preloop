@@ -9,6 +9,7 @@ import * as api from '../../api';
 import { AuthedElement } from '../../api';
 import '../../components/similar-issues-widget.ts';
 import '../../components/duplicate-stats-chart.ts';
+import { DEFAULT_SIMILARITY_THRESHOLD } from '../../config';
 
 interface Tracker {
   id: string;
@@ -201,7 +202,10 @@ export class DashboardView extends AuthedElement {
             <similar-issues-widget></similar-issues-widget>
             <sl-card>
               <div slot="header">Similar Issues per Project</div>
-              <duplicate-stats-chart no-padding></duplicate-stats-chart>
+              <duplicate-stats-chart
+                .similarityThreshold=${DEFAULT_SIMILARITY_THRESHOLD}
+                ?no-padding=${true}
+              ></duplicate-stats-chart>
             </sl-card>
             <sl-card>
               <div slot="header">Needs Attention: Definition of Ready</div>

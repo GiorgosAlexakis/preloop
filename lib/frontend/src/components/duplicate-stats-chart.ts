@@ -27,6 +27,8 @@ export class DuplicateStatsChart extends LitElement {
   @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' =
     'opened';
 
+  @property({ type: Number }) similarityThreshold = 0.8;
+
   @property({ type: Boolean, reflect: true, attribute: 'no-padding' })
   noPadding = false;
 
@@ -68,7 +70,8 @@ export class DuplicateStatsChart extends LitElement {
   updated(changedProperties: Map<string, any>) {
     if (
       changedProperties.has('projectIds') ||
-      changedProperties.has('selectedStatus')
+      changedProperties.has('selectedStatus') ||
+      changedProperties.has('similarityThreshold')
     ) {
       this.fetchData();
     }
@@ -88,6 +91,7 @@ export class DuplicateStatsChart extends LitElement {
       const data = await getProjectDuplicateStats({
         project_ids: this.projectIds,
         status: this.selectedStatus,
+        similarity_threshold: this.similarityThreshold,
       });
       // Guard against a missing projects property to prevent crashes
       if (data && data.projects) {

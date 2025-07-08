@@ -1,5 +1,6 @@
 import { LitElement } from 'lit';
 import { Router } from '@vaadin/router';
+import { DEFAULT_SIMILARITY_THRESHOLD } from './config';
 
 async function refreshToken(): Promise<string | null> {
   const refreshToken = localStorage.getItem('refreshToken');
@@ -530,19 +531,21 @@ export async function listIssueDuplicates(
     status?: 'opened' | 'closed' | 'all';
   } = {}
 ): Promise<DuplicatesResponse> {
-  const params = new URLSearchParams();
-  if (options.limit) params.append('limit', options.limit.toString());
-  if (options.skip) params.append('skip', options.skip.toString());
-  if (options.project_ids) {
-    options.project_ids.forEach((id) => params.append('project_ids', id));
-  }
-  if (options.similarity_threshold) {
-    params.append(
-      'similarity_threshold',
-      options.similarity_threshold.toString()
-    );
-  }
-  params.append('status', options.status ?? 'opened');
+  const {
+    limit = 10,
+    skip = 0,
+    project_ids = [],
+    status = 'opened',
+    similarity_threshold = DEFAULT_SIMILARITY_THRESHOLD,
+  } = options;
+
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+    skip: skip.toString(),
+  });
+  project_ids.forEach((id) => params.append('project_ids', id));
+  params.append('status', status);
+  params.append('similarity_threshold', similarity_threshold.toString());
   const response = await fetchWithAuth(
     `/api/v1/issue-duplicates?${params.toString()}`
   );
@@ -576,12 +579,16 @@ export interface DuplicateStatsResponse {
 export async function getProjectDuplicateStats(options: {
   project_ids?: string[];
   status?: 'opened' | 'closed' | 'all';
+  similarity_threshold?: number;
 }): Promise<DuplicateStatsResponse> {
-  const { project_ids = [], status = 'opened' } = options;
+  const { project_ids = [], status = 'opened', similarity_threshold = DEFAULT_SIMILARITY_THRESHOLD } =
+    options;
   const params = new URLSearchParams();
   project_ids.forEach((id) => params.append('project_ids', id));
   params.append('status', status);
+  params.append('similarity_threshold', similarity_threshold.toString());
   const url = `/api/v1/project-duplicate-stats?${params.toString()}`;
+  console.log(url);
   const response = await fetchWithAuth(url);
   if (!response.ok) {
     throw new Error('Failed to fetch project duplicate stats');
