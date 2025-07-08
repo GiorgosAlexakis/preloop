@@ -581,8 +581,11 @@ export async function getProjectDuplicateStats(options: {
   status?: 'opened' | 'closed' | 'all';
   similarity_threshold?: number;
 }): Promise<DuplicateStatsResponse> {
-  const { project_ids = [], status = 'opened', similarity_threshold = DEFAULT_SIMILARITY_THRESHOLD } =
-    options;
+  const {
+    project_ids = [],
+    status = 'opened',
+    similarity_threshold = DEFAULT_SIMILARITY_THRESHOLD,
+  } = options;
   const params = new URLSearchParams();
   project_ids.forEach((id) => params.append('project_ids', id));
   params.append('status', status);
