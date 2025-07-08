@@ -111,7 +111,7 @@ export class IssuesView extends LitElement {
       max-width: var(--console-container-large-max-width);
       padding: var(--sl-spacing-x-large);
     }
-      a {
+    a {
       color: var(--sl-color-primary-600);
       text-decoration: none;
     }
@@ -563,9 +563,6 @@ export class IssuesView extends LitElement {
         </sl-alert>
 
         ${this._renderActiveFilters()}
-
-        
-
         ${when(
           this._loading,
           () =>
