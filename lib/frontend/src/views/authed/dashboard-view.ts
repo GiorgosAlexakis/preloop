@@ -1,10 +1,12 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import * as api from '../../api';
 import { AuthedElement } from '../../api';
 import '../../components/similar-issues-widget.ts';
@@ -199,14 +201,25 @@ export class DashboardView extends AuthedElement {
         <h1>Overview</h1>
         <div class="overview-layout">
           <div class="main-column">
-            <similar-issues-widget></similar-issues-widget>
-            <sl-card>
-              <div slot="header">Similar Issues per Project</div>
-              <duplicate-stats-chart
-                .similarityThreshold=${DEFAULT_SIMILARITY_THRESHOLD}
-                ?no-padding=${true}
-              ></duplicate-stats-chart>
-            </sl-card>
+            ${this.trackers.length > 0
+              ? html`
+                  <similar-issues-widget></similar-issues-widget>
+                  <sl-card>
+                    <div slot="header">Similar Issues per Project</div>
+                    <duplicate-stats-chart
+                      .similarityThreshold=${DEFAULT_SIMILARITY_THRESHOLD}
+                      ?no-padding=${true}
+                    ></duplicate-stats-chart>
+                  </sl-card>
+                `
+              : html`
+                  <sl-alert variant="primary" open>
+                    <sl-icon slot="icon" name="info-circle"></sl-icon>
+                    ${unsafeHTML(
+                      'No projects found. <a href="/console/trackers">Add a tracker</a> to see project-specific widgets.'
+                    )}
+                  </sl-alert>
+                `}
             <sl-card>
               <div slot="header">Needs Attention: Definition of Ready</div>
               <ul class="dor-suggestion-list">

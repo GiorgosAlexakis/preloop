@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -100,12 +101,22 @@ export class IssuesView extends LitElement {
   private _allProjects: Project[] = [];
 
   @state()
+  private _hasProjects = true;
+
+  @state()
   private _organizations: Organization[] = [];
 
   static styles = css`
     .container {
       max-width: var(--console-container-large-max-width);
       padding: var(--sl-spacing-x-large);
+    }
+      a {
+      color: var(--sl-color-primary-600);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
     }
     .header {
       display: flex;
@@ -267,8 +278,10 @@ export class IssuesView extends LitElement {
   async fetchProjects() {
     try {
       this._allProjects = await listProjects();
+      this._hasProjects = this._allProjects.length > 0;
     } catch (error) {
       console.error('Failed to fetch project list:', error);
+      this._hasProjects = false; // Set to false on error
     }
   }
 
@@ -551,16 +564,7 @@ export class IssuesView extends LitElement {
 
         ${this._renderActiveFilters()}
 
-        <sl-card class="embedding-card">
-          <duplicate-stats-chart
-            .projectIds=${this._selectedProjectIds}
-            .selectedStatus=${this._selectedStatus}
-            .similarityThreshold=${this._similarityThreshold}
-            ?interactive=${true}
-            ?no-padding=${true}
-            @project-selected=${this._handleProjectSelectedFromChart}
-          ></duplicate-stats-chart>
-        </sl-card>
+        
 
         ${when(
           this._loading,
@@ -577,6 +581,17 @@ export class IssuesView extends LitElement {
         ${when(!this._loading && !this._error, () =>
           this._duplicates.length > 0
             ? html`
+                <sl-card class="embedding-card">
+                  <duplicate-stats-chart
+                    .hasProjects=${this._hasProjects}
+                    .projectIds=${this._selectedProjectIds}
+                    .selectedStatus=${this._selectedStatus}
+                    .similarityThreshold=${this._similarityThreshold}
+                    ?interactive=${true}
+                    ?no-padding=${true}
+                    @project-selected=${this._handleProjectSelectedFromChart}
+                  ></duplicate-stats-chart>
+                </sl-card>
                 <sl-card class="table-card">
                   <table class="styled-table">
                     <thead>
@@ -713,7 +728,11 @@ export class IssuesView extends LitElement {
             : html`
                 <sl-alert variant="primary" open>
                   <sl-icon slot="icon" name="info-circle"></sl-icon>
-                  No duplicate issues found.
+                  ${this._hasProjects
+                    ? 'No duplicate issues found for the current filters.'
+                    : unsafeHTML(
+                        'No projects found. <a href="/console/trackers">Add a tracker</a>.'
+                      )}
                 </sl-alert>
               `
         )}
