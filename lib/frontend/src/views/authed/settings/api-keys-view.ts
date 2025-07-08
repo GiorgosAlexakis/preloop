@@ -287,91 +287,94 @@ export class ApiKeysView extends LitElement {
     `;
   }
 
-  static styles = [unsafeCSS(consoleStyles), css`
-    .loading-indicator {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 200px;
-    }
-    .form-label {
-      font-size: var(--sl-input-label-font-size-medium);
-      display: inline-block;
-      color: var(--sl-input-label-color);
-      margin-bottom: var(--sl-spacing-3x-small);
-    }
-    .expiry-dropdown {
-      display: block;
-      margin-bottom: 1rem;
-    }
-    .expiry-dropdown::part(trigger) {
-      width: 100%;
-    }
-    .expiry-dropdown sl-button {
-      width: 100%;
-      text-align: left;
-    }
-    .table-card {
-      width: 100%;
-      --padding: 0;
-    }
-    .table-card::part(body) {
-      padding: 0;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    th,
-    td {
-      padding: var(--sl-spacing-medium);
-      text-align: left;
-      border-bottom: 1px solid var(--sl-color-neutral-200);
-    }
-    th {
-      background-color: var(--sl-color-neutral-50);
-      font-weight: var(--sl-font-weight-semibold);
-    }
-    tr:last-child td {
-      border-bottom: none;
-    }
-    th:last-child,
-    td:last-child {
-      text-align: right;
-    }
-    .code-container {
-      position: relative;
-      background-color: var(--sl-color-neutral-100);
-      border-radius: var(--sl-border-radius-medium);
-      margin: 1rem 0;
-    }
-    .code-container pre {
-      margin: 0;
-      padding: var(--sl-spacing-medium);
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .copy-btn {
-      position: absolute;
-      top: var(--sl-spacing-x-small);
-      right: var(--sl-spacing-x-small);
-      background: none;
-      border: none;
-      color: var(--sl-color-neutral-600);
-      cursor: pointer;
-      padding: var(--sl-spacing-2x-small);
-      border-radius: var(--sl-border-radius-circle);
-    }
-    .copy-btn:hover {
-      background-color: var(--sl-color-neutral-200);
-    }
-    .warning-text {
-      display: flex;
-      align-items: center;
-      gap: var(--sl-spacing-x-small);
-      color: var(--sl-color-neutral-600);
-      margin-top: var(--sl-spacing-medium);
-      font-size: var(--sl-font-size-small);
-    }
-  `];
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      .loading-indicator {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 200px;
+      }
+      .form-label {
+        font-size: var(--sl-input-label-font-size-medium);
+        display: inline-block;
+        color: var(--sl-input-label-color);
+        margin-bottom: var(--sl-spacing-3x-small);
+      }
+      .expiry-dropdown {
+        display: block;
+        margin-bottom: 1rem;
+      }
+      .expiry-dropdown::part(trigger) {
+        width: 100%;
+      }
+      .expiry-dropdown sl-button {
+        width: 100%;
+        text-align: left;
+      }
+      .table-card {
+        width: 100%;
+        --padding: 0;
+      }
+      .table-card::part(body) {
+        padding: 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: var(--sl-spacing-medium);
+        text-align: left;
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+      }
+      th {
+        background-color: var(--sl-color-neutral-50);
+        font-weight: var(--sl-font-weight-semibold);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      th:last-child,
+      td:last-child {
+        text-align: right;
+      }
+      .code-container {
+        position: relative;
+        background-color: var(--sl-color-neutral-100);
+        border-radius: var(--sl-border-radius-medium);
+        margin: 1rem 0;
+      }
+      .code-container pre {
+        margin: 0;
+        padding: var(--sl-spacing-medium);
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .copy-btn {
+        position: absolute;
+        top: var(--sl-spacing-x-small);
+        right: var(--sl-spacing-x-small);
+        background: none;
+        border: none;
+        color: var(--sl-color-neutral-600);
+        cursor: pointer;
+        padding: var(--sl-spacing-2x-small);
+        border-radius: var(--sl-border-radius-circle);
+      }
+      .copy-btn:hover {
+        background-color: var(--sl-color-neutral-200);
+      }
+      .warning-text {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-x-small);
+        color: var(--sl-color-neutral-600);
+        margin-top: var(--sl-spacing-medium);
+        font-size: var(--sl-font-size-small);
+      }
+    `,
+  ];
 }

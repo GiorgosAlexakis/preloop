@@ -56,66 +56,69 @@ export class LlmModelsView extends LitElement {
   @state()
   private isOtherModel = false;
 
-  static styles = [unsafeCSS(consoleStyles), css`
-    .table-card {
-      width: 100%;
-      --padding: 0;
-    }
-    .table-card::part(body) {
-      padding: 0;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    .styled-table th,
-    .styled-table td {
-      padding: var(--sl-spacing-medium);
-      text-align: left;
-      border-bottom: 1px solid var(--sl-color-neutral-200);
-    }
-    .styled-table th {
-      background-color: var(--sl-color-neutral-50);
-      font-weight: var(--sl-font-weight-semibold);
-    }
-    .styled-table tr:last-child td {
-      border-bottom: none;
-    }
-    .styled-table th:last-child,
-    .styled-table td:last-child {
-      text-align: right;
-    }
-    .actions {
-      display: flex;
-      gap: var(--sl-spacing-x-small);
-      justify-content: flex-end;
-    }
-    sl-dialog::part(panel) {
-      width: 620px;
-    }
-    .form-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-    }
-    .form-grid .full-width {
-      grid-column: 1 / -1;
-    }
-    .empty-state {
-      padding: var(--sl-spacing-large);
-    }
-    .empty-state a {
-      color: var(--sl-color-primary-600);
-      text-decoration: none;
-      cursor: pointer;
-    }
-    .empty-state a:hover {
-      text-decoration: underline;
-    }
-    .info-header {
-      margin-bottom: var(--sl-spacing-large);
-    }
-  `];
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      .table-card {
+        width: 100%;
+        --padding: 0;
+      }
+      .table-card::part(body) {
+        padding: 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .styled-table th,
+      .styled-table td {
+        padding: var(--sl-spacing-medium);
+        text-align: left;
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+      }
+      .styled-table th {
+        background-color: var(--sl-color-neutral-50);
+        font-weight: var(--sl-font-weight-semibold);
+      }
+      .styled-table tr:last-child td {
+        border-bottom: none;
+      }
+      .styled-table th:last-child,
+      .styled-table td:last-child {
+        text-align: right;
+      }
+      .actions {
+        display: flex;
+        gap: var(--sl-spacing-x-small);
+        justify-content: flex-end;
+      }
+      sl-dialog::part(panel) {
+        width: 620px;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+      }
+      .form-grid .full-width {
+        grid-column: 1 / -1;
+      }
+      .empty-state {
+        padding: var(--sl-spacing-large);
+      }
+      .empty-state a {
+        color: var(--sl-color-primary-600);
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .empty-state a:hover {
+        text-decoration: underline;
+      }
+      .info-header {
+        margin-bottom: var(--sl-spacing-large);
+      }
+    `,
+  ];
 
   async connectedCallback() {
     super.connectedCallback();

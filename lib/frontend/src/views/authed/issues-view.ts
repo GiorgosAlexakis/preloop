@@ -107,146 +107,149 @@ export class IssuesView extends LitElement {
   @state()
   private _organizations: Organization[] = [];
 
-  static styles = [unsafeCSS(consoleStyles), css`
-    sl-card::part(body) {
-      padding: 0;
-    }
-    .styled-table th,
-    .styled-table td {
-      padding: var(--sl-spacing-medium);
-      text-align: left;
-      border-bottom: 1px solid var(--sl-color-neutral-200);
-    }
-    .styled-table th {
-      background-color: var(--sl-color-neutral-50);
-      font-weight: var(--sl-font-weight-semibold);
-    }
-    .styled-table tr:last-child td {
-      border-bottom: none;
-    }
-    .styled-table th:last-child {
-      text-align: right;
-    }
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      sl-card::part(body) {
+        padding: 0;
+      }
+      .styled-table th,
+      .styled-table td {
+        padding: var(--sl-spacing-medium);
+        text-align: left;
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+      }
+      .styled-table th {
+        background-color: var(--sl-color-neutral-50);
+        font-weight: var(--sl-font-weight-semibold);
+      }
+      .styled-table tr:last-child td {
+        border-bottom: none;
+      }
+      .styled-table th:last-child {
+        text-align: right;
+      }
 
-    .issue-key {
-      color: var(--sl-color-neutral-600);
-    }
+      .issue-key {
+        color: var(--sl-color-neutral-600);
+      }
 
-    .pagination-controls {
-      display: flex;
-      justify-content: flex-end;
-      align-items: center;
-      gap: var(--sl-spacing-medium);
-      margin-top: var(--sl-spacing-large);
-    }
+      .pagination-controls {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: var(--sl-spacing-medium);
+        margin-top: var(--sl-spacing-large);
+      }
 
-    .faint-row {
-      opacity: 0.5;
-      transition: opacity 0.3s ease-in-out;
-    }
+      .faint-row {
+        opacity: 0.5;
+        transition: opacity 0.3s ease-in-out;
+      }
 
-    .actions-container {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: var(--sl-spacing-x-small);
-    }
+      .actions-container {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: var(--sl-spacing-x-small);
+      }
 
-    .clickable-row {
-      cursor: pointer;
-    }
+      .clickable-row {
+        cursor: pointer;
+      }
 
-    .detail-row > td {
-      padding: 0;
-      border-top: none;
-    }
+      .detail-row > td {
+        padding: 0;
+        border-top: none;
+      }
 
-    .detail-view-card {
-      padding: var(--sl-spacing-large);
-    }
+      .detail-view-card {
+        padding: var(--sl-spacing-large);
+      }
 
-    .detail-grid {
-      margin-bottom: var(--sl-spacing-large);
-    }
+      .detail-grid {
+        margin-bottom: var(--sl-spacing-large);
+      }
 
-    .detail-section h3 {
-      font-size: var(--sl-font-size-medium);
-      margin-top: 0;
-      margin-bottom: var(--sl-spacing-small);
-    }
+      .detail-section h3 {
+        font-size: var(--sl-font-size-medium);
+        margin-top: 0;
+        margin-bottom: var(--sl-spacing-small);
+      }
 
-    .detail-issue-key {
-      color: var(--sl-color-neutral-600);
-      font-weight: normal;
-    }
+      .detail-issue-key {
+        color: var(--sl-color-neutral-600);
+        font-weight: normal;
+      }
 
-    .issue-description {
-      background-color: var(--sl-color-neutral-100);
-      border: 1px solid var(--sl-color-neutral-200);
-      border-radius: var(--sl-border-radius-medium);
-      padding: var(--sl-spacing-medium);
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      max-height: 200px;
-      overflow-y: auto;
-    }
+      .issue-description {
+        background-color: var(--sl-color-neutral-100);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-medium);
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        max-height: 200px;
+        overflow-y: auto;
+      }
 
-    .active-filters {
-      display: flex;
-      align-items: center;
-      gap: var(--sl-spacing-x-small);
-      padding: var(--sl-spacing-small) 0;
-      flex-wrap: wrap;
-    }
+      .active-filters {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-x-small);
+        padding: var(--sl-spacing-small) 0;
+        flex-wrap: wrap;
+      }
 
-    .active-filters span {
-      font-size: var(--sl-font-size-small);
-      color: var(--sl-color-neutral-600);
-      margin-right: var(--sl-spacing-x-small);
-    }
+      .active-filters span {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-600);
+        margin-right: var(--sl-spacing-x-small);
+      }
 
-    .card-actions {
-      display: flex;
-      gap: var(--sl-spacing-x-small);
-    }
+      .card-actions {
+        display: flex;
+        gap: var(--sl-spacing-x-small);
+      }
 
-    .issue-id-link {
-      color: var(--sl-color-primary-600);
-      text-decoration: none;
-    }
+      .issue-id-link {
+        color: var(--sl-color-primary-600);
+        text-decoration: none;
+      }
 
-    .issue-id-link:hover {
-      text-decoration: underline;
-    }
+      .issue-id-link:hover {
+        text-decoration: underline;
+      }
 
-    .issue-id {
-      font-weight: 400;
-      margin-right: var(--sl-spacing-x-small);
-    }
+      .issue-id {
+        font-weight: 400;
+        margin-right: var(--sl-spacing-x-small);
+      }
 
-    .issue-status {
-      font-size: var(--sl-font-size-x-small);
-      text-transform: uppercase;
-    }
+      .issue-status {
+        font-size: var(--sl-font-size-x-small);
+        text-transform: uppercase;
+      }
 
-    .embedding-card {
-      width: 100%;
-      margin-bottom: var(--sl-spacing-large);
-    }
-    .embedding-card::part(body) {
-      padding: 0;
-      height: 160px;
-    }
-    .loading-overlay {
-      color: white;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      gap: var(--sl-spacing-medium);
-      z-index: 10000;
-    }
-  `];
+      .embedding-card {
+        width: 100%;
+        margin-bottom: var(--sl-spacing-large);
+      }
+      .embedding-card::part(body) {
+        padding: 0;
+        height: 160px;
+      }
+      .loading-overlay {
+        color: white;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: var(--sl-spacing-medium);
+        z-index: 10000;
+      }
+    `,
+  ];
 
   connectedCallback() {
     super.connectedCallback();

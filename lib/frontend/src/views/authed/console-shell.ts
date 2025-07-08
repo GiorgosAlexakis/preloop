@@ -8,86 +8,89 @@ import consoleStyles from '../../styles/console-styles.css?inline';
 
 // static styles = [formStyles, css`
 //     h2 {}
-    
+
 //     `];
 
 @customElement('console-shell')
 export class ConsoleShell extends LitElement {
-  static styles = [unsafeCSS(consoleStyles), css`
-    :host {
-      display: block;
-      height: 100vh;
-    }
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      :host {
+        display: block;
+        height: 100vh;
+      }
 
-    .console-container {
-      display: flex;
-      flex-direction: row;
-      height: 100%;
-    }
+      .console-container {
+        display: flex;
+        flex-direction: row;
+        height: 100%;
+      }
 
-    .sidebar {
-      width: 250px;
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-    }
+      .sidebar {
+        width: 250px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+      }
 
-    .sign-out-menu {
-      flex-grow: 0;
-    }
+      .sign-out-menu {
+        flex-grow: 0;
+      }
 
-    .sign-out-menu sl-menu-item::part(base) {
-      background-color: var(--sl-color-neutral-100);
-      color: var(--sl-color-primary-500);
-    }
+      .sign-out-menu sl-menu-item::part(base) {
+        background-color: var(--sl-color-neutral-100);
+        color: var(--sl-color-primary-500);
+      }
 
-    .sign-out-menu sl-menu-item:hover::part(base) {
-      background-color: var(--sl-color-neutral-100);
-      color: var(--sl-color-primary-700);
-    }
+      .sign-out-menu sl-menu-item:hover::part(base) {
+        background-color: var(--sl-color-neutral-100);
+        color: var(--sl-color-primary-700);
+      }
 
-    .main-content {
-      flex-grow: 1;
-      overflow-y: auto;
-      padding: 2rem;
-    }
+      .main-content {
+        flex-grow: 1;
+        overflow-y: auto;
+        padding: 2rem;
+      }
 
-    .logo {
-      text-align: center;
-      padding: 1rem;
-      background-color: var(--sl-color-neutral-100);
-    }
+      .logo {
+        text-align: center;
+        padding: 1rem;
+        background-color: var(--sl-color-neutral-100);
+      }
 
-    .logo img {
-      max-width: 150px;
-    }
+      .logo img {
+        max-width: 150px;
+      }
 
-    sl-menu {
-      flex-grow: 1;
-      border-width: 0;
-      background-color: var(--sl-color-neutral-100);
-      padding: 0;
-    }
+      sl-menu {
+        flex-grow: 1;
+        border-width: 0;
+        background-color: var(--sl-color-neutral-100);
+        padding: 0;
+      }
 
-    sl-details::part(base) {
-      width: 100%;
-      border-width: 0;
-      background-color: var(--sl-color-neutral-100);
-    }
+      sl-details::part(base) {
+        width: 100%;
+        border-width: 0;
+        background-color: var(--sl-color-neutral-100);
+      }
 
-    sl-details::part(content) {
-      padding-top: 0;
-      padding-left: 1.5rem;
-    }
+      sl-details::part(content) {
+        padding-top: 0;
+        padding-left: 1.5rem;
+      }
 
-    sl-menu-item {
-      padding: 0.25em;
-    }
+      sl-menu-item {
+        padding: 0.25em;
+      }
 
-    sl-details {
-      padding-left: 1em;
-    }
-  `];
+      sl-details {
+        padding-left: 1em;
+      }
+    `,
+  ];
 
   switchToOldUI() {
     // Clear the cookie
