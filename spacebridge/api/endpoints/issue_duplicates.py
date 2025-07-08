@@ -380,6 +380,7 @@ def _get_accessible_projects(
         .join(Organization.tracker)
         .filter(Tracker.account_id == current_user.id)
         .filter(Tracker.is_active)
+        .filter(Tracker.is_deleted.is_(False))
     )
 
     if project_ids:
