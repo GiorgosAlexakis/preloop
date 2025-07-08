@@ -520,10 +520,7 @@ export class IssuesView extends LitElement {
           </sl-button>
         </div>
 
-        <sl-alert
-          variant="primary"
-          open
-        >
+        <sl-alert variant="primary" open>
           <sl-icon slot="icon" name="info-circle"></sl-icon>
           <strong>Find similar issues and resolve duplicates</strong><br />
           Identify similar and potential duplicate issues across your projects.

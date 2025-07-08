@@ -125,7 +125,7 @@ export class DuplicateStatsChart extends LitElement {
   }
 
   renderCharts(stats: { [key: string]: ProjectStats }) {
-    this.charts.forEach(chart => chart.destroy());
+    this.charts.forEach((chart) => chart.destroy());
     this.charts = [];
 
     const container = this.shadowRoot?.querySelector('#chart-container');
@@ -139,7 +139,7 @@ export class DuplicateStatsChart extends LitElement {
     const alarmingColor = 'hsl(350, 70%, 60%)';
     const alarmingBgColor = 'hsl(350, 70%, 65%)';
 
-    sortedStats.forEach(stat => {
+    sortedStats.forEach((stat) => {
       const wrapper = document.createElement('div');
       wrapper.className = 'chart-wrapper';
 
@@ -195,7 +195,8 @@ export class DuplicateStatsChart extends LitElement {
           onHover: (event, chartElement) => {
             const target = event.native?.target as HTMLCanvasElement;
             if (target) {
-              target.style.cursor = this.interactive && chartElement[0] ? 'pointer' : 'default';
+              target.style.cursor =
+                this.interactive && chartElement[0] ? 'pointer' : 'default';
             }
           },
           responsive: true,
