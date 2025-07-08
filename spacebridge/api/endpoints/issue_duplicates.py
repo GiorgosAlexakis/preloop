@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import Any, Dict, List, Literal, Optional, Tuple
-from collections import Counter
 import logging
 import openai
 import os
@@ -234,7 +233,7 @@ def check_or_create_issue_duplicate(
 
 def _find_issue_duplicates_logic(
     db: Session,
-    accessible_project_ids: List[str],
+    accessible_projects: List[Project],
     similarity_threshold: float,
     limit: int,
     skip: int,
@@ -253,7 +252,9 @@ def _find_issue_duplicates_logic(
         )
     model = active_models[0]
 
-    issues_query = db.query(Issue).filter(Issue.project_id.in_(accessible_project_ids))
+    issues_query = db.query(Issue).filter(
+        Issue.project_id.in_([p.id for p in accessible_projects])
+    )
 
     if status and status != "all":
         issues_query = issues_query.filter(Issue.status == status)
@@ -298,6 +299,7 @@ def _find_issue_duplicates_logic(
                     project_ids=[project_id],
                     embedding_type="issue",
                     similarity=similarity_threshold,
+                    status=status if status and status != "all" else None,
                 )
             )
 
@@ -365,6 +367,37 @@ def _find_issue_duplicates_logic(
     return paginated_duplicates, model.id
 
 
+def _get_accessible_projects(
+    db: Session,
+    current_user: Account,
+    project_ids: Optional[List[str]],
+) -> List[str]:
+    """Get the list of accessible project IDs for the given user and project IDs."""
+    project_query = (
+        db.query(Project)
+        .options(joinedload(Project.organization).joinedload(Organization.tracker))
+        .join(Project.organization)
+        .join(Organization.tracker)
+        .filter(Tracker.account_id == current_user.id)
+        .filter(Tracker.is_active)
+    )
+
+    if project_ids:
+        project_query = project_query.filter(Project.id.in_(project_ids))
+
+    projects = project_query.all()
+
+    if not projects:
+        detail = (
+            "The specified project(s) were not found or you do not have access."
+            if project_ids
+            else "No projects found for the current user."
+        )
+        raise HTTPException(status_code=404, detail=detail)
+
+    return projects
+
+
 @router.get("/issue-duplicates", response_model=ProjectDuplicatesResponse)
 def find_issue_duplicates(
     project_ids: Optional[List[str]] = Query(
@@ -403,32 +436,13 @@ def find_issue_duplicates(
     """
     Finds potential duplicate issues within specified projects.
     """
-    project_query = (
-        db.query(Project)
-        .options(joinedload(Project.organization).joinedload(Organization.tracker))
-        .join(Project.organization)
-        .join(Organization.tracker)
-        .filter(Tracker.account_id == current_user.id)
+    accessible_projects = _get_accessible_projects(
+        db=db, current_user=current_user, project_ids=project_ids
     )
-
-    if project_ids:
-        project_query = project_query.filter(Project.id.in_(project_ids))
-
-    projects = project_query.all()
-
-    if not projects:
-        detail = (
-            "The specified project(s) were not found or you do not have access."
-            if project_ids
-            else "No projects found for the current user."
-        )
-        raise HTTPException(status_code=404, detail=detail)
-
-    accessible_project_ids = [str(p.id) for p in projects]
 
     paginated_duplicates, model_id_used = _find_issue_duplicates_logic(
         db=db,
-        accessible_project_ids=accessible_project_ids,
+        accessible_projects=accessible_projects,
         similarity_threshold=similarity_threshold,
         limit=limit,
         skip=skip,
@@ -437,7 +451,7 @@ def find_issue_duplicates(
     )
 
     return ProjectDuplicatesResponse(
-        project_ids=accessible_project_ids,
+        project_ids=[str(p.id) for p in accessible_projects],
         model_id_used=model_id_used,
         threshold_used=similarity_threshold,
         duplicates=paginated_duplicates,
@@ -463,36 +477,17 @@ def get_projects_duplicate_stats(
     """
     Get statistics about duplicate issues for specified projects.
     """
-    project_query = (
-        db.query(Project)
-        .options(joinedload(Project.organization).joinedload(Organization.tracker))
-        .join(Project.organization)
-        .join(Organization.tracker)
-        .filter(Tracker.account_id == current_user.id)
+    accessible_projects = _get_accessible_projects(
+        db=db, current_user=current_user, project_ids=project_ids
     )
 
-    if project_ids:
-        project_query = project_query.filter(Project.id.in_(project_ids))
-
-    projects = project_query.all()
-
-    if not projects:
-        detail = (
-            "The specified project(s) were not found or you do not have access."
-            if project_ids
-            else "No projects found for the current user."
-        )
-        raise HTTPException(status_code=404, detail=detail)
-
-    accessible_project_ids = [str(p.id) for p in projects]
-
     issue_counts = crud_issue.get_issue_counts_per_project(
-        db, project_ids=accessible_project_ids
+        db, project_ids=[str(p.id) for p in accessible_projects]
     )
 
     duplicate_issue_list, _ = _find_issue_duplicates_logic(
         db=db,
-        accessible_project_ids=accessible_project_ids,
+        accessible_projects=accessible_projects,
         similarity_threshold=similarity_threshold,
         limit=1000,  # A large enough number to get all duplicates for stats
         skip=0,
@@ -504,32 +499,20 @@ def get_projects_duplicate_stats(
         project.id: IssueDuplicateProjectStats(
             project_id=project.id, project_name=project.name, total=0, duplicates=0
         )
-        for project in projects
+        for project in accessible_projects
     }
 
     for pid, data in issue_counts.items():
         if pid in stats:
             stats[pid].total = data.get("total", 0)
 
-    if duplicate_issue_list:
-        # Since a duplicate pair contains two issues, we need to count unique issues involved
-        duplicate_issue_ids = set()
-        project_duplicate_counts = Counter()
-        for pair in duplicate_issue_list:
-            # Ensure both issues in the pair belong to one of the accessible projects
-            # This check is somewhat redundant if _find_issue_duplicates_logic is correct
-            # but provides an extra layer of safety.
-            if pair.issue1.project_id in accessible_project_ids:
-                if pair.issue1.id not in duplicate_issue_ids:
-                    duplicate_issue_ids.add(pair.issue1.id)
-                    project_duplicate_counts[pair.issue1.project_id] += 1
-            if pair.issue2.project_id in accessible_project_ids:
-                if pair.issue2.id not in duplicate_issue_ids:
-                    duplicate_issue_ids.add(pair.issue2.id)
-                    project_duplicate_counts[pair.issue2.project_id] += 1
+    # Since a duplicate pair contains two issues, we need to count unique issues involved
+    duplicate_issues_per_project = {p.id: set() for p in accessible_projects}
+    for pair in duplicate_issue_list:
+        duplicate_issues_per_project[pair.issue1.project_id].add(pair.issue1.id)
+        duplicate_issues_per_project[pair.issue2.project_id].add(pair.issue2.id)
 
-        for pid, count in project_duplicate_counts.items():
-            if pid in stats:
-                stats[pid].duplicates = count
+    for pid, issues in duplicate_issues_per_project.items():
+        stats[pid].duplicates = len(issues)
 
     return IssueDuplicateStats(projects=stats)
