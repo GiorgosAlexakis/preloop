@@ -1,38 +1,28 @@
+import { LitElement, html, css, PropertyValues } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
 import {
   addTracker,
+  updateTracker,
   validateTrackerToken,
   listProjectsForOrg,
 } from '../api';
-import { LitElement, html, css, render as litRender, TemplateResult } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import '@vaadin/dialog';
-import '@vaadin/form-layout';
-import '@vaadin/text-field';
-import '@vaadin/password-field';
-import '@vaadin/select';
-import '@vaadin/button';
-import '@vaadin/checkbox';
-import '@vaadin/progress-bar';
-import '@vaadin/details';
-
-interface Project {
-  id: string;
-  name: string;
-  identifier: string;
-}
-
-interface Organization {
-  id: string;
-  name: string;
-  children: Project[];
-  loading?: boolean;
-  projectsLoaded?: boolean;
-}
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import type SlInput from '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
+import '@shoelace-style/shoelace/dist/components/option/option.js';
+import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 
 @customElement('add-tracker-modal')
 export class AddTrackerModal extends LitElement {
+  @property({ type: Object })
+  tracker: any = null;
+
   @property({ type: Boolean })
-  opened = false;
+  opened = true;
 
   @state()
   private step = 1;
@@ -41,361 +31,569 @@ export class AddTrackerModal extends LitElement {
   private trackerName = '';
 
   @state()
-  private trackerType = '';
+  private trackerType = 'github';
 
   @state()
-  private trackerUrl = '';
+  private trackerUrl = 'https://api.github.com';
 
   @state()
   private trackerToken = '';
 
   @state()
-  private jiraUsername = '';
+  private trackerUsername = '';
 
   @state()
-  private orgs: Organization[] = [];
+  private orgs: any[] = [];
 
   @state()
-  private selectedProjects: Set<string> = new Set();
+  private projects: Record<string, any[]> = {};
+
+  @state()
+  private selectedOrgs: Record<string, boolean> = {};
+
+  @state()
+  private selectedProjects: Record<string, Record<string, boolean>> = {};
+
+  @state()
+  private singleOrgWithProjects = false;
+
+  @state()
+  private areAllProjectsSelected = false;
 
   @state()
   private includeFutureProjects = true;
 
   @state()
-  private isConnecting = false;
-
-  @state()
-  private isSaving = false;
+  private isLoading = false;
 
   @state()
   private errorMessage = '';
 
   static styles = css`
-    .form-container {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      width: 500px;
+    .error {
+      color: var(--sl-color-danger-700);
     }
-    .project-tree {
-      max-height: 300px;
-      overflow-y: auto;
+    sl-input,
+    sl-select {
+      margin-bottom: 1rem;
     }
-    .project-item {
-      margin-left: 1rem;
+    .projects {
+      padding-left: 4rem;
     }
-    .org-header {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
+    .select-all {
+      margin-bottom: 1rem;
+      margin-left: 0.5rem;
     }
-    .error-message {
-      color: var(--lumo-error-text-color);
-    }
-    vaadin-details {
-      margin-bottom: 0.5rem;
+    .include-future {
+      margin-left: 0.5rem;
+      margin-top: 1rem;
     }
   `;
 
-  private get isStep1Invalid() {
-    if (!this.trackerName || !this.trackerType || !this.trackerUrl || !this.trackerToken) {
-      return true;
+  connectedCallback() {
+    super.connectedCallback();
+    if (this.tracker) {
+      this.trackerName = this.tracker.name;
+      this.trackerType = this.tracker.tracker_type;
+      this.trackerUrl = this.tracker.url;
+      this.trackerToken = 'unchanged';
+      this.trackerUsername = this.tracker.connection_details?.username;
+      this.selectedOrgs = this.tracker.scope_rules
+        .filter(
+          (x: any) => x.rule_type == 'INCLUDE' && x.scope_type == 'ORGANIZATION'
+        )
+        .reduce((acc: any, x: any) => {
+          acc[x.identifier] = true;
+          return acc;
+        }, {});
+      this.selectedProjects = {};
+      // Object.keys(this.selectedOrgs).forEach((orgId: any) => {
+      //   this.selectedProjects[orgId] = {};
+      //   this.projects[orgId]?.forEach((project: any) => {
+      //     if (this.tracker.scope_rules.filter((x: any) => x.scope_type == 'PROJECT' && x.rule_type == 'INCLUDE' && x.identifier == project.id).length ||
+      //         !this.tracker.scope_rules.filter((x: any) => x.scope_type == 'PROJECT' && x.rule_type == 'EXCLUDE' && x.identifier == project.id).length) {
+      //       this.selectedProjects[orgId][project.id] = true;
+      //     }
+      //   });
+      // });
+      this.includeFutureProjects = !this.tracker.scope_rules.filter(
+        (x: any) => x.rule_type == 'INCLUDE' && x.scope_type == 'PROJECT'
+      ).length;
+      // Token is not pre-filled for security reasons
+      if (this.tracker) {
+        this.trackerToken = 'unchanged';
+      }
     }
-    if (this.trackerType === 'jira' && !this.jiraUsername) {
-      return true;
-    }
-    return false;
   }
-
+  firstUpdated() {
+    this.shadowRoot?.querySelector('sl-dialog')?.show();
+    setTimeout(() => {
+      const input = this.shadowRoot?.querySelector<SlInput>('sl-input');
+      input?.focus();
+    }, 100);
+  }
   render() {
     return html`
-      <vaadin-dialog
-        header-title="${this.step === 1
-          ? 'Add New Tracker: Credentials'
-          : 'Add New Tracker: Project Scope'}"
-        .opened="${this.opened}"
-        @opened-changed="${(e: CustomEvent) => {
-          if (!e.detail.value) this.reset();
-          this.opened = e.detail.value;
-        }}"
-        .renderer="${this.renderForm}"
-      ></vaadin-dialog>
+      <sl-dialog
+        label="${this.tracker ? 'Edit' : 'Add'} Tracker"
+        @sl-request-close=${() => this.closeModal()}
+      >
+        ${this.step === 1 ? this.renderStep1() : this.renderStep2()}
+        ${this.errorMessage
+          ? html`<p class="error">${this.errorMessage}</p>`
+          : ''}
+        <div slot="footer">${this.renderFooterButtons()}</div>
+      </sl-dialog>
     `;
   }
 
-  private renderForm = (root: HTMLElement) => {
-    litRender(
-      html`
-        <div class="form-container">
-          ${this.isConnecting || this.isSaving
-            ? html`<vaadin-progress-bar indeterminate></vaadin-progress-bar>`
-            : ''}
-          ${this.step === 1 ? this.renderStep1() : this.renderStep2()}
-          ${this.errorMessage ? html`<div class="error-message">${this.errorMessage}</div>` : ''}
-          <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
-            <vaadin-button @click="${() => (this.opened = false)}">Cancel</vaadin-button>
-            ${this.step > 1
-              ? html`<vaadin-button @click="${() => (this.step = 1)}">Previous</vaadin-button>`
-              : ''}
-            <vaadin-button
-              theme="primary"
-              @click="${this.handleNextOrSave}"
-              .disabled="${this.step === 1
-                ? this.isStep1Invalid || this.isConnecting
-                : this.isSaving}"
-            >
-              ${this.isConnecting
-                ? 'Connecting...'
-                : this.step === 1
-                ? 'Next'
-                : 'Save'}
-            </vaadin-button>
-          </div>
-        </div>
-      `,
-      root
-    );
-  };
-
-  private renderStep1(): TemplateResult {
+  renderFooterButtons() {
+    if (this.step === 1) {
+      return html`
+        <sl-button @click=${() => this.closeModal()}>Cancel</sl-button>
+        <sl-button
+          variant="primary"
+          @click=${this.testConnection}
+          .loading=${this.isLoading}
+          >Next</sl-button
+        >
+      `;
+    }
     return html`
-      <vaadin-text-field
-        label="Tracker Name"
-        .value="${this.trackerName}"
-        @value-changed="${(e: CustomEvent) => (this.trackerName = e.detail.value)}"
+      <sl-button @click=${() => (this.step = 1)}>Back</sl-button>
+      <sl-button
+        variant="primary"
+        @click=${this.handleSave}
+        .loading=${this.isLoading}
+      >
+        ${this.tracker ? 'Save' : 'Add'}
+      </sl-button>
+    `;
+  }
+
+  renderStep1() {
+    return html`
+      <sl-input
+        label="Name"
+        name="name"
+        .value=${this.trackerName}
+        @sl-input=${(e: any) => (this.trackerName = e.target.value)}
         required
-      ></vaadin-text-field>
-      <vaadin-select
-        label="Tracker Type"
-        .items="${[
-          { label: 'GitHub', value: 'github' },
-          { label: 'GitLab', value: 'gitlab' },
-          { label: 'Jira', value: 'jira' },
-        ]}"
-        .value="${this.trackerType}"
-        @value-changed="${(e: CustomEvent) => (this.trackerType = e.detail.value)}"
-        required
-      ></vaadin-select>
-      <vaadin-text-field
-        label="Tracker URL"
-        .value="${this.trackerUrl}"
-        @value-changed="${(e: CustomEvent) => (this.trackerUrl = e.detail.value)}"
-        required
-      ></vaadin-text-field>
-      <vaadin-password-field
-        label="Access Token"
-        .value="${this.trackerToken}"
-        @value-changed="${(e: CustomEvent) => (this.trackerToken = e.detail.value)}"
-        required
-      ></vaadin-password-field>
+        tabindex="0"
+        autofocus
+      ></sl-input>
+      <sl-select
+        label="Type"
+        name="type"
+        .value=${this.trackerType}
+        @sl-change=${(e: any) => {
+          this.trackerType = e.target.value;
+          const urlInput = this.shadowRoot?.querySelector(
+            'sl-input[name="url"]'
+          ) as HTMLInputElement;
+          if (this.trackerType === 'gitlab') {
+            this.trackerUrl = 'https://gitlab.com';
+            if (urlInput) {
+              urlInput.placeholder = 'e.g., https://gitlab.example.com';
+            }
+          } else if (this.trackerType === 'github') {
+            this.trackerUrl = 'https://github.com';
+            if (urlInput) {
+              urlInput.placeholder = 'e.g., https://github.example.com';
+            }
+          } else {
+            this.trackerUrl = '';
+            if (urlInput) {
+              urlInput.placeholder = 'e.g., https://your-team.atlassian.net';
+            }
+          }
+        }}
+      >
+        <sl-option value="github">GitHub</sl-option>
+        <sl-option value="gitlab">GitLab</sl-option>
+        <sl-option value="jira">Jira</sl-option>
+      </sl-select>
+      <sl-input
+        label="URL"
+        name="url"
+        .value=${this.trackerUrl}
+        @sl-input=${(e: any) => (this.trackerUrl = e.target.value)}
+        placeholder="e.g., https://github.example.com"
+      ></sl-input>
       ${this.trackerType === 'jira'
         ? html`
-            <vaadin-text-field
+            <sl-input
               label="Jira Username"
-              .value="${this.jiraUsername}"
-              @value-changed="${(e: CustomEvent) => (this.jiraUsername = e.detail.value)}"
+              name="username"
+              .value=${this.trackerUsername}
+              @sl-input=${(e: any) => (this.trackerUsername = e.target.value)}
               required
-            ></vaadin-text-field>
+            ></sl-input>
           `
         : ''}
+      <sl-input
+        type="password"
+        label="API Key"
+        name="api_key"
+        .value=${this.trackerToken}
+        @sl-input=${(e: any) => (this.trackerToken = e.target.value)}
+        required
+      ></sl-input>
     `;
   }
 
-  private renderStep2(): TemplateResult {
+  renderStep2() {
     return html`
-      <div class="project-tree">
-        ${this.orgs.map(
-          (org, index) => html`
-            <vaadin-details
-              @opened-changed="${(e: CustomEvent) => {
-                if (e.detail.value) this.loadProjectsForOrg(index);
-              }}"
-            >
-              <div slot="summary" class="org-header">
-                <vaadin-checkbox
-                  .checked="${this.isOrgSelected(org)}"
-                  .indeterminate="${this.isOrgIndeterminate(org)}"
-                  @click="${(e: Event) => e.stopPropagation()}"
-                  @change="${(e: Event) => {
-                    this.toggleOrg(org, (e.target as HTMLInputElement).checked);
-                  }}"
-                ></vaadin-checkbox>
-                <span>${org.name}</span>
-              </div>
-              ${org.loading
-                ? html`<vaadin-progress-bar indeterminate></vaadin-progress-bar>`
-                : html`
-                    <div class="project-list">
-                      ${org.children.map(
-                        proj => html`
-                          <div class="project-item">
-                            <vaadin-checkbox
-                              .checked="${this.selectedProjects.has(
-                                proj.identifier
-                              )}"
-                              @change="${() => this.toggleProject(proj)}"
-                              .label="${proj.name}"
-                            ></vaadin-checkbox>
-                          </div>
-                        `
-                      )}
-                    </div>
-                  `}
-            </vaadin-details>
+      <h2>Configure Project Scope</h2>
+      <div>
+        <sl-checkbox
+          .checked=${this.areAllProjectsSelected}
+          @sl-change=${this.toggleSelectAll}
+          class="select-all"
+        >
+          Select All
+        </sl-checkbox>
+      </div>
+      ${this.singleOrgWithProjects
+        ? this.renderProjectsForSingleOrg()
+        : this.renderOrgTree()}
+      <div>
+        <sl-checkbox
+          .checked=${this.includeFutureProjects}
+          @sl-change=${(e: any) =>
+            (this.includeFutureProjects = e.target.checked)}
+          class="include-future"
+        >
+          Include future projects
+        </sl-checkbox>
+      </div>
+    `;
+  }
+
+  renderProjectsForSingleOrg() {
+    const orgId = this.orgs[0].id;
+    return html`
+      <div class="projects">
+        ${this.projects[orgId]?.map(
+          (proj: any) => html`
+            <div>
+              <sl-checkbox
+                .checked=${this.selectedProjects[orgId]?.[proj.id]}
+                @sl-change=${() => this.toggleProject(orgId, proj.id)}
+              >
+                ${proj.name}
+              </sl-checkbox>
+            </div>
           `
         )}
       </div>
-      <vaadin-checkbox
-        .checked="${this.includeFutureProjects}"
-        @change="${(e: Event) =>
-          (this.includeFutureProjects = (e.target as HTMLInputElement).checked)}"
-        label="Automatically include new projects created in the future"
-      ></vaadin-checkbox>
     `;
   }
 
-  private handleNextOrSave = async () => {
+  renderOrgTree() {
+    return html`
+      ${this.orgs.map(
+        (org: any) => html`
+          <div>
+            <sl-icon-button
+              .name=${this.projects?.[org.id]
+                ? 'chevron-down'
+                : 'chevron-right'}
+              @click=${() => this.loadProjects(org.id)}
+            ></sl-icon-button>
+            <sl-checkbox
+              .checked=${this.selectedOrgs[org.id]}
+              @sl-change=${async () => await this.toggleOrg(org.id)}
+            >
+              ${org.name}
+            </sl-checkbox>
+
+            ${this.projects?.[org.id]
+              ? html`
+                  <div class="projects">
+                    ${this.projects?.[org.id].map(
+                      (proj: any) => html`
+                        <div>
+                          <sl-checkbox
+                            .checked=${this.selectedProjects[org.id]?.[proj.id]}
+                            @sl-change=${() =>
+                              this.toggleProject(org.id, proj.id)}
+                          >
+                            ${proj.name}
+                          </sl-checkbox>
+                        </div>
+                      `
+                    )}
+                  </div>
+                `
+              : ''}
+          </div>
+        `
+      )}
+    `;
+  }
+
+  async testConnection() {
+    this.isLoading = true;
     this.errorMessage = '';
-    if (this.step === 1) {
-      await this.testConnection();
-    } else {
-      await this.handleSave();
-    }
-  };
-
-  private async testConnection() {
-    if (!this.trackerName || !this.trackerType || !this.trackerUrl || !this.trackerToken) {
-      this.errorMessage = 'Please fill in all required fields.';
-      return;
-    }
-
-    this.isConnecting = true;
     try {
       const response = await validateTrackerToken(
+        this.tracker?.id,
         this.trackerType,
         this.trackerToken,
         this.trackerUrl,
-        this.jiraUsername
+        this.trackerUsername
       );
-      this.orgs =
-        response.orgs?.map((org: any) => ({
-          id: org.id,
-          name: org.name,
-          children: [],
-          loading: false,
-          projectsLoaded: false,
-        })) || [];
+      this.orgs = response.orgs;
+      if (response.orgs.length === 1 && response.orgs[0].children?.length > 0) {
+        this.singleOrgWithProjects = true;
+        const orgId = response.orgs[0].id;
+        this.projects = { [orgId]: response.orgs[0].children };
+        this.selectedOrgs = { [orgId]: true };
+        this.selectedProjects = { [orgId]: {} };
+        if (this.tracker?.scope_rules?.length > 0) {
+          this.projects[orgId].forEach((proj: any) => {
+            if (
+              this.tracker.scope_rules.filter(
+                (x: any) =>
+                  x.scope_type == 'PROJECT' &&
+                  x.rule_type == 'INCLUDE' &&
+                  x.identifier == proj.id
+              ).length ||
+              (this.includeFutureProjects &&
+                !this.tracker.scope_rules.filter(
+                  (x: any) =>
+                    x.scope_type == 'PROJECT' &&
+                    x.rule_type == 'EXCLUDE' &&
+                    x.identifier == proj.id
+                ).length)
+            ) {
+              this.selectedProjects[orgId][proj.id] = true;
+            }
+          });
+        } else {
+          this.projects[orgId].forEach((proj: any) => {
+            this.selectedProjects[orgId][proj.id] = true;
+          });
+        }
+      } else {
+        this.singleOrgWithProjects = false;
+      }
       this.step = 2;
     } catch (error: any) {
-      this.errorMessage = error.message || 'Failed to connect to the tracker.';
+      this.errorMessage = error.message;
     } finally {
-      this.isConnecting = false;
+      this.isLoading = false;
     }
   }
 
-  private async handleSave() {
-    this.isSaving = true;
-    const allProjectIdentifiers = this.orgs.flatMap(org => org.children.map(p => p.identifier));
-    const includedProjectIdentifiers = this.includeFutureProjects ? null : Array.from(this.selectedProjects);
-    const excludedProjectIdentifiers = this.includeFutureProjects ? allProjectIdentifiers.filter(id => !this.selectedProjects.has(id)) : null;
+  async loadProjects(orgId: string) {
+    if (this.projects[orgId]) {
+      // Projects already loaded
+      return;
+    }
+    this.isLoading = true;
+    try {
+      const projects = await listProjectsForOrg(
+        this.tracker?.id,
+        this.trackerType,
+        this.trackerToken,
+        orgId,
+        this.trackerUrl,
+        this.trackerUsername
+      );
+      this.projects = { ...this.projects, [orgId]: projects };
+      if (this.selectedOrgs[orgId]) {
+        if (!this.includeFutureProjects) {
+          this.selectedProjects[orgId] = projects.reduce(
+            (acc, proj) => {
+              acc[proj.id] =
+                this.tracker?.scope_rules.filter(
+                  (x: any) =>
+                    x.rule_type == 'INCLUDE' &&
+                    x.scope_type == 'PROJECT' &&
+                    x.identifier == proj.id
+                ).length > 0;
+              return acc;
+            },
+            {} as Record<string, boolean>
+          );
+        } else {
+          this.selectedProjects[orgId] = projects.reduce(
+            (acc, proj) => {
+              acc[proj.id] =
+                this.tracker?.scope_rules.filter(
+                  (x: any) =>
+                    x.rule_type == 'EXCLUDE' &&
+                    x.scope_type == 'PROJECT' &&
+                    x.identifier == proj.id
+                ).length == 0;
+              return acc;
+            },
+            {} as Record<string, boolean>
+          );
+        }
+      }
+    } catch (error: any) {
+      this.errorMessage = error.message;
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  async toggleOrg(orgId: string) {
+    const isSelected = !this.selectedOrgs[orgId];
+    this.selectedOrgs = {
+      ...this.selectedOrgs,
+      [orgId]: isSelected,
+    };
+    if (isSelected && !this.projects[orgId]) {
+      await this.loadProjects(orgId);
+    } else if (this.projects[orgId]) {
+      this.selectedProjects[orgId] = this.projects[orgId].reduce(
+        (acc, proj) => {
+          acc[proj.id] = isSelected;
+          return acc;
+        },
+        {} as Record<string, boolean>
+      );
+    }
+    // When an org is toggled, we might need to update the "Select All" status
+    this.updateSelectAllState();
+  }
+
+  toggleProject(orgId: string, projectId: string) {
+    const orgProjects = this.selectedProjects[orgId] || {};
+    const newOrgProjects = {
+      ...orgProjects,
+      [projectId]: !orgProjects[projectId],
+    };
+    this.selectedProjects = {
+      ...this.selectedProjects,
+      [orgId]: newOrgProjects,
+    };
+
+    this.selectedOrgs[orgId] = !Object.values(newOrgProjects).every(
+      (x) => x != true
+    );
+    this.updateSelectAllState();
+  }
+
+  toggleSelectAll() {
+    this.areAllProjectsSelected = !this.areAllProjectsSelected;
+    const newSelectedProjects: Record<string, Record<string, boolean>> = {};
+
+    for (const org of this.orgs) {
+      if (this.projects[org.id]) {
+        newSelectedProjects[org.id] = {};
+        for (const proj of this.projects[org.id]) {
+          newSelectedProjects[org.id][proj.id] = this.areAllProjectsSelected;
+        }
+      }
+      this.selectedOrgs[org.id] = this.areAllProjectsSelected;
+    }
+    this.selectedProjects = newSelectedProjects;
+  }
+
+  updateSelectAllState() {
+    let allSelected = true;
+    let hasProjects = false;
+    for (const org of this.orgs) {
+      if (this.projects[org.id]) {
+        hasProjects = true;
+        for (const proj of this.projects[org.id]) {
+          if (!this.selectedProjects[org.id]?.[proj.id]) {
+            allSelected = false;
+            break;
+          }
+        }
+      }
+      if (!allSelected) break;
+    }
+    this.areAllProjectsSelected = hasProjects && allSelected;
+  }
+
+  async handleSave() {
+    this.isLoading = true;
+    this.errorMessage = '';
+
+    const scopeRules = [];
+    for (const org of this.orgs) {
+      if (this.selectedOrgs[org.id]) {
+        scopeRules.push({
+          rule_type: 'INCLUDE',
+          scope_type: 'ORGANIZATION',
+          identifier: org.id,
+        });
+        if (this.includeFutureProjects) {
+          for (const proj of this.projects[org.id] || []) {
+            if (!this.selectedProjects[org.id]?.[proj.id]) {
+              scopeRules.push({
+                rule_type: 'EXCLUDE',
+                scope_type: 'PROJECT',
+                identifier: proj.id,
+              });
+            }
+          }
+        } else {
+          for (const proj of this.projects[org.id] || []) {
+            if (this.selectedProjects[org.id]?.[proj.id]) {
+              scopeRules.push({
+                rule_type: 'INCLUDE',
+                scope_type: 'PROJECT',
+                identifier: proj.id,
+              });
+            }
+          }
+        }
+      }
+    }
 
     const trackerData = {
       name: this.trackerName,
       type: this.trackerType,
       url: this.trackerUrl,
-      token: this.trackerToken,
-      config: this.trackerType === 'jira' ? { username: this.jiraUsername } : undefined,
-      include_future_projects: this.includeFutureProjects,
-      included_project_identifiers: includedProjectIdentifiers,
-      excluded_project_identifiers: excludedProjectIdentifiers,
+      api_key: this.trackerToken,
+      scope_rules: scopeRules,
+      config: {
+        username: this.trackerUsername,
+      },
     };
 
     try {
-      await addTracker(trackerData);
-      this.dispatchEvent(new CustomEvent('save'));
-      this.opened = false;
-    } catch (error: any) {
-      this.errorMessage = error.message || 'Failed to save tracker.';
-    } finally {
-      this.isSaving = false;
-    }
-  }
-
-  private async loadProjectsForOrg(index: number) {
-    const org = this.orgs[index];
-    if (!org || org.projectsLoaded) return;
-
-    org.loading = true;
-    this.requestUpdate();
-
-    try {
-      const response = await listProjectsForOrg(
-        this.trackerType,
-        this.trackerToken,
-        org.id,
-        this.trackerUrl,
-        this.jiraUsername
-      );
-      org.children = response.projects || [];
-      org.projectsLoaded = true;
-      // Add all newly fetched projects to the selection by default
-      org.children.forEach(p => this.selectedProjects.add(p.identifier));
-    } catch (error: any) {
-      this.errorMessage = error.message || `Failed to fetch projects for ${org.name}.`;
-    } finally {
-      org.loading = false;
-      this.requestUpdate();
-    }
-  }
-
-  private isOrgSelected(org: Organization): boolean {
-    if (!org.projectsLoaded || org.children.length === 0) return false;
-    return org.children.every(p => this.selectedProjects.has(p.identifier));
-  }
-
-  private isOrgIndeterminate(org: Organization): boolean {
-    if (!org.projectsLoaded) return false;
-    const selectedCount = org.children.filter(p => this.selectedProjects.has(p.identifier)).length;
-    return selectedCount > 0 && selectedCount < org.children.length;
-  }
-
-  private toggleOrg(org: Organization, checked: boolean) {
-    // Ensure projects are loaded before toggling
-    if (!org.projectsLoaded) {
-      // You might want to load them here if they aren't already
-      return;
-    }
-    org.children.forEach(p => {
-      if (checked) {
-        this.selectedProjects.add(p.identifier);
+      if (this.tracker) {
+        await updateTracker(this.tracker.id, trackerData);
+        this.dispatchEvent(
+          new CustomEvent('tracker-updated', {
+            detail: { tracker: trackerData },
+          })
+        );
       } else {
-        this.selectedProjects.delete(p.identifier);
+        await addTracker(trackerData);
+        this.dispatchEvent(
+          new CustomEvent('tracker-added', {
+            detail: { tracker: trackerData },
+          })
+        );
       }
-    });
-    this.requestUpdate();
-  }
-
-  private toggleProject(project: Project) {
-    if (this.selectedProjects.has(project.identifier)) {
-      this.selectedProjects.delete(project.identifier);
-    } else {
-      this.selectedProjects.add(project.identifier);
+    } catch (error: any) {
+      this.errorMessage = error.message;
+    } finally {
+      this.isLoading = false;
+      this.closeModal(true);
     }
-    this.requestUpdate();
   }
 
-  private reset() {
-    this.step = 1;
-    this.trackerName = '';
-    this.trackerType = '';
-    this.trackerUrl = '';
-    this.trackerToken = '';
-    this.jiraUsername = '';
-    this.orgs = [];
-    this.selectedProjects = new Set();
-    this.includeFutureProjects = true;
-    this.isConnecting = false;
-    this.isSaving = false;
-    this.errorMessage = '';
+  closeModal(success = false) {
+    if (typeof success !== 'boolean') {
+      success = false;
+    }
+    const event = new CustomEvent('close-modal', {
+      bubbles: true,
+      composed: true,
+      detail: { success },
+    });
+    this.dispatchEvent(event);
+    this.opened = false;
   }
 }

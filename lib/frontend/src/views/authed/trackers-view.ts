@@ -1,73 +1,73 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import { getTrackers } from '../../api';
-import '@vaadin/grid';
-import '../../components/add-tracker-modal';
-
-interface Tracker {
-  id: string;
-  name: string;
-  tracker_type: string;
-  url: string;
-  is_active: boolean;
-}
+import { LitElement, html, css, unsafeCSS } from 'lit';
+import { customElement, state, query } from 'lit/decorators.js';
+import '../../components/tracker-list.ts';
+import '../../components/add-tracker-modal.ts';
+import type { Tracker } from '../../components/tracker-item.ts';
+import type { TrackerList } from '../../components/tracker-list.ts';
+import consoleStyles from '../../styles/console-styles.css?inline';
 
 @customElement('trackers-view')
 export class TrackersView extends LitElement {
   @state()
-  private trackers: Tracker[] = [];
+  private isAddingTracker = false;
 
   @state()
-  private isModalOpened = false;
+  private editingTracker: Tracker | null = null;
 
-  static styles = css`
-    :host {
-      display: block;
-      padding: 1rem;
-    }
-    vaadin-grid {
-      height: 100%;
-    }
-  `;
+  @query('tracker-list')
+  private trackerListElement: TrackerList | undefined;
 
-  async firstUpdated() {
-    this.fetchTrackers();
+  static styles = [unsafeCSS(consoleStyles)];
+
+  private _openAddTrackerForm() {
+    this.isAddingTracker = true;
+    this.editingTracker = null;
   }
 
-  async fetchTrackers() {
-    this.trackers = await getTrackers();
+  private _closeAddTrackerForm() {
+    this.isAddingTracker = false;
+    this.editingTracker = null;
+  }
+
+  private async _handleTrackerAdded() {
+    this.isAddingTracker = false;
+    await this.trackerListElement?.fetchTrackers();
+  }
+
+  private async _handleTrackerUpdated() {
+    this.editingTracker = null;
+    await this.trackerListElement?.fetchTrackers();
+  }
+
+  private _handleTrackerEdit(event: CustomEvent) {
+    this.editingTracker = event.detail.tracker;
+    this.isAddingTracker = false;
   }
 
   render() {
     return html`
-      <add-tracker-modal
-        .opened=${this.isModalOpened}
-        @opened-changed=${(e: CustomEvent) => (this.isModalOpened = e.detail.value)}
-        @save=${this.fetchTrackers}
-      ></add-tracker-modal>
-
-      <div class="p-4">
-        <div class="flex justify-between items-center mb-4">
-          <h1 class="text-2xl font-bold">Trackers</h1>
-          <vaadin-button @click=${() => (this.isModalOpened = true)}>
-            Add Tracker
-          </vaadin-button>
+      <div class="container large">
+        <div class="header">
+          <h1 class="title">Trackers</h1>
+          <sl-button variant="primary" @click=${this._openAddTrackerForm}>
+            <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+            Add New Tracker
+          </sl-button>
         </div>
-        <vaadin-grid .items=${this.trackers}>
-          <vaadin-grid-column path="name" header="Name"></vaadin-grid-column>
-          <vaadin-grid-column
-            path="tracker_type"
-            header="Type"
-          ></vaadin-grid-column>
-          <vaadin-grid-column path="url" header="URL"></vaadin-grid-column>
-          <vaadin-grid-column header="Status">
-            <template>
-                <span class$="[[item.is_active ? 'text-green-500' : 'text-red-500']]">
-                    [[item.is_active ? 'Active' : 'Inactive']]
-                </span>
-            </template>
-          </vaadin-grid-column>
-        </vaadin-grid>
+        ${this.isAddingTracker
+          ? html`<add-tracker-modal
+              @tracker-added=${this._handleTrackerAdded}
+              @close-modal=${this._closeAddTrackerForm}
+            ></add-tracker-modal>`
+          : ''}
+        ${this.editingTracker
+          ? html`<add-tracker-modal
+              .tracker=${this.editingTracker}
+              @tracker-updated=${this._handleTrackerUpdated}
+              @close-modal=${this._closeAddTrackerForm}
+            ></add-tracker-modal>`
+          : ''}
+        <tracker-list @tracker-edit=${this._handleTrackerEdit}></tracker-list>
       </div>
     `;
   }

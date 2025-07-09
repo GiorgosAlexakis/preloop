@@ -1,0 +1,1 @@
+export const DEFAULT_SIMILARITY_THRESHOLD = 0.1;

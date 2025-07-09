@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
+import { router } from '../router';
 
 @customElement('app-footer')
 export class AppFooter extends LitElement {
@@ -7,11 +8,14 @@ export class AppFooter extends LitElement {
     css`
       :host {
         display: block;
-        background-color: var(--gray-900);
-        color: var(--gray-200);
+        color: var(--sl-color-neutral-700);
         padding: 48px 0;
         margin-top: auto;
         flex-shrink: 0;
+      }
+
+      p {
+        line-height: 1.6;
       }
 
       .footer-container {
@@ -32,32 +36,31 @@ export class AppFooter extends LitElement {
         text-align: right;
       }
 
-      h5 {
-        color: white;
-        font-size: 1.1rem;
-        margin-bottom: 20px;
-        font-weight: 600;
+      .footer-nav ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
       }
 
-      p,
-      li {
-        font-size: 0.9rem;
+      .footer-nav li {
         margin-bottom: 10px;
       }
 
-      a {
-        color: var(--gray-200);
-        text-decoration: none;
+      .footer-nav a {
+        font-size: 0.9rem;
+        color: var(--sl-color-neutral-700);
         transition: color 0.2s ease;
+        text-decoration: none;
+        cursor: pointer;
       }
 
-      a:hover {
+      .footer-nav a:hover {
         color: white;
       }
 
-      hr {
+      .divider {
         margin: 30px 0;
-        opacity: 0.1;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
       }
 
       .footer-bottom {
@@ -71,36 +74,28 @@ export class AppFooter extends LitElement {
         font-size: 0.85rem;
       }
 
-      .copyright-text a,
-      .linkedin-icon-footer {
+      .copyright-text a {
         color: inherit;
         text-decoration: none;
       }
 
-      .copyright-text a:hover,
-      .linkedin-icon-footer:hover {
+      .copyright-text a:hover {
         text-decoration: underline;
-      }
-
-      .linkedin-icon-footer svg {
-        fill: currentColor;
-        vertical-align: middle;
-      }
-      .btn-link {
-        background: none;
-        border: none;
-        padding: 0;
-        color: var(--gray-200);
-        text-decoration: none;
-        cursor: pointer;
-      }
-      .btn-link:hover {
-        color: white;
       }
     `,
   ];
 
-  switchToOldUI() {
+  handleLinkClick(event: MouseEvent) {
+    event.preventDefault();
+    const target = event.target as HTMLAnchorElement;
+    const path = target.getAttribute('href');
+    if (path) {
+      router.navigate(path);
+    }
+  }
+
+  switchToOldUI(event: MouseEvent) {
+    event.preventDefault();
     // Set the cookie to expire in 30 days
     const d = new Date();
     d.setTime(d.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -121,52 +116,35 @@ export class AppFooter extends LitElement {
               height="40"
               style="margin-bottom: 16px"
             />
-            <p>
-              MCP Server for unified issue tracker<br />management and
-              AI-powered collaboration.
-            </p>
           </div>
           <nav class="footer-nav">
-            <ul style="list-style: none; padding: 0; margin: 0;">
+            <ul>
               <li><a href="/docs">API Documentation</a></li>
               <li><a href="/register">Register</a></li>
-              <li><a href="/login">Login</a></li>
+              <li><a href="/login">Sign in</a></li>
               <li><a href="/privacy">Privacy Policy</a></li>
               <li><a href="/terms">Terms of Service</a></li>
               <li><a href="/whatis-mcp" target="_blank">What is MCP?</a></li>
               <li>
-                <button class="btn-link" @click=${this.switchToOldUI}>
-                  Switch to the old UI
-                </button>
+                <a href="#" @click=${this.switchToOldUI}
+                  >Switch to the old UI</a
+                >
               </li>
             </ul>
           </nav>
         </div>
-        <hr />
+        <div class="divider"></div>
         <div class="footer-bottom">
           <span class="copyright-text"
             >&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All
             rights reserved.</span
           >
-          <a
+          <sl-icon-button
+            name="linkedin"
+            label="LinkedIn"
             href="https://www.linkedin.com/company/spacecode-ai/"
             target="_blank"
-            rel="noopener noreferrer"
-            title="LinkedIn"
-            class="linkedin-icon-footer"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path
-                d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.761 0 5-2.239 5-5v-14c0-2.761-2.239-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"
-              />
-            </svg>
-          </a>
+          ></sl-icon-button>
         </div>
       </div>
     `;

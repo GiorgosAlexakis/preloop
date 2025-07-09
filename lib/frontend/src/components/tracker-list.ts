@@ -1,10 +1,11 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
-import { fetchApi } from '../api.js';
-import '@material/web/button/filled-button.js';
+import { fetchWithAuth } from '../api.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import './tracker-item.ts';
-import './add-tracker-form.ts';
 import type { Tracker } from './tracker-item.ts';
 
 @customElement('tracker-list')
@@ -18,12 +19,6 @@ export class TrackerList extends LitElement {
   @state()
   private error: string | null = null;
 
-  @state()
-  private isAddingTracker = false;
-
-  @state()
-  private editingTracker: Tracker | null = null;
-
   connectedCallback() {
     super.connectedCallback();
     this.fetchTrackers();
@@ -33,7 +28,11 @@ export class TrackerList extends LitElement {
     this.isLoading = true;
     this.error = null;
     try {
-      this.trackers = await fetchApi('/api/v1/trackers');
+      const response = await fetchWithAuth('/api/v1/trackers');
+      if (!response.ok) {
+        throw new Error('Failed to fetch trackers');
+      }
+      this.trackers = await response.json();
     } catch (error) {
       this.error =
         error instanceof Error ? error.message : 'An unknown error occurred';
@@ -42,34 +41,25 @@ export class TrackerList extends LitElement {
     }
   }
 
-  private _toggleAddTrackerForm() {
-    this.isAddingTracker = !this.isAddingTracker;
-    if (this.isAddingTracker) {
-      this.editingTracker = null;
-    }
-  }
-
-  private async _handleTrackerAdded() {
-    this.isAddingTracker = false;
-    await this.fetchTrackers();
-  }
-
-  private async _handleTrackerUpdated() {
-    this.editingTracker = null;
-    await this.fetchTrackers();
-  }
-
   private _handleTrackerEdit(event: CustomEvent) {
-    this.editingTracker = event.detail.tracker;
-    this.isAddingTracker = false;
+    this.dispatchEvent(
+      new CustomEvent('tracker-edit', {
+        detail: event.detail,
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private async _handleTrackerDeleted(event: CustomEvent) {
     const { id } = event.detail;
     try {
-      await fetchApi(`/api/v1/trackers/${id}`, {
+      const response = await fetchWithAuth(`/api/v1/trackers/${id}`, {
         method: 'DELETE',
       });
+      if (!response.ok) {
+        throw new Error('Failed to delete tracker');
+      }
       await this.fetchTrackers();
     } catch (error) {
       this.error =
@@ -78,48 +68,37 @@ export class TrackerList extends LitElement {
   }
 
   static styles = css`
-    :host {
-      display: block;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 2rem;
+    .tracker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: var(--sl-spacing-large);
+      padding-top: var(--sl-spacing-medium);
     }
-    .error {
-      color: var(--md-sys-color-error);
-    }
-    .controls {
-      margin-bottom: 1rem;
+
+    .loading-indicator {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100px;
     }
   `;
 
   render() {
     if (this.isLoading) {
-      return html`<p>Loading...</p>`;
+      return html`<div class="loading-indicator">
+        <sl-spinner></sl-spinner>
+      </div>`;
     }
 
     if (this.error) {
-      return html`<p class="error">Error: ${this.error}</p>`;
+      return html`<sl-alert variant="danger" open>
+        <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+        <strong>Error:</strong> ${this.error}
+      </sl-alert>`;
     }
 
     return html`
-      <div>
-        <div class="controls">
-          <md-filled-button @click=${this._toggleAddTrackerForm}>
-            ${this.isAddingTracker ? 'Cancel' : 'Add New Tracker'}
-          </md-filled-button>
-        </div>
-
-        ${this.isAddingTracker
-          ? html`<add-tracker-form
-              @tracker-added=${this._handleTrackerAdded}
-            ></add-tracker-form>`
-          : ''}
-        ${this.editingTracker
-          ? html`<add-tracker-form
-              .tracker=${this.editingTracker}
-              @tracker-updated=${this._handleTrackerUpdated}
-            ></add-tracker-form>`
-          : ''}
+      <div class="tracker-grid">
         ${repeat(
           this.trackers,
           (tracker) => tracker.id,

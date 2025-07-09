@@ -1,7 +1,8 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, state } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
-import '@vaadin/button';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
 
 type IdeTab = 'claude-code' | 'cursor' | 'windsurf';
 
@@ -9,6 +10,32 @@ type IdeTab = 'claude-code' | 'cursor' | 'windsurf';
 export class LandingView extends LitElement {
   @state() private _activeIdeTab: IdeTab = 'claude-code';
   @state() private _openFaq: number | null = null;
+  @state() private _faqs = [
+    {
+      q: 'What is Spacebridge?',
+      a: 'Spacebridge is an AI platform that connects to your existing project management tools like Jira, GitHub, and GitLab. It acts as a trust and governance layer, enabling you to automate product management tasks, gain deep insights into your backlog, and safely delegate work to AI agents.',
+    },
+    {
+      q: 'Which issue tracking and project management platforms does Spacebridge support?',
+      a: 'Spacebridge offers native integrations with Jira, GitHub, and GitLab. We are continuously expanding our support for other platforms based on customer needs.',
+    },
+    {
+      q: 'How does AI-Assisted Product Management help my team?',
+      a: 'It helps you manage your backlog more effectively. By identifying duplicate issues, detecting thematic overlap, and providing data-driven insights on issue readiness, Spacebridge allows your team to focus on high-impact work and strategic planning.',
+    },
+    {
+      q: 'How can I automate routine work with confidence?',
+      a: 'Spacebridge allows you to build automated workflows for low-risk, high-value tasks. For any sensitive action, our Preloop approval layer ensures a human is always in the loop, giving you the perfect balance of speed and safety.',
+    },
+    {
+      q: 'What is the Preloop Human Approval Layer?',
+      a: 'Preloop is a human-in-the-loop security feature that intercepts potentially high-risk actions initiated by AI agents. Before any critical command is executed—like a server rollback or a major code merge—it requires explicit approval from a designated human operator, ensuring complete oversight and control.',
+    },
+    {
+      q: 'Is it secure to connect my development tools to Spacebridge?',
+      a: 'Security is our top priority. Spacebridge uses industry-standard encryption for all data. We connect to your tools via secure, permission-scoped API tokens and OAuth, ensuring our platform only has the minimum access it needs to function.',
+    },
+  ];
 
   static styles = [
     css`
@@ -46,55 +73,174 @@ export class LandingView extends LitElement {
     return html`
       <app-header></app-header>
       <main>
-        <section class="hero">
+        <section class="hero main-section">
           <div class="section-container hero-inner">
-            <div class="hero-content">
-              <h1 class="fw-bold">
-                Turbocharge your<br />
-                <span
-                  style="display: inline-block; min-width: 220px; background: linear-gradient(to right, #ff7e5f, #feb47b, #d76d77, #9370DB); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700;"
-                  >Vibe Coding</span
-                ><br />
-                with Automated Issue Tracking
-              </h1>
+            <div class="hero-content text-center">
+              <h1 class="fw-bold">Drive your Product with AI</h1>
               <p class="lead">
-                SpaceBridge provides an open source MCP server and a free REST
-                API that can keep your issue tracker updated while you focus on
-                coding.
+                Spacebridge curates your backlog, automates high value, low-risk
+                work, and safeguards the critical.
               </p>
               <div class="hero-buttons">
-                <vaadin-button
-                  theme="primary large"
-                  @click=${() => (window.location.href = '/register')}
-                  >Get Started</vaadin-button
+                <sl-button variant="primary" size="large" href="/register"
+                  >Get Started</sl-button
                 >
-                <vaadin-button
-                  theme="tertiary"
-                  @click=${() =>
-                    window.open(
-                      'https://github.com/SpaceBridge/spacebridge',
-                      '_blank'
-                    )}
-                  >What is MCP?</vaadin-button
+                <sl-button variant="text" size="large" href="/request-demo"
+                  >Request a Demo</sl-button
                 >
               </div>
-            </div>
-            <div class="hero-image">
-              <img
-                src="/images/diagram.png"
-                alt="SpaceBridge Diagram"
-                class="img-fluid"
-              />
             </div>
           </div>
         </section>
 
-        <section class="feature-section" id="features">
-          <div class="section-container">
+        <section class="feature-section main-section">
+          <div class="section-container text-center">
+            <h2>AI Assisted Product Management</h2>
             <div class="feature-grid">
               <div class="feature-box">
                 <div class="feature-icon">
-                  <img src="/images/similarity.png" alt="Similarity Icon" />
+                  <sl-icon name="plug-fill"></sl-icon>
+                </div>
+                <h3>A Single Source of Truth</h3>
+                <p>
+                  Our hub syncs with Jira, GitHub, and GitLab and indexes your
+                  issues, comments and pull requests, to create a single source
+                  of truth for your AI agents.
+                </p>
+              </div>
+
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="people"></sl-icon>
+                </div>
+                <h3>Efficient Backlog Management</h3>
+                <p>
+                  By de-duplicating, detecting issue overlap and streamlining
+                  resolution, Spacebridge helps you optimize your backlog and
+                  roadmap.
+                </p>
+              </div>
+
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="clipboard-data"></sl-icon>
+                </div>
+                <h3>Actionable Product Intelligence</h3>
+                <p>
+                  Go beyond basic reports. Get actionable metrics on issue
+                  readiness, estimated effort, and backlog health to make
+                  data-driven product decisions.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="section-container">
+            <img
+              src="/images/ui_2.png"
+              alt="SpaceBridge UI showing intelligent issue management"
+              width="1200"
+              height="264"
+              class="ui-shot"
+            />
+          </div>
+        </section>
+
+        <section class="feature-section main-section">
+          <div class="section-container text-center">
+            <h2>Automate Routine Work with Confidence</h2>
+            <div class="feature-grid">
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="intersect"></sl-icon>
+                </div>
+                <h3>High-Value, Low-Risk Tasks</h3>
+                <p>
+                  With grounded context, our agentic flows can safely handle
+                  routine work, like drafting documentation.
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="clock-history"></sl-icon>
+                </div>
+                <h3>Initial Diagnostics</h3>
+                <p>
+                  Automatically run initial diagnostics on a service outage or
+                  suggest test coverage for a new feature.
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="flag"></sl-icon>
+                </div>
+                <h3>Free Up Your Best People</h3>
+                <p>
+                  Deliver immediate productivity wins and free up your senior
+                  developers from tedious toil, building trust in the system.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="section-container">
+            <img
+              src="/images/ui_1.png"
+              alt="SpaceBridge UI showing intelligent issue management"
+              width="1200"
+              height="224"
+              class="ui-shot"
+            />
+          </div>
+        </section>
+
+        <section class="feature-section main-section">
+          <div class="section-container text-center">
+            <h2>Safeguard Every Critical Action</h2>
+            <div class="feature-grid">
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="sliders"></sl-icon>
+                </div>
+                <h3>The Ultimate Safety Switch</h3>
+                <p>
+                  Our Preloop Human Approval Layer makes it possible to use AI
+                  for high-stakes tasks, intercepting commands before they
+                  execute.
+                </p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="eye"></sl-icon>
+                </div>
+                <h3>Intelligent Notifications</h3>
+                <p>
+                  The right people are instantly notified on Slack, SMS, or our
+                  app, to provide a simple Approve/Deny.
+                </p>
+              </div>
+              <div class="feature-box">
+                <img
+                  src="/images/ui_4.png"
+                  alt="SpaceBridge UI showing intelligent issue management"
+                  width="300"
+                  height="320"
+                  class="ui-shot"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="feature-section main-section" id="get-started">
+          <div class="section-container">
+            <div class="title-container">
+              <h2>SpaceBridge MCP Server</h2>
+              <a class="main-link" href="/whatis-mcp">What is MCP?</a>
+            </div>
+
+            <div class="feature-grid">
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <sl-icon name="search"></sl-icon>
                 </div>
                 <h3>Smart Duplicate Detection</h3>
                 <p>
@@ -104,7 +250,7 @@ export class LandingView extends LitElement {
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
-                  <img src="/images/context.png" alt="Context Icon" />
+                  <sl-icon name="journal-plus"></sl-icon>
                 </div>
                 <h3>Augment your LLM context</h3>
                 <p>
@@ -114,7 +260,7 @@ export class LandingView extends LitElement {
               </div>
               <div class="feature-box">
                 <div class="feature-icon">
-                  <img src="/images/ide.png" alt="IDE Icon" />
+                  <sl-icon name="code-slash"></sl-icon>
                 </div>
                 <h3>Cursor, Windsurf, Claude Code Ready</h3>
                 <p>
@@ -123,29 +269,7 @@ export class LandingView extends LitElement {
                 </p>
               </div>
             </div>
-          </div>
-        </section>
-
-        <section class="video-section">
-          <div class="section-container">
-            <div class="video-wrapper">
-              <iframe
-                width="560"
-                height="315"
-                src="https://www.youtube.com/embed/videoseries?si=qPHwJWgW3yW63Rzr&amp;list=PLr2Jp0c-Qn2itxlxK4vz8fDr7xCAUiDZw"
-                title="YouTube video player"
-                frameborder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                referrerpolicy="strict-origin-when-cross-origin"
-                allowfullscreen=""
-              ></iframe>
-            </div>
-          </div>
-        </section>
-
-        <section class="cta-section" id="get-started">
-          <div class="section-container">
-            <h2>Get Started</h2>
+            <h3>Get Started with MCP</h3>
             <div class="get-started-container">
               <div class="ide-tabs">
                 <div
@@ -187,7 +311,6 @@ export class LandingView extends LitElement {
                 ${this._activeIdeTab === 'claude-code'
                   ? html`
                       <div>
-                        <h4>Install SpaceBridge for Claude Code</h4>
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
@@ -231,7 +354,6 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                 ${this._activeIdeTab === 'cursor'
                   ? html`
                       <div>
-                        <h4>Install SpaceBridge for Cursor</h4>
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
@@ -298,7 +420,6 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
                 ${this._activeIdeTab === 'windsurf'
                   ? html`
                       <div>
-                        <h4>Install SpaceBridge for Windsurf</h4>
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
@@ -367,37 +488,67 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \\
           </div>
         </section>
 
-        <section class="faq-section">
+        <section class="video-section main-section">
           <div class="section-container">
-            <h2>FAQs</h2>
-            <div class="faq-container">
-              ${this.renderFaqItem(
-                0,
-                'What is SpaceBridge?',
-                'SpaceBridge is an open-source Master Control Program (MCP) server designed to unify your issue trackers (like Jira, GitHub Issues, GitLab Issues) and enhance them with AI-powered features like similarity search for duplicate detection. It provides a consistent API for AI agents and developers to interact with issue data.'
-              )}
-              ${this.renderFaqItem(
-                1,
-                'How does SpaceBridge help with AI development?',
-                "SpaceBridge provides a standardized MCP interface, allowing AI agents (like those in Claude Code, Cursor, or Windsurf) to easily access and manipulate issue tracker data. This augments the AI's context, enabling it to perform tasks like automated issue creation, updates, and intelligent searches more effectively."
-              )}
-              ${this.renderFaqItem(
-                2,
-                'Is SpaceBridge free to use?',
-                'Yes, the SpaceBridge MCP server software is open-source (MIT License) and free to self-host. We also offer a free tier for our hosted REST API service, which is perfect for individual developers and small teams to get started.'
+            <h2>Demo</h2>
+            <div class="video-wrapper">
+              <iframe
+                width="560"
+                height="315"
+                src="https://www.youtube.com/embed/videoseries?si=qPHwJWgW3yW63Rzr&amp;list=PLr2Jp0c-Qn2itxlxK4vz8fDr7xCAUiDZw"
+                title="YouTube video player"
+                frameborder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerpolicy="strict-origin-when-cross-origin"
+                allowfullscreen=""
+              ></iframe>
+            </div>
+          </div>
+        </section>
+
+        <section class="faq-section main-section">
+          <div class="section-container">
+            <h2 class="text-center">Frequently Asked Questions</h2>
+            <div class="faq-list">
+              ${this._faqs.map(
+                (faq, index) => html`
+                  <div class="faq-item">
+                    <div
+                      class="faq-question"
+                      @click=${() => this._toggleFaq(index)}
+                    >
+                      <span>${faq.q}</span>
+                      <sl-icon
+                        name=${this._openFaq === index
+                          ? 'chevron-up'
+                          : 'chevron-down'}
+                      ></sl-icon>
+                    </div>
+                    <div
+                      class="faq-answer ${this._openFaq === index
+                        ? 'open'
+                        : ''}"
+                    >
+                      <p>${unsafeHTML(faq.a)}</p>
+                    </div>
+                  </div>
+                `
               )}
             </div>
           </div>
         </section>
 
-        <section class="final-cta">
+        <section class="final-cta main-section special-cta">
           <div class="section-container">
-            <h2>Ready to Supercharge your AI Workflow?</h2>
-            <vaadin-button
-              theme="primary large"
-              @click=${() => (window.location.href = '/register')}
-              >Get Started For Free</vaadin-button
-            >
+            <h2>The Trust Layer for Enterprise AI</h2>
+            <div class="hero-buttons">
+              <sl-button variant="primary" size="large" href="/register"
+                >Get Started</sl-button
+              >
+              <sl-button variant="text" size="large" href="/request-demo"
+                >Request a Demo</sl-button
+              >
+            </div>
           </div>
         </section>
       </main>

@@ -13,9 +13,10 @@ import {
   Legend,
 } from 'chart.js';
 
-import '@vaadin/combo-box/vaadin-combo-box.js';
-import '@vaadin/date-picker/vaadin-date-picker.js';
-import '@vaadin/horizontal-layout/vaadin-horizontal-layout.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
+import '@shoelace-style/shoelace/dist/components/option/option.js';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
 
 Chart.register(
   LineController,
@@ -57,26 +58,30 @@ export class ApiUsageView extends LitElement {
       grid-template-columns: 2fr 1fr;
       gap: var(--lumo-space-l);
     }
-    .chart-card,
-    .list-card {
-      padding: var(--lumo-space-l);
-      background: var(--lumo-base-color);
-      border-radius: var(--lumo-border-radius-l);
-      box-shadow: var(--lumo-box-shadow-s);
+    .right-column {
+      display: flex;
+      flex-direction: column;
+      gap: var(--lumo-space-l);
+    }
+    sl-card::part(header) {
+      font-size: var(--lumo-font-size-l);
     }
     h2 {
-      font-size: var(--lumo-font-size-l);
-      margin-top: 0;
+      margin: 0;
     }
     .endpoints-list ul {
       list-style-type: none;
       padding: 0;
+      margin: 0;
     }
     .endpoints-list li {
       display: flex;
       justify-content: space-between;
       padding: var(--lumo-space-s) 0;
       border-bottom: 1px solid var(--lumo-contrast-10pct);
+    }
+    .endpoints-list li:last-child {
+      border-bottom: none;
     }
   `;
 
@@ -143,27 +148,28 @@ export class ApiUsageView extends LitElement {
       <h1>API Usage</h1>
 
       <div class="selectors">
-        <vaadin-combo-box
-          label="Date Range"
-          .items="${['Last 7 Days', 'Last 30 Days', 'Last 90 Days', 'Custom']}"
-          value="Last 30 Days"
-        ></vaadin-combo-box>
-        <vaadin-date-picker label="Start Date"></vaadin-date-picker>
-        <vaadin-date-picker label="End Date"></vaadin-date-picker>
+        <sl-select label="Date Range" value="last-30">
+          <sl-option value="last-7">Last 7 Days</sl-option>
+          <sl-option value="last-30">Last 30 Days</sl-option>
+          <sl-option value="last-90">Last 90 Days</sl-option>
+          <sl-option value="custom">Custom</sl-option>
+        </sl-select>
+        <sl-input type="date" label="Start Date"></sl-input>
+        <sl-input type="date" label="End Date"></sl-input>
       </div>
 
       <div class="charts-container">
-        <div class="chart-card">
-          <h2>API Usage Detail</h2>
+        <sl-card class="chart-card">
+          <h2 slot="header">API Usage Detail</h2>
           <canvas id="apiUsageChart"></canvas>
-        </div>
+        </sl-card>
         <div class="right-column">
-          <div class="chart-card">
-            <h2>Issue Actions</h2>
+          <sl-card class="chart-card">
+            <h2 slot="header">Issue Actions</h2>
             <canvas id="issueActionsChart"></canvas>
-          </div>
-          <div class="list-card" style="margin-top: var(--lumo-space-l);">
-            <h2>Endpoints Usage</h2>
+          </sl-card>
+          <sl-card class="list-card">
+            <h2 slot="header">Endpoints Usage</h2>
             <div class="endpoints-list">
               <ul>
                 <li><span>/api/v1/issues</span> <span>1,234 calls</span></li>
@@ -172,7 +178,7 @@ export class ApiUsageView extends LitElement {
                 <li><span>/api/v1/projects</span> <span>210 calls</span></li>
               </ul>
             </div>
-          </div>
+          </sl-card>
         </div>
       </div>
     `;

@@ -15,7 +15,7 @@ This frontend is a single-page application (SPA) that provides a rich, interacti
 
 ### Installing Dependencies
 
-To install the necessary dependencies, run the following command from the `frontend-v2` directory:
+To install the necessary dependencies, run the following command:
 
 ```bash
 npm install

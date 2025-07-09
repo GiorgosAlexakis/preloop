@@ -4,6 +4,9 @@ import { Router } from '@vaadin/router';
 import { post } from '../../api';
 import { formStyles } from '../../styles/form-styles';
 
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+
 @customElement('register-view')
 export class RegisterView extends LitElement {
   @state()
@@ -25,41 +28,64 @@ export class RegisterView extends LitElement {
         email,
         password,
       });
-      Router.go('/login');
+      Router.go('/login?registered=true');
     } catch (error) {
-      this.error = 'Failed to register';
-      console.error('Registration failed', error);
+      this.error = 'Failed to create an account';
+      console.error('Create account failed', error);
     }
   }
 
   render() {
     return html`
-      <div class="form-container">
-        <h2>Register</h2>
-        ${this.error
-          ? html`<div class="error-message">${this.error}</div>`
-          : ''}
-        <form @submit=${this.handleRegister}>
-          <div class="form-group">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" required />
-          </div>
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input type="email" id="email" name="email" required />
-          </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required />
-          </div>
-          <div class="form-actions">
-            <button type="submit">Register</button>
-          </div>
-          <div class="form-links">
-            <span>Already have an account? </span>
-            <a href="/login">Login</a>
-          </div>
-        </form>
+      <div class="container">
+        <div class="logo">
+          <a href="/">
+            <img src="/images/logo_dark.png" alt="SpaceBridge MCP" />
+          </a>
+        </div>
+        <div class="form-container">
+          <h2>Create a Spacebridge account</h2>
+          ${this.error
+            ? html`<div class="error-message">${this.error}</div>`
+            : ''}
+          <form @submit=${this.handleRegister}>
+            <div class="form-group">
+              <sl-input
+                label="Username"
+                id="username"
+                name="username"
+                required
+              ></sl-input>
+            </div>
+            <div class="form-group">
+              <sl-input
+                type="email"
+                label="Email"
+                id="email"
+                name="email"
+                required
+              ></sl-input>
+            </div>
+            <div class="form-group">
+              <sl-input
+                type="password"
+                label="Password"
+                id="password"
+                name="password"
+                required
+                password-toggle
+              ></sl-input>
+            </div>
+            <div class="form-actions">
+              <sl-button type="submit" variant="primary"
+                >Create account</sl-button
+              >
+            </div>
+            <div class="form-links">
+              <a href="/login">Already have an account? Sign In</a>
+            </div>
+          </form>
+        </div>
       </div>
     `;
   }

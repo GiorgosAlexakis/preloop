@@ -2,77 +2,63 @@ import { css } from 'lit';
 
 export const formStyles = css`
   /* Shared Form Styles */
+
+  .logo {
+    text-align: center;
+    padding: 2rem;
+  }
+
+  .logo img {
+    max-width: 150px;
+  }
+
+  .error-message {
+    color: var(--sl-color-danger-700);
+    margin-bottom: 1rem;
+    text-align: center;
+  }
+
   .form-container {
     max-width: 400px;
     margin: 2rem auto;
     padding: 2rem;
-    background-color: #f9f9f9;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
   .form-container h2 {
     text-align: center;
     margin-bottom: 1.5rem;
-    color: #333;
+    color: var(--sl-color-neutral-800);
   }
 
   .form-group {
     margin-bottom: 1rem;
   }
 
-  .form-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-    color: #555;
-  }
-
-  .form-group input {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    box-sizing: border-box;
-  }
-
-  .form-group input:focus {
-    border-color: #007bff;
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
-  }
-
   .form-actions {
-    margin-top: 1.5rem;
+    margin-top: 2rem;
     text-align: center;
   }
 
-  .form-actions button {
+  .form-actions sl-button {
     width: 100%;
-    padding: 0.75rem;
-    background-color: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 1rem;
-  }
-
-  .form-actions button:hover {
-    background-color: #0056b3;
   }
 
   .form-links {
-    margin-top: 1rem;
+    margin-top: 2rem;
     text-align: center;
+    color: var(--sl-color-primary-600);
   }
 
   .form-links a {
-    color: #007bff;
+    color: var(--sl-color-primary-600);
     text-decoration: none;
   }
 
   .form-links a:hover {
     text-decoration: underline;
+  }
+
+  sl-alert {
+    margin-bottom: 1rem;
   }
 `;

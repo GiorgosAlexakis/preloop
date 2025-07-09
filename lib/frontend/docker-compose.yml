@@ -1,0 +1,43 @@
+# Production setup with nginx
+version: '3.8'
+
+services:
+  # Frontend (Production)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      - API_URL=http://backend:8000
+      - MOCK_API=false
+    depends_on:
+      - backend
+    networks:
+      - spacelit-network
+
+  # Real API Backend (placeholder - replace with actual backend)
+  backend:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./docker/mock-api.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - spacelit-network
+
+  # Mock API Server (for testing without real backend)
+  mock-api:
+    image: nginx:alpine
+    ports:
+      - "8001:80"
+    volumes:
+      - ./docker/mock-api:/usr/share/nginx/html
+      - ./docker/mock-api.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - spacelit-network
+
+networks:
+  spacelit-network:
+    driver: bridge

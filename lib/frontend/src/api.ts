@@ -1,5 +1,6 @@
 import { LitElement } from 'lit';
 import { Router } from '@vaadin/router';
+import { DEFAULT_SIMILARITY_THRESHOLD } from './config';
 
 async function refreshToken(): Promise<string | null> {
   const refreshToken = localStorage.getItem('refreshToken');
@@ -64,6 +65,7 @@ export async function fetchWithAuth(
       response = await fetch(url, options);
     } else {
       // If refresh fails, the refreshToken function will handle redirection
+      Router.go('/login');
       throw new Error('Failed to refresh token, redirecting to login.');
     }
   }
@@ -86,6 +88,7 @@ export class AuthedElement extends LitElement {
     }
   }
 }
+
 export async function getApiUsageStats() {
   const response = await fetchWithAuth('/api/v1/auth/api-usage');
   if (!response.ok) {
@@ -114,13 +117,28 @@ export async function addTracker(trackerData: any) {
   return response.json();
 }
 
+export async function updateTracker(trackerId: string, trackerData: any) {
+  const response = await fetchWithAuth(`/api/v1/trackers/${trackerId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(trackerData),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update tracker');
+  }
+  return response.json();
+}
+
 export async function validateTrackerToken(
+  id?: string,
   type: string,
   token: string,
   url?: string,
   username?: string
 ) {
+  console.log('Validating tracker token', type, token, url, username);
   const payload: {
+    tracker_id?: string;
     tracker_type: string;
     api_key: string;
     url?: string;
@@ -129,6 +147,9 @@ export async function validateTrackerToken(
     tracker_type: type,
     api_key: token,
   };
+  if (id) {
+    payload.tracker_id = id;
+  }
   if (url) {
     payload.url = url;
   }
@@ -150,6 +171,7 @@ export async function validateTrackerToken(
 }
 
 export async function listProjectsForOrg(
+  trackerId: string,
   trackerType: string,
   token: string,
   orgId: string,
@@ -157,9 +179,10 @@ export async function listProjectsForOrg(
   username?: string
 ) {
   const payload: any = {
+    tracker_id: trackerId,
     tracker_type: trackerType,
     api_key: token,
-    organization_id: orgId,
+    organization_identifier: orgId,
   };
   if (url) {
     payload.url = url;
@@ -168,21 +191,30 @@ export async function listProjectsForOrg(
     payload.connection_details = { username };
   }
 
-  const response = await fetchWithAuth('/api/v1/trackers/list-projects-for-org', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetchWithAuth(
+    '/api/v1/trackers/list-projects-for-org',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || 'Failed to list projects for organization');
+    throw new Error(
+      errorData.message || 'Failed to list projects for organization'
+    );
   }
   return response.json();
 }
 
-export async function getDuplicateIssues() {
-  const response = await fetchWithAuth('/api/v1/issue-duplicates/');
+export async function getDuplicateIssues(
+  status: 'opened' | 'closed' | 'all' = 'opened'
+) {
+  const response = await fetchWithAuth(
+    `/api/v1/issue-duplicates/?status=${status}`
+  );
   if (!response.ok) {
     throw new Error('Failed to fetch duplicate issues');
   }
@@ -190,7 +222,7 @@ export async function getDuplicateIssues() {
 }
 
 export async function post(url: string, body: any) {
-  const response = await fetch(url, {
+  const response = await window.fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -203,6 +235,7 @@ export async function post(url: string, body: any) {
   }
   return response.json();
 }
+
 // Account
 export async function getAccountDetails() {
   const response = await fetchWithAuth('/api/v1/auth/users/me');
@@ -229,27 +262,27 @@ export async function changePassword(passwords: {
   new_password: string;
 }) {
   const response = await fetchWithAuth('/api/v1/auth/users/me/password', {
-    method: 'POST',
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(passwords),
   });
+  if (response.status === 204) {
+    return;
+  }
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      errorData.detail || 'Failed to change password'
-    );
+    throw new Error(errorData.detail || 'Failed to change password');
   }
-  return response.json();
 }
 
 // API Keys
 export interface ApiKey {
-    id: string;
-    name: string;
-    created_at: string;
-    last_used_at: string | null;
-    expires_at: string | null;
-    key?: string;
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  key?: string;
 }
 
 export async function getApiKeys(): Promise<ApiKey[]> {
@@ -260,7 +293,10 @@ export async function getApiKeys(): Promise<ApiKey[]> {
   return response.json();
 }
 
-export async function createApiKey(name: string, expires_at: string | null): Promise<ApiKey> {
+export async function createApiKey(
+  name: string,
+  expires_at: string | null
+): Promise<ApiKey> {
   const body = { name, expires_at };
   const response = await fetchWithAuth('/api/v1/auth/api-keys', {
     method: 'POST',
@@ -322,4 +358,281 @@ export async function deleteLlmModel(modelId: string) {
   if (!response.ok) {
     throw new Error('Failed to delete LLM model');
   }
+}
+
+// Flows
+export interface Flow {
+  id: string;
+  name: string;
+  description: string;
+  trigger_event_source: string;
+  trigger_event_type: string;
+  trigger_config: any;
+  prompt_template: string;
+  model_configuration_id: string;
+  openhands_agent_config: any;
+  allowed_mcp_servers: string[];
+  allowed_mcp_tools: any[];
+  is_preset: boolean;
+  is_enabled: boolean;
+  created_by_user_id: string;
+  organization_id: string;
+  created_at: string;
+}
+
+export async function getFlows(): Promise<Flow[]> {
+  const response = await fetchWithAuth('/api/v1/flows');
+  if (!response.ok) {
+    throw new Error('Failed to fetch flows');
+  }
+  return response.json();
+}
+
+export async function createFlow(flow: Partial<Flow>): Promise<Flow> {
+  const response = await fetchWithAuth('/api/v1/flows', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(flow),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to create flow');
+  }
+  return response.json();
+}
+
+export async function updateFlow(
+  flowId: string,
+  flow: Partial<Flow>
+): Promise<Flow> {
+  const response = await fetchWithAuth(`/api/v1/flows/${flowId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(flow),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update flow');
+  }
+  return response.json();
+}
+
+export async function deleteFlow(flowId: string) {
+  const response = await fetchWithAuth(`/api/v1/flows/${flowId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete flow');
+  }
+}
+
+export interface Project {
+  id: number;
+  name: string;
+  identifier: string;
+  organization_id: number;
+}
+
+export interface Organization {
+  id: number;
+  name: string;
+}
+
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function listProjects(): Promise<Project[]> {
+  const response = await fetchWithAuth('/api/v1/projects');
+  if (!response.ok) {
+    throw new Error('Failed to fetch projects');
+  }
+  return response.json();
+}
+
+export interface IssueEmbedding {
+  issue_id: string;
+  project_id: string;
+  issue_key: string;
+  issue_title: string;
+  issue_created_at: string;
+  embedding: number[];
+}
+
+export async function getEmbeddingsForProjects(
+  projectIds: string[]
+): Promise<{ data: IssueEmbedding[] } | null> {
+  const params = new URLSearchParams();
+  if (projectIds.length > 0) {
+    params.append('project_ids', projectIds.join(','));
+  }
+
+  const queryString = params.toString();
+  const url = queryString
+    ? `/api/v1/embeddings?${queryString}`
+    : '/api/v1/embeddings';
+
+  try {
+    const response = await fetchWithAuth(url);
+    if (!response.ok) {
+      console.error('Failed to fetch embeddings:', response.statusText);
+      throw new Error('Failed to fetch embeddings for projects');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error in getEmbeddingsForProjects:', error);
+    return null;
+  }
+}
+
+export async function listOrganizations(): Promise<Organization[]> {
+  const response = await fetchWithAuth('/api/v1/organizations');
+  if (!response.ok) {
+    throw new Error('Failed to fetch organizations');
+  }
+  const data: Paginated<Organization> = await response.json();
+  return data.items;
+}
+
+// Add interfaces for the issue duplicates endpoint
+export interface Issue {
+  project_id: string;
+  id: string;
+  title: string;
+  description: string;
+  key: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  url: string;
+  meta_data?: { [key: string]: any };
+}
+
+export interface DuplicatePair {
+  issue1: Issue;
+  issue2: Issue;
+  similarity: number;
+}
+
+export interface DuplicatesResponse {
+  project_ids: string[];
+  model_id_used: string;
+  threshold_used: number;
+  duplicates: DuplicatePair[];
+}
+
+export async function listIssueDuplicates(
+  options: {
+    limit?: number;
+    skip?: number;
+    project_ids?: string[];
+    similarity_threshold?: number;
+    status?: 'opened' | 'closed' | 'all';
+  } = {}
+): Promise<DuplicatesResponse> {
+  const {
+    limit = 10,
+    skip = 0,
+    project_ids = [],
+    status = 'opened',
+    similarity_threshold = DEFAULT_SIMILARITY_THRESHOLD,
+  } = options;
+
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+    skip: skip.toString(),
+  });
+  project_ids.forEach((id) => params.append('project_ids', id));
+  params.append('status', status);
+  params.append('similarity_threshold', similarity_threshold.toString());
+  const response = await fetchWithAuth(
+    `/api/v1/issue-duplicates?${params.toString()}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch duplicate issues');
+  }
+  return response.json();
+}
+
+export async function checkLlmVerdict(issue1_id: string, issue2_id: string) {
+  const response = await fetchWithAuth(
+    `/api/v1/issue-duplicates/check?issue1_id=${issue1_id}&issue2_id=${issue2_id}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch LLM verdict');
+  }
+  return response.json();
+}
+
+export interface ProjectStats {
+  project_id: string;
+  project_name: string;
+  total: number;
+  duplicates: number;
+}
+
+export interface DuplicateStatsResponse {
+  projects: { [key: string]: ProjectStats };
+}
+
+export async function getProjectDuplicateStats(options: {
+  project_ids?: string[];
+  status?: 'opened' | 'closed' | 'all';
+  similarity_threshold?: number;
+}): Promise<DuplicateStatsResponse> {
+  const {
+    project_ids = [],
+    status = 'opened',
+    similarity_threshold = DEFAULT_SIMILARITY_THRESHOLD,
+  } = options;
+  const params = new URLSearchParams();
+  project_ids.forEach((id) => params.append('project_ids', id));
+  params.append('status', status);
+  params.append('similarity_threshold', similarity_threshold.toString());
+  const url = `/api/v1/project-duplicate-stats?${params.toString()}`;
+  console.log(url);
+  const response = await fetchWithAuth(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch project duplicate stats');
+  }
+  return response.json();
+}
+
+export async function executeResolution(
+  actionId: string,
+  issue1Id: string,
+  issue2Id: string
+): Promise<{ success: boolean }> {
+  console.log(
+    `Executing resolution '${actionId}' for issues ${issue1Id} and ${issue2Id}`
+  );
+
+  // Simulate network delay
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
+  // In a real implementation, you would make a call to your backend here
+  // to perform the action (e.g., using a tool to update the issues).
+
+  return Promise.resolve({ success: true });
+}
+
+export async function dismissDuplicatePair(
+  issue1Id: string,
+  issue2Id: string
+): Promise<{ success: boolean }> {
+  console.log(`Dismissing duplicate pair: ${issue1Id} and ${issue2Id}`);
+
+  // Simulate network delay
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  // In a real implementation, you would make a call to your backend here
+  // to record the dismissal.
+
+  return Promise.resolve({ success: true });
+}
+
+export interface SimilarIssue {
+  id: number;
+  title: string;
 }
