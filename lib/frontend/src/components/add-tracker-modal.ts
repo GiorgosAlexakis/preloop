@@ -233,8 +233,8 @@ export class AddTrackerModal extends LitElement {
         : ''}
       <sl-input
         type="password"
-        label="Access Token"
-        name="token"
+        label="API Key"
+        name="api_key"
         .value=${this.trackerToken}
         @sl-input=${(e: any) => (this.trackerToken = e.target.value)}
         required
@@ -553,7 +553,7 @@ export class AddTrackerModal extends LitElement {
       name: this.trackerName,
       type: this.trackerType,
       url: this.trackerUrl,
-      token: this.trackerToken,
+      api_key: this.trackerToken,
       scope_rules: scopeRules,
       config: {
         username: this.trackerUsername,
