@@ -436,9 +436,14 @@ async def receive_webhook(
                             detail="Missing data to construct GitHub issue key.",
                         )
 
-            transformed_issue = tracker_client.client.transform_issue_webhook(
-                issue_data, project
-            )
+            if hasattr(tracker_client.client, "transform_issue_webhook"):
+                transformed_issue = tracker_client.client.transform_issue_webhook(
+                    issue_data, project
+                )
+            else:
+                transformed_issue = tracker_client.client.transform_issue(
+                    issue_data, project
+                )
 
             existing_issue = crud_issue.get_by_external_id(
                 db,

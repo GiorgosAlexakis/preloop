@@ -168,7 +168,13 @@ async def register_tracker(
         )
 
         # Create the tracker with the account reference and project selection fields
-        scope_rules = [TrackerScopeRule(**rule) for rule in scope_rules_data]
+        scope_rules = []
+        for rule in scope_rules_data:
+            if hasattr(rule.get("scope_type"), "value"):
+                rule["scope_type"] = rule["scope_type"].value
+            if hasattr(rule.get("rule_type"), "value"):
+                rule["rule_type"] = rule["rule_type"].value
+            scope_rules.append(TrackerScopeRule(**rule))
 
         new_tracker = Tracker(
             name=name,
@@ -334,9 +340,13 @@ async def update_tracker(
         # Create new scope rules from the payload
         new_scope_rules_data = update_data.pop("scope_rules")
         if new_scope_rules_data is not None:
-            new_scope_rules = [
-                TrackerScopeRule(**rule_data) for rule_data in new_scope_rules_data
-            ]
+            new_scope_rules = []
+            for rule_data in new_scope_rules_data:
+                if hasattr(rule_data.get("scope_type"), "value"):
+                    rule_data["scope_type"] = rule_data["scope_type"].value
+                if hasattr(rule_data.get("rule_type"), "value"):
+                    rule_data["rule_type"] = rule_data["rule_type"].value
+                new_scope_rules.append(TrackerScopeRule(**rule_data))
             tracker.scope_rules = new_scope_rules
 
     # Update other fields
