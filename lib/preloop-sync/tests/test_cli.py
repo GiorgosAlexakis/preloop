@@ -175,7 +175,7 @@ class TestScanCommands(unittest.TestCase):
 
         # Mock the scan_tracker_func
         mock_scan_tracker_func.return_value = {
-            "organizations_scanned": 1,
+            "organizations": 1,
             "organizations_skipped_webhook": 0,
             "organizations_skipped_polling": 0,
             "projects": 3,
@@ -192,6 +192,7 @@ class TestScanCommands(unittest.TestCase):
             # Print result to debug
             if result.exit_code != 0:
                 print(f"Command failed with: {result.output}")
+                print(f"Exception: {result.exception}")
 
             # We expect the command to succeed
             self.assertEqual(result.exit_code, 0)

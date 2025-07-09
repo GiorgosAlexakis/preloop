@@ -43,7 +43,7 @@ def scan_all_cmd(verbose: bool, force_update: bool):
     click.echo("Scanning all accounts and trackers...")
 
     # Scan all accounts (pass force_update)
-    stats = scan_all_accounts(db=db, force_update=force_update)
+    stats = scan_all_accounts(db=db, verbose=verbose, force_update=force_update)
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
@@ -110,7 +110,8 @@ def scan_account_cmd(account_id: str, verbose: bool, force_update: bool):
     is_flag=True,
     help="Force update of all embeddings even if content hasn't changed",
 )
-def scan_tracker_cmd(tracker_id: str, force_update: bool):
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
+def scan_tracker_cmd(tracker_id: str, force_update: bool, verbose: bool):
     """
     Perform a ONE-OFF scan for a specific tracker.
     Does NOT start the continuous service.
@@ -128,7 +129,9 @@ def scan_tracker_cmd(tracker_id: str, force_update: bool):
     click.echo(f"Scanning tracker: ID {tracker.id} ({tracker.tracker_type})...")
 
     # Scan the tracker (pass force_update)
-    stats = scan_tracker_func(db=db, tracker=tracker, force_update=force_update) # Pass force_update
+    stats = scan_tracker_func(
+        db=db, tracker=tracker, force_update=force_update, verbose=verbose
+    )
 
     # Print summary
     click.echo("\n=== Scan Complete ===")

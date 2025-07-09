@@ -289,7 +289,11 @@ def _process_organization(
     return org_stats, False
 
 def scan_tracker(
-    db: Session, tracker: Tracker, force_update: bool = False, since: Optional[datetime.datetime] = None
+    db: Session,
+    tracker: Tracker,
+    force_update: bool = False,
+    since: Optional[datetime.datetime] = None,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     """Scan a single tracker."""
     logger.info(f"Scanning tracker {tracker.id} ({tracker.tracker_type})")
@@ -308,10 +312,16 @@ def scan_tracker(
         logger.error(f"Failed to scan tracker {tracker.id}: {e}", exc_info=True)
         stats["errors"] += 1
 
+    if verbose:
+        logger.info(f"Stats for tracker {tracker.id}: {stats}")
     return stats
 
 def scan_account(
-    db: Session, account_id: str, force_update: bool = False, since: Optional[datetime.datetime] = None
+    db: Session,
+    account_id: str,
+    force_update: bool = False,
+    since: Optional[datetime.datetime] = None,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     """Scan all trackers for a given account."""
     account = crud_account.get(db, id=account_id)
@@ -323,12 +333,16 @@ def scan_account(
     for tracker in account.trackers:
         if tracker.is_active:
             total_stats["trackers"] += 1
-            tracker_stats = scan_tracker(db, tracker, force_update, since)
+            tracker_stats = scan_tracker(db, tracker, force_update, since, verbose)
             for key in total_stats:
                 total_stats[key] += tracker_stats.get(key, 0)
+    if verbose:
+        logger.info(f"Stats for account {account_id}: {total_stats}")
     return total_stats
 
-def scan_all_accounts(db: Session, force_update: bool = False) -> Dict[str, Any]:
+def scan_all_accounts(
+    db: Session, force_update: bool = False, verbose: bool = False
+) -> Dict[str, Any]:
     """Scan all active accounts and their trackers."""
     accounts = crud_account.get_multi(db, skip=0, limit=1000)
     logger.info(f"Found {len(accounts)} accounts to scan.")
@@ -336,7 +350,7 @@ def scan_all_accounts(db: Session, force_update: bool = False) -> Dict[str, Any]
     for account in accounts:
         if account.is_active:
             overall_stats["accounts_scanned"] += 1
-            account_stats = scan_account(db, account.id, force_update)
+            account_stats = scan_account(db, account.id, force_update, verbose=verbose)
             if account_stats.get("errors", 0) > 0:
                 overall_stats["accounts_with_errors"] += 1
             overall_stats["total_trackers_scanned"] += account_stats.get("trackers", 0)
