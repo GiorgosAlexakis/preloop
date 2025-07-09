@@ -386,17 +386,7 @@ def _get_accessible_projects(
     if project_ids:
         project_query = project_query.filter(Project.id.in_(project_ids))
 
-    projects = project_query.all()
-
-    if not projects:
-        detail = (
-            "The specified project(s) were not found or you do not have access."
-            if project_ids
-            else "No projects found for the current user."
-        )
-        raise HTTPException(status_code=404, detail=detail)
-
-    return projects
+    return project_query.all()
 
 
 @router.get("/issue-duplicates", response_model=ProjectDuplicatesResponse)
