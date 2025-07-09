@@ -17,6 +17,8 @@ from ..utils import retry
 from .base import BaseTracker
 from ..config import logger
 from spacemodels.models.project import Project
+from spacemodels.crud import crud_webhook
+from spacemodels.db.session import get_db_session
 
 class GitHubTracker(BaseTracker):
     """GitHub tracker implementation."""
@@ -309,6 +311,7 @@ class GitHubTracker(BaseTracker):
         Returns:
             True if registration was successful or webhook already exists, False otherwise.
         """
+        db = get_db_session()
         # GitHub doesn't support organization-level webhooks for personal accounts via this API
         if org_identifier == "personal":
             logger.info(f"Skipping webhook registration for personal account '{self.connection_details.get('login', 'N/A')}'. GitHub personal webhooks are managed per-repository.")

@@ -7,7 +7,7 @@ from datetime import timedelta
 import os
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
-
+import secrets
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import (
@@ -104,6 +104,8 @@ class TrackerClient:
         for proj_data in proj_data_list:
             try:
                 proj_create_data = self.client.transform_project(proj_data, organization.id)
+                if 'meta_data' in proj_data and 'full_name' in proj_data['meta_data'] and not proj_create_data.get("slug"):
+                    proj_create_data["slug"] = proj_data['meta_data']['full_name']
                 project_identifier = proj_create_data.get("identifier")
                 project_name = proj_create_data.get("name", "N/A")
 
@@ -218,6 +220,8 @@ def _process_organization(
             webhook_target_path = f"/api/v1/private/webhooks/{client.tracker_type}/{org.identifier}"
             webhook_target_url = urljoin(spacebridge_url_str, webhook_target_path)
             current_secret_to_use = org.webhook_secret
+            if not org.webhook_secret:
+                current_secret_to_use = secrets.token_hex(32)
 
             if client.tracker_type == "jira":
                 for project in projects:

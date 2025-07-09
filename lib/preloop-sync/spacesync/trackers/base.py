@@ -163,7 +163,7 @@ class BaseTracker(ABC):
         # Add more mappings as needed
 
         # Get issue type or default to "task"
-        issue_type = issue_data.get("type", "task")
+        issue_type = issue_data.get("type") or "task"
         # Map common types to standardized ones
         if issue_type.lower() in ["bug", "defect", "error"]:
             issue_type = "bug"
