@@ -3,10 +3,10 @@ Tracker update service manager.
 (Refactored for APScheduler integration)
 """
 
-from typing import Optional, Set, List
+from typing import Set, Dict, Any
 
 import pytz
-from datetime import datetime, timedelta, timezone # Import timedelta, timezone
+from datetime import datetime, timedelta # Import timedelta, timezone
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.base import BaseScheduler # Import BaseScheduler for type hinting
 from apscheduler.triggers.interval import IntervalTrigger # Import IntervalTrigger
@@ -14,9 +14,7 @@ from apscheduler.jobstores.base import JobLookupError # Import specific error
 
 from spacemodels.crud import crud_tracker
 from spacemodels.db.session import get_db_session
-from spacemodels.models import Organization
-from spacesync.scanner.core import TrackerClient, _process_organization # Import the helper
-from ..exceptions import TrackerRateLimitError # Import necessary exceptions
+from spacesync.scanner.core import scan_tracker # Import the helper
 
 from ..config import logger, SERVICE_POLL_INTERVAL # Import default interval
 
@@ -30,131 +28,14 @@ TRACKER_JOB_PREFIX = "tracker_update_"
 
 
 
-def update_tracker(tracker_id: str):
+def update_tracker(tracker_id: str) -> Dict[str, Any]:
     logger.info(f"Starting update poll for tracker {tracker_id}")
-    now = datetime.now(timezone.utc)  # Define now as timezone-aware UTC
-    # Initialize stats dictionary similar to scan_tracker
-    stats = {
-        "organizations_scanned": 0,
-        "organizations_skipped_webhook": 0,
-        "organizations_skipped_polling": 0,
-        "projects": 0,
-        "issues": 0,
-        "embeddings_updated": 0,
-        "errors": 0,
-    }
-    rate_limited_tracker = False # Flag to stop processing this tracker if rate limited
+    db = next(get_db_session())
+    tracker = crud_tracker.get_by_id(db, id=tracker_id)
+    return scan_tracker(db, tracker)
 
-    # Each job run gets its own session using the generator pattern
-    db: Optional[Session] = None
-    session_generator = get_db_session()
-    try:
-        db = next(session_generator) # Get the session from the generator
-        tracker = crud_tracker.get_by_id(db, id=tracker_id)
-        if not tracker:
-            logger.error(f"Tracker {tracker_id} not found in database.")
-            return stats # Return empty stats
-
-        tracker_client = TrackerClient(tracker)
-        # Use epoch time (Jan 1, 1970) to effectively scan all issues when polling
-        # This matches the behavior in the original scan_tracker before refactoring
-        since = datetime(1970, 1, 1)
-        # Force update is false by default for scheduled jobs
-        force_update = False
-
-        # 1. Get organizations for this tracker from the API
-        try:
-            tracker_organizations: List[Organization] = tracker_client.scan_organizations(db)
-            if not tracker_organizations:
-                logger.info(f"No active organizations found for tracker {tracker_id}. Skipping update cycle.")
-                return stats # Return empty stats
-        except TrackerRateLimitError as rle:
-             logger.warning(f"Rate limit hit for tracker {tracker_id} during organization scan. Pausing updates for this tracker. Details: {rle}")
-             rate_limited_tracker = True
-             tracker_organizations = [] # Ensure loop doesn't run
-             stats["errors"] += 1
-        except Exception as e:
-            logger.error(f"Failed to get organizations for tracker {tracker_id}: {e}", exc_info=True)
-            return stats # Return empty stats with error count potentially incremented
-
-        # Process each organization using the helper function from core.py
-        for org in tracker_organizations:
-            if rate_limited_tracker:
-                logger.warning(f"Skipping remaining organizations for tracker {tracker_id} due to prior rate limit.")
-                break # Stop processing orgs for this tracker if rate limited
-
-            try:
-                # Call the centralized processing function
-                org_stats, skipped = _process_organization(
-                    db=db,
-                    client=tracker_client,
-                    org=org,
-                    since=since,
-                    force_update=force_update,
-                )
-
-                # Aggregate stats
-                if skipped:
-                    # Increment appropriate skipped counter based on current org state
-                    last_webhook_update_aware: Optional[datetime] = None
-                    if org.last_webhook_update:
-                        if org.last_webhook_update.tzinfo is None:
-                            last_webhook_update_aware = org.last_webhook_update.replace(tzinfo=timezone.utc)
-                        else:
-                            last_webhook_update_aware = org.last_webhook_update.astimezone(timezone.utc)
-
-                    last_polling_update_aware: Optional[datetime] = None
-                    if org.last_polling_update:
-                        if org.last_polling_update.tzinfo is None:
-                            last_polling_update_aware = org.last_polling_update.replace(tzinfo=timezone.utc)
-                        else:
-                            last_polling_update_aware = org.last_polling_update.astimezone(timezone.utc)
-
-                    if last_webhook_update_aware and (now - last_webhook_update_aware) < POLLING_THRESHOLD:
-                         stats["organizations_skipped_webhook"] += 1
-                    elif last_polling_update_aware and (now - last_polling_update_aware) < POLLING_THRESHOLD:
-                         stats["organizations_skipped_polling"] += 1
-                else:
-                    stats["organizations_scanned"] += 1
-                    stats["projects"] += org_stats["projects"]
-                    stats["issues"] += org_stats["issues"]
-                    stats["embeddings_updated"] += org_stats["embeddings_updated"]
-                    stats["errors"] += org_stats["errors"]
-
-            except TrackerRateLimitError as rle:
-                 # Catch rate limit errors that might occur within _process_organization
-                 # (e.g., during project or issue scanning)
-                 logger.warning(f"Rate limit hit for tracker {tracker_id} while processing org {org.identifier}. Pausing updates. Details: {rle}")
-                 rate_limited_tracker = True
-                 stats["errors"] += 1
-                 # Don't 'continue' here, let the rate_limited_tracker flag handle skipping subsequent orgs
-            except Exception as e:
-                 # Catch unexpected errors during the processing of a single organization
-                 logger.error(f"Unexpected error processing organization {org.identifier} for tracker {tracker_id}: {e}", exc_info=True)
-                 stats["errors"] += 1
-                 # Continue to the next organization even if one fails unexpectedly
-
-        logger.info(f"Finished update poll for tracker {tracker_id}. Stats: {stats}. Rate limited encountered: {rate_limited_tracker}")
-        return stats # Return the collected statistics
-    except StopIteration:
-        logger.error(f"Failed to get database session from generator for tracker {tracker_id}.")
-        stats["errors"] += 1
-        return stats # Return stats indicating error
-    except Exception as e:
-        logger.error(f"Error during tracker update job for {tracker_id}: {e}", exc_info=True)
-        stats["errors"] += 1
-        return stats # Return stats indicating error
-    finally:
-        # Ensure the session is closed if it was successfully obtained
-        if db:
-            try:
-                db.close()
-                logger.debug(f"Closed DB session for tracker {tracker_id}")
-            except Exception as close_exc:
-                logger.error(f"Error closing DB session for tracker {tracker_id}: {close_exc}")
 
 # --- APScheduler Job Synchronization Function ---
-
 def sync_scheduled_jobs(scheduler: BaseScheduler, db: Session):
     """
     Synchronizes APScheduler jobs with active trackers in the database.
