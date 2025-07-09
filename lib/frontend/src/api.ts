@@ -599,24 +599,6 @@ export async function getProjectDuplicateStats(options: {
   return response.json();
 }
 
-export async function executeResolution(
-  actionId: string,
-  issue1Id: string,
-  issue2Id: string
-): Promise<{ success: boolean }> {
-  console.log(
-    `Executing resolution '${actionId}' for issues ${issue1Id} and ${issue2Id}`
-  );
-
-  // Simulate network delay
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-
-  // In a real implementation, you would make a call to your backend here
-  // to perform the action (e.g., using a tool to update the issues).
-
-  return Promise.resolve({ success: true });
-}
-
 export async function dismissDuplicatePair(
   issue1Id: string,
   issue2Id: string
@@ -635,4 +617,31 @@ export async function dismissDuplicatePair(
 export interface SimilarIssue {
   id: number;
   title: string;
+}
+
+export interface SuggestionResponse {
+  resolution: 'MERGE' | 'DISAMBIGUATE';
+  disambiguated_title1?: string;
+  disambiguated_description1?: string;
+  disambiguated_title2?: string;
+  disambiguated_description2?: string;
+  explanation: string;
+}
+
+export async function getResolutionSuggestion(
+  issue1_id: string,
+  issue2_id: string,
+  resolution: 'merged' | 'disambiguated'
+): Promise<SuggestionResponse> {
+  return await fetchWithAuth('/api/v1/LLM-suggestion', {
+    method: 'POST',
+    body: JSON.stringify({ issue1_id, issue2_id, resolution }),
+  });
+}
+
+export async function executeResolution(resolutionData: any) {
+  return await fetchWithAuth('/api/v1/issue-duplicates/resolve', {
+    method: 'PATCH',
+    body: JSON.stringify(resolutionData),
+  });
 }

@@ -1,6 +1,10 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { DuplicatePair, executeResolution } from '../api';
+import {
+  DuplicatePair,
+  executeResolution,
+  getResolutionSuggestion,
+} from '../api';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
@@ -8,6 +12,7 @@ import '@shoelace-style/shoelace/dist/components/radio/radio.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
+import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 
 type ResolutionStep = 'initial' | 'close' | 'merge' | 'disambiguate';
 
@@ -18,8 +23,7 @@ export class ResolveIssueModal extends LitElement {
 
   @state() private _isSubmitting = false;
   @state() private _resolutionStep: ResolutionStep = 'initial';
-
-  // State for Merge step
+  @state() private _isLoadingSuggestion = false;
   @state() private _mergeTarget: 'A' | 'B' = 'B';
   @state() private _mergedTitle = '';
   @state() private _mergedDescription = '';
@@ -46,19 +50,37 @@ export class ResolveIssueModal extends LitElement {
     this._resolutionStep = 'initial';
   }
 
-  private _startResolution(step: ResolutionStep) {
-    if (step === 'merge') {
-      // TODO: Replace with actual LLM suggestion API call
-      this._mergedTitle = `Merged: ${this.duplicatePair?.issue1.title} & ${this.duplicatePair?.issue2.title}`;
-      this._mergedDescription = `This issue combines the details from both ${this.duplicatePair?.issue1.key} and ${this.duplicatePair?.issue2.key}.\n\n---\n\n${this.duplicatePair?.issue1.description}\n\n---\n\n${this.duplicatePair?.issue2.description}`;
-    } else if (step === 'disambiguate') {
-      // TODO: Replace with actual LLM suggestion API call
-      this._disambiguatedTitle1 = `${this.duplicatePair?.issue1.title}`;
-      this._disambiguatedDescription1 = `[This issue is distinct because...]\n\n${this.duplicatePair?.issue1.description}`;
-      this._disambiguatedTitle2 = `${this.duplicatePair?.issue2.title}`;
-      this._disambiguatedDescription2 = `[This issue is distinct because...]\n\n${this.duplicatePair?.issue2.description}`;
-    }
+  private async _startResolution(step: ResolutionStep) {
     this._resolutionStep = step;
+    if (step === 'merge' || step === 'disambiguate') {
+      if (!this.duplicatePair?.issue1 || !this.duplicatePair?.issue2) return;
+      this._isLoadingSuggestion = true;
+      try {
+        const resolutionType = step === 'merge' ? 'merged' : 'disambiguated';
+        const suggestion = await getResolutionSuggestion(
+          this.duplicatePair.issue1.id,
+          this.duplicatePair.issue2.id,
+          resolutionType
+        );
+
+        if (step === 'merge') {
+          this._mergedTitle = suggestion.merged_title || '';
+          this._mergedDescription = suggestion.merged_description || '';
+        } else {
+          this._disambiguatedTitle1 = suggestion.disambiguated_title1 || '';
+          this._disambiguatedDescription1 =
+            suggestion.disambiguated_description1 || '';
+          this._disambiguatedTitle2 = suggestion.disambiguated_title2 || '';
+          this._disambiguatedDescription2 =
+            suggestion.disambiguated_description2 || '';
+        }
+      } catch (error) {
+        console.error('Failed to get suggestion:', error);
+        // Optionally, show an error message to the user
+      } finally {
+        this._isLoadingSuggestion = false;
+      }
+    }
   }
 
   private async _handleFinalResolve(resolution: string) {
@@ -73,40 +95,31 @@ export class ResolveIssueModal extends LitElement {
     };
 
     if (resolution === 'MERGE') {
-      const mergeTargetId = this._mergeTarget === 'A' ? issue1.id : issue2.id;
-      const sourceId = this._mergeTarget === 'A' ? issue2.id : issue1.id;
-      resolutionData = {
-        ...resolutionData,
-        resolution_reason: `Merged issue ${sourceId} into ${mergeTargetId}`,
-        resulting_issue1_id: mergeTargetId,
-        merged_title: this._mergedTitle,
-        merged_description: this._mergedDescription,
-      };
-    } else if (resolution === 'DISAMBIGUATE') {
-      resolutionData = {
-        ...resolutionData,
-        resolution_reason:
-          'Disambiguated issues with new titles and descriptions.',
-        resulting_issue1_id: issue1.id,
-        resulting_issue2_id: issue2.id,
-        disambiguated_title1: this._disambiguatedTitle1,
-        disambiguated_description1: this._disambiguatedDescription1,
-        disambiguated_title2: this._disambiguatedTitle2,
-        disambiguated_description2: this._disambiguatedDescription2,
-      };
-    } else if (resolution.startsWith('CLOSE_')) {
-      const issueToClose = resolution === 'CLOSE_A' ? issue1 : issue2;
-      const issueToKeep = resolution === 'CLOSE_A' ? issue2 : issue1;
-      resolutionData.resolution = 'CLOSE'; // The API expects 'CLOSE', not 'CLOSE_A' or 'CLOSE_B'
-      resolutionData.resolution_reason = `Closed ${issueToClose.key} as duplicate of ${issueToKeep.key}`;
+      const issueToKeep = this._mergeTarget === 'A' ? issue1 : issue2;
+      const issueToClose = this._mergeTarget === 'A' ? issue2 : issue1;
+      resolutionData.resolution_reason = `Merged ${issueToClose.key} into ${issueToKeep.key}`;
       resolutionData.resulting_issue1_id = issueToKeep.id;
+      resolutionData.merged_title = this._mergedTitle;
+      resolutionData.merged_description = this._mergedDescription;
+    } else if (resolution === 'DISAMBIGUATE') {
+      resolutionData.resolution_reason = 'Disambiguated issues';
+      resolutionData.resulting_issue1_id = issue1.id;
+      resolutionData.resulting_issue2_id = issue2.id;
+      resolutionData.disambiguated_title1 = this._disambiguatedTitle1;
+      resolutionData.disambiguated_description1 = this._disambiguatedDescription1;
+      resolutionData.disambiguated_title2 = this._disambiguatedTitle2;
+      resolutionData.disambiguated_description2 = this._disambiguatedDescription2;
+    } else if (resolution.startsWith('CLOSE_')) {
+        const issueToClose = resolution === 'CLOSE_A' ? issue1 : issue2;
+        const issueToKeep = resolution === 'CLOSE_A' ? issue2 : issue1;
+        resolutionData.resolution = 'CLOSE'; // The API expects 'CLOSE', not 'CLOSE_A' or 'CLOSE_B'
+        resolutionData.resolution_reason = `Closed ${issueToClose.key} as duplicate of ${issueToKeep.key}`;
+        resolutionData.resulting_issue1_id = issueToKeep.id;
     }
 
     try {
       await executeResolution(resolutionData);
-      this.dispatchEvent(
-        new CustomEvent('resolved', { bubbles: true, composed: true })
-      );
+      this.dispatchEvent(new CustomEvent('resolved', { bubbles: true, composed: true }));
       this._close();
     } catch (error) {
       console.error('Failed to execute resolution:', error);
@@ -151,6 +164,8 @@ export class ResolveIssueModal extends LitElement {
 
     return html`
       <div class="step-container">
+        
+
         <div class="initial-options-group">
           ${actions.map(
             (action) => html`
@@ -350,6 +365,24 @@ export class ResolveIssueModal extends LitElement {
       display: flex;
       flex-direction: column;
       gap: var(--sl-spacing-large);
+    }
+    .llm-suggestion {
+      background-color: var(--sl-color-neutral-50);
+      border: 1px solid var(--sl-color-neutral-200);
+      border-radius: var(--sl-border-radius-medium);
+      padding: var(--sl-spacing-medium);
+    }
+    .suggestion-header {
+      display: flex;
+      align-items: center;
+      gap: var(--sl-spacing-small);
+      margin-bottom: var(--sl-spacing-x-small);
+      font-weight: var(--sl-font-weight-semibold);
+    }
+    .suggestion-reason {
+      font-size: var(--sl-font-size-medium);
+      color: var(--sl-color-neutral-700);
+      margin: 0;
     }
     .initial-options-group {
       display: flex;
