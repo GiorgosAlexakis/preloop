@@ -845,7 +845,7 @@ async def create_issue(
                 org_input_identifier and not org
             ):  # Org identifier provided, but org not resolved yet
                 org = crud_organization.get_by_identifier(
-                    db, identifier=org_input_identifier
+                    db, identifier=org_input_identifier, account_id=current_user.id
                 ) or crud_organization.get_by_name(db, name=org_input_identifier)
                 if not org:
                     raise HTTPException(
@@ -1369,8 +1369,11 @@ async def update_issue(
                     f"Calling tracker client to update issue {issue.external_id} with data: {update_data_for_tracker}"
                 )
                 # Use the issue's external_id for the tracker API call
+                issue_repo_id = issue.external_id
+                if issue.external_url:
+                    issue_repo_id = issue.external_url.split("/")[-1]
                 await tracker_client.update_issue(
-                    issue.external_id, IssueUpdate(**update_data_for_tracker)
+                    issue_repo_id, IssueUpdate(**update_data_for_tracker)
                 )
                 logger.info(
                     f"Successfully updated issue {issue.external_id} via tracker client."
