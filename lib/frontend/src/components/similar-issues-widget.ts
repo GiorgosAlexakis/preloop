@@ -26,7 +26,8 @@ export class SimilarIssuesWidget extends LitElement {
     a:hover {
       text-decoration: underline;
     }
-    sl-alert::part(base), sl-card {
+    sl-alert::part(base),
+    sl-card {
       width: 100%;
     }
     .suggestion-list {
