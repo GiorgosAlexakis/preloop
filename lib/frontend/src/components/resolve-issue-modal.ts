@@ -106,20 +106,24 @@ export class ResolveIssueModal extends LitElement {
       resolutionData.resulting_issue1_id = issue1.id;
       resolutionData.resulting_issue2_id = issue2.id;
       resolutionData.disambiguated_title1 = this._disambiguatedTitle1;
-      resolutionData.disambiguated_description1 = this._disambiguatedDescription1;
+      resolutionData.disambiguated_description1 =
+        this._disambiguatedDescription1;
       resolutionData.disambiguated_title2 = this._disambiguatedTitle2;
-      resolutionData.disambiguated_description2 = this._disambiguatedDescription2;
+      resolutionData.disambiguated_description2 =
+        this._disambiguatedDescription2;
     } else if (resolution.startsWith('CLOSE_')) {
-        const issueToClose = resolution === 'CLOSE_A' ? issue1 : issue2;
-        const issueToKeep = resolution === 'CLOSE_A' ? issue2 : issue1;
-        resolutionData.resolution = 'CLOSE'; // The API expects 'CLOSE', not 'CLOSE_A' or 'CLOSE_B'
-        resolutionData.resolution_reason = `Closed ${issueToClose.key} as duplicate of ${issueToKeep.key}`;
-        resolutionData.resulting_issue1_id = issueToKeep.id;
+      const issueToClose = resolution === 'CLOSE_A' ? issue1 : issue2;
+      const issueToKeep = resolution === 'CLOSE_A' ? issue2 : issue1;
+      resolutionData.resolution = 'CLOSE'; // The API expects 'CLOSE', not 'CLOSE_A' or 'CLOSE_B'
+      resolutionData.resolution_reason = `Closed ${issueToClose.key} as duplicate of ${issueToKeep.key}`;
+      resolutionData.resulting_issue1_id = issueToKeep.id;
     }
 
     try {
       await executeResolution(resolutionData);
-      this.dispatchEvent(new CustomEvent('resolved', { bubbles: true, composed: true }));
+      this.dispatchEvent(
+        new CustomEvent('resolved', { bubbles: true, composed: true })
+      );
       this._close();
     } catch (error) {
       console.error('Failed to execute resolution:', error);
@@ -164,8 +168,6 @@ export class ResolveIssueModal extends LitElement {
 
     return html`
       <div class="step-container">
-        
-
         <div class="initial-options-group">
           ${actions.map(
             (action) => html`
