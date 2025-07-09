@@ -582,6 +582,7 @@ async def search_issues(
                             priority=issue.priority,
                             organization=organization_name,
                             project=project_name,
+                            project_id=issue.project_id,
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
@@ -717,6 +718,7 @@ async def search_issues(
                             priority=issue.priority,
                             organization=organization_name,
                             project=project_name,
+                            project_id=issue.project_id,
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
@@ -726,7 +728,7 @@ async def search_issues(
                             if isinstance(metadata_dict.get("labels"), list)
                             else [],
                             assignee=metadata_dict.get("assignee"),
-                            score=None,  # No score for full-text search
+                            score=0.0,  # No score for full-text search
                         )
                     )
 
@@ -1055,6 +1057,7 @@ async def create_issue(
             key=db_issue.key,
             organization=org.name,
             project=proj.slug,
+            project_id=proj.id,  # Add missing project_id
             title=db_issue.title,
             description=db_issue.description,
             status=db_issue.status,
@@ -1166,6 +1169,7 @@ def get_issue(
             external_id=issue.external_id,
             organization=organization.name,
             project=project.name,
+            project_id=issue.project_id,
             title=issue.title,
             description=issue.description,
             status=issue.status,
@@ -1470,6 +1474,7 @@ async def update_issue(
             external_id=issue.external_id,
             organization=org_name,
             project=project_name,
+            project_id=issue.project_id,
             title=issue.title,
             description=issue.description,
             status=issue.status,
