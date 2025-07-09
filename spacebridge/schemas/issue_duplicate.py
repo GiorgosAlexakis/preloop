@@ -44,13 +44,21 @@ class IssueDuplicateUpdate(IssueDuplicateBase):
     pass
 
 
-class IssueDuplicateResolutionUpdate(BaseModel):
-    """Schema for updating the resolution of an IssueDuplicate."""
+class IssueDuplicateResolve(BaseModel):
+    """Schema for resolving an IssueDuplicate."""
 
+    issue1_id: str
+    issue2_id: str
     resolution: IssueDuplicateResolution
     resolution_reason: Optional[str] = None
     resulting_issue1_id: Optional[str] = None
     resulting_issue2_id: Optional[str] = None
+    merged_title: Optional[str] = None
+    merged_description: Optional[str] = None
+    disambiguated_title1: Optional[str] = None
+    disambiguated_description1: Optional[str] = None
+    disambiguated_title2: Optional[str] = None
+    disambiguated_description2: Optional[str] = None
 
 
 class IssueDuplicate(IssueDuplicateBase):

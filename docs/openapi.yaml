@@ -2151,29 +2151,14 @@ paths:
       - Issue Duplicates
       - Issue Duplicates
       summary: Resolve Issue Duplicate
-      description: Resolve a duplicate issue pair.
+      description: Resolve an issue duplicate.
       operationId: resolve_issue_duplicate_api_v1_issue_duplicates_resolve_patch
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: issue1_id
-        in: query
-        required: true
-        schema:
-          type: string
-          title: Issue1 Id
-      - name: issue2_id
-        in: query
-        required: true
-        schema:
-          type: string
-          title: Issue2 Id
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IssueDuplicateResolutionUpdate'
+              $ref: '#/components/schemas/IssueDuplicateResolve'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -2187,6 +2172,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/issue-duplicates:
     get:
       tags:
@@ -3140,8 +3127,14 @@ components:
       - not_a_duplicate
       title: IssueDuplicateResolution
       description: Resolution of a duplicate issue suggestion.
-    IssueDuplicateResolutionUpdate:
+    IssueDuplicateResolve:
       properties:
+        issue1_id:
+          type: string
+          title: Issue1 Id
+        issue2_id:
+          type: string
+          title: Issue2 Id
         resolution:
           $ref: '#/components/schemas/IssueDuplicateResolution'
         resolution_reason:
@@ -3159,11 +3152,43 @@ components:
           - type: string
           - type: 'null'
           title: Resulting Issue2 Id
+        merged_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Title
+        merged_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Description
+        disambiguated_title1:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Disambiguated Title1
+        disambiguated_description1:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Disambiguated Description1
+        disambiguated_title2:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Disambiguated Title2
+        disambiguated_description2:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Disambiguated Description2
       type: object
       required:
+      - issue1_id
+      - issue2_id
       - resolution
-      title: IssueDuplicateResolutionUpdate
-      description: Schema for updating the resolution of an IssueDuplicate.
+      title: IssueDuplicateResolve
+      description: Schema for resolving an IssueDuplicate.
     IssueDuplicateStats:
       properties:
         projects:

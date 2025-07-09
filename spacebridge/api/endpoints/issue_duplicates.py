@@ -8,8 +8,10 @@ import os
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate as IssueDuplicateSchema,
     IssueDuplicateCreate,
-    IssueDuplicateResolutionUpdate,
+    IssueDuplicateResolve,
 )
+from spacemodels.crud import issue as issue_crud
+from spacemodels.crud import issue_duplicate as issue_duplicate_crud
 
 from spacebridge.schemas.issue import IssueResponse
 
@@ -237,15 +239,12 @@ def check_or_create_issue_duplicate(
     response_model=IssueDuplicateSchema,
     tags=["Issue Duplicates"],
 )
-def resolve_issue_duplicate(
-    *,
+async def resolve_issue_duplicate(
+    resolution: IssueDuplicateResolve,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
-    issue1_id: str,
-    issue2_id: str,
-    resolution_in: IssueDuplicateResolutionUpdate,
-) -> Any:
-    """Resolve a duplicate issue pair."""
+) -> IssueDuplicateSchema:
+    """Resolve an issue duplicate."""
     existing_duplicate = crud_issue_duplicate.get_by_issue_ids(
         db, issue1_id=issue1_id, issue2_id=issue2_id
     )
@@ -257,15 +256,69 @@ def resolve_issue_duplicate(
     project_id = existing_duplicate.issue1.project_id
     _get_accessible_projects(db, current_user, [project_id])
 
-    updated_duplicate = crud_issue_duplicate.update_resolution(
-        db,
-        db_obj=existing_duplicate,
-        resolution=resolution_in.resolution,
-        resolution_reason=resolution_in.resolution_reason,
-        resulting_issue1_id=resolution_in.resulting_issue1_id,
-        resulting_issue2_id=resolution_in.resulting_issue2_id,
+    if resolution.resolution == IssueDuplicateResolution.MERGE:
+        if not all(
+            [
+                resolution.resulting_issue1_id,
+                resolution.merged_title,
+                resolution.merged_description,
+            ]
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Merge resolution requires resulting_issue1_id, merged_title, and merged_description.",
+            )
+        issue_to_update = await issue_crud.get(db=db, id=resolution.resulting_issue1_id)
+        if not issue_to_update:
+            raise HTTPException(status_code=404, detail="Resulting issue not found.")
+        update_data = {
+            "title": resolution.merged_title,
+            "description": resolution.merged_description,
+        }
+        await issue_crud.update(db=db, db_obj=issue_to_update, obj_in=update_data)
+
+    elif resolution.resolution == IssueDuplicateResolution.DISAMBIGUATE:
+        if not all(
+            [
+                resolution.disambiguated_title1,
+                resolution.disambiguated_description1,
+                resolution.disambiguated_title2,
+                resolution.disambiguated_description2,
+            ]
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Disambiguate resolution requires titles and descriptions for both issues.",
+            )
+
+        issue1_to_update = await issue_crud.get(db=db, id=resolution.issue1_id)
+        issue2_to_update = await issue_crud.get(db=db, id=resolution.issue2_id)
+        if not issue1_to_update or not issue2_to_update:
+            raise HTTPException(status_code=404, detail="One or both issues not found.")
+
+        update_data1 = {
+            "title": resolution.disambiguated_title1,
+            "description": resolution.disambiguated_description1,
+        }
+        await issue_crud.update(db=db, db_obj=issue1_to_update, obj_in=update_data1)
+
+        update_data2 = {
+            "title": resolution.disambiguated_title2,
+            "description": resolution.disambiguated_description2,
+        }
+        await issue_crud.update(db=db, db_obj=issue2_to_update, obj_in=update_data2)
+
+    db_duplicate = await issue_duplicate_crud.update_resolution(
+        db=db,
+        issue1_id=resolution.issue1_id,
+        issue2_id=resolution.issue2_id,
+        resolution_in=resolution,
     )
-    return updated_duplicate
+
+    if not db_duplicate:
+        raise HTTPException(status_code=404, detail="Issue duplicate not found.")
+
+    return db_duplicate
 
 
 def _find_issue_duplicates_logic(
