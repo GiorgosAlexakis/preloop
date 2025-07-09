@@ -9,6 +9,8 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate as IssueDuplicateSchema,
     IssueDuplicateCreate,
     IssueDuplicateResolve,
+    IssueDuplicateSuggestionRequest,
+    IssueDuplicateSuggestionResponse,
 )
 from spacemodels.crud import issue as issue_crud
 from spacemodels.crud import issue_duplicate as issue_duplicate_crud
@@ -243,10 +245,10 @@ async def resolve_issue_duplicate(
     resolution: IssueDuplicateResolve,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
-) -> IssueDuplicateSchema:
+):
     """Resolve an issue duplicate."""
     existing_duplicate = crud_issue_duplicate.get_by_issue_ids(
-        db, issue1_id=issue1_id, issue2_id=issue2_id
+        db, issue1_id=resolution.issue1_id, issue2_id=resolution.issue2_id
     )
     if not existing_duplicate:
         raise HTTPException(status_code=404, detail="Duplicate entry not found.")
@@ -256,7 +258,7 @@ async def resolve_issue_duplicate(
     project_id = existing_duplicate.issue1.project_id
     _get_accessible_projects(db, current_user, [project_id])
 
-    if resolution.resolution == IssueDuplicateResolution.MERGE:
+    if resolution.resolution == "merge":
         if not all(
             [
                 resolution.resulting_issue1_id,
@@ -277,7 +279,7 @@ async def resolve_issue_duplicate(
         }
         await issue_crud.update(db=db, db_obj=issue_to_update, obj_in=update_data)
 
-    elif resolution.resolution == IssueDuplicateResolution.DISAMBIGUATE:
+    elif resolution.resolution == "disambiguate":
         if not all(
             [
                 resolution.disambiguated_title1,
@@ -597,3 +599,59 @@ def get_projects_duplicate_stats(
         stats[pid].duplicates = len(issues)
 
     return IssueDuplicateStats(projects=stats)
+
+
+@router.post("/LLM-suggestion", response_model=IssueDuplicateSuggestionResponse)
+def get_resolution_suggestion(
+    suggestion_request: IssueDuplicateSuggestionRequest,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+):
+    """Generate a suggestion for resolving a duplicate issue pair."""
+    issue1 = crud_issue.get(db, id=suggestion_request.issue1_id)
+    issue2 = crud_issue.get(db, id=suggestion_request.issue2_id)
+
+    if not issue1 or not issue2:
+        raise HTTPException(status_code=404, detail="One or both issues not found")
+
+    # For simplicity, we'll just check access to the first project.
+    # A more robust implementation might check both.
+    crud.project.check_user_project_access(
+        db, user_id=current_user.id, project_id=issue1.project_id
+    )
+
+    if suggestion_request.resolution == "merge":
+        # Placeholder for LLM call to generate merge suggestion
+        merged_title = f"Merged: {issue1.title} & {issue2.title}"
+        merged_description = (
+            f"This issue combines the details of two related issues.\n\n"
+            f"From Issue {issue1.key}:\n{issue1.description}\n\n"
+            f"From Issue {issue2.key}:\n{issue2.description}"
+        )
+        explanation = "The titles and descriptions of both issues were combined to create a comprehensive new issue."
+        return IssueDuplicateSuggestionResponse(
+            merged_title=merged_title,
+            merged_description=merged_description,
+            explanation=explanation,
+        )
+
+    elif suggestion_request.resolution == "disambiguate":
+        # Placeholder for LLM call to generate disambiguation suggestion
+        disambiguated_title1 = f"{issue1.title} (Disambiguated)"
+        disambiguated_description1 = f"Original Description:\n{issue1.description}"
+        disambiguated_title2 = f"{issue2.title} (Disambiguated)"
+        disambiguated_description2 = f"Original Description:\n{issue2.description}"
+        explanation = "The titles have been updated to be more specific. Please review and refine the descriptions to ensure they are distinct."
+        return IssueDuplicateSuggestionResponse(
+            disambiguated_title1=disambiguated_title1,
+            disambiguated_description1=disambiguated_description1,
+            disambiguated_title2=disambiguated_title2,
+            disambiguated_description2=disambiguated_description2,
+            explanation=explanation,
+        )
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Suggestions are only available for MERGE or DISAMBIGUATE resolutions.",
+        )

@@ -7,8 +7,6 @@ from typing import Optional, List, Dict
 
 from pydantic import BaseModel
 
-from spacemodels.models.issue_duplicate import IssueDuplicateResolution
-
 
 class IssueDuplicateBase(BaseModel):
     """Base schema for IssueDuplicate."""
@@ -22,7 +20,7 @@ class IssueDuplicateBase(BaseModel):
     reason: Optional[str] = None
 
     # User's resolution
-    resolution: Optional[IssueDuplicateResolution] = None
+    resolution: Optional[str] = None
     resolution_at: Optional[datetime] = None
     resolution_reason: Optional[str] = None
     resulting_issue1_id: Optional[str] = None
@@ -49,7 +47,7 @@ class IssueDuplicateResolve(BaseModel):
 
     issue1_id: str
     issue2_id: str
-    resolution: IssueDuplicateResolution
+    resolution: str
     resolution_reason: Optional[str] = None
     resulting_issue1_id: Optional[str] = None
     resulting_issue2_id: Optional[str] = None
@@ -86,6 +84,22 @@ class IssueDuplicateProjectStats(BaseModel):
     project_name: str
     total: int
     duplicates: int
+
+
+class IssueDuplicateSuggestionRequest(BaseModel):
+    issue1_id: str
+    issue2_id: str
+    resolution: str
+
+
+class IssueDuplicateSuggestionResponse(BaseModel):
+    merged_title: Optional[str] = None
+    merged_description: Optional[str] = None
+    disambiguated_title1: Optional[str] = None
+    disambiguated_description1: Optional[str] = None
+    disambiguated_title2: Optional[str] = None
+    disambiguated_description2: Optional[str] = None
+    explanation: str
 
 
 class IssueDuplicateStats(BaseModel):

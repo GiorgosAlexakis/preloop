@@ -2324,6 +2324,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/LLM-suggestion:
+    post:
+      tags:
+      - Issue Duplicates
+      summary: Get Resolution Suggestion
+      description: Generate a suggestion for resolving a duplicate issue pair.
+      operationId: get_resolution_suggestion_api_v1_LLM_suggestion_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueDuplicateSuggestionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicateSuggestionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/private/webhooks/{tracker_type}/{identifier_in_url}:
     post:
       tags:
@@ -3043,8 +3071,9 @@ components:
           title: Reason
         resolution:
           anyOf:
-          - $ref: '#/components/schemas/IssueDuplicateResolution'
+          - type: string
           - type: 'null'
+          title: Resolution
         resolution_at:
           anyOf:
           - type: string
@@ -3117,16 +3146,6 @@ components:
       - total
       - duplicates
       title: IssueDuplicateProjectStats
-    IssueDuplicateResolution:
-      type: string
-      enum:
-      - closed
-      - merged
-      - disambiguated
-      - dismissed
-      - not_a_duplicate
-      title: IssueDuplicateResolution
-      description: Resolution of a duplicate issue suggestion.
     IssueDuplicateResolve:
       properties:
         issue1_id:
@@ -3136,7 +3155,8 @@ components:
           type: string
           title: Issue2 Id
         resolution:
-          $ref: '#/components/schemas/IssueDuplicateResolution'
+          type: string
+          title: Resolution
         resolution_reason:
           anyOf:
           - type: string
@@ -3200,6 +3220,62 @@ components:
       required:
       - projects
       title: IssueDuplicateStats
+    IssueDuplicateSuggestionRequest:
+      properties:
+        issue1_id:
+          type: string
+          title: Issue1 Id
+        issue2_id:
+          type: string
+          title: Issue2 Id
+        resolution:
+          type: string
+          title: Resolution
+      type: object
+      required:
+      - issue1_id
+      - issue2_id
+      - resolution
+      title: IssueDuplicateSuggestionRequest
+    IssueDuplicateSuggestionResponse:
+      properties:
+        merged_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Title
+        merged_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Description
+        disambiguated_title1:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Disambiguated Title1
+        disambiguated_description1:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Disambiguated Description1
+        disambiguated_title2:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Disambiguated Title2
+        disambiguated_description2:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Disambiguated Description2
+        explanation:
+          type: string
+          title: Explanation
+      type: object
+      required:
+      - explanation
+      title: IssueDuplicateSuggestionResponse
     IssueResponse:
       properties:
         title:
