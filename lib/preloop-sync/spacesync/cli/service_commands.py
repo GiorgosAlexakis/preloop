@@ -25,7 +25,6 @@ def service_start(foreground):
     db = next(get_db_session())
 
     try:
-
         if foreground:
             logger.info("Tracker update service started in foreground")
 

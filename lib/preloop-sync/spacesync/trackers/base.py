@@ -205,9 +205,7 @@ class BaseTracker(ABC):
             "issue_type": issue_type,
             "priority": issue_data.get("priority", None),
             "updated_at": issue_data.get("updated_at"),
-            "last_updated_external": issue_data.get(
-                "updated_at"
-            ),
+            "last_updated_external": issue_data.get("updated_at"),
             "external_url": issue_url,
             "last_synced": datetime.now(),
             "meta_data": {
@@ -226,7 +224,10 @@ class BaseTracker(ABC):
         return transformed
 
     def transform_comment(
-        self, comment_data: Dict[str, Any], issue_db_id: str, author_db_id: Optional[str] = None
+        self,
+        comment_data: Dict[str, Any],
+        issue_db_id: str,
+        author_db_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Transform comment data to a format that can be stored in the database.
@@ -248,7 +249,9 @@ class BaseTracker(ABC):
             "type": "issue",
             "meta_data": {
                 "comment_id": external_id,
-                "external_author_id": str(comment_data.get("author_id")) if comment_data.get("author_id") else None,
+                "external_author_id": str(comment_data.get("author_id"))
+                if comment_data.get("author_id")
+                else None,
                 "url": comment_data.get("url"),
                 "source": "spacesync",
             },
@@ -288,7 +291,9 @@ class BaseTracker(ABC):
         pass
 
         @abstractmethod
-        def unregister_all_webhooks(self, webhook_url_pattern: Optional[str] = None) -> Dict[str, int]:
+        def unregister_all_webhooks(
+            self, webhook_url_pattern: Optional[str] = None
+        ) -> Dict[str, int]:
             """
             Unregister all webhooks, optionally matching a URL pattern.
 
@@ -307,7 +312,6 @@ class BaseTracker(ABC):
                 {"unregistered": count, "failed": count, "not_found": count}.
             """
             pass
-
 
     if __name__ == "__main__":
         pass

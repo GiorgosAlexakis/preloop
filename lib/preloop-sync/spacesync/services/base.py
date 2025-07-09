@@ -98,7 +98,9 @@ class PollingTrackerUpdateService(BaseTrackerUpdateService):
         """Start the polling service (sets running flag)."""
         # The actual scheduling and execution is handled externally.
         super().start()
-        logger.info(f"Polling service for tracker {self.tracker.id} marked as started (scheduling handled externally).")
+        logger.info(
+            f"Polling service for tracker {self.tracker.id} marked as started (scheduling handled externally)."
+        )
 
     def stop(self) -> None:
         """Stop the polling service (sets running flag and cleans up)."""

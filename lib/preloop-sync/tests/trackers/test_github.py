@@ -4,9 +4,9 @@ from datetime import datetime
 
 from spacesync.trackers.github import GitHubTracker
 
-class TestGitHubTrackerComments(unittest.TestCase):
 
-    @patch('spacesync.trackers.github.requests.get')
+class TestGitHubTrackerComments(unittest.TestCase):
+    @patch("spacesync.trackers.github.requests.get")
     def test_get_issues_fetches_and_transforms_comments(self, mock_requests_get):
         # --- Mock API Responses ---
         # Response for repo details (if project_id is not full_name)
@@ -34,7 +34,7 @@ class TestGitHubTrackerComments(unittest.TestCase):
                 "assignees": [{"login": "octocat", "id": 1}],
                 "created_at": "2011-04-22T13:33:48Z",
                 "updated_at": "2011-04-22T13:33:48Z",
-                "html_url": "https://github.com/octocat/Hello-World/issues/1347"
+                "html_url": "https://github.com/octocat/Hello-World/issues/1347",
             }
         ]
 
@@ -48,23 +48,29 @@ class TestGitHubTrackerComments(unittest.TestCase):
                 "body": "This is a comment on the issue.",
                 "created_at": "2011-04-22T14:00:00Z",
                 "updated_at": "2011-04-22T14:00:00Z",
-                "html_url": "https://github.com/octocat/Hello-World/issues/1347#issuecomment-101"
+                "html_url": "https://github.com/octocat/Hello-World/issues/1347#issuecomment-101",
             }
         ]
 
         # Configure mock_requests_get to return different responses based on URL
         def side_effect_requests_get(url, headers, params=None):
             if "repositories/project-id-123" in url:
-                return mock_repo_details_response # If project_id is an ID
-            if "repos/octocat/Hello-World/issues" == url.split('?')[0].replace(GitHubTracker.API_BASE_URL + "/", "") and params.get("state") == "all":
-                 return mock_issues_list_response
+                return mock_repo_details_response  # If project_id is an ID
+            if (
+                "repos/octocat/Hello-World/issues"
+                == url.split("?")[0].replace(GitHubTracker.API_BASE_URL + "/", "")
+                and params.get("state") == "all"
+            ):
+                return mock_issues_list_response
             if "repos/octocat/Hello-World/issues/1347/comments" in url:
                 return mock_comments_response
             # Fallback for unexpected calls
             fallback_response = MagicMock()
             fallback_response.status_code = 404
             fallback_response.json.return_value = {"message": "Not Found"}
-            print(f"UNMOCKED URL in test: {url} with params {params}") # For debugging tests
+            print(
+                f"UNMOCKED URL in test: {url} with params {params}"
+            )  # For debugging tests
             return fallback_response
 
         mock_requests_get.side_effect = side_effect_requests_get
@@ -73,12 +79,14 @@ class TestGitHubTrackerComments(unittest.TestCase):
         tracker = GitHubTracker(
             tracker_id="test-github-tracker",
             api_key="fake_token",
-            connection_details={}
+            connection_details={},
         )
 
         # --- Call get_issues ---
         # Using 'octocat/Hello-World' directly as project_id to simplify one mock path
-        issues_with_comments = tracker.get_issues(organization_id="octocat", project_id="octocat/Hello-World")
+        issues_with_comments = tracker.get_issues(
+            organization_id="octocat", project_id="octocat/Hello-World"
+        )
 
         # --- Assertions ---
         self.assertEqual(len(issues_with_comments), 1, "Should return one issue")
@@ -87,15 +95,23 @@ class TestGitHubTrackerComments(unittest.TestCase):
         self.assertEqual(issue_data["external_id"], "1")
         self.assertEqual(issue_data["key"], "octocat/Hello-World#1347")
         self.assertEqual(issue_data["title"], "Found a bug")
-        self.assertIn("comments", issue_data, "Issue data should contain 'comments' key")
+        self.assertIn(
+            "comments", issue_data, "Issue data should contain 'comments' key"
+        )
         self.assertEqual(len(issue_data["comments"]), 1, "Should include one comment")
 
         comment_data = issue_data["comments"][0]
         self.assertEqual(comment_data["id"], "101")
         self.assertEqual(comment_data["body"], "This is a comment on the issue.")
         self.assertEqual(comment_data["author_id"], "2")
-        self.assertEqual(comment_data["created_at"], datetime.strptime("2011-04-22T14:00:00Z", "%Y-%m-%dT%H:%M:%SZ"))
-        self.assertEqual(comment_data["url"], "https://github.com/octocat/Hello-World/issues/1347#issuecomment-101")
+        self.assertEqual(
+            comment_data["created_at"],
+            datetime.strptime("2011-04-22T14:00:00Z", "%Y-%m-%dT%H:%M:%SZ"),
+        )
+        self.assertEqual(
+            comment_data["url"],
+            "https://github.com/octocat/Hello-World/issues/1347#issuecomment-101",
+        )
 
         # Verify API calls (simplified check of calls made)
         # Check that requests.get was called at least for issues and comments
@@ -105,5 +121,6 @@ class TestGitHubTrackerComments(unittest.TestCase):
         # mock_requests_get.assert_any_call(f"{GitHubTracker.API_BASE_URL}/repos/octocat/Hello-World/issues", headers=tracker.headers, params={'state': 'all', 'per_page': 100, 'sort': 'updated', 'direction': 'desc'})
         # mock_requests_get.assert_any_call(f"{GitHubTracker.API_BASE_URL}/repos/octocat/Hello-World/issues/1347/comments", headers=tracker.headers, params={'per_page': 100})
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

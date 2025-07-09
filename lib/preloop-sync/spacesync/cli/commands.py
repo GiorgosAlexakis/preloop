@@ -8,16 +8,19 @@ import uuid
 from typing import List, Optional
 
 from spacemodels.crud import crud_account, crud_tracker
-from spacemodels.models.tracker import Tracker as TrackerModel # Renamed to avoid conflict
+from spacemodels.models.tracker import (
+    Tracker as TrackerModel,
+)  # Renamed to avoid conflict
 from sqlalchemy.orm import Session
 
 
 from .. import __version__
 from ..config import logger
-from ..scanner.core import TrackerClient # For instantiating tracker clients
+from ..scanner.core import TrackerClient  # For instantiating tracker clients
 from spacemodels.db.session import get_db_session
 from .scan_commands import scan
 from .scheduler_commands import scheduler_cmd
+
 
 @click.group()
 @click.version_option(version=__version__)
@@ -35,6 +38,7 @@ def cli() -> None:
 # Add command groups
 cli.add_command(scan)
 cli.add_command(scheduler_cmd, name="scheduler")
+
 
 @cli.command()
 def version() -> None:
@@ -132,30 +136,46 @@ def unregister_webhooks_command(
         click.echo(f"Filtering by account ID: {account_id}")
         account = crud_account.get(db, id=account_id)
         if account and account.is_active:
-            trackers_for_account = crud_tracker.get_for_account(db, account_id=account.id)
-            active_trackers_for_account = [t for t in trackers_for_account if t.is_active]
+            trackers_for_account = crud_tracker.get_for_account(
+                db, account_id=account.id
+            )
+            active_trackers_for_account = [
+                t for t in trackers_for_account if t.is_active
+            ]
             trackers_to_process.extend(active_trackers_for_account)
         elif account:
-            click.echo(f"Account {account_id} found but is not active. Skipping its trackers.")
+            click.echo(
+                f"Account {account_id} found but is not active. Skipping its trackers."
+            )
         else:
             click.echo(f"Account with ID {account_id} not found.")
     elif account_email:
         click.echo(f"Filtering by account email: {account_email}")
         account = crud_account.get_by_email(db, email=account_email)
         if account and account.is_active:
-            trackers_for_account = crud_tracker.get_for_account(db, account_id=account.id)
-            active_trackers_for_account = [t for t in trackers_for_account if t.is_active]
+            trackers_for_account = crud_tracker.get_for_account(
+                db, account_id=account.id
+            )
+            active_trackers_for_account = [
+                t for t in trackers_for_account if t.is_active
+            ]
             trackers_to_process.extend(active_trackers_for_account)
         elif account:
-            click.echo(f"Account with email {account_email} found but is not active. Skipping its trackers.")
+            click.echo(
+                f"Account with email {account_email} found but is not active. Skipping its trackers."
+            )
         else:
             click.echo(f"Account with email {account_email} not found.")
     else:
-        click.echo("No specific account or tracker filter. Processing all active trackers for all active accounts.")
+        click.echo(
+            "No specific account or tracker filter. Processing all active trackers for all active accounts."
+        )
         active_accounts = crud_account.get_active(db)
         for acc in active_accounts:
             trackers_for_account = crud_tracker.get_for_account(db, account_id=acc.id)
-            active_trackers_for_account = [t for t in trackers_for_account if t.is_active]
+            active_trackers_for_account = [
+                t for t in trackers_for_account if t.is_active
+            ]
             trackers_to_process.extend(active_trackers_for_account)
 
     if not trackers_to_process:
@@ -169,10 +189,16 @@ def unregister_webhooks_command(
         # Ensure SPACEBRIDGE_URL is available, e.g., from config or env
         sb_url = os.getenv("SPACEBRIDGE_URL")
         if sb_url:
-            target_webhook_url_pattern = f"{sb_url.rstrip('/')}/api/v1/private/webhooks/"
-            click.echo(f"No --webhook-url provided. Using default pattern: {target_webhook_url_pattern}")
+            target_webhook_url_pattern = (
+                f"{sb_url.rstrip('/')}/api/v1/private/webhooks/"
+            )
+            click.echo(
+                f"No --webhook-url provided. Using default pattern: {target_webhook_url_pattern}"
+            )
         else:
-            click.echo("Warning: --webhook-url not provided and SPACEBRIDGE_URL is not set. Unregistration might be ineffective or too broad.")
+            click.echo(
+                "Warning: --webhook-url not provided and SPACEBRIDGE_URL is not set. Unregistration might be ineffective or too broad."
+            )
             # Depending on desired safety, could exit here or allow proceeding with None pattern (handled by trackers)
 
     total_unregistered = 0
@@ -180,14 +206,18 @@ def unregister_webhooks_command(
     total_not_found = 0
 
     for tracker_orm_instance in trackers_to_process:
-        click.echo(f"\nProcessing tracker: {tracker_orm_instance.id} (Type: {tracker_orm_instance.tracker_type})")
+        click.echo(
+            f"\nProcessing tracker: {tracker_orm_instance.id} (Type: {tracker_orm_instance.tracker_type})"
+        )
         try:
             # Instantiate TrackerClient which then instantiates the specific tracker (GitHub, GitLab, Jira)
             # The TrackerClient needs the ORM tracker object.
             tracker_client_instance = TrackerClient(tracker=tracker_orm_instance)
 
             if not hasattr(tracker_client_instance.client, "unregister_all_webhooks"):
-                click.echo(f"Tracker type {tracker_orm_instance.tracker_type} does not support unregister_all_webhooks. Skipping.")
+                click.echo(
+                    f"Tracker type {tracker_orm_instance.tracker_type} does not support unregister_all_webhooks. Skipping."
+                )
                 continue
 
             # Call the unregister_all_webhooks method on the specific client (e.g., GitHubTracker instance)
@@ -199,19 +229,24 @@ def unregister_webhooks_command(
             click.echo(f"  Unregistered: {summary.get('unregistered', 0)}")
             click.echo(f"  Failed: {summary.get('failed', 0)}")
             click.echo(f"  Not Found (matching pattern): {summary.get('not_found', 0)}")
-            total_unregistered += summary.get('unregistered', 0)
-            total_failed += summary.get('failed', 0)
-            total_not_found += summary.get('not_found', 0)
+            total_unregistered += summary.get("unregistered", 0)
+            total_failed += summary.get("failed", 0)
+            total_not_found += summary.get("not_found", 0)
 
         except Exception as e:
             click.echo(f"Error processing tracker {tracker_orm_instance.id}: {e}")
-            logger.error(f"CLI unregister-webhooks: Error processing tracker {tracker_orm_instance.id}", exc_info=True)
-            total_failed += 1 # Count this as a general failure for this tracker
+            logger.error(
+                f"CLI unregister-webhooks: Error processing tracker {tracker_orm_instance.id}",
+                exc_info=True,
+            )
+            total_failed += 1  # Count this as a general failure for this tracker
 
     click.echo("\n--- Summary ---")
     click.echo(f"Total webhooks unregistered: {total_unregistered}")
     click.echo(f"Total failures during unregistration: {total_failed}")
-    click.echo(f"Total trackers/scopes where no matching webhooks were found: {total_not_found}")
+    click.echo(
+        f"Total trackers/scopes where no matching webhooks were found: {total_not_found}"
+    )
     click.echo("Webhook unregistration process finished.")
     db.close()
 

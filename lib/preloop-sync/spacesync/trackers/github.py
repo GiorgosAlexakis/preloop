@@ -17,7 +17,7 @@ from ..utils import retry
 from .base import BaseTracker
 from ..config import logger
 from spacemodels.models.project import Project
-from spacemodels.db.session import get_db_session
+
 
 class GitHubTracker(BaseTracker):
     """GitHub tracker implementation."""
@@ -151,7 +151,9 @@ class GitHubTracker(BaseTracker):
                         "default_branch": repo["default_branch"],
                         "language": repo.get("language"),
                         "created_at": repo["created_at"],
-                        "updated_at": repo["pushed_at"],  # Use pushed_at for last activity
+                        "updated_at": repo[
+                            "pushed_at"
+                        ],  # Use pushed_at for last activity
                         "stars": repo["stargazers_count"],
                     },
                 }
@@ -182,13 +184,22 @@ class GitHubTracker(BaseTracker):
                 repo_details = self._make_request(f"repositories/{project_id}")
                 repo_name = repo_details["full_name"]
             except TrackerResponseError as e:
-                logger.error(f"Failed to get repository details for project_id {project_id}: {e}")
-                return [] # Cannot proceed without repo_name
+                logger.error(
+                    f"Failed to get repository details for project_id {project_id}: {e}"
+                )
+                return []  # Cannot proceed without repo_name
 
-        params = {"state": "all", "per_page": 100, "sort": "updated", "direction": "desc"}
+        params = {
+            "state": "all",
+            "per_page": 100,
+            "sort": "updated",
+            "direction": "desc",
+        }
         if since:
             params["since"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
-            logger.debug(f"GitHub get_issues: Filtering issues updated since {params['since']}")
+            logger.debug(
+                f"GitHub get_issues: Filtering issues updated since {params['since']}"
+            )
 
         issues_endpoint = f"repos/{repo_name}/issues"
         try:
@@ -199,7 +210,7 @@ class GitHubTracker(BaseTracker):
 
         processed_issues = []
         for issue_data in raw_issues_data:
-            if "pull_request" in issue_data: # Skip pull requests
+            if "pull_request" in issue_data:  # Skip pull requests
                 continue
 
             issue_number = issue_data["number"]
@@ -210,17 +221,27 @@ class GitHubTracker(BaseTracker):
             try:
                 # GitHub API for comments might not support 'since' for individual issue comments list
                 # It's usually for the main issues list. We fetch all comments for an issue.
-                raw_comments_data = self._make_request(comments_endpoint, params={"per_page": 100})
+                raw_comments_data = self._make_request(
+                    comments_endpoint, params={"per_page": 100}
+                )
                 for comment_item in raw_comments_data:
                     try:
-                        created_at_dt = datetime.strptime(comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ")
-                        updated_at_dt = datetime.strptime(comment_item["updated_at"], "%Y-%m-%dT%H:%M:%SZ")
+                        created_at_dt = datetime.strptime(
+                            comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+                        )
+                        updated_at_dt = datetime.strptime(
+                            comment_item["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
+                        )
                     except (ValueError, TypeError) as ve:
-                        logger.warning(f"Could not parse datetime for comment {comment_item.get('id')} on issue {issue_number}: {ve}. Using fallback.")
+                        logger.warning(
+                            f"Could not parse datetime for comment {comment_item.get('id')} on issue {issue_number}: {ve}. Using fallback."
+                        )
                         created_at_dt = datetime.now()
                         if isinstance(comment_item.get("created_at"), str):
                             try:
-                                created_at_dt = datetime.strptime(comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+                                created_at_dt = datetime.strptime(
+                                    comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+                                )
                             except ValueError:
                                 pass
                         updated_at_dt = created_at_dt
@@ -228,26 +249,40 @@ class GitHubTracker(BaseTracker):
                     comments_data_transformed.append(
                         {
                             "id": str(comment_item["id"]),
-                            "body": comment_item.get("body", "") or "", # Ensure body is not None
-                            "author_id": str(comment_item["user"]["id"]) if comment_item.get("user") and comment_item["user"].get("id") else None,
+                            "body": comment_item.get("body", "")
+                            or "",  # Ensure body is not None
+                            "author_id": str(comment_item["user"]["id"])
+                            if comment_item.get("user")
+                            and comment_item["user"].get("id")
+                            else None,
                             "created_at": created_at_dt,
                             "updated_at": updated_at_dt,
                             "url": comment_item.get("html_url", ""),
                         }
                     )
             except TrackerResponseError as e:
-                logger.error(f"Failed to get comments for issue {repo_name}#{issue_number}: {e}")
+                logger.error(
+                    f"Failed to get comments for issue {repo_name}#{issue_number}: {e}"
+                )
             # Continue processing the issue even if comments fail
 
             try:
-                issue_created_at = datetime.strptime(issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ")
-                issue_updated_at = datetime.strptime(issue_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ")
+                issue_created_at = datetime.strptime(
+                    issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+                )
+                issue_updated_at = datetime.strptime(
+                    issue_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
+                )
             except (ValueError, TypeError) as ve:
-                logger.warning(f"Could not parse datetime for issue {issue_number}: {ve}. Using fallback.")
+                logger.warning(
+                    f"Could not parse datetime for issue {issue_number}: {ve}. Using fallback."
+                )
                 issue_created_at = datetime.now()
                 if isinstance(issue_data.get("created_at"), str):
                     try:
-                        issue_created_at = datetime.strptime(issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+                        issue_created_at = datetime.strptime(
+                            issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+                        )
                     except ValueError:
                         pass
                 issue_updated_at = issue_created_at
@@ -257,12 +292,21 @@ class GitHubTracker(BaseTracker):
                     "external_id": str(issue_data["id"]),
                     "key": f"{repo_name}#{issue_number}",
                     "title": issue_data["title"],
-                    "description": issue_data.get("body", "") or "", # Ensure body is not None
+                    "description": issue_data.get("body", "")
+                    or "",  # Ensure body is not None
                     "state": issue_data["state"],
                     "created_at": issue_created_at,
                     "updated_at": issue_updated_at,
-                    "labels": [label["name"] for label in issue_data.get("labels", []) if isinstance(label, dict) and "name" in label],
-                    "assignees": [assignee["login"] for assignee in issue_data.get("assignees", []) if isinstance(assignee, dict) and "login" in assignee],
+                    "labels": [
+                        label["name"]
+                        for label in issue_data.get("labels", [])
+                        if isinstance(label, dict) and "name" in label
+                    ],
+                    "assignees": [
+                        assignee["login"]
+                        for assignee in issue_data.get("assignees", [])
+                        if isinstance(assignee, dict) and "login" in assignee
+                    ],
                     "url": issue_data.get("html_url", ""),
                     "comments": comments_data_transformed,
                 }
@@ -285,12 +329,17 @@ class GitHubTracker(BaseTracker):
         return transformed_data
 
     def transform_comment(
-        self, comment_data: Dict[str, Any], issue_db_id: str, author_db_id: Optional[str] = None
+        self,
+        comment_data: Dict[str, Any],
+        issue_db_id: str,
+        author_db_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Transforms GitHub comment data into a standardized format.
         """
-        transformed_data = super().transform_comment(comment_data, issue_db_id, author_db_id)
+        transformed_data = super().transform_comment(
+            comment_data, issue_db_id, author_db_id
+        )
 
         # GitHub-specific transformations can be added here if needed
 
@@ -310,10 +359,11 @@ class GitHubTracker(BaseTracker):
         Returns:
             True if registration was successful or webhook already exists, False otherwise.
         """
-        db = get_db_session()
         # GitHub doesn't support organization-level webhooks for personal accounts via this API
         if org_identifier == "personal":
-            logger.info(f"Skipping webhook registration for personal account '{self.connection_details.get('login', 'N/A')}'. GitHub personal webhooks are managed per-repository.")
+            logger.info(
+                f"Skipping webhook registration for personal account '{self.connection_details.get('login', 'N/A')}'. GitHub personal webhooks are managed per-repository."
+            )
             # Consider this 'successful' in the sense that there's nothing to do here.
             # Alternatively, could return False if strict registration is required.
             return True
@@ -323,17 +373,17 @@ class GitHubTracker(BaseTracker):
             "name": "web",
             "active": True,
             "events": [
-                "issues",       # Issue opened, edited, closed, reopened, assigned, etc.
-                "project",      # Project created, updated, deleted
-                "repository",   # Repository created, deleted, archived, unarchived
-                "push"          # Git push to a repository
+                "issues",  # Issue opened, edited, closed, reopened, assigned, etc.
+                "project",  # Project created, updated, deleted
+                "repository",  # Repository created, deleted, archived, unarchived
+                "push",  # Git push to a repository
                 # Add more events as needed, e.g., 'pull_request', 'release', 'member'
             ],
             "config": {
                 "url": webhook_url,
                 "content_type": "json",
                 "secret": secret,
-                "insecure_ssl": "0", # Recommended to verify SSL
+                "insecure_ssl": "0",  # Recommended to verify SSL
             },
         }
 
@@ -343,6 +393,7 @@ class GitHubTracker(BaseTracker):
             response = requests.post(url, headers=self.headers, json=payload)
 
             if response.status_code == 201 or response.status_code == 200:
+                # db = get_db_session()
                 # crud_webhook.create(
                 #     db,
                 #     obj_in={
@@ -357,35 +408,56 @@ class GitHubTracker(BaseTracker):
                 # logger.info(f"Successfully created webhook for GitHub org '{org_identifier}' pointing to {webhook_url}")
                 return True
             elif response.status_code == 401:
-                logger.error(f"GitHub authentication failed while trying to register webhook for org '{org_identifier}'.")
+                logger.error(
+                    f"GitHub authentication failed while trying to register webhook for org '{org_identifier}'."
+                )
                 # Raise specific error? Or just log and return False? Let's log and return False for now.
                 return False
             elif response.status_code == 403:
-                 logger.error(f"Permission denied: Unable to register webhook for GitHub org '{org_identifier}'. Check token permissions (needs admin:org_hook).")
-                 return False
+                logger.error(
+                    f"Permission denied: Unable to register webhook for GitHub org '{org_identifier}'. Check token permissions (needs admin:org_hook)."
+                )
+                return False
             elif response.status_code == 404:
-                 logger.error(f"GitHub organization '{org_identifier}' not found while trying to register webhook.")
-                 return False
+                logger.error(
+                    f"GitHub organization '{org_identifier}' not found while trying to register webhook."
+                )
+                return False
             elif response.status_code == 422:
                 # Check if it's because the hook already exists
                 response_data = response.json()
-                if "errors" in response_data and any("Hook already exists" in e.get("message", "") for e in response_data["errors"]):
-                    logger.warning(f"Webhook for GitHub org '{org_identifier}' pointing to {webhook_url} already exists.")
+                if "errors" in response_data and any(
+                    "Hook already exists" in e.get("message", "")
+                    for e in response_data["errors"]
+                ):
+                    logger.warning(
+                        f"Webhook for GitHub org '{org_identifier}' pointing to {webhook_url} already exists."
+                    )
                     # Consider this a success as the desired state is achieved
                     return True
                 else:
-                    logger.error(f"Failed to register webhook for GitHub org '{org_identifier}' (Unprocessable Entity - check config/permissions): {response.text}")
+                    logger.error(
+                        f"Failed to register webhook for GitHub org '{org_identifier}' (Unprocessable Entity - check config/permissions): {response.text}"
+                    )
                     return False
             else:
                 # General API error
-                logger.error(f"GitHub API error registering webhook for org '{org_identifier}': {response.status_code} - {response.text}")
+                logger.error(
+                    f"GitHub API error registering webhook for org '{org_identifier}': {response.status_code} - {response.text}"
+                )
                 return False
 
         except requests.RequestException as e:
-            logger.error(f"GitHub connection error while registering webhook for org '{org_identifier}': {e}", exc_info=True)
+            logger.error(
+                f"GitHub connection error while registering webhook for org '{org_identifier}': {e}",
+                exc_info=True,
+            )
             return False
         except Exception as e:
-            logger.error(f"Unexpected error registering webhook for GitHub org '{org_identifier}': {e}", exc_info=True)
+            logger.error(
+                f"Unexpected error registering webhook for GitHub org '{org_identifier}': {e}",
+                exc_info=True,
+            )
             return False
 
     def unregister_webhook(
@@ -410,7 +482,7 @@ class GitHubTracker(BaseTracker):
             logger.info(
                 f"Skipping webhook unregistration for org '{org_identifier}'. GitHub webhooks are managed per-repository for personal accounts or org_identifier is missing."
             )
-            return True # No action to take, consider it success for this context
+            return True  # No action to take, consider it success for this context
 
         if not webhook_id and not webhook_url:
             logger.error(
@@ -445,13 +517,15 @@ class GitHubTracker(BaseTracker):
                     logger.warning(
                         f"Webhook for GitHub org '{org_identifier}' with URL '{webhook_url}' not found. Assuming already unregistered."
                     )
-                    return True # Not found is a form of success for unregistration
+                    return True  # Not found is a form of success for unregistration
 
-            if not hook_to_delete_id: # Should only happen if only webhook_id was None and URL wasn't found
+            if (
+                not hook_to_delete_id
+            ):  # Should only happen if only webhook_id was None and URL wasn't found
                 logger.warning(
                     f"No webhook ID provided or found for GitHub org '{org_identifier}' with URL '{webhook_url}'. Cannot unregister."
                 )
-                return True # Or False if strict "must find then delete" is required. True aligns with "not found is success".
+                return True  # Or False if strict "must find then delete" is required. True aligns with "not found is success".
 
             # Proceed to delete the hook by its ID
             delete_endpoint = f"{base_hooks_endpoint}/{hook_to_delete_id}"
@@ -463,7 +537,7 @@ class GitHubTracker(BaseTracker):
                     f"Successfully unregistered webhook {hook_to_delete_id} for GitHub org '{org_identifier}'."
                 )
                 return True
-            elif delete_response.status_code == 404: # Not found during delete attempt
+            elif delete_response.status_code == 404:  # Not found during delete attempt
                 logger.warning(
                     f"Webhook {hook_to_delete_id} for GitHub org '{org_identifier}' not found during delete attempt. Assuming already unregistered."
                 )
@@ -514,27 +588,40 @@ class GitHubTracker(BaseTracker):
             sb_url = os.getenv("SPACEBRIDGE_URL")
             if sb_url:
                 target_pattern = f"{sb_url.rstrip('/')}/api/v1/private/webhooks/"
-                logger.info(f"No specific webhook_url_pattern provided, using default pattern: {target_pattern}")
+                logger.info(
+                    f"No specific webhook_url_pattern provided, using default pattern: {target_pattern}"
+                )
             else:
-                logger.warning("Cannot determine target webhook URL pattern: webhook_url_pattern is None and SPACEBRIDGE_URL is not set.")
+                logger.warning(
+                    "Cannot determine target webhook URL pattern: webhook_url_pattern is None and SPACEBRIDGE_URL is not set."
+                )
                 # Depending on desired behavior, could return early or try to delete all webhooks (risky)
                 # For safety, let's not delete all if no pattern can be determined.
                 return results
 
-
         try:
             organizations = self.get_organizations()
-        except (TrackerAuthenticationError, TrackerConnectionError, TrackerResponseError) as e:
-            logger.error(f"Failed to get organizations for GitHub tracker {self.tracker_id}: {e}")
-            return results # Cannot proceed
+        except (
+            TrackerAuthenticationError,
+            TrackerConnectionError,
+            TrackerResponseError,
+        ) as e:
+            logger.error(
+                f"Failed to get organizations for GitHub tracker {self.tracker_id}: {e}"
+            )
+            return results  # Cannot proceed
 
         for org_data in organizations:
             org_identifier = org_data.get("id")
             if not org_identifier or org_identifier == "personal":
-                logger.debug(f"Skipping webhook operations for org '{org_identifier}' (personal or invalid).")
+                logger.debug(
+                    f"Skipping webhook operations for org '{org_identifier}' (personal or invalid)."
+                )
                 continue
 
-            logger.info(f"Processing webhooks for GitHub organization: {org_identifier}")
+            logger.info(
+                f"Processing webhooks for GitHub organization: {org_identifier}"
+            )
             hooks_endpoint = f"orgs/{org_identifier}/hooks"
             list_url = f"{self.API_BASE_URL}/{hooks_endpoint.lstrip('/')}"
 
@@ -546,13 +633,15 @@ class GitHubTracker(BaseTracker):
                     logger.error(
                         f"Failed to list webhooks for GitHub org '{org_identifier}': {list_response.status_code} - {list_response.text}"
                     )
-                    results["failed"] += 1 # Count failure at org level if list fails
+                    results["failed"] += 1  # Count failure at org level if list fails
                     continue
 
                 hooks = list_response.json()
                 if not hooks:
                     logger.info(f"No webhooks found for GitHub org '{org_identifier}'.")
-                    results["not_found"] += 1 # Or just continue, depends on how "not_found" is defined
+                    results["not_found"] += (
+                        1  # Or just continue, depends on how "not_found" is defined
+                    )
                     continue
 
                 hooks_to_delete_ids = []
@@ -565,30 +654,41 @@ class GitHubTracker(BaseTracker):
                             # This case should ideally be handled by the check above for sb_url
                             # If target_pattern is None here, it means SPACEBRIDGE_URL was also not found.
                             # Avoid deleting all hooks if no pattern.
-                            logger.debug(f"Skipping hook {hook['id']} for org {org_identifier} as no target_pattern is defined.")
+                            logger.debug(
+                                f"Skipping hook {hook['id']} for org {org_identifier} as no target_pattern is defined."
+                            )
                             pass
 
-
                 if not hooks_to_delete_ids:
-                    logger.info(f"No webhooks matching pattern '{target_pattern}' found for GitHub org '{org_identifier}'.")
+                    logger.info(
+                        f"No webhooks matching pattern '{target_pattern}' found for GitHub org '{org_identifier}'."
+                    )
                     # This could be counted as "not_found" for webhooks matching the pattern
                     # For simplicity, let's assume if none match, it's not an error but nothing to do.
                     # results["not_found"] += 1 # if we consider "no matching hooks" as "not_found"
                     continue
 
                 for hook_id in hooks_to_delete_ids:
-                    if self.unregister_webhook(org_identifier=org_identifier, webhook_id=hook_id):
+                    if self.unregister_webhook(
+                        org_identifier=org_identifier, webhook_id=hook_id
+                    ):
                         results["unregistered"] += 1
                     else:
                         # unregister_webhook already logs errors, so just count failure
                         results["failed"] += 1
 
             except requests.RequestException as e:
-                logger.error(f"Connection error processing webhooks for org '{org_identifier}': {e}", exc_info=True)
-                results["failed"] += 1 # Count as failed for this org
+                logger.error(
+                    f"Connection error processing webhooks for org '{org_identifier}': {e}",
+                    exc_info=True,
+                )
+                results["failed"] += 1  # Count as failed for this org
             except Exception as e:
-                logger.error(f"Unexpected error processing webhooks for org '{org_identifier}': {e}", exc_info=True)
-                results["failed"] += 1 # Count as failed for this org
+                logger.error(
+                    f"Unexpected error processing webhooks for org '{org_identifier}': {e}",
+                    exc_info=True,
+                )
+                results["failed"] += 1  # Count as failed for this org
 
         logger.info(f"GitHub unregister_all_webhooks summary: {results}")
         return results

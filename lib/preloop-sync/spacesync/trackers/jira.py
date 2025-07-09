@@ -9,7 +9,7 @@ import logging
 import urllib.parse
 
 import requests
-from jira import JIRA, JIRAError # type: ignore
+from jira import JIRA, JIRAError  # type: ignore
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import crud_webhook
@@ -31,6 +31,7 @@ DEFAULT_JIRA_WEBHOOK_EVENTS = [
     "jira:issue_updated",
     "comment_created",
 ]
+
 
 class JiraTracker(BaseTracker):
     """Jira tracker implementation."""
@@ -105,7 +106,11 @@ class JiraTracker(BaseTracker):
 
     @retry(max_attempts=3, exceptions=(TrackerConnectionError, TrackerResponseError))
     def _make_request(
-        self, method: str, endpoint: str, params: Optional[Dict[str, Any]] = None, json_data: Optional[Dict[str, Any]] = None
+        self,
+        method: str,
+        endpoint: str,
+        params: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """Make a request to the Jira API using the requests library."""
         try:
@@ -136,6 +141,7 @@ class JiraTracker(BaseTracker):
     def get_organizations(self) -> List[Dict[str, Any]]:
         """Get organizations from Jira."""
         import re
+
         domain_match = re.search(r"https?://([^/]+)", self.jira_url)
         org_name = domain_match.group(1) if domain_match else "Jira Instance"
         return [{"id": org_name, "name": org_name, "url": self.jira_url}]
@@ -189,31 +195,43 @@ class JiraTracker(BaseTracker):
                 created_dt = datetime.now()
                 updated_dt = created_dt
 
-            assignee_list = [
-                issue_data["fields"]["assignee"]["displayName"]
-            ] if issue_data["fields"].get("assignee") else []
+            assignee_list = (
+                [issue_data["fields"]["assignee"]["displayName"]]
+                if issue_data["fields"].get("assignee")
+                else []
+            )
 
             comments_transformed = []
             if issue_data["fields"].get("comment", {}).get("comments"):
                 for comment_item in issue_data["fields"]["comment"]["comments"]:
                     try:
-                        comment_created_dt = datetime.strptime(comment_item["created"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
-                        comment_updated_dt = datetime.strptime(comment_item["updated"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+                        comment_created_dt = datetime.strptime(
+                            comment_item["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                        ).replace(tzinfo=None)
+                        comment_updated_dt = datetime.strptime(
+                            comment_item["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                        ).replace(tzinfo=None)
                     except (ValueError, TypeError):
                         comment_created_dt = datetime.now()
                         comment_updated_dt = comment_created_dt
 
                     author = comment_item.get("author", {})
-                    author_id = author.get("accountId") or author.get("key") or author.get("name")
+                    author_id = (
+                        author.get("accountId")
+                        or author.get("key")
+                        or author.get("name")
+                    )
 
-                    comments_transformed.append({
-                        "id": str(comment_item["id"]),
-                        "body": comment_item.get("body", ""),
-                        "author_id": str(author_id) if author_id else None,
-                        "created_at": comment_created_dt,
-                        "updated_at": comment_updated_dt,
-                        "url": f"{self.jira_url}/browse/{issue_data['key']}?focusedCommentId={comment_item['id']}#comment-{comment_item['id']}"
-                    })
+                    comments_transformed.append(
+                        {
+                            "id": str(comment_item["id"]),
+                            "body": comment_item.get("body", ""),
+                            "author_id": str(author_id) if author_id else None,
+                            "created_at": comment_created_dt,
+                            "updated_at": comment_updated_dt,
+                            "url": f"{self.jira_url}/browse/{issue_data['key']}?focusedCommentId={comment_item['id']}#comment-{comment_item['id']}",
+                        }
+                    )
 
             description_text = issue_data["fields"].get("description") or ""
 
@@ -235,18 +253,18 @@ class JiraTracker(BaseTracker):
             )
         return processed_issues
 
-    def transform_issue(self, issue_data: Dict[str, Any], project: Project) -> Dict[str, Any]:
+    def transform_issue(
+        self, issue_data: Dict[str, Any], project: Project
+    ) -> Dict[str, Any]:
         """Transforms Jira issue data into a standardized format."""
         # Get issue status from data or default to "open"
-        status = issue_data.get('state','open')
+        status = issue_data.get("state", "open")
 
         # Map common status values to standardized ones
         if status.lower() in ["closed", "done", "completed", "fixed"]:
             status = "closed"
         elif status.lower() in ["open", "new", "todo", "to do"]:
             status = "open"
-
-
 
         # Convert datetime objects to ISO format strings for JSON serialization
         last_updated = issue_data.get("updated_at")
@@ -297,10 +315,12 @@ class JiraTracker(BaseTracker):
 
         return transformed_data
 
-    def transform_issue_webhook(self, issue_data: Dict[str, Any], project: "Project") -> Dict[str, Any]:
+    def transform_issue_webhook(
+        self, issue_data: Dict[str, Any], project: "Project"
+    ) -> Dict[str, Any]:
         """Transforms Jira issue data into a standardized format."""
         # Get issue status from data or default to "open"
-        status = issue_data['fields'].get('status',{}).get('name')
+        status = issue_data["fields"].get("status", {}).get("name")
         # Map common status values to standardized ones
         if status.lower() in ["closed", "done", "completed", "fixed"]:
             status = "closed"
@@ -309,7 +329,7 @@ class JiraTracker(BaseTracker):
         # Add more mappings as needed
 
         # Get issue type or default to "task"
-        issue_type = issue_data['fields'].get('issuetype',{}).get('name')
+        issue_type = issue_data["fields"].get("issuetype", {}).get("name")
         # Map common types to standardized ones
         if issue_type.lower() in ["bug", "defect", "error"]:
             issue_type = "bug"
@@ -317,16 +337,16 @@ class JiraTracker(BaseTracker):
             issue_type = "feature"
 
         # Convert datetime objects to ISO format strings for JSON serialization
-        last_updated = issue_data['fields'].get("updated")
+        last_updated = issue_data["fields"].get("updated")
         if isinstance(last_updated, datetime):
             last_updated = last_updated.isoformat()
 
-        created_at = issue_data['fields'].get("created")
+        created_at = issue_data["fields"].get("created")
         if isinstance(created_at, datetime):
             created_at = created_at.isoformat()
 
         # Get description and truncate if necessary to avoid DB errors
-        description = issue_data['fields'].get("description", "")
+        description = issue_data["fields"].get("description", "")
         original_length = len(description) if description else 0
 
         if description and len(description) > DESCRIPTION_MAX_LENGTH:
@@ -354,8 +374,10 @@ class JiraTracker(BaseTracker):
             "last_updated_external": last_updated,
             "last_synced": datetime.now(),
             "meta_data": {
-                "labels": issue_data['fields'].get("labels", []),
-                "assignees": issue_data['fields'].get("assignee", {}).get("displayName", []),
+                "labels": issue_data["fields"].get("labels", []),
+                "assignees": issue_data["fields"]
+                .get("assignee", {})
+                .get("displayName", []),
                 "url": issue_url,
                 "external_url": issue_url,
                 "external_created_at": created_at,
@@ -374,13 +396,19 @@ class JiraTracker(BaseTracker):
         """Helper to map JIRAError to tracker exceptions."""
         logger.error(f"{context} (JIRAError): {e.status_code} - {e.text}")
         if e.status_code == 401:
-            raise TrackerAuthenticationError(f"{context}: Jira authentication failed: {e.text}")
+            raise TrackerAuthenticationError(
+                f"{context}: Jira authentication failed: {e.text}"
+            )
         elif e.status_code == 403:
-            raise TrackerAuthenticationError(f"{context}: Jira permission denied: {e.text}")
+            raise TrackerAuthenticationError(
+                f"{context}: Jira permission denied: {e.text}"
+            )
         elif e.status_code == 404:
             raise TrackerResponseError(f"{context}: Jira resource not found: {e.text}")
         else:
-            raise TrackerResponseError(f"{context}: Jira API error {e.status_code}: {e.text}")
+            raise TrackerResponseError(
+                f"{context}: Jira API error {e.status_code}: {e.text}"
+            )
 
     def register_webhook(
         self,
@@ -398,7 +426,9 @@ class JiraTracker(BaseTracker):
 
         existing_webhook = crud_webhook.get_by_project_id(db, project_id=project_id)
         if existing_webhook:
-            logger.info(f"Webhook for project {project_key} already registered in database. Skipping.")
+            logger.info(
+                f"Webhook for project {project_key} already registered in database. Skipping."
+            )
             return True
 
         actual_events = events or DEFAULT_JIRA_WEBHOOK_EVENTS
@@ -406,9 +436,11 @@ class JiraTracker(BaseTracker):
 
         parsed_url = urllib.parse.urlparse(webhook_url)
         query_params = urllib.parse.parse_qs(parsed_url.query)
-        query_params['project_key'] = [project_key]
+        query_params["project_key"] = [project_key]
         new_query_string = urllib.parse.urlencode(query_params, doseq=True)
-        url_with_secret_and_project = parsed_url._replace(query=new_query_string).geturl()
+        url_with_secret_and_project = parsed_url._replace(
+            query=new_query_string
+        ).geturl()
 
         jql_filter = f"project = {project_key.upper()}"
 
@@ -439,17 +471,29 @@ class JiraTracker(BaseTracker):
                     "events": actual_events,
                 },
             )
-            logger.info(f"Successfully registered webhook {webhook_id} for project {project_key}.")
+            logger.info(
+                f"Successfully registered webhook {webhook_id} for project {project_key}."
+            )
             return True
         except JIRAError as e:
-            if e.status_code == 400 and "webhook with same name and url already exists" in e.text.lower():
-                logger.warning(f"Webhook for project {project_key} already exists in Jira. Assuming it's ours.")
+            if (
+                e.status_code == 400
+                and "webhook with same name and url already exists" in e.text.lower()
+            ):
+                logger.warning(
+                    f"Webhook for project {project_key} already exists in Jira. Assuming it's ours."
+                )
                 return True
             self._handle_jira_error(e, f"registering webhook for project {project_key}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error registering webhook for {project_key}: {e}", exc_info=True)
-            raise TrackerConnectionError(f"Unexpected error registering webhook for {project_key}: {str(e)}")
+            logger.error(
+                f"Unexpected error registering webhook for {project_key}: {e}",
+                exc_info=True,
+            )
+            raise TrackerConnectionError(
+                f"Unexpected error registering webhook for {project_key}: {str(e)}"
+            )
 
     def unregister_webhook(self, db: Session, project_id: str) -> bool:
         """Unregister a webhook for a project using the database record."""
@@ -459,20 +503,30 @@ class JiraTracker(BaseTracker):
 
         webhook = crud_webhook.get_by_project_id(db, project_id=project_id)
         if not webhook:
-            logger.warning(f"No webhook found in database for project ID {project_id}. Cannot unregister.")
+            logger.warning(
+                f"No webhook found in database for project ID {project_id}. Cannot unregister."
+            )
             return True
 
         try:
-            logger.info(f"Attempting to unregister webhook with external ID {webhook.external_id}.")
+            logger.info(
+                f"Attempting to unregister webhook with external ID {webhook.external_id}."
+            )
             self.jira_client._session.delete(
                 f"{self.jira_url}/rest/webhooks/1.0/webhook/{webhook.external_id}"
             )
-            logger.info(f"Successfully unregistered webhook {webhook.external_id} from Jira.")
+            logger.info(
+                f"Successfully unregistered webhook {webhook.external_id} from Jira."
+            )
         except JIRAError as e:
             if e.status_code != 404:
-                self._handle_jira_error(e, f"unregistering webhook {webhook.external_id}")
+                self._handle_jira_error(
+                    e, f"unregistering webhook {webhook.external_id}"
+                )
                 return False
-            logger.warning(f"Webhook {webhook.external_id} not found in Jira. Assuming already deleted.")
+            logger.warning(
+                f"Webhook {webhook.external_id} not found in Jira. Assuming already deleted."
+            )
 
         crud_webhook.remove(db, id=webhook.id)
         logger.info(f"Removed webhook record for project {project_id} from database.")
@@ -481,17 +535,31 @@ class JiraTracker(BaseTracker):
     def unregister_all_webhooks(self, db: Session, organization_id: str) -> None:
         """Unregister all webhooks for all projects in an organization."""
         from spacemodels.crud import crud_project
-        projects = crud_project.get_for_organization(db, organization_id=organization_id)
+
+        projects = crud_project.get_for_organization(
+            db, organization_id=organization_id
+        )
 
         if not projects:
-            logger.info(f"No projects found for organization {organization_id}. No webhooks to unregister.")
+            logger.info(
+                f"No projects found for organization {organization_id}. No webhooks to unregister."
+            )
             return
 
-        logger.info(f"Starting unregistration of all webhooks for organization {organization_id}...")
+        logger.info(
+            f"Starting unregistration of all webhooks for organization {organization_id}..."
+        )
         for proj in projects:
             try:
-                logger.info(f"Unregistering webhook for project: {proj.name} ({proj.identifier})")
+                logger.info(
+                    f"Unregistering webhook for project: {proj.name} ({proj.identifier})"
+                )
                 self.unregister_webhook(db, project_id=proj.id)
             except Exception as e:
-                logger.error(f"Failed to unregister webhook for project {proj.identifier}: {e}", exc_info=True)
-        logger.info(f"Finished unregistering webhooks for organization {organization_id}.")
+                logger.error(
+                    f"Failed to unregister webhook for project {proj.identifier}: {e}",
+                    exc_info=True,
+                )
+        logger.info(
+            f"Finished unregistering webhooks for organization {organization_id}."
+        )

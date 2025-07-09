@@ -9,17 +9,20 @@ import sys
 import time
 from pathlib import Path
 import atexit
-from datetime import datetime # Import datetime
+from datetime import datetime  # Import datetime
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent)) # Go up two levels to reach project root
+sys.path.insert(
+    0, str(Path(__file__).parent.parent.parent)
+)  # Go up two levels to reach project root
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
-from apscheduler.triggers.interval import IntervalTrigger # Import IntervalTrigger
+from apscheduler.triggers.interval import IntervalTrigger  # Import IntervalTrigger
 
 from spacemodels.db.session import get_db_session
 from spacesync.config import logger
+
 # Import the sync function and the manager
 from spacesync.services.manager import TrackerUpdateServiceManager, sync_scheduled_jobs
 
@@ -65,6 +68,7 @@ def setup_logging(log_level):
 # Global scheduler instance
 scheduler = None
 
+
 def shutdown_scheduler():
     """Function to shut down the scheduler."""
     global scheduler
@@ -76,6 +80,7 @@ def shutdown_scheduler():
             logger.info("Scheduler shutdown initiated.")
         except Exception as e:
             logger.error(f"Error shutting down scheduler: {e}")
+
 
 def main():
     """Run the service."""
@@ -91,38 +96,42 @@ def main():
     db = next(get_db_session())
 
     # Configure scheduler executor
-    executors = {
-        'default': ThreadPoolExecutor(args.max_workers)
-    }
+    executors = {"default": ThreadPoolExecutor(args.max_workers)}
     job_defaults = {
-        'coalesce': False, # Run jobs even if previous run is pending
-        'max_instances': 1 # Default max instances per job (can be overridden)
+        "coalesce": False,  # Run jobs even if previous run is pending
+        "max_instances": 1,  # Default max instances per job (can be overridden)
     }
 
     # Initialize the scheduler
-    scheduler = BackgroundScheduler(executors=executors, job_defaults=job_defaults, timezone="UTC")
+    scheduler = BackgroundScheduler(
+        executors=executors, job_defaults=job_defaults, timezone="UTC"
+    )
 
     # Register shutdown hook
     atexit.register(shutdown_scheduler)
 
     # Create service manager (passing scheduler and db session)
     # The manager now primarily holds state and service instances
-    manager = TrackerUpdateServiceManager(db=db, scheduler=scheduler, reload_interval=args.reload_interval)
-    manager.running = True # Mark manager as running conceptually
+    manager = TrackerUpdateServiceManager(
+        db=db, scheduler=scheduler, reload_interval=args.reload_interval
+    )
+    manager.running = True  # Mark manager as running conceptually
 
     try:
         # Add the recurring job to sync tracker jobs
         scheduler.add_job(
             sync_scheduled_jobs,
             trigger=IntervalTrigger(seconds=args.reload_interval),
-            args=[scheduler, manager], # Pass scheduler and manager instances
-            id='tracker_reload_job',
-            name='Sync Tracker Jobs',
+            args=[scheduler, manager],  # Pass scheduler and manager instances
+            id="tracker_reload_job",
+            name="Sync Tracker Jobs",
             replace_existing=True,
-            misfire_grace_time=60, # Allow 1 minute grace time
-            next_run_time=datetime.now() # Run immediately on start
+            misfire_grace_time=60,  # Allow 1 minute grace time
+            next_run_time=datetime.now(),  # Run immediately on start
         )
-        logger.info(f"Scheduled tracker job synchronization every {args.reload_interval} seconds.")
+        logger.info(
+            f"Scheduled tracker job synchronization every {args.reload_interval} seconds."
+        )
 
         # Start the scheduler
         scheduler.start()
@@ -134,12 +143,12 @@ def main():
 
         # Keep main thread alive if running in foreground
         if args.foreground:
-            while True: # Keep running until interrupted
+            while True:  # Keep running until interrupted
                 time.sleep(1)
         else:
             # In background mode, the scheduler thread keeps the process alive
             while True:
-                time.sleep(3600) # Sleep for a long time
+                time.sleep(3600)  # Sleep for a long time
 
     except (KeyboardInterrupt, SystemExit):
         logger.info("Shutdown signal received, stopping service...")
@@ -148,7 +157,7 @@ def main():
     finally:
         # Manager cleanup (stopping service instances)
         if manager and manager.running:
-             manager.stop()
+            manager.stop()
         # Explicitly close DB session if manager didn't (or if it's still open)
         if db:
             try:

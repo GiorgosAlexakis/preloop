@@ -9,7 +9,7 @@ from spacemodels.crud import crud_account, crud_tracker
 from spacemodels.db.session import get_db_session
 
 # Import scanner functions
-from ..scanner import scan_account, scan_all_accounts # Import scan_all_accounts
+from ..scanner import scan_account, scan_all_accounts  # Import scan_all_accounts
 from ..scanner import scan_tracker as scan_tracker_func
 
 # Import service components for the 'scan all' (now service start) command
@@ -87,7 +87,9 @@ def scan_account_cmd(account_id: str, verbose: bool, force_update: bool):
     click.echo(f"Scanning account: {account.username} (ID: {account.id})...")
 
     # Scan the account (pass force_update)
-    stats = scan_account(db=db, account_id=account_id, verbose=verbose, force_update=force_update)
+    stats = scan_account(
+        db=db, account_id=account_id, verbose=verbose, force_update=force_update
+    )
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
