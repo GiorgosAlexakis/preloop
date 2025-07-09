@@ -26,11 +26,8 @@ export class SimilarIssuesWidget extends LitElement {
     a:hover {
       text-decoration: underline;
     }
-    sl-card {
-      flex-grow: 1; /* Allow the card to grow and fill the available space */
-    }
-    sl-card::part(base) {
-      height: 100%;
+    sl-alert::part(base), sl-card {
+      width: 100%;
     }
     .suggestion-list {
       list-style: none;
@@ -158,6 +155,14 @@ export class SimilarIssuesWidget extends LitElement {
       return `Here are the top ${count} suggestions:`;
     };
 
+    if (this._totalSuggestions === 0) {
+      return html`
+        <sl-alert variant="primary" open>
+          <sl-icon slot="icon" name="info-circle"></sl-icon>
+          No similar issues found for the current filters.
+        </sl-alert>
+      `;
+    }
     return html`
       <sl-card>
         <div slot="header">Similar Issue Suggestions</div>
@@ -165,9 +170,6 @@ export class SimilarIssuesWidget extends LitElement {
         ${when(this._loading, () => html`<div>Loading...</div>`)}
         ${when(this._error, () => html`<div>${this._error}</div>`)}
         ${when(!this._loading && !this._error, () => {
-          if (this._totalSuggestions === 0) {
-            return html`<p>No unresolved suggestions found. Great job!</p>`;
-          }
           return html`
             <p>
               You have

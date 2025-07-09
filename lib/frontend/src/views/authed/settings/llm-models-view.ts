@@ -185,7 +185,8 @@ export class LlmModelsView extends LitElement {
         ${when(
           this.models.length === 0,
           () =>
-            html` <p class="empty-state">
+            html` <sl-alert variant="primary" open>
+          <sl-icon slot="icon" name="info-circle"></sl-icon>
               No LLM models configured yet.
               <a
                 href="#"
@@ -195,7 +196,7 @@ export class LlmModelsView extends LitElement {
                 }}
                 >Add a Model</a
               >
-            </p>`,
+            </sl-alert>`,
           () => html`
             <table class="styled-table">
               <thead>

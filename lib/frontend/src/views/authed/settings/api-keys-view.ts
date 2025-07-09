@@ -142,6 +142,24 @@ export class ApiKeysView extends LitElement {
           </sl-alert>
         `;
       }
+
+      if (this.apiKeys.length === 0) {
+        return html`
+            <sl-alert variant="primary" open>
+              <sl-icon slot="icon" name="info-circle"></sl-icon>
+              No API keys created yet.
+              <a
+                href="#"
+                @click=${(e: Event) => {
+                  e.preventDefault();
+                  this.isCreateModalOpen = true;
+                }}
+                >Add an API Key</a
+              >
+            </sl-alert>
+        `;
+      }
+
       return html`
         <sl-card class="table-card">
           <table>

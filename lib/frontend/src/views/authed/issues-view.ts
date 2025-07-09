@@ -693,7 +693,7 @@ export class IssuesView extends LitElement {
                   ${this._hasProjects
                     ? 'No duplicate issues found for the current filters.'
                     : unsafeHTML(
-                        'No projects found. <a href="/console/trackers">Add a tracker</a>.'
+                        'No projects found. Did you <a href="/console/trackers">add a tracker</a>?'
                       )}
                 </sl-alert>
               `
