@@ -3,6 +3,8 @@
 from typing import TYPE_CHECKING, Optional, List, Dict
 
 from sqlalchemy import ForeignKey, String, Text
+
+# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -33,14 +35,14 @@ class Comment(Base):
     )
 
     # Foreign keys
-    issue_id: Mapped[str] = mapped_column(
-        String(36),
+    issue_id: Mapped[Optional[str]] = mapped_column(  # Reverted to Optional[str]
+        String(36),  # Reverted to String(36)
         ForeignKey("issue.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    author_id: Mapped[str] = mapped_column(
-        String(36),
+    author_id: Mapped[Optional[str]] = mapped_column(  # Reverted to Optional[str]
+        String(36),  # Reverted to String(36)
         ForeignKey(
             "account.id", ondelete="SET NULL"
         ),  # Or CASCADE, depending on desired behavior

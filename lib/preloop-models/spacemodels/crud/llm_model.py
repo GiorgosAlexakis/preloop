@@ -11,9 +11,26 @@ from .base import CRUDBase
 class CRUDLLMModel(CRUDBase[LLMModel]):
     """CRUD class for LLMModel operations."""
 
-    def get_default_active_model(self, db: Session) -> Optional[LLMModel]:
-        """Get the default, active LLMModel for the system."""
-        return db.query(self.model).filter(self.model.is_default).first()
+    def get_default_active_model(
+        self, db: Session, *, include_ownerless: bool = False
+    ) -> Optional[LLMModel]:
+        """Get the default, active LLMModel.
+
+        If include_ownerless is True, it will also look for a system-wide default model.
+        """
+        query = db.query(self.model).filter(self.model.is_default == True)
+        if not include_ownerless:
+            query = query.filter(self.model.account_id.isnot(None))
+        return query.first()
+
+    def default_model_exists(self, db: Session) -> bool:
+        """Check if a system-wide default model exists."""
+        return (
+            db.query(self.model.id)
+            .filter(self.model.is_default == True, self.model.account_id.is_(None))
+            .first()
+            is not None
+        )
 
     def create_with_account(
         self,

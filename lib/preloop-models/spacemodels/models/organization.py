@@ -1,9 +1,12 @@
 """Organization model."""
 
 # Import at the end to avoid circular imports
+from datetime import datetime
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String
+
+# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -25,11 +28,18 @@ class Organization(Base):
     """
 
     # Organization details
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(
+        String(255), nullable=False
+    )  # Assuming String is imported if still needed
     identifier: Mapped[str] = mapped_column(
-        String(100), unique=True, nullable=False, index=True
+        String(100),
+        unique=True,
+        nullable=False,
+        index=True,  # Assuming String is imported
     )
-    description: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(
+        String(1000), nullable=True
+    )  # Assuming String is imported
     is_active: Mapped[bool] = mapped_column(default=True)
 
     # Organization settings stored as JSON
@@ -38,9 +48,22 @@ class Organization(Base):
     # Generic metadata field for extensibility
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
+    # Secret for verifying incoming webhooks (e.g., HMAC signature)
+    webhook_secret: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )  # Assuming String is imported
+
+    # Timestamps for sync updates
+    last_webhook_update: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_polling_update: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Foreign keys - the tracker determines the owner account
-    tracker_id: Mapped[str] = mapped_column(
-        String(36),
+    tracker_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("tracker.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

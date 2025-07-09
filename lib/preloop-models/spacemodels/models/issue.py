@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint, func
+
+# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, DateTime
 
@@ -44,14 +46,14 @@ class Issue(Base):
     key: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
 
     # Foreign keys
-    project_id: Mapped[str] = mapped_column(
-        String(36),
+    project_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("project.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    tracker_id: Mapped[str] = mapped_column(
-        String(36),
+    tracker_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("tracker.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -79,6 +81,8 @@ class Issue(Base):
 
 class EmbeddingModel(Base):
     """Model to track different embedding models used in the system."""
+
+    # Primary key is inherited from Base
 
     # Embedding model details
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
@@ -109,21 +113,23 @@ class IssueEmbedding(Base):
     This flexible design supports embeddings of different dimensions.
     """
 
+    # Primary key is inherited from Base
+
     # Foreign keys
-    issue_id: Mapped[str] = mapped_column(
-        String(36),
+    issue_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("issue.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    comment_id: Mapped[str] = mapped_column(
-        String(36),
+    comment_id: Mapped[Optional[str]] = mapped_column(  # Reverted to Optional[str]
+        String(36),  # Reverted to String(36)
         ForeignKey("comment.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    embedding_model_id: Mapped[str] = mapped_column(
-        String(36),
+    embedding_model_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("embeddingmodel.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

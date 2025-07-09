@@ -165,8 +165,8 @@ def test_similarity_search(
     db_session, create_issue, create_embedding_model, create_tracker
 ):
     """Test similarity search functionality."""
-    # Create embedding model
-    model = create_embedding_model(dimensions=4)  # Small dimension for testing
+    # Create embedding model (defaulting to 1536 dimensions from conftest fixture)
+    model = create_embedding_model()
 
     # Create a single tracker instance using the injected factory fixture
     # The `create_tracker` argument in the function signature provides the factory function.
@@ -178,11 +178,15 @@ def test_similarity_search(
     issue3 = create_issue(title="Login page crashes on mobile", tracker=tracker)
 
     # Create fixed embeddings for testing similarity
-    embeddings = [
-        [1.0, 0.0, 0.0, 0.0],  # issue1
-        [0.0, 1.0, 0.0, 0.0],  # issue2
-        [0.8, 0.2, 0.0, 0.0],  # issue3 (more similar to issue1)
+    default_dimension = 1536  # Should match the default in EmbeddingModel or conftest
+    embeddings_data = [
+        ([1.0, 0.0, 0.0, 0.0], default_dimension),  # issue1
+        ([0.0, 1.0, 0.0, 0.0], default_dimension),  # issue2
+        ([0.8, 0.2, 0.0, 0.0], default_dimension),  # issue3 (more similar to issue1)
     ]
+    embeddings = []
+    for vec, dim in embeddings_data:
+        embeddings.append(vec + [0.0] * (dim - len(vec)))
 
     # Manually create embeddings
     for issue, emb in zip([issue1, issue2, issue3], embeddings, strict=False):
@@ -196,7 +200,10 @@ def test_similarity_search(
     db_session.commit()
 
     # Search with a vector similar to issue1
-    query_vector = [0.9, 0.1, 0.0, 0.0]
+    query_vector_short = [0.9, 0.1, 0.0, 0.0]
+    query_vector = query_vector_short + [0.0] * (
+        default_dimension - len(query_vector_short)
+    )
     # Get the tracker_id from one of the created issues
     tracker_id = tracker.id  # Use the id from the shared tracker created above
     results = crud_issue_embedding.similarity_search(
@@ -222,7 +229,11 @@ def test_similarity_search_with_embedding_type(
     create_comment,
 ):
     """Test similarity search with embedding_type filtering."""
-    model = create_embedding_model(name="test_model_type_filter", dimensions=3)
+    # Use default 1536 dimensions for the model
+    model = create_embedding_model(name="test_model_type_filter")
+    default_dimension = (
+        1536  # model.dimensions would also work if fixture guarantees it
+    )
     tracker = create_tracker(name="test_tracker_type_filter")
 
     issue1 = create_issue(title="Issue One For Type Filter", tracker_id=tracker.id)
@@ -233,9 +244,23 @@ def test_similarity_search_with_embedding_type(
         issue_id=issue1.id, external_id="901", body="A comment on Issue One"
     )
 
-    embedding_vector_issue1 = [1.0, 0.0, 0.0]
-    embedding_vector_issue2 = [0.0, 1.0, 0.0]
-    embedding_vector_comment1 = [0.0, 0.0, 1.0]  # Distinct embedding for the comment
+    embedding_vector_issue1_short = [1.0, 0.0, 0.0]
+    embedding_vector_issue2_short = [0.0, 1.0, 0.0]
+    embedding_vector_comment1_short = [
+        0.0,
+        0.0,
+        1.0,
+    ]  # Distinct embedding for the comment
+
+    embedding_vector_issue1 = embedding_vector_issue1_short + [0.0] * (
+        default_dimension - len(embedding_vector_issue1_short)
+    )
+    embedding_vector_issue2 = embedding_vector_issue2_short + [0.0] * (
+        default_dimension - len(embedding_vector_issue2_short)
+    )
+    embedding_vector_comment1 = embedding_vector_comment1_short + [0.0] * (
+        default_dimension - len(embedding_vector_comment1_short)
+    )
 
     # Create embeddings directly for precise testing
     embedding_for_issue1 = IssueEmbedding(

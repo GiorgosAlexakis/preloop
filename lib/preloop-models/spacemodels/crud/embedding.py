@@ -98,11 +98,11 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         db: Session,
         *,
         embedding_model_id: Optional[str] = None,
-        project_id: Optional[str] = None,
-        project_name: Optional[str] = None,
+        project_ids: Optional[List[str]] = None,
+        project_names: Optional[List[str]] = None,
         tracker_id: Optional[str] = None,
-        organization_id: Optional[str] = None,
-        organization_name: Optional[str] = None,
+        organization_ids: Optional[List[str]] = None,
+        organization_names: Optional[List[str]] = None,
         account_id: Optional[str] = None,
         skip: int = 0,
         limit: int = 1000,  # Default to a higher limit for raw data
@@ -115,7 +115,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             IssueEmbedding.issue_id,
             IssueEmbedding.embedding,
             Issue.title,
-            # Issue.labels,
+            Issue.project_id,
             Issue.issue_type,
             Issue.last_updated_external,
         ).join(Issue, IssueEmbedding.issue_id == Issue.id)
@@ -125,27 +125,29 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 IssueEmbedding.embedding_model_id == embedding_model_id
             )
 
-        if project_id:
-            query = query.filter(Issue.project_id == project_id)
+        if project_ids:
+            query = query.filter(Issue.project_id.in_(project_ids))
 
-        if project_name:
+        if project_names:
+            lowercase_project_names = [name.lower() for name in project_names]
             query = query.join(Project, Issue.project_id == Project.id).filter(
-                func.lower(Project.name) == func.lower(project_name)
+                func.lower(Project.name).in_(lowercase_project_names)
             )
 
         if tracker_id:
             query = query.filter(Issue.tracker_id == tracker_id)
 
-        if organization_id:
+        if organization_ids:
             # Join with Project table to filter by organization_id
             query = query.join(Project, Issue.project_id == Project.id)
-            query = query.filter(Project.organization_id == organization_id)
+            query = query.filter(Project.organization_id.in_(organization_ids))
 
-        if organization_name:
+        if organization_names:
+            lowercase_org_names = [name.lower() for name in organization_names]
             query = (
                 query.join(Project, Issue.project_id == Project.id)
                 .join(Organization, Project.organization_id == Organization.id)
-                .filter(func.lower(Organization.name) == func.lower(organization_name))
+                .filter(func.lower(Organization.name).in_(lowercase_org_names))
             )
 
         if account_id:
@@ -331,6 +333,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         model_id: str,
         query_vector: List[float],
         limit: int = 10,
+        similarity: Optional[float] = None,
         distance_type: str = "cosine",  # Note: distance_type is not used in this SQL version
         tracker_ids: Optional[List[str]] = None,
         project_ids: Optional[List[str]] = None,
@@ -350,6 +353,8 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             model_id: ID of the embedding model to search within
             query_vector: Vector to search for
             limit: Maximum number of results to return
+            similarity: Optional similarity score to filter by. If provided, only results with
+                        a similarity score greater than or equal to this value will be returned.
             distance_type: (Currently unused in this SQL implementation) Distance metric.
             tracker_ids: Optional list of tracker IDs to filter by (applies to the issue).
             project_ids: Optional list of project IDs to filter by (applies to the issue).
@@ -373,6 +378,9 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             "query_vector": query_vector,  # pgvector expects a string representation of a list
             "limit": limit,
         }
+        if similarity is not None:
+            params["similarity"] = similarity
+
         common_where_clauses = ["e.embedding_model_id = :model_id"]
 
         # Issue-related filters (applied via JOIN with 'issue' table)
@@ -411,6 +419,10 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 "e.issue_id IS NOT NULL",
                 "e.comment_id IS NULL",
             ]
+            if similarity is not None:
+                specific_where_clauses.append(
+                    "(1 - (e.embedding <=> CAST(:query_vector AS vector))) >= :similarity"
+                )
             where_sql = " AND ".join(specific_where_clauses)
             sql = f"""
                 WITH results AS (
@@ -459,6 +471,10 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         elif embedding_type == "comment":
             specific_where_clauses = common_where_clauses + ["e.comment_id IS NOT NULL"]
             # For comments, common_where_clauses join on 'i' via 'c.issue_id = i.id'
+            if similarity is not None:
+                specific_where_clauses.append(
+                    "(1 - (e.embedding <=> CAST(:query_vector AS vector))) >= :similarity"
+                )
             where_sql = " AND ".join(specific_where_clauses)
             sql = f"""
                 WITH results AS (
@@ -501,11 +517,19 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 "e.issue_id IS NOT NULL",
                 "e.comment_id IS NULL",
             ]
+            if similarity is not None:
+                where_issues_specific.append(
+                    "(1 - (e.embedding <=> CAST(:query_vector AS vector))) >= :similarity"
+                )
             where_sql_issues_part = " AND ".join(where_issues_specific)
 
             where_comments_specific = common_where_clauses + [
                 "e.comment_id IS NOT NULL"
             ]
+            if similarity is not None:
+                where_comments_specific.append(
+                    "(1 - (e.embedding <=> CAST(:query_vector AS vector))) >= :similarity"
+                )
             where_sql_comments_part = " AND ".join(where_comments_specific)
 
             sql = f"""

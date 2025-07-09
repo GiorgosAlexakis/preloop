@@ -5,7 +5,9 @@ from datetime import datetime
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, func, String  # Added String back
+
+# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -98,23 +100,21 @@ class AccountOrganization(Base):
     __tablename__ = "accountorganization"
 
     # Composite primary key
-    account_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("account.id", ondelete="CASCADE"), primary_key=True
+    account_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
+        ForeignKey("account.id", ondelete="CASCADE"),
+        primary_key=True,
     )
-    organization_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("organization.id", ondelete="CASCADE"), primary_key=True
+    organization_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
+        ForeignKey("organization.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
     # Role in the organization
     role: Mapped[str] = mapped_column(String(50), default="member")
 
-    # Add timestamps manually since we're not inheriting from Base
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
-    )
+    # Timestamps are inherited from Base. id is also inherited as PK.
 
     # Relationships
     account: Mapped["Account"] = relationship(

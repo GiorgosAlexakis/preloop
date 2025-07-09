@@ -7,10 +7,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, String, func
+
+# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import JSON, DateTime
 
 from .base import Base
+from .tracker_scope_rule import TrackerScopeRule
 
 if TYPE_CHECKING:
     from .account import Account
@@ -82,28 +85,30 @@ class Tracker(Base):
     # }
     connection_details: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
-    # Project selection fields
-    included_project_identifiers: Mapped[Optional[List[str]]] = mapped_column(
-        JSON,
-        nullable=True,
-        comment="List of project identifiers (e.g., 'org/repo', 'PROJKEY') to include. None means include all by default.",
-    )
-    excluded_project_identifiers: Mapped[Optional[List[str]]] = mapped_column(
-        JSON,
-        nullable=True,
-        comment="List of project identifiers to explicitly exclude. Takes precedence over inclusions.",
-    )
-    include_future_projects: Mapped[bool] = mapped_column(
-        default=True,
-        comment="Whether to automatically include newly discovered projects when included_project_identifiers is None.",
-    )
-
     # Generic metadata field for extensibility
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
+    # Webhook event subscriptions
+    subscribed_events: Mapped[Optional[List[str]]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=list,
+        comment="List of specific webhook event names to subscribe to (e.g., ['push', 'issues']). Empty or None might imply default/all events based on client logic.",
+    )
+
+    # Jira Webhook specific fields
+    jira_webhook_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="Stored Jira Webhook ID"
+    )
+    jira_webhook_secret: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Secret used to validate incoming Jira webhooks. Store encrypted if possible.",
+    )
+
     # Foreign keys
-    account_id: Mapped[str] = mapped_column(
-        String(36),
+    account_id: Mapped[str] = mapped_column(  # Reverted to str
+        String(36),  # Reverted to String(36)
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -116,6 +121,11 @@ class Tracker(Base):
     )
     issues: Mapped[List["Issue"]] = relationship(
         "Issue", back_populates="tracker", cascade="all, delete-orphan"
+    )
+    scope_rules: Mapped[List["TrackerScopeRule"]] = relationship(
+        "TrackerScopeRule",
+        back_populates="tracker",
+        cascade="all, delete-orphan",
     )
 
     # Validation status

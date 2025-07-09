@@ -97,8 +97,14 @@ def create_tracker(db_session, create_account):
             "api_key": "test_api_key",
             "url": "https://example.com",
             "is_active": True,
+            "jira_webhook_id": None,
+            "jira_webhook_secret": None,
             **kwargs,
         }
+        # Ensure that if tracker_type is jira, url is provided.
+        if tracker_data["tracker_type"] == "jira" and not tracker_data.get("url"):
+            tracker_data["url"] = "https://jira.example.com"
+
         return crud_tracker.create(db_session, obj_in=tracker_data)
 
     return _create_tracker

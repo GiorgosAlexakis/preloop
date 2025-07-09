@@ -12,6 +12,9 @@ from .project import Project
 from .tracker import Tracker, TrackerType
 from .client_version_log import ClientVersionLog
 from .llm_model import LLMModel
+from .flow import Flow
+from .webhook import Webhook
+from .tracker_scope_rule import TrackerScopeRule
 
 __all__ = [
     "Base",
@@ -30,4 +33,7 @@ __all__ = [
     "ClientVersionLog",
     "Comment",
     "LLMModel",
+    "Flow",
+    "Webhook",
+    "TrackerScopeRule",
 ]
