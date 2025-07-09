@@ -56,6 +56,7 @@ class CRUDProject(CRUDBase[Project]):
         *,
         slug_or_identifier: str,
         organization_id: Optional[str] = None,
+        account_id: Optional[str] = None,
     ) -> Optional[Project]:
         """
         Get a project by slug or identifier, optionally filtered by organization.
@@ -75,6 +76,9 @@ class CRUDProject(CRUDBase[Project]):
         if organization_id:
             # If organization_id is provided, filter by it
             query = query.filter(Project.organization_id == organization_id)
+        if account_id:
+            # If account_id is provided, filter by it
+            query = query.filter(Project.account_id == account_id)
         query = query.order_by(Project.updated_at.desc())
         return query.first()
 
@@ -87,6 +91,7 @@ class CRUDProject(CRUDBase[Project]):
         tracker_id: Optional[
             str
         ] = None,  # Keep tracker_id filter for potential future use, though search_issues doesn't use it now
+        account_id: Optional[str] = None,
     ) -> Optional[Project]:
         """
         Get a project by name, optionally filtered by organization and tracker.
@@ -108,7 +113,8 @@ class CRUDProject(CRUDBase[Project]):
 
         if organization_id:
             query = query.filter(Project.organization_id == organization_id)
-
+        if account_id:
+            query = query.filter(Project.account_id == account_id)
         if tracker_id:
             # Projects don't have tracker_id directly - need to join with Organization
             query = query.join(Organization, Project.organization_id == Organization.id)
