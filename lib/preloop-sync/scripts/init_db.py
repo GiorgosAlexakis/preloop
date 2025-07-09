@@ -51,7 +51,9 @@ def init_db(force: bool):
                 db_session, provider=provider, version=version
             )
             if existing_model:
-                click.echo(f"Embedding model '{model_name}' already exists (ID: {existing_model.id}), skipping.")
+                click.echo(
+                    f"Embedding model '{model_name}' already exists (ID: {existing_model.id}), skipping."
+                )
             else:
                 click.echo(f"Adding embedding model '{model_name}'...")
                 model_data = {

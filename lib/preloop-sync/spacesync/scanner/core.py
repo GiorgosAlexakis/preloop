@@ -3,9 +3,11 @@ Core scanning functionality for SpaceSync.
 """
 
 import datetime
-import time
+from datetime import timedelta
+import os
 from typing import Any, Dict, List, Optional, Tuple
-
+from urllib.parse import urljoin
+import secrets
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import (
@@ -14,238 +16,192 @@ from spacemodels.crud import (
     crud_issue_embedding,
     crud_organization,
     crud_project,
-    crud_tracker,
     crud_comment,
 )
-from spacemodels.models import Issue, Organization, Project, Tracker
+from spacemodels.models import Issue, Organization, Project, Tracker, TrackerScopeRule
 
 from ..config import logger
+
+POLLING_THRESHOLD = timedelta(seconds=os.getenv("POLLING_THRESHOLD", 3600))
+RECHECK_PROJECT_WEBHOOK_INTERVAL = timedelta(days=1)
 
 
 class TrackerClient:
     """Client for interacting with trackers."""
 
     def __init__(self, tracker: Tracker):
-        """
-        Initialize the tracker client.
-
-        Args:
-            tracker: Tracker model from database
-        """
+        """Initialize the tracker client."""
         self.tracker = tracker
-        # Ensure tracker_type is lowercase for comparison
-        if hasattr(tracker.tracker_type, "value"):
-            # Handle if tracker_type is an enum
-            self.tracker_type = tracker.tracker_type.value.lower()
-        else:
-            # Handle if tracker_type is a string
-            self.tracker_type = tracker.tracker_type.lower()
+        self.tracker_type = (
+            tracker.tracker_type.value.lower()
+            if hasattr(tracker.tracker_type, "value")
+            else tracker.tracker_type.lower()
+        )
 
-        # Add URL to connection_details from tracker model
         connection_details = (
             dict(tracker.connection_details) if tracker.connection_details else {}
         )
-
-        # Ensure URL is included in connection details
         if hasattr(tracker, "url") and tracker.url:
             connection_details["url"] = tracker.url
-            print(f"  Adding URL to connection_details: {tracker.url}")
 
-        # Create appropriate tracker instance based on type
         if self.tracker_type == "github":
             from ..trackers.github import GitHubTracker
 
-            self.client = GitHubTracker(
-                tracker_id=tracker.id,
-                api_key=tracker.api_key,
-                connection_details=connection_details,
-            )
-            # Set tracker reference for URL access
-            self.client.tracker = tracker
+            self.client = GitHubTracker(tracker.id, tracker.api_key, connection_details)
         elif self.tracker_type == "gitlab":
             from ..trackers.gitlab import GitLabTracker
 
-            self.client = GitLabTracker(
-                tracker_id=tracker.id,
-                api_key=tracker.api_key,
-                connection_details=connection_details,
-            )
-            # Set tracker reference for URL access
-            self.client.tracker = tracker
+            self.client = GitLabTracker(tracker.id, tracker.api_key, connection_details)
         elif self.tracker_type == "jira":
             from ..trackers.jira import JiraTracker
 
-            self.client = JiraTracker(
-                tracker_id=tracker.id,
-                api_key=tracker.api_key,
-                connection_details=connection_details,
-            )
-            # Set tracker reference for URL access
-            self.client.tracker = tracker
+            self.client = JiraTracker(tracker.id, tracker.api_key, connection_details)
         else:
             raise ValueError(f"Unsupported tracker type: {self.tracker_type}")
 
-    def _get_project_identifier(self, proj_data: Dict[str, Any]) -> Optional[str]:
-        """Extract a consistent identifier from raw project data."""
-        # Try common fields from different trackers
-        if 'full_name' in proj_data.get('meta_data', {}): # GitHub repo name (owner/repo)
-            return proj_data['meta_data']['full_name']
-        if self.tracker_type == 'gitlab' and 'id' in proj_data: # GitLab project path
-            return proj_data['id']
-        if 'key' in proj_data: # Jira project key
-            return proj_data['key']
-        if 'url' in proj_data: # Generic URL
-            return '/'.join(proj_data['url'].split('/')[-2:])
-
-        # Add more potential fields if needed (e.g., 'id' as a last resort?)
-        logger.warning(f"Could not determine identifier for project data: {proj_data.get('name', 'N/A')}")
-        return None
-
     def scan_organizations(self, db: Session) -> List[Organization]:
-        """
-        Scan and update organizations for this tracker.
-
-        Args:
-            db: Database session
-
-        Returns:
-            List of organization models
-        """
-        logger.info(
-            f"Scanning organizations for tracker {self.tracker.id} ({self.tracker_type})"
-        )
-
-        # Get organizations from tracker
+        """Scan and update organizations for this tracker."""
         org_data_list = self.client.get_organizations()
         logger.info(
             f"Found {len(org_data_list)} organizations in tracker {self.tracker.id}"
         )
 
-        # Process each organization
         orgs = []
+        rules = (
+            db.query(TrackerScopeRule)
+            .filter(TrackerScopeRule.tracker_id == self.tracker.id)
+            .all()
+        )
+
+        # 1. Separate rules into four sets for efficient lookup
+        org_inclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "ORGANIZATION" and r.rule_type == "INCLUDE"
+        }
         for org_data in org_data_list:
-            # Transform data for database
+            if str(org_data["id"]) not in org_inclusions:
+                logger.info(
+                    f"Skipping organization {org_data['name']} ({org_data['id']}) because it is not in the "
+                    f"explicit inclusion list for tracker {self.tracker.id}."
+                )
+                continue
             org_create_data = self.client.transform_organization(org_data)
-            # Find existing organization or create new one
             org = crud_organization.get_by_identifier(
                 db, identifier=org_create_data["identifier"]
             )
-
             if org:
-                # Update existing
                 org = crud_organization.update(db, db_obj=org, obj_in=org_create_data)
-                logger.debug(f"Updated organization {org.id} ({org.name})")
             else:
-                # Create new
                 org = crud_organization.create(db, obj_in=org_create_data)
-                logger.info(f"Created organization {org.id} ({org.name})")
-
             orgs.append(org)
-
         return orgs
 
     def scan_projects(self, db: Session, organization: Organization) -> List[Project]:
-        """
-        Scan and update projects for an organization, applying inclusion/exclusion rules.
-
-        Args:
-            db: Database session
-            organization: Organization model
-
-        Returns:
-            List of processed (created or updated) project models that match the rules.
-        """
+        """Scan and update projects for an organization."""
         logger.info(
             f"Scanning projects for organization {organization.id} ({organization.name})"
         )
-
-        # Get project selection rules from the tracker
-        included_list = set(self.tracker.included_project_identifiers or [])
-        excluded_list = set(self.tracker.excluded_project_identifiers or [])
-        include_future = self.tracker.include_future_projects
-        has_includes = bool(included_list)
-
-        logger.debug(f"Tracker {self.tracker.id} rules: include_future={include_future}, "
-                     f"includes={included_list}, excludes={excluded_list}")
-
-        # Get all projects from the tracker API
         try:
             proj_data_list = self.client.get_projects(organization.identifier)
-            logger.info(
-                f"Found {len(proj_data_list)} raw projects in tracker for organization {organization.id}"
-            )
         except Exception as e:
-            logger.error(f"Failed to get projects from tracker for org {organization.identifier}: {e}")
-            return [] # Return empty list if API call fails
+            logger.error(
+                f"Failed to get projects from tracker for org {organization.name}: {e}"
+            )
+            return []
 
-        # Filter projects based on inclusion/exclusion rules
-        filtered_proj_data_list = []
-        for proj_data in proj_data_list:
-            identifier = self._get_project_identifier(proj_data)
-            if not identifier:
-                logger.warning(f"Skipping project with no identifier: {proj_data.get('name')}")
-                continue
+        rules = (
+            db.query(TrackerScopeRule)
+            .filter(TrackerScopeRule.tracker_id == self.tracker.id)
+            .all()
+        )
 
-            # Apply exclusion first
-            if identifier in excluded_list:
-                logger.debug(f"Excluding project '{identifier}' based on exclusion list.")
-                continue
+        # 1. Separate rules into four sets for efficient lookup
+        org_inclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "ORGANIZATION" and r.rule_type == "INCLUDE"
+        }
+        project_inclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "PROJECT" and r.rule_type == "INCLUDE"
+        }
+        project_exclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "PROJECT" and r.rule_type == "EXCLUDE"
+        }
+        # 2. Check if the organization is explicitly included. This is a precondition for scanning any projects.
+        if organization.identifier not in org_inclusions:
+            logger.info(
+                f"Skipping organization {organization.name} ({organization.identifier}) because it is not in the "
+                f"explicit inclusion list for tracker {self.tracker.id}."
+            )
+            return []
 
+        logger.info(
+            f"Organization {organization.name} ({organization.identifier}) is included. Fetching and filtering projects."
+        )
 
-            # Apply inclusion if an inclusion list exists
-            if has_includes and identifier not in included_list:
-                logger.debug(f"Skipping project '{identifier}' as it's not in the inclusion list.")
-                continue
-
-            # If it passes filters, add to the list to be processed
-            filtered_proj_data_list.append(proj_data)
-
-        logger.info(f"Processing {len(filtered_proj_data_list)} projects after filtering for org {organization.id}")
-
-        # Process the filtered projects
         processed_projects = []
-        for proj_data in filtered_proj_data_list:
+        for proj_data in proj_data_list:
             try:
-                # Transform data for database
-                proj_create_data = self.client.transform_project(proj_data, organization.id)
-                project_identifier = proj_create_data.get("identifier") # Use identifier from transformed data
+                proj_create_data = self.client.transform_project(
+                    proj_data, organization.id
+                )
+                if (
+                    "meta_data" in proj_data
+                    and "full_name" in proj_data["meta_data"]
+                    and not proj_create_data.get("slug")
+                ):
+                    proj_create_data["slug"] = proj_data["meta_data"]["full_name"]
+                project_identifier = proj_create_data.get("identifier")
+                project_name = proj_create_data.get("name", "N/A")
 
                 if not project_identifier:
-                     logger.warning(f"Skipping project due to missing identifier after transform: {proj_create_data.get('name')}")
-                     continue
+                    logger.warning(
+                        f"Skipping project with missing identifier in org {organization.name}."
+                    )
+                    continue
 
-                # Find existing project or create new one
+                # Apply project-level filtering logic
+                # Condition 2: The project's identifier is not in project_exclusions.
+                if project_identifier in project_exclusions:
+                    logger.info(
+                        f"Skipping project {project_name} ({project_identifier}) because it is in the exclusion list."
+                    )
+                    continue
+
+                # Condition 3: Either there are no project_inclusions rules, OR the project's identifier is in project_inclusions.
+                if project_inclusions and project_identifier not in project_inclusions:
+                    logger.info(
+                        f"Skipping project {project_name} ({project_identifier}) because it is not in the "
+                        f"project inclusion list, and one is defined."
+                    )
+                    continue
+
+                # If all checks pass, the project is included.
+                logger.info(
+                    f"Project {project_name} ({project_identifier}) passed filters. Processing."
+                )
                 existing_project = crud_project.get_by_slug_or_identifier(
                     db,
                     slug_or_identifier=project_identifier,
                     organization_id=organization.id,
                 )
-
                 if existing_project:
-                    # Update existing project
                     project = crud_project.update(
                         db, db_obj=existing_project, obj_in=proj_create_data
                     )
-                    logger.debug(f"Updated project {project.id} ({project.name})")
-                    processed_projects.append(project)
                 else:
-                    # Check include_future logic before creating a new project
-                    create_new = True
-                    if not include_future and has_includes:
-                        # If not including future and there's an include list,
-                        # only create if it was explicitly included.
-                        if project_identifier not in included_list:
-                            create_new = False
-                            logger.debug(f"Skipping creation of new project '{project_identifier}' due to include_future=False and not in inclusion list.")
-
-                    if create_new:
-                        project = crud_project.create(db, obj_in=proj_create_data)
-                        logger.info(f"Created project {project.id} ({project.name})")
-                        processed_projects.append(project)
-
+                    project = crud_project.create(db, obj_in=proj_create_data)
+                processed_projects.append(project)
             except Exception as e:
-                 logger.error(f"Error processing project data {proj_data.get('name', 'N/A')}: {e}", exc_info=True)
-                 # Continue processing other projects
+                logger.error(
+                    f"Error processing project data for {proj_data.get('name', 'N/A')}: {e}",
+                    exc_info=True,
+                )
 
         return processed_projects
 
@@ -257,129 +213,206 @@ class TrackerClient:
         since: Optional[datetime.datetime] = None,
         force_update: bool = False,
     ) -> Tuple[List[Issue], int]:
-        """
-        Scan and update issues for a project.
-
-        Args:
-            db: Database session
-            organization: Organization model
-            project: Project model
-            since: Only update issues modified since this datetime
-            force_update: Whether to force update all embeddings even if content hasn't changed
-
-        Returns:
-            Tuple of (list of issue models, count of issues with updated embeddings)
-        """
-        logger.info(f"Scanning issues for project {project.id} ({project.name})")
-
-        # Get issues from tracker, passing the 'since' parameter
-        logger.debug(f"Calling get_issues for project {project.identifier} since {since}")
-        issue_data_list = self.client.get_issues(
-            organization_id=organization.identifier, # Pass org_id/identifier
-            project_id=project.identifier,       # Pass proj_id/identifier
-            since=since                          # Pass the since parameter
+        """Scan and update issues for a project."""
+        logger.info(
+            f"Scanning issues for project {project.id} ({project.name}) since {since}"
         )
-        logger.info(f"Found {len(issue_data_list)} issues in project {project.id} since {since}")
+        issue_data_list = self.client.get_issues(
+            organization_id=organization.identifier,
+            project_id=project.identifier,
+            since=since,
+        )
 
-        issues_processed = [] # Renamed from 'issues' to avoid conflict with model name
+        issues_processed = []
         embedding_updates = 0
-
         for issue_data in issue_data_list:
-            xformed_issue_data = self.client.transform_issue(issue_data, project.id)
+            xformed_issue_data = self.client.transform_issue(issue_data, project)
+            comment_data = xformed_issue_data.pop("comments", [])
 
-            existing_issues_for_project = crud_issue.get_for_project(
-                db,
-                project_id=project.id,
-                skip=0,
-                limit=10000,
-            )
-
-            current_issue_model = next(
-                (
-                    i
-                    for i in existing_issues_for_project
-                    if i.external_id == xformed_issue_data.get("external_id")
-                ),
-                None,
+            current_issue_model = crud_issue.get_by_external_id(
+                db, external_id=xformed_issue_data["external_id"], project_id=project.id
             )
 
             issue_changed = False
-
+            if not isinstance(xformed_issue_data["updated_at"], datetime.datetime):
+                xformed_issue_data["updated_at"] = datetime.datetime.fromisoformat(
+                    xformed_issue_data["updated_at"]
+                )
             if current_issue_model:
-                if (
-                    current_issue_model.title != xformed_issue_data.get("title")
-                    or current_issue_model.description != xformed_issue_data.get("description")
-                ):
+                if current_issue_model.updated_at < xformed_issue_data["updated_at"]:
                     issue_changed = True
-
-                current_issue_model = crud_issue.update(db, db_obj=current_issue_model, obj_in=xformed_issue_data)
-                logger.debug(f"Updated issue {current_issue_model.id} ({current_issue_model.title})")
+                    current_issue_model = crud_issue.update(
+                        db, db_obj=current_issue_model, obj_in=xformed_issue_data
+                    )
             else:
-                current_issue_model = crud_issue.create(db, obj_in=xformed_issue_data)
                 issue_changed = True
-                logger.debug(f"Created issue {current_issue_model.id} ({current_issue_model.title})")
+                current_issue_model = crud_issue.create(db, obj_in=xformed_issue_data)
 
             issues_processed.append(current_issue_model)
 
-            comment_data = xformed_issue_data.pop("comments", [])
-
-            if len(comment_data):
-                logger.debug(f"Proce {len(comment_data)} comments for issue {current_issue_model.id}")
-
-            db_comments_for_issue = crud_comment.get_multi_by_issue(db, issue_id=current_issue_model.id, limit=10000)
-            db_comments_map_by_external_id = {
-                c.external_id: c for c in db_comments_for_issue if c.external_id
-            }
-
             for single_comment_data in comment_data:
+                xformed_comment_data = self.client.transform_comment(
+                    single_comment_data, current_issue_model.id
+                )
+                db_comment = crud_comment.get_by_external_id(
+                    db,
+                    external_id=xformed_comment_data["external_id"],
+                    issue_id=current_issue_model.id,
+                )
+
                 comment_changed = False
-                xformed_comment_data = self.client.transform_comment(single_comment_data, current_issue_model.id)
-                #Find if comment exists in db comparing commend_data id with db external_id
-                db_comment = db_comments_map_by_external_id.get(xformed_comment_data.get("external_id"))
-                if db_comment and db_comment.body != xformed_comment_data.get("body"):
-                    # Check if comment needs update
-                    db_comment = crud_comment.update(db, db_obj=db_comment, obj_in=xformed_comment_data)
+                if db_comment:
+                    if db_comment.updated_at < xformed_comment_data["updated_at"]:
+                        comment_changed = True
+                        crud_comment.update(
+                            db, db_obj=db_comment, obj_in=xformed_comment_data
+                        )
+                else:
                     comment_changed = True
-                    logger.debug(f"Updated comment {db_comment.id} (external_id: {xformed_comment_data.get('external_id')})")
-                elif not db_comment:
-                    #Create comment
                     db_comment = crud_comment.create(db, obj_in=xformed_comment_data)
-                    comment_changed = True
-                    logger.debug(f"Created comment {db_comment.id} (external_id: {xformed_comment_data.get('external_id')})")
-                # Generate comment embedding
+
                 if comment_changed or force_update:
                     crud_issue_embedding.create_embeddings(
-                                    db=db,
-                                    issue_id=current_issue_model.id,
-                                    comment_id=db_comment.id,
-                                    force_update=force_update
-                                )
+                        db=db,
+                        issue_id=current_issue_model.id,
+                        comment_id=db_comment.id,
+                        force_update=force_update,
+                    )
 
             if issue_changed or force_update:
                 embedding_updates += 1
-                crud_issue_embedding.create_embeddings(db, issue_id=current_issue_model.id)
-                logger.info(
-                    f"Generated embeddings for issue {current_issue_model.id} - '{current_issue_model.title}'"
+                crud_issue_embedding.create_embeddings(
+                    db, issue_id=current_issue_model.id
                 )
 
         return issues_processed, embedding_updates
 
+
+def _process_organization(
+    db: Session,
+    client: TrackerClient,
+    org: Organization,
+    since: datetime.datetime,
+    force_update: bool,
+) -> Tuple[Dict[str, Any], bool]:
+    """Processes a single organization."""
+    org_stats = {"projects": 0, "issues": 0, "embeddings_updated": 0, "errors": 0}
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    projects = client.scan_projects(db, org)
+    org_stats["projects"] = len(projects)
+    spacebridge_url_str = os.getenv("SPACEBRIDGE_URL")
+    if spacebridge_url_str:
+        try:
+            webhook_target_path = (
+                f"/api/v1/private/webhooks/{client.tracker_type}/{org.identifier}"
+            )
+            webhook_target_url = urljoin(spacebridge_url_str, webhook_target_path)
+            current_secret_to_use = org.webhook_secret
+            if not org.webhook_secret:
+                current_secret_to_use = secrets.token_hex(32)
+
+            if client.tracker_type == "jira":
+                for project in projects:
+                    try:
+                        client.client.register_webhook(
+                            db=db,
+                            project_id=project.id,
+                            project_key=project.identifier,
+                            webhook_url=webhook_target_url,
+                            secret=current_secret_to_use,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error registering webhook for Jira project {project.identifier}: {e}",
+                            exc_info=True,
+                        )
+                        org_stats["errors"] += 1
+            elif client.tracker_type == "github":
+                try:
+                    client.client.register_webhook(
+                        org_identifier=org.name,
+                        webhook_url=webhook_target_url,
+                        secret=current_secret_to_use,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error registering webhook for GitHub organization {org.identifier}: {e}",
+                        exc_info=True,
+                    )
+                    org_stats["errors"] += 1
+            elif client.tracker_type == "gitlab":
+                try:
+                    result = client.client.register_group_webhook(
+                        organization=org,
+                        webhook_url=webhook_target_url,
+                        secret=current_secret_to_use,
+                    )
+                    if result == "group_hooks_not_supported":
+                        logger.warning(
+                            f"Group hooks are not supported for GitLab organization {org.identifier}."
+                        )
+                        for project in projects:
+                            try:
+                                client.client.register_project_webhook(
+                                    project=project,
+                                    webhook_url=webhook_target_url,
+                                    secret=current_secret_to_use,
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"Error registering webhook for GitLab project {project.identifier}: {e}",
+                                    exc_info=True,
+                                )
+                                org_stats["errors"] += 1
+                except Exception as e:
+                    logger.error(
+                        f"Error registering webhook for GitLab organization {org.identifier}: {e}",
+                        exc_info=True,
+                    )
+                    org_stats["errors"] += 1
+            else:
+                # Handle other tracker types here if necessary
+                pass
+
+            if not org.webhook_secret:
+                crud_organization.update(
+                    db,
+                    db_obj=org,
+                    obj_in={
+                        "webhook_secret": current_secret_to_use,
+                        "last_webhook_update": now,
+                    },
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Error during webhook registration for org {org.id}: {e}",
+                exc_info=True,
+            )
+            org_stats["errors"] += 1
+
+    # Polling logic
+    for project in projects:
+        issues, embeddings_updated = client.scan_issues(
+            db, org, project, since, force_update
+        )
+        org_stats["issues"] += len(issues)
+        org_stats["embeddings_updated"] += embeddings_updated
+
+    crud_organization.update(db, db_obj=org, obj_in={"last_polling_update": now})
+    return org_stats, False
+
+
 def scan_tracker(
-    db: Session, tracker: Tracker, verbose: bool = False, force_update: bool = False
+    db: Session,
+    tracker: Tracker,
+    force_update: bool = False,
+    since: Optional[datetime.datetime] = None,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
-    """
-    Scan a single tracker and update the database.
-
-    Args:
-        db: Database session
-        tracker: Tracker model to scan
-        verbose: Whether to print verbose output
-        force_update: Whether to force update all embeddings even if content hasn't changed
-
-    Returns:
-        Dictionary containing scan statistics
-    """
-    start_time = time.time()
+    """Scan a single tracker."""
+    logger.info(f"Scanning tracker {tracker.id} ({tracker.tracker_type})")
     stats = {
         "organizations": 0,
         "projects": 0,
@@ -388,207 +421,92 @@ def scan_tracker(
         "errors": 0,
     }
 
-    # Debug information about the tracker
-    print("\nTracker Debug Info:")
-    print(f"  ID: {tracker.id}")
-    print(f"  Type: {tracker.tracker_type}")
-    print(f"  URL: {tracker.url if hasattr(tracker, 'url') else 'None'}")
-    print(
-        f"  API Key (first 5 chars): {tracker.api_key[:5] if len(tracker.api_key) > 5 else '***'}"
-    )
-    print(f"  Connection Details: {tracker.connection_details}")
-
-    # Create tracker client
-    client = TrackerClient(tracker)
-
-    # Use epoch time (Jan 1, 1970) to effectively scan all issues
-    since = datetime.datetime(1970, 1, 1)
-
-    # Scan organizations
-    orgs = client.scan_organizations(db)
-    stats["organizations"] = len(orgs)
-
-    # Scan projects for each organization
-    all_projects = []
-    for org in orgs:
-        projects = client.scan_projects(db, org)
-        all_projects.extend(projects)
-
-    stats["projects"] = len(all_projects)
-
-    # Scan issues for each project
-    for project in all_projects:
-        org = next(org for org in orgs if org.id == project.organization_id)
-        issues, embedding_updates = client.scan_issues(
-            db, org, project, since, force_update
-        )
-        stats["issues"] += len(issues)
-        stats["embeddings_updated"] += embedding_updates
-
-    # Try to store the current time as the last scan time
-    # This is optional and we continue even if it fails (field might not exist)
     try:
-        crud_tracker.update(
-            db, db_obj=tracker, obj_in={"last_scan_time": datetime.datetime.now()}
-        )
-    except Exception as e:
-        # If last_scan_time doesn't exist, we can ignore this error
-        logger.debug(
-            f"Could not update last_scan_time for tracker {tracker.id}: {str(e)}"
-        )
+        client = TrackerClient(tracker)
+        organizations = client.scan_organizations(db)
+        stats["organizations"] = len(organizations)
 
-    stats["duration_seconds"] = time.time() - start_time
+        for org in organizations:
+            org_stats, skipped = _process_organization(
+                db, client, org, since, force_update
+            )
+            for key in stats:
+                stats[key] += org_stats.get(key, 0)
+    except Exception as e:
+        logger.error(f"Failed to scan tracker {tracker.id}: {e}", exc_info=True)
+        stats["errors"] += 1
 
     if verbose:
-        print(f"Tracker {tracker.id} ({tracker.tracker_type}) scan completed:")
-        print(f"  Organizations: {stats['organizations']}")
-        print(f"  Projects: {stats['projects']}")
-        print(f"  Issues: {stats['issues']}")
-        print(f"  Embeddings updated: {stats['embeddings_updated']}")
-        print(f"  Errors: {stats['errors']}")
-        print(f"  Duration: {stats['duration_seconds']:.2f} seconds")
-
+        logger.info(f"Stats for tracker {tracker.id}: {stats}")
     return stats
 
 
 def scan_account(
-    db: Session, account_id: str, verbose: bool = False, force_update: bool = False
+    db: Session,
+    account_id: str,
+    force_update: bool = False,
+    since: Optional[datetime.datetime] = None,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
-    """
-    Scan all trackers for a single account and update the database.
+    """Scan all trackers for a given account."""
+    account = crud_account.get(db, id=account_id)
+    if not account:
+        logger.error(f"Account with id {account_id} not found.")
+        return {}
 
-    Args:
-        db: Database session
-        account_id: ID of the account to scan (UUID string)
-        verbose: Whether to print verbose output
-        force_update: Whether to force update all embeddings even if content hasn't changed
-
-    Returns:
-        Dictionary containing scan statistics
-    """
-    logger.info(f"Scanning account {account_id}")
-
-    start_time = time.time()
-    account_stats = {
-        "trackers_scanned": 0,
-        "trackers_with_errors": 0,
+    total_stats = {
+        "trackers": 0,
         "organizations": 0,
         "projects": 0,
         "issues": 0,
         "embeddings_updated": 0,
+        "errors": 0,
     }
-
-    # Get trackers for account
-    trackers = crud_tracker.get_for_account(db, account_id=account_id)
-    logger.info(f"Found {len(trackers)} trackers for account {account_id}")
-    if not trackers:
-        logger.warning(f"No trackers found for account {account_id}")
-        return account_stats
-
-    # Scan each tracker
-    for tracker in trackers:
-        stats = scan_tracker(db, tracker, verbose, force_update)
-
-        # Aggregate statistics
-        account_stats["trackers_scanned"] += 1
-        if stats["errors"] > 0:
-            account_stats["trackers_with_errors"] += 1
-        account_stats["organizations"] += stats["organizations"]
-        account_stats["projects"] += stats["projects"]
-        account_stats["issues"] += stats["issues"]
-        account_stats["embeddings_updated"] += stats["embeddings_updated"]
-
-    account_stats["duration_seconds"] = time.time() - start_time
-
+    for tracker in account.trackers:
+        if tracker.is_active:
+            total_stats["trackers"] += 1
+            tracker_stats = scan_tracker(db, tracker, force_update, since, verbose)
+            for key in total_stats:
+                total_stats[key] += tracker_stats.get(key, 0)
     if verbose:
-        print(f"\nAccount {account_id} scan completed:")
-        print(f"  Trackers scanned: {account_stats['trackers_scanned']}")
-        print(f"  Trackers with errors: {account_stats['trackers_with_errors']}")
-        print(f"  Total organizations: {account_stats['organizations']}")
-        print(f"  Total projects: {account_stats['projects']}")
-        print(f"  Total issues: {account_stats['issues']}")
-        print(f"  Total embeddings updated: {account_stats['embeddings_updated']}")
-        print(f"  Duration: {account_stats['duration_seconds']:.2f} seconds")
-
-    return account_stats
+        logger.info(f"Stats for account {account_id}: {total_stats}")
+    return total_stats
 
 
-def scan_all_accounts(db: Session, verbose: bool = False, force_update: bool = False) -> Dict[str, Any]:
-    """
-    Scan all accounts and their trackers, updating the database.
-
-    Args:
-        db: Database session.
-        verbose: Whether to print verbose output during scans.
-        force_update: Whether to force update all embeddings even if content hasn't changed.
-
-    Returns:
-        Dictionary containing scan statistics.
-    """
-    logger.info("Starting scan of all accounts")
-
-    start_time = time.time()
-    # Use consistent naming for stats dictionary keys as used in scan_account and scan_tracker
+def scan_all_accounts(
+    db: Session, force_update: bool = False, verbose: bool = False
+) -> Dict[str, Any]:
+    """Scan all active accounts and their trackers."""
+    accounts = crud_account.get_multi(db, skip=0, limit=1000)
+    logger.info(f"Found {len(accounts)} accounts to scan.")
     overall_stats = {
         "accounts_scanned": 0,
         "accounts_with_errors": 0,
-        "total_trackers_scanned": 0, # Renamed for clarity
-        "total_trackers_with_errors": 0, # Renamed for clarity
-        "total_organizations": 0, # Renamed for clarity
-        "total_projects": 0, # Renamed for clarity
-        "total_issues": 0, # Renamed for clarity
-        "total_embeddings_updated": 0, # Renamed for clarity
+        "total_trackers_scanned": 0,
+        "total_trackers_with_errors": 0,
+        "total_organizations": 0,
+        "total_projects": 0,
+        "total_issues": 0,
+        "total_embeddings_updated": 0,
+        "total_duration_seconds": 0.0,
     }
-
-    # Get all active accounts
-    accounts = crud_account.get_active(db)
-    logger.info(f"Found {len(accounts)} active accounts")
-
-    if not accounts:
-        logger.warning("No active accounts found")
-        # Add duration before returning early
-        overall_stats["total_duration_seconds"] = time.time() - start_time
-        return overall_stats
-
-    # Scan each account
     for account in accounts:
-        logger.info(f"Starting scan for account: {account.username} (ID: {account.id})")
-        # Ensure verbose and force_update are passed explicitly by name for clarity
-        account_stats = scan_account(db, account.id, verbose=verbose, force_update=force_update)
+        if account.is_active:
+            overall_stats["accounts_scanned"] += 1
+            account_stats = scan_account(db, account.id, force_update, verbose=verbose)
+            if account_stats.get("errors", 0) > 0:
+                overall_stats["accounts_with_errors"] += 1
+            overall_stats["total_trackers_scanned"] += account_stats.get("trackers", 0)
+            overall_stats["total_organizations"] += account_stats.get(
+                "organizations", 0
+            )
+            overall_stats["total_projects"] += account_stats.get("projects", 0)
+            overall_stats["total_issues"] += account_stats.get("issues", 0)
+            overall_stats["total_embeddings_updated"] += account_stats.get(
+                "embeddings_updated", 0
+            )
+            # Note: duration is not summed up from individual accounts.
+            # This would require more complex logic to run scans in parallel and measure total time.
 
-        # Aggregate statistics using the renamed keys
-        overall_stats["accounts_scanned"] += 1
-        if account_stats["trackers_with_errors"] > 0:
-            overall_stats["accounts_with_errors"] += 1
-        overall_stats["total_trackers_scanned"] += account_stats["trackers_scanned"]
-        overall_stats["total_trackers_with_errors"] += account_stats["trackers_with_errors"]
-        overall_stats["total_organizations"] += account_stats["organizations"]
-        overall_stats["total_projects"] += account_stats["projects"]
-        overall_stats["total_issues"] += account_stats["issues"]
-        overall_stats["total_embeddings_updated"] += account_stats["embeddings_updated"]
-        logger.info(f"Finished scan for account: {account.username} (ID: {account.id})")
-
-
-    overall_stats["total_duration_seconds"] = time.time() - start_time # Renamed for clarity
-
-    logger.info(f"Finished scanning all accounts in {overall_stats['total_duration_seconds']:.2f} seconds.")
-    # Use the renamed keys for the verbose printout to match the return dict and CLI output
-    if verbose:
-        print("\n=== Overall Scan Summary ===")
-        print(f"  Accounts scanned: {overall_stats['accounts_scanned']}")
-        print(f"  Accounts with errors: {overall_stats['accounts_with_errors']}")
-        print(f"  Total trackers scanned: {overall_stats['total_trackers_scanned']}")
-        print(f"  Total trackers with errors: {overall_stats['total_trackers_with_errors']}")
-        print(f"  Total organizations: {overall_stats['total_organizations']}")
-        print(f"  Total projects: {overall_stats['total_projects']}")
-        print(f"  Total issues: {overall_stats['total_issues']}")
-        print(f"  Total embeddings updated: {overall_stats['total_embeddings_updated']}")
-        print(f"  Total duration: {overall_stats['total_duration_seconds']:.2f} seconds")
-
-    # Remove redundant logging already covered by verbose output or logger above
-    # logger.info(f"Scan completed in {overall_stats['total_duration_seconds']:.2f} seconds")
-    # logger.info(
-    #     f"Processed {overall_stats['total_issues']} issues, updated {overall_stats['total_embeddings_updated']} embeddings"
-    # )
-
+    logger.info(f"Finished scanning all accounts. Stats: {overall_stats}")
     return overall_stats

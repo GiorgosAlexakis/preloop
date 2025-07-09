@@ -9,7 +9,7 @@ from spacemodels.crud import crud_account, crud_tracker
 from spacemodels.db.session import get_db_session
 
 # Import scanner functions
-from ..scanner import scan_account, scan_all_accounts # Import scan_all_accounts
+from ..scanner import scan_account, scan_all_accounts  # Import scan_all_accounts
 from ..scanner import scan_tracker as scan_tracker_func
 
 # Import service components for the 'scan all' (now service start) command
@@ -42,8 +42,8 @@ def scan_all_cmd(verbose: bool, force_update: bool):
 
     click.echo("Scanning all accounts and trackers...")
 
-    # Scan all accounts (pass verbose and force_update)
-    stats = scan_all_accounts(db, verbose, force_update)
+    # Scan all accounts (pass force_update)
+    stats = scan_all_accounts(db=db, verbose=verbose, force_update=force_update)
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
@@ -87,7 +87,9 @@ def scan_account_cmd(account_id: str, verbose: bool, force_update: bool):
     click.echo(f"Scanning account: {account.username} (ID: {account.id})...")
 
     # Scan the account (pass force_update)
-    stats = scan_account(db, account_id, verbose, force_update) # Pass force_update
+    stats = scan_account(
+        db=db, account_id=account_id, verbose=verbose, force_update=force_update
+    )
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
@@ -104,14 +106,14 @@ def scan_account_cmd(account_id: str, verbose: bool, force_update: bool):
 
 @scan.command(name="tracker")
 @click.argument("tracker_id", type=str)
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option(
     "--force-update",
     "-f",
     is_flag=True,
     help="Force update of all embeddings even if content hasn't changed",
 )
-def scan_tracker_cmd(tracker_id: str, verbose: bool, force_update: bool):
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
+def scan_tracker_cmd(tracker_id: str, force_update: bool, verbose: bool):
     """
     Perform a ONE-OFF scan for a specific tracker.
     Does NOT start the continuous service.
@@ -129,15 +131,16 @@ def scan_tracker_cmd(tracker_id: str, verbose: bool, force_update: bool):
     click.echo(f"Scanning tracker: ID {tracker.id} ({tracker.tracker_type})...")
 
     # Scan the tracker (pass force_update)
-    stats = scan_tracker_func(db, tracker, verbose, force_update) # Pass force_update
+    stats = scan_tracker_func(
+        db=db, tracker=tracker, force_update=force_update, verbose=verbose
+    )
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
-    click.echo(f"Organizations: {stats['organizations']}")
+    click.echo(f"Organizations scanned: {stats['organizations']}")
     click.echo(f"Projects: {stats['projects']}")
     click.echo(f"Issues: {stats['issues']}")
     click.echo(f"Embeddings updated: {stats['embeddings_updated']}")
     click.echo(f"Errors: {stats['errors']}")
-    click.echo(f"Duration: {stats['duration_seconds']:.2f} seconds")
 
     db.close()

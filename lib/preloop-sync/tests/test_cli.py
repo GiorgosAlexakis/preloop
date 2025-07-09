@@ -21,7 +21,7 @@ class TestScanCommands(unittest.TestCase):
         """Test scan all command runs synchronously and prints stats."""
         # Setup mocks
         mock_db = MagicMock()
-        mock_get_db.return_value.__next__.return_value = mock_db # Use generator style
+        mock_get_db.return_value.__next__.return_value = mock_db  # Use generator style
 
         # Mock the return value of the core scan function
         mock_stats = {
@@ -48,71 +48,102 @@ class TestScanCommands(unittest.TestCase):
                 print(f"Exception:\n{result.exception}")
 
             # Check exit code
-            self.assertEqual(result.exit_code, 0, msg=f"Command failed: {result.output}")
+            self.assertEqual(
+                result.exit_code, 0, msg=f"Command failed: {result.output}"
+            )
 
             # Check that the core scan function was called correctly
             # Check that the core scan function was called correctly
             # The actual call uses the result of __next__ for the db session
-            mock_scan_all_accounts.assert_called_once_with(mock_db, False, False)
+            mock_scan_all_accounts.assert_called_once_with(
+                db=mock_db, verbose=False, force_update=False
+            )
 
             # Check that the database session context manager was used
             mock_get_db.assert_called_once()
             # Removed: mock_db.close.assert_not_called() - db.close() is called explicitly
 
             # Check for expected statistics in the output
-            self.assertIn("=== Scan Complete ===", result.output) # Match actual output format
+            self.assertIn(
+                "=== Scan Complete ===", result.output
+            )  # Match actual output format
             self.assertIn("Accounts scanned: 3", result.output)
             self.assertIn("Accounts with errors: 1", result.output)
-            self.assertIn("Total trackers scanned: 10", result.output) # Check total count
+            self.assertIn(
+                "Total trackers scanned: 10", result.output
+            )  # Check total count
             self.assertIn("Total trackers with errors: 2", result.output)
             self.assertIn("Total organizations: 5", result.output)
-            self.assertIn("Total projects: 20", result.output) # Corrected assertion
-            self.assertIn("Total issues: 150", result.output) # Corrected assertion
+            self.assertIn("Total projects: 20", result.output)  # Corrected assertion
+            self.assertIn("Total issues: 150", result.output)  # Corrected assertion
             self.assertIn("Total embeddings updated: 75", result.output)
-            self.assertIn("Total duration: 35.8", result.output) # Check for substring
+            self.assertIn("Total duration: 35.8", result.output)  # Check for substring
+
     @patch("spacesync.cli.scan_commands.scan_all_accounts")
     @patch("spacesync.cli.scan_commands.get_db_session")
     def test_scan_all_sync_verbose(self, mock_get_db, mock_scan_all_accounts):
         """Test scan all command with --verbose flag."""
         mock_db = MagicMock()
-        mock_get_db.return_value.__next__.return_value = mock_db # Use generator style
+        mock_get_db.return_value.__next__.return_value = mock_db  # Use generator style
         # Provide default stats keys expected by the command's print logic
         mock_stats = {
-            "accounts_scanned": 0, "accounts_with_errors": 0,
-            "total_trackers_scanned": 0, "total_trackers_with_errors": 0,
-            "total_organizations": 0, "total_projects": 0, "total_issues": 0,
-            "total_embeddings_updated": 0, "total_duration_seconds": 0.0,
+            "accounts_scanned": 0,
+            "accounts_with_errors": 0,
+            "total_trackers_scanned": 0,
+            "total_trackers_with_errors": 0,
+            "total_organizations": 0,
+            "total_projects": 0,
+            "total_issues": 0,
+            "total_embeddings_updated": 0,
+            "total_duration_seconds": 0.0,
         }
         mock_scan_all_accounts.return_value = mock_stats
 
         with self.runner.isolated_filesystem():
             result = self.runner.invoke(scan, ["all", "--verbose"])
 
-            self.assertEqual(result.exit_code, 0, msg=f"Command failed: {result.output}")
-            mock_scan_all_accounts.assert_called_once_with(mock_db, True, False)
-            self.assertIn("=== Scan Complete ===", result.output) # Match actual output format
+            self.assertEqual(
+                result.exit_code, 0, msg=f"Command failed: {result.output}"
+            )
+            mock_scan_all_accounts.assert_called_once_with(
+                db=mock_db, verbose=True, force_update=False
+            )
+            self.assertIn(
+                "=== Scan Complete ===", result.output
+            )  # Match actual output format
 
     @patch("spacesync.cli.scan_commands.scan_all_accounts")
     @patch("spacesync.cli.scan_commands.get_db_session")
     def test_scan_all_sync_force_update(self, mock_get_db, mock_scan_all_accounts):
         """Test scan all command with --force-update flag."""
         mock_db = MagicMock()
-        mock_get_db.return_value.__next__.return_value = mock_db # Use generator style
+        mock_get_db.return_value.__next__.return_value = mock_db  # Use generator style
         # Provide default stats keys expected by the command's print logic
         mock_stats = {
-            "accounts_scanned": 0, "accounts_with_errors": 0,
-            "total_trackers_scanned": 0, "total_trackers_with_errors": 0,
-            "total_organizations": 0, "total_projects": 0, "total_issues": 0,
-            "total_embeddings_updated": 0, "total_duration_seconds": 0.0,
+            "accounts_scanned": 0,
+            "accounts_with_errors": 0,
+            "total_trackers_scanned": 0,
+            "total_trackers_with_errors": 0,
+            "total_organizations": 0,
+            "total_projects": 0,
+            "total_issues": 0,
+            "total_embeddings_updated": 0,
+            "total_duration_seconds": 0.0,
         }
         mock_scan_all_accounts.return_value = mock_stats
 
         with self.runner.isolated_filesystem():
             result = self.runner.invoke(scan, ["all", "--force-update"])
 
-            self.assertEqual(result.exit_code, 0, msg=f"Command failed: {result.output}")
-            mock_scan_all_accounts.assert_called_once_with(mock_db, False, True)
-            self.assertIn("=== Scan Complete ===", result.output) # Match actual output format
+            self.assertEqual(
+                result.exit_code, 0, msg=f"Command failed: {result.output}"
+            )
+            mock_scan_all_accounts.assert_called_once_with(
+                db=mock_db, verbose=False, force_update=True
+            )
+            self.assertIn(
+                "=== Scan Complete ===", result.output
+            )  # Match actual output format
 
     @patch("spacesync.cli.scan_commands.scan_account")
     @patch("spacesync.cli.scan_commands.crud_account")
@@ -153,7 +184,12 @@ class TestScanCommands(unittest.TestCase):
 
             # Verify our mock was called with the account ID
             # Assert call includes db, account_id, verbose=False, force_update=False
-            mock_scan_account.assert_called_once_with(mock_db, "test-account-id", False, False)
+            mock_scan_account.assert_called_once_with(
+                db=mock_db,
+                account_id="test-account-id",
+                verbose=False,
+                force_update=False,
+            )
 
     @patch("spacesync.cli.scan_commands.scan_tracker_func")
     @patch("spacesync.cli.scan_commands.crud_tracker")
@@ -176,6 +212,8 @@ class TestScanCommands(unittest.TestCase):
         # Mock the scan_tracker_func
         mock_scan_tracker_func.return_value = {
             "organizations": 1,
+            "organizations_skipped_webhook": 0,
+            "organizations_skipped_polling": 0,
             "projects": 3,
             "issues": 25,
             "embeddings_updated": 10,
@@ -190,10 +228,13 @@ class TestScanCommands(unittest.TestCase):
             # Print result to debug
             if result.exit_code != 0:
                 print(f"Command failed with: {result.output}")
+                print(f"Exception: {result.exception}")
 
             # We expect the command to succeed
             self.assertEqual(result.exit_code, 0)
 
             # Verify our mock was called with the tracker
             # Assert call includes db, tracker object, verbose=False, force_update=False
-            mock_scan_tracker_func.assert_called_once_with(mock_db, mock_tracker, False, False)
+            mock_scan_tracker_func.assert_called_once_with(
+                db=mock_db, tracker=mock_tracker, verbose=False, force_update=False
+            )
