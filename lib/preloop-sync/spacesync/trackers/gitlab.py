@@ -324,8 +324,9 @@ class GitLabTracker(BaseTracker):
             issue_data["key"] = f"{project.slug}#{issue_data['iid']}"
 
         transformed_data = super().transform_issue(issue_data, project)
-
-        # GitLab-specific transformations can be added here if needed
+        labels = transformed_data.get("meta_data", {}).get("labels", [])
+        new_labels =  [l["title"] if isinstance(l, dict) and "title" in l else l for l in labels]
+        transformed_data["meta_data"]["labels"] = new_labels
 
         return transformed_data
 

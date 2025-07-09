@@ -109,7 +109,7 @@ class BaseTracker(ABC):
             Transformed organization data ready for database storage.
         """
         return {
-            "identifier": org_data["id"],
+            "identifier": str(org_data["id"]),
             "name": org_data["name"],
             "tracker_id": self.tracker_id,
         }

@@ -51,12 +51,21 @@ class TrackerClient:
 
     def scan_organizations(self, db: Session) -> List[Organization]:
         """Scan and update organizations for this tracker."""
-        logger.info(f"Scanning organizations for tracker {self.tracker.id} ({self.tracker_type})")
         org_data_list = self.client.get_organizations()
         logger.info(f"Found {len(org_data_list)} organizations in tracker {self.tracker.id}")
 
         orgs = []
+        rules = db.query(TrackerScopeRule).filter(TrackerScopeRule.tracker_id == self.tracker.id).all()
+
+        # 1. Separate rules into four sets for efficient lookup
+        org_inclusions = {r.identifier for r in rules if r.scope_type == "ORGANIZATION" and r.rule_type == "INCLUDE"}
         for org_data in org_data_list:
+            if str(org_data["id"]) not in org_inclusions:
+                logger.info(
+                    f"Skipping organization {org_data['name']} ({org_data['id']}) because it is not in the "
+                    f"explicit inclusion list for tracker {self.tracker.id}."
+                )
+                continue
             org_create_data = self.client.transform_organization(org_data)
             org = crud_organization.get_by_identifier(db, identifier=org_create_data["identifier"])
             if org:
@@ -226,7 +235,7 @@ def _process_organization(
             elif client.tracker_type == "github":
                 try:
                     client.client.register_webhook(
-                        org_identifier=org.identifier,
+                        org_identifier=org.name,
                         webhook_url=webhook_target_url,
                         secret=current_secret_to_use,
                     )

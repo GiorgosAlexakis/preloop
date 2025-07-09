@@ -104,14 +104,13 @@ def scan_account_cmd(account_id: str, verbose: bool, force_update: bool):
 
 @scan.command(name="tracker")
 @click.argument("tracker_id", type=str)
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option(
     "--force-update",
     "-f",
     is_flag=True,
     help="Force update of all embeddings even if content hasn't changed",
 )
-def scan_tracker_cmd(tracker_id: str, verbose: bool, force_update: bool):
+def scan_tracker_cmd(tracker_id: str, force_update: bool):
     """
     Perform a ONE-OFF scan for a specific tracker.
     Does NOT start the continuous service.
@@ -129,17 +128,14 @@ def scan_tracker_cmd(tracker_id: str, verbose: bool, force_update: bool):
     click.echo(f"Scanning tracker: ID {tracker.id} ({tracker.tracker_type})...")
 
     # Scan the tracker (pass force_update)
-    stats = scan_tracker_func(db=db, tracker=tracker, verbose=verbose, force_update=force_update) # Pass force_update
+    stats = scan_tracker_func(db=db, tracker=tracker, force_update=force_update) # Pass force_update
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
-    click.echo(f"Organizations scanned: {stats['organizations_scanned']}")
-    click.echo(f"Organizations skipped webhook: {stats['organizations_skipped_webhook']}")
-    click.echo(f"Organizations skipped polling: {stats['organizations_skipped_polling']}")
+    click.echo(f"Organizations scanned: {stats['organizations']}")
     click.echo(f"Projects: {stats['projects']}")
     click.echo(f"Issues: {stats['issues']}")
     click.echo(f"Embeddings updated: {stats['embeddings_updated']}")
     click.echo(f"Errors: {stats['errors']}")
-    click.echo(f"Duration: {stats['duration_seconds']:.2f} seconds")
 
     db.close()

@@ -104,7 +104,7 @@ class GitHubTracker(BaseTracker):
         for org in orgs_data:
             organizations.append(
                 {
-                    "id": org["login"],
+                    "id": org["id"],
                     "name": org["login"],  # Use login name as display name
                     "url": org["url"]
                     .replace("api.github.com", "github.com")
@@ -339,7 +339,18 @@ class GitHubTracker(BaseTracker):
             url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
             response = requests.post(url, headers=self.headers, json=payload)
 
-            if response.status_code == 201:
+            if response.status_code == 201 or response.status_code == 200:
+                crud_webhook.create(
+                    db,
+                    obj_in={
+                        "organization_id": org_id,
+                        "external_id": webhook_id,
+                        "url": url_with_secret_and_project,
+                        "secret": secret,
+                        "events": actual_events,
+                    },
+                )
+                logger.info(f"Successfully registered webhook {webhook_id} for project {project_key}.")
                 logger.info(f"Successfully created webhook for GitHub org '{org_identifier}' pointing to {webhook_url}")
                 return True
             elif response.status_code == 401:
