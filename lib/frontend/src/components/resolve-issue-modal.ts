@@ -37,7 +37,9 @@ export class ResolveIssueModal extends LitElement {
 
   private _close() {
     this.open = false;
-    this.dispatchEvent(new CustomEvent('closed', { bubbles: true, composed: true }));
+    this.dispatchEvent(
+      new CustomEvent('closed', { bubbles: true, composed: true })
+    );
   }
 
   private _goBack() {
@@ -83,7 +85,8 @@ export class ResolveIssueModal extends LitElement {
     } else if (resolution === 'DISAMBIGUATE') {
       resolutionData = {
         ...resolutionData,
-        resolution_reason: 'Disambiguated issues with new titles and descriptions.',
+        resolution_reason:
+          'Disambiguated issues with new titles and descriptions.',
         resulting_issue1_id: issue1.id,
         resulting_issue2_id: issue2.id,
         disambiguated_title1: this._disambiguatedTitle1,
@@ -92,16 +95,18 @@ export class ResolveIssueModal extends LitElement {
         disambiguated_description2: this._disambiguatedDescription2,
       };
     } else if (resolution.startsWith('CLOSE_')) {
-        const issueToClose = resolution === 'CLOSE_A' ? issue1 : issue2;
-        const issueToKeep = resolution === 'CLOSE_A' ? issue2 : issue1;
-        resolutionData.resolution = 'CLOSE'; // The API expects 'CLOSE', not 'CLOSE_A' or 'CLOSE_B'
-        resolutionData.resolution_reason = `Closed ${issueToClose.key} as duplicate of ${issueToKeep.key}`;
-        resolutionData.resulting_issue1_id = issueToKeep.id;
+      const issueToClose = resolution === 'CLOSE_A' ? issue1 : issue2;
+      const issueToKeep = resolution === 'CLOSE_A' ? issue2 : issue1;
+      resolutionData.resolution = 'CLOSE'; // The API expects 'CLOSE', not 'CLOSE_A' or 'CLOSE_B'
+      resolutionData.resolution_reason = `Closed ${issueToClose.key} as duplicate of ${issueToKeep.key}`;
+      resolutionData.resulting_issue1_id = issueToKeep.id;
     }
 
     try {
       await executeResolution(resolutionData);
-      this.dispatchEvent(new CustomEvent('resolved', { bubbles: true, composed: true }));
+      this.dispatchEvent(
+        new CustomEvent('resolved', { bubbles: true, composed: true })
+      );
       this._close();
     } catch (error) {
       console.error('Failed to execute resolution:', error);
@@ -117,38 +122,44 @@ export class ResolveIssueModal extends LitElement {
       {
         id: 'close',
         title: 'Close as Duplicate',
-        description: 'One issue will be closed, the other will remain. You will choose which one to close in the next step.',
-        handler: () => this._startResolution('close')
+        description:
+          'One issue will be closed, the other will remain. You will choose which one to close in the next step.',
+        handler: () => this._startResolution('close'),
       },
       {
         id: 'merge',
         title: 'Merge Issues',
-        description: 'Combine both issues into a single issue. You will edit the new title and description in the next step.',
-        handler: () => this._startResolution('merge')
+        description:
+          'Combine both issues into a single issue. You will edit the new title and description in the next step.',
+        handler: () => this._startResolution('merge'),
       },
       {
         id: 'disambiguate',
         title: 'Disambiguate Issues',
-        description: 'Edit the titles and descriptions of both issues to make them distinct. Both issues will remain open.',
-        handler: () => this._startResolution('disambiguate')
+        description:
+          'Edit the titles and descriptions of both issues to make them distinct. Both issues will remain open.',
+        handler: () => this._startResolution('disambiguate'),
       },
       {
         id: 'unrelated',
         title: 'Not Duplicates',
-        description: 'Mark the issues as unrelated. This action is immediate and requires no further steps.',
-        handler: () => this._handleFinalResolve('UNRELATED')
-      }
+        description:
+          'Mark the issues as unrelated. This action is immediate and requires no further steps.',
+        handler: () => this._handleFinalResolve('UNRELATED'),
+      },
     ];
 
     return html`
       <div class="step-container">
         <div class="initial-options-group">
-          ${actions.map(action => html`
-            <div class="action-card" @click=${action.handler}>
-              <div class="action-title">${action.title}</div>
-              <div class="action-description">${action.description}</div>
-            </div>
-          `)}
+          ${actions.map(
+            (action) => html`
+              <div class="action-card" @click=${action.handler}>
+                <div class="action-title">${action.title}</div>
+                <div class="action-description">${action.description}</div>
+              </div>
+            `
+          )}
         </div>
       </div>
     `;
@@ -163,13 +174,29 @@ export class ResolveIssueModal extends LitElement {
         <h2>Close Duplicate Issue</h2>
         <p>Select which issue to close. The other will remain open.</p>
         <div class="initial-options-group">
-          <div class="action-card" @click=${() => this._handleFinalResolve('CLOSE_A')}>
-            <div class="action-title">Close ${issueA?.key}: ${issueA?.title}</div>
-            <div class="action-description">This will mark ${issueA?.key} as a duplicate of ${issueB?.key} and close it. ${issueB?.key} will remain open.</div>
+          <div
+            class="action-card"
+            @click=${() => this._handleFinalResolve('CLOSE_A')}
+          >
+            <div class="action-title">
+              Close ${issueA?.key}: ${issueA?.title}
+            </div>
+            <div class="action-description">
+              This will mark ${issueA?.key} as a duplicate of ${issueB?.key} and
+              close it. ${issueB?.key} will remain open.
+            </div>
           </div>
-          <div class="action-card" @click=${() => this._handleFinalResolve('CLOSE_B')}>
-            <div class="action-title">Close ${issueB?.key}: ${issueB?.title}</div>
-            <div class="action-description">This will mark ${issueB?.key} as a duplicate of ${issueA?.key} and close it. ${issueA?.key} will remain open.</div>
+          <div
+            class="action-card"
+            @click=${() => this._handleFinalResolve('CLOSE_B')}
+          >
+            <div class="action-title">
+              Close ${issueB?.key}: ${issueB?.title}
+            </div>
+            <div class="action-description">
+              This will mark ${issueB?.key} as a duplicate of ${issueA?.key} and
+              close it. ${issueA?.key} will remain open.
+            </div>
           </div>
         </div>
         <div class="footer-buttons">
@@ -186,17 +213,39 @@ export class ResolveIssueModal extends LitElement {
     return html`
       <div class="step-container">
         <h2>Merge Issues</h2>
-        <sl-radio-group label="Merge Direction" value=${this._mergeTarget} @sl-change=${(e: any) => this._mergeTarget = e.target.value}>
-          <sl-radio value="B">Merge ${issueA?.key} into ${issueB?.key}</sl-radio>
-          <sl-radio value="A">Merge ${issueB?.key} into ${issueA?.key}</sl-radio>
+        <sl-radio-group
+          label="Merge Direction"
+          value=${this._mergeTarget}
+          @sl-change=${(e: any) => (this._mergeTarget = e.target.value)}
+        >
+          <sl-radio value="B"
+            >Merge ${issueA?.key} into ${issueB?.key}</sl-radio
+          >
+          <sl-radio value="A"
+            >Merge ${issueB?.key} into ${issueA?.key}</sl-radio
+          >
         </sl-radio-group>
         <div class="form-group">
-          <sl-input label="Merged Issue Title" .value=${this._mergedTitle} @sl-input=${(e: any) => this._mergedTitle = e.target.value}></sl-input>
-          <sl-textarea label="Merged Issue Description" .value=${this._mergedDescription} @sl-input=${(e: any) => this._mergedDescription = e.target.value} rows="8"></sl-textarea>
+          <sl-input
+            label="Merged Issue Title"
+            .value=${this._mergedTitle}
+            @sl-input=${(e: any) => (this._mergedTitle = e.target.value)}
+          ></sl-input>
+          <sl-textarea
+            label="Merged Issue Description"
+            .value=${this._mergedDescription}
+            @sl-input=${(e: any) => (this._mergedDescription = e.target.value)}
+            rows="8"
+          ></sl-textarea>
         </div>
         <div class="footer-buttons">
           <sl-button @click="${this._goBack}">Back</sl-button>
-          <sl-button variant="primary" .loading=${this._isSubmitting} @click="${() => this._handleFinalResolve('MERGE')}">Resolve Merge</sl-button>
+          <sl-button
+            variant="primary"
+            .loading=${this._isSubmitting}
+            @click="${() => this._handleFinalResolve('MERGE')}"
+            >Resolve Merge</sl-button
+          >
         </div>
       </div>
     `;
@@ -209,22 +258,52 @@ export class ResolveIssueModal extends LitElement {
     return html`
       <div class="step-container">
         <h2>Disambiguate Issues</h2>
-        <p>Edit the titles and descriptions to make these issues distinct. Both will be updated.</p>
+        <p>
+          Edit the titles and descriptions to make these issues distinct. Both
+          will be updated.
+        </p>
         <div class="form-group">
           <div class="sub-form-group">
             <h3>${issueA?.key}: ${issueA?.title}</h3>
-            <sl-input label="New Title" .value=${this._disambiguatedTitle1} @sl-input=${(e: any) => this._disambiguatedTitle1 = e.target.value}></sl-input>
-            <sl-textarea label="New Description" .value=${this._disambiguatedDescription1} @sl-input=${(e: any) => this._disambiguatedDescription1 = e.target.value} rows="6"></sl-textarea>
+            <sl-input
+              label="New Title"
+              .value=${this._disambiguatedTitle1}
+              @sl-input=${(e: any) =>
+                (this._disambiguatedTitle1 = e.target.value)}
+            ></sl-input>
+            <sl-textarea
+              label="New Description"
+              .value=${this._disambiguatedDescription1}
+              @sl-input=${(e: any) =>
+                (this._disambiguatedDescription1 = e.target.value)}
+              rows="6"
+            ></sl-textarea>
           </div>
           <div class="sub-form-group">
             <h3>${issueB?.key}: ${issueB?.title}</h3>
-            <sl-input label="New Title" .value=${this._disambiguatedTitle2} @sl-input=${(e: any) => this._disambiguatedTitle2 = e.target.value}></sl-input>
-            <sl-textarea label="New Description" .value=${this._disambiguatedDescription2} @sl-input=${(e: any) => this._disambiguatedDescription2 = e.target.value} rows="6"></sl-textarea>
+            <sl-input
+              label="New Title"
+              .value=${this._disambiguatedTitle2}
+              @sl-input=${(e: any) =>
+                (this._disambiguatedTitle2 = e.target.value)}
+            ></sl-input>
+            <sl-textarea
+              label="New Description"
+              .value=${this._disambiguatedDescription2}
+              @sl-input=${(e: any) =>
+                (this._disambiguatedDescription2 = e.target.value)}
+              rows="6"
+            ></sl-textarea>
           </div>
         </div>
         <div class="footer-buttons">
           <sl-button @click="${this._goBack}">Back</sl-button>
-          <sl-button variant="primary" .loading=${this._isSubmitting} @click="${() => this._handleFinalResolve('DISAMBIGUATE')}">Resolve Disambiguation</sl-button>
+          <sl-button
+            variant="primary"
+            .loading=${this._isSubmitting}
+            @click="${() => this._handleFinalResolve('DISAMBIGUATE')}"
+            >Resolve Disambiguation</sl-button
+          >
         </div>
       </div>
     `;
@@ -233,10 +312,17 @@ export class ResolveIssueModal extends LitElement {
   render() {
     let content;
     switch (this._resolutionStep) {
-      case 'close': content = this.renderCloseStep(); break;
-      case 'merge': content = this.renderMergeStep(); break;
-      case 'disambiguate': content = this.renderDisambiguateStep(); break;
-      default: content = this.renderInitialStep();
+      case 'close':
+        content = this.renderCloseStep();
+        break;
+      case 'merge':
+        content = this.renderMergeStep();
+        break;
+      case 'disambiguate':
+        content = this.renderDisambiguateStep();
+        break;
+      default:
+        content = this.renderInitialStep();
     }
 
     const issueAKey = this.duplicatePair?.issue1?.key || 'Issue A';
@@ -258,15 +344,17 @@ export class ResolveIssueModal extends LitElement {
     sl-dialog::part(panel) {
       max-width: 80ch;
     }
-    .step-container, .form-group, .sub-form-group {
+    .step-container,
+    .form-group,
+    .sub-form-group {
       display: flex;
       flex-direction: column;
       gap: var(--sl-spacing-large);
     }
     .initial-options-group {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-medium);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sl-spacing-medium);
     }
     .action-card {
       padding: var(--sl-spacing-large);
@@ -287,23 +375,23 @@ export class ResolveIssueModal extends LitElement {
       color: var(--sl-color-neutral-600);
     }
     .options-group {
-        display: flex;
-        justify-content: center;
-        gap: var(--sl-spacing-medium);
+      display: flex;
+      justify-content: center;
+      gap: var(--sl-spacing-medium);
     }
     .footer-buttons {
-        display: flex;
-        justify-content: flex-start;
-        margin-top: var(--sl-spacing-large);
+      display: flex;
+      justify-content: flex-start;
+      margin-top: var(--sl-spacing-large);
     }
     .footer-buttons:not(:has(sl-button:nth-child(2))) {
-        justify-content: flex-start;
+      justify-content: flex-start;
     }
     .footer-buttons sl-button:first-child:not(:only-child) {
-        margin-right: auto;
+      margin-right: auto;
     }
     .sub-form-group h3 {
-        margin-bottom: calc(-1 * var(--sl-spacing-small));
+      margin-bottom: calc(-1 * var(--sl-spacing-small));
     }
   `;
 }
