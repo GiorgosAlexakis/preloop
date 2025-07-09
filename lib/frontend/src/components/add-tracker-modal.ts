@@ -408,7 +408,7 @@ export class AddTrackerModal extends LitElement {
           this.selectedProjects[orgId] = projects.reduce(
             (acc, proj) => {
               acc[proj.id] =
-                this.tracker.scope_rules.filter(
+                this.tracker?.scope_rules.filter(
                   (x: any) =>
                     x.rule_type == 'INCLUDE' &&
                     x.scope_type == 'PROJECT' &&
@@ -422,7 +422,7 @@ export class AddTrackerModal extends LitElement {
           this.selectedProjects[orgId] = projects.reduce(
             (acc, proj) => {
               acc[proj.id] =
-                this.tracker.scope_rules.filter(
+                this.tracker?.scope_rules.filter(
                   (x: any) =>
                     x.rule_type == 'EXCLUDE' &&
                     x.scope_type == 'PROJECT' &&
@@ -449,7 +449,7 @@ export class AddTrackerModal extends LitElement {
     };
     if (isSelected && !this.projects[orgId]) {
       await this.loadProjects(orgId);
-    } else {
+    } else if (this.projects[orgId]) {
       this.selectedProjects[orgId] = this.projects[orgId].reduce(
         (acc, proj) => {
           acc[proj.id] = isSelected;
