@@ -417,6 +417,7 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \
                         <li><a href="/privacy">Privacy Policy</a></li>
                         <li><a href="/terms">Terms of Service</a></li>
                         <li><a href="/whatis-mcp" target="_blank">What is MCP?</a></li>
+                        <li><button class="btn btn-link nav-link" onclick="switchToNewUI()">Try the new UI</button></li>
                     </ul>
                 </div>
             </div>
@@ -431,6 +432,16 @@ claude mcp add spacebridge $(which spacebridge-mcp-server) \
     </footer>
 
     <script>
+    function switchToNewUI() {
+        // Set the cookie to expire in 30 days
+        const d = new Date();
+        d.setTime(d.getTime() + (30 * 24 * 60 * 60 * 1000));
+        let expires = "expires="+ d.toUTCString();
+        document.cookie = "ui_version=spacelit; " + expires + "; path=/";
+        // Reload the page
+        window.location.reload();
+    }
+
     function copyCode(button) {
         const codeBlock = button.parentElement.querySelector('code');
         const textArea = document.createElement('textarea');

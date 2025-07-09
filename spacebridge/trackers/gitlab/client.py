@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from pydantic import BaseModel, Field
 
+from spacebridge.schemas.tracker import OrganizationGroup, ProjectIdentifier
 from spacebridge.trackers.base import (
     Issue,
     IssueComment,
@@ -23,6 +24,21 @@ from spacebridge.trackers.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_GITLAB_WEBHOOK_EVENTS = [
+    "push_events",
+    "issues_events",
+    "confidential_issues_events",
+    "merge_requests_events",
+    "tag_push_events",
+    "note_events",  # Comments
+    "job_events",
+    "pipeline_events",
+    "wiki_page_events",
+    "releases_events",
+    # "confidential_note_events"
+    # "deployment_events" # This is a separate type of hook in GitLab, not a standard event.
+]
 
 
 class GitLabCredentials(BaseModel):
@@ -208,6 +224,51 @@ class GitLabClient(TrackerInterface):
             priorities=priorities,
             url=project_data["web_url"],
         )
+
+    async def get_projects_for_group(self, group_path: str) -> List[Dict[str, Any]]:
+        """Fetch projects for a specific group."""
+        return await self._request("GET", f"/groups/{group_path}/projects")
+
+    async def get_groups(self) -> List[Dict[str, Any]]:
+        """Fetch groups the user has access to."""
+        return await self._request("GET", "/groups")
+
+    async def get_organizations(self) -> List[OrganizationGroup]:
+        """
+        Get organizations (groups) from GitLab.
+
+        Returns:
+            List of organization data dictionaries.
+        """
+        # For GitLab, organizations are groups
+        groups = await self._request("GET", "/groups")
+
+        organizations = []
+        for group in groups:
+            organizations.append(
+                OrganizationGroup(
+                    id=str(group["id"]),
+                    name=group["name"],
+                    identifier=str(group["id"]),
+                    type="organization",
+                    children=[],
+                )
+            )
+
+        return organizations
+
+    async def list_projects(self, org_id: str = None) -> List[ProjectIdentifier]:
+        """List all accessible projects in a GitLab group."""
+        projects = await self._request("GET", f"/groups/{org_id}/projects")
+        return [
+            ProjectIdentifier(
+                id=str(project["id"]),
+                name=project["name"],
+                identifier=project["path_with_namespace"],
+                type="project",
+            )
+            for project in projects
+        ]
 
     async def get_groups_and_projects(self) -> List[Dict[str, Any]]:
         """Fetch groups and projects the user has access to, structured for UI."""
@@ -915,5 +976,275 @@ class GitLabClient(TrackerInterface):
         except httpx.HTTPStatusError as e:
             logger.error(
                 f"Failed to add relation: {e.response.status_code} - {e.response.text}"
+            )
+            raise
+
+    async def _get_user_id_by_username(self, username: str) -> Optional[int]:
+        """Helper to get user ID by username."""
+        try:
+            users_data = await self._request(
+                "GET", "/users", params={"username": username}
+            )
+            if users_data and len(users_data) == 1:
+                return users_data[0]["id"]
+            logger.warning(f"User '{username}' not found or multiple users found.")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching user ID for '{username}': {e}")
+            return None
+
+    async def create_webhook(
+        self,
+        project_id: str,  # Project ID or URL-encoded path
+        webhook_url: str,
+        secret: Optional[str] = None,
+        events: Optional[List[str]] = None,  # List of event names like "push_events"
+        active: bool = True,  # GitLab hooks are active by default
+    ) -> Dict[str, Any]:
+        """Create a new webhook for a GitLab project.
+
+        Args:
+            project_id: The ID or URL-encoded path of the project.
+            webhook_url: The URL to which the payloads will be delivered.
+            secret: Optional secret token for the webhook.
+            events: A list of event names (e.g., "push_events", "issues_events").
+                    Defaults to DEFAULT_GITLAB_WEBHOOK_EVENTS.
+            active: GitLab webhooks are implicitly active on creation. This param is for consistency.
+
+        Returns:
+            The created webhook data.
+        """
+        if not project_id:
+            raise ValueError("Project ID must be specified to create a webhook.")
+
+        encoded_project_id = project_id.replace("/", "%2F")
+        path = f"/projects/{encoded_project_id}/hooks"
+
+        payload: Dict[str, Any] = {
+            "url": webhook_url,
+            "enable_ssl_verification": True,  # Good default
+        }
+
+        if secret:
+            payload["token"] = secret
+
+        # Convert event list to GitLab's boolean flags
+        target_events = events if events is not None else DEFAULT_GITLAB_WEBHOOK_EVENTS
+        if not target_events:  # Ensure some events if default is empty
+            target_events = ["push_events", "issues_events"]
+
+        for (
+            event_name
+        ) in DEFAULT_GITLAB_WEBHOOK_EVENTS:  # Iterate through all possible known events
+            payload[event_name] = event_name in target_events
+
+        # Ensure at least one event is true if target_events was specified but empty
+        # or if default was empty. GitLab requires at least one event type.
+        if not any(
+            payload.get(ev_name)
+            for ev_name in DEFAULT_GITLAB_WEBHOOK_EVENTS
+            if isinstance(payload.get(ev_name), bool)
+        ):
+            payload["push_events"] = (
+                True  # Default to push_events if nothing else is set
+            )
+
+        logger.info(
+            f"Creating GitLab webhook for project {project_id} with payload: {payload}"
+        )
+        try:
+            webhook_data = await self._request("POST", path, data=payload)
+            logger.info(
+                f"Successfully created GitLab webhook ID {webhook_data.get('id')} for project {project_id}"
+            )
+            return webhook_data
+        except httpx.HTTPStatusError as e:
+            # GitLab returns 400 if hook already exists for URL, but message is not specific.
+            # It might also return 422 for other validation issues.
+            if e.response.status_code == 400 or e.response.status_code == 422:
+                logger.warning(
+                    f"GitLab webhook for project {project_id} at {webhook_url} might already exist or config is invalid: {e.response.text}"
+                )
+                # Attempt to list existing webhooks to confirm
+                try:
+                    existing_hooks = await self.list_webhooks(project_id)
+                    for hook in existing_hooks:
+                        if hook.get("url") == webhook_url:
+                            logger.info(
+                                f"GitLab webhook for project {project_id} at {webhook_url} already exists with ID {hook.get('id')}. Returning existing hook."
+                            )
+                            return hook
+                except Exception as list_err:
+                    logger.error(
+                        f"Could not list existing webhooks for {project_id} while handling creation error: {list_err}"
+                    )
+                logger.error(
+                    f"Webhook creation for {project_id} failed with {e.response.status_code}, but no existing hook found for {webhook_url} or failed to list. Error: {e.response.text}"
+                )
+            logger.error(
+                f"Failed to create GitLab webhook for project {project_id}: {e} - {e.response.text if e.response else 'No response text'}"
+            )
+            raise
+
+    async def update_webhook(
+        self,
+        project_id: str,
+        hook_id: int,
+        webhook_url: Optional[str] = None,
+        secret: Optional[str] = None,
+        events: Optional[List[str]] = None,  # Full list of event names to set
+        active: Optional[
+            bool
+        ] = None,  # GitLab hooks are active/inactive via PUT, not a separate flag in payload
+    ) -> Dict[str, Any]:
+        """Update an existing webhook for a GitLab project.
+
+        Args:
+            project_id: The ID or URL-encoded path of the project.
+            hook_id: The ID of the webhook to update.
+            webhook_url: New URL for the webhook.
+            secret: New secret token for the webhook.
+            events: A list of event names to replace the current subscription.
+                    If None, event subscriptions are not changed.
+                    If an empty list, all event subscriptions are disabled (if API allows).
+            active: GitLab doesn't have a direct 'active' flag in PUT.
+                    It's implied by the hook existing. Deletion removes it.
+                    This parameter is kept for interface consistency but might not directly map.
+
+        Returns:
+            The updated webhook data.
+        """
+        if not project_id:
+            raise ValueError("Project ID must be specified to update a webhook.")
+
+        encoded_project_id = project_id.replace("/", "%2F")
+        path = f"/projects/{encoded_project_id}/hooks/{hook_id}"
+
+        payload: Dict[str, Any] = {}
+        if webhook_url is not None:
+            payload["url"] = webhook_url
+        if secret is not None:  # Can be set to empty string to remove
+            payload["token"] = secret
+
+        if events is not None:  # If events is provided, update event flags
+            # Set all known events to false first, then true for those in the list
+            for event_name in DEFAULT_GITLAB_WEBHOOK_EVENTS:
+                payload[event_name] = event_name in events
+            # Ensure at least one event is true if 'events' was an empty list,
+            # as GitLab might require at least one event.
+            if not events and not any(
+                payload.get(ev_name)
+                for ev_name in DEFAULT_GITLAB_WEBHOOK_EVENTS
+                if isinstance(payload.get(ev_name), bool)
+            ):
+                # If user explicitly wants to disable all, this might be an issue with GitLab.
+                # For now, let's assume if 'events' is empty, they mean to disable what they can.
+                # If GitLab errors, this logic might need adjustment or clarification.
+                logger.warning(
+                    f"Attempting to set an empty event list for GitLab webhook {hook_id} on project {project_id}. This might be rejected by GitLab if no events are true."
+                )
+
+        if not payload:
+            logger.warning(
+                f"No update parameters provided for GitLab webhook ID {hook_id} on project {project_id}."
+            )
+            return await self.get_webhook(project_id, hook_id)
+
+        logger.info(
+            f"Updating GitLab webhook ID {hook_id} for project {project_id} with payload: {payload}"
+        )
+        try:
+            updated_webhook_data = await self._request("PUT", path, data=payload)
+            logger.info(
+                f"Successfully updated GitLab webhook ID {hook_id} for project {project_id}"
+            )
+            return updated_webhook_data
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Failed to update GitLab webhook ID {hook_id} for project {project_id}: {e} - {e.response.text if e.response else 'No response text'}"
+            )
+            raise
+
+    async def list_webhooks(self, project_id: str) -> List[Dict[str, Any]]:
+        """List all webhooks for a GitLab project.
+
+        Args:
+            project_id: The ID or URL-encoded path of the project.
+
+        Returns:
+            A list of webhooks.
+        """
+        if not project_id:
+            raise ValueError("Project ID must be specified to list webhooks.")
+        encoded_project_id = project_id.replace("/", "%2F")
+        path = f"/projects/{encoded_project_id}/hooks"
+        try:
+            hooks = await self._request("GET", path)
+            return hooks
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Failed to list GitLab webhooks for project {project_id}: {e} - {e.response.text if e.response else 'No response text'}"
+            )
+            raise
+
+    async def get_webhook(self, project_id: str, hook_id: int) -> Dict[str, Any]:
+        """Get a specific webhook for a GitLab project.
+
+        Args:
+            project_id: The ID or URL-encoded path of the project.
+            hook_id: The ID of the webhook.
+
+        Returns:
+            The webhook data.
+        """
+        if not project_id:
+            raise ValueError("Project ID must be specified to get a webhook.")
+        encoded_project_id = project_id.replace("/", "%2F")
+        path = f"/projects/{encoded_project_id}/hooks/{hook_id}"
+        try:
+            hook = await self._request("GET", path)
+            return hook
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Failed to get GitLab webhook ID {hook_id} for project {project_id}: {e} - {e.response.text if e.response else 'No response text'}"
+            )
+            raise
+
+    async def delete_webhook(self, project_id: str, hook_id: int) -> bool:
+        """Delete a webhook for a GitLab project.
+
+        Args:
+            project_id: The ID or URL-encoded path of the project.
+            hook_id: The ID of the webhook to delete.
+
+        Returns:
+            True if deletion was successful (status 204).
+        """
+        if not project_id:
+            raise ValueError("Project ID must be specified to delete a webhook.")
+        encoded_project_id = project_id.replace("/", "%2F")
+        path = f"/projects/{encoded_project_id}/hooks/{hook_id}"
+        try:
+            # GitLab DELETE returns 204 No Content on success
+            url = f"{self.base_url}{path}"
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.request(
+                    method="DELETE",
+                    url=url,
+                    headers=self.headers,
+                )
+            response.raise_for_status()  # Will raise for 4xx/5xx
+            logger.info(
+                f"Successfully deleted GitLab webhook ID {hook_id} for project {project_id}"
+            )
+            return True  # Status 204 implies success
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.warning(
+                    f"GitLab webhook ID {hook_id} not found for deletion on project {project_id}."
+                )
+                return False  # Or True for idempotency, but False indicates it wasn't there to delete
+            logger.error(
+                f"Failed to delete GitLab webhook ID {hook_id} for project {project_id}: {e} - {e.response.text if e.response else 'No response text'}"
             )
             raise

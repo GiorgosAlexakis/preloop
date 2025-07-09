@@ -1,9 +1,7 @@
 """Trackers router for registering and managing issue trackers."""
 
 import logging
-import re
-import uuid
-from typing import Dict, List, cast
+from typing import Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import UUID4
@@ -19,18 +17,13 @@ from spacebridge.schemas.tracker import (
     TrackerTestRequest,
 )
 from spacebridge.schemas.tracker import (
-    OrganizationGroup,
     ProjectIdentifier,
 )  # Corrected import location
-from spacebridge.trackers.github.client import GitHubClient  # Added import
-from spacebridge.trackers.gitlab.client import GitLabClient
-from spacebridge.trackers.jira.client import JiraClient
 from spacebridge.trackers.factory import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
-from spacemodels.models.organization import Organization
-from spacemodels.models.tracker import Tracker, TrackerType
+from spacemodels.models.tracker import Tracker, TrackerType, TrackerScopeRule
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -77,19 +70,15 @@ async def register_tracker(
         name = data.get("name")
         tracker_type_str = data.get("type")
         url_str = data.get("url")
-        token = data.get("token")
+        api_key = data.get("api_key")
         config = data.get("config")
-        included_identifiers = data.get("included_project_identifiers", [])
-        excluded_identifiers = data.get("excluded_project_identifiers", [])
-        include_future = data.get(
-            "include_future_projects", True
-        )  # Default to True as per schema
+        scope_rules_data = data.get("scope_rules", [])
 
         # Validate required fields
-        if not name or not tracker_type_str or not token:
+        if not name or not tracker_type_str or not api_key:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing required fields: name, type, token",
+                detail="Missing required fields: name, type, api_key",
             )
     except Exception as e:
         logger.error(f"Error parsing request data: {str(e)}")
@@ -120,7 +109,7 @@ async def register_tracker(
         client = await create_tracker_client(
             tracker_type=tracker_type.value,
             base_url=str(url_str) if url_str else None,
-            token=token,
+            token=api_key,
             config=config or {},
         )
 
@@ -179,18 +168,24 @@ async def register_tracker(
         )
 
         # Create the tracker with the account reference and project selection fields
+        scope_rules = []
+        for rule in scope_rules_data:
+            if hasattr(rule.get("scope_type"), "value"):
+                rule["scope_type"] = rule["scope_type"].value
+            if hasattr(rule.get("rule_type"), "value"):
+                rule["rule_type"] = rule["rule_type"].value
+            scope_rules.append(TrackerScopeRule(**rule))
+
         new_tracker = Tracker(
             name=name,
             tracker_type=tracker_type.value,
             url=str(url_str) if url_str else None,
-            api_key=token,  # In production, this should be encrypted
+            api_key=api_key,
             connection_details=config or {},
             account_id=account.id,
             is_active=True,
             meta_data={},
-            included_project_identifiers=included_identifiers,
-            excluded_project_identifiers=excluded_identifiers,
-            include_future_projects=include_future,
+            scope_rules=scope_rules,
         )
 
         db.add(new_tracker)
@@ -198,36 +193,6 @@ async def register_tracker(
 
         # Then create or find organization for this tracker
         # (Assuming one org per tracker for now, might need adjustment later)
-        org = (
-            db.query(Organization)
-            .filter(Organization.tracker_id == new_tracker.id)
-            .first()
-        )
-
-        if not org:
-            # Create a default organization
-            safe_tracker_name = re.sub(r"[^a-zA-Z0-9]", "-", name.lower())
-            safe_tracker_name = re.sub(r"-+", "-", safe_tracker_name)[:20]
-            org_identifier = f"{current_user.username.lower()}-{tracker_type.value}-{safe_tracker_name}"
-
-            existing_org = (
-                db.query(Organization)
-                .filter(Organization.identifier == org_identifier)
-                .first()
-            )
-            if existing_org:
-                short_uuid = str(uuid.uuid4())[:8]
-                org_identifier = f"{org_identifier}-{short_uuid}"
-
-            logger.info(f"Creating organization with identifier: {org_identifier}")
-            org = Organization(
-                name=f"{name} Organization",
-                identifier=org_identifier,
-                tracker_id=new_tracker.id,
-                is_active=True,
-            )
-            db.add(org)
-
         db.commit()
         db.refresh(new_tracker)
 
@@ -363,12 +328,33 @@ async def update_tracker(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tracker not found or access denied",
         )
+    update_data = tracker_update.model_dump(exclude_unset=True)
 
-    update_data = tracker_update.dict(exclude_unset=True)
+    # Handle scope_rules separately
+    if "scope_rules" in update_data:
+        # Delete existing scope rules
+        db.query(TrackerScopeRule).filter(
+            TrackerScopeRule.tracker_id == tracker.id
+        ).delete(synchronize_session=False)
 
-    # Update fields
+        # Create new scope rules from the payload
+        new_scope_rules_data = update_data.pop("scope_rules")
+        if new_scope_rules_data is not None:
+            new_scope_rules = []
+            for rule_data in new_scope_rules_data:
+                if hasattr(rule_data.get("scope_type"), "value"):
+                    rule_data["scope_type"] = rule_data["scope_type"].value
+                if hasattr(rule_data.get("rule_type"), "value"):
+                    rule_data["rule_type"] = rule_data["rule_type"].value
+                new_scope_rules.append(TrackerScopeRule(**rule_data))
+            tracker.scope_rules = new_scope_rules
+
+    # Update other fields
     for field, value in update_data.items():
         setattr(tracker, field, value)
+
+    if update_data.get("api_key") == "unchanged":
+        del update_data["api_key"]
 
     # Special handling if api_key is updated - revalidate connection?
     if "api_key" in update_data:
@@ -381,7 +367,8 @@ async def update_tracker(
         )
 
     try:
-        db.add(tracker)
+        logger.info(f"Updating tracker {tracker_id} with data: {update_data}")
+        db.merge(tracker)
         db.commit()
         db.refresh(tracker)
         return tracker
@@ -469,28 +456,32 @@ async def delete_tracker(
         )
 
 
-@router.post("/trackers/test-and-list-projects", response_model=TrackerTestResponse)
-async def test_connection_and_list_projects(
+@router.post("/trackers/test-and-list-orgs", response_model=TrackerTestResponse)
+async def test_connection_and_list_orgs(
     test_data: TrackerTestRequest,
     current_user: UserResponse = Depends(get_current_active_user),
-    # db: Session = Depends(get_db_session), # Not strictly needed for this endpoint
+    db: Session = Depends(get_db_session),
 ) -> TrackerTestResponse:
     """
-    Tests connection to a tracker with provided credentials and lists accessible projects.
-    Does not save the tracker configuration.
-
-    Args:
-        test_data: Temporary tracker connection details.
-        current_user: The authenticated user performing the test.
-
-    Returns:
-        TrackerTestResponse indicating success/failure and the project list if successful.
+    Tests connection to a tracker and lists accessible organizations/groups.
+    This endpoint does not fetch the projects within each organization.
     """
     logger.info(
         f"User {current_user.username} testing tracker connection for type {test_data.tracker_type.value}"
     )
-
-    # Create a temporary tracker client
+    if test_data.tracker_id:
+        tracker = (
+            db.query(Tracker)
+            .filter(Tracker.account_id == current_user.id)
+            .filter(Tracker.id == test_data.tracker_id)
+            .first()
+        )
+        if not tracker:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tracker not found or access denied",
+            )
+        test_data.api_key = tracker.api_key
     try:
         client = await create_tracker_client(
             tracker_type=test_data.tracker_type.value,
@@ -503,192 +494,85 @@ async def test_connection_and_list_projects(
                 f"Could not create client for type {test_data.tracker_type.value}"
             )
 
-        # Test the connection
         connection_result = await client.test_connection()
-
         if not connection_result.connected:
             logger.warning(
                 f"Connection test failed for user {current_user.username}: {connection_result.message}"
             )
             return TrackerTestResponse(
-                success=False, message=connection_result.message, projects=None
+                success=False, message=connection_result.message, orgs=[]
             )
 
         logger.info(f"Connection test successful for user {current_user.username}")
 
-        # Fetch projects based on tracker type
-        project_tree: List[OrganizationGroup] = []
-
-        if test_data.tracker_type == TrackerType.GITHUB:
-            logger.debug(
-                "Tracker type is GitHub, fetching repositories grouped by owner."
-            )
-            # Ensure client is GitHubClient for type hinting, though factory should guarantee this
-            if isinstance(client, GitHubClient):
-                grouped_repos = await client.get_repositories_grouped_by_owner()
-                for owner_group_data in grouped_repos:
-                    # Use owner_login as the group ID and name for GitHub
-                    owner_login = owner_group_data["owner_login"]
-                    org_group = OrganizationGroup(id=owner_login, name=owner_login)
-                    logger.debug(f"Processing owner group: {owner_login}")
-
-                    for repo_data in owner_group_data.get("repositories", []):
-                        # Use full_name as the project identifier for GitHub repos
-                        repo_identifier = repo_data.get("identifier")
-                        repo_name = repo_data.get("name")
-                        if repo_identifier and repo_name:
-                            logger.debug(f"Adding repository: {repo_identifier}")
-                            org_group.children.append(
-                                ProjectIdentifier(
-                                    id=repo_identifier,
-                                    name=repo_name,
-                                    identifier=repo_identifier,
-                                )
-                            )
-                        else:
-                            logger.warning(
-                                f"Skipping repository with missing identifier or name in group {owner_login}: {repo_data}"
-                            )
-
-                    if (
-                        org_group.children
-                    ):  # Only add group if it has valid repositories
-                        project_tree.append(org_group)
-                    else:
-                        logger.debug(f"Skipping empty owner group: {owner_login}")
-            else:
-                logger.error(
-                    f"Client type mismatch: Expected GitHubClient, got {type(client)}"
-                )
-                # Handle error appropriately, maybe raise HTTPException
-
-        elif test_data.tracker_type == TrackerType.GITLAB:
-            logger.debug("Tracker type is GitLab, fetching groups and projects.")
-            # Ensure client is GitLabClient for type hinting and access to the new method
-            if isinstance(client, GitLabClient):
-                grouped_data = await client.get_groups_and_projects()
-                for group_data in grouped_data:
-                    # Use group_path as the OrganizationGroup ID and group_name as name
-                    group_id = group_data.get("group_path")  # Use path for ID
-                    group_name = group_data.get("group_name")
-
-                    if not group_id or not group_name:
-                        logger.warning(
-                            f"Skipping GitLab group/user entry with missing path or name: {group_data}"
-                        )
-                        continue
-
-                    org_group = OrganizationGroup(
-                        id=str(group_id), name=group_name
-                    )  # Ensure ID is string
-                    logger.debug(
-                        f"Processing GitLab group/user: {group_name} (Path: {group_id})"
-                    )
-
-                    for proj_data in group_data.get("projects", []):
-                        # Use project 'identifier' (which is the stringified project ID)
-                        proj_identifier = proj_data.get("identifier")
-                        proj_name = proj_data.get("name")
-
-                        if proj_identifier and proj_name:
-                            # ProjectIdentifier expects string IDs
-                            logger.debug(
-                                f"Adding GitLab project: {proj_name} (Identifier: {proj_identifier})"
-                            )
-                            org_group.children.append(
-                                ProjectIdentifier(
-                                    id=proj_identifier,
-                                    name=proj_name,
-                                    identifier=proj_identifier,
-                                )
-                            )
-                        else:
-                            logger.warning(
-                                f"Skipping GitLab project with missing identifier or name in group {group_name}: {proj_data}"
-                            )
-
-                    if org_group.children:  # Only add group if it has valid projects
-                        project_tree.append(org_group)
-                    else:
-                        logger.debug(
-                            f"Skipping empty GitLab group/user entry: {group_name}"
-                        )
-            else:
-                logger.error(
-                    f"Client type mismatch: Expected GitLabClient, got {type(client)}"
-                )
-                # Handle error appropriately
-
-        elif test_data.tracker_type == TrackerType.JIRA:
-            logger.debug("Tracker type is Jira, listing projects.")
-            jira_client = cast(JiraClient, client)
-            try:
-                jira_projects_list: List[
-                    TrackerProject
-                ] = await jira_client.list_projects()
-
-                server_info = connection_result.server_info or {}
-                # For Jira, create one 'organization' (group in frontend terms) for the Jira instance itself
-                # Always use a UUID-based ID for Jira org_id to ensure it's DOM-safe and consistent.
-                org_id = f"jira-instance-{uuid.uuid4()}"
-
-                org_name = server_info.get("serverTitle", "Jira Projects")
-                # Keep org_url as the actual URL for display or linking purposes if needed elsewhere,
-                # but it's not used for the group's DOM ID.
-                org_url = server_info.get("baseUrl", jira_client.base_url)
-
-                project_identifiers: List[ProjectIdentifier] = []
-                for proj in jira_projects_list:
-                    project_identifiers.append(
-                        ProjectIdentifier(
-                            id=str(proj.id),
-                            name=proj.name,
-                            identifier=str(proj.identifier),
-                        )
-                    )
-
-                if project_identifiers:
-                    jira_org_group = OrganizationGroup(
-                        id=org_id,  # Use 'id' for OrganizationGroup schema
-                        name=org_name,  # Use 'name' for OrganizationGroup schema
-                        # The OrganizationGroup model from schemas.tracker uses 'id' and 'name'
-                        # and 'children' for ProjectIdentifier list.
-                        # We will adapt to what the frontend expects or adjust frontend/schemas.
-                        # For now, mapping to 'id' and 'name' for the group.
-                        # The frontend's renderProjectSelectionTree uses group.id and group.name
-                        children=project_identifiers,
-                    )
-                    project_tree.append(jira_org_group)
-
-            except Exception as e:
-                logger.error(f"Error listing Jira projects: {str(e)}", exc_info=True)
-                # Allow to return success with empty project list if this part fails
-                pass
-
-        else:
-            logger.error(f"Unsupported tracker type: {test_data.tracker_type.value}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Unsupported tracker type.",
-            )
-
-        # Sort the final tree by organization/owner name
-        project_tree.sort(key=lambda group: group.name.lower())
-
+        orgs = await client.get_organizations()
+        if len(orgs) == 1:
+            projects = await client.list_projects(orgs[0].id)
+            orgs[0].children = [
+                ProjectIdentifier(id=p.id, name=p.name, identifier=p.id, type="project")
+                for p in projects
+            ]
         return TrackerTestResponse(
             success=True,
-            message="Connection successful. Projects listed.",
-            projects=project_tree,
+            message="Connection successful!",
+            orgs=orgs,
         )
 
-    except HTTPException as http_exc:
-        # Re-raise HTTP exceptions from client creation/testing
-        raise http_exc
     except Exception as e:
-        logger.error(
-            f"Error during tracker test/list for user {current_user.username}: {e}",
-            exc_info=True,
+        logger.exception(
+            f"Error during tracker org list for user {current_user.username}: {e}"
         )
         return TrackerTestResponse(
-            success=False, message=f"An error occurred: {str(e)}", projects=None
+            success=False, message=f"An unexpected error occurred: {e}", orgs=[]
+        )
+
+
+@router.post("/trackers/list-projects-for-org", response_model=List[ProjectIdentifier])
+async def list_projects_for_org(
+    test_data: TrackerTestRequest,
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> List[ProjectIdentifier]:
+    """
+    Lists projects for a specific organization/group within a tracker.
+    """
+    logger.info(
+        f"User {current_user.username} listing projects for org {test_data.organization_identifier} "
+        f"in tracker type {test_data.tracker_type.value}"
+    )
+    if test_data.tracker_id:
+        tracker = (
+            db.query(Tracker)
+            .filter(Tracker.account_id == current_user.id)
+            .filter(Tracker.id == test_data.tracker_id)
+            .first()
+        )
+        if not tracker:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tracker not found or access denied",
+            )
+        test_data.api_key = tracker.api_key
+
+    try:
+        if test_data.url and not test_data.url.endswith("/"):
+            test_data.url = test_data.url + "/"
+        client = await create_tracker_client(
+            tracker_type=test_data.tracker_type.value,
+            base_url=str(test_data.url) if test_data.url else None,
+            token=test_data.api_key,
+            config=test_data.connection_details or {},
+        )
+        if not client:
+            raise HTTPException(
+                status_code=400, detail="Could not create tracker client"
+            )
+        return await client.list_projects(test_data.organization_identifier)
+
+    except Exception as e:
+        logger.exception(
+            f"Error listing projects for org for user {current_user.username}: {e}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {e}"
         )

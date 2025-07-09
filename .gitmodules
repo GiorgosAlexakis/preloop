@@ -4,6 +4,9 @@
 [submodule "SpaceModels"]
 	path = SpaceModels
 	url = ../../spacecode/SpaceModels.git
+[submodule "SpaceLit"]
+	path = SpaceLit
+	url = ../../spacecode/SpaceLit.git
 [submodule "mcp"]
 	path = mcp
 	url = ../../spacecode/spacebridge-mcp.git

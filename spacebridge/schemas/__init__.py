@@ -49,6 +49,10 @@ from spacebridge.schemas.llm_model import (
     LLMModelRead,
     LLMModelUpdate,
 )
+from spacebridge.schemas.issue_duplicate import (
+    IssueDuplicateProjectStats,
+    IssueDuplicateStats,
+)
 
 __all__ = [
     # Auth schemas
@@ -89,4 +93,7 @@ __all__ = [
     "LLMModelCreate",
     "LLMModelRead",
     "LLMModelUpdate",
+    # IssueDuplicate schemas
+    "IssueDuplicateStats",
+    "IssueDuplicateProjectStats",
 ]

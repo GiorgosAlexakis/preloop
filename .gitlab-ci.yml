@@ -4,7 +4,7 @@ variables:
   CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/spacebridge
   GIT_SUBMODULE_STRATEGY: "recursive"
   GITLAB_TOKEN: $GITLAB_TOKEN
-
+  STAGING_DOMAIN: "staging.spacebridge.io"
 
 cache:
   paths:
@@ -34,13 +34,14 @@ build:
 
 pre-commit:
   stage: test
-  needs: []
-  image: python:3.11-slim
+  needs: [build]
+  image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
     - apt-get update && apt-get install -y git
     - pip install -U pip pre-commit ruff
     - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
     - pip install -e ".[dev]"
+    - cp -r /app/SpaceLit/dist ./SpaceLit/dist
   script:
     - pre-commit install
     - ruff check
@@ -48,8 +49,8 @@ pre-commit:
 
 pytest:
   stage: test
-  needs: []
-  image: python:3.11-slim
+  needs: [build]
+  image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   services:
     - name: pgvector/pgvector:pg13
       alias: postgres
@@ -71,7 +72,40 @@ pytest:
     # Explicitly list top-level and SpaceModels tests, let pyproject.toml handle spacesync tests discovery
     - pytest -v tests/ SpaceModels/tests/ --cov=spacebridge --cov=SpaceModels/spacemodels --cov=spacesync/spacesync --cov-report=xml --cov-report=term-missing
 
-deploy:
+staging:
+  stage: deploy
+  image: dtzar/helm-kubectl:3.13.2
+  when: manual
+  environment:
+    name: staging
+  script:
+    - helm upgrade --install spacebridge ./helm/spacebridge
+      --namespace spacebridge-staging
+      --set image.tag=${CI_COMMIT_SHA}
+      --set config.openai.apiKey=${OPENAI_API_KEY}
+      --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
+      --set config.smtp.host=${SMTP_HOST}
+      --set config.smtp.port=${SMTP_PORT}
+      --set config.smtp.username=${SMTP_USERNAME}
+      --set config.smtp.password=${SMTP_PASSWORD}
+      --set config.smtp.from=${SMTP_FROM}
+      --set config.smtp.fromName=${SMTP_FROM_NAME}
+      --set ingress.enabled=true
+      --set ingress.hosts[0].host=${STAGING_DOMAIN}
+      --set ingress.hosts[0].paths[0].path=/
+      --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
+      --set ingress.tls[0].hosts[0]=${STAGING_DOMAIN}
+      --set ingress.tls[0].secretName=spacebridge-staging-tls
+      --set environment.spacebridgeUrl=https://${STAGING_DOMAIN}
+    - echo "Helm deployment finished."
+  artifacts:
+    paths:
+      - "db_backup_*.sql.xz"
+    when: on_success
+    expire_in: 7 days
+
+
+prod:
   stage: deploy
   image: dtzar/helm-kubectl:3.13.2
   when: manual
@@ -101,12 +135,6 @@ deploy:
       --namespace spacebridge
       --set image.tag=${CI_COMMIT_SHA}
       --set config.openai.apiKey=${OPENAI_API_KEY}
-      --set config.gitlab.apiKey=${GITLAB_API_KEY}
-      --set config.gitlab.apiUrl=${GITLAB_API_URL}
-      --set config.jira.apiKey=${JIRA_API_KEY}
-      --set config.jira.apiUrl=${JIRA_API_URL}
-      --set config.github.apiKey=${GITHUB_API_KEY}
-      --set config.github.apiUrl=${GITHUB_API_URL}
       --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
       --set config.smtp.host=${SMTP_HOST}
       --set config.smtp.port=${SMTP_PORT}
@@ -118,6 +146,6 @@ deploy:
     - echo "Helm deployment finished."
   artifacts:
     paths:
-      - "db_backup_*.sql.xz" # Artifact path remains correct
+      - "db_backup_*.sql.xz"
     when: on_success
     expire_in: 7 days

@@ -17,7 +17,7 @@ Use the Lit.dev framework for frontend code. If you create new web components en
 
 ## Commit message Guidelines
 
-- All commit messages should include references to relevant issues in the tracker. Use the SpaceBridge-MCP tools to find or create issues for every change. Include the issue ID's in the commit message footer. Ensure issue title and description are clear and concise, always in present tense.
+- All commit messages should include references to relevant issues in the tracker. Use the SpaceBridge-MCP tools to find or create issues for every change. Include the issue key in the commit message footer. Ensure issue title and description are clear and concise, always in present tense.
 
 
 ## Code Style

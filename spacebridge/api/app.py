@@ -7,8 +7,9 @@ of issue tracking systems.
 import logging
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +19,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
+from spacebridge.api.middleware import UIRoutingMiddleware
 from fastapi.encoders import jsonable_encoder
 
 from spacebridge import __version__
@@ -34,6 +36,8 @@ from spacebridge.api.endpoints import (
     embedding as embedding_router,
     llm_models,
     issue_duplicates,
+    webhooks,
+    # flows,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -67,9 +71,9 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         response = await call_next(request)
-        duration = (datetime.utcnow() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
         # Extract tracking information
         method = request.method
@@ -133,12 +137,62 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
         return response
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    logger.info("Starting up application and database...")
+    # Initialize database connection and optionally create tables.
+    logger.info("Setting up database connection...")
+    try:
+        # Check if running in test mode or if INIT_DB is set
+        init_db = os.getenv("INIT_DB", "false").lower() == "true"
+        if init_db:
+            logger.info("Initializing database schema...")
+            database_url = os.getenv(
+                "DATABASE_URL",
+                "postgresql+psycopg://user:password@db:5432/spacebridge",
+            )
+            setup_database(database_url)
+            logger.info("Database schema initialized.")
+        else:
+            logger.info("Skipping database schema initialization (INIT_DB not true).")
+
+        # Check if test data initialization is enabled
+        if os.getenv("INIT_TEST_DATA", "false").lower() == "true":
+            logger.info("Initializing test data...")
+            # Import and run the test data initialization script
+            from scripts.init_test_data import main as init_data_main
+
+            init_data_main()
+            logger.info("Test data initialization complete.")
+
+    except Exception as e:
+        logger.error(f"Database setup failed: {e}", exc_info=True)
+        # Depending on the severity, you might want to exit or handle differently
+        # raise RuntimeError("Database setup failed") from e
+
+    yield
+
+    # Shutdown logic
+    logger.info("Shutting down application...")
+    # Restore the original jsonable_encoder
+    import fastapi.encoders
+
+    if hasattr(app.state, "original_jsonable_encoder"):
+        fastapi.encoders.jsonable_encoder = app.state.original_jsonable_encoder
+        logger.info("Restored original jsonable_encoder.")
+    logger.info("Application shutdown complete.")
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application.
 
     Returns:
         FastAPI: The configured FastAPI application.
     """
+    # Load environment variables from .env file
+    # load_dotenv()
+
     # Define base directory relative to this file's location
     base_dir = Path(__file__).resolve().parent.parent.parent
 
@@ -147,9 +201,10 @@ def create_app() -> FastAPI:
         title="SpaceBridge API",
         description="REST API for SpaceBridge issue tracking management",
         version=__version__,
+        openapi_url="/api/v1/openapi.json",  # Keep OpenAPI schema URL
         docs_url=None,  # Disable the automatic docs at /docs
         redoc_url=None,  # Disable the automatic redoc at /redoc
-        openapi_url="/api/v1/openapi.json",  # Keep OpenAPI schema URL
+        lifespan=lifespan,  # Use the new lifespan context manager
     )
 
     # Override the default JSON encoder to handle datetime objects
@@ -181,13 +236,16 @@ def create_app() -> FastAPI:
     # Patch FastAPI's jsonable_encoder
     import fastapi.encoders
 
-    original_jsonable_encoder = fastapi.encoders.jsonable_encoder
+    app.state.original_jsonable_encoder = fastapi.encoders.jsonable_encoder
     fastapi.encoders.jsonable_encoder = custom_jsonable_encoder
 
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # This should be more restrictive in production
+        allow_origins=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -195,6 +253,7 @@ def create_app() -> FastAPI:
 
     # Add API usage tracking
     app.add_middleware(ApiUsageMiddleware)
+    app.add_middleware(UIRoutingMiddleware)
 
     # --- Static Files Setup ---
     static_dir = base_dir / "static"
@@ -213,6 +272,19 @@ def create_app() -> FastAPI:
 
     # Mount general static files (CSS, JS for landing/auth pages)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    try:
+        app.mount(
+            "/assets",
+            StaticFiles(directory=str(base_dir / "SpaceLit" / "dist" / "assets")),
+            name="spacelit_assets",
+        )
+        app.mount(
+            "/images",
+            StaticFiles(directory=str(base_dir / "SpaceLit" / "public" / "images")),
+            name="spacelit_images",
+        )
+    except Exception as e:
+        logger.error(f"Failed to mount SpaceLit static files: {e}")
 
     # --- Mount MkDocs Site ---
     # Check if the 'site' directory exists (created by 'mkdocs build')
@@ -380,6 +452,11 @@ def create_app() -> FastAPI:
         tags=["Issue Duplicates"],
         dependencies=[Depends(get_current_active_user)],
     )
+    app.include_router(
+        version.router, prefix="/api/v1", tags=["Version"]
+    )  # No auth dependency for version check
+    app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
+    # app.include_router(flows.router, prefix="/api/v1", tags=["Flows"])
 
     # --- HTML Page Routes ---
     templates = Jinja2Templates(directory=str(templates_dir))
@@ -470,44 +547,21 @@ def create_app() -> FastAPI:
         # Placeholder - Implement actual logic if needed
         return templates.TemplateResponse("whatis-mcp.html", {"request": request})
 
-    # --- Database Setup on Startup ---
-    @app.on_event("startup")
-    def startup_db_client():
-        """Initialize database connection and optionally create tables."""
-        logger.info("Setting up database connection...")
+    # --- SPA Static Files (Production) ---
+    # In production, serve the built Lit frontend from the root
+    # This should be mounted *after* all API routes are defined.
+    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
+    if not dev_mode:
+        logger.info("DEV_MODE is false, serving SPA from 'SpaceLit/dist'")
         try:
-            # Check if running in test mode or if INIT_DB is set
-            init_db = os.getenv("INIT_DB", "false").lower() == "true"
-            if init_db:
-                logger.info("Initializing database schema...")
-                database_url = os.getenv(
-                    "DATABASE_URL",
-                    "postgresql+psycopg://user:password@db:5432/spacebridge",
-                )
-                setup_database(database_url)
-                logger.info("Database schema initialized.")
-            else:
-                logger.info(
-                    "Skipping database schema initialization (INIT_DB not true)."
-                )
-
-            # Check if test data initialization is enabled
-            if os.getenv("INIT_TEST_DATA", "false").lower() == "true":
-                logger.info("Initializing test data...")
-                # Import and run the test data initialization script
-                from scripts.init_test_data import main as init_data_main
-
-                init_data_main()
-                logger.info("Test data initialization complete.")
-
+            app.mount(
+                "/",
+                StaticFiles(directory=str(base_dir / "SpaceLit" / "dist"), html=True),
+                name="spa",
+            )
         except Exception as e:
-            logger.error(f"Database setup failed: {e}", exc_info=True)
-            # Depending on the severity, you might want to exit or handle differently
-            # raise RuntimeError("Database setup failed") from e
-
-    # Restore original jsonable_encoder on shutdown (optional, good practice)
-    @app.on_event("shutdown")
-    def shutdown_event():
-        fastapi.encoders.jsonable_encoder = original_jsonable_encoder
+            logger.error(f"Failed to mount SPA static files: {e}")
+    else:
+        logger.info("DEV_MODE is true, SPA is served by the frontend dev server.")
 
     return app

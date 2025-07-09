@@ -3,7 +3,7 @@
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -19,7 +19,7 @@ from spacemodels.models.api_key import ApiKey
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
 # Password context for hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -80,7 +80,7 @@ def create_access_token(
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def decode_token(token: str) -> Union[TokenData, Dict[str, Any]]:
+def decode_token(token: str) -> TokenData:
     """Decode a JWT token.
 
     Args:
@@ -106,15 +106,12 @@ def decode_token(token: str) -> Union[TokenData, Dict[str, Any]]:
         exp = payload.get("exp")
         refresh = payload.get("refresh", False)
 
-        # Return either TokenData object or raw payload for refresh token verification
-        if isinstance(scopes, list) and isinstance(exp, (int, float)):
-            # Return a TokenData object for access tokens
-            return TokenData(
-                sub=sub, scopes=scopes, exp=datetime.fromtimestamp(exp), refresh=refresh
-            )
-        else:
-            # Return the raw payload for refresh tokens
-            return payload
+        return TokenData(
+            sub=sub,
+            scopes=scopes,
+            exp=datetime.fromtimestamp(exp) if exp else None,
+            refresh=refresh,
+        )
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -136,7 +133,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
         HTTPException: If the token is invalid or the user doesn't exist.
     """
     logger.info(f"Authenticating token: {token[:10]}...")
-
     # If token looks like an API key (no periods, which JWT has), try API key first
     # Most API keys are random alphanumeric strings without dots
     if token and "." not in token:

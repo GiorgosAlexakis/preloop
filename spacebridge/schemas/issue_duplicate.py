@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from pydantic import BaseModel
 
@@ -50,3 +50,14 @@ class PaginatedIssueDuplicateResponse(BaseModel):
     items: List[IssueDuplicate]
     page: int
     size: int
+
+
+class IssueDuplicateProjectStats(BaseModel):
+    project_id: str
+    project_name: str
+    total: int
+    duplicates: int
+
+
+class IssueDuplicateStats(BaseModel):
+    projects: Dict[str, IssueDuplicateProjectStats]

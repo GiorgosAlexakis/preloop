@@ -4,13 +4,24 @@ import logging
 import secrets
 import string
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 from sqlalchemy.future import select
+
+from spacemodels.crud import crud_account
 
 from spacebridge.api.auth.jwt import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -34,8 +45,14 @@ from spacebridge.schemas.auth import (
     User,
     UserCreate,
     UserResponse,
+    UserUpdate,
+    PasswordChangeRequest,
 )
-from spacebridge.utils.email import send_password_reset_email, send_verification_email
+from spacebridge.utils.email import (
+    send_password_reset_email,
+    send_verification_email,
+    send_product_notification_email,
+)
 from spacebridge.utils.tokens import (
     TokenError,
     create_email_verification_token,
@@ -55,13 +72,14 @@ router = APIRouter()
     "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
 )
 async def register(
-    user_data: UserCreate, background_tasks: BackgroundTasks
+    user_data: UserCreate, background_tasks: BackgroundTasks, request: Request
 ) -> Dict[str, str]:
     """Register a new user.
 
     Args:
         user_data: User creation data.
         background_tasks: Background tasks for sending emails.
+        request: The incoming request object.
 
     Returns:
         The created user.
@@ -120,6 +138,29 @@ async def register(
             background_tasks.add_task(
                 send_verification_email, user_email=user_data.email, token=token
             )
+
+            # Send product notification email
+            try:
+                user_info_for_email = {
+                    "username": new_user.username,
+                    "email": new_user.email,
+                    "full_name": new_user.full_name,
+                    "is_active": new_user.is_active,
+                    "email_verified": new_user.email_verified,
+                    "id": str(new_user.id) if new_user.id else None,
+                    "created_at": new_user.created_at.isoformat()
+                    if new_user.created_at
+                    else None,
+                }
+                await send_product_notification_email(
+                    user_data=user_info_for_email,
+                    source_ip=request.client.host if request.client else "Unknown",
+                    tracker_data=None,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to send product notification email for user {new_user.email}: {str(e)}"
+                )
 
             return {
                 "username": new_user.username,
@@ -414,7 +455,7 @@ async def refresh_token(request: RefreshRequest) -> Dict[str, str]:
         token_data = decode_token(request.refresh_token)
 
         # Check if it's a refresh token
-        if not token_data.get("refresh", False):
+        if not token_data.refresh:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token",
@@ -460,6 +501,36 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)) -
         The current user.
     """
     return current_user
+
+
+@router.put("/users/me", response_model=UserResponse)
+async def update_user_me(
+    *,
+    db: Session = Depends(get_db_session),
+    user_update: UserUpdate,
+    current_user: Account = Depends(get_current_active_user),
+) -> Any:
+    """Update own user."""
+    user = crud_account.update(db, db_obj=current_user, obj_in=user_update)
+    return user
+
+
+@router.put("/users/me/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_current_user_password(
+    passwords: PasswordChangeRequest,
+    current_user: Account = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+):
+    """Change current user's password."""
+    if not verify_password(passwords.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect current password",
+        )
+    hashed_password = get_password_hash(passwords.new_password)
+    crud_account.update(
+        db, db_obj=current_user, obj_in={"hashed_password": hashed_password}
+    )
 
 
 @router.post("/api-keys", response_model=ApiKeyResponse)

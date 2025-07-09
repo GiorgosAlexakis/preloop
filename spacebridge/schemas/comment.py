@@ -48,10 +48,7 @@ class CommentResponse(CommentBase):
             f"Field '{info.field_name}' must be a datetime object or a string, got {type(v).__name__}"
         )
 
-    class Config:
-        """Pydantic model configuration."""
-
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class CommentList(BaseModel):

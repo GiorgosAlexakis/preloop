@@ -1,8 +1,29 @@
 """Issue schemas for request and response validation."""
 
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator, root_validator, ValidationInfo
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
+
+
+# Validator function
+def format_datetime_optional_to_iso_string(v: Any) -> Optional[str]:
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, str):
+        # Attempt to parse and reformat, or return as is if already ISO
+        try:
+            # Check if it's already a valid ISO 8601 string (simplistic check)
+            datetime.fromisoformat(v.replace("Z", "+00:00"))
+            return v
+        except ValueError:
+            # If parsing fails, it might be a different format or invalid
+            # For now, we'll return it as is, assuming it might be handled elsewhere
+            # or it's an error to be caught by further validation if strictness is required.
+            # A more robust solution might raise an error here or attempt other parsing.
+            return v  # Or raise ValueError("Invalid datetime format")
+    return str(v)  # Fallback, convert to string
 
 
 class IssueBase(BaseModel):
@@ -38,8 +59,9 @@ class IssueCreate(IssueBase):
         None, description="Project identifier (name or ID)"
     )  # Keep for flexibility
 
-    @root_validator(pre=True)
-    def check_project_or_org_provided(cls, values):
+    @model_validator(mode="before")
+    @classmethod
+    def check_project_or_org_provided(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Validate that project information is provided, organization is optional."""
         has_project = (
             values.get("project_id")
@@ -80,6 +102,7 @@ class IssueResponse(IssueBase):
     key: str = Field(..., description="Human-readable issue key (e.g., PROJ-123)")
     organization: str = Field(..., description="Organization name")
     project: str = Field(..., description="Project name")
+    project_id: str = Field(..., description="Project ID")
     url: str = Field(..., description="URL to the issue in the original tracker")
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
@@ -87,25 +110,14 @@ class IssueResponse(IssueBase):
         None, description="Similarity score for search results (if applicable)"
     )
 
-    @field_validator("created_at", "updated_at", mode="before")
-    @classmethod
-    def format_datetime_fields_to_str(
-        cls, v: Any, info: ValidationInfo
-    ) -> Optional[str]:
-        if v is None:
-            return None
-        if isinstance(v, datetime):
-            return v.isoformat()
-        if isinstance(v, str):
-            return v
-        raise TypeError(
-            f"Field '{info.field_name}' must be a datetime object or a string, got {type(v).__name__}"
-        )
+    _format_created_at = field_validator("created_at", mode="before")(
+        format_datetime_optional_to_iso_string
+    )
+    _format_updated_at = field_validator("updated_at", mode="before")(
+        format_datetime_optional_to_iso_string
+    )
 
-    class Config:
-        """Pydantic model configuration."""
-
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class IssueSearchResults(BaseModel):

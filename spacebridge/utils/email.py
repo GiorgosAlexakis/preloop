@@ -1,11 +1,16 @@
 """Email sending utility for SpaceBridge."""
 
+import asyncio
 import logging
 import os
 import smtplib
+
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
+
+from typing import Dict, Any
+from spacebridge.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -201,3 +206,86 @@ def send_tracker_registered_email(
     """
 
     send_email(user_email, subject, text_body, html_body)
+
+
+async def send_product_notification_email(
+    user_data: Dict[str, Any],
+    tracker_data: Optional[Dict[str, Any]],
+    source_ip: str,
+) -> None:
+    """Send a product notification email with user, tracker, and IP information.
+
+    Args:
+        user_data: User account information.
+        tracker_data: Tracker information (optional).
+        source_ip: Source IP address.
+
+    Raises:
+        EmailError: If email sending fails.
+    """
+    recipient_email = settings.product_team_email
+    subject = "Product Notification: User Activity"
+
+    # Filter sensitive fields
+    sensitive_fields = {"password", "token", "secret", "api_key"}
+
+    def filter_data(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if not data:
+            return {}
+        return {k: v for k, v in data.items() if k.lower() not in sensitive_fields}
+
+    filtered_user_data = filter_data(user_data)
+    filtered_tracker_data = filter_data(tracker_data)
+
+    body_parts = [
+        "A product notification event has occurred.",
+        "\nUser Data:",
+    ]
+    for key, value in filtered_user_data.items():
+        body_parts.append(f"  {key}: {value}")
+
+    if filtered_tracker_data:
+        body_parts.append("\nTracker Data:")
+        for key, value in filtered_tracker_data.items():
+            body_parts.append(f"  {key}: {value}")
+
+    body_parts.append(f"\nSource IP: {source_ip}")
+
+    body_text = "\n".join(body_parts)
+
+    # HTML body (optional, can be enhanced)
+    html_body_parts = [
+        "<html><body>",
+        "<h2>Product Notification: User Activity</h2>",
+        "<p>A product notification event has occurred.</p>",
+        "<h3>User Data:</h3><ul>",
+    ]
+    for key, value in filtered_user_data.items():
+        html_body_parts.append(f"<li><strong>{key}:</strong> {value}</li>")
+    html_body_parts.append("</ul>")
+
+    if filtered_tracker_data:
+        html_body_parts.append("<h3>Tracker Data:</h3><ul>")
+        for key, value in filtered_tracker_data.items():
+            html_body_parts.append(f"<li><strong>{key}:</strong> {value}</li>")
+        html_body_parts.append("</ul>")
+
+    html_body_parts.append(f"<p><strong>Source IP:</strong> {source_ip}</p>")
+    html_body_parts.append("</body></html>")
+    body_html = "\n".join(html_body_parts)
+
+    try:
+        # Run send_email in a separate thread to avoid blocking asyncio event loop
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, send_email, recipient_email, subject, body_text, body_html
+        )
+        logger.info(f"Product notification email sent to {recipient_email}")
+    except EmailError as e:
+        logger.error(f"Failed to send product notification email: {str(e)}")
+        raise  # Re-raise the EmailError to be handled by the caller
+    except Exception as e:
+        logger.error(
+            f"An unexpected error occurred while sending product notification email: {str(e)}"
+        )
+        raise EmailError(f"An unexpected error occurred: {str(e)}")

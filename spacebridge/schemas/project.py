@@ -2,7 +2,7 @@
 
 from typing import Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ProjectBase(BaseModel):
@@ -42,10 +42,7 @@ class ProjectResponse(ProjectBase):
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
 
-    class Config:
-        """Pydantic model configuration."""
-
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TestConnectionRequest(BaseModel):

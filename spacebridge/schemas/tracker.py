@@ -3,9 +3,10 @@
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 
 from spacemodels.models.tracker import TrackerType
+from .tracker_scope_rule import TrackerScopeRuleCreate, TrackerScopeRuleResponse
 
 
 class TrackerBase(BaseModel):
@@ -23,23 +24,23 @@ class TrackerBase(BaseModel):
     meta_data: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Additional metadata"
     )
-    included_project_identifiers: Optional[List[str]] = Field(
-        None,
-        description="List of project identifiers to include. None means include all.",
+    subscribed_events: Optional[List[str]] = Field(
+        default_factory=list,
+        description="List of specific webhook event names to subscribe to. Empty list implies default/all events based on client logic.",
     )
-    excluded_project_identifiers: Optional[List[str]] = Field(
-        None, description="List of project identifiers to exclude."
-    )
-    include_future_projects: bool = Field(
-        True,
-        description="Whether to automatically include new projects if no specific inclusions are set.",
-    )
+    jira_webhook_id: Optional[str] = Field(None, description="Stored Jira Webhook ID")
+    # jira_webhook_secret is intentionally not in TrackerBase to avoid accidental exposure.
+    # It should be handled in specific create/update schemas if needed for input,
+    # and never in response schemas.
 
 
 class TrackerCreate(TrackerBase):
     """Model for creating a new tracker."""
 
     api_key: str = Field(..., description="API key or token for the tracker")
+    scope_rules: List[TrackerScopeRuleCreate] = Field(
+        default_factory=list, description="List of scope rules for the tracker"
+    )
 
 
 class TrackerRegisterRequest(BaseModel):
@@ -64,21 +65,13 @@ class TrackerRegisterRequest(BaseModel):
     meta_data: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Additional metadata"
     )
-    included_project_identifiers: Optional[List[str]] = Field(
-        None,
-        description="List of project identifiers to include. None means include all.",
-    )
-    excluded_project_identifiers: Optional[List[str]] = Field(
-        None, description="List of project identifiers to exclude."
-    )
-    include_future_projects: bool = Field(
-        True,
-        description="Whether to automatically include new projects if no specific inclusions are set.",
+    scope_rules: List[TrackerScopeRuleCreate] = Field(
+        default_factory=list, description="List of scope rules for the tracker"
     )
 
-    class Config:
-        populate_by_name = True  # Enables the alias functionality
-        json_schema_extra = {
+    model_config = ConfigDict(
+        populate_by_name=True,  # Enables the alias functionality
+        json_schema_extra={
             "examples": [
                 {
                     "name": "GitHub",
@@ -88,7 +81,8 @@ class TrackerRegisterRequest(BaseModel):
                     "config": None,
                 }
             ]
-        }
+        },
+    )
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -99,7 +93,7 @@ class TrackerUpdate(BaseModel):
     """Model for updating an existing tracker."""
 
     name: Optional[str] = Field(None, description="New name for the tracker")
-    url: Optional[HttpUrl] = Field(None, description="New URL for the tracker instance")
+    url: Optional[str] = Field(None, description="New URL for the tracker instance")
     api_key: Optional[str] = Field(
         None, description="New API key or token for the tracker"
     )
@@ -108,14 +102,17 @@ class TrackerUpdate(BaseModel):
         None, description="Updated connection details"
     )
     meta_data: Optional[Dict[str, Any]] = Field(None, description="Updated metadata")
-    included_project_identifiers: Optional[List[str]] = Field(
-        None, description="Updated list of included project identifiers."
+    scope_rules: Optional[List[TrackerScopeRuleCreate]] = Field(
+        None, description="Updated list of scope rules for the tracker"
     )
-    excluded_project_identifiers: Optional[List[str]] = Field(
-        None, description="Updated list of excluded project identifiers."
+    subscribed_events: Optional[List[str]] = Field(
+        None,
+        description="Updated list of specific webhook event names to subscribe to.",
     )
-    include_future_projects: Optional[bool] = Field(
-        None, description="Updated setting for including future projects."
+    jira_webhook_id: Optional[str] = Field(None, description="Updated Jira Webhook ID")
+    jira_webhook_secret: Optional[str] = Field(
+        None,
+        description="Updated Secret for Jira webhook validation (handle with care)",
     )
 
 
@@ -133,19 +130,27 @@ class TrackerResponse(TrackerBase):
     )
     created: datetime = Field(..., description="Creation timestamp")
     last_updated: datetime = Field(..., description="Last update timestamp")
+    scope_rules: List[TrackerScopeRuleResponse] = Field(
+        default_factory=list, description="List of scope rules for the tracker"
+    )
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TrackerTestRequest(BaseModel):
     """Model for testing tracker connection and listing projects."""
 
+    tracker_id: Optional[str] = Field(
+        None, description="Tracker unique identifier (UUID)"
+    )
     tracker_type: TrackerType = Field(..., description="Type of the issue tracker")
-    url: Optional[HttpUrl] = Field(None, description="URL of the tracker instance")
+    url: Optional[str] = Field(None, description="URL of the tracker instance")
     api_key: str = Field(..., description="API key or token for the tracker")
     connection_details: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Tracker-specific connection details"
+    )
+    organization_identifier: Optional[str] = Field(
+        None, description="Identifier for the organization to fetch projects from"
     )
 
 
@@ -168,7 +173,7 @@ class TrackerTestResponse(BaseModel):
 
     success: bool = Field(..., description="Whether the connection test was successful")
     message: str = Field(..., description="Connection test result message")
-    projects: Optional[List[OrganizationGroup]] = Field(
+    orgs: Optional[List[OrganizationGroup]] = Field(
         None,
-        description="List of organizations and their projects if connection succeeded",
+        description="List of organizations if connection succeeded",
     )

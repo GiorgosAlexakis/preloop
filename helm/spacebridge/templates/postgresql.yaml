@@ -16,9 +16,11 @@ spec:
     initdb:
       postInitSQL:
         - CREATE EXTENSION IF NOT EXISTS vector;
+        - ALTER USER {{ .Values.database.cnpg.auth.username }} WITH PASSWORD '{{ .Values.database.cnpg.auth.password }}';
   {{- end }}
 
   # User management
+  enableSuperuserAccess: true
   superuserSecret:
     name: {{ include "spacebridge.fullname" . }}-db-superuser
   bootstrap:

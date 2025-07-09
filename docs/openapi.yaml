@@ -10,9 +10,9 @@ paths:
       - Auth
       summary: Register
       description: "Register a new user.\n\nArgs:\n    user_data: User creation data.\n\
-        \    background_tasks: Background tasks for sending emails.\n\nReturns:\n\
-        \    The created user.\n\nRaises:\n    HTTPException: If the username or email\
-        \ is already taken."
+        \    background_tasks: Background tasks for sending emails.\n    request:\
+        \ The incoming request object.\n\nReturns:\n    The created user.\n\nRaises:\n\
+        \    HTTPException: If the username or email is already taken."
       operationId: register_api_v1_auth_register_post
       requestBody:
         content:
@@ -227,6 +227,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+      security:
+      - OAuth2PasswordBearer: []
+    put:
+      tags:
+      - Auth
+      summary: Update User Me
+      description: Update own user.
+      operationId: update_user_me_api_v1_auth_users_me_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/auth/users/me/password:
+    put:
+      tags:
+      - Auth
+      summary: Change Current User Password
+      description: Change current user's password.
+      operationId: change_current_user_password_api_v1_auth_users_me_password_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
   /api/v1/auth/api-keys:
@@ -633,17 +684,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/trackers/test-and-list-projects:
+  /api/v1/trackers/test-and-list-orgs:
     post:
       tags:
       - Trackers
-      summary: Test Connection And List Projects
-      description: "Tests connection to a tracker with provided credentials and lists\
-        \ accessible projects.\nDoes not save the tracker configuration.\n\nArgs:\n\
-        \    test_data: Temporary tracker connection details.\n    current_user: The\
-        \ authenticated user performing the test.\n\nReturns:\n    TrackerTestResponse\
-        \ indicating success/failure and the project list if successful."
-      operationId: test_connection_and_list_projects_api_v1_trackers_test_and_list_projects_post
+      summary: Test Connection And List Orgs
+      description: 'Tests connection to a tracker and lists accessible organizations/groups.
+
+        This endpoint does not fetch the projects within each organization.'
+      operationId: test_connection_and_list_orgs_api_v1_trackers_test_and_list_orgs_post
       requestBody:
         content:
           application/json:
@@ -657,6 +706,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackerTestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/trackers/list-projects-for-org:
+    post:
+      tags:
+      - Trackers
+      summary: List Projects For Org
+      description: Lists projects for a specific organization/group within a tracker.
+      operationId: list_projects_for_org_api_v1_trackers_list_projects_for_org_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackerTestRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ProjectIdentifier'
+                type: array
+                title: Response List Projects For Org Api V1 Trackers List Projects
+                  For Org Post
         '422':
           description: Validation Error
           content:
@@ -1124,58 +1205,6 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/projects/{project_id}/duplicates:
-    get:
-      tags:
-      - Projects
-      summary: Find Project Duplicates
-      description: Finds potential duplicate issues within a project using semantic
-        similarity.
-      operationId: find_project_duplicates_api_v1_projects__project_id__duplicates_get
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: project_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Project Id
-      - name: similarity_threshold
-        in: query
-        required: false
-        schema:
-          type: number
-          maximum: 1.0
-          minimum: 0.0
-          description: Similarity threshold for considering issues as duplicates.
-          default: 0.7
-          title: Similarity Threshold
-        description: Similarity threshold for considering issues as duplicates.
-      - name: limit_per_issue
-        in: query
-        required: false
-        schema:
-          type: integer
-          maximum: 20
-          minimum: 1
-          description: Maximum number of duplicates to find for each issue.
-          default: 5
-          title: Limit Per Issue
-        description: Maximum number of duplicates to find for each issue.
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectDuplicatesResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issues/search:
     get:
       tags:
@@ -1802,29 +1831,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/projects/{project_name}/embeddings:
+  /api/v1/embeddings:
     get:
       tags:
       - Embeddings
-      - projects
       - embeddings
-      summary: Get all issue embeddings for a project
+      summary: Get all issue embeddings
       description: 'API endpoint to fetch raw embedding vectors for issues, with optional
         filtering.
 
-
         This endpoint is designed to provide data for frontend visualizations like
         deck.gl.'
-      operationId: get_raw_embeddings_api_v1_projects__project_name__embeddings_get
+      operationId: get_raw_embeddings_api_v1_embeddings_get
       security:
       - bearerAuth: []
       parameters:
-      - name: project_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Project Name
       - name: embedding_model_id
         in: query
         required: false
@@ -1835,16 +1856,46 @@ paths:
           description: The ID of the embedding model to use.
           title: Embedding Model Id
         description: The ID of the embedding model to use.
-      - name: organization_name
+      - name: project_ids
         in: query
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          description: Filter embeddings by organization name.
-          title: Organization Name
-        description: Filter embeddings by organization name.
+          description: Comma-separated list of project IDs.
+          title: Project Ids
+        description: Comma-separated list of project IDs.
+      - name: project_names
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Comma-separated list of project names.
+          title: Project Names
+        description: Comma-separated list of project names.
+      - name: organization_ids
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Comma-separated list of organization IDs.
+          title: Organization Ids
+        description: Comma-separated list of organization IDs.
+      - name: organization_names
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Comma-separated list of organization names.
+          title: Organization Names
+        description: Comma-separated list of organization names.
       - name: skip
         in: query
         required: false
@@ -2017,6 +2068,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue-duplicates/confirmed:
+    get:
+      tags:
+      - Issue Duplicates
+      - Issue Duplicates
+      summary: Get Duplicate Issues
+      description: Retrieve confirmed duplicate issues.
+      operationId: get_duplicate_issues_api_v1_issue_duplicates_confirmed_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Skip
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IssueDuplicate'
+                title: Response Get Duplicate Issues Api V1 Issue Duplicates Confirmed
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issue-duplicates/check:
     get:
       tags:
@@ -2052,6 +2145,195 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue-duplicates:
+    get:
+      tags:
+      - Issue Duplicates
+      summary: Find Issue Duplicates
+      description: Finds potential duplicate issues within specified projects.
+      operationId: find_issue_duplicates_api_v1_issue_duplicates_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_ids
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              type: string
+          - type: 'null'
+          description: Optional list of project IDs to search within. If not provided,
+            searches across all accessible projects.
+          title: Project Ids
+        description: Optional list of project IDs to search within. If not provided,
+          searches across all accessible projects.
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          description: Maximum number of duplicates to return.
+          default: 5
+          title: Limit
+        description: Maximum number of duplicates to return.
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of duplicates to skip for pagination.
+          default: 0
+          title: Skip
+        description: Number of duplicates to skip for pagination.
+      - name: similarity_threshold
+        in: query
+        required: false
+        schema:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          description: Similarity threshold for considering issues as duplicates.
+          default: 0.7
+          title: Similarity Threshold
+        description: Similarity threshold for considering issues as duplicates.
+      - name: limit_per_issue
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 20
+          minimum: 1
+          description: Maximum number of duplicates to find for each issue.
+          default: 5
+          title: Limit Per Issue
+        description: Maximum number of duplicates to find for each issue.
+      - name: status
+        in: query
+        required: false
+        schema:
+          enum:
+          - opened
+          - closed
+          - all
+          type: string
+          description: Filter issues by status.
+          default: opened
+          title: Status
+        description: Filter issues by status.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDuplicatesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/project-duplicate-stats:
+    get:
+      tags:
+      - Issue Duplicates
+      summary: Get Projects Duplicate Stats
+      description: Get statistics about duplicate issues for specified projects.
+      operationId: get_projects_duplicate_stats_api_v1_project_duplicate_stats_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_ids
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              type: string
+          - type: 'null'
+          description: A list of project IDs to filter the statistics by. If not provided,
+            stats for all accessible projects will be returned.
+          title: Project Ids
+        description: A list of project IDs to filter the statistics by. If not provided,
+          stats for all accessible projects will be returned.
+      - name: similarity_threshold
+        in: query
+        required: false
+        schema:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          description: Similarity threshold for considering issues as duplicates.
+          default: 0.95
+          title: Similarity Threshold
+        description: Similarity threshold for considering issues as duplicates.
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter issues by status.
+          title: Status
+        description: Filter issues by status.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicateStats'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/private/webhooks/{tracker_type}/{identifier_in_url}:
+    post:
+      tags:
+      - Webhooks
+      summary: Receive Webhook
+      description: 'Receive webhook events from external trackers (GitHub, GitLab).
+
+
+        Parses the payload to identify the organization and updates its
+
+        last_webhook_update timestamp.'
+      operationId: receive_webhook_api_v1_private_webhooks__tracker_type___identifier_in_url__post
+      parameters:
+      - name: tracker_type
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Tracker Type
+      - name: identifier_in_url
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Identifier In Url
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /:
     get:
       tags:
@@ -2563,6 +2845,9 @@ components:
         issue_id:
           type: string
           title: Issue Id
+        project_id:
+          type: string
+          title: Project Id
         embedding:
           items:
             type: number
@@ -2594,6 +2879,7 @@ components:
       type: object
       required:
       - issue_id
+      - project_id
       - embedding
       title: EmbeddingRawDataItem
       description: Individual data item in the raw embedding response.
@@ -2756,6 +3042,38 @@ components:
       - updated_at
       title: IssueDuplicate
       description: Schema for returning an IssueDuplicate.
+    IssueDuplicateProjectStats:
+      properties:
+        project_id:
+          type: string
+          title: Project Id
+        project_name:
+          type: string
+          title: Project Name
+        total:
+          type: integer
+          title: Total
+        duplicates:
+          type: integer
+          title: Duplicates
+      type: object
+      required:
+      - project_id
+      - project_name
+      - total
+      - duplicates
+      title: IssueDuplicateProjectStats
+    IssueDuplicateStats:
+      properties:
+        projects:
+          additionalProperties:
+            $ref: '#/components/schemas/IssueDuplicateProjectStats'
+          type: object
+          title: Projects
+      type: object
+      required:
+      - projects
+      title: IssueDuplicateStats
     IssueResponse:
       properties:
         title:
@@ -2821,6 +3139,10 @@ components:
           type: string
           title: Project
           description: Project name
+        project_id:
+          type: string
+          title: Project Id
+          description: Project ID
         url:
           type: string
           title: Url
@@ -2847,6 +3169,7 @@ components:
       - key
       - organization
       - project
+      - project_id
       - url
       - created_at
       - updated_at
@@ -3185,6 +3508,21 @@ components:
       type: object
       title: OrganizationUpdate
       description: Model for updating an organization.
+    PasswordChangeRequest:
+      properties:
+        current_password:
+          type: string
+          title: Current Password
+        new_password:
+          type: string
+          minLength: 8
+          title: New Password
+      type: object
+      required:
+      - current_password
+      - new_password
+      title: PasswordChangeRequest
+      description: Password change request schema.
     PasswordResetConfirmRequest:
       properties:
         token:
@@ -3254,10 +3592,12 @@ components:
       description: Model for creating a new project.
     ProjectDuplicatesResponse:
       properties:
-        project_id:
-          type: string
-          title: Project Id
-          description: The ID of the project that was scanned.
+        project_ids:
+          items:
+            type: string
+          type: array
+          title: Project Ids
+          description: The IDs of the projects that were scanned.
         model_id_used:
           type: string
           title: Model Id Used
@@ -3274,7 +3614,7 @@ components:
           description: A list of potential duplicate issue pairs.
       type: object
       required:
-      - project_id
+      - project_ids
       - model_id_used
       - threshold_used
       - duplicates
@@ -3398,6 +3738,20 @@ components:
       - refresh_token
       title: RefreshRequest
       description: Model for token refresh requests.
+    RuleType:
+      type: string
+      enum:
+      - INCLUDE
+      - EXCLUDE
+      title: RuleType
+      description: Enum for rule types.
+    ScopeType:
+      type: string
+      enum:
+      - ORGANIZATION
+      - PROJECT
+      title: ScopeType
+      description: Enum for scope types.
     SearchResponse:
       properties:
         results:
@@ -3532,29 +3886,21 @@ components:
           - type: 'null'
           title: Meta Data
           description: Additional metadata
-        included_project_identifiers:
+        subscribed_events:
           anyOf:
           - items:
               type: string
             type: array
           - type: 'null'
-          title: Included Project Identifiers
-          description: List of project identifiers to include. None means include
-            all.
-        excluded_project_identifiers:
+          title: Subscribed Events
+          description: List of specific webhook event names to subscribe to. Empty
+            list implies default/all events based on client logic.
+        jira_webhook_id:
           anyOf:
-          - items:
-              type: string
-            type: array
+          - type: string
           - type: 'null'
-          title: Excluded Project Identifiers
-          description: List of project identifiers to exclude.
-        include_future_projects:
-          type: boolean
-          title: Include Future Projects
-          description: Whether to automatically include new projects if no specific
-            inclusions are set.
-          default: true
+          title: Jira Webhook Id
+          description: Stored Jira Webhook ID
         id:
           type: string
           title: Id
@@ -3590,6 +3936,12 @@ components:
           format: date-time
           title: Last Updated
           description: Last update timestamp
+        scope_rules:
+          items:
+            $ref: '#/components/schemas/TrackerScopeRuleResponse'
+          type: array
+          title: Scope Rules
+          description: List of scope rules for the tracker
       type: object
       required:
       - name
@@ -3601,17 +3953,63 @@ components:
       title: TrackerResponse
       description: Response model for tracker data (excluding sensitive info like
         api_key).
+    TrackerScopeRuleCreate:
+      properties:
+        scope_type:
+          $ref: '#/components/schemas/ScopeType'
+          description: The type of scope (ORGANIZATION or PROJECT).
+        rule_type:
+          $ref: '#/components/schemas/RuleType'
+          description: The type of rule (INCLUDE or EXCLUDE).
+        identifier:
+          type: string
+          title: Identifier
+          description: The identifier for the scope (e.g., 'my-org' or 'my-org/my-repo').
+      type: object
+      required:
+      - scope_type
+      - rule_type
+      - identifier
+      title: TrackerScopeRuleCreate
+      description: Schema for creating a new tracker scope rule.
+    TrackerScopeRuleResponse:
+      properties:
+        scope_type:
+          $ref: '#/components/schemas/ScopeType'
+          description: The type of scope (ORGANIZATION or PROJECT).
+        rule_type:
+          $ref: '#/components/schemas/RuleType'
+          description: The type of rule (INCLUDE or EXCLUDE).
+        identifier:
+          type: string
+          title: Identifier
+          description: The identifier for the scope (e.g., 'my-org' or 'my-org/my-repo').
+        id:
+          type: string
+          title: Id
+          description: The unique ID of the scope rule.
+      type: object
+      required:
+      - scope_type
+      - rule_type
+      - identifier
+      - id
+      title: TrackerScopeRuleResponse
+      description: Schema for responding with tracker scope rule details.
     TrackerTestRequest:
       properties:
+        tracker_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tracker Id
+          description: Tracker unique identifier (UUID)
         tracker_type:
           $ref: '#/components/schemas/TrackerType'
           description: Type of the issue tracker
         url:
           anyOf:
           - type: string
-            maxLength: 2083
-            minLength: 1
-            format: uri
           - type: 'null'
           title: Url
           description: URL of the tracker instance
@@ -3626,6 +4024,12 @@ components:
           - type: 'null'
           title: Connection Details
           description: Tracker-specific connection details
+        organization_identifier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization Identifier
+          description: Identifier for the organization to fetch projects from
       type: object
       required:
       - tracker_type
@@ -3642,14 +4046,14 @@ components:
           type: string
           title: Message
           description: Connection test result message
-        projects:
+        orgs:
           anyOf:
           - items:
               $ref: '#/components/schemas/OrganizationGroup'
             type: array
           - type: 'null'
-          title: Projects
-          description: List of organizations and their projects if connection succeeded
+          title: Orgs
+          description: List of organizations if connection succeeded
       type: object
       required:
       - success
@@ -3675,9 +4079,6 @@ components:
         url:
           anyOf:
           - type: string
-            maxLength: 2083
-            minLength: 1
-            format: uri
           - type: 'null'
           title: Url
           description: New URL for the tracker instance
@@ -3707,28 +4108,34 @@ components:
           - type: 'null'
           title: Meta Data
           description: Updated metadata
-        included_project_identifiers:
+        scope_rules:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/TrackerScopeRuleCreate'
+            type: array
+          - type: 'null'
+          title: Scope Rules
+          description: Updated list of scope rules for the tracker
+        subscribed_events:
           anyOf:
           - items:
               type: string
             type: array
           - type: 'null'
-          title: Included Project Identifiers
-          description: Updated list of included project identifiers.
-        excluded_project_identifiers:
+          title: Subscribed Events
+          description: Updated list of specific webhook event names to subscribe to.
+        jira_webhook_id:
           anyOf:
-          - items:
-              type: string
-            type: array
+          - type: string
           - type: 'null'
-          title: Excluded Project Identifiers
-          description: Updated list of excluded project identifiers.
-        include_future_projects:
+          title: Jira Webhook Id
+          description: Updated Jira Webhook ID
+        jira_webhook_secret:
           anyOf:
-          - type: boolean
+          - type: string
           - type: 'null'
-          title: Include Future Projects
-          description: Updated setting for including future projects.
+          title: Jira Webhook Secret
+          description: Updated Secret for Jira webhook validation (handle with care)
       type: object
       title: TrackerUpdate
       description: Model for updating an existing tracker.
@@ -3783,6 +4190,16 @@ components:
       - email_verified
       title: UserResponse
       description: Response model for user data.
+    UserUpdate:
+      properties:
+        full_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Full Name
+      type: object
+      title: UserUpdate
+      description: User update model.
     ValidationError:
       properties:
         loc:

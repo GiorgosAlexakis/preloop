@@ -36,6 +36,15 @@ This structure allows:
 - Independent development and versioning of the core components.
 - Direct HTTP API access for applications that don't need MCP.
 
+## Frontend
+
+### V2 (Work in Progress)
+
+A new frontend is under active development in the `SpaceLit` directory. This version is being built from the ground up using modern web technologies to provide a fast, responsive, and feature-rich user experience.
+
+- **Technology Stack**: Lit, Vite, TypeScript, and Material Web Components.
+- **Status**: This frontend is a work in progress and is not yet feature-complete.
+
 ## Installation
 
 ### Prerequisites
@@ -242,6 +251,46 @@ SpaceBridge provides a RESTful API with the following key endpoints:
 - `PUT /api/v1/issues/{issue_id}` - Update issue
 - `DELETE /api/v1/issues/{issue_id}` - Delete issue
 - `POST /api/v1/issues/{issue_id}/comments` - Add comment to issue
+
+## Testing
+
+SpaceBridge uses pytest for unit and integration testing. The test suite covers API endpoints, database models, and tracker integrations.
+
+### Running Tests
+
+To run all tests:
+
+```bash
+# Run all tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run a specific test file
+pytest tests/endpoints/test_webhooks.py
+
+# Run a specific test case
+pytest tests/endpoints/test_webhooks.py::TestWebhooksEndpoint::test_github_webhook_valid_signature
+```
+
+### Test Structure
+
+- **Unit Tests**: Located in `tests/` directory, testing individual components in isolation
+- **Integration Tests**: Test the interaction between components
+- **Endpoint Tests**: Test API endpoints with mocked database sessions
+
+### Testing Webhooks
+
+The webhook endpoint tests (`tests/endpoints/test_webhooks.py`) validate:
+
+1. Authentication via signatures/tokens for GitHub and GitLab webhooks
+2. Error handling for invalid signatures, missing tokens, etc.
+3. Organization identifier resolution
+4. Database updates (last_webhook_update timestamp)
+5. Error handling for database failures
+
+These tests use mocking to isolate the webhook handling logic from external dependencies.
 
 ## Contributing
 

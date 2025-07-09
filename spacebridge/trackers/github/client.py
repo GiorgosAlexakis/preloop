@@ -20,8 +20,39 @@ from spacebridge.trackers.base import (
     TrackerConnection,
     TrackerInterface,
 )
+from spacebridge.schemas.tracker import ProjectIdentifier, OrganizationGroup
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_GITHUB_WEBHOOK_EVENTS = [
+    "push",
+    "issues",
+    "issue_comment",
+    "pull_request",
+    "release",
+    "deployment_status",
+    "commit_comment",
+    "pull_request_review",
+    "pull_request_review_comment",
+    "discussion",
+    "discussion_comment",
+    # Add other relevant events as needed, e.g.:
+    # "create",  # branch/tag creation
+    # "delete",  # branch/tag deletion
+    # "fork",
+    # "member",  # collaborator added
+    # "project_card",
+    # "project_column",
+    # "project",
+    # "public",  # repo made public
+    # "repository_dispatch", # for custom events
+    # "star",
+    # "watch", # same as star
+    # "workflow_run",
+    # "workflow_job",
+    # "check_run",
+    # "check_suite",
+]
 
 
 class GitHubCredentials(BaseModel):
@@ -139,6 +170,52 @@ class GitHubClient(TrackerInterface):
                 connected=False,
                 message=f"Failed to connect to GitHub: {str(e)}",
             )
+
+    async def get_organizations(self) -> List[Dict[str, Any]]:
+        """Fetch organizations accessible by the authenticated user.
+
+        Returns:
+            List of dictionaries, each representing an organization.
+        """
+        try:
+            orgs_path = "/user/orgs"
+            orgs_data = await self._request("GET", orgs_path)
+            orgs = [
+                OrganizationGroup(
+                    id=str(org["id"]),
+                    name=org["login"],
+                    identifier=str(org["id"]),
+                    type="organization",
+                    children=[],
+                )
+                for org in orgs_data
+            ]
+            return orgs
+        except Exception as e:
+            logger.exception("Failed to fetch organizations from GitHub")
+            return []
+
+    async def list_projects(self, org_id: int) -> List[ProjectIdentifier]:
+        """Fetch projects accessible by the authenticated user.
+
+        Returns:
+            List of dictionaries, each representing a project."""
+        try:
+            projects_path = f"/orgs/{org_id}/repos"
+            projects_data = await self._request("GET", projects_path)
+            projects = [
+                ProjectIdentifier(
+                    id=str(p["id"]),
+                    name=p["name"],
+                    identifier=p["full_name"],
+                    type="project",
+                )
+                for p in projects_data
+            ]
+            return projects
+        except Exception as e:
+            logger.exception("Failed to fetch projects from GitHub")
+            return []
 
     async def get_repositories_grouped_by_owner(self) -> List[Dict[str, Any]]:
         """Fetch repositories accessible by the authenticated user, grouped by owner.
@@ -705,3 +782,231 @@ class GitHubClient(TrackerInterface):
         except Exception as e:
             logger.exception(f"Failed to add relation: {e}")
             return False
+
+    async def create_webhook(
+        self,
+        owner: str,
+        repo: str,
+        webhook_url: str,
+        secret: Optional[str] = None,
+        events: Optional[List[str]] = None,
+        active: bool = True,
+    ) -> Dict[str, Any]:
+        """Create a new webhook for a GitHub repository.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            webhook_url: The URL to which the payloads will be delivered.
+            secret: Optional secret for securing webhooks.
+            events: A list of events to subscribe to. Defaults to DEFAULT_GITHUB_WEBHOOK_EVENTS.
+            active: Whether the webhook is active.
+
+        Returns:
+            The created webhook data.
+        """
+        if not owner or not repo:
+            raise ValueError("Owner and repo must be specified to create a webhook.")
+
+        path = f"/repos/{owner}/{repo}/hooks"
+        config = {
+            "url": webhook_url,
+            "content_type": "json",
+        }
+        if secret:
+            config["secret"] = secret
+
+        payload_events = events if events else DEFAULT_GITHUB_WEBHOOK_EVENTS
+        if (
+            not payload_events
+        ):  # Ensure there's always some event if default is also empty for some reason
+            payload_events = ["push", "issues"]
+
+        payload = {
+            "name": "web",  # GitHub requires this to be "web"
+            "active": active,
+            "events": payload_events,
+            "config": config,
+        }
+        logger.info(
+            f"Creating webhook for {owner}/{repo} with events: {payload_events} pointing to {webhook_url}"
+        )
+        try:
+            webhook_data = await self._request("POST", path, data=payload)
+            logger.info(
+                f"Successfully created webhook ID {webhook_data.get('id')} for {owner}/{repo}"
+            )
+            return webhook_data
+        except httpx.HTTPStatusError as e:
+            if (
+                e.response.status_code == 422
+            ):  # Unprocessable Entity - often means hook already exists
+                logger.warning(
+                    f"Webhook for {owner}/{repo} at {webhook_url} might already exist or config is invalid: {e.response.text}"
+                )
+                # Attempt to list existing webhooks to confirm
+                existing_hooks = await self.list_webhooks(owner, repo)
+                for hook in existing_hooks:
+                    if hook.get("config", {}).get("url") == webhook_url:
+                        logger.info(
+                            f"Webhook for {owner}/{repo} at {webhook_url} already exists with ID {hook.get('id')}. Returning existing hook."
+                        )
+                        return hook
+                logger.error(
+                    f"Webhook creation for {owner}/{repo} failed with 422, but no existing hook found for {webhook_url}. Error: {e.response.text}"
+                )
+            logger.error(
+                f"Failed to create webhook for {owner}/{repo}: {e} - {e.response.text if e.response else 'No response text'}"
+            )
+            raise
+
+    async def update_webhook(
+        self,
+        owner: str,
+        repo: str,
+        hook_id: int,
+        webhook_url: Optional[str] = None,
+        secret: Optional[str] = None,
+        events: Optional[List[str]] = None,
+        add_events: Optional[List[str]] = None,
+        remove_events: Optional[List[str]] = None,
+        active: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Update an existing webhook for a GitHub repository.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            hook_id: The ID of the webhook to update.
+            webhook_url: New URL for the webhook.
+            secret: New secret for the webhook.
+            events: A list of events to replace the current subscription.
+            add_events: A list of events to add to the current subscription.
+            remove_events: A list of events to remove from the current subscription.
+            active: New active status for the webhook.
+
+        Returns:
+            The updated webhook data.
+        """
+        if not owner or not repo:
+            raise ValueError("Owner and repo must be specified to update a webhook.")
+
+        path = f"/repos/{owner}/{repo}/hooks/{hook_id}"
+        payload: Dict[str, Any] = {}
+        config_update: Dict[str, str] = {}
+
+        if webhook_url:
+            config_update["url"] = webhook_url
+        if secret:  # Note: GitHub API might require re-setting the secret if other config changes
+            config_update["secret"] = secret
+
+        if config_update:
+            payload["config"] = config_update
+
+        if (
+            events is not None
+        ):  # If events is provided (even empty list), it replaces existing events
+            payload["events"] = (
+                events if events else []
+            )  # Use empty list to unsubscribe from all
+        if add_events:
+            payload["add_events"] = add_events
+        if remove_events:
+            payload["remove_events"] = remove_events
+
+        if active is not None:
+            payload["active"] = active
+
+        if not payload:
+            logger.warning(
+                f"No update parameters provided for webhook ID {hook_id} on {owner}/{repo}."
+            )
+            # Optionally, fetch and return the current hook state or raise error
+            return await self.get_webhook(owner, repo, hook_id)
+
+        logger.info(
+            f"Updating webhook ID {hook_id} for {owner}/{repo} with payload: {payload}"
+        )
+        try:
+            updated_webhook_data = await self._request("PATCH", path, data=payload)
+            logger.info(f"Successfully updated webhook ID {hook_id} for {owner}/{repo}")
+            return updated_webhook_data
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Failed to update webhook ID {hook_id} for {owner}/{repo}: {e} - {e.response.text if e.response else 'No response text'}"
+            )
+            raise
+
+    async def list_webhooks(self, owner: str, repo: str) -> List[Dict[str, Any]]:
+        """List all webhooks for a GitHub repository.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+
+        Returns:
+            A list of webhooks.
+        """
+        if not owner or not repo:
+            raise ValueError("Owner and repo must be specified to list webhooks.")
+        path = f"/repos/{owner}/{repo}/hooks"
+        try:
+            hooks = await self._request("GET", path)
+            return hooks
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Failed to list webhooks for {owner}/{repo}: {e} - {e.response.text if e.response else 'No response text'}"
+            )
+            raise
+
+    async def get_webhook(self, owner: str, repo: str, hook_id: int) -> Dict[str, Any]:
+        """Get a specific webhook for a GitHub repository.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            hook_id: The ID of the webhook.
+
+        Returns:
+            The webhook data.
+        """
+        if not owner or not repo:
+            raise ValueError("Owner and repo must be specified to get a webhook.")
+        path = f"/repos/{owner}/{repo}/hooks/{hook_id}"
+        try:
+            hook = await self._request("GET", path)
+            return hook
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Failed to get webhook ID {hook_id} for {owner}/{repo}: {e} - {e.response.text if e.response else 'No response text'}"
+            )
+            raise
+
+    async def delete_webhook(self, owner: str, repo: str, hook_id: int) -> bool:
+        """Delete a webhook for a GitHub repository.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            hook_id: The ID of the webhook to delete.
+
+        Returns:
+            True if deletion was successful, False otherwise.
+        """
+        if not owner or not repo:
+            raise ValueError("Owner and repo must be specified to delete a webhook.")
+        path = f"/repos/{owner}/{repo}/hooks/{hook_id}"
+        try:
+            await self._request("DELETE", path)
+            logger.info(f"Successfully deleted webhook ID {hook_id} for {owner}/{repo}")
+            return True
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.warning(
+                    f"Webhook ID {hook_id} not found for deletion on {owner}/{repo}."
+                )
+                return False  # Or True, depending on desired idempotency
+            logger.error(
+                f"Failed to delete webhook ID {hook_id} for {owner}/{repo}: {e} - {e.response.text if e.response else 'No response text'}"
+            )
+            raise

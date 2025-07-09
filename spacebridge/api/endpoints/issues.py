@@ -22,6 +22,7 @@ from spacemodels.crud import (
     CRUDTracker,
     crud_embedding_model,
     crud_issue_embedding,
+    crud_tracker_scope_rule,
 )
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
@@ -140,35 +141,60 @@ async def get_tracker_client(
         )
     # --- End Authorization Check ---
 
-    # --- Project Selection Check ---
-    project_identifier = project.identifier  # Use the resolved project's identifier
-    included_list = set(tracker.included_project_identifiers or [])
-    excluded_list = set(tracker.excluded_project_identifiers or [])
-    has_includes = bool(included_list)
+    # --- New Scoping Logic ---
+    scope_rules = crud_tracker_scope_rule.get_by_tracker(db, tracker_id=tracker.id)
 
-    logger.debug(
-        f"Checking project '{project_identifier}' against tracker {tracker.id} rules: "
-        f"includes={included_list}, excludes={excluded_list}"
+    org_identifier = organization.identifier
+    project_identifier = project.identifier
+
+    org_rules = [rule for rule in scope_rules if rule.scope_type == "ORGANIZATION"]
+    project_rules = [rule for rule in scope_rules if rule.scope_type == "PROJECT"]
+
+    # Rule 1: Organization must be included
+    org_included = any(
+        rule.rule_type == "INCLUDE" and rule.identifier == org_identifier
+        for rule in org_rules
+    )
+    org_excluded = any(
+        rule.rule_type == "EXCLUDE" and rule.identifier == org_identifier
+        for rule in org_rules
     )
 
-    if project_identifier in excluded_list:
-        logger.warning(
-            f"Access denied: Project '{project_identifier}' is explicitly excluded by tracker {tracker.id}."
-        )
+    if org_excluded:
         raise HTTPException(
             status_code=403,
-            detail=f"Access denied: Project '{project.name}' is excluded.",
+            detail="Access denied: Organization is explicitly excluded.",
+        )
+    if not org_included:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: Organization is not included in tracker scope.",
         )
 
-    if has_includes and project_identifier not in included_list:
-        logger.warning(
-            f"Access denied: Project '{project_identifier}' is not in the inclusion list for tracker {tracker.id}."
-        )
+    # Rule 2: Project must not be excluded
+    project_excluded = any(
+        rule.rule_type == "EXCLUDE" and rule.identifier == project_identifier
+        for rule in project_rules
+    )
+    if project_excluded:
         raise HTTPException(
-            status_code=403,
-            detail=f"Access denied: Project '{project.name}' is not included for this tracker.",
+            status_code=403, detail="Access denied: Project is explicitly excluded."
         )
-    # --- End Project Selection Check ---
+
+    # Rule 3: If project-level includes exist, project must be in the list
+    project_level_includes = [
+        rule for rule in project_rules if rule.rule_type == "INCLUDE"
+    ]
+    if project_level_includes:
+        project_included = any(
+            rule.identifier == project_identifier for rule in project_level_includes
+        )
+        if not project_included:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: Project is not in the tracker's include list.",
+            )
+    # --- End New Scoping Logic ---
 
     tracker_type = tracker.tracker_type
 
@@ -312,9 +338,11 @@ async def search_issues(
         elif project:
             # If we have an organization, use it to narrow down the project search
             if org_id:
+                # get_by_name returns Optional[Project] when org_id is specified
                 proj = crud_project.get_by_name(
                     db, name=project, organization_id=org_id
                 )
+                # proj will be None if no project is found by that name in the org
             else:
                 # --- No organization specified: Search globally by slug/id AND name ---
                 logger.warning(
@@ -554,6 +582,7 @@ async def search_issues(
                             priority=issue.priority,
                             organization=organization_name,
                             project=project_name,
+                            project_id=issue.project_id,
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
@@ -689,6 +718,7 @@ async def search_issues(
                             priority=issue.priority,
                             organization=organization_name,
                             project=project_name,
+                            project_id=issue.project_id,
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
@@ -698,7 +728,7 @@ async def search_issues(
                             if isinstance(metadata_dict.get("labels"), list)
                             else [],
                             assignee=metadata_dict.get("assignee"),
-                            score=None,  # No score for full-text search
+                            score=0.0,  # No score for full-text search
                         )
                     )
 
@@ -815,7 +845,7 @@ async def create_issue(
                 org_input_identifier and not org
             ):  # Org identifier provided, but org not resolved yet
                 org = crud_organization.get_by_identifier(
-                    db, identifier=org_input_identifier
+                    db, identifier=org_input_identifier, account_id=current_user.id
                 ) or crud_organization.get_by_name(db, name=org_input_identifier)
                 if not org:
                     raise HTTPException(
@@ -1027,6 +1057,7 @@ async def create_issue(
             key=db_issue.key,
             organization=org.name,
             project=proj.slug,
+            project_id=proj.id,  # Add missing project_id
             title=db_issue.title,
             description=db_issue.description,
             status=db_issue.status,
@@ -1138,6 +1169,7 @@ def get_issue(
             external_id=issue.external_id,
             organization=organization.name,
             project=project.name,
+            project_id=issue.project_id,
             title=issue.title,
             description=issue.description,
             status=issue.status,
@@ -1337,8 +1369,11 @@ async def update_issue(
                     f"Calling tracker client to update issue {issue.external_id} with data: {update_data_for_tracker}"
                 )
                 # Use the issue's external_id for the tracker API call
+                issue_repo_id = issue.external_id
+                if issue.external_url:
+                    issue_repo_id = issue.external_url.split("/")[-1]
                 await tracker_client.update_issue(
-                    issue.external_id, IssueUpdate(**update_data_for_tracker)
+                    issue_repo_id, IssueUpdate(**update_data_for_tracker)
                 )
                 logger.info(
                     f"Successfully updated issue {issue.external_id} via tracker client."
@@ -1442,6 +1477,7 @@ async def update_issue(
             external_id=issue.external_id,
             organization=org_name,
             project=project_name,
+            project_id=issue.project_id,
             title=issue.title,
             description=issue.description,
             status=issue.status,

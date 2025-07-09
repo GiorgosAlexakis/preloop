@@ -1,3 +1,10 @@
+# Stage 1: Build SpaceLit
+FROM node:18-alpine AS space-lit-build
+WORKDIR /app
+COPY SpaceLit /app
+RUN npm install && npm run build
+
+# Stage 2: Build SpaceBridge
 FROM python:3.10-slim
 
 WORKDIR /app
@@ -18,6 +25,8 @@ RUN pip install -U --no-cache-dir build setuptools pip wheel mkdocs mkdocs-mater
 
 # Copy application code
 COPY . .
+
+COPY --from=space-lit-build /app/dist /app/SpaceLit/dist
 
 # Install the application
 RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync && pip install --no-cache-dir -e . && mkdocs build
