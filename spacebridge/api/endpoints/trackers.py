@@ -70,15 +70,15 @@ async def register_tracker(
         name = data.get("name")
         tracker_type_str = data.get("type")
         url_str = data.get("url")
-        token = data.get("token")
+        api_key = data.get("api_key")
         config = data.get("config")
         scope_rules_data = data.get("scope_rules", [])
 
         # Validate required fields
-        if not name or not tracker_type_str or not token:
+        if not name or not tracker_type_str or not api_key:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing required fields: name, type, token",
+                detail="Missing required fields: name, type, api_key",
             )
     except Exception as e:
         logger.error(f"Error parsing request data: {str(e)}")
@@ -109,7 +109,7 @@ async def register_tracker(
         client = await create_tracker_client(
             tracker_type=tracker_type.value,
             base_url=str(url_str) if url_str else None,
-            token=token,
+            token=api_key,
             config=config or {},
         )
 
@@ -180,7 +180,7 @@ async def register_tracker(
             name=name,
             tracker_type=tracker_type.value,
             url=str(url_str) if url_str else None,
-            api_key=token,  # In production, this should be encrypted
+            api_key=api_key,
             connection_details=config or {},
             account_id=account.id,
             is_active=True,
@@ -352,6 +352,9 @@ async def update_tracker(
     # Update other fields
     for field, value in update_data.items():
         setattr(tracker, field, value)
+
+    if update_data.get("api_key") == "unchanged":
+        del update_data["api_key"]
 
     # Special handling if api_key is updated - revalidate connection?
     if "api_key" in update_data:
