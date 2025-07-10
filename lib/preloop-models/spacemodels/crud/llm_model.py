@@ -18,7 +18,7 @@ class CRUDLLMModel(CRUDBase[LLMModel]):
 
         If include_ownerless is True, it will also look for a system-wide default model.
         """
-        query = db.query(self.model).filter(self.model.is_default == True)
+        query = db.query(self.model).filter(self.model.is_default)
         if not include_ownerless:
             query = query.filter(self.model.account_id.isnot(None))
         return query.first()
@@ -27,7 +27,7 @@ class CRUDLLMModel(CRUDBase[LLMModel]):
         """Check if a system-wide default model exists."""
         return (
             db.query(self.model.id)
-            .filter(self.model.is_default == True, self.model.account_id.is_(None))
+            .filter(self.model.is_default, self.model.account_id.is_(None))
             .first()
             is not None
         )
