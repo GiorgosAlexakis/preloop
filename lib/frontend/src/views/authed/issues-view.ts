@@ -26,7 +26,10 @@ import {
   listOrganizations,
   Organization,
 } from '../../api';
-import { DEFAULT_SIMILARITY_THRESHOLD, DEFAULT_SIMILARITY_THRESHOLD_CHARTS } from '../../config';
+import {
+  DEFAULT_SIMILARITY_THRESHOLD,
+  DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
+} from '../../config';
 import { LlmVerdict, renderVerdict } from '../../utils/verdict';
 import consoleStyles from '../../styles/console-styles.css?inline';
 

@@ -13,7 +13,10 @@ import * as api from '../../api';
 import { AuthedElement } from '../../api';
 import '../../components/similar-issues-widget.ts';
 import '../../components/duplicate-stats-chart.ts';
-import { DEFAULT_SIMILARITY_THRESHOLD, DEFAULT_SIMILARITY_THRESHOLD_CHARTS } from '../../config';
+import {
+  DEFAULT_SIMILARITY_THRESHOLD,
+  DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
+} from '../../config';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 interface Tracker {
@@ -217,7 +220,7 @@ export class DashboardView extends AuthedElement {
                       Similar Issues per Project
                       <sl-tooltip
                         content="Showing issues with a similarity score of ${DEFAULT_SIMILARITY_THRESHOLD_CHARTS *
-                          100}% or higher."
+                        100}% or higher."
                       >
                         <sl-icon name="question-circle"></sl-icon>
                       </sl-tooltip>
