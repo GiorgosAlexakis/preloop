@@ -6,6 +6,7 @@ import '../views/public/login-view.ts';
 import '../views/public/register-view.ts';
 import '../views/public/forgot-password-view.ts';
 import '../views/public/request-demo-view.ts';
+import '../views/public/whatis-mcp-view.ts';
 import '../views/authed/console-shell.ts';
 import '../views/authed/dashboard-view.ts';
 import '../views/authed/trackers-view.ts';
@@ -43,6 +44,7 @@ export class LitApp extends LitElement {
       { path: '/register', component: 'register-view' },
       { path: '/forgot-password', component: 'forgot-password-view' },
       { path: '/request-demo', component: 'request-demo-view' },
+      { path: '/whatis-mcp', component: 'whatis-mcp-view' },
       {
         path: '/console',
         component: 'console-shell',

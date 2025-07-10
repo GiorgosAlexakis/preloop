@@ -23,9 +23,13 @@ export class AppHeader extends LitElement {
   @state()
   private user: User | null = null;
 
+  @state()
+  private isMenuOpen = false;
+
   static styles = css`
     :host {
       display: block;
+      position: relative;
     }
     .header-container {
       display: flex;
@@ -45,6 +49,47 @@ export class AppHeader extends LitElement {
     }
     sl-icon-button::part(base) {
       font-size: 1.5rem;
+    }
+
+    .mobile-menu-button {
+      display: none;
+    }
+
+    .mobile-menu-button sl-icon-button {
+      color: var(--sl-color-primary-500);
+    }
+
+    @media (max-width: 768px) {
+      nav {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background-color: #161b24;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 1rem;
+        border-top: 1px solid #30363d;
+        z-index: 100;
+      }
+
+      nav.mobile-menu-open {
+        display: flex;
+      }
+
+      .mobile-menu-button {
+        display: block;
+      }
+
+      nav sl-button {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      nav sl-button::part(base) {
+        justify-content: flex-start;
+      }
     }
   `;
 
@@ -115,7 +160,7 @@ export class AppHeader extends LitElement {
                   </a>
                 </div>`}
           </div>
-          <nav>
+          <nav class="${this.isMenuOpen ? 'mobile-menu-open' : ''}">
             <sl-button href="/docs" variant="text">Docs</sl-button>
             ${this.isAuthenticated && this.user
               ? html`
@@ -130,6 +175,15 @@ export class AppHeader extends LitElement {
                   >
                 `}
           </nav>
+          <div class="mobile-menu-button">
+            <sl-icon-button
+              name="list"
+              label="Menu"
+              @click=${() => {
+                this.isMenuOpen = !this.isMenuOpen;
+              }}
+            ></sl-icon-button>
+          </div>
         </div>
       </header>
     `;

@@ -7,11 +7,16 @@ import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import * as api from '../../api';
 import { AuthedElement } from '../../api';
 import '../../components/similar-issues-widget.ts';
 import '../../components/duplicate-stats-chart.ts';
-import { DEFAULT_SIMILARITY_THRESHOLD } from '../../config';
+import {
+  DEFAULT_SIMILARITY_THRESHOLD,
+  DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
+} from '../../config';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 interface Tracker {
@@ -175,6 +180,15 @@ export class DashboardView extends AuthedElement {
         gap: var(--sl-spacing-x-small);
         white-space: nowrap;
       }
+      .chart-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      sl-icon {
+        font-size: 1rem;
+      }
       @media (max-width: 992px) {
         .overview-layout {
           grid-template-columns: 1fr;
@@ -202,9 +216,17 @@ export class DashboardView extends AuthedElement {
               ? html`
                   <similar-issues-widget></similar-issues-widget>
                   <sl-card>
-                    <div slot="header">Similar Issues per Project</div>
+                    <div slot="header" class="chart-header">
+                      Similar Issues per Project
+                      <sl-tooltip
+                        content="Showing issues with a similarity score of ${DEFAULT_SIMILARITY_THRESHOLD_CHARTS *
+                        100}% or higher."
+                      >
+                        <sl-icon name="question-circle"></sl-icon>
+                      </sl-tooltip>
+                    </div>
                     <duplicate-stats-chart
-                      .similarityThreshold=${DEFAULT_SIMILARITY_THRESHOLD}
+                      .similarityThreshold=${DEFAULT_SIMILARITY_THRESHOLD_CHARTS}
                     ></duplicate-stats-chart>
                   </sl-card>
                 `
