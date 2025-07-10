@@ -7,17 +7,29 @@ from typing import Optional, List, Dict
 
 from pydantic import BaseModel
 
+from spacemodels.models.issue_duplicate import IssueDuplicateResolution
+
 
 class IssueDuplicateBase(BaseModel):
     """Base schema for IssueDuplicate."""
 
     issue1_id: str
     issue2_id: str
+
+    # LLM's decision
     decision: str
     decision_at: Optional[datetime] = None
+    reason: Optional[str] = None
+
+    # User's resolution
+    resolution: Optional[IssueDuplicateResolution] = None
+    resolution_at: Optional[datetime] = None
+    resolution_reason: Optional[str] = None
+    resulting_issue1_id: Optional[str] = None
+    resulting_issue2_id: Optional[str] = None
+
     llm_model_id: str
     llm_model_name: Optional[str] = None
-    reason: Optional[str] = None
 
 
 class IssueDuplicateCreate(IssueDuplicateBase):
@@ -30,6 +42,15 @@ class IssueDuplicateUpdate(IssueDuplicateBase):
     """Schema for updating an IssueDuplicate."""
 
     pass
+
+
+class IssueDuplicateResolutionUpdate(BaseModel):
+    """Schema for updating the resolution of an IssueDuplicate."""
+
+    resolution: IssueDuplicateResolution
+    resolution_reason: Optional[str] = None
+    resulting_issue1_id: Optional[str] = None
+    resulting_issue2_id: Optional[str] = None
 
 
 class IssueDuplicate(IssueDuplicateBase):

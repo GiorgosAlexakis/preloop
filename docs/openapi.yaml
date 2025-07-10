@@ -2145,6 +2145,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue-duplicates/resolve:
+    patch:
+      tags:
+      - Issue Duplicates
+      - Issue Duplicates
+      summary: Resolve Issue Duplicate
+      description: Resolve a duplicate issue pair.
+      operationId: resolve_issue_duplicate_api_v1_issue_duplicates_resolve_patch
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: issue1_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Issue1 Id
+      - name: issue2_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Issue2 Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueDuplicateResolutionUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicate'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issue-duplicates:
     get:
       tags:
@@ -3007,6 +3049,36 @@ components:
             format: date-time
           - type: 'null'
           title: Decision At
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        resolution:
+          anyOf:
+          - $ref: '#/components/schemas/IssueDuplicateResolution'
+          - type: 'null'
+        resolution_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Resolution At
+        resolution_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Reason
+        resulting_issue1_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue1 Id
+        resulting_issue2_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue2 Id
         llm_model_id:
           type: string
           title: Llm Model Id
@@ -3015,11 +3087,6 @@ components:
           - type: string
           - type: 'null'
           title: Llm Model Name
-        reason:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Reason
         id:
           type: string
           title: Id
@@ -3063,6 +3130,40 @@ components:
       - total
       - duplicates
       title: IssueDuplicateProjectStats
+    IssueDuplicateResolution:
+      type: string
+      enum:
+      - closed
+      - merged
+      - disambiguated
+      - dismissed
+      - not_a_duplicate
+      title: IssueDuplicateResolution
+      description: Resolution of a duplicate issue suggestion.
+    IssueDuplicateResolutionUpdate:
+      properties:
+        resolution:
+          $ref: '#/components/schemas/IssueDuplicateResolution'
+        resolution_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Reason
+        resulting_issue1_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue1 Id
+        resulting_issue2_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue2 Id
+      type: object
+      required:
+      - resolution
+      title: IssueDuplicateResolutionUpdate
+      description: Schema for updating the resolution of an IssueDuplicate.
     IssueDuplicateStats:
       properties:
         projects:

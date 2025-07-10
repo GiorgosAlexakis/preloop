@@ -8,6 +8,7 @@ import os
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate as IssueDuplicateSchema,
     IssueDuplicateCreate,
+    IssueDuplicateResolutionUpdate,
 )
 
 from spacebridge.schemas.issue import IssueResponse
@@ -229,6 +230,42 @@ def check_or_create_issue_duplicate(
             f"An unexpected error occurred during LLM invocation for model '{default_model.model_name}': {e}"
         )
         raise HTTPException(status_code=500, detail=f"LLM processing error: {str(e)}")
+
+
+@router.patch(
+    "/issue-duplicates/resolve",
+    response_model=IssueDuplicateSchema,
+    tags=["Issue Duplicates"],
+)
+def resolve_issue_duplicate(
+    *,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+    issue1_id: str,
+    issue2_id: str,
+    resolution_in: IssueDuplicateResolutionUpdate,
+) -> Any:
+    """Resolve a duplicate issue pair."""
+    existing_duplicate = crud_issue_duplicate.get_by_issue_ids(
+        db, issue1_id=issue1_id, issue2_id=issue2_id
+    )
+    if not existing_duplicate:
+        raise HTTPException(status_code=404, detail="Duplicate entry not found.")
+
+    # Check if the user has access to the project containing the issues
+    # Raises an exception if not
+    project_id = existing_duplicate.issue1.project_id
+    _get_accessible_projects(db, current_user, [project_id])
+
+    updated_duplicate = crud_issue_duplicate.update_resolution(
+        db,
+        db_obj=existing_duplicate,
+        resolution=resolution_in.resolution,
+        resolution_reason=resolution_in.resolution_reason,
+        resulting_issue1_id=resolution_in.resulting_issue1_id,
+        resulting_issue2_id=resolution_in.resulting_issue2_id,
+    )
+    return updated_duplicate
 
 
 def _find_issue_duplicates_logic(
