@@ -40,17 +40,21 @@ async def get_model_configuration(
 
 
 async def get_model_configurations_by_organization(
-    db: Session, organization_id: uuid.UUID, skip: int = 0, limit: int = 100
+    db: Session,
+    organization_id: uuid.UUID,
+    skip: int = 0,
+    limit: int = 100,
+    account_id: Optional[str] = None,
 ) -> List[ModelConfiguration]:
     """
     Retrieve model configurations for a specific organization.
     """
-    result = await db.execute(
-        select(ModelConfiguration)
-        .filter(ModelConfiguration.organization_id == organization_id)
-        .offset(skip)
-        .limit(limit)
+    query = select(ModelConfiguration).filter(
+        ModelConfiguration.organization_id == organization_id
     )
+    if account_id:
+        query = query.filter(ModelConfiguration.owner_user_id == account_id)
+    result = await db.execute(query.offset(skip).limit(limit))
     return result.scalars().all()
 
 

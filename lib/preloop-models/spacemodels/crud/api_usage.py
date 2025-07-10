@@ -83,57 +83,49 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             return None
 
     def get_user_usage(
-        self, db: Session, *, username: str, days: int = 30
+        self,
+        db: Session,
+        *,
+        username: str,
+        days: int = 30,
+        account_id: Optional[str] = None,
     ) -> List[ApiUsage]:
-        """Get API usage for a specific user within a time period.
-
-        Args:
-            db: Database session
-            username: Username to filter by
-            days: Number of days to look back
-
-        Returns:
-            List of API usage records
-        """
+        """Get API usage for a specific user within a time period."""
         start_date = datetime.now(timezone.utc) - timedelta(days=days)
-
-        return (
-            db.query(ApiUsage)
-            .filter(ApiUsage.username == username, ApiUsage.timestamp >= start_date)
-            .order_by(ApiUsage.timestamp.desc())
-            .all()
+        query = db.query(ApiUsage).filter(
+            ApiUsage.username == username, ApiUsage.timestamp >= start_date
         )
+        if account_id:
+            query = query.join(Account, ApiUsage.username == Account.username).filter(
+                Account.id == account_id
+            )
+        return query.order_by(ApiUsage.timestamp.desc()).all()
 
     def get_endpoint_stats(
-        self, db: Session, *, days: int = 30
+        self, db: Session, *, days: int = 30, account_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get statistics for API endpoints.
-
-        Args:
-            db: Database session
-            days: Number of days to look back
-
-        Returns:
-            List of dictionaries with endpoint statistics
-        """
+        """Get statistics for API endpoints."""
         start_date = datetime.now(timezone.utc) - timedelta(days=days)
+        query = db.query(
+            ApiUsage.endpoint,
+            ApiUsage.method,
+            func.count().label("request_count"),
+            func.avg(ApiUsage.duration).label("avg_duration"),
+            func.min(ApiUsage.duration).label("min_duration"),
+            func.max(ApiUsage.duration).label("max_duration"),
+        ).filter(ApiUsage.timestamp >= start_date)
+
+        if account_id:
+            query = query.join(Account, ApiUsage.username == Account.username).filter(
+                Account.id == account_id
+            )
 
         result = (
-            db.query(
-                ApiUsage.endpoint,
-                ApiUsage.method,
-                func.count().label("request_count"),
-                func.avg(ApiUsage.duration).label("avg_duration"),
-                func.min(ApiUsage.duration).label("min_duration"),
-                func.max(ApiUsage.duration).label("max_duration"),
-            )
-            .filter(ApiUsage.timestamp >= start_date)
-            .group_by(ApiUsage.endpoint, ApiUsage.method)
+            query.group_by(ApiUsage.endpoint, ApiUsage.method)
             .order_by(func.count().desc())
             .all()
         )
 
-        # Convert to list of dictionaries
         return [
             {
                 "endpoint": row.endpoint,
@@ -147,34 +139,33 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         ]
 
     def get_user_stats(
-        self, db: Session, *, days: int = 30, limit: int = 10
+        self,
+        db: Session,
+        *,
+        days: int = 30,
+        limit: int = 10,
+        account_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Get statistics for API users.
-
-        Args:
-            db: Database session
-            days: Number of days to look back
-            limit: Maximum number of users to return
-
-        Returns:
-            List of dictionaries with user statistics
-        """
+        """Get statistics for API users."""
         start_date = datetime.now(timezone.utc) - timedelta(days=days)
+        query = db.query(
+            ApiUsage.username,
+            func.count().label("request_count"),
+            func.avg(ApiUsage.duration).label("avg_duration"),
+        ).filter(ApiUsage.timestamp >= start_date)
+
+        if account_id:
+            query = query.join(Account, ApiUsage.username == Account.username).filter(
+                Account.id == account_id
+            )
 
         result = (
-            db.query(
-                ApiUsage.username,
-                func.count().label("request_count"),
-                func.avg(ApiUsage.duration).label("avg_duration"),
-            )
-            .filter(ApiUsage.timestamp >= start_date)
-            .group_by(ApiUsage.username)
+            query.group_by(ApiUsage.username)
             .order_by(func.count().desc())
             .limit(limit)
             .all()
         )
 
-        # Convert to list of dictionaries
         return [
             {
                 "username": row.username,

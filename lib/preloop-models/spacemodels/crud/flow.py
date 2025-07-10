@@ -28,27 +28,22 @@ class CRUDFlow(CRUDBase[models.Flow]):
         return db.query(self.model).filter(self.model.id == id).first()
 
     def get_by_organization(
-        self, db: Session, organization_id: uuid.UUID, skip: int = 0, limit: int = 100
+        self,
+        db: Session,
+        organization_id: uuid.UUID,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
     ) -> List[models.Flow]:
         """
         Retrieve flows for a specific organization with pagination.
-
-        Args:
-            db: The database session.
-            organization_id: The ID of the organization.
-            skip: Number of records to skip for pagination.
-            limit: Maximum number of records to return.
-
-        Returns:
-            A list of flow objects.
         """
-        return (
-            db.query(self.model)
-            .filter(self.model.organization_id == organization_id)
-            .offset(skip)
-            .limit(limit)
-            .all()
+        query = db.query(self.model).filter(
+            self.model.organization_id == organization_id
         )
+        if account_id:
+            query = query.filter(self.model.created_by_user_id == account_id)
+        return query.offset(skip).limit(limit).all()
 
     def create(self, db: Session, *, flow_in: schemas.FlowCreate) -> models.Flow:
         """

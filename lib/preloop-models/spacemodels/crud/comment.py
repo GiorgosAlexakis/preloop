@@ -20,38 +20,53 @@ class CRUDComment(CRUDBase[Comment]):
         return super().create(db, obj_in=comment_data)
 
     def get_by_external_id(
-        self, db: Session, *, external_id: str, issue_id: Optional[str] = None
+        self,
+        db: Session,
+        *,
+        external_id: str,
+        issue_id: Optional[str] = None,
+        account_id: Optional[str] = None,
     ) -> Optional[Comment]:
         """Get comment by external ID with optional issue filter."""
         query = db.query(self.model).filter(self.model.external_id == external_id)
         if issue_id:
             query = query.filter(self.model.issue_id == issue_id)
+        if account_id:
+            query = query.filter(self.model.author_id == account_id)
         return query.first()
 
     def get_multi_by_issue(
-        self, db: Session, *, issue_id: str, skip: int = 0, limit: int = 100
+        self,
+        db: Session,
+        *,
+        issue_id: str,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
     ) -> List[Comment]:
         """Get multiple comments for a specific issue."""
+        query = db.query(self.model).filter(self.model.issue_id == issue_id)
+        if account_id:
+            query = query.filter(self.model.author_id == account_id)
         return (
-            db.query(self.model)
-            .filter(self.model.issue_id == issue_id)
-            .order_by(self.model.created_at.asc())
-            .offset(skip)
-            .limit(limit)
-            .all()
+            query.order_by(self.model.created_at.asc()).offset(skip).limit(limit).all()
         )
 
     def get_multi_by_author(
-        self, db: Session, *, author_id: str, skip: int = 0, limit: int = 100
+        self,
+        db: Session,
+        *,
+        author_id: str,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
     ) -> List[Comment]:
         """Get multiple comments by a specific author."""
+        query = db.query(self.model).filter(self.model.author_id == author_id)
+        if account_id:
+            query = query.filter(self.model.author_id == account_id)
         return (
-            db.query(self.model)
-            .filter(self.model.author_id == author_id)
-            .order_by(self.model.created_at.desc())
-            .offset(skip)
-            .limit(limit)
-            .all()
+            query.order_by(self.model.created_at.desc()).offset(skip).limit(limit).all()
         )
 
 
