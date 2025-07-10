@@ -2335,7 +2335,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IssueDuplicateSuggestionRequest'
+              $ref: '#/components/schemas/Body_get_resolution_suggestion_api_v1_LLM_suggestion_post'
         required: true
       responses:
         '200':
@@ -2717,6 +2717,23 @@ components:
       - requests_by_endpoint
       title: ApiUsageStatistics
       description: Model for API usage statistics.
+    Body_get_resolution_suggestion_api_v1_LLM_suggestion_post:
+      properties:
+        issue1_id:
+          type: string
+          title: Issue1 Id
+        issue2_id:
+          type: string
+          title: Issue2 Id
+        resolution:
+          type: string
+          title: Resolution
+      type: object
+      required:
+      - issue1_id
+      - issue2_id
+      - resolution
+      title: Body_get_resolution_suggestion_api_v1_LLM_suggestion_post
     Body_login_form_api_v1_auth_token_post:
       properties:
         grant_type:
@@ -3220,23 +3237,6 @@ components:
       required:
       - projects
       title: IssueDuplicateStats
-    IssueDuplicateSuggestionRequest:
-      properties:
-        issue1_id:
-          type: string
-          title: Issue1 Id
-        issue2_id:
-          type: string
-          title: Issue2 Id
-        resolution:
-          type: string
-          title: Resolution
-      type: object
-      required:
-      - issue1_id
-      - issue2_id
-      - resolution
-      title: IssueDuplicateSuggestionRequest
     IssueDuplicateSuggestionResponse:
       properties:
         merged_title:

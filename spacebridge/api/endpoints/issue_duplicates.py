@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import Any, Dict, List, Literal, Optional, Tuple
 import logging
 import openai
 import os
+import json
 
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate as IssueDuplicateSchema,
     IssueDuplicateCreate,
     IssueDuplicateResolve,
-    IssueDuplicateSuggestionRequest,
     IssueDuplicateSuggestionResponse,
 )
 from spacemodels.crud import issue as issue_crud
@@ -24,6 +24,8 @@ from spacemodels.crud import (
     crud_embedding_model,
     crud_issue,
     crud_llm_model,
+    crud_project,
+    crud_organization,
 )
 from spacemodels.db.session import get_db_session as get_db
 
@@ -601,57 +603,123 @@ def get_projects_duplicate_stats(
     return IssueDuplicateStats(projects=stats)
 
 
+MERGE_PROMPT = """
+You are an expert software engineering assistant. Your task is to merge two issue reports into a single, comprehensive issue. Analyze the title and description of both issues provided below.
+
+Issue 1 Title: {title1}
+Issue 1 Description: {description1}
+
+Issue 2 Title: {title2}
+Issue 2 Description: {description2}
+
+Generate a new, merged issue that includes:
+1. `merged_title`: A clear and concise title that combines the key information from both issues.
+2. `merged_description`: A detailed description that synthesizes the information from both issues, preserving important context, steps to reproduce, and expected outcomes. Structure it logically.
+3. `explanation`: A brief explanation of how you combined the issues and why.
+
+Format your response as a single JSON object with the keys "merged_title", "merged_description", and "explanation".
+"""
+
+DISAMBIGUATE_PROMPT = """
+You are an expert software engineering assistant. Your task is to disambiguate two similar-looking issue reports. They might be distinct bugs, or one might be a subset of the other. Analyze the title and description of both issues provided below.
+
+Issue 1 Title: {title1}
+Issue 1 Description: {description1}
+
+Issue 2 Title: {title2}
+Issue 2 Description: {description2}
+
+Generate new, distinct titles and descriptions for both issues to make them clearer and easier to track independently. Provide:
+1. `disambiguated_title1`: A new, more specific title for Issue 1.
+2. `disambiguated_description1`: A revised description for Issue 1, clarifying its unique scope.
+3. `disambiguated_title2`: A new, more specific title for Issue 2.
+4. `disambiguated_description2`: A revised description for Issue 2, clarifying its unique scope.
+5. `explanation`: A brief explanation of the changes you made and the reasoning for the disambiguation.
+
+Format your response as a single JSON object with the keys "disambiguated_title1", "disambiguated_description1", "disambiguated_title2", "disambiguated_description2", and "explanation".
+"""
+
+
 @router.post("/LLM-suggestion", response_model=IssueDuplicateSuggestionResponse)
 def get_resolution_suggestion(
-    suggestion_request: IssueDuplicateSuggestionRequest,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
+    issue1_id: str = Body(...),
+    issue2_id: str = Body(...),
+    resolution: str = Body(...),
 ):
     """Generate a suggestion for resolving a duplicate issue pair."""
-    issue1 = crud_issue.get(db, id=suggestion_request.issue1_id)
-    issue2 = crud_issue.get(db, id=suggestion_request.issue2_id)
+    issue1 = crud_issue.get(db, id=issue1_id)
+    issue2 = crud_issue.get(db, id=issue2_id)
 
     if not issue1 or not issue2:
         raise HTTPException(status_code=404, detail="One or both issues not found")
 
-    # For simplicity, we'll just check access to the first project.
-    # A more robust implementation might check both.
-    crud.project.check_user_project_access(
-        db, user_id=current_user.id, project_id=issue1.project_id
-    )
+    project = crud_project.get(db, id=issue1.project_id)
 
-    if suggestion_request.resolution == "merge":
-        # Placeholder for LLM call to generate merge suggestion
-        merged_title = f"Merged: {issue1.title} & {issue2.title}"
-        merged_description = (
-            f"This issue combines the details of two related issues.\n\n"
-            f"From Issue {issue1.key}:\n{issue1.description}\n\n"
-            f"From Issue {issue2.key}:\n{issue2.description}"
-        )
-        explanation = "The titles and descriptions of both issues were combined to create a comprehensive new issue."
-        return IssueDuplicateSuggestionResponse(
-            merged_title=merged_title,
-            merged_description=merged_description,
-            explanation=explanation,
-        )
+    # Authorization check
+    organization = crud_organization.get(db, id=project.organization_id)
+    if (
+        not organization
+        or not organization.tracker
+        or organization.tracker.account_id != current_user.id
+    ):
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    elif suggestion_request.resolution == "disambiguate":
-        # Placeholder for LLM call to generate disambiguation suggestion
-        disambiguated_title1 = f"{issue1.title} (Disambiguated)"
-        disambiguated_description1 = f"Original Description:\n{issue1.description}"
-        disambiguated_title2 = f"{issue2.title} (Disambiguated)"
-        disambiguated_description2 = f"Original Description:\n{issue2.description}"
-        explanation = "The titles have been updated to be more specific. Please review and refine the descriptions to ensure they are distinct."
-        return IssueDuplicateSuggestionResponse(
-            disambiguated_title1=disambiguated_title1,
-            disambiguated_description1=disambiguated_description1,
-            disambiguated_title2=disambiguated_title2,
-            disambiguated_description2=disambiguated_description2,
-            explanation=explanation,
-        )
-
-    else:
+    default_model = crud_llm_model.get_default_active_model(db, include_ownerless=True)
+    if not default_model:
+        logger.error("No default active LLM model configured.")
         raise HTTPException(
-            status_code=400,
-            detail="Suggestions are only available for MERGE or DISAMBIGUATE resolutions.",
+            status_code=500, detail="No default active LLM model configured."
+        )
+
+    logger.info(f"Using LLM model '{default_model.model_name}'.")
+
+    client = openai.OpenAI()
+
+    try:
+        if resolution == "merged":
+            prompt = MERGE_PROMPT.format(
+                title1=issue1.title,
+                description1=issue1.description,
+                title2=issue2.title,
+                description2=issue2.description,
+            )
+            llm_response = client.chat.completions.create(
+                model=default_model.model_name,
+                messages=[{"content": prompt, "role": "user"}],
+                response_format={"type": "json_object"},
+            )
+            suggestion_data = json.loads(llm_response.choices[0].message.content)
+            return IssueDuplicateSuggestionResponse(**suggestion_data)
+
+        elif resolution == "disambiguated":
+            prompt = DISAMBIGUATE_PROMPT.format(
+                title1=issue1.title,
+                description1=issue1.description,
+                title2=issue2.title,
+                description2=issue2.description,
+            )
+            llm_response = client.chat.completions.create(
+                model=default_model.model_name,
+                messages=[{"content": prompt, "role": "user"}],
+                response_format={"type": "json_object"},
+            )
+            suggestion_data = json.loads(llm_response.choices[0].message.content)
+            return IssueDuplicateSuggestionResponse(**suggestion_data)
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Suggestions are only available for 'merged' or 'disambiguated' resolutions.",
+            )
+    except openai.APIError as e:
+        logger.error(f"OpenAI API call failed: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate suggestion from LLM."
+        )
+    except Exception as e:
+        logger.error(f"LLM suggestion failed: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate suggestion from LLM."
         )
