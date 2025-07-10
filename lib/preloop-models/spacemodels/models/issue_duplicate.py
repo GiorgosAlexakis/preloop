@@ -9,9 +9,9 @@ from sqlalchemy.orm import relationship
 from .base import Base
 
 
-
 class IssueDuplicateResolution(enum.Enum):
     """Resolution of a duplicate issue suggestion."""
+
     CLOSED = "closed"
     MERGED = "merged"
     DISAMBIGUATED = "disambiguated"
