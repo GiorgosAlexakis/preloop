@@ -11,7 +11,7 @@ image:
 
 spacelit:
   repository: registry.spacecode.ai/spacecode/spacelit
-  tag: "shoelace"
+  tag: "latest"
   pullPolicy: Always
 
 # Image pull secrets
