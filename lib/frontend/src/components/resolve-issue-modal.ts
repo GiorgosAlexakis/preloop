@@ -52,6 +52,15 @@ export class ResolveIssueModal extends LitElement {
 
   private async _startResolution(step: ResolutionStep) {
     this._resolutionStep = step;
+
+    // Reset previous suggestions
+    this._mergedTitle = '';
+    this._mergedDescription = '';
+    this._disambiguatedTitle1 = '';
+    this._disambiguatedDescription1 = '';
+    this._disambiguatedTitle2 = '';
+    this._disambiguatedDescription2 = '';
+
     if (step === 'merge' || step === 'disambiguate') {
       if (!this.duplicatePair?.issue1 || !this.duplicatePair?.issue2) return;
       this._isLoadingSuggestion = true;
@@ -242,19 +251,24 @@ export class ResolveIssueModal extends LitElement {
             >Merge ${issueB?.key} into ${issueA?.key}</sl-radio
           >
         </sl-radio-group>
-        <div class="form-group">
-          <sl-input
-            label="Merged Issue Title"
-            .value=${this._mergedTitle}
-            @sl-input=${(e: any) => (this._mergedTitle = e.target.value)}
-          ></sl-input>
-          <sl-textarea
-            label="Merged Issue Description"
-            .value=${this._mergedDescription}
-            @sl-input=${(e: any) => (this._mergedDescription = e.target.value)}
-            rows="8"
-          ></sl-textarea>
-        </div>
+        ${this._isLoadingSuggestion
+          ? html`<div class="loading-suggestion"><sl-spinner></sl-spinner><div>Generating suggestion...</div></div>`
+          : html`
+              <div class="form-group">
+                <sl-input
+                  label="Merged Issue Title"
+                  .value=${this._mergedTitle}
+                  @sl-input=${(e: any) => (this._mergedTitle = e.target.value)}
+                ></sl-input>
+                <sl-textarea
+                  label="Merged Issue Description"
+                  .value=${this._mergedDescription}
+                  @sl-input=${(e: any) =>
+                    (this._mergedDescription = e.target.value)}
+                  rows="8"
+                ></sl-textarea>
+              </div>
+            `}
         <div class="footer-buttons">
           <sl-button @click="${this._goBack}">Back</sl-button>
           <sl-button
@@ -279,40 +293,44 @@ export class ResolveIssueModal extends LitElement {
           Edit the titles and descriptions to make these issues distinct. Both
           will be updated.
         </p>
-        <div class="form-group">
-          <div class="sub-form-group">
-            <h3>${issueA?.key}: ${issueA?.title}</h3>
-            <sl-input
-              label="New Title"
-              .value=${this._disambiguatedTitle1}
-              @sl-input=${(e: any) =>
-                (this._disambiguatedTitle1 = e.target.value)}
-            ></sl-input>
-            <sl-textarea
-              label="New Description"
-              .value=${this._disambiguatedDescription1}
-              @sl-input=${(e: any) =>
-                (this._disambiguatedDescription1 = e.target.value)}
-              rows="6"
-            ></sl-textarea>
-          </div>
-          <div class="sub-form-group">
-            <h3>${issueB?.key}: ${issueB?.title}</h3>
-            <sl-input
-              label="New Title"
-              .value=${this._disambiguatedTitle2}
-              @sl-input=${(e: any) =>
-                (this._disambiguatedTitle2 = e.target.value)}
-            ></sl-input>
-            <sl-textarea
-              label="New Description"
-              .value=${this._disambiguatedDescription2}
-              @sl-input=${(e: any) =>
-                (this._disambiguatedDescription2 = e.target.value)}
-              rows="6"
-            ></sl-textarea>
-          </div>
-        </div>
+        ${this._isLoadingSuggestion
+          ? html`<div class="loading-suggestion"><sl-spinner></sl-spinner><div>Generating suggestion...</div></div>`
+          : html`
+              <div class="form-group">
+                <div class="sub-form-group">
+                  <h3>${issueA?.key}: ${issueA?.title}</h3>
+                  <sl-input
+                    label="New Title"
+                    .value=${this._disambiguatedTitle1}
+                    @sl-input=${(e: any) =>
+                      (this._disambiguatedTitle1 = e.target.value)}
+                  ></sl-input>
+                  <sl-textarea
+                    label="New Description"
+                    .value=${this._disambiguatedDescription1}
+                    @sl-input=${(e: any) =>
+                      (this._disambiguatedDescription1 = e.target.value)}
+                    rows="6"
+                  ></sl-textarea>
+                </div>
+                <div class="sub-form-group">
+                  <h3>${issueB?.key}: ${issueB?.title}</h3>
+                  <sl-input
+                    label="New Title"
+                    .value=${this._disambiguatedTitle2}
+                    @sl-input=${(e: any) =>
+                      (this._disambiguatedTitle2 = e.target.value)}
+                  ></sl-input>
+                  <sl-textarea
+                    label="New Description"
+                    .value=${this._disambiguatedDescription2}
+                    @sl-input=${(e: any) =>
+                      (this._disambiguatedDescription2 = e.target.value)}
+                    rows="6"
+                  ></sl-textarea>
+                </div>
+              </div>
+            `}
         <div class="footer-buttons">
           <sl-button @click="${this._goBack}">Back</sl-button>
           <sl-button
@@ -361,6 +379,12 @@ export class ResolveIssueModal extends LitElement {
     sl-dialog::part(panel) {
       max-width: 80ch;
     }
+    sl-dialog::part(header) {
+      border-bottom: 1px solid var(--sl-color-neutral-0);
+    }
+    p, ul, li {
+      line-height: 1.6;
+    }
     .step-container,
     .form-group,
     .sub-form-group {
@@ -378,7 +402,7 @@ export class ResolveIssueModal extends LitElement {
       display: flex;
       align-items: center;
       gap: var(--sl-spacing-small);
-      margin-bottom: var(--sl-spacing-x-small);
+      margin-bottom: var(--sl-spacing-small);
       font-weight: var(--sl-font-weight-semibold);
     }
     .suggestion-reason {
@@ -427,6 +451,13 @@ export class ResolveIssueModal extends LitElement {
     }
     .sub-form-group h3 {
       margin-bottom: calc(-1 * var(--sl-spacing-small));
+    }
+    .loading-suggestion {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--sl-spacing-medium);
+      padding: var(--sl-spacing-large) 0;
     }
   `;
 }

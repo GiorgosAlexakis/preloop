@@ -621,6 +621,8 @@ export interface SimilarIssue {
 
 export interface SuggestionResponse {
   resolution: 'MERGE' | 'DISAMBIGUATE';
+  merged_title?: string;
+  merged_description?: string;
   disambiguated_title1?: string;
   disambiguated_description1?: string;
   disambiguated_title2?: string;
@@ -633,10 +635,19 @@ export async function getResolutionSuggestion(
   issue2_id: string,
   resolution: 'merged' | 'disambiguated'
 ): Promise<SuggestionResponse> {
-  return await fetchWithAuth('/api/v1/LLM-suggestion', {
+  const response = await fetchWithAuth('/api/v1/LLM-suggestion', {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({ issue1_id, issue2_id, resolution }),
   });
+
+  if (!response.ok) {
+    throw new Error('Failed to get resolution suggestion');
+  }
+
+  return response.json();
 }
 
 export async function executeResolution(resolutionData: any) {
