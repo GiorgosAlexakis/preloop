@@ -10,6 +10,8 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 import '@shoelace-style/shoelace/dist/components/button-group/button-group.js';
 import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '../../components/project-filter-modal.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/resolve-issue-modal.ts';
@@ -24,7 +26,7 @@ import {
   listOrganizations,
   Organization,
 } from '../../api';
-import { DEFAULT_SIMILARITY_THRESHOLD } from '../../config';
+import { DEFAULT_SIMILARITY_THRESHOLD, DEFAULT_SIMILARITY_THRESHOLD_CHARTS } from '../../config';
 import { LlmVerdict, renderVerdict } from '../../utils/verdict';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
@@ -97,6 +99,8 @@ export class IssuesView extends LitElement {
   private _selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
 
   private _similarityThreshold = DEFAULT_SIMILARITY_THRESHOLD;
+
+  private _similarityThresholdCharts = DEFAULT_SIMILARITY_THRESHOLD_CHARTS;
 
   @state()
   private _allProjects: Project[] = [];
@@ -230,6 +234,16 @@ export class IssuesView extends LitElement {
         align-items: center;
         gap: var(--sl-spacing-medium);
         z-index: 10000;
+      }
+
+      .chart-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      sl-icon {
+        font-size: 1rem;
       }
     `,
   ];
@@ -545,11 +559,20 @@ export class IssuesView extends LitElement {
           this._duplicates.length > 0
             ? html`
                 <sl-card class="embedding-card">
+                  <div slot="header" class="chart-header">
+                    Similar Issues per Project
+                    <sl-tooltip
+                      content="Showing issues with a similarity score of ${this
+                        ._similarityThresholdCharts * 100}% or higher."
+                    >
+                      <sl-icon name="question-circle"></sl-icon>
+                    </sl-tooltip>
+                  </div>
                   <duplicate-stats-chart
                     .hasProjects=${this._hasProjects}
                     .projectIds=${this._selectedProjectIds}
                     .selectedStatus=${this._selectedStatus}
-                    .similarityThreshold=${this._similarityThreshold}
+                    .similarityThreshold=${this._similarityThresholdCharts}
                     ?interactive=${true}
                     @project-selected=${this._handleProjectSelectedFromChart}
                   ></duplicate-stats-chart>
