@@ -1,11 +1,6 @@
 import { LitElement, html, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import {
-  addTracker,
-  updateTracker,
-  validateTrackerToken,
-  listProjectsForOrg,
-} from '../api';
+import * as api from '../api';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
@@ -22,6 +17,11 @@ import '@shoelace-style/shoelace/dist/components/tree-item/tree-item.js';
 export class AddTrackerModal extends LitElement {
   @property({ type: Object })
   tracker: any = null;
+
+  /**
+   * @internal
+   */
+  _api = api;
 
   @property({ type: Boolean })
   opened = true;
@@ -314,7 +314,7 @@ export class AddTrackerModal extends LitElement {
     this.isLoading = true;
     this.errorMessage = '';
     try {
-      const response = await validateTrackerToken(
+      const response = await this._api.validateTrackerToken(
         this.tracker?.id,
         this.trackerType,
         this.trackerToken,
@@ -344,7 +344,7 @@ export class AddTrackerModal extends LitElement {
       item.loading = true;
     }
     try {
-      const projects = await listProjectsForOrg(
+      const projects = await this._api.listProjectsForOrg(
         this.tracker?.id,
         this.trackerType,
         this.trackerToken,
@@ -522,17 +522,20 @@ export class AddTrackerModal extends LitElement {
 
     try {
       if (this.tracker) {
-        await updateTracker(this.tracker.id, trackerData);
+        const updatedTracker = await this._api.updateTracker(
+          this.tracker.id,
+          trackerData
+        );
         this.dispatchEvent(
           new CustomEvent('tracker-updated', {
-            detail: { tracker: trackerData },
+            detail: { tracker: updatedTracker },
           })
         );
       } else {
-        await addTracker(trackerData);
+        const newTracker = await this._api.addTracker(trackerData);
         this.dispatchEvent(
           new CustomEvent('tracker-added', {
-            detail: { tracker: trackerData },
+            detail: { tracker: newTracker },
           })
         );
       }

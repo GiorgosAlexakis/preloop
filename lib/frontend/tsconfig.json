@@ -10,7 +10,7 @@
     "useDefineForClassFields": false,
     "moduleResolution": "bundler",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"]
+    "types": ["vite/client", "mocha", "sinon", "chai"]
   },
   "include": ["src/**/*.ts", "src/**/*.test.ts"],
   "exclude": ["node_modules", "dist"]
