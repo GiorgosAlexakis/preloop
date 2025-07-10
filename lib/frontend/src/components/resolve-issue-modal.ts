@@ -252,7 +252,10 @@ export class ResolveIssueModal extends LitElement {
           >
         </sl-radio-group>
         ${this._isLoadingSuggestion
-          ? html`<div class="loading-suggestion"><sl-spinner></sl-spinner><div>Generating suggestion...</div></div>`
+          ? html`<div class="loading-suggestion">
+              <sl-spinner></sl-spinner>
+              <div>Generating suggestion...</div>
+            </div>`
           : html`
               <div class="form-group">
                 <sl-input
@@ -294,7 +297,10 @@ export class ResolveIssueModal extends LitElement {
           will be updated.
         </p>
         ${this._isLoadingSuggestion
-          ? html`<div class="loading-suggestion"><sl-spinner></sl-spinner><div>Generating suggestion...</div></div>`
+          ? html`<div class="loading-suggestion">
+              <sl-spinner></sl-spinner>
+              <div>Generating suggestion...</div>
+            </div>`
           : html`
               <div class="form-group">
                 <div class="sub-form-group">
@@ -382,7 +388,9 @@ export class ResolveIssueModal extends LitElement {
     sl-dialog::part(header) {
       border-bottom: 1px solid var(--sl-color-neutral-0);
     }
-    p, ul, li {
+    p,
+    ul,
+    li {
       line-height: 1.6;
     }
     .step-container,
