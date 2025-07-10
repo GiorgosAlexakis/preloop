@@ -5,7 +5,7 @@
   color: #e6edf3;
 }
 
-p {
+p, ul, li {
   line-height: 1.6;
 }
 
