@@ -134,6 +134,7 @@ async def receive_webhook(
     resolved_tracker = organization_data.tracker
     webhook_secret_to_use = organization_data.webhook_secret
     organization_context_for_timestamp = organization_data
+    account_id = organization_data.account_id
 
     if not resolved_tracker:
         logger.error(
@@ -398,7 +399,9 @@ async def receive_webhook(
                     detail="Could not determine project identifier from payload",
                 )
 
-            project = crud_project.get_by_identifier(db, identifier=project_identifier)
+            project = crud_project.get_by_identifier(
+                db, identifier=project_identifier, account_id=account_id
+            )
             if not project:
                 raise HTTPException(
                     status_code=404,
@@ -449,6 +452,7 @@ async def receive_webhook(
                 db,
                 project_id=project.id,
                 external_id=transformed_issue.get("external_id"),
+                account_id=account_id,
             )
 
             if existing_issue:
@@ -495,7 +499,9 @@ async def receive_webhook(
                     detail="Could not determine project identifier from payload",
                 )
 
-            project = crud_project.get_by_identifier(db, identifier=project_identifier)
+            project = crud_project.get_by_identifier(
+                db, identifier=project_identifier, account_id=account_id
+            )
             if not project:
                 raise HTTPException(
                     status_code=404,
@@ -509,7 +515,10 @@ async def receive_webhook(
                 )
 
             issue = crud_issue.get_by_external_id(
-                db, project_id=project.id, external_id=str(issue_data["id"])
+                db,
+                project_id=project.id,
+                external_id=str(issue_data["id"]),
+                account_id=account_id,
             )
             if not issue:
                 raise HTTPException(status_code=404, detail="Issue not found")
@@ -526,6 +535,7 @@ async def receive_webhook(
                 db,
                 issue_id=issue.id,
                 external_id=transformed_comment.get("external_id"),
+                account_id=account_id,
             )
 
             if existing_comment:

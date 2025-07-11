@@ -91,12 +91,13 @@ def get_duplicate_issues(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
+    current_user: Account = Depends(get_current_active_user),
 ) -> Any:
     """
     Retrieve confirmed duplicate issues.
     """
     duplicates = crud_issue_duplicate.get_multi(
-        db, skip=skip, limit=limit, decision="duplicate"
+        db, skip=skip, limit=limit, decision="duplicate", account_id=current_user.id
     )
     return duplicates
 
@@ -111,12 +112,13 @@ def check_or_create_issue_duplicate(
     db: Session = Depends(get_db),
     issue1_id: str,
     issue2_id: str,
+    current_user: Account = Depends(get_current_active_user),
 ) -> Any:
     if issue1_id == issue2_id:
         raise HTTPException(status_code=400, detail="Issue IDs cannot be the same.")
 
     existing_duplicate = crud_issue_duplicate.get_by_issue_ids(
-        db, issue1_id=issue1_id, issue2_id=issue2_id
+        db, issue1_id=issue1_id, issue2_id=issue2_id, account_id=current_user.id
     )
     if existing_duplicate:
         logger.info(
@@ -128,8 +130,8 @@ def check_or_create_issue_duplicate(
         f"No existing duplicate entry for issues {issue1_id} and {issue2_id}. Proceeding with LLM analysis."
     )
 
-    issue1 = crud_issue.get(db, id=issue1_id)
-    issue2 = crud_issue.get(db, id=issue2_id)
+    issue1 = crud_issue.get(db, id=issue1_id, account_id=current_user.id)
+    issue2 = crud_issue.get(db, id=issue2_id, account_id=current_user.id)
 
     if not issue1 or not issue2:
         missing_ids_str = []
@@ -141,7 +143,9 @@ def check_or_create_issue_duplicate(
         logger.warning(detail)
         raise HTTPException(status_code=404, detail=detail)
 
-    default_model = crud_llm_model.get_default_active_model(db, include_ownerless=True)
+    default_model = crud_llm_model.get_default_active_model(
+        db, include_ownerless=True, account_id=current_user.id
+    )
     if not default_model:
         logger.error("No default active LLM model configured.")
         raise HTTPException(
@@ -333,6 +337,7 @@ async def resolve_issue_duplicate(
 
 def _find_issue_duplicates_logic(
     db: Session,
+    current_user: Account,
     accessible_projects: List[Project],
     similarity_threshold: float,
     limit: int,
@@ -400,6 +405,7 @@ def _find_issue_duplicates_logic(
                     embedding_type="issue",
                     similarity=similarity_threshold,
                     status=status if status and status != "all" else None,
+                    account_id=current_user.id,
                 )
             )
 
@@ -533,6 +539,7 @@ def find_issue_duplicates(
 
     paginated_duplicates, model_id_used = _find_issue_duplicates_logic(
         db=db,
+        current_user=current_user,
         accessible_projects=accessible_projects,
         similarity_threshold=similarity_threshold,
         limit=limit,
@@ -573,11 +580,14 @@ def get_projects_duplicate_stats(
     )
 
     issue_counts = crud_issue.get_issue_counts_per_project(
-        db, project_ids=[str(p.id) for p in accessible_projects]
+        db,
+        project_ids=[str(p.id) for p in accessible_projects],
+        account_id=current_user.id,
     )
 
     duplicate_issue_list, _ = _find_issue_duplicates_logic(
         db=db,
+        current_user=current_user,
         accessible_projects=accessible_projects,
         similarity_threshold=similarity_threshold,
         limit=1000,  # A large enough number to get all duplicates for stats

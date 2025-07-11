@@ -20,6 +20,7 @@ from spacemodels.crud import (
     CRUDOrganization,
     CRUDProject,
     CRUDTracker,
+    crud_comment,
     crud_embedding_model,
     crud_issue_embedding,
 )
@@ -230,6 +231,7 @@ async def search_comments(
                 limit=limit,
                 project_ids=resolved_project_ids,
                 embedding_type="comment",
+                account_id=current_user.id,
             )
             total_comments = len(similar_comments)
 
@@ -281,6 +283,7 @@ async def search_comments(
                 project_id=project_id,  # Pass single string or None
                 organization_id=organization_id,  # Pass single string or None
                 author_id=author_id,
+                account_id=current_user.id,
                 # TODO: Consider if accessible_tracker_ids needs to be passed to search_full_text for pre-filtering
             )
             total_comments = count

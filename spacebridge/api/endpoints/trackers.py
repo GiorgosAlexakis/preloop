@@ -29,6 +29,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def get_account(db: Session, current_user: UserResponse) -> Account:
+    """Fetches the account for the current user, raising an exception if not found."""
+    account = (
+        db.query(Account).filter(Account.username == current_user.username).first()
+    )
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
+        )
+    return account
+
+
 @router.post("/trackers/debug")
 async def debug_tracker_request(request: Request):
     """Debug endpoint to see raw request data"""
@@ -133,16 +145,7 @@ async def register_tracker(
     # Create a new tracker in the database
     try:
         # Find current user's account
-        account = (
-            db.query(Account).filter(Account.username == current_user.username).first()
-        )
-
-        if not account:
-            # This shouldn't happen if get_current_active_user works correctly
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User account not found",
-            )
+        account = get_account(db, current_user)
 
         # Check if a tracker with the same name already exists for this account
         existing_tracker = (
@@ -249,11 +252,7 @@ async def list_trackers(
     db: Session = Depends(get_db_session),
 ) -> List[Tracker]:
     """List all non-deleted trackers for the current user."""
-    account = (
-        db.query(Account).filter(Account.username == current_user.username).first()
-    )
-    if not account:
-        return []  # Or raise 404 if user must exist
+    account = get_account(db, current_user)
 
     trackers = (
         db.query(Tracker)
@@ -271,14 +270,7 @@ async def get_tracker(
     db: Session = Depends(get_db_session),
 ) -> Tracker:
     """Get a non-deleted tracker by ID, ensuring it belongs to the current user."""
-    account = (
-        db.query(Account).filter(Account.username == current_user.username).first()
-    )
-    if not account:
-        # This case should ideally be handled by get_current_active_user dependency
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
-        )
+    account = get_account(db, current_user)
 
     tracker = (
         db.query(Tracker)
@@ -307,13 +299,7 @@ async def update_tracker(
     db: Session = Depends(get_db_session),
 ) -> Tracker:
     """Update an existing tracker."""
-    account = (
-        db.query(Account).filter(Account.username == current_user.username).first()
-    )
-    if not account:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
-        )
+    account = get_account(db, current_user)
 
     tracker = (
         db.query(Tracker)
@@ -349,12 +335,12 @@ async def update_tracker(
                 new_scope_rules.append(TrackerScopeRule(**rule_data))
             tracker.scope_rules = new_scope_rules
 
+    if update_data.get("api_key") == "unchanged":
+        del update_data["api_key"]
+
     # Update other fields
     for field, value in update_data.items():
         setattr(tracker, field, value)
-
-    if update_data.get("api_key") == "unchanged":
-        del update_data["api_key"]
 
     # Special handling if api_key is updated - revalidate connection?
     if "api_key" in update_data:
@@ -396,13 +382,7 @@ async def delete_tracker(
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete a tracker by ID (soft delete by default, hard delete if specified)."""
-    account = (
-        db.query(Account).filter(Account.username == current_user.username).first()
-    )
-    if not account:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
-        )
+    account = get_account(db, current_user)
 
     # Find the tracker, including potentially soft-deleted ones if hard_delete is true
     query = (
@@ -469,10 +449,11 @@ async def test_connection_and_list_orgs(
     logger.info(
         f"User {current_user.username} testing tracker connection for type {test_data.tracker_type.value}"
     )
+    account = get_account(db, current_user)
     if test_data.tracker_id:
         tracker = (
             db.query(Tracker)
-            .filter(Tracker.account_id == current_user.id)
+            .filter(Tracker.account_id == account.id)
             .filter(Tracker.id == test_data.tracker_id)
             .first()
         )
@@ -481,7 +462,8 @@ async def test_connection_and_list_orgs(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Tracker not found or access denied",
             )
-        test_data.api_key = tracker.api_key
+        if test_data.api_key == "unchanged":
+            test_data.api_key = tracker.api_key
     try:
         client = await create_tracker_client(
             tracker_type=test_data.tracker_type.value,
@@ -529,22 +511,23 @@ async def test_connection_and_list_orgs(
 
 @router.post("/trackers/list-projects-for-org", response_model=List[ProjectIdentifier])
 async def list_projects_for_org(
-    test_data: TrackerTestRequest,
+    project_data: TrackerTestRequest,
     current_user: UserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> List[ProjectIdentifier]:
     """
     Lists projects for a specific organization/group within a tracker.
     """
+    account = get_account(db, current_user)
     logger.info(
-        f"User {current_user.username} listing projects for org {test_data.organization_identifier} "
-        f"in tracker type {test_data.tracker_type.value}"
+        f"User {current_user.username} listing projects for org {project_data.organization_identifier} "
+        f"in tracker type {project_data.tracker_type.value}"
     )
-    if test_data.tracker_id:
+    if project_data.tracker_id:
         tracker = (
             db.query(Tracker)
-            .filter(Tracker.account_id == current_user.id)
-            .filter(Tracker.id == test_data.tracker_id)
+            .filter(Tracker.account_id == account.id)
+            .filter(Tracker.id == project_data.tracker_id)
             .first()
         )
         if not tracker:
@@ -552,22 +535,22 @@ async def list_projects_for_org(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Tracker not found or access denied",
             )
-        test_data.api_key = tracker.api_key
-
+        if project_data.api_key == "unchanged":
+            project_data.api_key = tracker.api_key
     try:
-        if test_data.url and not test_data.url.endswith("/"):
-            test_data.url = test_data.url + "/"
+        if project_data.url and not project_data.url.endswith("/"):
+            project_data.url = project_data.url + "/"
         client = await create_tracker_client(
-            tracker_type=test_data.tracker_type.value,
-            base_url=str(test_data.url) if test_data.url else None,
-            token=test_data.api_key,
-            config=test_data.connection_details or {},
+            tracker_type=project_data.tracker_type.value,
+            base_url=str(project_data.url) if project_data.url else None,
+            token=project_data.api_key,
+            config=project_data.connection_details or {},
         )
         if not client:
             raise HTTPException(
                 status_code=400, detail="Could not create tracker client"
             )
-        return await client.list_projects(test_data.organization_identifier)
+        return await client.list_projects(project_data.organization_identifier)
 
     except Exception as e:
         logger.exception(

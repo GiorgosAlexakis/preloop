@@ -119,7 +119,9 @@ async def search_all(
             org_filter_is_valid = True
 
             if organization_id:
-                org_obj = crud_organization.get(db, id=organization_id)
+                org_obj = crud_organization.get(
+                    db, id=organization_id, account_id=current_user.id
+                )
                 if org_obj and org_obj.tracker_id in tracker_ids:
                     actual_organization_id = org_obj.id
                 else:
@@ -144,11 +146,15 @@ async def search_all(
             else:
                 # Organization filter is valid or was not specified; proceed to resolve project
                 if project_id:
-                    proj_obj = crud_project.get(db, id=project_id)
+                    proj_obj = crud_project.get(
+                        db, id=project_id, account_id=current_user.id
+                    )
                     if proj_obj and proj_obj.is_active:  # Check active status first
                         # A project is accessible if its organization's tracker is in tracker_ids
                         project_org = crud_organization.get(
-                            db, id=proj_obj.organization_id
+                            db,
+                            id=proj_obj.organization_id,
+                            account_id=current_user.id,
                         )
                         if project_org and project_org.tracker_id in tracker_ids:
                             # Now check if it matches actual_organization_id if that filter is active
@@ -257,12 +263,16 @@ async def search_all(
 
         if isinstance(db_obj, sm_models.Issue):
             issue_project = crud_project.get(
-                db, id=db_obj.project_id
+                db, id=db_obj.project_id, account_id=current_user.id
             )  # Still need project for response model
             project_name = issue_project.name if issue_project else None
             organization_name = None
             if issue_project:
-                issue_org = crud_organization.get(db, id=issue_project.organization_id)
+                issue_org = crud_organization.get(
+                    db,
+                    id=issue_project.organization_id,
+                    account_id=current_user.id,
+                )
                 if issue_org:
                     organization_name = issue_org.name
             external_url = db_obj.external_url

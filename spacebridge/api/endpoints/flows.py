@@ -28,7 +28,7 @@ def create_flow(
         )
     flow_in.organization_id = current_user.organization_id
     flow_in.created_by_user_id = current_user.id
-    flow = crud_flow.create(db=db, flow_in=flow_in)
+    flow = crud_flow.create(db=db, obj_in=flow_in, account_id=current_user.id)
     return flow
 
 
@@ -44,9 +44,7 @@ def read_flows(
         raise HTTPException(
             status_code=400, detail="User does not belong to an organization."
         )
-    flows = crud_flow.get_by_organization(
-        db, organization_id=current_user.organization_id, skip=skip, limit=limit
-    )
+    flows = crud_flow.get_multi(db, account_id=current_user.id, skip=skip, limit=limit)
     return flows
 
 
@@ -58,7 +56,7 @@ def read_flow(
     current_user: Account = Depends(get_current_active_user),
 ):
     """Get flow by ID."""
-    flow = crud_flow.get(db=db, id=flow_id)
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
     if flow.organization_id != current_user.organization_id:
@@ -75,12 +73,12 @@ def update_flow(
     current_user: Account = Depends(get_current_active_user),
 ):
     """Update a flow."""
-    flow = crud_flow.get(db=db, id=flow_id)
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
     if flow.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    flow = crud_flow.update(db=db, db_obj=flow, flow_in=flow_in)
+    flow = crud_flow.update(db=db, db_obj=flow, obj_in=flow_in)
     return flow
 
 
@@ -92,10 +90,11 @@ def delete_flow(
     current_user: Account = Depends(get_current_active_user),
 ):
     """Delete a flow."""
-    flow = crud_flow.get(db=db, id=flow_id)
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
     if flow.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    flow = crud_flow.remove(db=db, id=flow_id)
+    crud_flow.remove(db=db, id=flow_id, account_id=current_user.id)
+    return flow
     return flow

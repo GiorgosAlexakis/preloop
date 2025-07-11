@@ -48,15 +48,11 @@ def create_project(
 ) -> dict:
     """Create a new project, ensuring user has access to the organization."""
     # Check if organization exists
-    organization = crud_organization.get(db, id=project.organization_id)
+    organization = crud_organization.get(
+        db, id=project.organization_id, account_id=current_user.id
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
-
-    # Authorization check: Ensure the user owns the organization's tracker
-    if not organization.tracker or organization.tracker.account_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="Access denied to this organization"
-        )
 
     # Check if project with this identifier already exists in the organization
     existing_project = crud_project.get_by_identifier(
@@ -110,16 +106,11 @@ def list_projects(
     projects = []
     if organization_id:
         # If organization_id is provided, check access first
-        organization = crud_organization.get(db, id=organization_id)
+        organization = crud_organization.get(
+            db, id=organization_id, account_id=current_user.id
+        )
         if not organization:
             raise HTTPException(status_code=404, detail="Organization not found")
-        if (
-            not organization.tracker
-            or organization.tracker.account_id != current_user.id
-        ):
-            raise HTTPException(
-                status_code=403, detail="Access denied to this organization"
-            )
         # Fetch projects for this specific organization
         projects = crud_project.get_for_organization(
             db, organization_id=organization_id, skip=offset, limit=limit
@@ -174,15 +165,11 @@ def list_organization_projects(
 ):
     """List all projects for an organization, ensuring user has access."""
     # Check if organization exists
-    organization = crud_organization.get(db, id=organization_id)
+    organization = crud_organization.get(
+        db, id=organization_id, account_id=current_user.id
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
-
-    # Authorization check
-    if not organization.tracker or organization.tracker.account_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="Access denied to this organization"
-        )
 
     # Use the CRUD method to get projects for the organization
     projects = crud_project.get_for_organization(
@@ -221,18 +208,9 @@ def get_project(
     current_user: Account = Depends(get_current_active_user),
 ) -> dict:
     """Get a project by ID, ensuring user has access."""
-    project = crud_project.get(db, id=project_id)
+    project = crud_project.get(db, id=project_id, account_id=current_user.id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    # Authorization check
-    organization = crud_organization.get(db, id=project.organization_id)
-    if (
-        not organization
-        or not organization.tracker
-        or organization.tracker.account_id != current_user.id
-    ):
-        raise HTTPException(status_code=403, detail="Access denied")
 
     # Convert datetime objects to ISO format strings
     return {
@@ -260,13 +238,11 @@ def get_project_by_identifier(
 ) -> dict:
     """Get a project by organization ID and project identifier, ensuring user has access."""
     # Check organization access first
-    organization = crud_organization.get(db, id=organization_id)
+    organization = crud_organization.get(
+        db, id=organization_id, account_id=current_user.id
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
-    if not organization.tracker or organization.tracker.account_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="Access denied to this organization"
-        )
 
     # Now get the project within the authorized organization using slug or identifier
     project = crud_project.get_by_slug_or_identifier(
@@ -297,18 +273,9 @@ def update_project(
     current_user: Account = Depends(get_current_active_user),
 ) -> dict:
     """Update a project, ensuring user has access."""
-    project = crud_project.get(db, id=project_id)
+    project = crud_project.get(db, id=project_id, account_id=current_user.id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    # Authorization check
-    organization = crud_organization.get(db, id=project.organization_id)
-    if (
-        not organization
-        or not organization.tracker
-        or organization.tracker.account_id != current_user.id
-    ):
-        raise HTTPException(status_code=403, detail="Access denied")
 
     # Update project using CRUD operation
     # Note: Handle potential field name differences (e.g., tracker_configurations)
@@ -341,18 +308,9 @@ def delete_project(
     current_user: Account = Depends(get_current_active_user),
 ) -> None:
     """Delete a project, ensuring user has access."""
-    project = crud_project.get(db, id=project_id)
+    project = crud_project.get(db, id=project_id, account_id=current_user.id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    # Authorization check
-    organization = crud_organization.get(db, id=project.organization_id)
-    if (
-        not organization
-        or not organization.tracker
-        or organization.tracker.account_id != current_user.id
-    ):
-        raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete the project
     crud_project.delete(db, id=project_id)
@@ -369,28 +327,21 @@ async def test_project_connection(
         # Resolve organization
         organization_id = request.organization
         if len(organization_id) == 36:  # Simple UUID check
-            organization = crud_organization.get(db, id=organization_id)
+            organization = crud_organization.get(
+                db, id=organization_id, account_id=current_user.id
+            )
         else:
             organization = crud_organization.get_by_identifier(
-                db, identifier=organization_id
+                db, identifier=organization_id, account_id=current_user.id
             )
 
         if not organization:
             raise HTTPException(status_code=404, detail="Organization not found")
 
-        # Authorization check for organization
-        if (
-            not organization.tracker
-            or organization.tracker.account_id != current_user.id
-        ):
-            raise HTTPException(
-                status_code=403, detail="Access denied to this organization"
-            )
-
         # Resolve project
         project_id = request.project
         if len(project_id) == 36:  # Simple UUID check
-            project = crud_project.get(db, id=project_id)
+            project = crud_project.get(db, id=project_id, account_id=current_user.id)
         else:
             project = crud_project.get_by_identifier(
                 db, organization_id=organization.id, identifier=project_id

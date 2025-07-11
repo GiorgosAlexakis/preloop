@@ -119,13 +119,11 @@ def get_organization(
     current_user: Account = Depends(get_current_active_user),
 ) -> Organization:
     """Get an organization by ID, ensuring user has access."""
-    organization = crud_organization.get(db, id=organization_id)
+    organization = crud_organization.get(
+        db, id=organization_id, account_id=current_user.id
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
-
-    # Authorization check
-    if not organization.tracker or organization.tracker.account_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     return organization
 
@@ -139,13 +137,11 @@ def get_organization_by_identifier(
     current_user: Account = Depends(get_current_active_user),
 ) -> Organization:
     """Get an organization by identifier, ensuring user has access."""
-    organization = crud_organization.get_by_identifier(db, identifier=identifier)
+    organization = crud_organization.get_by_identifier(
+        db, identifier=identifier, account_id=current_user.id
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
-
-    # Authorization check
-    if not organization.tracker or organization.tracker.account_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     return organization
 
@@ -158,13 +154,11 @@ def update_organization(
     current_user: Account = Depends(get_current_active_user),
 ) -> Organization:
     """Update an organization, ensuring user has access."""
-    organization = crud_organization.get(db, id=organization_id)
+    organization = crud_organization.get(
+        db, id=organization_id, account_id=current_user.id
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
-
-    # Authorization check
-    if not organization.tracker or organization.tracker.account_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     # Update organization using CRUD operation
     update_data = organization_update.dict(exclude_unset=True)
@@ -182,13 +176,11 @@ def delete_organization(
     current_user: Account = Depends(get_current_active_user),
 ) -> None:
     """Delete an organization, ensuring user has access."""
-    organization = crud_organization.get(db, id=organization_id)
+    organization = crud_organization.get(
+        db, id=organization_id, account_id=current_user.id
+    )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
-
-    # Authorization check
-    if not organization.tracker or organization.tracker.account_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete the organization
     crud_organization.delete(db, id=organization_id)
