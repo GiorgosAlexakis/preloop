@@ -14,7 +14,7 @@ class IssueDuplicateResolution(enum.Enum):
 
     CLOSED = "closed"
     MERGED = "merged"
-    DISAMBIGUATED = "disambiguated"
+    DECONFLICTED = "deconflicted"
     DISMISSED = "dismissed"
     NOT_A_DUPLICATE = "not_a_duplicate"
 
