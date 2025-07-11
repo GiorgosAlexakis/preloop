@@ -1,14 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import Any, Dict, List, Literal, Optional, Tuple
 import logging
 import openai
 import os
+import json
 
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate as IssueDuplicateSchema,
     IssueDuplicateCreate,
+    IssueDuplicateResolve,
+    IssueDuplicateSuggestionResponse,
 )
+from spacemodels.crud import issue as issue_crud
+from spacemodels.crud import issue_duplicate as issue_duplicate_crud
 
 from spacebridge.schemas.issue import IssueResponse
 
@@ -19,6 +24,8 @@ from spacemodels.crud import (
     crud_embedding_model,
     crud_issue,
     crud_llm_model,
+    crud_project,
+    crud_organization,
 )
 from spacemodels.db.session import get_db_session as get_db
 
@@ -42,12 +49,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-LLM_DUPLICATE_SYSTEM_PROMPT = "You are an expert issue tracker assistant. Your task is to determine if two issues are duplicates of each other."
+LLM_DUPLICATE_SYSTEM_PROMPT = "You are an expert issue tracker assistant. Your task is to classify the relationship between two issues based on their content."
 LLM_DUPLICATE_USER_PROMPT_TEMPLATE = """
-Use your expert judgement to determine if the following two issues are duplicates.
+Use your expert judgement to classify the relationship between the following two issues based on their content.
 
+- `DUPLICATE`: The issues describe the same core problem, request, or task, even if the wording differs slightly.
+- `OVERLAPPING`: There is significant content overlap, but the issues are not full duplicates and should be tracked separately.
+- `UNRELATED`: The issues are distinct. They are considered unrelated if they refer to different components, even if their descriptions seem similar.
+
+Note:
 - Two issues are considered duplicates if they describe the same core problem, request, or task, even if the wording differs slightly or one contains minor additional details.
-- Two issues are not considered duplicates even if they look almost identical, if they refer to different components.
+- Two issues are unrelated even if they look almost identical, if they refer to different components.
+- Two issues are overlapping if they refer to the same component, describe related problems, but are not full duplicates.
 
 Issue 1:
 Title: {issue1_title}
@@ -63,10 +76,8 @@ Description:
 {issue2_description}
 ---
 
-Based on the information above, is Issue 2 a duplicate of Issue 1?
-
-Are these two issues duplicates? Your answer must be only two lines.
-On the first line, write a single word: either 'YES' or 'NO'.
+Based on the information above, what is the relationship between these two issues? Your answer must be only two lines.
+On the first line, write a single word: `DUPLICATE`, `OVERLAPPING`, or `UNRELATED`.
 On the second line, provide a single-sentence reasoning for your decision.
 """
 
@@ -85,7 +96,7 @@ def get_duplicate_issues(
     Retrieve confirmed duplicate issues.
     """
     duplicates = crud_issue_duplicate.get_multi(
-        db, skip=skip, limit=limit, decision="confirmed"
+        db, skip=skip, limit=limit, decision="duplicate"
     )
     return duplicates
 
@@ -191,10 +202,12 @@ def check_or_create_issue_duplicate(
         decision_word = response_lines[0].strip().upper()
         reason = response_lines[1].strip()
 
-        if decision_word == "YES":
-            parsed_status = "confirmed"
-        elif decision_word == "NO":
-            parsed_status = "rejected"
+        if decision_word == "DUPLICATE":
+            parsed_status = "duplicate"
+        elif decision_word == "OVERLAPPING":
+            parsed_status = "overlapping"
+        elif decision_word == "UNRELATED":
+            parsed_status = "unrelated"
         else:
             logger.warning(
                 f"LLM returned unexpected status: '{decision_word}'. Defaulting to 'undecided'."
@@ -229,6 +242,93 @@ def check_or_create_issue_duplicate(
             f"An unexpected error occurred during LLM invocation for model '{default_model.model_name}': {e}"
         )
         raise HTTPException(status_code=500, detail=f"LLM processing error: {str(e)}")
+
+
+@router.patch(
+    "/issue-duplicates/resolve",
+    response_model=IssueDuplicateSchema,
+    tags=["Issue Duplicates"],
+)
+async def resolve_issue_duplicate(
+    resolution: IssueDuplicateResolve,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+):
+    """Resolve an issue duplicate."""
+    existing_duplicate = crud_issue_duplicate.get_by_issue_ids(
+        db, issue1_id=resolution.issue1_id, issue2_id=resolution.issue2_id
+    )
+    if not existing_duplicate:
+        raise HTTPException(status_code=404, detail="Duplicate entry not found.")
+
+    # Check if the user has access to the project containing the issues
+    # Raises an exception if not
+    project_id = existing_duplicate.issue1.project_id
+    _get_accessible_projects(db, current_user, [project_id])
+
+    if resolution.resolution == "merge":
+        if not all(
+            [
+                resolution.resulting_issue1_id,
+                resolution.merged_title,
+                resolution.merged_description,
+            ]
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Merge resolution requires resulting_issue1_id, merged_title, and merged_description.",
+            )
+        issue_to_update = await issue_crud.get(db=db, id=resolution.resulting_issue1_id)
+        if not issue_to_update:
+            raise HTTPException(status_code=404, detail="Resulting issue not found.")
+        update_data = {
+            "title": resolution.merged_title,
+            "description": resolution.merged_description,
+        }
+        await issue_crud.update(db=db, db_obj=issue_to_update, obj_in=update_data)
+
+    elif resolution.resolution == "deconflict":
+        if not all(
+            [
+                resolution.deconflicted_title1,
+                resolution.deconflicted_description1,
+                resolution.deconflicted_title2,
+                resolution.deconflicted_description2,
+            ]
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Deconflict resolution requires titles and descriptions for both issues.",
+            )
+
+        issue1_to_update = await issue_crud.get(db=db, id=resolution.issue1_id)
+        issue2_to_update = await issue_crud.get(db=db, id=resolution.issue2_id)
+        if not issue1_to_update or not issue2_to_update:
+            raise HTTPException(status_code=404, detail="One or both issues not found.")
+
+        update_data1 = {
+            "title": resolution.deconflicted_title1,
+            "description": resolution.deconflicted_description1,
+        }
+        await issue_crud.update(db=db, db_obj=issue1_to_update, obj_in=update_data1)
+
+        update_data2 = {
+            "title": resolution.deconflicted_title2,
+            "description": resolution.deconflicted_description2,
+        }
+        await issue_crud.update(db=db, db_obj=issue2_to_update, obj_in=update_data2)
+
+    db_duplicate = await issue_duplicate_crud.update_resolution(
+        db=db,
+        issue1_id=resolution.issue1_id,
+        issue2_id=resolution.issue2_id,
+        resolution_in=resolution,
+    )
+
+    if not db_duplicate:
+        raise HTTPException(status_code=404, detail="Issue duplicate not found.")
+
+    return db_duplicate
 
 
 def _find_issue_duplicates_logic(
@@ -507,3 +607,125 @@ def get_projects_duplicate_stats(
         stats[pid].duplicates = len(issues)
 
     return IssueDuplicateStats(projects=stats)
+
+
+MERGED_PROMPT = """
+You are an expert software engineering assistant. Your task is to merge two issue reports into a single, comprehensive issue. Analyze the title and description of both issues provided below.
+
+Issue 1 Title: {title1}
+Issue 1 Description: {description1}
+
+Issue 2 Title: {title2}
+Issue 2 Description: {description2}
+
+Generate a new, merged issue that includes:
+1. `merged_title`: A clear and concise title that combines the key information from both issues.
+2. `merged_description`: A detailed description that synthesizes the information from both issues, preserving important context, steps to reproduce, and expected outcomes. Structure it logically.
+3. `explanation`: A brief explanation of how you combined the issues and why.
+
+Format your response as a single JSON object with the keys "merged_title", "merged_description", and "explanation".
+"""
+
+DECONFLICTED_PROMPT = """
+You are an expert software engineering assistant. In the following two issues there is significant overlap in content. They might be distinct bugs, or one might be a subset of the other. Analyze the title and description of both issues provided below.
+
+Issue 1 Title: {title1}
+Issue 1 Description: {description1}
+
+Issue 2 Title: {title2}
+Issue 2 Description: {description2}
+
+Generate new, distinct titles and descriptions for both issues to deconflict them, and make them clearer and easier to track independently. Provide:
+1. `deconflicted_title1`: A new, more specific title for Issue 1.
+2. `deconflicted_description1`: A revised description for Issue 1, clarifying its unique scope.
+3. `deconflicted_title2`: A new, more specific title for Issue 2.
+4. `deconflicted_description2`: A revised description for Issue 2, clarifying its unique scope.
+5. `explanation`: A brief explanation of the changes you made and the reasoning for the deconfliction.
+
+Format your response as a single JSON object with the keys "deconflicted_title1", "deconflicted_description1", "deconflicted_title2", "deconflicted_description2", and "explanation".
+"""
+
+
+@router.post("/LLM-suggestion", response_model=IssueDuplicateSuggestionResponse)
+def get_resolution_suggestion(
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+    issue1_id: str = Body(...),
+    issue2_id: str = Body(...),
+    resolution: str = Body(...),
+):
+    """Generate a suggestion for resolving a duplicate issue pair."""
+    issue1 = crud_issue.get(db, id=issue1_id)
+    issue2 = crud_issue.get(db, id=issue2_id)
+
+    if not issue1 or not issue2:
+        raise HTTPException(status_code=404, detail="One or both issues not found")
+
+    project = crud_project.get(db, id=issue1.project_id)
+
+    # Authorization check
+    organization = crud_organization.get(db, id=project.organization_id)
+    if (
+        not organization
+        or not organization.tracker
+        or organization.tracker.account_id != current_user.id
+    ):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    default_model = crud_llm_model.get_default_active_model(db, include_ownerless=True)
+    if not default_model:
+        logger.error("No default active LLM model configured.")
+        raise HTTPException(
+            status_code=500, detail="No default active LLM model configured."
+        )
+
+    logger.info(f"Using LLM model '{default_model.model_name}'.")
+
+    client = openai.OpenAI()
+
+    try:
+        if resolution == "merged":
+            prompt = MERGED_PROMPT.format(
+                title1=issue1.title,
+                description1=issue1.description,
+                title2=issue2.title,
+                description2=issue2.description,
+            )
+            llm_response = client.chat.completions.create(
+                model=default_model.model_name,
+                messages=[{"content": prompt, "role": "user"}],
+                response_format={"type": "json_object"},
+            )
+            suggestion_data = json.loads(llm_response.choices[0].message.content)
+            return IssueDuplicateSuggestionResponse(**suggestion_data)
+
+        elif resolution == "deconflicted":
+            prompt = DECONFLICTED_PROMPT.format(
+                title1=issue1.title,
+                description1=issue1.description,
+                title2=issue2.title,
+                description2=issue2.description,
+            )
+            llm_response = client.chat.completions.create(
+                model=default_model.model_name,
+                messages=[{"content": prompt, "role": "user"}],
+                response_format={"type": "json_object"},
+            )
+            suggestion_data = json.loads(llm_response.choices[0].message.content)
+            return IssueDuplicateSuggestionResponse(**suggestion_data)
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Suggestions are only available for 'merged' or 'deconflicted' resolutions.",
+            )
+    except openai.APIError as e:
+        logger.error(f"OpenAI API call failed: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate suggestion from LLM."
+        )
+    except Exception as e:
+        logger.error(f"LLM suggestion failed: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate suggestion from LLM."
+        )

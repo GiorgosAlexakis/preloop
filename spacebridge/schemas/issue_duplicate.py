@@ -13,11 +13,21 @@ class IssueDuplicateBase(BaseModel):
 
     issue1_id: str
     issue2_id: str
+
+    # LLM's decision
     decision: str
     decision_at: Optional[datetime] = None
+    reason: Optional[str] = None
+
+    # User's resolution
+    resolution: Optional[str] = None
+    resolution_at: Optional[datetime] = None
+    resolution_reason: Optional[str] = None
+    resulting_issue1_id: Optional[str] = None
+    resulting_issue2_id: Optional[str] = None
+
     llm_model_id: str
     llm_model_name: Optional[str] = None
-    reason: Optional[str] = None
 
 
 class IssueDuplicateCreate(IssueDuplicateBase):
@@ -30,6 +40,23 @@ class IssueDuplicateUpdate(IssueDuplicateBase):
     """Schema for updating an IssueDuplicate."""
 
     pass
+
+
+class IssueDuplicateResolve(BaseModel):
+    """Schema for resolving an IssueDuplicate."""
+
+    issue1_id: str
+    issue2_id: str
+    resolution: str
+    resolution_reason: Optional[str] = None
+    resulting_issue1_id: Optional[str] = None
+    resulting_issue2_id: Optional[str] = None
+    merged_title: Optional[str] = None
+    merged_description: Optional[str] = None
+    deconflicted_title1: Optional[str] = None
+    deconflicted_description1: Optional[str] = None
+    deconflicted_title2: Optional[str] = None
+    deconflicted_description2: Optional[str] = None
 
 
 class IssueDuplicate(IssueDuplicateBase):
@@ -57,6 +84,22 @@ class IssueDuplicateProjectStats(BaseModel):
     project_name: str
     total: int
     duplicates: int
+
+
+class IssueDuplicateSuggestionRequest(BaseModel):
+    issue1_id: str
+    issue2_id: str
+    resolution: str
+
+
+class IssueDuplicateSuggestionResponse(BaseModel):
+    merged_title: Optional[str] = None
+    merged_description: Optional[str] = None
+    deconflicted_title1: Optional[str] = None
+    deconflicted_description1: Optional[str] = None
+    deconflicted_title2: Optional[str] = None
+    deconflicted_description2: Optional[str] = None
+    explanation: str
 
 
 class IssueDuplicateStats(BaseModel):

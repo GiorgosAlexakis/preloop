@@ -2145,6 +2145,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue-duplicates/resolve:
+    patch:
+      tags:
+      - Issue Duplicates
+      - Issue Duplicates
+      summary: Resolve Issue Duplicate
+      description: Resolve an issue duplicate.
+      operationId: resolve_issue_duplicate_api_v1_issue_duplicates_resolve_patch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueDuplicateResolve'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicate'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/issue-duplicates:
     get:
       tags:
@@ -2295,6 +2324,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/LLM-suggestion:
+    post:
+      tags:
+      - Issue Duplicates
+      summary: Get Resolution Suggestion
+      description: Generate a suggestion for resolving a duplicate issue pair.
+      operationId: get_resolution_suggestion_api_v1_LLM_suggestion_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Body_get_resolution_suggestion_api_v1_LLM_suggestion_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicateSuggestionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/private/webhooks/{tracker_type}/{identifier_in_url}:
     post:
       tags:
@@ -2660,6 +2717,23 @@ components:
       - requests_by_endpoint
       title: ApiUsageStatistics
       description: Model for API usage statistics.
+    Body_get_resolution_suggestion_api_v1_LLM_suggestion_post:
+      properties:
+        issue1_id:
+          type: string
+          title: Issue1 Id
+        issue2_id:
+          type: string
+          title: Issue2 Id
+        resolution:
+          type: string
+          title: Resolution
+      type: object
+      required:
+      - issue1_id
+      - issue2_id
+      - resolution
+      title: Body_get_resolution_suggestion_api_v1_LLM_suggestion_post
     Body_login_form_api_v1_auth_token_post:
       properties:
         grant_type:
@@ -3007,6 +3081,37 @@ components:
             format: date-time
           - type: 'null'
           title: Decision At
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        resolution:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution
+        resolution_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Resolution At
+        resolution_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Reason
+        resulting_issue1_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue1 Id
+        resulting_issue2_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue2 Id
         llm_model_id:
           type: string
           title: Llm Model Id
@@ -3015,11 +3120,6 @@ components:
           - type: string
           - type: 'null'
           title: Llm Model Name
-        reason:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Reason
         id:
           type: string
           title: Id
@@ -3063,6 +3163,69 @@ components:
       - total
       - duplicates
       title: IssueDuplicateProjectStats
+    IssueDuplicateResolve:
+      properties:
+        issue1_id:
+          type: string
+          title: Issue1 Id
+        issue2_id:
+          type: string
+          title: Issue2 Id
+        resolution:
+          type: string
+          title: Resolution
+        resolution_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Reason
+        resulting_issue1_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue1 Id
+        resulting_issue2_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue2 Id
+        merged_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Title
+        merged_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Description
+        deconflicted_title1:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deconflicted Title1
+        deconflicted_description1:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deconflicted Description1
+        deconflicted_title2:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deconflicted Title2
+        deconflicted_description2:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deconflicted Description2
+      type: object
+      required:
+      - issue1_id
+      - issue2_id
+      - resolution
+      title: IssueDuplicateResolve
+      description: Schema for resolving an IssueDuplicate.
     IssueDuplicateStats:
       properties:
         projects:
@@ -3074,6 +3237,45 @@ components:
       required:
       - projects
       title: IssueDuplicateStats
+    IssueDuplicateSuggestionResponse:
+      properties:
+        merged_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Title
+        merged_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Description
+        deconflicted_title1:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deconflicted Title1
+        deconflicted_description1:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deconflicted Description1
+        deconflicted_title2:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deconflicted Title2
+        deconflicted_description2:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deconflicted Description2
+        explanation:
+          type: string
+          title: Explanation
+      type: object
+      required:
+      - explanation
+      title: IssueDuplicateSuggestionResponse
     IssueResponse:
       properties:
         title:
