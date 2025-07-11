@@ -17,15 +17,29 @@ class CRUDBase(Generic[ModelType]):
         """Initialize with a model class."""
         self.model = model
 
-    def get(self, db: Session, id: Any) -> Optional[ModelType]:
+    def get(
+        self, db: Session, id: Any, *, account_id: Optional[str] = None
+    ) -> Optional[ModelType]:
         """Get entity by ID."""
-        return db.query(self.model).filter(self.model.id == id).first()
+        query = db.query(self.model).filter(self.model.id == id)
+        if account_id and hasattr(self.model, "account_id"):
+            query = query.filter(self.model.account_id == account_id)
+        return query.first()
 
     def get_multi(
-        self, db: Session, *, skip: int = 0, limit: int = 100, **filters
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
+        **filters,
     ) -> List[ModelType]:
         """Get multiple entities with optional filtering."""
         query = db.query(self.model)
+        if account_id and hasattr(self.model, "account_id"):
+            query = query.filter(self.model.account_id == account_id)
+
         for key, value in filters.items():
             if hasattr(self.model, key):
                 query = query.filter(getattr(self.model, key) == value)

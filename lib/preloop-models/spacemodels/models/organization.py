@@ -33,7 +33,7 @@ class Organization(Base):
     )  # Assuming String is imported if still needed
     identifier: Mapped[str] = mapped_column(
         String(100),
-        unique=True,
+        unique=False,
         nullable=False,
         index=True,  # Assuming String is imported
     )

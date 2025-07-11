@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from ..models.api_key import ApiKey
+from ..models.account import Account
 from .base import CRUDBase
 
 
@@ -21,22 +22,10 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         owner_username: str,
         expires_days: Optional[int] = 365,
     ) -> ApiKey:
-        """Create a new API key with owner.
-
-        Args:
-            db: Database session
-            obj_in: Key data
-            owner_username: Username of the key owner
-            expires_days: Days until key expiration (None for no expiration)
-
-        Returns:
-            Created API key
-        """
+        """Create a new API key with owner."""
         obj_in_data = dict(obj_in)
-        # Generate a secure key
         key_value = secrets.token_urlsafe(32)
 
-        # Set expiration date if specified
         expires_at = None
         if expires_days is not None:
             expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
@@ -55,39 +44,35 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         db.refresh(db_obj)
         return db_obj
 
-    def get_by_key(self, db: Session, *, key: str) -> Optional[ApiKey]:
-        """Get API key by key string.
-
-        Args:
-            db: Database session
-            key: The key string to look up
-
-        Returns:
-            API key if found
-        """
-        return db.query(ApiKey).filter(ApiKey.key == key).first()
+    def get_by_key(
+        self, db: Session, *, key: str, account_id: Optional[str] = None
+    ) -> Optional[ApiKey]:
+        """Get API key by key string."""
+        query = db.query(ApiKey).filter(ApiKey.key == key)
+        if account_id:
+            query = query.join(Account, ApiKey.created_by == Account.username).filter(
+                Account.id == account_id
+            )
+        return query.first()
 
     def get_active_by_user(
-        self, db: Session, *, username: str, skip: int = 0, limit: int = 100
+        self,
+        db: Session,
+        *,
+        username: str,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
     ) -> List[ApiKey]:
-        """Get active API keys for a user.
-
-        Args:
-            db: Database session
-            username: Username of the key owner
-            skip: Number of items to skip
-            limit: Maximum number of items to return
-
-        Returns:
-            List of active API keys
-        """
-        return (
-            db.query(ApiKey)
-            .filter(ApiKey.created_by == username, ApiKey.is_active.is_(True))
-            .offset(skip)
-            .limit(limit)
-            .all()
+        """Get active API keys for a user."""
+        query = db.query(ApiKey).filter(
+            ApiKey.created_by == username, ApiKey.is_active.is_(True)
         )
+        if account_id:
+            query = query.join(Account, ApiKey.created_by == Account.username).filter(
+                Account.id == account_id
+            )
+        return query.offset(skip).limit(limit).all()
 
     def update_last_used(self, db: Session, *, key_id: Any) -> Optional[ApiKey]:
         """Update the last_used_at field to current timestamp.

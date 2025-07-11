@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..models.issue import Issue
 from ..models.project import Project
+from ..models.tracker import Tracker
 from .base import CRUDBase
 
 
@@ -35,19 +36,10 @@ class CRUDIssue(CRUDBase[Issue]):
         project_id: Optional[str] = None,
         organization_id: Optional[str] = None,
         tracker_id: Optional[str] = None,
+        account_id: Optional[str] = None,
     ) -> Optional[Issue]:
         """
         Get issue by title with optional project, organization, and tracker filters.
-
-        Args:
-            db: Database session
-            title: Issue title to search for
-            project_id: Optional project ID to filter by
-            organization_id: Optional organization ID to filter by
-            tracker_id: Optional tracker ID to filter by
-
-        Returns:
-            Issue object if found, otherwise None
         """
         query = db.query(Issue).filter(Issue.title == title)
 
@@ -55,35 +47,49 @@ class CRUDIssue(CRUDBase[Issue]):
             query = query.filter(Issue.project_id == project_id)
 
         if organization_id:
-            # Issues don't have organization_id directly - need to join with Project
-            query = query.join(Project, Issue.project_id == Project.id)
-            query = query.filter(Project.organization_id == organization_id)
+            query = query.join(Project, Issue.project_id == Project.id).filter(
+                Project.organization_id == organization_id
+            )
 
         if tracker_id:
             query = query.filter(Issue.tracker_id == tracker_id)
 
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+
         return query.first()
 
     def get_by_key(
-        self, db: Session, *, key: str, project_id: Optional[str] = None
+        self,
+        db: Session,
+        *,
+        key: str,
+        project_id: Optional[str] = None,
+        account_id: Optional[str] = None,
     ) -> Optional[Issue]:
         """Get issue by its unique key."""
         query = db.query(Issue).filter(Issue.key == key)
         if project_id:
             query = query.filter(Issue.project_id == project_id)
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
         return query.first()
 
     def get_by_external_id(
-        self, db: Session, *, project_id: str, external_id: str
+        self,
+        db: Session,
+        *,
+        project_id: str,
+        external_id: str,
+        account_id: Optional[str] = None,
     ) -> Optional[Issue]:
         """Get issue by its external ID and project ID."""
-        return (
-            db.query(Issue)
-            .filter(
-                Issue.project_id == project_id, Issue.external_id == str(external_id)
-            )
-            .first()
+        query = db.query(Issue).filter(
+            Issue.project_id == project_id, Issue.external_id == str(external_id)
         )
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+        return query.first()
 
     def get_for_project(
         self,
@@ -94,6 +100,7 @@ class CRUDIssue(CRUDBase[Issue]):
         issue_type: Optional[str] = None,
         skip: int = 0,
         limit: int = 100,
+        account_id: Optional[str] = None,
     ) -> List[Issue]:
         """Get issues for a project with optional filters."""
         query = db.query(Issue).filter(Issue.project_id == project_id)
@@ -102,22 +109,20 @@ class CRUDIssue(CRUDBase[Issue]):
             query = query.filter(Issue.status == status)
         if issue_type:
             query = query.filter(Issue.issue_type == issue_type)
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
 
         return query.order_by(Issue.created_at.desc()).offset(skip).limit(limit).all()
 
     def get_issue_counts_per_project(
-        self, db: Session, *, project_ids: Optional[List[str]] = None
+        self,
+        db: Session,
+        *,
+        project_ids: Optional[List[str]] = None,
+        account_id: Optional[str] = None,
     ) -> Dict[str, Dict[str, int]]:
         """
         Get the number of issues for each project.
-
-        Args:
-            db: The database session.
-            project_ids: An optional list of project IDs to filter by. If None,
-                         counts issues for all projects.
-
-        Returns:
-            A dictionary mapping project_id to the number of issues.
         """
         query = db.query(Issue.project_id, func.count(Issue.id))
 
@@ -126,21 +131,26 @@ class CRUDIssue(CRUDBase[Issue]):
                 return {}
             query = query.filter(Issue.project_id.in_(project_ids))
 
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+
         result = query.group_by(Issue.project_id).all()
         return {project_id: {"total": count} for project_id, count in result}
 
     def get_for_tracker(
-        self, db: Session, *, tracker_id: str, skip: int = 0, limit: int = 100
+        self,
+        db: Session,
+        *,
+        tracker_id: str,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
     ) -> List[Issue]:
         """Get issues for a tracker."""
-        return (
-            db.query(Issue)
-            .filter(Issue.tracker_id == tracker_id)
-            .order_by(Issue.created_at.desc())
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
+        query = db.query(Issue).filter(Issue.tracker_id == tracker_id)
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+        return query.order_by(Issue.created_at.desc()).offset(skip).limit(limit).all()
 
     def sync_from_external(
         self, db: Session, *, tracker_id: str, external_id: str

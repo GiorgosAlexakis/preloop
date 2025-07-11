@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from spacemodels.crud.base import CRUDBase
 from ..models.issue_duplicate import IssueDuplicate, IssueDuplicateResolution
+from ..models.issue import Issue
+from ..models.tracker import Tracker
 
 
 class CRUDIssueDuplicate(CRUDBase[IssueDuplicate]):
@@ -16,7 +18,6 @@ class CRUDIssueDuplicate(CRUDBase[IssueDuplicate]):
         """Create a new issue duplicate."""
         db_obj_data = obj_in.copy()
 
-        # Ensure issue1_id is less than or equal to issue2_id for consistency
         id1 = db_obj_data.pop("issue1_id")
         id2 = db_obj_data.pop("issue2_id")
 
@@ -51,26 +52,41 @@ class CRUDIssueDuplicate(CRUDBase[IssueDuplicate]):
         return db_obj
 
     def get_by_issue_ids(
-        self, db: Session, *, issue1_id: int, issue2_id: int
+        self,
+        db: Session,
+        *,
+        issue1_id: int,
+        issue2_id: int,
+        account_id: Optional[str] = None,
     ) -> Optional[IssueDuplicate]:
         """Get an IssueDuplicate entry by the two issue IDs, order-agnostic."""
         id_a = min(issue1_id, issue2_id)
         id_b = max(issue1_id, issue2_id)
-        return (
-            db.query(self.model)
-            .filter(self.model.issue1_id == id_a, self.model.issue2_id == id_b)
-            .first()
+        query = db.query(self.model).filter(
+            self.model.issue1_id == id_a, self.model.issue2_id == id_b
         )
-
-    def get_all_for_issue(self, db: Session, *, issue_id: int) -> List[IssueDuplicate]:
-        """Get all duplicates for a given issue."""
-        return (
-            db.query(self.model)
-            .filter(
-                (self.model.issue1_id == issue_id) | (self.model.issue2_id == issue_id)
+        if account_id:
+            query = (
+                query.join(Issue, self.model.issue1_id == Issue.id)
+                .join(Tracker)
+                .filter(Tracker.account_id == account_id)
             )
-            .all()
+        return query.first()
+
+    def get_all_for_issue(
+        self, db: Session, *, issue_id: int, account_id: Optional[str] = None
+    ) -> List[IssueDuplicate]:
+        """Get all duplicates for a given issue."""
+        query = db.query(self.model).filter(
+            (self.model.issue1_id == issue_id) | (self.model.issue2_id == issue_id)
         )
+        if account_id:
+            query = (
+                query.join(Issue, self.model.issue1_id == Issue.id)
+                .join(Tracker)
+                .filter(Tracker.account_id == account_id)
+            )
+        return query.all()
 
 
 crud_issue_duplicate = CRUDIssueDuplicate(IssueDuplicate)

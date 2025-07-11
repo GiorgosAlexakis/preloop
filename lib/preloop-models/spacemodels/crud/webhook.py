@@ -5,33 +5,47 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from ..models.webhook import Webhook
+from ..models.project import Project
+from ..models.organization import Organization
+from ..models.tracker import Tracker
 from .base import CRUDBase
 
 
 class CRUDWebhook(CRUDBase[Webhook]):
     """CRUD operations for Webhook model."""
 
-    def get_by_project_id(self, db: Session, *, project_id: str) -> Optional[Webhook]:
+    def get_by_project_id(
+        self, db: Session, *, project_id: str, account_id: Optional[str] = None
+    ) -> Optional[Webhook]:
         """
         Get a webhook by project ID.
-
-        Args:
-            db: Database session.
-            project_id: The project ID to search for.
-
-        Returns:
-            An optional matching Webhook object. Returns None if no match is found.
         """
-        return db.query(Webhook).filter(Webhook.project_id == project_id).first()
+        query = db.query(Webhook).filter(Webhook.project_id == project_id)
+        if account_id:
+            query = (
+                query.join(Project)
+                .join(Organization)
+                .join(Tracker)
+                .filter(Tracker.account_id == account_id)
+            )
+        return query.first()
 
     def get_all_for_project(
-        self, db: Session, *, project_id: str, skip: int = 0, limit: int = 100
+        self,
+        db: Session,
+        *,
+        project_id: str,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
     ) -> List[Webhook]:
         """Get all webhooks for a project."""
-        return (
-            db.query(Webhook)
-            .filter(Webhook.project_id == project_id)
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
+        query = db.query(Webhook).filter(Webhook.project_id == project_id)
+        if account_id:
+            query = (
+                query.join(Project)
+                .join(Organization)
+                .join(Tracker)
+                .filter(Tracker.account_id == account_id)
+            )
+        return query.offset(skip).limit(limit).all()

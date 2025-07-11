@@ -44,54 +44,82 @@ class CRUDEmbeddingModel(CRUDBase[EmbeddingModel]):
 class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
     """CRUD operations for IssueEmbedding model."""
 
-    def get_for_issue(self, db: Session, *, issue_id: str) -> Dict[str, IssueEmbedding]:
+    def get_for_issue(
+        self, db: Session, *, issue_id: str, account_id: Optional[str] = None
+    ) -> Dict[str, IssueEmbedding]:
         """Get all embeddings for an issue (including its content and all its comments), keyed by model name."""
-        embeddings = (
+        query = (
             db.query(IssueEmbedding, EmbeddingModel)
             .join(EmbeddingModel)
             .filter(IssueEmbedding.issue_id == issue_id)
-            .all()
         )
-
+        if account_id:
+            query = (
+                query.join(Issue, IssueEmbedding.issue_id == Issue.id)
+                .join(Tracker, Issue.tracker_id == Tracker.id)
+                .filter(Tracker.account_id == account_id)
+            )
+        embeddings = query.all()
         return {model.name: embedding for embedding, model in embeddings}
 
     def get_for_issue_content(
-        self, db: Session, *, issue_id: str
+        self, db: Session, *, issue_id: str, account_id: Optional[str] = None
     ) -> Dict[str, IssueEmbedding]:
         """Get embeddings specifically for an issue's main content (not comments), keyed by model name."""
-        embeddings = (
+        query = (
             db.query(IssueEmbedding, EmbeddingModel)
             .join(EmbeddingModel)
             .filter(
                 IssueEmbedding.issue_id == issue_id, IssueEmbedding.comment_id.is_(None)
             )
-            .all()
         )
+        if account_id:
+            query = (
+                query.join(Issue, IssueEmbedding.issue_id == Issue.id)
+                .join(Tracker, Issue.tracker_id == Tracker.id)
+                .filter(Tracker.account_id == account_id)
+            )
+        embeddings = query.all()
         return {model.name: embedding for embedding, model in embeddings}
 
     def get_for_comment(
-        self, db: Session, *, comment_id: str
+        self, db: Session, *, comment_id: str, account_id: Optional[str] = None
     ) -> Dict[str, IssueEmbedding]:
         """Get all embeddings for a specific comment, keyed by model name."""
-        embeddings = (
+        query = (
             db.query(IssueEmbedding, EmbeddingModel)
             .join(EmbeddingModel)
             .filter(IssueEmbedding.comment_id == comment_id)
-            .all()
         )
+        if account_id:
+            query = (
+                query.join(Issue, IssueEmbedding.issue_id == Issue.id)
+                .join(Tracker, Issue.tracker_id == Tracker.id)
+                .filter(Tracker.account_id == account_id)
+            )
+        embeddings = query.all()
         return {model.name: embedding for embedding, model in embeddings}
 
     def get_for_model(
-        self, db: Session, *, model_id: str, skip: int = 0, limit: int = 100
+        self,
+        db: Session,
+        *,
+        model_id: str,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
     ) -> List[IssueEmbedding]:
         """Get embeddings for a specific model."""
-        return (
-            db.query(IssueEmbedding)
-            .filter(IssueEmbedding.embedding_model_id == model_id)
-            .offset(skip)
-            .limit(limit)
-            .all()
+        query = db.query(IssueEmbedding).filter(
+            IssueEmbedding.embedding_model_id == model_id
         )
+        if account_id:
+            query = (
+                query.join(Issue, IssueEmbedding.issue_id == Issue.id)
+                .join(Tracker, Issue.tracker_id == Tracker.id)
+                .filter(Tracker.account_id == account_id)
+            )
+        return query.offset(skip).limit(limit).all()
 
     def get_raw_embeddings(
         self,
@@ -344,6 +372,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         last_updated_before: Optional[datetime] = None,
         last_updated_after: Optional[datetime] = None,
         embedding_type: Optional[str] = None,  # "issue", "comment", or None
+        account_id: Optional[str] = None,
     ) -> List[Union[Tuple[Issue, float], Tuple[Comment, float]]]:
         """
         Search for similar issues or comments based on vector similarity using raw SQL with pgvector.
@@ -411,6 +440,9 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         if last_updated_before:
             common_where_clauses.append("i.updated_at < :last_updated_before")
             params["last_updated_before"] = last_updated_before
+        if account_id:
+            common_where_clauses.append("t.account_id = :account_id")
+            params["account_id"] = account_id
 
         processed_results: List[Union[Tuple[Issue, float], Tuple[Comment, float]]] = []
 
@@ -438,6 +470,8 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         issueembedding e
                     JOIN
                         issue i ON e.issue_id = i.id
+                    JOIN
+                        tracker t ON i.tracker_id = t.id
                     WHERE {where_sql}
                 )
                 SELECT * FROM results
