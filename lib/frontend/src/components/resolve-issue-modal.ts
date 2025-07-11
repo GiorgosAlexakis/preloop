@@ -28,7 +28,7 @@ export class ResolveIssueModal extends LitElement {
   @state() private _mergedTitle = '';
   @state() private _mergedDescription = '';
 
-  // State for Disambiguate step
+  // State for Deconflict step
   @state() private _deconflictedTitle1 = '';
   @state() private _deconflictedDescription1 = '';
   @state() private _deconflictedTitle2 = '';
@@ -159,7 +159,7 @@ export class ResolveIssueModal extends LitElement {
       },
       {
         id: 'deconflict',
-        title: 'Disambiguate Issues',
+        title: 'Deconflict Issues',
         description:
           'Edit the titles and descriptions of both issues to make them distinct. Both issues will remain open.',
         handler: () => this._startResolution('deconflict'),
@@ -283,13 +283,13 @@ export class ResolveIssueModal extends LitElement {
     `;
   }
 
-  // Step 2c: Disambiguate
+  // Step 2c: Deconflict
   private renderDeconflictStep() {
     const issueA = this.duplicatePair?.issue1;
     const issueB = this.duplicatePair?.issue2;
     return html`
       <div class="step-container">
-        <h2>Disambiguate Issues</h2>
+        <h2>Deconflict Issues</h2>
         <p>
           Edit the titles and descriptions to make these issues distinct. Both
           will be updated.
@@ -341,7 +341,7 @@ export class ResolveIssueModal extends LitElement {
             variant="primary"
             .loading=${this._isSubmitting}
             @click="${() => this._handleFinalResolve('DECONFLICT')}"
-            >Resolve Disambiguation</sl-button
+            >Resolve Conflict</sl-button
           >
         </div>
       </div>
