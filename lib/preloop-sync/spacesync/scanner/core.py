@@ -88,7 +88,9 @@ class TrackerClient:
                 continue
             org_create_data = self.client.transform_organization(org_data)
             org = crud_organization.get_by_identifier(
-                db, identifier=org_create_data["identifier"]
+                db,
+                identifier=org_create_data["identifier"],
+                account_id=self.tracker.account_id,
             )
             if org:
                 org = crud_organization.update(db, db_obj=org, obj_in=org_create_data)
@@ -189,6 +191,7 @@ class TrackerClient:
                     db,
                     slug_or_identifier=project_identifier,
                     organization_id=organization.id,
+                    account_id=self.tracker.account_id,
                 )
                 if existing_project:
                     project = crud_project.update(
@@ -230,7 +233,10 @@ class TrackerClient:
             comment_data = xformed_issue_data.pop("comments", [])
 
             current_issue_model = crud_issue.get_by_external_id(
-                db, external_id=xformed_issue_data["external_id"], project_id=project.id
+                db,
+                external_id=xformed_issue_data["external_id"],
+                project_id=project.id,
+                account_id=self.tracker.account_id,
             )
 
             issue_changed = False
@@ -258,6 +264,7 @@ class TrackerClient:
                     db,
                     external_id=xformed_comment_data["external_id"],
                     issue_id=current_issue_model.id,
+                    account_id=self.tracker.account_id,
                 )
 
                 comment_changed = False
