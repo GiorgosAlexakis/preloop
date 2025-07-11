@@ -133,6 +133,7 @@ export class DuplicateStatsChart extends LitElement {
     container.innerHTML = ''; // Clear previous charts
 
     const sortedStats = Object.values(stats)
+      .filter((stat) => stat.duplicates > 0)
       .sort((a, b) => b.duplicates - a.duplicates)
       .slice(0, 5);
 
