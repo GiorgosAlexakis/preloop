@@ -1,11 +1,12 @@
 """CRUD operations for IssueDuplicate model."""
 
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from spacemodels.crud.base import CRUDBase
-from ..models.issue_duplicate import IssueDuplicate
+from ..models.issue_duplicate import IssueDuplicate, IssueDuplicateResolution
 
 
 class CRUDIssueDuplicate(CRUDBase[IssueDuplicate]):
@@ -23,6 +24,27 @@ class CRUDIssueDuplicate(CRUDBase[IssueDuplicate]):
         db_obj_data["issue2_id"] = max(id1, id2)
 
         db_obj = self.model(**db_obj_data)
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def update_resolution(
+        self,
+        db: Session,
+        *,
+        db_obj: IssueDuplicate,
+        resolution: IssueDuplicateResolution,
+        resolution_reason: Optional[str] = None,
+        resulting_issue1_id: Optional[str] = None,
+        resulting_issue2_id: Optional[str] = None,
+    ) -> IssueDuplicate:
+        """Update the resolution of an issue duplicate."""
+        db_obj.resolution = resolution
+        db_obj.resolution_at = datetime.utcnow()
+        db_obj.resolution_reason = resolution_reason
+        db_obj.resulting_issue1_id = resulting_issue1_id
+        db_obj.resulting_issue2_id = resulting_issue2_id
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
