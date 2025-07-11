@@ -509,7 +509,9 @@ async def receive_webhook(
                 )
 
             issue = crud_issue.get_by_external_id(
-                db, project_id=project.id, external_id=str(issue_data["id"])
+                db,
+                project_id=project.id,
+                external_id=str(issue_data["id"]),
             )
             if not issue:
                 raise HTTPException(status_code=404, detail="Issue not found")
