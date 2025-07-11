@@ -1,0 +1,51 @@
+import uuid
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
+
+from .base import Base
+
+
+class FlowExecution(Base):
+    __tablename__ = "flow_executions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    flow_id = Column(
+        UUID(as_uuid=True), ForeignKey("flows.id"), nullable=False, index=True
+    )
+    trigger_event_id = Column(
+        String, nullable=True, index=True
+    )  # From StandardizedNatsEvent.event_id
+    trigger_event_details = Column(
+        JSONB, nullable=True
+    )  # Snapshot of StandardizedNatsEvent.data or full event
+    status = Column(
+        String, nullable=False, default="PENDING", index=True
+    )  # PENDING, INITIALIZING, RUNNING, etc.
+    start_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+    end_time = Column(DateTime, nullable=True)
+    resolved_input_prompt = Column(Text, nullable=True)
+    model_output_summary = Column(Text, nullable=True)
+    actions_taken_summary = Column(
+        JSONB, nullable=True
+    )  # Structured log of agent actions
+    mcp_usage_logs = Column(JSONB, nullable=True)  # Detailed log of MCP tool calls
+    openhands_session_reference = Column(
+        String, nullable=True
+    )  # e.g., OpenHands session ID, K8s job ID
+    error_message = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    # Relationships
+    flow = relationship(
+        "Flow", back_populates="executions"
+    )  # Assuming Flow model has 'executions'
+
+    def __repr__(self):
+        return f"<FlowExecution(id={self.id}, flow_id={self.flow_id}, status='{self.status}')>"

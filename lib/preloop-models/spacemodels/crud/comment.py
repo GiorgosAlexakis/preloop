@@ -5,6 +5,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 
 from ..models.comment import Comment
+from ..models.account import Account
 from .base import CRUDBase
 
 
@@ -32,7 +33,7 @@ class CRUDComment(CRUDBase[Comment]):
         if issue_id:
             query = query.filter(self.model.issue_id == issue_id)
         if account_id:
-            query = query.filter(self.model.author_id == account_id)
+            query = query.join(Account).filter(Account.id == account_id)
         return query.first()
 
     def get_multi_by_issue(
@@ -47,7 +48,7 @@ class CRUDComment(CRUDBase[Comment]):
         """Get multiple comments for a specific issue."""
         query = db.query(self.model).filter(self.model.issue_id == issue_id)
         if account_id:
-            query = query.filter(self.model.author_id == account_id)
+            query = query.join(Account).filter(Account.id == account_id)
         return (
             query.order_by(self.model.created_at.asc()).offset(skip).limit(limit).all()
         )
@@ -64,7 +65,7 @@ class CRUDComment(CRUDBase[Comment]):
         """Get multiple comments by a specific author."""
         query = db.query(self.model).filter(self.model.author_id == author_id)
         if account_id:
-            query = query.filter(self.model.author_id == account_id)
+            query = query.join(Account).filter(Account.id == account_id)
         return (
             query.order_by(self.model.created_at.desc()).offset(skip).limit(limit).all()
         )
