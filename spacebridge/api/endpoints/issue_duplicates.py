@@ -49,12 +49,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-LLM_DUPLICATE_SYSTEM_PROMPT = "You are an expert issue tracker assistant. Your task is to determine if two issues are duplicates of each other."
+LLM_DUPLICATE_SYSTEM_PROMPT = "You are an expert issue tracker assistant. Your task is to classify the relationship between two issues based on their content."
 LLM_DUPLICATE_USER_PROMPT_TEMPLATE = """
-Use your expert judgement to determine if the following two issues are duplicates.
+Use your expert judgement to classify the relationship between the following two issues based on their content.
 
+- `DUPLICATE`: The issues describe the same core problem, request, or task, even if the wording differs slightly.
+- `OVERLAPPING`: There is significant content overlap, but the issues are not full duplicates and should be tracked separately.
+- `UNRELATED`: The issues are distinct. They are considered unrelated if they refer to different components, even if their descriptions seem similar.
+
+Note:
 - Two issues are considered duplicates if they describe the same core problem, request, or task, even if the wording differs slightly or one contains minor additional details.
-- Two issues are not considered duplicates even if they look almost identical, if they refer to different components.
+- Two issues are unrelated even if they look almost identical, if they refer to different components.
+- Two issues are overlapping if they refer to the same component, describe related problems, but are not full duplicates.
 
 Issue 1:
 Title: {issue1_title}
@@ -70,10 +76,8 @@ Description:
 {issue2_description}
 ---
 
-Based on the information above, is Issue 2 a duplicate of Issue 1?
-
-Are these two issues duplicates? Your answer must be only two lines.
-On the first line, write a single word: either 'YES' or 'NO'.
+Based on the information above, what is the relationship between these two issues? Your answer must be only two lines.
+On the first line, write a single word: `DUPLICATE`, `OVERLAPPING`, or `UNRELATED`.
 On the second line, provide a single-sentence reasoning for your decision.
 """
 
@@ -92,7 +96,7 @@ def get_duplicate_issues(
     Retrieve confirmed duplicate issues.
     """
     duplicates = crud_issue_duplicate.get_multi(
-        db, skip=skip, limit=limit, decision="confirmed"
+        db, skip=skip, limit=limit, decision="duplicate"
     )
     return duplicates
 
@@ -198,10 +202,12 @@ def check_or_create_issue_duplicate(
         decision_word = response_lines[0].strip().upper()
         reason = response_lines[1].strip()
 
-        if decision_word == "YES":
-            parsed_status = "confirmed"
-        elif decision_word == "NO":
-            parsed_status = "rejected"
+        if decision_word == "DUPLICATE":
+            parsed_status = "duplicate"
+        elif decision_word == "OVERLAPPING":
+            parsed_status = "overlapping"
+        elif decision_word == "UNRELATED":
+            parsed_status = "unrelated"
         else:
             logger.warning(
                 f"LLM returned unexpected status: '{decision_word}'. Defaulting to 'undecided'."
@@ -281,18 +287,18 @@ async def resolve_issue_duplicate(
         }
         await issue_crud.update(db=db, db_obj=issue_to_update, obj_in=update_data)
 
-    elif resolution.resolution == "disambiguate":
+    elif resolution.resolution == "deconflict":
         if not all(
             [
-                resolution.disambiguated_title1,
-                resolution.disambiguated_description1,
-                resolution.disambiguated_title2,
-                resolution.disambiguated_description2,
+                resolution.deconflicted_title1,
+                resolution.deconflicted_description1,
+                resolution.deconflicted_title2,
+                resolution.deconflicted_description2,
             ]
         ):
             raise HTTPException(
                 status_code=400,
-                detail="Disambiguate resolution requires titles and descriptions for both issues.",
+                detail="Deconflict resolution requires titles and descriptions for both issues.",
             )
 
         issue1_to_update = await issue_crud.get(db=db, id=resolution.issue1_id)
@@ -301,14 +307,14 @@ async def resolve_issue_duplicate(
             raise HTTPException(status_code=404, detail="One or both issues not found.")
 
         update_data1 = {
-            "title": resolution.disambiguated_title1,
-            "description": resolution.disambiguated_description1,
+            "title": resolution.deconflicted_title1,
+            "description": resolution.deconflicted_description1,
         }
         await issue_crud.update(db=db, db_obj=issue1_to_update, obj_in=update_data1)
 
         update_data2 = {
-            "title": resolution.disambiguated_title2,
-            "description": resolution.disambiguated_description2,
+            "title": resolution.deconflicted_title2,
+            "description": resolution.deconflicted_description2,
         }
         await issue_crud.update(db=db, db_obj=issue2_to_update, obj_in=update_data2)
 
@@ -603,7 +609,7 @@ def get_projects_duplicate_stats(
     return IssueDuplicateStats(projects=stats)
 
 
-MERGE_PROMPT = """
+MERGED_PROMPT = """
 You are an expert software engineering assistant. Your task is to merge two issue reports into a single, comprehensive issue. Analyze the title and description of both issues provided below.
 
 Issue 1 Title: {title1}
@@ -620,8 +626,8 @@ Generate a new, merged issue that includes:
 Format your response as a single JSON object with the keys "merged_title", "merged_description", and "explanation".
 """
 
-DISAMBIGUATE_PROMPT = """
-You are an expert software engineering assistant. Your task is to disambiguate two similar-looking issue reports. They might be distinct bugs, or one might be a subset of the other. Analyze the title and description of both issues provided below.
+DECONFLICTED_PROMPT = """
+You are an expert software engineering assistant. In the following two issues there is significant overlap in content. They might be distinct bugs, or one might be a subset of the other. Analyze the title and description of both issues provided below.
 
 Issue 1 Title: {title1}
 Issue 1 Description: {description1}
@@ -629,14 +635,14 @@ Issue 1 Description: {description1}
 Issue 2 Title: {title2}
 Issue 2 Description: {description2}
 
-Generate new, distinct titles and descriptions for both issues to make them clearer and easier to track independently. Provide:
-1. `disambiguated_title1`: A new, more specific title for Issue 1.
-2. `disambiguated_description1`: A revised description for Issue 1, clarifying its unique scope.
-3. `disambiguated_title2`: A new, more specific title for Issue 2.
-4. `disambiguated_description2`: A revised description for Issue 2, clarifying its unique scope.
-5. `explanation`: A brief explanation of the changes you made and the reasoning for the disambiguation.
+Generate new, distinct titles and descriptions for both issues to deconflict them, and make them clearer and easier to track independently. Provide:
+1. `deconflicted_title1`: A new, more specific title for Issue 1.
+2. `deconflicted_description1`: A revised description for Issue 1, clarifying its unique scope.
+3. `deconflicted_title2`: A new, more specific title for Issue 2.
+4. `deconflicted_description2`: A revised description for Issue 2, clarifying its unique scope.
+5. `explanation`: A brief explanation of the changes you made and the reasoning for the deconfliction.
 
-Format your response as a single JSON object with the keys "disambiguated_title1", "disambiguated_description1", "disambiguated_title2", "disambiguated_description2", and "explanation".
+Format your response as a single JSON object with the keys "deconflicted_title1", "deconflicted_description1", "deconflicted_title2", "deconflicted_description2", and "explanation".
 """
 
 
@@ -679,7 +685,7 @@ def get_resolution_suggestion(
 
     try:
         if resolution == "merged":
-            prompt = MERGE_PROMPT.format(
+            prompt = MERGED_PROMPT.format(
                 title1=issue1.title,
                 description1=issue1.description,
                 title2=issue2.title,
@@ -693,8 +699,8 @@ def get_resolution_suggestion(
             suggestion_data = json.loads(llm_response.choices[0].message.content)
             return IssueDuplicateSuggestionResponse(**suggestion_data)
 
-        elif resolution == "disambiguated":
-            prompt = DISAMBIGUATE_PROMPT.format(
+        elif resolution == "deconflicted":
+            prompt = DECONFLICTED_PROMPT.format(
                 title1=issue1.title,
                 description1=issue1.description,
                 title2=issue2.title,
@@ -711,7 +717,7 @@ def get_resolution_suggestion(
         else:
             raise HTTPException(
                 status_code=400,
-                detail="Suggestions are only available for 'merged' or 'disambiguated' resolutions.",
+                detail="Suggestions are only available for 'merged' or 'deconflicted' resolutions.",
             )
     except openai.APIError as e:
         logger.error(f"OpenAI API call failed: {e}")

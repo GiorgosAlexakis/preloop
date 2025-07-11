@@ -3199,26 +3199,26 @@ components:
           - type: string
           - type: 'null'
           title: Merged Description
-        disambiguated_title1:
+        deconflicted_title1:
           anyOf:
           - type: string
           - type: 'null'
-          title: Disambiguated Title1
-        disambiguated_description1:
+          title: Deconflicted Title1
+        deconflicted_description1:
           anyOf:
           - type: string
           - type: 'null'
-          title: Disambiguated Description1
-        disambiguated_title2:
+          title: Deconflicted Description1
+        deconflicted_title2:
           anyOf:
           - type: string
           - type: 'null'
-          title: Disambiguated Title2
-        disambiguated_description2:
+          title: Deconflicted Title2
+        deconflicted_description2:
           anyOf:
           - type: string
           - type: 'null'
-          title: Disambiguated Description2
+          title: Deconflicted Description2
       type: object
       required:
       - issue1_id
@@ -3249,26 +3249,26 @@ components:
           - type: string
           - type: 'null'
           title: Merged Description
-        disambiguated_title1:
+        deconflicted_title1:
           anyOf:
           - type: string
           - type: 'null'
-          title: Disambiguated Title1
-        disambiguated_description1:
+          title: Deconflicted Title1
+        deconflicted_description1:
           anyOf:
           - type: string
           - type: 'null'
-          title: Disambiguated Description1
-        disambiguated_title2:
+          title: Deconflicted Description1
+        deconflicted_title2:
           anyOf:
           - type: string
           - type: 'null'
-          title: Disambiguated Title2
-        disambiguated_description2:
+          title: Deconflicted Title2
+        deconflicted_description2:
           anyOf:
           - type: string
           - type: 'null'
-          title: Disambiguated Description2
+          title: Deconflicted Description2
         explanation:
           type: string
           title: Explanation

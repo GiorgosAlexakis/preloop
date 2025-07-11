@@ -53,10 +53,10 @@ class IssueDuplicateResolve(BaseModel):
     resulting_issue2_id: Optional[str] = None
     merged_title: Optional[str] = None
     merged_description: Optional[str] = None
-    disambiguated_title1: Optional[str] = None
-    disambiguated_description1: Optional[str] = None
-    disambiguated_title2: Optional[str] = None
-    disambiguated_description2: Optional[str] = None
+    deconflicted_title1: Optional[str] = None
+    deconflicted_description1: Optional[str] = None
+    deconflicted_title2: Optional[str] = None
+    deconflicted_description2: Optional[str] = None
 
 
 class IssueDuplicate(IssueDuplicateBase):
@@ -95,10 +95,10 @@ class IssueDuplicateSuggestionRequest(BaseModel):
 class IssueDuplicateSuggestionResponse(BaseModel):
     merged_title: Optional[str] = None
     merged_description: Optional[str] = None
-    disambiguated_title1: Optional[str] = None
-    disambiguated_description1: Optional[str] = None
-    disambiguated_title2: Optional[str] = None
-    disambiguated_description2: Optional[str] = None
+    deconflicted_title1: Optional[str] = None
+    deconflicted_description1: Optional[str] = None
+    deconflicted_title2: Optional[str] = None
+    deconflicted_description2: Optional[str] = None
     explanation: str
 
 
