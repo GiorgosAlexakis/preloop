@@ -1,25 +1,27 @@
 import { LitElement, html, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import {
-  addTracker,
-  updateTracker,
-  validateTrackerToken,
-  listProjectsForOrg,
-} from '../api';
+import * as api from '../api';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import type SlInput from '@shoelace-style/shoelace/dist/components/input/input.js';
+import type SlTreeItem from '@shoelace-style/shoelace/dist/components/tree-item/tree-item.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
+import '@shoelace-style/shoelace/dist/components/tree/tree.js';
+import '@shoelace-style/shoelace/dist/components/tree-item/tree-item.js';
 
 @customElement('add-tracker-modal')
 export class AddTrackerModal extends LitElement {
   @property({ type: Object })
   tracker: any = null;
+
+  /**
+   * @internal
+   */
+  _api = api;
 
   @property({ type: Boolean })
   opened = true;
@@ -55,9 +57,6 @@ export class AddTrackerModal extends LitElement {
   private selectedProjects: Record<string, Record<string, boolean>> = {};
 
   @state()
-  private singleOrgWithProjects = false;
-
-  @state()
   private areAllProjectsSelected = false;
 
   @state()
@@ -76,9 +75,6 @@ export class AddTrackerModal extends LitElement {
     sl-input,
     sl-select {
       margin-bottom: 1rem;
-    }
-    .projects {
-      padding-left: 4rem;
     }
     .select-all {
       margin-bottom: 1rem;
@@ -254,9 +250,7 @@ export class AddTrackerModal extends LitElement {
           Select All
         </sl-checkbox>
       </div>
-      ${this.singleOrgWithProjects
-        ? this.renderProjectsForSingleOrg()
-        : this.renderOrgTree()}
+      ${this.renderOrgTree()}
       <div>
         <sl-checkbox
           .checked=${this.includeFutureProjects}
@@ -270,66 +264,49 @@ export class AddTrackerModal extends LitElement {
     `;
   }
 
-  renderProjectsForSingleOrg() {
-    const orgId = this.orgs[0].id;
-    return html`
-      <div class="projects">
-        ${this.projects[orgId]?.map(
-          (proj: any) => html`
-            <div>
-              <sl-checkbox
-                .checked=${this.selectedProjects[orgId]?.[proj.id]}
-                @sl-change=${() => this.toggleProject(orgId, proj.id)}
-              >
-                ${proj.name}
-              </sl-checkbox>
-            </div>
-          `
-        )}
-      </div>
-    `;
-  }
-
   renderOrgTree() {
+    setTimeout(() => {
+      this.shadowRoot
+        ?.querySelectorAll('sl-tree-item')
+        ?.forEach((item: any) => {
+          if (item.selected) {
+            item.dispatchEvent(
+              new CustomEvent('sl-lazy-load', { bubbles: true })
+            );
+          }
+        });
+    }, 300);
     return html`
-      ${this.orgs.map(
-        (org: any) => html`
-          <div>
-            <sl-icon-button
-              .name=${this.projects?.[org.id]
-                ? 'chevron-down'
-                : 'chevron-right'}
-              @click=${() => this.loadProjects(org.id)}
-            ></sl-icon-button>
-            <sl-checkbox
-              .checked=${this.selectedOrgs[org.id]}
-              @sl-change=${async () => await this.toggleOrg(org.id)}
+      <sl-tree
+        selection="multiple"
+        @sl-selection-change=${this.handleSelectionChange}
+      >
+        ${this.orgs.map(
+          (org: any) => html`
+            <sl-tree-item
+              value="${org.id}"
+              ?selected=${this.selectedOrgs[org.id]}
+              ?lazy=${!this.projects[org.id]}
+              ?loading=${this.isLoading}
+              ?expanded=${this.selectedOrgs[org.id]}
+              @sl-lazy-load=${(e: { target: SlTreeItem }) =>
+                this.loadProjects(org.id, e.target)}
             >
               ${org.name}
-            </sl-checkbox>
-
-            ${this.projects?.[org.id]
-              ? html`
-                  <div class="projects">
-                    ${this.projects?.[org.id].map(
-                      (proj: any) => html`
-                        <div>
-                          <sl-checkbox
-                            .checked=${this.selectedProjects[org.id]?.[proj.id]}
-                            @sl-change=${() =>
-                              this.toggleProject(org.id, proj.id)}
-                          >
-                            ${proj.name}
-                          </sl-checkbox>
-                        </div>
-                      `
-                    )}
-                  </div>
+              ${this.projects[org.id]?.map(
+                (proj: any) => html`
+                  <sl-tree-item
+                    value="${proj.id}"
+                    ?selected=${this.selectedProjects[org.id]?.[proj.id]}
+                  >
+                    ${proj.name}
+                  </sl-tree-item>
                 `
-              : ''}
-          </div>
-        `
-      )}
+              )}
+            </sl-tree-item>
+          `
+        )}
+      </sl-tree>
     `;
   }
 
@@ -337,48 +314,18 @@ export class AddTrackerModal extends LitElement {
     this.isLoading = true;
     this.errorMessage = '';
     try {
-      const response = await validateTrackerToken(
+      const response = await this._api.validateTrackerToken(
         this.tracker?.id,
         this.trackerType,
         this.trackerToken,
         this.trackerUrl,
         this.trackerUsername
       );
-      this.orgs = response.orgs;
-      if (response.orgs.length === 1 && response.orgs[0].children?.length > 0) {
-        this.singleOrgWithProjects = true;
-        const orgId = response.orgs[0].id;
-        this.projects = { [orgId]: response.orgs[0].children };
-        this.selectedOrgs = { [orgId]: true };
-        this.selectedProjects = { [orgId]: {} };
-        if (this.tracker?.scope_rules?.length > 0) {
-          this.projects[orgId].forEach((proj: any) => {
-            if (
-              this.tracker.scope_rules.filter(
-                (x: any) =>
-                  x.scope_type == 'PROJECT' &&
-                  x.rule_type == 'INCLUDE' &&
-                  x.identifier == proj.id
-              ).length ||
-              (this.includeFutureProjects &&
-                !this.tracker.scope_rules.filter(
-                  (x: any) =>
-                    x.scope_type == 'PROJECT' &&
-                    x.rule_type == 'EXCLUDE' &&
-                    x.identifier == proj.id
-                ).length)
-            ) {
-              this.selectedProjects[orgId][proj.id] = true;
-            }
-          });
-        } else {
-          this.projects[orgId].forEach((proj: any) => {
-            this.selectedProjects[orgId][proj.id] = true;
-          });
-        }
-      } else {
-        this.singleOrgWithProjects = false;
+      if (!response.success) {
+        this.errorMessage = response.message.split('\n')[0];
+        return;
       }
+      this.orgs = response.orgs;
       this.step = 2;
     } catch (error: any) {
       this.errorMessage = error.message;
@@ -387,14 +334,17 @@ export class AddTrackerModal extends LitElement {
     }
   }
 
-  async loadProjects(orgId: string) {
+  async loadProjects(orgId: string, item?: SlTreeItem) {
     if (this.projects[orgId]) {
       // Projects already loaded
       return;
     }
     this.isLoading = true;
+    if (item) {
+      item.loading = true;
+    }
     try {
-      const projects = await listProjectsForOrg(
+      const projects = await this._api.listProjectsForOrg(
         this.tracker?.id,
         this.trackerType,
         this.trackerToken,
@@ -406,7 +356,7 @@ export class AddTrackerModal extends LitElement {
       if (this.selectedOrgs[orgId]) {
         if (!this.includeFutureProjects) {
           this.selectedProjects[orgId] = projects.reduce(
-            (acc, proj) => {
+            (acc: Record<string, boolean>, proj: any) => {
               acc[proj.id] =
                 this.tracker?.scope_rules.filter(
                   (x: any) =>
@@ -420,7 +370,7 @@ export class AddTrackerModal extends LitElement {
           );
         } else {
           this.selectedProjects[orgId] = projects.reduce(
-            (acc, proj) => {
+            (acc: Record<string, boolean>, proj: any) => {
               acc[proj.id] =
                 this.tracker?.scope_rules.filter(
                   (x: any) =>
@@ -438,69 +388,80 @@ export class AddTrackerModal extends LitElement {
       this.errorMessage = error.message;
     } finally {
       this.isLoading = false;
+      if (item) {
+        item.loading = false;
+        item.lazy = false;
+      }
+      this.requestUpdate();
     }
   }
 
-  async toggleOrg(orgId: string) {
-    const isSelected = !this.selectedOrgs[orgId];
-    this.selectedOrgs = {
-      ...this.selectedOrgs,
-      [orgId]: isSelected,
-    };
-    if (isSelected && !this.projects[orgId]) {
-      await this.loadProjects(orgId);
-    } else if (this.projects[orgId]) {
-      this.selectedProjects[orgId] = this.projects[orgId].reduce(
-        (acc, proj) => {
-          acc[proj.id] = isSelected;
-          return acc;
-        },
-        {} as Record<string, boolean>
-      );
-    }
-    // When an org is toggled, we might need to update the "Select All" status
+  handleSelectionChange(event: CustomEvent) {
+    const selectedItems = event.detail.selection as SlTreeItem[];
+    const newSelectedOrgs: Record<string, boolean> = {};
+    const newSelectedProjects: Record<string, Record<string, boolean>> = {};
+    // Initialize projects map
+    this.orgs.forEach((org) => {
+      newSelectedProjects[org.id] = {};
+    });
+
+    selectedItems.forEach((item) => {
+      const project = item.getAttribute('value');
+      const org = item.parentElement?.getAttribute('value');
+      if (!org || !project) return;
+      newSelectedOrgs[org] = true;
+      newSelectedProjects[org][project] = true;
+    });
+
+    this.selectedOrgs = newSelectedOrgs;
+    this.selectedProjects = newSelectedProjects;
     this.updateSelectAllState();
   }
 
-  toggleProject(orgId: string, projectId: string) {
-    const orgProjects = this.selectedProjects[orgId] || {};
-    const newOrgProjects = {
-      ...orgProjects,
-      [projectId]: !orgProjects[projectId],
-    };
-    this.selectedProjects = {
-      ...this.selectedProjects,
-      [orgId]: newOrgProjects,
-    };
-
-    this.selectedOrgs[orgId] = !Object.values(newOrgProjects).every(
-      (x) => x != true
-    );
-    this.updateSelectAllState();
-  }
-
-  toggleSelectAll() {
+  async toggleSelectAll() {
     this.areAllProjectsSelected = !this.areAllProjectsSelected;
+
+    if (this.areAllProjectsSelected) {
+      this.isLoading = true;
+      const promises = this.orgs
+        .filter((org) => !this.projects[org.id])
+        .map((org) => this.loadProjects(org.id));
+      await Promise.all(promises);
+      this.isLoading = false;
+    }
+
+    const newSelectedOrgs: Record<string, boolean> = {};
     const newSelectedProjects: Record<string, Record<string, boolean>> = {};
 
-    for (const org of this.orgs) {
+    this.orgs.forEach((org) => {
+      newSelectedOrgs[org.id] = this.areAllProjectsSelected;
+      newSelectedProjects[org.id] = {};
       if (this.projects[org.id]) {
-        newSelectedProjects[org.id] = {};
-        for (const proj of this.projects[org.id]) {
+        this.projects[org.id].forEach((proj) => {
           newSelectedProjects[org.id][proj.id] = this.areAllProjectsSelected;
-        }
+        });
       }
-      this.selectedOrgs[org.id] = this.areAllProjectsSelected;
-    }
+    });
+
+    this.selectedOrgs = newSelectedOrgs;
     this.selectedProjects = newSelectedProjects;
+    this.requestUpdate();
   }
 
   updateSelectAllState() {
+    // Only consider loaded projects for the "Select All" state
+    const loadedProjects = this.orgs
+      .filter((org) => this.projects[org.id])
+      .flatMap((org) => this.projects[org.id]);
+
+    if (loadedProjects.length === 0) {
+      this.areAllProjectsSelected = false;
+      return;
+    }
+
     let allSelected = true;
-    let hasProjects = false;
     for (const org of this.orgs) {
       if (this.projects[org.id]) {
-        hasProjects = true;
         for (const proj of this.projects[org.id]) {
           if (!this.selectedProjects[org.id]?.[proj.id]) {
             allSelected = false;
@@ -510,13 +471,12 @@ export class AddTrackerModal extends LitElement {
       }
       if (!allSelected) break;
     }
-    this.areAllProjectsSelected = hasProjects && allSelected;
+    this.areAllProjectsSelected = allSelected;
   }
 
   async handleSave() {
     this.isLoading = true;
     this.errorMessage = '';
-
     const scopeRules = [];
     for (const org of this.orgs) {
       if (this.selectedOrgs[org.id]) {
@@ -562,17 +522,20 @@ export class AddTrackerModal extends LitElement {
 
     try {
       if (this.tracker) {
-        await updateTracker(this.tracker.id, trackerData);
+        const updatedTracker = await this._api.updateTracker(
+          this.tracker.id,
+          trackerData
+        );
         this.dispatchEvent(
           new CustomEvent('tracker-updated', {
-            detail: { tracker: trackerData },
+            detail: { tracker: updatedTracker },
           })
         );
       } else {
-        await addTracker(trackerData);
+        const newTracker = await this._api.addTracker(trackerData);
         this.dispatchEvent(
           new CustomEvent('tracker-added', {
-            detail: { tracker: trackerData },
+            detail: { tracker: newTracker },
           })
         );
       }
