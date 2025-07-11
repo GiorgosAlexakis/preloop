@@ -1,7 +1,7 @@
 """add_flow_executions_table
 
 Revision ID: 5fd31a7ef8f2
-Revises: 20250617145000
+Revises: bf6fac0a7c61
 Create Date: 2025-06-10 19:47:55.384833
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "5fd31a7ef8f2"
-down_revision: Union[str, None] = "20250617145000"
+down_revision: Union[str, None] = "bf6fac0a7c61"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

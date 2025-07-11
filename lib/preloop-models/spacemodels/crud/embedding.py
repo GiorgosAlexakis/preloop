@@ -372,6 +372,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         last_updated_before: Optional[datetime] = None,
         last_updated_after: Optional[datetime] = None,
         embedding_type: Optional[str] = None,  # "issue", "comment", or None
+        account_id: Optional[str] = None,
     ) -> List[Union[Tuple[Issue, float], Tuple[Comment, float]]]:
         """
         Search for similar issues or comments based on vector similarity using raw SQL with pgvector.
@@ -439,6 +440,9 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         if last_updated_before:
             common_where_clauses.append("i.updated_at < :last_updated_before")
             params["last_updated_before"] = last_updated_before
+        if account_id:
+            common_where_clauses.append("t.account_id = :account_id")
+            params["account_id"] = account_id
 
         processed_results: List[Union[Tuple[Issue, float], Tuple[Comment, float]]] = []
 
@@ -466,6 +470,8 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         issueembedding e
                     JOIN
                         issue i ON e.issue_id = i.id
+                    JOIN
+                        tracker t ON i.tracker_id = t.id
                     WHERE {where_sql}
                 )
                 SELECT * FROM results
