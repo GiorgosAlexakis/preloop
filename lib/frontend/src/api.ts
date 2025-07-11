@@ -623,17 +623,17 @@ export interface SuggestionResponse {
   resolution: 'MERGE' | 'DISAMBIGUATE';
   merged_title?: string;
   merged_description?: string;
-  disambiguated_title1?: string;
-  disambiguated_description1?: string;
-  disambiguated_title2?: string;
-  disambiguated_description2?: string;
+  deconflicted_title1?: string;
+  deconflicted_description1?: string;
+  deconflicted_title2?: string;
+  deconflicted_description2?: string;
   explanation: string;
 }
 
 export async function getResolutionSuggestion(
   issue1_id: string,
   issue2_id: string,
-  resolution: 'merged' | 'disambiguated'
+  resolution: 'merged' | 'deconflicted'
 ): Promise<SuggestionResponse> {
   const response = await fetchWithAuth('/api/v1/LLM-suggestion', {
     method: 'POST',

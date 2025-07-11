@@ -4,7 +4,12 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 
 export interface LlmVerdict {
-  decision: 'confirmed' | 'rejected' | 'undecided' | 'checking';
+  decision:
+    | 'duplicate'
+    | 'overlapping'
+    | 'undecided'
+    | 'checking'
+    | 'unrelated';
   reason?: string;
 }
 
@@ -19,7 +24,7 @@ export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
   }
 
   switch (verdict.decision) {
-    case 'confirmed':
+    case 'duplicate':
       return html`
         <sl-badge
           variant="success"
@@ -33,7 +38,21 @@ export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
           Confirmed
         </sl-badge>
       `;
-    case 'rejected':
+    case 'overlapping':
+      return html`
+        <sl-badge
+          variant="primary"
+          style="--sl-color-primary-text: var(--sl-color-orange-50); --sl-color-primary-600: var(--sl-color-orange-600);"
+          pill
+        >
+          <sl-icon
+            name="intersect"
+            style="margin-right: var(--sl-spacing-2x-small);"
+          ></sl-icon>
+          Overlapping
+        </sl-badge>
+      `;
+    case 'unrelated':
       return html`
         <sl-badge
           variant="danger"
@@ -44,7 +63,7 @@ export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
             name="x-circle"
             style="margin-right: var(--sl-spacing-2x-small);"
           ></sl-icon>
-          Rejected
+          Unrelated
         </sl-badge>
       `;
     default:

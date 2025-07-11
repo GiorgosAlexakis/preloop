@@ -14,7 +14,7 @@ import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 
-type ResolutionStep = 'initial' | 'close' | 'merge' | 'disambiguate';
+type ResolutionStep = 'initial' | 'close' | 'merge' | 'deconflict';
 
 @customElement('resolve-issue-modal')
 export class ResolveIssueModal extends LitElement {
@@ -29,10 +29,10 @@ export class ResolveIssueModal extends LitElement {
   @state() private _mergedDescription = '';
 
   // State for Disambiguate step
-  @state() private _disambiguatedTitle1 = '';
-  @state() private _disambiguatedDescription1 = '';
-  @state() private _disambiguatedTitle2 = '';
-  @state() private _disambiguatedDescription2 = '';
+  @state() private _deconflictedTitle1 = '';
+  @state() private _deconflictedDescription1 = '';
+  @state() private _deconflictedTitle2 = '';
+  @state() private _deconflictedDescription2 = '';
 
   private _handleOpen() {
     this._isSubmitting = false;
@@ -56,16 +56,16 @@ export class ResolveIssueModal extends LitElement {
     // Reset previous suggestions
     this._mergedTitle = '';
     this._mergedDescription = '';
-    this._disambiguatedTitle1 = '';
-    this._disambiguatedDescription1 = '';
-    this._disambiguatedTitle2 = '';
-    this._disambiguatedDescription2 = '';
+    this._deconflictedTitle1 = '';
+    this._deconflictedDescription1 = '';
+    this._deconflictedTitle2 = '';
+    this._deconflictedDescription2 = '';
 
-    if (step === 'merge' || step === 'disambiguate') {
+    if (step === 'merge' || step === 'deconflict') {
       if (!this.duplicatePair?.issue1 || !this.duplicatePair?.issue2) return;
       this._isLoadingSuggestion = true;
       try {
-        const resolutionType = step === 'merge' ? 'merged' : 'disambiguated';
+        const resolutionType = step === 'merge' ? 'merged' : 'deconflicted';
         const suggestion = await getResolutionSuggestion(
           this.duplicatePair.issue1.id,
           this.duplicatePair.issue2.id,
@@ -76,12 +76,12 @@ export class ResolveIssueModal extends LitElement {
           this._mergedTitle = suggestion.merged_title || '';
           this._mergedDescription = suggestion.merged_description || '';
         } else {
-          this._disambiguatedTitle1 = suggestion.disambiguated_title1 || '';
-          this._disambiguatedDescription1 =
-            suggestion.disambiguated_description1 || '';
-          this._disambiguatedTitle2 = suggestion.disambiguated_title2 || '';
-          this._disambiguatedDescription2 =
-            suggestion.disambiguated_description2 || '';
+          this._deconflictedTitle1 = suggestion.deconflicted_title1 || '';
+          this._deconflictedDescription1 =
+            suggestion.deconflicted_description1 || '';
+          this._deconflictedTitle2 = suggestion.deconflicted_title2 || '';
+          this._deconflictedDescription2 =
+            suggestion.deconflicted_description2 || '';
         }
       } catch (error) {
         console.error('Failed to get suggestion:', error);
@@ -110,16 +110,14 @@ export class ResolveIssueModal extends LitElement {
       resolutionData.resulting_issue1_id = issueToKeep.id;
       resolutionData.merged_title = this._mergedTitle;
       resolutionData.merged_description = this._mergedDescription;
-    } else if (resolution === 'DISAMBIGUATE') {
-      resolutionData.resolution_reason = 'Disambiguated issues';
+    } else if (resolution === 'DECONFLICT') {
+      resolutionData.resolution_reason = 'Deconflicted issues';
       resolutionData.resulting_issue1_id = issue1.id;
       resolutionData.resulting_issue2_id = issue2.id;
-      resolutionData.disambiguated_title1 = this._disambiguatedTitle1;
-      resolutionData.disambiguated_description1 =
-        this._disambiguatedDescription1;
-      resolutionData.disambiguated_title2 = this._disambiguatedTitle2;
-      resolutionData.disambiguated_description2 =
-        this._disambiguatedDescription2;
+      resolutionData.deconflicted_title1 = this._deconflictedTitle1;
+      resolutionData.deconflicted_description1 = this._deconflictedDescription1;
+      resolutionData.deconflicted_title2 = this._deconflictedTitle2;
+      resolutionData.deconflicted_description2 = this._deconflictedDescription2;
     } else if (resolution.startsWith('CLOSE_')) {
       const issueToClose = resolution === 'CLOSE_A' ? issue1 : issue2;
       const issueToKeep = resolution === 'CLOSE_A' ? issue2 : issue1;
@@ -160,11 +158,11 @@ export class ResolveIssueModal extends LitElement {
         handler: () => this._startResolution('merge'),
       },
       {
-        id: 'disambiguate',
+        id: 'deconflict',
         title: 'Disambiguate Issues',
         description:
           'Edit the titles and descriptions of both issues to make them distinct. Both issues will remain open.',
-        handler: () => this._startResolution('disambiguate'),
+        handler: () => this._startResolution('deconflict'),
       },
       {
         id: 'unrelated',
@@ -286,7 +284,7 @@ export class ResolveIssueModal extends LitElement {
   }
 
   // Step 2c: Disambiguate
-  private renderDisambiguateStep() {
+  private renderDeconflictStep() {
     const issueA = this.duplicatePair?.issue1;
     const issueB = this.duplicatePair?.issue2;
     return html`
@@ -307,15 +305,15 @@ export class ResolveIssueModal extends LitElement {
                   <h3>${issueA?.key}: ${issueA?.title}</h3>
                   <sl-input
                     label="New Title"
-                    .value=${this._disambiguatedTitle1}
+                    .value=${this._deconflictedTitle1}
                     @sl-input=${(e: any) =>
-                      (this._disambiguatedTitle1 = e.target.value)}
+                      (this._deconflictedTitle1 = e.target.value)}
                   ></sl-input>
                   <sl-textarea
                     label="New Description"
-                    .value=${this._disambiguatedDescription1}
+                    .value=${this._deconflictedDescription1}
                     @sl-input=${(e: any) =>
-                      (this._disambiguatedDescription1 = e.target.value)}
+                      (this._deconflictedDescription1 = e.target.value)}
                     rows="6"
                   ></sl-textarea>
                 </div>
@@ -323,15 +321,15 @@ export class ResolveIssueModal extends LitElement {
                   <h3>${issueB?.key}: ${issueB?.title}</h3>
                   <sl-input
                     label="New Title"
-                    .value=${this._disambiguatedTitle2}
+                    .value=${this._deconflictedTitle2}
                     @sl-input=${(e: any) =>
-                      (this._disambiguatedTitle2 = e.target.value)}
+                      (this._deconflictedTitle2 = e.target.value)}
                   ></sl-input>
                   <sl-textarea
                     label="New Description"
-                    .value=${this._disambiguatedDescription2}
+                    .value=${this._deconflictedDescription2}
                     @sl-input=${(e: any) =>
-                      (this._disambiguatedDescription2 = e.target.value)}
+                      (this._deconflictedDescription2 = e.target.value)}
                     rows="6"
                   ></sl-textarea>
                 </div>
@@ -342,7 +340,7 @@ export class ResolveIssueModal extends LitElement {
           <sl-button
             variant="primary"
             .loading=${this._isSubmitting}
-            @click="${() => this._handleFinalResolve('DISAMBIGUATE')}"
+            @click="${() => this._handleFinalResolve('DECONFLICT')}"
             >Resolve Disambiguation</sl-button
           >
         </div>
@@ -359,8 +357,8 @@ export class ResolveIssueModal extends LitElement {
       case 'merge':
         content = this.renderMergeStep();
         break;
-      case 'disambiguate':
-        content = this.renderDisambiguateStep();
+      case 'deconflict':
+        content = this.renderDeconflictStep();
         break;
       default:
         content = this.renderInitialStep();
