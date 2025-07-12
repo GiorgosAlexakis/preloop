@@ -143,9 +143,7 @@ def check_or_create_issue_duplicate(
         logger.warning(detail)
         raise HTTPException(status_code=404, detail=detail)
 
-    default_model = crud_llm_model.get_default_active_model(
-        db, include_ownerless=True, account_id=current_user.id
-    )
+    default_model = crud_llm_model.get_default_active_model(db, include_ownerless=True)
     if not default_model:
         logger.error("No default active LLM model configured.")
         raise HTTPException(
