@@ -650,8 +650,45 @@ export async function getResolutionSuggestion(
   return response.json();
 }
 
-export async function executeResolution(resolutionData: any) {
-  return await fetchWithAuth('/api/v1/issue-duplicates/resolve', {
+export interface IssueDuplicateResolutionRequest {
+  issue1_id: string;
+  issue2_id: string;
+  resolution: 'close_a' | 'close_b' | 'merge_a_to_b' | 'merge_b_to_a' | 'deconflict';
+  resolution_reason?: string;
+  resulting_issue_1_title?: string;
+  resulting_issue_1_description?: string;
+  resulting_issue_2_title?: string;
+  resulting_issue_2_description?: string;
+}
+
+export interface IssueDuplicateResolutionResponse {
+  issue1_id: string;
+  issue2_id: string;
+  resolution: string;
+}
+
+export async function executeIssueDuplicateResolution(
+  resolutionData: IssueDuplicateResolutionRequest
+): Promise<IssueDuplicateResolutionResponse> {
+  const response = await fetchWithAuth(
+    '/api/v1/issue-duplicates/execute-resolution',
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(resolutionData),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || 'Failed to execute issue duplicate resolution'
+    );
+  }
+  return response.json();
+}
+
+export async function proposeResolution(resolutionData: any) {
+  return await fetchWithAuth('/api/v1/issue-duplicates/propose-resolution', {
     method: 'PATCH',
     body: JSON.stringify(resolutionData),
   });

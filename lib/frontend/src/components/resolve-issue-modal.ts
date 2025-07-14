@@ -2,7 +2,8 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   DuplicatePair,
-  executeResolution,
+  executeIssueDuplicateResolution,
+  IssueDuplicateResolutionRequest,
   getResolutionSuggestion,
 } from '../api';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
@@ -92,48 +93,64 @@ export class ResolveIssueModal extends LitElement {
     }
   }
 
-  private async _handleFinalResolve(resolution: string) {
+  private async _handleFinalResolve(resolutionType: string) {
     if (!this.duplicatePair) return;
     this._isSubmitting = true;
 
     const { issue1, issue2 } = this.duplicatePair;
-    let resolutionData: any = {
-      issue1_id: issue1.id,
-      issue2_id: issue2.id,
-      resolution: resolution,
-    };
+    let resolutionData: IssueDuplicateResolutionRequest;
 
-    if (resolution === 'MERGE') {
-      const issueToKeep = this._mergeTarget === 'A' ? issue1 : issue2;
-      const issueToClose = this._mergeTarget === 'A' ? issue2 : issue1;
-      resolutionData.resolution_reason = `Merged ${issueToClose.key} into ${issueToKeep.key}`;
-      resolutionData.resulting_issue1_id = issueToKeep.id;
-      resolutionData.merged_title = this._mergedTitle;
-      resolutionData.merged_description = this._mergedDescription;
-    } else if (resolution === 'DECONFLICT') {
-      resolutionData.resolution_reason = 'Deconflicted issues';
-      resolutionData.resulting_issue1_id = issue1.id;
-      resolutionData.resulting_issue2_id = issue2.id;
-      resolutionData.deconflicted_title1 = this._deconflictedTitle1;
-      resolutionData.deconflicted_description1 = this._deconflictedDescription1;
-      resolutionData.deconflicted_title2 = this._deconflictedTitle2;
-      resolutionData.deconflicted_description2 = this._deconflictedDescription2;
-    } else if (resolution.startsWith('CLOSE_')) {
-      const issueToClose = resolution === 'CLOSE_A' ? issue1 : issue2;
-      const issueToKeep = resolution === 'CLOSE_A' ? issue2 : issue1;
-      resolutionData.resolution = 'CLOSE'; // The API expects 'CLOSE', not 'CLOSE_A' or 'CLOSE_B'
-      resolutionData.resolution_reason = `Closed ${issueToClose.key} as duplicate of ${issueToKeep.key}`;
-      resolutionData.resulting_issue1_id = issueToKeep.id;
+    switch (resolutionType) {
+      case 'CLOSE_A':
+        resolutionData = {
+          issue1_id: issue1.id,
+          issue2_id: issue2.id,
+          resolution: 'close_a',
+        };
+        break;
+      case 'CLOSE_B':
+        resolutionData = {
+          issue1_id: issue1.id,
+          issue2_id: issue2.id,
+          resolution: 'close_b',
+        };
+        break;
+      case 'MERGE':
+        resolutionData = {
+          issue1_id: issue1.id,
+          issue2_id: issue2.id,
+          resolution: this._mergeTarget === 'A' ? 'merge_b_to_a' : 'merge_a_to_b',
+          resulting_issue_1_title: this._mergeTarget === 'A' ? this._mergedTitle : undefined,
+          resulting_issue_1_description: this._mergeTarget === 'A' ? this._mergedDescription : undefined,
+          resulting_issue_2_title: this._mergeTarget === 'B' ? this._mergedTitle : undefined,
+          resulting_issue_2_description: this._mergeTarget === 'B' ? this._mergedDescription : undefined,
+        };
+        break;
+      case 'DECONFLICT':
+        resolutionData = {
+          issue1_id: issue1.id,
+          issue2_id: issue2.id,
+          resolution: 'deconflict',
+          resulting_issue_1_title: this._deconflictedTitle1,
+          resulting_issue_1_description: this._deconflictedDescription1,
+          resulting_issue_2_title: this._deconflictedTitle2,
+          resulting_issue_2_description: this._deconflictedDescription2,
+        };
+        break;
+      default:
+        // Handle 'UNRELATED' or other cases if necessary
+        this._isSubmitting = false;
+        return;
     }
 
     try {
-      await executeResolution(resolutionData);
+      await executeIssueDuplicateResolution(resolutionData);
       this.dispatchEvent(
         new CustomEvent('resolved', { bubbles: true, composed: true })
       );
       this._close();
     } catch (error) {
-      console.error('Failed to execute resolution:', error);
+      console.error('Failed to resolve duplicate:', error);
       // TODO: Add a user-facing error notification (e.g., a toast)
     } finally {
       this._isSubmitting = false;
