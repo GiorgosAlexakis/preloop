@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from spacemodels.crud.base import CRUDBase
-from ..models.issue_duplicate import IssueDuplicate, IssueDuplicateResolution
+from ..models.issue_duplicate import IssueDuplicate
 from ..models.issue import Issue
 from ..models.tracker import Tracker
 
@@ -35,7 +35,7 @@ class CRUDIssueDuplicate(CRUDBase[IssueDuplicate]):
         db: Session,
         *,
         db_obj: IssueDuplicate,
-        resolution: IssueDuplicateResolution,
+        resolution: str,
         resolution_reason: Optional[str] = None,
         resulting_issue1_id: Optional[str] = None,
         resulting_issue2_id: Optional[str] = None,
