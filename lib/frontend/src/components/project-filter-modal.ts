@@ -32,7 +32,8 @@ export class ProjectFilterModal extends LitElement {
   @property({ type: Array }) organizations: Organization[] = [];
   @property({ type: Array }) projects: Project[] = [];
   @property({ type: Array }) selectedProjectIds: string[] = [];
-  @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+  @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' =
+    'opened';
 
   @state() private draftSelectedProjectIds: string[] = [];
   @state() private draftSelectedStatus: 'opened' | 'closed' | 'all' = 'opened';
@@ -73,7 +74,9 @@ export class ProjectFilterModal extends LitElement {
   }
 
   handleClose() {
-    this.dispatchEvent(new CustomEvent('on-close', { bubbles: true, composed: true }));
+    this.dispatchEvent(
+      new CustomEvent('on-close', { bubbles: true, composed: true })
+    );
   }
 
   render() {
