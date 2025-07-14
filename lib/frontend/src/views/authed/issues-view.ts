@@ -90,6 +90,9 @@ export class IssuesView extends LitElement {
   private _isFilterModalOpen = false;
 
   @state()
+  private _resolutionSummary: string | null = null;
+
+  @state()
   private _isResolveModalOpen = false;
 
   @state()
@@ -439,6 +442,17 @@ export class IssuesView extends LitElement {
     this._selectedPair = null;
   }
 
+  private async handleResolution(e: CustomEvent) {
+    if (e.detail.summary) {
+      this._resolutionSummary = e.detail.summary;
+      // Auto-hide after 5 seconds
+      setTimeout(() => {
+        this._resolutionSummary = null;
+      }, 5000);
+    }
+    this.fetchDuplicates();
+  }
+
   private _handleResolved() {
     this._isResolveModalOpen = false;
     this._selectedPair = null;
@@ -604,6 +618,21 @@ export class IssuesView extends LitElement {
           Review each suggested pair, check the similarity score, and use the
           LLM review to resolve or dismiss the suggestion.
         </sl-alert>
+
+        ${when(
+          this._resolutionSummary,
+          () => html`
+            <sl-alert
+              variant="success"
+              open
+              closable
+              @sl-after-hide=${() => (this._resolutionSummary = null)}
+            >
+              <sl-icon slot="icon" name="check-circle"></sl-icon>
+              ${this._resolutionSummary}
+            </sl-alert>
+          `
+        )}
 
         ${this._renderActiveFilters()}
         ${when(
@@ -800,8 +829,8 @@ export class IssuesView extends LitElement {
       <resolve-issue-modal
         .isOpen=${this._isResolveModalOpen}
         .duplicatePair=${this._selectedPair}
-        @on-close=${this._handleModalClose}
-        @on-resolved=${this._handleResolved}
+        @on-close=${() => (this._isResolveModalOpen = false)}
+        @on-resolved=${this.handleResolution}
       ></resolve-issue-modal>
     `;
   }

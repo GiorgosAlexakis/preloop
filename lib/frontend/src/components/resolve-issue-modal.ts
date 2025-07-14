@@ -35,6 +35,8 @@ export class ResolveIssueModal extends LitElement {
   @state() private _deconflictedTitle2 = '';
   @state() private _deconflictedDescription2 = '';
 
+  @state() private _resolutionSummary = '';
+
   private handleOpen() {
     this._isSubmitting = false;
     this._resolutionStep = 'initial';
@@ -99,6 +101,7 @@ export class ResolveIssueModal extends LitElement {
 
     const { issue1, issue2 } = this.duplicatePair;
     let resolutionData: IssueDuplicateResolutionRequest;
+    let resolutionSummary = '';
 
     switch (resolutionType) {
       case 'CLOSE_A':
@@ -107,6 +110,7 @@ export class ResolveIssueModal extends LitElement {
           issue2_id: issue2.id,
           resolution: 'close_a',
         };
+        resolutionSummary = `Closed ${issue1.key} as duplicate of ${issue2.key}.`;
         break;
       case 'CLOSE_B':
         resolutionData = {
@@ -114,6 +118,7 @@ export class ResolveIssueModal extends LitElement {
           issue2_id: issue2.id,
           resolution: 'close_b',
         };
+        resolutionSummary = `Closed ${issue2.key} as duplicate of ${issue1.key}.`;
         break;
       case 'MERGE':
         resolutionData = {
@@ -130,6 +135,7 @@ export class ResolveIssueModal extends LitElement {
           resulting_issue_2_description:
             this._mergeTarget === 'B' ? this._mergedDescription : undefined,
         };
+        resolutionSummary = `Merged ${issue1.key} and ${issue2.key}.`;
         break;
       case 'DECONFLICT':
         resolutionData = {
@@ -141,9 +147,18 @@ export class ResolveIssueModal extends LitElement {
           resulting_issue_2_title: this._deconflictedTitle2,
           resulting_issue_2_description: this._deconflictedDescription2,
         };
+        resolutionSummary = `Deconflicted ${issue1.key} and ${issue2.key}.`;
+        break;
+      case 'UNRELATED':
+        resolutionData = {
+          issue1_id: issue1.id,
+          issue2_id: issue2.id,
+          resolution: 'unrelated',
+        };
+        resolutionSummary = `Marked ${issue1.key} and ${issue2.key} as unrelated.`;
         break;
       default:
-        // Handle 'UNRELATED' or other cases if necessary
+        // Handle other cases if necessary
         this._isSubmitting = false;
         return;
     }
@@ -151,7 +166,11 @@ export class ResolveIssueModal extends LitElement {
     try {
       await executeIssueDuplicateResolution(resolutionData);
       this.dispatchEvent(
-        new CustomEvent('on-resolved', { bubbles: true, composed: true })
+        new CustomEvent('on-resolved', {
+          bubbles: true,
+          composed: true,
+          detail: { summary: resolutionSummary },
+        })
       );
       this.handleClose();
     } catch (error) {
