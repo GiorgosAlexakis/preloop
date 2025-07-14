@@ -119,11 +119,16 @@ export class ResolveIssueModal extends LitElement {
         resolutionData = {
           issue1_id: issue1.id,
           issue2_id: issue2.id,
-          resolution: this._mergeTarget === 'A' ? 'merge_b_to_a' : 'merge_a_to_b',
-          resulting_issue_1_title: this._mergeTarget === 'A' ? this._mergedTitle : undefined,
-          resulting_issue_1_description: this._mergeTarget === 'A' ? this._mergedDescription : undefined,
-          resulting_issue_2_title: this._mergeTarget === 'B' ? this._mergedTitle : undefined,
-          resulting_issue_2_description: this._mergeTarget === 'B' ? this._mergedDescription : undefined,
+          resolution:
+            this._mergeTarget === 'A' ? 'merge_b_to_a' : 'merge_a_to_b',
+          resulting_issue_1_title:
+            this._mergeTarget === 'A' ? this._mergedTitle : undefined,
+          resulting_issue_1_description:
+            this._mergeTarget === 'A' ? this._mergedDescription : undefined,
+          resulting_issue_2_title:
+            this._mergeTarget === 'B' ? this._mergedTitle : undefined,
+          resulting_issue_2_description:
+            this._mergeTarget === 'B' ? this._mergedDescription : undefined,
         };
         break;
       case 'DECONFLICT':
