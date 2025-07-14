@@ -14,7 +14,6 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateResolutionRequest,
     IssueDuplicateResolutionResponse,
 )
-from spacemodels.crud import issue as issue_crud
 from spacemodels.crud import issue_duplicate as issue_duplicate_crud
 
 from spacebridge.schemas.issue import IssueResponse, IssueUpdate
@@ -257,7 +256,7 @@ def check_or_create_issue_duplicate(
     response_model=IssueDuplicateSchema,
     tags=["Issue Duplicates"],
 )
-async def propose_issue_duplicate_resolution(
+def propose_issue_duplicate_resolution(
     resolution: IssueDuplicateSuggestionRequest,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
@@ -286,14 +285,14 @@ async def propose_issue_duplicate_resolution(
                 status_code=400,
                 detail="Merge resolution requires resulting_issue1_id, merged_title, and merged_description.",
             )
-        issue_to_update = await issue_crud.get(db=db, id=resolution.resulting_issue1_id)
+        issue_to_update = crud_issue.get(db=db, id=resolution.resulting_issue1_id)
         if not issue_to_update:
             raise HTTPException(status_code=404, detail="Resulting issue not found.")
         update_data = {
             "title": resolution.merged_title,
             "description": resolution.merged_description,
         }
-        await issue_crud.update(db=db, db_obj=issue_to_update, obj_in=update_data)
+        crud_issue.update(db=db, db_obj=issue_to_update, obj_in=update_data)
 
     elif resolution.resolution == "deconflict":
         if not all(
@@ -309,8 +308,8 @@ async def propose_issue_duplicate_resolution(
                 detail="Deconflict resolution requires titles and descriptions for both issues.",
             )
 
-        issue1_to_update = await issue_crud.get(db=db, id=resolution.issue1_id)
-        issue2_to_update = await issue_crud.get(db=db, id=resolution.issue2_id)
+        issue1_to_update = crud_issue.get(db=db, id=resolution.issue1_id)
+        issue2_to_update = crud_issue.get(db=db, id=resolution.issue2_id)
         if not issue1_to_update or not issue2_to_update:
             raise HTTPException(status_code=404, detail="One or both issues not found.")
 
@@ -318,15 +317,15 @@ async def propose_issue_duplicate_resolution(
             "title": resolution.deconflicted_title1,
             "description": resolution.deconflicted_description1,
         }
-        await issue_crud.update(db=db, db_obj=issue1_to_update, obj_in=update_data1)
+        crud_issue.update(db=db, db_obj=issue1_to_update, obj_in=update_data1)
 
         update_data2 = {
             "title": resolution.deconflicted_title2,
             "description": resolution.deconflicted_description2,
         }
-        await issue_crud.update(db=db, db_obj=issue2_to_update, obj_in=update_data2)
+        crud_issue.update(db=db, db_obj=issue2_to_update, obj_in=update_data2)
 
-    db_duplicate = await issue_duplicate_crud.update_resolution(
+    db_duplicate = issue_duplicate_crud.update_resolution(
         db=db,
         issue1_id=resolution.issue1_id,
         issue2_id=resolution.issue2_id,
@@ -350,13 +349,29 @@ async def execute_issue_duplicate_resolution(
     current_user: Account = Depends(get_current_active_user),
 ):
     """Execute the resolution for a pair of duplicate issues."""
-    issue_a = await issue_crud.get(db=db, id=resolution.issue1_id)
-    issue_b = await issue_crud.get(db=db, id=resolution.issue2_id)
+    issue_a = crud_issue.get(db=db, id=resolution.issue1_id)
+    issue_b = crud_issue.get(db=db, id=resolution.issue2_id)
 
     if not issue_a or not issue_b:
         raise HTTPException(status_code=404, detail="One or both issues not found")
 
     resolution_type = resolution.resolution
+
+    # Map the detailed resolution to a canonical string value.
+    resolution_map = {
+        "close_a": "closed",
+        "close_b": "closed",
+        "merge_a_to_b": "merged",
+        "merge_b_to_a": "merged",
+        "deconflict": "deconflicted",
+        "not_a_duplicate": "not_a_duplicate",
+    }
+    db_resolution_value = resolution_map.get(resolution_type)
+
+    if db_resolution_value is None:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid resolution type: {resolution_type}"
+        )
 
     if resolution_type == "close_a":
         await update_issue(
@@ -464,15 +479,15 @@ async def execute_issue_duplicate_resolution(
         raise HTTPException(status_code=400, detail="Invalid resolution type")
 
     # Update the issue_duplicate record
-    duplicate_record = await crud_issue_duplicate.get_by_issue_ids(
+    duplicate_record = crud_issue_duplicate.get_by_issue_ids(
         db=db, issue1_id=issue_a.id, issue2_id=issue_b.id
     )
     if duplicate_record:
-        await crud_issue_duplicate.update(
+        crud_issue_duplicate.update(
             db=db,
             db_obj=duplicate_record,
             obj_in={
-                "resolution": resolution_type,
+                "resolution": db_resolution_value,
                 "resolution_at": datetime.utcnow(),
                 "resolution_reason": resolution.resolution_reason,
             },
@@ -481,7 +496,7 @@ async def execute_issue_duplicate_resolution(
     return IssueDuplicateResolutionResponse(
         issue1_id=resolution.issue1_id,
         issue2_id=resolution.issue2_id,
-        resolution=resolution_type,
+        resolution=resolution.resolution,
     )
 
 

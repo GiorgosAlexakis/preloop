@@ -40,9 +40,9 @@ async def test_execute_resolution_close_a(mock_issues, mocker: MockerFixture):
         issue1_id=issue_a.id, issue2_id=issue_b.id, resolution="close_a"
     )
 
-    mock_issue_crud = mocker.patch(
-        "spacebridge.api.endpoints.issue_duplicates.issue_crud",
-        new_callable=AsyncMock,
+    mock_crud_issue = mocker.patch(
+        "spacebridge.api.endpoints.issue_duplicates.crud_issue",
+        new_callable=MagicMock,
     )
     mock_update_issue = mocker.patch(
         "spacebridge.api.endpoints.issue_duplicates.update_issue",
@@ -50,10 +50,10 @@ async def test_execute_resolution_close_a(mock_issues, mocker: MockerFixture):
     )
     mocker.patch(
         "spacebridge.api.endpoints.issue_duplicates.crud_issue_duplicate",
-        new_callable=AsyncMock,
+        new_callable=MagicMock,
     )
 
-    mock_issue_crud.get.side_effect = [issue_a, issue_b]
+    mock_crud_issue.get.side_effect = [issue_a, issue_b]
 
     # Act
     await execute_issue_duplicate_resolution(
@@ -99,9 +99,9 @@ async def test_execute_resolution_merge_b_to_a(mock_issues, mocker: MockerFixtur
         resulting_issue_1_description="New Merged Description",
     )
 
-    mock_issue_crud = mocker.patch(
-        "spacebridge.api.endpoints.issue_duplicates.issue_crud",
-        new_callable=AsyncMock,
+    mock_crud_issue = mocker.patch(
+        "spacebridge.api.endpoints.issue_duplicates.crud_issue",
+        new_callable=MagicMock,
     )
     mock_update_issue = mocker.patch(
         "spacebridge.api.endpoints.issue_duplicates.update_issue",
@@ -109,10 +109,10 @@ async def test_execute_resolution_merge_b_to_a(mock_issues, mocker: MockerFixtur
     )
     mocker.patch(
         "spacebridge.api.endpoints.issue_duplicates.crud_issue_duplicate",
-        new_callable=AsyncMock,
+        new_callable=MagicMock,
     )
 
-    mock_issue_crud.get.side_effect = [issue_a, issue_b]
+    mock_crud_issue.get.side_effect = [issue_a, issue_b]
 
     # Act
     await execute_issue_duplicate_resolution(
@@ -157,9 +157,9 @@ async def test_execute_resolution_deconflict(mock_issues, mocker: MockerFixture)
         resulting_issue_2_description="Deconflicted Desc B",
     )
 
-    mock_issue_crud = mocker.patch(
-        "spacebridge.api.endpoints.issue_duplicates.issue_crud",
-        new_callable=AsyncMock,
+    mock_crud_issue = mocker.patch(
+        "spacebridge.api.endpoints.issue_duplicates.crud_issue",
+        new_callable=MagicMock,
     )
     mock_update_issue = mocker.patch(
         "spacebridge.api.endpoints.issue_duplicates.update_issue",
@@ -167,10 +167,10 @@ async def test_execute_resolution_deconflict(mock_issues, mocker: MockerFixture)
     )
     mocker.patch(
         "spacebridge.api.endpoints.issue_duplicates.crud_issue_duplicate",
-        new_callable=AsyncMock,
+        new_callable=MagicMock,
     )
 
-    mock_issue_crud.get.side_effect = [issue_a, issue_b]
+    mock_crud_issue.get.side_effect = [issue_a, issue_b]
 
     # Act
     await execute_issue_duplicate_resolution(
@@ -204,11 +204,12 @@ async def test_execute_resolution_issue_not_found(mocker: MockerFixture):
     resolution_request = IssueDuplicateResolutionRequest(
         issue1_id="a", issue2_id="b", resolution="close_a"
     )
-    mock_issue_crud = mocker.patch(
-        "spacebridge.api.endpoints.issue_duplicates.issue_crud",
+    mock_crud_issue = mocker.patch(
+        "spacebridge.api.endpoints.issue_duplicates.crud_issue",
+        new_callable=MagicMock,
     )
     # Configure the mock to be awaitable
-    mock_issue_crud.get = AsyncMock(return_value=None)
+    mock_crud_issue.get.return_value = None
 
     # Act & Assert
     with pytest.raises(HTTPException) as excinfo:
@@ -227,11 +228,12 @@ async def test_execute_resolution_invalid_type(mock_issues, mocker: MockerFixtur
     resolution_request = IssueDuplicateResolutionRequest(
         issue1_id=issue_a.id, issue2_id=issue_b.id, resolution="invalid_type"
     )
-    mock_issue_crud = mocker.patch(
-        "spacebridge.api.endpoints.issue_duplicates.issue_crud",
+    mock_crud_issue = mocker.patch(
+        "spacebridge.api.endpoints.issue_duplicates.crud_issue",
+        new_callable=MagicMock,
     )
     # Configure the mock to be awaitable
-    mock_issue_crud.get = AsyncMock(side_effect=[issue_a, issue_b])
+    mock_crud_issue.get.side_effect = [issue_a, issue_b]
 
     # Act & Assert
     with pytest.raises(HTTPException) as excinfo:
