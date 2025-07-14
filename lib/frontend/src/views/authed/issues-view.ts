@@ -633,7 +633,6 @@ export class IssuesView extends LitElement {
             </sl-alert>
           `
         )}
-
         ${this._renderActiveFilters()}
         ${when(
           this._loading,
