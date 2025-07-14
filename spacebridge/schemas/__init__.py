@@ -52,6 +52,10 @@ from spacebridge.schemas.llm_model import (
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateProjectStats,
     IssueDuplicateStats,
+    IssueDuplicateResolutionRequest,
+    IssueDuplicateResolutionResponse,
+    IssueDuplicateSuggestionRequest,
+    IssueDuplicateSuggestionResponse,
 )
 
 __all__ = [
@@ -96,4 +100,8 @@ __all__ = [
     # IssueDuplicate schemas
     "IssueDuplicateStats",
     "IssueDuplicateProjectStats",
+    "IssueDuplicateResolutionRequest",
+    "IssueDuplicateResolutionResponse",
+    "IssueDuplicateSuggestionRequest",
+    "IssueDuplicateSuggestionResponse",
 ]

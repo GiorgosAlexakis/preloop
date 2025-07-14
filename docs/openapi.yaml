@@ -2145,19 +2145,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/issue-duplicates/resolve:
+  /api/v1/issue-duplicates/propose-resolution:
     patch:
       tags:
       - Issue Duplicates
       - Issue Duplicates
-      summary: Resolve Issue Duplicate
-      description: Resolve an issue duplicate.
-      operationId: resolve_issue_duplicate_api_v1_issue_duplicates_resolve_patch
+      summary: Propose Issue Duplicate Resolution
+      description: Propose a resolution for an issue duplicate.
+      operationId: propose_issue_duplicate_resolution_api_v1_issue_duplicates_propose_resolution_patch
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IssueDuplicateResolve'
+              $ref: '#/components/schemas/IssueDuplicateSuggestionRequest'
         required: true
       responses:
         '200':
@@ -2166,6 +2166,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IssueDuplicate'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/issue-duplicates/execute-resolution:
+    patch:
+      tags:
+      - Issue Duplicates
+      - Issue Duplicates
+      summary: Execute Issue Duplicate Resolution
+      description: Execute the resolution for a pair of duplicate issues.
+      operationId: execute_issue_duplicate_resolution_api_v1_issue_duplicates_execute_resolution_patch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueDuplicateResolutionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDuplicateResolutionResponse'
         '422':
           description: Validation Error
           content:
@@ -3120,28 +3149,14 @@ components:
           - type: string
           - type: 'null'
           title: Llm Model Name
-        id:
-          type: string
-          title: Id
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-        updated_at:
-          type: string
-          format: date-time
-          title: Updated At
       type: object
       required:
       - issue1_id
       - issue2_id
       - decision
       - llm_model_id
-      - id
-      - created_at
-      - updated_at
       title: IssueDuplicate
-      description: Schema for returning an IssueDuplicate.
+      description: Base schema for IssueDuplicate.
     IssueDuplicateProjectStats:
       properties:
         project_id:
@@ -3163,7 +3178,77 @@ components:
       - total
       - duplicates
       title: IssueDuplicateProjectStats
-    IssueDuplicateResolve:
+    IssueDuplicateResolutionRequest:
+      properties:
+        issue1_id:
+          type: string
+          title: Issue1 Id
+        issue2_id:
+          type: string
+          title: Issue2 Id
+        resolution:
+          type: string
+          title: Resolution
+        resolution_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Reason
+        resulting_issue_1_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue 1 Title
+        resulting_issue_1_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue 1 Description
+        resulting_issue_2_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue 2 Title
+        resulting_issue_2_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resulting Issue 2 Description
+      type: object
+      required:
+      - issue1_id
+      - issue2_id
+      - resolution
+      title: IssueDuplicateResolutionRequest
+    IssueDuplicateResolutionResponse:
+      properties:
+        issue1_id:
+          type: string
+          title: Issue1 Id
+        issue2_id:
+          type: string
+          title: Issue2 Id
+        resolution:
+          type: string
+          title: Resolution
+      type: object
+      required:
+      - issue1_id
+      - issue2_id
+      - resolution
+      title: IssueDuplicateResolutionResponse
+    IssueDuplicateStats:
+      properties:
+        projects:
+          additionalProperties:
+            $ref: '#/components/schemas/IssueDuplicateProjectStats'
+          type: object
+          title: Projects
+      type: object
+      required:
+      - projects
+      title: IssueDuplicateStats
+    IssueDuplicateSuggestionRequest:
       properties:
         issue1_id:
           type: string
@@ -3189,54 +3274,13 @@ components:
           - type: string
           - type: 'null'
           title: Resulting Issue2 Id
-        merged_title:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Merged Title
-        merged_description:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Merged Description
-        deconflicted_title1:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Deconflicted Title1
-        deconflicted_description1:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Deconflicted Description1
-        deconflicted_title2:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Deconflicted Title2
-        deconflicted_description2:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Deconflicted Description2
       type: object
       required:
       - issue1_id
       - issue2_id
       - resolution
-      title: IssueDuplicateResolve
-      description: Schema for resolving an IssueDuplicate.
-    IssueDuplicateStats:
-      properties:
-        projects:
-          additionalProperties:
-            $ref: '#/components/schemas/IssueDuplicateProjectStats'
-          type: object
-          title: Projects
-      type: object
-      required:
-      - projects
-      title: IssueDuplicateStats
+      title: IssueDuplicateSuggestionRequest
+      description: Schema for suggesting a resolution for an IssueDuplicate.
     IssueDuplicateSuggestionResponse:
       properties:
         merged_title:
