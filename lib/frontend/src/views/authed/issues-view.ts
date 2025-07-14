@@ -251,9 +251,68 @@ export class IssuesView extends LitElement {
     `,
   ];
 
-  connectedCallback() {
+  async connectedCallback() {
     super.connectedCallback();
-    this.fetchInitialData();
+    // Fetch projects first so we can map short IDs from the URL to full IDs.
+    await this.fetchProjects();
+    this.parseUrlAndUpdateState();
+    this.fetchDuplicates();
+    this.fetchOrganizations();
+    window.addEventListener('popstate', this.handlePopState);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('popstate', this.handlePopState);
+
+    // Check if we are still on the issues path before cleaning up.
+    // This prevents a race condition where the URL of the *next* page is cleaned.
+    if (window.location.pathname.includes('/issues')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }
+
+  private handlePopState = () => {
+    this.parseUrlAndUpdateState();
+    this.fetchDuplicates();
+  };
+
+  private parseUrlAndUpdateState() {
+    const params = new URLSearchParams(window.location.search);
+    this._currentPage = parseInt(params.get('page') || '1', 10);
+    this._selectedStatus = (params.get('status') || 'opened') as
+      | 'opened'
+      | 'closed'
+      | 'all';
+    const shortProjectIds = params.get('projects');
+    if (shortProjectIds && this._allProjects.length > 0) {
+      const shortIdSet = new Set(shortProjectIds.split(','));
+      this._selectedProjectIds = this._allProjects
+        .filter((p) => shortIdSet.has(p.id.split('-')[0]))
+        .map((p) => p.id);
+    } else {
+      this._selectedProjectIds = [];
+    }
+  }
+
+  private _updateUrl() {
+    // Only update the URL if we are on the issues page.
+    if (!window.location.pathname.includes('/issues')) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('page', this._currentPage.toString());
+    params.set('status', this._selectedStatus);
+    if (this._selectedProjectIds.length > 0) {
+      const shortProjectIds = this._selectedProjectIds.map(
+        (id) => id.split('-')[0]
+      );
+      params.set('projects', shortProjectIds.join(','));
+    }
+
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.pushState({}, '', newUrl);
   }
 
   async fetchInitialData() {
@@ -296,6 +355,7 @@ export class IssuesView extends LitElement {
 
       this._duplicates = data.duplicates;
       this._hasMorePages = data.duplicates.length === this._pageSize;
+      this._updateUrl(); // Update URL after fetching
       this.fetchLlmVerdicts(); // Fetch verdicts after getting duplicates
     } catch (error) {
       this._error =
@@ -698,19 +758,21 @@ export class IssuesView extends LitElement {
                   </table>
                 </sl-card>
                 <div class="pagination-controls">
-                  <sl-button
-                    size="small"
-                    @click=${this._previousPage}
-                    ?disabled=${this._currentPage === 1}
-                    >Previous</sl-button
-                  >
+                  <sl-button-group>
+                    <sl-button
+                      @click=${() => this._goToPage(this._currentPage - 1)}
+                      ?disabled=${this._currentPage <= 1}
+                    >
+                      Previous
+                    </sl-button>
+                    <sl-button
+                      @click=${() => this._goToPage(this._currentPage + 1)}
+                      ?disabled=${!this._hasMorePages}
+                    >
+                      Next
+                    </sl-button>
+                  </sl-button-group>
                   <span>Page ${this._currentPage}</span>
-                  <sl-button
-                    size="small"
-                    @click=${this._nextPage}
-                    ?disabled=${!this._hasMorePages}
-                    >Next</sl-button
-                  >
                 </div>
               `
             : html`
@@ -726,38 +788,33 @@ export class IssuesView extends LitElement {
         )}
       </div>
       <project-filter-modal
-        .open=${this._isFilterModalOpen}
+        .isOpen=${this._isFilterModalOpen}
+        .allProjects=${this._allProjects}
         .organizations=${this._organizations}
         .projects=${this._allProjects}
         .selectedProjectIds=${this._selectedProjectIds}
         .selectedStatus=${this._selectedStatus}
-        @close-modal=${() => (this._isFilterModalOpen = false)}
-        @apply-filters=${(event: CustomEvent) => {
-          const { selectedProjectIds, selectedStatus } = event.detail;
-          this._selectedProjectIds = selectedProjectIds;
-          this._selectedStatus = selectedStatus;
-          this.fetchDuplicates(); // Re-fetch data with new filters
-          this._isFilterModalOpen = false;
-        }}
+        @on-close=${() => (this._isFilterModalOpen = false)}
+        @on-apply=${this._applyFilters}
       ></project-filter-modal>
       <resolve-issue-modal
-        .open=${this._isResolveModalOpen}
+        .isOpen=${this._isResolveModalOpen}
         .duplicatePair=${this._selectedPair}
-        @closed=${this._handleModalClose}
-        @resolved=${this._handleResolved}
+        @on-close=${this._handleModalClose}
+        @on-resolved=${this._handleResolved}
       ></resolve-issue-modal>
     `;
   }
 
-  private _previousPage() {
-    if (this._currentPage > 1) {
-      this._currentPage--;
-      this.fetchDuplicates();
-    }
+  private _goToPage(page: number) {
+    this._currentPage = page;
+    this.fetchDuplicates();
   }
 
-  private _nextPage() {
-    this._currentPage++;
+  private _applyFilters(event: CustomEvent) {
+    this._selectedProjectIds = event.detail.projectIds;
+    this._selectedStatus = event.detail.status;
+    this._currentPage = 1; // Reset to first page
     this.fetchDuplicates();
   }
 }

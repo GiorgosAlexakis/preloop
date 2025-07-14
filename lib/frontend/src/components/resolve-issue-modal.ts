@@ -19,7 +19,7 @@ type ResolutionStep = 'initial' | 'close' | 'merge' | 'deconflict';
 
 @customElement('resolve-issue-modal')
 export class ResolveIssueModal extends LitElement {
-  @property({ type: Boolean, reflect: true }) open = false;
+  @property({ type: Boolean }) isOpen = false;
   @property({ type: Object }) duplicatePair: DuplicatePair | null = null;
 
   @state() private _isSubmitting = false;
@@ -35,23 +35,23 @@ export class ResolveIssueModal extends LitElement {
   @state() private _deconflictedTitle2 = '';
   @state() private _deconflictedDescription2 = '';
 
-  private _handleOpen() {
+  private handleOpen() {
     this._isSubmitting = false;
     this._resolutionStep = 'initial';
   }
 
-  private _close() {
-    this.open = false;
+  private handleClose() {
+    this.isOpen = false;
     this.dispatchEvent(
-      new CustomEvent('closed', { bubbles: true, composed: true })
+      new CustomEvent('on-close', { bubbles: true, composed: true })
     );
   }
 
-  private _goBack() {
+  private goBack() {
     this._resolutionStep = 'initial';
   }
 
-  private async _startResolution(step: ResolutionStep) {
+  private async startResolution(step: ResolutionStep) {
     this._resolutionStep = step;
 
     // Reset previous suggestions
@@ -93,7 +93,7 @@ export class ResolveIssueModal extends LitElement {
     }
   }
 
-  private async _handleFinalResolve(resolutionType: string) {
+  private async handleFinalResolve(resolutionType: string) {
     if (!this.duplicatePair) return;
     this._isSubmitting = true;
 
@@ -151,9 +151,9 @@ export class ResolveIssueModal extends LitElement {
     try {
       await executeIssueDuplicateResolution(resolutionData);
       this.dispatchEvent(
-        new CustomEvent('resolved', { bubbles: true, composed: true })
+        new CustomEvent('on-resolved', { bubbles: true, composed: true })
       );
-      this._close();
+      this.handleClose();
     } catch (error) {
       console.error('Failed to resolve duplicate:', error);
       // TODO: Add a user-facing error notification (e.g., a toast)
@@ -170,28 +170,28 @@ export class ResolveIssueModal extends LitElement {
         title: 'Close as Duplicate',
         description:
           'One issue will be closed, the other will remain. You will choose which one to close in the next step.',
-        handler: () => this._startResolution('close'),
+        handler: () => this.startResolution('close'),
       },
       {
         id: 'merge',
         title: 'Merge Issues',
         description:
           'Combine both issues into a single issue. You will edit the new title and description in the next step.',
-        handler: () => this._startResolution('merge'),
+        handler: () => this.startResolution('merge'),
       },
       {
         id: 'deconflict',
         title: 'Deconflict Issues',
         description:
           'Edit the titles and descriptions of both issues to make them distinct. Both issues will remain open.',
-        handler: () => this._startResolution('deconflict'),
+        handler: () => this.startResolution('deconflict'),
       },
       {
         id: 'unrelated',
         title: 'Not Duplicates',
         description:
           'Mark the issues as unrelated. This action is immediate and requires no further steps.',
-        handler: () => this._handleFinalResolve('UNRELATED'),
+        handler: () => this.handleFinalResolve('UNRELATED'),
       },
     ];
 
@@ -222,7 +222,7 @@ export class ResolveIssueModal extends LitElement {
         <div class="initial-options-group">
           <div
             class="action-card"
-            @click=${() => this._handleFinalResolve('CLOSE_A')}
+            @click=${() => this.handleFinalResolve('CLOSE_A')}
           >
             <div class="action-title">
               Close ${issueA?.key}: ${issueA?.title}
@@ -234,7 +234,7 @@ export class ResolveIssueModal extends LitElement {
           </div>
           <div
             class="action-card"
-            @click=${() => this._handleFinalResolve('CLOSE_B')}
+            @click=${() => this.handleFinalResolve('CLOSE_B')}
           >
             <div class="action-title">
               Close ${issueB?.key}: ${issueB?.title}
@@ -246,7 +246,7 @@ export class ResolveIssueModal extends LitElement {
           </div>
         </div>
         <div class="footer-buttons">
-          <sl-button @click="${this._goBack}">Back</sl-button>
+          <sl-button @click="${this.goBack}">Back</sl-button>
         </div>
       </div>
     `;
@@ -293,11 +293,11 @@ export class ResolveIssueModal extends LitElement {
               </div>
             `}
         <div class="footer-buttons">
-          <sl-button @click="${this._goBack}">Back</sl-button>
+          <sl-button @click="${this.goBack}">Back</sl-button>
           <sl-button
             variant="primary"
             .loading=${this._isSubmitting}
-            @click="${() => this._handleFinalResolve('MERGE')}"
+            @click="${() => this.handleFinalResolve('MERGE')}"
             >Resolve Merge</sl-button
           >
         </div>
@@ -358,11 +358,11 @@ export class ResolveIssueModal extends LitElement {
               </div>
             `}
         <div class="footer-buttons">
-          <sl-button @click="${this._goBack}">Back</sl-button>
+          <sl-button @click="${this.goBack}">Back</sl-button>
           <sl-button
             variant="primary"
             .loading=${this._isSubmitting}
-            @click="${() => this._handleFinalResolve('DECONFLICT')}"
+            @click="${() => this.handleFinalResolve('DECONFLICT')}"
             >Resolve Conflict</sl-button
           >
         </div>
@@ -392,9 +392,9 @@ export class ResolveIssueModal extends LitElement {
     return html`
       <sl-dialog
         label="Resolve Duplicates: ${issueAKey} & ${issueBKey}"
-        .open=${this.open}
-        @sl-show=${this._handleOpen}
-        @sl-hide=${this._close}
+        .open=${this.isOpen}
+        @sl-show=${this.handleOpen}
+        @sl-hide=${this.handleClose}
       >
         ${content}
       </sl-dialog>
@@ -486,6 +486,9 @@ export class ResolveIssueModal extends LitElement {
       align-items: center;
       gap: var(--sl-spacing-medium);
       padding: var(--sl-spacing-large) 0;
+    }
+    .step-container {
+      padding: var(--sl-spacing-medium);
     }
   `;
 }

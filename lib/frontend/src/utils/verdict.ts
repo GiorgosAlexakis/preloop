@@ -35,7 +35,7 @@ export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
             name="check-circle"
             style="margin-right: var(--sl-spacing-2x-small);"
           ></sl-icon>
-          Confirmed
+          Duplicate
         </sl-badge>
       `;
     case 'overlapping':
