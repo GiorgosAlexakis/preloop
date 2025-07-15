@@ -34,15 +34,24 @@ export class ProjectFilterModal extends LitElement {
   @property({ type: Array }) selectedProjectIds: string[] = [];
   @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' =
     'opened';
+  @property({ type: String }) selectedResolution:
+    | 'resolved'
+    | 'unresolved'
+    | 'all' = 'all';
 
   @state() private draftSelectedProjectIds: string[] = [];
   @state() private draftSelectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+  @state() private draftSelectedResolution:
+    | 'resolved'
+    | 'unresolved'
+    | 'all' = 'all';
 
   willUpdate(changedProperties: Map<string, any>) {
     // When the dialog is opened, reset the draft state from the properties
     if (changedProperties.has('isOpen') && this.isOpen) {
       this.draftSelectedProjectIds = [...this.selectedProjectIds];
       this.draftSelectedStatus = this.selectedStatus;
+      this.draftSelectedResolution = this.selectedResolution;
     }
   }
 
@@ -60,6 +69,11 @@ export class ProjectFilterModal extends LitElement {
     this.draftSelectedStatus = radioGroup.value;
   }
 
+  handleResolutionChange(event: CustomEvent) {
+    const radioGroup = event.target as any;
+    this.draftSelectedResolution = radioGroup.value;
+  }
+
   handleApply() {
     this.dispatchEvent(
       new CustomEvent('on-apply', {
@@ -68,6 +82,7 @@ export class ProjectFilterModal extends LitElement {
         detail: {
           projectIds: this.draftSelectedProjectIds,
           status: this.draftSelectedStatus,
+          resolution: this.draftSelectedResolution,
         },
       })
     );
@@ -151,6 +166,20 @@ export class ProjectFilterModal extends LitElement {
             <sl-radio-button value="opened">Opened</sl-radio-button>
             <sl-radio-button value="closed">Closed</sl-radio-button>
             <sl-radio-button value="all">All</sl-radio-button>
+          </sl-radio-group>
+        </div>
+
+        <sl-divider></sl-divider>
+
+        <div class="filter-section">
+          <label class="filter-label">Resolution Status</label>
+          <sl-radio-group
+            value=${this.draftSelectedResolution}
+            @sl-change=${this.handleResolutionChange}
+          >
+            <sl-radio-button value="all">All</sl-radio-button>
+            <sl-radio-button value="resolved">Resolved</sl-radio-button>
+            <sl-radio-button value="unresolved">Unresolved</sl-radio-button>
           </sl-radio-group>
         </div>
 

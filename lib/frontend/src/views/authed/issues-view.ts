@@ -25,6 +25,7 @@ import {
   DuplicatesResponse,
   listOrganizations,
   Organization,
+  Issue,
 } from '../../api';
 import {
   DEFAULT_SIMILARITY_THRESHOLD,
@@ -33,33 +34,6 @@ import {
 import { LlmVerdict, renderVerdict } from '../../utils/verdict';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
-// Define the structure of an issue and a duplicate pair based on the API response
-interface Issue {
-  project_id: string;
-  id: string;
-  title: string;
-  description: string;
-  key: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  url: string;
-  meta_data?: { [key: string]: any };
-}
-
-interface DuplicatePair {
-  issue1: Issue;
-  issue2: Issue;
-  similarity: number;
-}
-
-interface DuplicatesResponse {
-  project_ids: string[];
-  model_id_used: string;
-  threshold_used: number;
-  duplicates: DuplicatePair[];
-}
-
 @customElement('issues-view')
 export class IssuesView extends LitElement {
   @state()
@@ -67,6 +41,9 @@ export class IssuesView extends LitElement {
 
   @state()
   private _llmVerdicts: Record<string, LlmVerdict> = {};
+
+  @state()
+  private _loadingVerdicts: Record<string, boolean> = {};
 
   @state()
   private _loading = false;
@@ -103,6 +80,9 @@ export class IssuesView extends LitElement {
 
   @state()
   private _selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+
+  @state()
+  private _selectedResolutionStatus: 'resolved' | 'unresolved' | 'all' = 'all';
 
   private _similarityThreshold = DEFAULT_SIMILARITY_THRESHOLD;
 
@@ -287,6 +267,10 @@ export class IssuesView extends LitElement {
       | 'opened'
       | 'closed'
       | 'all';
+    this._selectedResolutionStatus = (params.get('resolution') || 'all') as
+      | 'resolved'
+      | 'unresolved'
+      | 'all';
     const shortProjectIds = params.get('projects');
     if (shortProjectIds && this._allProjects.length > 0) {
       const shortIdSet = new Set(shortProjectIds.split(','));
@@ -307,6 +291,9 @@ export class IssuesView extends LitElement {
     const params = new URLSearchParams();
     params.set('page', this._currentPage.toString());
     params.set('status', this._selectedStatus);
+    if (this._selectedResolutionStatus !== 'all') {
+      params.set('resolution', this._selectedResolutionStatus);
+    }
     if (this._selectedProjectIds.length > 0) {
       const shortProjectIds = this._selectedProjectIds.map(
         (id) => id.split('-')[0]
@@ -353,6 +340,7 @@ export class IssuesView extends LitElement {
         skip: skip,
         project_ids: this._selectedProjectIds,
         status: this._selectedStatus,
+        resolution: this._selectedResolutionStatus,
         similarity_threshold: this._similarityThreshold,
       });
 
@@ -370,40 +358,35 @@ export class IssuesView extends LitElement {
   }
 
   async fetchLlmVerdicts() {
-    for (const pair of this._duplicates) {
-      if (pair.similarity < 0.999) {
-        const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-        // Set initial state to 'checking'
-        this._llmVerdicts = {
-          ...this._llmVerdicts,
-          [pairKey]: { decision: 'checking' },
-        };
+    const newVerdicts = { ...this._llmVerdicts };
+    const newLoadingVerdicts = { ...this._loadingVerdicts };
 
-        try {
-          const verdictData = await checkLlmVerdict(
-            pair.issue1.id,
-            pair.issue2.id
-          );
-
-          this._llmVerdicts = {
-            ...this._llmVerdicts,
-            [pairKey]: {
-              decision: verdictData.decision || 'undecided',
-              reason: verdictData.reason,
-            },
-          };
-        } catch (error) {
-          console.error(
-            `Failed to fetch LLM verdict for pair ${pairKey}:`,
-            error
-          );
-          this._llmVerdicts = {
-            ...this._llmVerdicts,
-            [pairKey]: { decision: 'undecided', reason: 'Failed to load' },
-          };
-        }
+    const promises = this._duplicates.map((pair) => {
+      const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+      if (newVerdicts[pairKey]) {
+        return Promise.resolve();
       }
-    }
+
+      newLoadingVerdicts[pairKey] = true;
+
+      return checkLlmVerdict(pair.issue1.id, pair.issue2.id)
+        .then((verdict) => {
+          newVerdicts[pairKey] = verdict;
+        })
+        .catch((error) => {
+          console.error(`Failed to fetch LLM verdict for ${pairKey}:`, error);
+          // Store a failed state if needed, or just remove loading indicator
+        })
+        .finally(() => {
+          newLoadingVerdicts[pairKey] = false;
+        });
+    });
+
+    this._loadingVerdicts = newLoadingVerdicts;
+
+    await Promise.all(promises);
+
+    this._llmVerdicts = newVerdicts;
   }
 
   private _toggleRow(pairKey: string) {
@@ -485,7 +468,7 @@ export class IssuesView extends LitElement {
             ${verdict
               ? html`
                   <div class="detail-section">
-                    <h3>LLM Review</h3>
+                    <h3>AI Review</h3>
                     <p>
                       <strong>Status:</strong>
                       ${renderVerdict(verdict)}
@@ -540,7 +523,8 @@ export class IssuesView extends LitElement {
   private _renderActiveFilters() {
     if (
       this._selectedProjectIds.length === 0 &&
-      this._selectedStatus === 'opened'
+      this._selectedStatus === 'opened' &&
+      this._selectedResolutionStatus === 'all'
     ) {
       return html``;
     }
@@ -575,6 +559,19 @@ export class IssuesView extends LitElement {
               </sl-tag>
             `
           : ''}
+        ${this._selectedResolutionStatus !== 'all'
+          ? html`
+              <sl-tag
+                size="medium"
+                removable
+                @sl-remove=${() => this._clearResolutionFilter()}
+              >
+                ${this._selectedResolutionStatus === 'resolved'
+                  ? 'Resolved'
+                  : 'Unresolved'}
+              </sl-tag>
+            `
+          : ''}
         <sl-button size="small" pill @click=${this._clearAllFilters}
           >Clear all</sl-button
         >
@@ -584,6 +581,11 @@ export class IssuesView extends LitElement {
 
   private _clearStatusFilter() {
     this._selectedStatus = 'opened';
+    this.fetchDuplicates();
+  }
+
+  private _clearResolutionFilter() {
+    this._selectedResolutionStatus = 'all';
     this.fetchDuplicates();
   }
 
@@ -598,6 +600,21 @@ export class IssuesView extends LitElement {
       return 'primary';
     }
     return 'neutral';
+  }
+
+  private renderVerdictForPair(pair: DuplicatePair) {
+    const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+    const verdict = this._llmVerdicts[pairKey];
+
+    if (pair.resolution && verdict) {
+      verdict.resolution = pair.resolution;
+    }
+
+    if (this._loadingVerdicts[pairKey]) {
+      return html`<sl-spinner></sl-spinner>`;
+    }
+
+    return renderVerdict(verdict);
   }
 
   render() {
@@ -616,7 +633,7 @@ export class IssuesView extends LitElement {
           <strong>Find similar issues and resolve duplicates</strong><br />
           Identify similar and potential duplicate issues across your projects.
           Review each suggested pair, check the similarity score, and use the
-          LLM review to resolve or dismiss the suggestion.
+          AI review to resolve or dismiss the suggestion.
         </sl-alert>
 
         ${when(
@@ -663,6 +680,7 @@ export class IssuesView extends LitElement {
                     .hasProjects=${this._hasProjects}
                     .projectIds=${this._selectedProjectIds}
                     .selectedStatus=${this._selectedStatus}
+                    .selectedResolution=${this._selectedResolutionStatus}
                     .similarityThreshold=${this._similarityThresholdCharts}
                     ?interactive=${true}
                     @project-selected=${this._handleProjectSelectedFromChart}
@@ -675,7 +693,7 @@ export class IssuesView extends LitElement {
                         <th>Issue 1</th>
                         <th>Issue 2</th>
                         <th class="text-right">Similarity</th>
-                        <th class="text-right">LLM Review</th>
+                        <th class="text-right">AI Review</th>
                         <th class="text-right">Actions</th>
                       </tr>
                     </thead>
@@ -686,10 +704,7 @@ export class IssuesView extends LitElement {
 
                         return html`
                           <tr
-                            class="clickable-row ${verdict?.decision ===
-                            'rejected'
-                              ? 'faint-row'
-                              : ''}"
+                            class="clickable-row"
                             @click=${() => this._toggleRow(pairKey)}
                           >
                             <td>
@@ -757,23 +772,25 @@ export class IssuesView extends LitElement {
                             </td>
                             <td>
                               <div class="actions-container">
-                                <sl-button
-                                  size="small"
-                                  variant="primary"
-                                  @click=${(e: Event) => {
-                                    e.stopPropagation();
-                                    this._openResolveModal(pair);
-                                  }}
-                                  >Resolve</sl-button
-                                >
-                                <sl-icon-button
-                                  name="x-circle"
-                                  label="Dismiss"
-                                  @click=${(e: Event) => {
-                                    e.stopPropagation();
-                                    this._handleDismiss(pair);
-                                  }}
-                                ></sl-icon-button>
+                                ${when(
+                                  !verdict?.resolution,
+                                  () => html`
+                                     <sl-button
+                                       size="small"
+                                       variant="primary"
+                                       @click=${() => this._openResolveModal(pair)}
+                                       >Resolve</sl-button
+                                     >
+                                     <sl-icon-button
+                                       name="x-circle"
+                                       label="Dismiss"
+                                       @click=${(e: Event) => {
+                                         e.stopPropagation();
+                                         this._handleDismiss(pair);
+                                       }}
+                                     ></sl-icon-button>
+                                   `
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -822,6 +839,7 @@ export class IssuesView extends LitElement {
         .projects=${this._allProjects}
         .selectedProjectIds=${this._selectedProjectIds}
         .selectedStatus=${this._selectedStatus}
+        .selectedResolution=${this._selectedResolutionStatus}
         @on-close=${() => (this._isFilterModalOpen = false)}
         @on-apply=${this._applyFilters}
       ></project-filter-modal>
@@ -835,6 +853,7 @@ export class IssuesView extends LitElement {
   }
 
   private _goToPage(page: number) {
+    if (page < 1) return;
     this._currentPage = page;
     this.fetchDuplicates();
   }
@@ -842,6 +861,8 @@ export class IssuesView extends LitElement {
   private _applyFilters(event: CustomEvent) {
     this._selectedProjectIds = event.detail.projectIds;
     this._selectedStatus = event.detail.status;
+    this._selectedResolutionStatus = event.detail.resolution;
+    this._isFilterModalOpen = false;
     this._currentPage = 1; // Reset to first page
     this.fetchDuplicates();
   }

@@ -513,6 +513,7 @@ export interface DuplicatePair {
   issue1: Issue;
   issue2: Issue;
   similarity: number;
+  resolution: string;
 }
 
 export interface DuplicatesResponse {
@@ -529,6 +530,7 @@ export async function listIssueDuplicates(
     project_ids?: string[];
     similarity_threshold?: number;
     status?: 'opened' | 'closed' | 'all';
+    resolution?: 'resolved' | 'unresolved' | 'all';
   } = {}
 ): Promise<DuplicatesResponse> {
   const {
@@ -537,6 +539,7 @@ export async function listIssueDuplicates(
     project_ids = [],
     status = 'opened',
     similarity_threshold = DEFAULT_SIMILARITY_THRESHOLD,
+    resolution = 'all',
   } = options;
 
   const params = new URLSearchParams({
@@ -546,6 +549,10 @@ export async function listIssueDuplicates(
   project_ids.forEach((id) => params.append('project_ids', id));
   params.append('status', status);
   params.append('similarity_threshold', similarity_threshold.toString());
+  if (resolution && resolution !== 'all') {
+    params.append('resolution', resolution);
+  }
+
   const response = await fetchWithAuth(
     `/api/v1/issue-duplicates?${params.toString()}`
   );
