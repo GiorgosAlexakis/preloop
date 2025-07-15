@@ -632,8 +632,8 @@ export class IssuesView extends LitElement {
           <sl-icon slot="icon" name="info-circle"></sl-icon>
           <strong>Find similar issues and resolve duplicates</strong><br />
           Identify similar and potential duplicate issues across your projects.
-          Review each suggested pair, check the similarity score, and use the
-          AI review to resolve or dismiss the suggestion.
+          Review each suggested pair, check the similarity score, and use the AI
+          review to resolve or dismiss the suggestion.
         </sl-alert>
 
         ${when(
@@ -775,21 +775,22 @@ export class IssuesView extends LitElement {
                                 ${when(
                                   !verdict?.resolution,
                                   () => html`
-                                     <sl-button
-                                       size="small"
-                                       variant="primary"
-                                       @click=${() => this._openResolveModal(pair)}
-                                       >Resolve</sl-button
-                                     >
-                                     <sl-icon-button
-                                       name="x-circle"
-                                       label="Dismiss"
-                                       @click=${(e: Event) => {
-                                         e.stopPropagation();
-                                         this._handleDismiss(pair);
-                                       }}
-                                     ></sl-icon-button>
-                                   `
+                                    <sl-button
+                                      size="small"
+                                      variant="primary"
+                                      @click=${() =>
+                                        this._openResolveModal(pair)}
+                                      >Resolve</sl-button
+                                    >
+                                    <sl-icon-button
+                                      name="x-circle"
+                                      label="Dismiss"
+                                      @click=${(e: Event) => {
+                                        e.stopPropagation();
+                                        this._handleDismiss(pair);
+                                      }}
+                                    ></sl-icon-button>
+                                  `
                                 )}
                               </div>
                             </td>

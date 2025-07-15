@@ -41,10 +41,8 @@ export class ProjectFilterModal extends LitElement {
 
   @state() private draftSelectedProjectIds: string[] = [];
   @state() private draftSelectedStatus: 'opened' | 'closed' | 'all' = 'opened';
-  @state() private draftSelectedResolution:
-    | 'resolved'
-    | 'unresolved'
-    | 'all' = 'all';
+  @state() private draftSelectedResolution: 'resolved' | 'unresolved' | 'all' =
+    'all';
 
   willUpdate(changedProperties: Map<string, any>) {
     // When the dialog is opened, reset the draft state from the properties
