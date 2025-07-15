@@ -38,11 +38,12 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = {"id": "12345"}
         self.mock_jira_client._session.post.return_value = mock_response
-
+        mock_project = MagicMock()
+        mock_project.id = "proj-db-id"
+        mock_project.identifier = "TEST"
         result = self.tracker.register_webhook(
             db=self.mock_db_session,
-            project_id="proj-db-id",
-            project_key="TEST",
+            project=mock_project,
             webhook_url="https://example.com/webhook",
             secret="mysecret",
         )
@@ -59,11 +60,12 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         self.mock_crud_webhook.get_by_project_id.return_value = Webhook(
             id="wh-id", project_id="proj-db-id", external_id="123"
         )
-
+        mock_project = MagicMock()
+        mock_project.id = "proj-db-id"
+        mock_project.identifier = "TEST"
         result = self.tracker.register_webhook(
             db=self.mock_db_session,
-            project_id="proj-db-id",
-            project_key="TEST",
+            project=mock_project,
             webhook_url="https://example.com/webhook",
             secret="mysecret",
         )
@@ -82,9 +84,11 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         )
         self.mock_crud_webhook.get_by_project_id.return_value = mock_webhook
         self.mock_jira_client._session.delete.return_value = MagicMock(status_code=204)
-
+        mock_project = MagicMock()
+        mock_project.id = "proj-db-id"
+        mock_project.identifier = "TEST"
         result = self.tracker.unregister_webhook(
-            db=self.mock_db_session, project_id="proj-db-id"
+            db=self.mock_db_session, project=mock_project
         )
 
         self.assertTrue(result)
@@ -101,9 +105,11 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
     def test_unregister_webhook_not_in_db(self):
         """Test unregistration is skipped if no webhook is in the DB."""
         self.mock_crud_webhook.get_by_project_id.return_value = None
-
+        mock_project = MagicMock()
+        mock_project.id = "proj-db-id"
+        mock_project.identifier = "TEST"
         result = self.tracker.unregister_webhook(
-            db=self.mock_db_session, project_id="proj-db-id"
+            db=self.mock_db_session, project=mock_project
         )
 
         self.assertTrue(result)
@@ -122,9 +128,11 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         self.mock_jira_client._session.delete.side_effect = JIRAError(
             status_code=404, text="Not Found"
         )
-
+        mock_project = MagicMock()
+        mock_project.id = "proj-db-id"
+        mock_project.identifier = "TEST"
         result = self.tracker.unregister_webhook(
-            db=self.mock_db_session, project_id="proj-db-id"
+            db=self.mock_db_session, project=mock_project
         )
 
         self.assertTrue(result)

@@ -312,7 +312,7 @@ def _process_organization(
     if spacebridge_url_str:
         try:
             webhook_target_path = (
-                f"/api/v1/private/webhooks/{client.tracker_type}/{org.identifier}"
+                f"/api/v1/private/webhooks/{client.tracker_type}/{org.id}"
             )
             webhook_target_url = urljoin(spacebridge_url_str, webhook_target_path)
             current_secret_to_use = org.webhook_secret
@@ -324,8 +324,7 @@ def _process_organization(
                     try:
                         client.client.register_webhook(
                             db=db,
-                            project_id=project.id,
-                            project_key=project.identifier,
+                            project=project,
                             webhook_url=webhook_target_url,
                             secret=current_secret_to_use,
                         )
@@ -338,7 +337,8 @@ def _process_organization(
             elif client.tracker_type == "github":
                 try:
                     client.client.register_webhook(
-                        org_identifier=org.name,
+                        db=db,
+                        organization=org,
                         webhook_url=webhook_target_url,
                         secret=current_secret_to_use,
                     )
@@ -351,6 +351,7 @@ def _process_organization(
             elif client.tracker_type == "gitlab":
                 try:
                     result = client.client.register_group_webhook(
+                        db=db,
                         organization=org,
                         webhook_url=webhook_target_url,
                         secret=current_secret_to_use,
@@ -362,6 +363,7 @@ def _process_organization(
                         for project in projects:
                             try:
                                 client.client.register_project_webhook(
+                                    db=db,
                                     project=project,
                                     webhook_url=webhook_target_url,
                                     secret=current_secret_to_use,

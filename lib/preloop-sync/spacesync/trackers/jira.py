@@ -410,11 +410,38 @@ class JiraTracker(BaseTracker):
                 f"{context}: Jira API error {e.status_code}: {e.text}"
             )
 
+    def register_project_webhook(
+        self, db: Session, project: Project, webhook_url: str, secret: str
+    ) -> bool:
+        """
+        Register a webhook for the given Jira project.
+        """
+        logger.info(
+            f"Attempting to register project webhook for Jira project '{project.identifier}' pointing to {webhook_url}"
+        )
+        hook_attrs = {
+            "url": webhook_url,
+            "token": secret,
+            "events": ["issue_created", "issue_updated", "issue_deleted"],
+        }
+        try:
+            self.jira_client.webhooks.create(
+                project_id=project.external_id, **hook_attrs
+            )
+            logger.info(
+                f"Successfully registered project webhook for Jira project '{project.identifier}'"
+            )
+            return True
+        except JIRAError as e:
+            logger.error(
+                f"Failed to register project webhook for Jira project '{project.identifier}': {e.text}"
+            )
+            return False
+
     def register_webhook(
         self,
         db: Session,
-        project_id: str,
-        project_key: str,
+        project: Project,
         webhook_url: str,
         secret: str,
         events: Optional[List[str]] = None,
@@ -424,28 +451,30 @@ class JiraTracker(BaseTracker):
             logger.error("Jira client not initialized. Cannot register webhook.")
             return False
 
-        existing_webhook = crud_webhook.get_by_project_id(db, project_id=project_id)
+        existing_webhook = crud_webhook.get_by_project_id(db, project_id=project.id)
         if existing_webhook:
             logger.info(
-                f"Webhook for project {project_key} already registered in database. Skipping."
+                f"Webhook for project {project.identifier} already registered in database. Skipping."
             )
             return True
 
         actual_events = events or DEFAULT_JIRA_WEBHOOK_EVENTS
-        webhook_name = f"SpaceBridge Sync for {project_key}"
+        webhook_name = f"SpaceBridge Sync for {project.identifier}"
 
         parsed_url = urllib.parse.urlparse(webhook_url)
         query_params = urllib.parse.parse_qs(parsed_url.query)
-        query_params["project_key"] = [project_key]
+        query_params["project_key"] = [project.identifier]
         new_query_string = urllib.parse.urlencode(query_params, doseq=True)
         url_with_secret_and_project = parsed_url._replace(
             query=new_query_string
         ).geturl()
 
-        jql_filter = f"project = {project_key.upper()}"
+        jql_filter = f"project = {project.identifier.upper()}"
 
         try:
-            logger.info(f"Registering webhook for project {project_key} in Jira.")
+            logger.info(
+                f"Registering webhook for project {project.identifier} in Jira."
+            )
             response = self.jira_client._session.post(
                 f"{self.jira_url}/rest/webhooks/1.0/webhook",
                 json={
@@ -464,7 +493,7 @@ class JiraTracker(BaseTracker):
             crud_webhook.create(
                 db,
                 obj_in={
-                    "project_id": project_id,
+                    "project_id": project.id,
                     "external_id": webhook_id,
                     "url": url_with_secret_and_project,
                     "secret": secret,
@@ -472,7 +501,7 @@ class JiraTracker(BaseTracker):
                 },
             )
             logger.info(
-                f"Successfully registered webhook {webhook_id} for project {project_key}."
+                f"Successfully registered webhook {webhook_id} for project {project.identifier}."
             )
             return True
         except JIRAError as e:
@@ -481,30 +510,32 @@ class JiraTracker(BaseTracker):
                 and "webhook with same name and url already exists" in e.text.lower()
             ):
                 logger.warning(
-                    f"Webhook for project {project_key} already exists in Jira. Assuming it's ours."
+                    f"Webhook for project {project.identifier} already exists in Jira. Assuming it's ours."
                 )
                 return True
-            self._handle_jira_error(e, f"registering webhook for project {project_key}")
+            self._handle_jira_error(
+                e, f"registering webhook for project {project.identifier}"
+            )
             return False
         except Exception as e:
             logger.error(
-                f"Unexpected error registering webhook for {project_key}: {e}",
+                f"Unexpected error registering webhook for {project.identifier}: {e}",
                 exc_info=True,
             )
             raise TrackerConnectionError(
-                f"Unexpected error registering webhook for {project_key}: {str(e)}"
+                f"Unexpected error registering webhook for {project.identifier}: {str(e)}"
             )
 
-    def unregister_webhook(self, db: Session, project_id: str) -> bool:
+    def unregister_webhook(self, db: Session, project: Project) -> bool:
         """Unregister a webhook for a project using the database record."""
         if not self.jira_client:
             logger.error("Jira client not initialized. Cannot unregister webhook.")
             return False
 
-        webhook = crud_webhook.get_by_project_id(db, project_id=project_id)
+        webhook = crud_webhook.get_by_project_id(db, project_id=project.id)
         if not webhook:
             logger.warning(
-                f"No webhook found in database for project ID {project_id}. Cannot unregister."
+                f"No webhook found in database for project ID {project.id}. Cannot unregister."
             )
             return True
 
@@ -529,7 +560,9 @@ class JiraTracker(BaseTracker):
             )
 
         crud_webhook.remove(db, id=webhook.id)
-        logger.info(f"Removed webhook record for project {project_id} from database.")
+        logger.info(
+            f"Removed webhook record for project {project.identifier} from database."
+        )
         return True
 
     def unregister_all_webhooks(self, db: Session, organization_id: str) -> None:
@@ -554,7 +587,7 @@ class JiraTracker(BaseTracker):
                 logger.info(
                     f"Unregistering webhook for project: {proj.name} ({proj.identifier})"
                 )
-                self.unregister_webhook(db, project_id=proj.id)
+                self.unregister_webhook(db, project=proj)
             except Exception as e:
                 logger.error(
                     f"Failed to unregister webhook for project {proj.identifier}: {e}",

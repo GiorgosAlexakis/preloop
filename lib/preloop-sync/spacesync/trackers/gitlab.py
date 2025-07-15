@@ -5,9 +5,9 @@ GitLab tracker implementation for SpaceSync using python-gitlab library.
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 from typing_extensions import Literal  # For Python < 3.8 compatibility with Literal
-import os
 
 import gitlab
+from sqlalchemy.orm import Session
 
 from ..config import logger
 from ..exceptions import (
@@ -19,6 +19,8 @@ from ..utils import retry
 from .base import BaseTracker
 from spacemodels.models.project import Project
 from spacemodels.models.organization import Organization
+from spacemodels.models.webhook import Webhook
+from spacemodels.crud import crud_webhook
 
 
 class GitLabTracker(BaseTracker):
@@ -54,27 +56,13 @@ class GitLabTracker(BaseTracker):
 
         self.url = gitlab_url
 
-        # Log information for debugging
-        print("GitLab Tracker Debug Info:")
-        print(f"  URL: {self.url}")
-        print(f"  Original URL from connection_details: {gitlab_url}")
-        print(
-            f"  API Key (first 5 chars): {api_key[:5] if len(api_key) > 5 else '***'}"
-        )
-        print(f"  Tracker ID: {tracker_id}")
-
         try:
-            print(f"  Attempting to connect to GitLab at {self.url}")
             self.gl = gitlab.Gitlab(self.url, private_token=api_key)
             # Test connection and authentication
-            print("  Testing authentication...")
             self.gl.auth()
-            print("  Authentication successful!")
         except gitlab.exceptions.GitlabAuthenticationError as e:
-            print(f"  Authentication Error: {str(e)}")
             raise TrackerAuthenticationError(f"GitLab authentication failed: {str(e)}")
         except gitlab.exceptions.GitlabHttpError as e:
-            print(f"  HTTP Error: {str(e)}")
             raise TrackerConnectionError(f"GitLab connection error: {str(e)}")
 
     @retry(max_attempts=3, exceptions=(TrackerConnectionError, TrackerResponseError))
@@ -396,13 +384,14 @@ class GitLabTracker(BaseTracker):
         raise NotImplementedError("GitLabTracker.register_webhook is not implemented.")
 
     def register_group_webhook(
-        self, organization: Organization, webhook_url: str, secret: str
+        self, db: Session, organization: Organization, webhook_url: str, secret: str
     ) -> Union[bool, Literal["group_hooks_not_supported"]]:
         """
         Register a webhook for the given GitLab group.
 
         Args:
-            org_identifier: The GitLab group ID.
+            db: The database session.
+            organization: The organization to register the webhook for.
             webhook_url: The target URL for the webhook.
             secret: The secret token to use for the webhook.
 
@@ -464,6 +453,16 @@ class GitLabTracker(BaseTracker):
                 logger.info(
                     f"Successfully created group webhook (ID: {hook.id}) for GitLab group '{organization.identifier}'."
                 )
+                crud_webhook.create(
+                    db,
+                    obj_in={
+                        "external_id": str(hook.id),
+                        "url": webhook_url,
+                        "secret": secret,
+                        "tracker_id": self.tracker_id,
+                        "organization_id": organization.id,
+                    },
+                )
                 return True
             except gitlab.exceptions.GitlabCreateError as e:
                 if e.response_code == 409:  # Conflict
@@ -520,13 +519,14 @@ class GitLabTracker(BaseTracker):
             return False
 
     def register_project_webhook(
-        self, project: Project, webhook_url: str, secret: str
+        self, db: Session, project: Project, webhook_url: str, secret: str
     ) -> bool:
         """
         Register a webhook for the given GitLab project.
 
         Args:
-            project_id_or_path: The GitLab project ID (int) or path_with_namespace (str).
+            db: The database session.
+            project: The project to register the webhook for.
             webhook_url: The target URL for the webhook.
             secret: The secret token to use for the webhook.
 
@@ -570,32 +570,28 @@ class GitLabTracker(BaseTracker):
                         )
                         return True
             except gitlab.exceptions.GitlabListError as e:
-                # A 404 on listing project hooks is a genuine error if the project itself was found.
-                # It means the /hooks endpoint for that specific project is not found or accessible.
-                # This is different from a 404 on group.hooks.list which might mean group hooks aren't supported at all.
                 logger.error(
                     f"Error listing project hooks for GitLab project '{project.identifier}': {e.response_code} - {e.error_message}",
                     exc_info=True,
                 )
-                return (
-                    False  # Treat as a failure for this specific project's hook setup
-                )
+                return False
 
-            # If list succeeded (or didn't error out before this point) and hook doesn't exist, try to create it.
+            # If list succeeded and hook doesn't exist, try to create it.
             logger.info(
                 f"Attempting to create project hook for GitLab project '{project.identifier}' (URL: {webhook_url})."
             )
             try:
                 hook = gitlab_project.hooks.create(hook_attrs)
-                # crud_webhook.create(
-                #     db,
-                #     obj_in={
-                #         "project_id": project.id,
-                #         "external_id": hook.id,
-                #         "url": url_with_secret_and_project,
-                #         "secret": secret,
-                #     },
-                # )
+                crud_webhook.create(
+                    db,
+                    obj_in={
+                        "external_id": str(hook.id),
+                        "url": webhook_url,
+                        "secret": secret,
+                        "tracker_id": self.tracker_id,
+                        "project_id": project.id,
+                    },
+                )
                 logger.info(
                     f"Successfully registered webhook {hook.id} for project {project.identifier}."
                 )
@@ -606,7 +602,6 @@ class GitLabTracker(BaseTracker):
                         f"Project webhook for GitLab project '{project.identifier}' (URL: {webhook_url}) already exists (409 on create)."
                     )
                     return True
-                # A 404 on create for a project hook is a genuine "not found" for the endpoint or project, or permission issue.
                 elif e.response_code == 404:
                     logger.error(
                         f"Creating project hook for GitLab project '{project.identifier}' failed with 404. Project or hooks endpoint not found or no permission."
@@ -655,122 +650,70 @@ class GitLabTracker(BaseTracker):
             )
             return False
 
-    def unregister_webhook(self, **kwargs: Any) -> bool:
+    def unregister_webhook(self, db: Session, webhook: Webhook) -> bool:
         """
         Unregister a specific webhook by its ID for a GitLab group or project.
 
         Args:
-            **kwargs: Keyword arguments. Expected:
-                      'org_identifier' (str, optional): GitLab group ID.
-                      'project_id_or_path' (Union[int, str], optional): GitLab project ID or path.
-                      'webhook_id' (int): The ID of the webhook to unregister.
+            db: The database session.
+            webhook: The Webhook object to unregister.
 
         Returns:
             True if unregistration was successful or webhook was already gone, False otherwise.
         """
-        org_identifier = kwargs.get("org_identifier")
-        project_id_or_path = kwargs.get("project_id_or_path")
-        webhook_id = kwargs.get("webhook_id")
-
-        if not webhook_id:
-            logger.error("GitLab: unregister_webhook called without 'webhook_id'.")
-            return False
-        if not org_identifier and not project_id_or_path:
-            logger.error(
-                "GitLab: unregister_webhook called without 'org_identifier' or 'project_id_or_path'."
-            )
-            return False
-        if org_identifier and project_id_or_path:
-            logger.error(
-                "GitLab: unregister_webhook called with both 'org_identifier' and 'project_id_or_path'. Provide only one."
-            )
-            return False
-
         target_entity = None
         entity_type = ""
-        entity_id_for_log = ""  # For logging purposes
+        entity_id_for_log = ""
+        webhook_id = int(webhook.external_id)
 
         try:
-            if org_identifier:
+            if webhook.organization_id:
                 entity_type = "group"
-                entity_id_for_log = str(org_identifier)
-                logger.info(
-                    f"GitLab: Attempting to get group '{entity_id_for_log}' for unregistering webhook ID {webhook_id}."
-                )
-                target_entity = self._make_request(self.gl.groups.get, org_identifier)
-            elif project_id_or_path:
-                entity_type = "project"
-                entity_id_for_log = str(project_id_or_path)
-                logger.info(
-                    f"GitLab: Attempting to get project '{entity_id_for_log}' for unregistering webhook ID {webhook_id}."
-                )
+                entity_id_for_log = str(webhook.organization.identifier)
                 target_entity = self._make_request(
-                    self.gl.projects.get, project_id_or_path
+                    self.gl.groups.get, entity_id_for_log
                 )
-
-            if (
-                not target_entity
-            ):  # Should not happen if one of the above blocks executed
+            elif webhook.project_id:
+                entity_type = "project"
+                entity_id_for_log = str(webhook.project.identifier)
+                target_entity = self._make_request(
+                    self.gl.projects.get, entity_id_for_log
+                )
+            else:
                 logger.error(
-                    "GitLab: Could not determine target entity for webhook unregistration."
+                    f"Webhook {webhook.id} has no organization or project associated."
                 )
                 return False
 
-            # We have the entity (group or project), now try to delete the hook by its ID.
-            # The python-gitlab library uses entity.hooks.delete(hook_id).
             logger.info(
                 f"GitLab: Attempting to delete webhook ID {webhook_id} from {entity_type} '{entity_id_for_log}'."
             )
-            try:
-                hook_manager = target_entity.hooks
-                self._make_request(hook_manager.delete, webhook_id)
-                logger.info(
-                    f"Successfully unregistered webhook {webhook_id} for GitLab {entity_type} {entity_id_for_log}."
-                )
-                return True
-            except gitlab.exceptions.GitlabDeleteError as e:
-                if e.response_code == 404:
-                    logger.warning(
-                        f"Webhook {webhook_id} for GitLab {entity_type} {entity_id_for_log} not found during delete. Assuming already unregistered."
-                    )
-                    return True  # Treat as success if already gone
+            hook_manager = target_entity.hooks
+            self._make_request(hook_manager.delete, webhook_id)
+            logger.info(
+                f"Successfully unregistered webhook {webhook_id} from GitLab {entity_type} {entity_id_for_log}."
+            )
+
+        except gitlab.exceptions.GitlabDeleteError as e:
+            if e.response_code != 404:
                 logger.error(
                     f"Failed to unregister webhook {webhook_id} for GitLab {entity_type} {entity_id_for_log}: {e.response_code} - {e.error_message}",
                     exc_info=True,
                 )
                 return False
-            except (
-                TrackerResponseError
-            ) as e:  # Catch errors from _make_request if delete fails for other reasons
-                if "404" in str(e).lower():
-                    logger.warning(
-                        f"Webhook {webhook_id} for GitLab {entity_type} {entity_id_for_log} not found during delete (via TrackerResponseError). Assuming already unregistered."
-                    )
-                    return True
-                logger.error(
-                    f"TrackerResponseError while unregistering webhook {webhook_id} for GitLab {entity_type} {entity_id_for_log}: {e}",
-                    exc_info=True,
-                )
-                return False
-
-        except gitlab.exceptions.GitlabGetError as e:  # Error getting group/project
-            if e.response_code == 404:
-                logger.error(
-                    f"GitLab {entity_type} {entity_id_for_log} not found when trying to unregister webhook."
-                )
-            else:
+            logger.warning(
+                f"Webhook {webhook_id} for GitLab {entity_type} {entity_id_for_log} not found during delete. Assuming already unregistered."
+            )
+        except gitlab.exceptions.GitlabGetError as e:
+            if e.response_code != 404:
                 logger.error(
                     f"Error getting GitLab {entity_type} {entity_id_for_log} for webhook unregistration: {e.response_code} - {e.error_message}",
                     exc_info=True,
                 )
-            return False
-        except (
-            gitlab.exceptions.GitlabAuthenticationError
-        ):  # Should be caught by _make_request
-            logger.error(
-                f"GitLab authentication error during webhook unregistration for {entity_id_for_log}."
+                return False
+            logger.warning(
+                f"GitLab {entity_type} {entity_id_for_log} not found when trying to unregister webhook. Assuming webhook is already gone."
             )
-            raise  # Re-raise
         except Exception as e:
             logger.error(
                 f"Unexpected error unregistering webhook for GitLab {entity_type} {entity_id_for_log}: {e}",
@@ -778,309 +721,37 @@ class GitLabTracker(BaseTracker):
             )
             return False
 
-    def unregister_all_webhooks(
-        self, webhook_url_pattern: Optional[str] = None
-    ) -> Dict[str, int]:
+        # If we reach here, the webhook is gone from GitLab (or was never there), so remove from DB
+        crud_webhook.remove(db, id=webhook.id)
+        logger.info(
+            f"Removed webhook record {webhook.id} for {entity_type} {entity_id_for_log} from database."
+        )
+        return True
+
+    def unregister_all_webhooks(self, db: Session) -> Dict[str, int]:
         """
-        Unregister all webhooks for relevant groups and projects, optionally matching a URL pattern.
+        Unregister all webhooks for this tracker based on database records.
 
         Args:
-            webhook_url_pattern: If provided, only unregister webhooks whose URL
-                                 matches this pattern. If None, attempts to unregister
-                                 webhooks matching the SPACEBRIDGE_URL pattern.
+            db: The database session.
 
         Returns:
-            A dictionary summarizing the actions taken, e.g.,
-            {"unregistered": count, "failed": count, "not_found": count}.
+            A dictionary summarizing the actions taken.
         """
         results = {"unregistered": 0, "failed": 0, "not_found": 0}
+        logger.info(f"Unregistering all webhooks for GitLab tracker {self.tracker_id}.")
+        webhooks = crud_webhook.get_by_tracker(db, tracker_id=self.tracker_id)
 
-        target_pattern = webhook_url_pattern
-        if target_pattern is None:
-            sb_url = os.getenv("SPACEBRIDGE_URL")
-            if sb_url:
-                target_pattern = f"{sb_url.rstrip('/')}/api/v1/private/webhooks/"
-                logger.info(
-                    f"GitLab: No specific webhook_url_pattern provided, using default pattern: {target_pattern}"
-                )
+        if not webhooks:
+            logger.info("No webhooks found in database for this tracker.")
+            results["not_found"] = 1
+            return results
+
+        for webhook in webhooks:
+            if self.unregister_webhook(db, webhook=webhook):
+                results["unregistered"] += 1
             else:
-                logger.warning(
-                    "GitLab: Cannot determine target webhook URL pattern: webhook_url_pattern is None and SPACEBRIDGE_URL is not set."
-                )
-                return results  # Cannot proceed without a pattern
-
-        # Phase 1: Group Webhook Unregistration
-        logger.info("GitLab: Starting unregistration of group webhooks.")
-        groups: List[Any] = []
-        try:
-            groups = self._make_request(self.gl.groups.list, all=True, owned=True)
-        except TrackerAuthenticationError as e:
-            logger.error(
-                f"GitLab: Authentication error listing groups for webhook unregistration: {e}",
-                exc_info=True,
-            )
-            results["failed"] += 1
-        except TrackerConnectionError as e:
-            logger.error(
-                f"GitLab: Connection error listing groups for webhook unregistration: {e}",
-                exc_info=True,
-            )
-            results["failed"] += 1
-        except TrackerResponseError as e:
-            logger.error(
-                f"GitLab: Response error listing groups for webhook unregistration: {e}",
-                exc_info=True,
-            )
-            results["failed"] += 1
-        except Exception as e:  # Catch any other unexpected error during group listing
-            logger.error(
-                f"GitLab: Unexpected error listing groups for webhook unregistration: {e}",
-                exc_info=True,
-            )
-            results["failed"] += 1
-        # If group listing fails, 'groups' list will be empty, and the loop below won't run.
-        # We still proceed to project-level unregistration.
-
-        for group_obj in groups:
-            group_id = group_obj.id
-            group_name = group_obj.name
-            logger.debug(
-                f"GitLab: Processing group '{group_name}' (ID: {group_id}) for webhook unregistration."
-            )
-            existing_hooks_for_group: Optional[List[Any]] = None
-            try:
-                existing_hooks_for_group = self._make_request(
-                    group_obj.hooks.list, all=True
-                )
-
-                found_matching_in_group = False
-                if not existing_hooks_for_group:
-                    logger.debug(f"GitLab: No webhooks found for group '{group_name}'.")
-                    # If a pattern was specified, and no hooks exist at all, it's a "not_found" for this entity.
-                    # However, the primary "not_found" is for when hooks exist but none match.
-                    # This case is implicitly handled by found_matching_in_group remaining False.
-                else:
-                    for hook in existing_hooks_for_group:
-                        hook_config_url = getattr(hook, "url", None)
-                        if (
-                            hook_config_url
-                            and target_pattern
-                            and target_pattern in hook_config_url
-                        ):
-                            found_matching_in_group = True
-                            logger.info(
-                                f"GitLab: Found matching group webhook ID {hook.id} (URL: {hook_config_url}) for group '{group_name}'. Attempting to unregister."
-                            )
-                            try:
-                                if self.unregister_webhook(
-                                    org_identifier=str(group_id), webhook_id=hook.id
-                                ):
-                                    results["unregistered"] += 1
-                                else:
-                                    results["failed"] += 1
-                            except Exception as unreg_e:  # Catch errors from the unregister_webhook call itself
-                                logger.error(
-                                    f"GitLab: Error during unregister_webhook call for hook ID {hook.id} in group '{group_name}': {unreg_e}",
-                                    exc_info=True,
-                                )
-                                results["failed"] += 1
-
-                if (
-                    not found_matching_in_group
-                    and target_pattern
-                    and existing_hooks_for_group is not None
-                ):
-                    logger.debug(
-                        f"GitLab: No webhooks matching pattern '{target_pattern}' found for group '{group_name}' (hooks were listed)."
-                    )
-                    results["not_found"] += 1
-
-            except TrackerResponseError as e:
-                if "404" in str(e).lower():
-                    logger.info(
-                        f"GitLab: Listing group hooks for group '{group_name}' (ID: {group_id}) failed with 404, likely not supported or no hooks. Skipping group hook processing for this group."
-                    )
-                    # Do not increment results["failed"] for 404 on listing group hooks
-                else:
-                    logger.error(
-                        f"GitLab: TrackerResponseError listing hooks for group '{group_name}' (ID: {group_id}): {e}",
-                        exc_info=True,
-                    )
-                    results["failed"] += 1
-            except TrackerConnectionError as e:
-                logger.error(
-                    f"GitLab: TrackerConnectionError listing hooks for group '{group_name}' (ID: {group_id}): {e}",
-                    exc_info=True,
-                )
-                results["failed"] += 1
-            except TrackerAuthenticationError as e:
-                logger.error(
-                    f"GitLab: TrackerAuthenticationError listing hooks for group '{group_name}' (ID: {group_id}): {e}",
-                    exc_info=True,
-                )
-                results["failed"] += 1
-            except Exception as e:  # Catch-all for other errors during hook listing for a specific group
-                logger.error(
-                    f"GitLab: Unexpected error processing group '{group_name}' (ID: {group_id}) for hook listing: {e}",
-                    exc_info=True,
-                )
                 results["failed"] += 1
 
-        # Phase 2: Project Webhook Unregistration (Independent Fallback)
-        logger.info("GitLab: Starting project-level webhook unregistration.")
-        all_projects: List[Any] = []
-        try:
-            all_projects = self._make_request(
-                self.gl.projects.list, all=True, owned=True
-            )
-        except TrackerAuthenticationError as e:
-            logger.error(
-                f"GitLab: Authentication error listing all projects for webhook unregistration: {e}",
-                exc_info=True,
-            )
-            results["failed"] += 1
-        except TrackerConnectionError as e:
-            logger.error(
-                f"GitLab: Connection error listing all projects for webhook unregistration: {e}",
-                exc_info=True,
-            )
-            results["failed"] += 1
-        except TrackerResponseError as e:
-            logger.error(
-                f"GitLab: Response error listing all projects for webhook unregistration: {e}",
-                exc_info=True,
-            )
-            results["failed"] += 1
-        except (
-            Exception
-        ) as e:  # Catch any other unexpected error during all_projects listing
-            logger.error(
-                f"GitLab: Unexpected error listing all projects for webhook unregistration: {e}",
-                exc_info=True,
-            )
-            results["failed"] += 1
-        # If all_projects listing fails, 'all_projects' list will be empty, and the loop below won't run.
-
-        for project_obj in all_projects:
-            project_id = project_obj.id
-            project_name = project_obj.path_with_namespace
-            logger.debug(
-                f"GitLab: Processing project '{project_name}' (ID: {project_id}) for webhook unregistration."
-            )
-            existing_hooks_for_project: Optional[List[Any]] = None
-            try:
-                existing_hooks_for_project = self._make_request(
-                    project_obj.hooks.list, all=True
-                )
-
-                found_matching_in_project = False
-                if not existing_hooks_for_project:
-                    logger.debug(
-                        f"GitLab: No webhooks found for project '{project_name}'."
-                    )
-                else:
-                    for hook in existing_hooks_for_project:
-                        hook_config_url = getattr(hook, "url", None)
-                        if (
-                            hook_config_url
-                            and target_pattern
-                            and target_pattern in hook_config_url
-                        ):
-                            found_matching_in_project = True
-                            logger.info(
-                                f"GitLab: Found matching project webhook ID {hook.id} (URL: {hook_config_url}) for project '{project_name}'. Attempting to unregister."
-                            )
-                            try:
-                                if self.unregister_webhook(
-                                    project_id_or_path=project_id, webhook_id=hook.id
-                                ):
-                                    results["unregistered"] += 1
-                                else:
-                                    results["failed"] += 1
-                            except Exception as unreg_e:  # Catch errors from the unregister_webhook call itself
-                                logger.error(
-                                    f"GitLab: Error during unregister_webhook call for hook ID {hook.id} in project '{project_name}': {unreg_e}",
-                                    exc_info=True,
-                                )
-                                results["failed"] += 1
-
-                if (
-                    not found_matching_in_project
-                    and target_pattern
-                    and existing_hooks_for_project is not None
-                ):
-                    logger.debug(
-                        f"GitLab: No webhooks matching pattern '{target_pattern}' found for project '{project_name}' (hooks were listed)."
-                    )
-                    results["not_found"] += 1
-
-            except TrackerResponseError as e:
-                if "404" in str(e).lower():
-                    logger.info(
-                        f"GitLab: Listing project hooks for project '{project_name}' (ID: {project_id}) failed with 404. Skipping this project's hook processing."
-                    )
-                    # Do not increment results["failed"] for 404 on listing project hooks
-                else:
-                    logger.error(
-                        f"GitLab: TrackerResponseError listing hooks for project '{project_name}' (ID: {project_id}): {e}",
-                        exc_info=True,
-                    )
-                    results["failed"] += 1
-            except TrackerConnectionError as e:
-                logger.error(
-                    f"GitLab: TrackerConnectionError listing hooks for project '{project_name}' (ID: {project_id}): {e}",
-                    exc_info=True,
-                )
-                results["failed"] += 1
-            except TrackerAuthenticationError as e:
-                logger.error(
-                    f"GitLab: TrackerAuthenticationError listing hooks for project '{project_name}' (ID: {project_id}): {e}",
-                    exc_info=True,
-                )
-                results["failed"] += 1
-            except Exception as e:  # Catch-all for other errors during hook listing for a specific project
-                logger.error(
-                    f"GitLab: Unexpected error processing project '{project_name}' (ID: {project_id}) for hook listing: {e}",
-                    exc_info=True,
-                )
-                results["failed"] += 1
-
-        logger.info(f"GitLab: unregister_all_webhooks summary: {results}")
+        logger.info(f"GitLab unregister_all_webhooks summary: {results}")
         return results
-
-
-print("DEBUG: === Post-GitLabTracker Class Definition Diagnostics (V4) ===")
-print(
-    f"DEBUG: BaseTracker abstract methods: {getattr(BaseTracker, '__abstractmethods__', 'N/A')}"
-)
-print(
-    f"DEBUG: GitLabTracker abstract methods: {getattr(GitLabTracker, '__abstractmethods__', 'N/A')}"
-)
-print(
-    f"DEBUG: GitLabTracker.register_webhook method: {getattr(GitLabTracker, 'register_webhook', 'Missing')}"
-)
-print(
-    f"DEBUG: type(GitLabTracker.register_webhook): {type(getattr(GitLabTracker, 'register_webhook', None))}"
-)
-print(
-    f"DEBUG: Callable GitLabTracker.register_webhook? {callable(getattr(GitLabTracker, 'register_webhook', None))}"
-)
-print(
-    f"DEBUG: GitLabTracker.unregister_webhook method: {getattr(GitLabTracker, 'unregister_webhook', 'Missing')}"
-)
-print(
-    f"DEBUG: type(GitLabTracker.unregister_webhook): {type(getattr(GitLabTracker, 'unregister_webhook', None))}"
-)
-print(
-    f"DEBUG: Callable GitLabTracker.unregister_webhook? {callable(getattr(GitLabTracker, 'unregister_webhook', None))}"
-)
-print(
-    f"DEBUG: GitLabTracker.unregister_all_webhooks method: {getattr(GitLabTracker, 'unregister_all_webhooks', 'Missing')}"
-)
-print(
-    f"DEBUG: type(GitLabTracker.unregister_all_webhooks): {type(getattr(GitLabTracker, 'unregister_all_webhooks', None))}"
-)
-print(
-    f"DEBUG: Callable GitLabTracker.unregister_all_webhooks? {callable(getattr(GitLabTracker, 'unregister_all_webhooks', None))}"
-)
-print("DEBUG: === End Diagnostics (V4) ===")
