@@ -51,3 +51,4 @@ site/
 # Generated files
 repomix-output.xml
 repomix-output-mcp.xml
+coverage.xml

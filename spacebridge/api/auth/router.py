@@ -4,7 +4,7 @@ import logging
 import secrets
 import string
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import (
@@ -18,10 +18,9 @@ from fastapi import (
 )
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-
-from spacemodels.crud import crud_account
+from sqlalchemy.orm import Session
 
 from spacebridge.api.auth.jwt import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -38,6 +37,7 @@ from spacebridge.schemas.auth import (
     ApiUsageStatistics,
     EmailVerificationRequest,
     LoginRequest,
+    PasswordChangeRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
     RefreshRequest,
@@ -46,12 +46,11 @@ from spacebridge.schemas.auth import (
     UserCreate,
     UserResponse,
     UserUpdate,
-    PasswordChangeRequest,
 )
 from spacebridge.utils.email import (
     send_password_reset_email,
-    send_verification_email,
     send_product_notification_email,
+    send_verification_email,
 )
 from spacebridge.utils.tokens import (
     TokenError,
@@ -59,6 +58,7 @@ from spacebridge.utils.tokens import (
     create_password_reset_token,
     verify_token,
 )
+from spacemodels.crud import crud_account
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.api_key import ApiKey
@@ -438,7 +438,9 @@ async def login_json(request: LoginRequest) -> Dict[str, str]:
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(request: RefreshRequest) -> Dict[str, str]:
+async def refresh_token(
+    request: RefreshRequest, db: AsyncSession = Depends(get_db_session)
+) -> Dict[str, str]:
     """Refresh an access token using a refresh token.
 
     Args:
@@ -453,6 +455,19 @@ async def refresh_token(request: RefreshRequest) -> Dict[str, str]:
     try:
         # Decode and validate the refresh token
         token_data = decode_token(request.refresh_token)
+
+        # Verify user exists and is active
+        result = await db.execute(
+            select(Account).where(Account.id == int(token_data.sub))
+        )
+        user = result.scalars().first()
+
+        if user is None or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         # Check if it's a refresh token
         if not token_data.refresh:
