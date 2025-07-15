@@ -30,6 +30,14 @@ class IssueDuplicate(BaseModel):
     llm_model_name: Optional[str] = None
 
 
+class IssueDuplicateUpdate(BaseModel):
+    """Schema for updating an IssueDuplicate."""
+
+    resolution: Optional[str] = None
+    resolution_at: Optional[datetime] = None
+    resolution_reason: Optional[str] = None
+
+
 class IssueDuplicateSuggestionRequest(BaseModel):
     """Schema for suggesting a resolution for an IssueDuplicate."""
 

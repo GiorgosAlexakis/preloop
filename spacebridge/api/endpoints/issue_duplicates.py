@@ -37,6 +37,7 @@ from spacebridge.schemas.duplicates import (
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateProjectStats,
     IssueDuplicateStats,
+    IssueDuplicateUpdate,
 )
 from spacemodels.models.account import Account  # Import Account model
 from spacemodels.models.organization import Organization
@@ -475,6 +476,10 @@ async def execute_issue_duplicate_resolution(
             current_user=current_user,
         )
 
+    elif resolution_type == "not_a_duplicate":
+        # No action needed for the issues themselves, only for the duplicate record.
+        pass
+
     else:
         raise HTTPException(status_code=400, detail="Invalid resolution type")
 
@@ -483,19 +488,19 @@ async def execute_issue_duplicate_resolution(
         db=db, issue1_id=issue_a.id, issue2_id=issue_b.id
     )
     if duplicate_record:
-        crud_issue_duplicate.update(
-            db=db,
-            db_obj=duplicate_record,
-            obj_in={
-                "resolution": db_resolution_value,
-                "resolution_at": datetime.utcnow(),
-                "resolution_reason": resolution.resolution_reason,
-            },
+        update_data = IssueDuplicateUpdate(
+            resolution=db_resolution_value,
+            resolution_at=datetime.utcnow(),
+            resolution_reason=resolution.resolution_reason,
         )
+        crud_issue_duplicate.update(db=db, db_obj=duplicate_record, obj_in=update_data)
+    else:
+        # This case should ideally not be reached if the frontend is behaving correctly.
+        raise HTTPException(status_code=404, detail="Issue duplicate record not found")
 
     return IssueDuplicateResolutionResponse(
-        issue1_id=resolution.issue1_id,
-        issue2_id=resolution.issue2_id,
+        issue1_id=issue_a.id,
+        issue2_id=issue_b.id,
         resolution=resolution.resolution,
     )
 

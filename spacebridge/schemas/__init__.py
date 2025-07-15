@@ -56,6 +56,7 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateResolutionResponse,
     IssueDuplicateSuggestionRequest,
     IssueDuplicateSuggestionResponse,
+    IssueDuplicateUpdate,
 )
 
 __all__ = [
@@ -104,4 +105,5 @@ __all__ = [
     "IssueDuplicateResolutionResponse",
     "IssueDuplicateSuggestionRequest",
     "IssueDuplicateSuggestionResponse",
+    "IssueDuplicateUpdate",
 ]
