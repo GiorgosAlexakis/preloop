@@ -38,6 +38,7 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateProjectStats,
     IssueDuplicateStats,
     IssueDuplicateUpdate,
+    IssueDuplicate,
 )
 from spacemodels.models.account import Account  # Import Account model
 from spacemodels.models.organization import Organization
@@ -148,7 +149,7 @@ def check_or_create_issue_duplicate(
         raise HTTPException(status_code=404, detail=detail)
 
     default_model = crud_llm_model.get_default_active_model(
-        db, include_ownerless=True, account_id=current_user.id
+        db, account_id=current_user.id
     )
     if not default_model:
         logger.error("No default active LLM model configured.")
@@ -223,7 +224,7 @@ def check_or_create_issue_duplicate(
             parsed_status = "undecided"
             reason = llm_response_text
 
-        duplicate_create_data = IssueDuplicateCreate(
+        duplicate_create_data = IssueDuplicate(
             issue1_id=issue1.id,
             issue2_id=issue2.id,
             decision=parsed_status,
@@ -264,7 +265,10 @@ def propose_issue_duplicate_resolution(
 ):
     """Propose a resolution for an issue duplicate."""
     existing_duplicate = crud_issue_duplicate.get_by_issue_ids(
-        db, issue1_id=resolution.issue1_id, issue2_id=resolution.issue2_id
+        db,
+        issue1_id=resolution.issue1_id,
+        issue2_id=resolution.issue2_id,
+        account_id=current_user.id,
     )
     if not existing_duplicate:
         raise HTTPException(status_code=404, detail="Duplicate entry not found.")
@@ -286,7 +290,9 @@ def propose_issue_duplicate_resolution(
                 status_code=400,
                 detail="Merge resolution requires resulting_issue1_id, merged_title, and merged_description.",
             )
-        issue_to_update = crud_issue.get(db=db, id=resolution.resulting_issue1_id)
+        issue_to_update = crud_issue.get(
+            db=db, id=resolution.resulting_issue1_id, account_id=current_user.id
+        )
         if not issue_to_update:
             raise HTTPException(status_code=404, detail="Resulting issue not found.")
         update_data = {
@@ -309,8 +315,12 @@ def propose_issue_duplicate_resolution(
                 detail="Deconflict resolution requires titles and descriptions for both issues.",
             )
 
-        issue1_to_update = crud_issue.get(db=db, id=resolution.issue1_id)
-        issue2_to_update = crud_issue.get(db=db, id=resolution.issue2_id)
+        issue1_to_update = crud_issue.get(
+            db=db, id=resolution.issue1_id, account_id=current_user.id
+        )
+        issue2_to_update = crud_issue.get(
+            db=db, id=resolution.issue2_id, account_id=current_user.id
+        )
         if not issue1_to_update or not issue2_to_update:
             raise HTTPException(status_code=404, detail="One or both issues not found.")
 
@@ -350,8 +360,8 @@ async def execute_issue_duplicate_resolution(
     current_user: Account = Depends(get_current_active_user),
 ):
     """Execute the resolution for a pair of duplicate issues."""
-    issue_a = crud_issue.get(db=db, id=resolution.issue1_id)
-    issue_b = crud_issue.get(db=db, id=resolution.issue2_id)
+    issue_a = crud_issue.get(db=db, id=resolution.issue1_id, account_id=current_user.id)
+    issue_b = crud_issue.get(db=db, id=resolution.issue2_id, account_id=current_user.id)
 
     if not issue_a or not issue_b:
         raise HTTPException(status_code=404, detail="One or both issues not found")
@@ -485,7 +495,7 @@ async def execute_issue_duplicate_resolution(
 
     # Update the issue_duplicate record
     duplicate_record = crud_issue_duplicate.get_by_issue_ids(
-        db=db, issue1_id=issue_a.id, issue2_id=issue_b.id
+        db=db, issue1_id=issue_a.id, issue2_id=issue_b.id, account_id=current_user.id
     )
     if duplicate_record:
         update_data = IssueDuplicateUpdate(
@@ -852,7 +862,9 @@ def get_resolution_suggestion(
     ):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    default_model = crud_llm_model.get_default_active_model(db, include_ownerless=True)
+    default_model = crud_llm_model.get_default_active_model(
+        db, account_id=current_user.id
+    )
     if not default_model:
         logger.error("No default active LLM model configured.")
         raise HTTPException(
