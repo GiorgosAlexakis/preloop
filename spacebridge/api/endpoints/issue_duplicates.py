@@ -524,6 +524,7 @@ def _find_issue_duplicates_logic(
     skip: int,
     limit_per_issue: int,
     status: Optional[str],
+    resolution: Optional[str] = None,
 ) -> Tuple[List[DuplicateIssuePair], str]:
     """Shared logic to find potential duplicate issues within specified projects."""
     active_models = crud_embedding_model.get_active(db)
@@ -598,6 +599,24 @@ def _find_issue_duplicates_logic(
                 pair_key = frozenset([id1_str, id2_str])
 
                 if pair_key not in reported_pairs:
+                    duplicate_record = crud_issue_duplicate.get_by_issue_ids(
+                        db,
+                        issue1_id=id1_str,
+                        issue2_id=id2_str,
+                        account_id=current_user.id,
+                    )
+                    record_resolution = (
+                        duplicate_record.resolution if duplicate_record else None
+                    )
+
+                    # Apply resolution filter
+                    if resolution and resolution != "all":
+                        is_resolved = bool(record_resolution)
+                        if resolution == "resolved" and not is_resolved:
+                            continue
+                        if resolution == "unresolved" and is_resolved:
+                            continue
+
                     try:
                         duplicate_pair = DuplicateIssuePair(
                             issue1=IssueResponse(
@@ -639,6 +658,7 @@ def _find_issue_duplicates_logic(
                                 project_id=project_id,
                             ),
                             similarity=score,
+                            resolution=record_resolution,
                         )
                         all_duplicates_pairs.append(duplicate_pair)
                         reported_pairs.add(pair_key)
@@ -707,6 +727,9 @@ def find_issue_duplicates(
     status: Literal["opened", "closed", "all"] = Query(
         "opened", description="Filter issues by status."
     ),
+    resolution: Literal["resolved", "unresolved", "all"] = Query(
+        "all", description="Filter by resolution status."
+    ),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
@@ -726,6 +749,7 @@ def find_issue_duplicates(
         skip=skip,
         limit_per_issue=limit_per_issue,
         status=status,
+        resolution=resolution,
     )
 
     return ProjectDuplicatesResponse(

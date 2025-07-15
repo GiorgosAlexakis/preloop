@@ -2282,6 +2282,19 @@ paths:
           default: opened
           title: Status
         description: Filter issues by status.
+      - name: resolution
+        in: query
+        required: false
+        schema:
+          enum:
+          - resolved
+          - unresolved
+          - all
+          type: string
+          description: Filter by resolution status.
+          default: all
+          title: Resolution
+        description: Filter by resolution status.
       responses:
         '200':
           description: Successful Response
