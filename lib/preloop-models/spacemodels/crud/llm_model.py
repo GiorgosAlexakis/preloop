@@ -2,6 +2,7 @@
 
 from typing import Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from spacemodels.models.llm_model import LLMModel
@@ -12,16 +13,23 @@ class CRUDLLMModel(CRUDBase[LLMModel]):
     """CRUD class for LLMModel operations."""
 
     def get_default_active_model(
-        self, db: Session, *, include_ownerless: bool = False
+        self, db: Session, *, account_id: Optional[str] = None
     ) -> Optional[LLMModel]:
         """Get the default, active LLMModel.
 
         If include_ownerless is True, it will also look for a system-wide default model.
         """
         query = db.query(self.model).filter(self.model.is_default)
-        if not include_ownerless:
-            query = query.filter(self.model.account_id.isnot(None))
-        return query.first()
+        if account_id is not None:
+            query = query.filter(
+                or_(
+                    self.model.account_id.is_(None), self.model.account_id == account_id
+                )
+            )
+        else:
+            query = query.filter(self.model.account_id.is_(None))
+        result = query.order_by(self.model.account_id).first()
+        return result
 
     def default_model_exists(self, db: Session) -> bool:
         """Check if a system-wide default model exists."""
