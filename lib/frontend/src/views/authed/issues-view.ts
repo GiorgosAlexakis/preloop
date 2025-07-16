@@ -164,6 +164,8 @@ export class IssuesView extends LitElement {
       }
 
       .issue-description {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-700);
         background-color: var(--sl-color-neutral-100);
         border: 1px solid var(--sl-color-neutral-200);
         border-radius: var(--sl-border-radius-medium);
@@ -778,18 +780,22 @@ export class IssuesView extends LitElement {
                                     <sl-button
                                       size="small"
                                       variant="primary"
-                                      @click=${() =>
-                                        this._openResolveModal(pair)}
-                                      >Resolve</sl-button
-                                    >
-                                    <sl-icon-button
-                                      name="x-circle"
-                                      label="Dismiss"
                                       @click=${(e: Event) => {
                                         e.stopPropagation();
-                                        this._handleDismiss(pair);
+                                        this._openResolveModal(pair);
                                       }}
-                                    ></sl-icon-button>
+                                      >Resolve</sl-button
+                                    >
+                                    <sl-tooltip content="Dismiss this suggestion">
+                                      <sl-icon-button
+                                        name="x-circle"
+                                        label="Dismiss"
+                                        @click=${(e: Event) => {
+                                          e.stopPropagation();
+                                          this._handleDismiss(pair);
+                                        }}
+                                      ></sl-icon-button>
+                                    </sl-tooltip>
                                   `
                                 )}
                               </div>

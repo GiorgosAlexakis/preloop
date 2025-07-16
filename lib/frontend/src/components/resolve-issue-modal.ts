@@ -233,7 +233,7 @@ export class ResolveIssueModal extends LitElement {
       },
       {
         id: 'unrelated',
-        title: 'Not Duplicates',
+        title: 'Mark as Unrelated',
         description:
           'Mark the issues as unrelated. This action is immediate and requires no further steps.',
         handler: () => this.handleFinalResolve('UNRELATED'),
@@ -263,7 +263,7 @@ export class ResolveIssueModal extends LitElement {
     return html`
       <div class="step-container">
         <p>Select which issue to close. The other will remain open.</p>
-        <div class="initial-options-group">
+        <div class="close-options-group">
           <div
             class="action-card"
             @click=${() => this.handleFinalResolve('CLOSE_A')}
@@ -516,7 +516,7 @@ export class ResolveIssueModal extends LitElement {
         margin-bottom: 1rem;
       }
 
-      .initial-options-group {
+      .initial-options-group, .close-options-group {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
         gap: 1rem;
@@ -578,13 +578,15 @@ export class ResolveIssueModal extends LitElement {
       }
       .issue-description {
         font-size: var(--sl-font-size-small);
-        white-space: pre-wrap; /* Allows wrapping of long lines */
+        color: var(--sl-color-neutral-700);
+        background-color: var(--sl-color-neutral-100);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-medium);
+        white-space: pre-wrap;
+        word-wrap: break-word;
         max-height: 300px;
         overflow-y: auto;
-        background-color: var(--sl-color-neutral-100);
-        padding: 0.75rem;
-        border-radius: var(--sl-border-radius-medium);
-        color: var(--sl-color-neutral-700);
       }
       .form-group {
         display: flex;
