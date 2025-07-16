@@ -30,7 +30,7 @@ class CRUDWebhook(CRUDBase[Webhook]):
             )
         return query.first()
 
-    def get_all_for_project(
+    def get_all_by_project(
         self,
         db: Session,
         *,
@@ -40,12 +40,30 @@ class CRUDWebhook(CRUDBase[Webhook]):
         account_id: Optional[str] = None,
     ) -> List[Webhook]:
         """Get all webhooks for a project."""
-        query = db.query(Webhook).filter(Webhook.project_id == project_id)
+        query = db.query(Webhook).join(Project).filter(Webhook.project_id == project_id)
         if account_id:
-            query = (
-                query.join(Project)
-                .join(Organization)
-                .join(Tracker)
-                .filter(Tracker.account_id == account_id)
-            )
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
         return query.offset(skip).limit(limit).all()
+
+    def get_all_by_organization(
+        self,
+        db: Session,
+        *,
+        organization_id: str,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
+    ) -> List[Webhook]:
+        """Get all webhooks for an organization."""
+        query = (
+            db.query(Webhook)
+            .join(Organization)
+            .filter(Organization.id == organization_id)
+        )
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+        return query.offset(skip).limit(limit).all()
+
+    def remove(self, db: Session, *, id: str) -> Optional[Webhook]:
+        """Remove a webhook by ID."""
+        return db.query(Webhook).filter(Webhook.id == id).delete()
