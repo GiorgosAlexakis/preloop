@@ -305,12 +305,16 @@ export class ResolveIssueModal extends LitElement {
         <h2 class="issue-comparison-header">Original Issues</h2>
         <div class="issue-comparison">
           <div class="issue-panel">
-            <div class="issue-header"><a href="${issueA?.url}" target="_blank">${issueA?.key}</a></div>
+            <div class="issue-header">
+              <a href="${issueA?.url}" target="_blank">${issueA?.key}</a>
+            </div>
             <h3 class="issue-title">${issueA?.title}</h3>
             <div class="issue-description">${issueA?.description}</div>
           </div>
           <div class="issue-panel">
-            <div class="issue-header"><a href="${issueB?.url}" target="_blank">${issueB?.key}</a></div>
+            <div class="issue-header">
+              <a href="${issueB?.url}" target="_blank">${issueB?.key}</a>
+            </div>
             <h3 class="issue-title">${issueB?.title}</h3>
             <div class="issue-description">${issueB?.description}</div>
           </div>
@@ -371,16 +375,19 @@ export class ResolveIssueModal extends LitElement {
     const issueB = this.duplicatePair?.issue2;
     return html`
       <div class="step-container">
-
         <h2 class="issue-comparison-header">Original Issues</h2>
         <div class="issue-comparison">
           <div class="issue-panel">
-            <div class="issue-header"><a href="${issueA?.url}" target="_blank">${issueA?.key}</a></div>
+            <div class="issue-header">
+              <a href="${issueA?.url}" target="_blank">${issueA?.key}</a>
+            </div>
             <h3 class="issue-title">${issueA?.title}</h3>
             <div class="issue-description">${issueA?.description}</div>
           </div>
           <div class="issue-panel">
-            <div class="issue-header"><a href="${issueB?.url}" target="_blank">${issueB?.key}</a></div>
+            <div class="issue-header">
+              <a href="${issueB?.url}" target="_blank">${issueB?.key}</a>
+            </div>
             <h3 class="issue-title">${issueB?.title}</h3>
             <div class="issue-description">${issueB?.description}</div>
           </div>
@@ -467,23 +474,27 @@ export class ResolveIssueModal extends LitElement {
         @sl-initial-focus=${(e: Event) => e.preventDefault()}
         class="resolve-issue-dialog"
       >
-        ${this._resolutionStep !== 'merge' && this._resolutionStep !== 'deconflict'
+        ${this._resolutionStep !== 'merge' &&
+        this._resolutionStep !== 'deconflict'
           ? html`
               <div class="issue-comparison">
                 <div class="issue-panel">
-                  <div class="issue-header"><a href="${issue1?.url}" target="_blank">${issue1?.key}</a></div>
+                  <div class="issue-header">
+                    <a href="${issue1?.url}" target="_blank">${issue1?.key}</a>
+                  </div>
                   <h3 class="issue-title">${issue1?.title}</h3>
                   <div class="issue-description">${issue1?.description}</div>
                 </div>
                 <div class="issue-panel">
-                  <div class="issue-header"><a href="${issue2?.url}" target="_blank">${issue2?.key}</a></div>
+                  <div class="issue-header">
+                    <a href="${issue2?.url}" target="_blank">${issue2?.key}</a>
+                  </div>
                   <h3 class="issue-title">${issue2?.title}</h3>
                   <div class="issue-description">${issue2?.description}</div>
                 </div>
               </div>
             `
           : ''}
-
         ${content}
       </sl-dialog>
     `;
@@ -492,108 +503,108 @@ export class ResolveIssueModal extends LitElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
-    sl-dialog::part(panel) {
-      width: 1280px;
-      padding: 1rem;
-    }
-
-    h2 {
-      position: relative;
-      text-align: left;
-      font-size: 1.2rem;
-      font-weight: 300;
-      margin-bottom: 1rem;
-    }
-
-    .initial-options-group {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1rem;
-      margin-top: 1rem;
-    }
-
-    @media (min-width: 992px) {
-      .initial-options-group {
-        grid-template-columns: repeat(4, 1fr);
+      sl-dialog::part(panel) {
+        width: 1280px;
+        padding: 1rem;
       }
-    }
 
-    .action-card {
-      border: 1px solid var(--sl-color-neutral-300);
-      border-radius: var(--sl-border-radius-medium);
-      padding: 1rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .action-card:hover {
-      background-color: var(--sl-color-primary-50);
-      border-color: var(--sl-color-primary-300);
-    }
-    .action-title {
-      font-weight: var(--sl-font-weight-semibold);
-    }
-    .action-description {
-      font-size: var(--sl-font-size-small);
-      color: var(--sl-color-neutral-600);
-      margin-top: 0.5rem;
-    }
-    .footer-buttons {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 1.5rem;
-    }
-    sl-radio-group {
-      margin-bottom: 1rem;
-    }
-    sl-radio-group::part(label) {
-      font-weight: bold;
-    }
+      h2 {
+        position: relative;
+        text-align: left;
+        font-size: 1.2rem;
+        font-weight: 300;
+        margin-bottom: 1rem;
+      }
 
-    .issue-comparison {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
-    .issue-header {
-      font-size: var(--sl-font-size-medium);
-      margin-bottom: 0.5rem;
-    }
-    .issue-title {
-      font-size: var(--sl-font-size-medium);
-      font-weight: var(--sl-font-weight-semibold);
-      margin-top: 0;
-      margin-bottom: 1rem;
-    }
-    .issue-description {
-      font-size: var(--sl-font-size-small);
-      white-space: pre-wrap; /* Allows wrapping of long lines */
-      max-height: 300px;
-      overflow-y: auto;
-      background-color: var(--sl-color-neutral-100);
-      padding: 0.75rem;
-      border-radius: var(--sl-border-radius-medium);
-      color: var(--sl-color-neutral-700);
-    }
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-    sl-textarea::part(textarea) {
-      font-size: var(--sl-font-size-small);
-      max-height: 200px;
-      overflow-y: auto;
-    }
-    .loading-suggestion {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem;
-      gap: 1rem;
-      color: var(--sl-color-neutral-600);
-    }
-  `,
-];
+      .initial-options-group {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      @media (min-width: 992px) {
+        .initial-options-group {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+
+      .action-card {
+        border: 1px solid var(--sl-color-neutral-300);
+        border-radius: var(--sl-border-radius-medium);
+        padding: 1rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .action-card:hover {
+        background-color: var(--sl-color-primary-50);
+        border-color: var(--sl-color-primary-300);
+      }
+      .action-title {
+        font-weight: var(--sl-font-weight-semibold);
+      }
+      .action-description {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-600);
+        margin-top: 0.5rem;
+      }
+      .footer-buttons {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 1.5rem;
+      }
+      sl-radio-group {
+        margin-bottom: 1rem;
+      }
+      sl-radio-group::part(label) {
+        font-weight: bold;
+      }
+
+      .issue-comparison {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+      }
+      .issue-header {
+        font-size: var(--sl-font-size-medium);
+        margin-bottom: 0.5rem;
+      }
+      .issue-title {
+        font-size: var(--sl-font-size-medium);
+        font-weight: var(--sl-font-weight-semibold);
+        margin-top: 0;
+        margin-bottom: 1rem;
+      }
+      .issue-description {
+        font-size: var(--sl-font-size-small);
+        white-space: pre-wrap; /* Allows wrapping of long lines */
+        max-height: 300px;
+        overflow-y: auto;
+        background-color: var(--sl-color-neutral-100);
+        padding: 0.75rem;
+        border-radius: var(--sl-border-radius-medium);
+        color: var(--sl-color-neutral-700);
+      }
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      sl-textarea::part(textarea) {
+        font-size: var(--sl-font-size-small);
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .loading-suggestion {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        gap: 1rem;
+        color: var(--sl-color-neutral-600);
+      }
+    `,
+  ];
 }
