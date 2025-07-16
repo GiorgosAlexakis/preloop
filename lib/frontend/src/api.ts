@@ -660,12 +660,7 @@ export async function getResolutionSuggestion(
 export interface IssueDuplicateResolutionRequest {
   issue1_id: string;
   issue2_id: string;
-  resolution:
-    | 'close_a'
-    | 'close_b'
-    | 'merge_a_to_b'
-    | 'merge_b_to_a'
-    | 'deconflict';
+  resolution: string;
   resolution_reason?: string;
   resulting_issue_1_title?: string;
   resulting_issue_1_description?: string;
