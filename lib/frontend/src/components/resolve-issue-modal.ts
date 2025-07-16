@@ -516,7 +516,8 @@ export class ResolveIssueModal extends LitElement {
         margin-bottom: 1rem;
       }
 
-      .initial-options-group, .close-options-group {
+      .initial-options-group,
+      .close-options-group {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
         gap: 1rem;

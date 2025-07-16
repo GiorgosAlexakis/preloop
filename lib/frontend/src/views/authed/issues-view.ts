@@ -786,7 +786,9 @@ export class IssuesView extends LitElement {
                                       }}
                                       >Resolve</sl-button
                                     >
-                                    <sl-tooltip content="Dismiss this suggestion">
+                                    <sl-tooltip
+                                      content="Dismiss this suggestion"
+                                    >
                                       <sl-icon-button
                                         name="x-circle"
                                         label="Dismiss"
