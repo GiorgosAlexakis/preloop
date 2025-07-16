@@ -21,6 +21,7 @@ from ..utils import retry
 from .base import BaseTracker
 from ..config import logger
 from spacemodels.models.project import Project
+from spacemodels.crud import crud_organization, crud_project
 
 
 class GitHubTracker(BaseTracker):
@@ -45,7 +46,7 @@ class GitHubTracker(BaseTracker):
             "Accept": "application/vnd.github.v3+json",
         }
 
-    @retry(max_attempts=3, exceptions=(TrackerConnectionError, TrackerResponseError))
+    @retry(max_attempts=2, exceptions=(TrackerConnectionError, TrackerResponseError))
     def _make_request(
         self, endpoint: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
@@ -76,6 +77,42 @@ class GitHubTracker(BaseTracker):
                 )
 
             return response.json()
+        except requests.RequestException as e:
+            raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
+
+    @retry(max_attempts=1, exceptions=(TrackerConnectionError, TrackerResponseError))
+    def _make_request_delete(self, endpoint: str) -> bool:
+        """
+        Make a DELETE request to the GitHub API.
+
+        Args:
+            endpoint: API endpoint to request.
+
+        Returns:
+            True if successful, False otherwise.
+
+        Raises:
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+            TrackerResponseError: If response is invalid.
+        """
+        try:
+            url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
+            response = requests.delete(url, headers=self.headers)
+
+            if response.status_code == 401:
+                raise TrackerAuthenticationError("GitHub authentication failed")
+            elif response.status_code == 404:
+                logger.warning(
+                    f"Resource not found during DELETE request to {endpoint}"
+                )
+                return True  # Treat not found as a success for cleanup
+            elif response.status_code >= 400:
+                raise TrackerResponseError(
+                    f"GitHub API error: {response.status_code} - {response.text}"
+                )
+
+            return response.status_code == 204
         except requests.RequestException as e:
             raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
 
@@ -529,6 +566,7 @@ class GitHubTracker(BaseTracker):
         Args:
             db: The database session.
         """
+        results = {"unregistered": 0, "failed": 0, "not_found": 0}
         logger.info(
             f"Starting to unregister all webhooks for tracker {self.tracker_id}."
         )
@@ -538,24 +576,158 @@ class GitHubTracker(BaseTracker):
                 .join(Organization)
                 .filter(Organization.tracker_id == self.tracker_id)
                 .all()
+            ) + (
+                db.query(Webhook)
+                .join(Project)
+                .join(Organization)
+                .filter(Organization.tracker_id == self.tracker_id)
+                .all()
             )
 
             if not webhooks_to_delete:
                 logger.info("No webhooks found in the database for this tracker.")
-                return
+                return results
 
             for webhook in webhooks_to_delete:
-                logger.info(
-                    f"Attempting to unregister webhook {webhook.external_id} for org '{webhook.organization.identifier}'..."
-                )
-                self.unregister_webhook(db=db, webhook=webhook)
+                if webhook.organization_id:
+                    organization = crud_organization.get(db, id=webhook.organization_id)
+                    logger.info(
+                        f"Attempting to unregister webhook {webhook.external_id} for org '{organization.identifier}'..."
+                    )
+                else:
+                    project = crud_project.get(db, id=webhook.project_id)
+                    logger.info(
+                        f"Attempting to unregister webhook {webhook.external_id} for project '{project.name}'..."
+                    )
+                if self.unregister_webhook(db=db, webhook=webhook):
+                    results["unregistered"] += 1
+                else:
+                    results["failed"] += 1
 
         except Exception as e:
             logger.error(
                 f"An unexpected error occurred during webhook unregistration for tracker {self.tracker_id}: {e}",
                 exc_info=True,
             )
-
+            results["failed"] += 1
         logger.info(
             f"Finished unregistering all webhooks for tracker {self.tracker_id}."
         )
+        logger.info(f"GitHub unregister_all_webhooks summary: {results}")
+        return results
+
+    def cleanup_stale_webhooks(
+        self, spacebridge_url: str, cleanup_projects: bool = False
+    ) -> dict:
+        """
+        Deletes stale webhooks pointing to the given SpaceBridge URL.
+
+        By default, this method cleans up organization-level webhooks.
+        If `cleanup_projects` is True, it cleans up repository-level webhooks instead.
+
+        Args:
+            spacebridge_url: The base URL of the SpaceBridge instance.
+            cleanup_projects: If True, clean up repository-level webhooks. Defaults to False.
+
+        Returns:
+            A dictionary summarizing the actions taken, e.g., `{"unregistered": count, "failed": count}`.
+        """
+        results = {"unregistered": 0, "failed": 0}
+        logger.info(
+            f"Starting cleanup of stale webhooks for URL: {spacebridge_url} (cleanup_projects={cleanup_projects})"
+        )
+
+        if cleanup_projects:
+            self._cleanup_project_webhooks(spacebridge_url, results)
+        else:
+            self._cleanup_organization_webhooks(spacebridge_url, results)
+
+        logger.info(f"Webhook cleanup summary: {results}")
+        return results
+
+    def _cleanup_organization_webhooks(
+        self, spacebridge_url: str, results: dict
+    ) -> None:
+        """Helper to clean up organization-level webhooks."""
+        try:
+            organizations = self.get_organizations()
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(f"Failed to retrieve organizations: {e}")
+            return
+
+        for org in organizations:
+            org_login = org.get("name")
+            if not org_login or org.get("id") == "personal":
+                continue
+
+            logger.info(f"Checking webhooks for organization: {org_login}")
+            try:
+                hooks = self._make_request(f"orgs/{org_login}/hooks")
+            except (TrackerConnectionError, TrackerResponseError) as e:
+                logger.error(f"Failed to list webhooks for {org_login}: {e}")
+                results["failed"] += 1
+                continue
+
+            for hook in hooks:
+                self._process_hook(
+                    hook, spacebridge_url, results, f"orgs/{org_login}/hooks"
+                )
+
+    def _cleanup_project_webhooks(self, spacebridge_url: str, results: dict) -> None:
+        """Helper to clean up repository-level webhooks."""
+        try:
+            repos = self._make_request("user/repos", {"per_page": 100})
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(f"Failed to retrieve repositories: {e}")
+            return
+
+        for repo in repos:
+            repo_full_name = repo.get("full_name")
+            if not repo_full_name:
+                continue
+
+            logger.info(f"Checking webhooks for repository: {repo_full_name}")
+            try:
+                hooks = self._make_request(f"repos/{repo_full_name}/hooks")
+            except (TrackerConnectionError, TrackerResponseError) as e:
+                logger.error(f"Failed to list webhooks for {repo_full_name}: {e}")
+                results["failed"] += 1
+                continue
+
+            for hook in hooks:
+                self._process_hook(
+                    hook, spacebridge_url, results, f"repos/{repo_full_name}/hooks"
+                )
+
+    def _process_hook(
+        self, hook: dict, spacebridge_url: str, results: dict, base_endpoint: str
+    ) -> None:
+        """Processes a single webhook for cleanup."""
+        hook_id = hook.get("id")
+        hook_config = hook.get("config", {})
+        hook_url = hook_config.get("url")
+
+        if not all([hook_id, hook_url]):
+            return
+
+        if hook_url.startswith(spacebridge_url):
+            logger.info(
+                f"Found stale webhook {hook_id} in {base_endpoint} pointing to {hook_url}. Deleting..."
+            )
+            try:
+                delete_endpoint = f"{base_endpoint}/{hook_id}"
+                if self._make_request_delete(delete_endpoint):
+                    logger.info(
+                        f"Successfully deleted webhook {hook_id} from {base_endpoint}."
+                    )
+                    results["unregistered"] += 1
+                else:
+                    logger.error(
+                        f"Failed to delete webhook {hook_id} from {base_endpoint}."
+                    )
+                    results["failed"] += 1
+            except (TrackerConnectionError, TrackerResponseError) as e:
+                logger.error(
+                    f"An error occurred while deleting webhook {hook_id} from {base_endpoint}: {e}"
+                )
+                results["failed"] += 1

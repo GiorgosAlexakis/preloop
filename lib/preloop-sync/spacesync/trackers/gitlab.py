@@ -20,7 +20,7 @@ from .base import BaseTracker
 from spacemodels.models.project import Project
 from spacemodels.models.organization import Organization
 from spacemodels.models.webhook import Webhook
-from spacemodels.crud import crud_webhook
+from spacemodels.crud import crud_webhook, crud_project, crud_organization
 
 
 class GitLabTracker(BaseTracker):
@@ -65,7 +65,7 @@ class GitLabTracker(BaseTracker):
         except gitlab.exceptions.GitlabHttpError as e:
             raise TrackerConnectionError(f"GitLab connection error: {str(e)}")
 
-    @retry(max_attempts=3, exceptions=(TrackerConnectionError, TrackerResponseError))
+    @retry(max_attempts=2, exceptions=(TrackerConnectionError, TrackerResponseError))
     def _make_request(self, method, *args, **kwargs):
         """
         Execute a GitLab API request with error handling.
@@ -683,6 +683,7 @@ class GitLabTracker(BaseTracker):
                 logger.error(
                     f"Webhook {webhook.id} has no organization or project associated."
                 )
+                crud_webhook.remove(db, id=webhook.id)
                 return False
 
             logger.info(
@@ -704,6 +705,7 @@ class GitLabTracker(BaseTracker):
             logger.warning(
                 f"Webhook {webhook_id} for GitLab {entity_type} {entity_id_for_log} not found during delete. Assuming already unregistered."
             )
+            crud_webhook.remove(db, id=webhook.id)
         except gitlab.exceptions.GitlabGetError as e:
             if e.response_code != 404:
                 logger.error(
@@ -714,11 +716,13 @@ class GitLabTracker(BaseTracker):
             logger.warning(
                 f"GitLab {entity_type} {entity_id_for_log} not found when trying to unregister webhook. Assuming webhook is already gone."
             )
+            crud_webhook.remove(db, id=webhook.id)
         except Exception as e:
             logger.error(
                 f"Unexpected error unregistering webhook for GitLab {entity_type} {entity_id_for_log}: {e}",
                 exc_info=True,
             )
+            crud_webhook.remove(db, id=webhook.id)
             return False
 
         # If we reach here, the webhook is gone from GitLab (or was never there), so remove from DB
@@ -740,18 +744,113 @@ class GitLabTracker(BaseTracker):
         """
         results = {"unregistered": 0, "failed": 0, "not_found": 0}
         logger.info(f"Unregistering all webhooks for GitLab tracker {self.tracker_id}.")
-        webhooks = crud_webhook.get_by_tracker(db, tracker_id=self.tracker_id)
+        orgs = crud_organization.get_for_tracker(db, tracker_id=self.tracker_id)
+        for org in orgs:
+            results = self.unregister_all_webhooks_for_organization(db, org)
+        if results["unregistered"] > 0:
+            logger.info(
+                f"Unregistered {results['unregistered']} webhooks for GitLab tracker {self.tracker_id}."
+            )
+        else:
+            projects = crud_project.get_for_tracker(db, tracker_id=self.tracker_id)
+            for project in projects:
+                results = self.unregister_all_webhooks_for_project(db, project)
+            if results["unregistered"] > 0:
+                logger.info(
+                    f"Unregistered {results['unregistered']} webhooks for GitLab tracker {self.tracker_id}."
+                )
+            else:
+                logger.info(f"No webhooks found for GitLab tracker {self.tracker_id}.")
 
-        if not webhooks:
-            logger.info("No webhooks found in database for this tracker.")
-            results["not_found"] = 1
-            return results
+        logger.info(f"GitLab unregister_all_webhooks summary: {results}")
+        return results
 
+    def unregister_all_webhooks_for_organization(
+        self, db: Session, organization: Organization
+    ) -> Dict[str, int]:
+        results = {"unregistered": 0, "failed": 0, "not_found": 0}
+        webhooks = crud_webhook.get_all_by_organization(
+            db, organization_id=organization.id
+        )
         for webhook in webhooks:
             if self.unregister_webhook(db, webhook=webhook):
                 results["unregistered"] += 1
             else:
                 results["failed"] += 1
 
-        logger.info(f"GitLab unregister_all_webhooks summary: {results}")
+        logger.info(
+            f"GitLab unregister_all_webhooks_for_organization summary: {results}"
+        )
         return results
+
+    def unregister_all_webhooks_for_project(
+        self, db: Session, project: Project
+    ) -> Dict[str, int]:
+        results = {"unregistered": 0, "failed": 0, "not_found": 0}
+        webhooks = crud_webhook.get_all_by_project(db, project_id=project.id)
+        for webhook in webhooks:
+            if self.unregister_webhook(db, webhook=webhook):
+                results["unregistered"] += 1
+            else:
+                results["failed"] += 1
+
+        logger.info(f"GitLab unregister_all_webhooks_for_project summary: {results}")
+        return results
+
+    def cleanup_stale_webhooks(self, spacebridge_url: str) -> dict:
+        """
+        Deletes all webhooks from all accessible projects that point to a specific SpaceBridge URL.
+
+        This is useful for cleaning up stale webhooks if the SpaceBridge instance URL changes.
+
+        Args:
+            spacebridge_url: The base URL of the SpaceBridge instance to remove.
+
+        Returns:
+            A dictionary summarizing the actions taken, e.g., `{"unregistered": count, "failed": count}`.
+        """
+        summary = {"unregistered": 0, "failed": 0}
+        logger.info(
+            f"Starting cleanup of stale GitLab webhooks for URL: {spacebridge_url}"
+        )
+
+        try:
+            projects = self._make_request(self.gl.projects.list, all=True, owned=True)
+        except Exception as e:
+            logger.error(f"Failed to list GitLab projects for webhook cleanup: {e}")
+            return summary
+
+        for project in projects:
+            try:
+                hooks = self._make_request(project.hooks.list, all=True)
+                for hook in hooks:
+                    if hook.url.startswith(spacebridge_url):
+                        logger.info(
+                            f"Found stale webhook {hook.id} in project {project.path_with_namespace} (URL: {hook.url}). Deleting."
+                        )
+                        try:
+                            self._make_request(project.hooks.delete, hook.id)
+                            summary["unregistered"] += 1
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to delete webhook {hook.id} from project {project.path_with_namespace}: {e}"
+                            )
+                            summary["failed"] += 1
+            except gitlab.exceptions.GitlabListError as e:
+                if e.response_code == 403:
+                    logger.warning(
+                        f"Permission denied to list hooks for project {project.path_with_namespace}. Skipping."
+                    )
+                else:
+                    logger.error(
+                        f"Failed to list webhooks for project {project.path_with_namespace}: {e}"
+                    )
+                    summary["failed"] += 1
+            except Exception as e:
+                logger.error(
+                    f"An unexpected error occurred while processing project {project.path_with_namespace}: {e}"
+                )
+                summary["failed"] += 1
+
+        logger.info(f"GitLab stale webhook cleanup summary: {summary}")
+        return summary

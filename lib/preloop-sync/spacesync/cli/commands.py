@@ -102,11 +102,23 @@ def status(verbose: bool) -> None:
     type=str,
     help="(Optional) Specify a particular webhook URL pattern to unregister. If not provided, attempts to unregister SpaceBridge-managed webhooks.",
 )
+@click.option(
+    "--cleanup-all",
+    is_flag=True,
+    help="Unregister all webhooks pointing to SPACEBRIDGE_URL from configured trackers, even if not in the database.",
+)
+@click.option(
+    "--cleanup-project-webhooks",
+    is_flag=True,
+    help="For GitHub, cleanup repository-level webhooks instead of organization-level.",
+)
 def unregister_webhooks_command(
     account_id: Optional[uuid.UUID],
     account_email: Optional[str],
     tracker_id: Optional[uuid.UUID],
     webhook_url: Optional[str],
+    cleanup_all: bool,
+    cleanup_project_webhooks: bool,
 ) -> None:
     """
     Unregisters webhooks from configured trackers.
@@ -205,14 +217,35 @@ def unregister_webhooks_command(
     total_failed = 0
     total_not_found = 0
 
+    spacebridge_url = os.getenv("SPACEBRIDGE_URL")
+
     for tracker_orm_instance in trackers_to_process:
         click.echo(
             f"\nProcessing tracker: {tracker_orm_instance.id} (Type: {tracker_orm_instance.tracker_type})"
         )
         try:
-            # Instantiate TrackerClient which then instantiates the specific tracker (GitHub, GitLab, Jira)
-            # The TrackerClient needs the ORM tracker object.
             tracker_client_instance = TrackerClient(tracker=tracker_orm_instance)
+
+            if cleanup_all:
+                logger.info(f"Running cleanup for tracker {tracker_orm_instance.id}...")
+                if hasattr(tracker_client_instance.client, "cleanup_stale_webhooks"):
+                    if tracker_orm_instance.tracker_type == "github":
+                        tracker_client_instance.client.cleanup_stale_webhooks(
+                            spacebridge_url=spacebridge_url,
+                            cleanup_projects=cleanup_project_webhooks,
+                        )
+                    else:
+                        tracker_client_instance.client.cleanup_stale_webhooks(
+                            spacebridge_url=spacebridge_url
+                        )
+                    click.echo(
+                        f"  Cleanup of stale webhooks for tracker {tracker_orm_instance.id} completed."
+                    )
+                else:
+                    click.echo(
+                        f"  Tracker type {tracker_orm_instance.tracker_type} does not support --cleanup-all."
+                    )
+                continue
 
             if not hasattr(tracker_client_instance.client, "unregister_all_webhooks"):
                 click.echo(
@@ -220,11 +253,7 @@ def unregister_webhooks_command(
                 )
                 continue
 
-            # Call the unregister_all_webhooks method on the specific client (e.g., GitHubTracker instance)
-            # The specific client is tracker_client_instance.client
-            summary = tracker_client_instance.client.unregister_all_webhooks(
-                webhook_url_pattern=target_webhook_url_pattern
-            )
+            summary = tracker_client_instance.client.unregister_all_webhooks(db=db)
 
             click.echo(f"  Unregistered: {summary.get('unregistered', 0)}")
             click.echo(f"  Failed: {summary.get('failed', 0)}")
@@ -239,7 +268,7 @@ def unregister_webhooks_command(
                 f"CLI unregister-webhooks: Error processing tracker {tracker_orm_instance.id}",
                 exc_info=True,
             )
-            total_failed += 1  # Count this as a general failure for this tracker
+            total_failed += 1
 
     click.echo("\n--- Summary ---")
     click.echo(f"Total webhooks unregistered: {total_unregistered}")
