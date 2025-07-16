@@ -59,7 +59,7 @@ DEFAULT_JIRA_SUBSCRIBED_EVENTS = [
 @router.post("/private/webhooks/{tracker_type}/{organization_id}")
 async def receive_webhook(
     tracker_type: str,
-    organization_id: int,
+    organization_id: str,
     request: Request,
     db: Session = Depends(get_db_session),
 ):

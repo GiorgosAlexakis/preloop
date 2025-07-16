@@ -2417,7 +2417,7 @@ paths:
         in: path
         required: true
         schema:
-          type: integer
+          type: string
           title: Organization Id
       responses:
         '200':
