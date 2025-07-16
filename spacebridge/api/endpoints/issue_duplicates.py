@@ -503,7 +503,9 @@ async def execute_issue_duplicate_resolution(
             resolution_at=datetime.utcnow(),
             resolution_reason=resolution.resolution_reason,
         )
-        crud_issue_duplicate.update(db=db, db_obj=duplicate_record, obj_in=update_data)
+        crud_issue_duplicate.update(
+            db=db, db_obj=duplicate_record, obj_in=update_data.dict(exclude_unset=True)
+        )
     else:
         # This case should ideally not be reached if the frontend is behaving correctly.
         raise HTTPException(status_code=404, detail="Issue duplicate record not found")
