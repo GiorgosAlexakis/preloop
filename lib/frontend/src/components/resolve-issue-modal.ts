@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   DuplicatePair,
@@ -14,6 +14,11 @@ import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '@shoelace-style/shoelace/dist/components/tag/tag.js';
+import '@shoelace-style/shoelace/dist/components/tab/tab.js';
+import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
+import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
+
+import consoleStyles from '../styles/console-styles.css?inline';
 
 type ResolutionStep = 'initial' | 'close' | 'merge' | 'deconflict';
 
@@ -36,10 +41,29 @@ export class ResolveIssueModal extends LitElement {
   @state() private _deconflictedDescription2 = '';
 
   @state() private _resolutionSummary = '';
+  @state() private _modalTitle = 'Resolve Similar Issues';
+
+  private updateTitleForStep(step: ResolutionStep) {
+    switch (step) {
+      case 'initial':
+        this._modalTitle = 'Resolve Similar Issues';
+        break;
+      case 'close':
+        this._modalTitle = 'Resolve Similar Issues → Close as Duplicate';
+        break;
+      case 'merge':
+        this._modalTitle = 'Resolve Similar Issues → Merge Issues';
+        break;
+      case 'deconflict':
+        this._modalTitle = 'Resolve Similar Issues → Deconflict Issues';
+        break;
+    }
+  }
 
   private handleOpen() {
     this._isSubmitting = false;
     this._resolutionStep = 'initial';
+    this.updateTitleForStep('initial');
   }
 
   private handleClose() {
@@ -51,10 +75,12 @@ export class ResolveIssueModal extends LitElement {
 
   private goBack() {
     this._resolutionStep = 'initial';
+    this.updateTitleForStep('initial');
   }
 
   private async startResolution(step: ResolutionStep) {
     this._resolutionStep = step;
+    this.updateTitleForStep(step);
 
     // Reset previous suggestions
     this._mergedTitle = '';
@@ -236,7 +262,6 @@ export class ResolveIssueModal extends LitElement {
     const issueB = this.duplicatePair?.issue2;
     return html`
       <div class="step-container">
-        <h2>Close Duplicate Issue</h2>
         <p>Select which issue to close. The other will remain open.</p>
         <div class="initial-options-group">
           <div
@@ -277,19 +302,21 @@ export class ResolveIssueModal extends LitElement {
     const issueB = this.duplicatePair?.issue2;
     return html`
       <div class="step-container">
-        <h2>Merge Issues</h2>
-        <sl-radio-group
-          label="Merge Direction"
-          value=${this._mergeTarget}
-          @sl-change=${(e: any) => (this._mergeTarget = e.target.value)}
-        >
-          <sl-radio value="B"
-            >Merge ${issueA?.key} into ${issueB?.key}</sl-radio
-          >
-          <sl-radio value="A"
-            >Merge ${issueB?.key} into ${issueA?.key}</sl-radio
-          >
-        </sl-radio-group>
+        <h2 class="issue-comparison-header">Original Issues</h2>
+        <div class="issue-comparison">
+          <div class="issue-panel">
+            <div class="issue-header"><a href="${issueA?.url}" target="_blank">${issueA?.key}</a></div>
+            <h3 class="issue-title">${issueA?.title}</h3>
+            <div class="issue-description">${issueA?.description}</div>
+          </div>
+          <div class="issue-panel">
+            <div class="issue-header"><a href="${issueB?.url}" target="_blank">${issueB?.key}</a></div>
+            <h3 class="issue-title">${issueB?.title}</h3>
+            <div class="issue-description">${issueB?.description}</div>
+          </div>
+        </div>
+
+        <h2 class="issue-comparison-header">Proposed Issue</h2>
         ${this._isLoadingSuggestion
           ? html`<div class="loading-suggestion">
               <sl-spinner></sl-spinner>
@@ -298,12 +325,10 @@ export class ResolveIssueModal extends LitElement {
           : html`
               <div class="form-group">
                 <sl-input
-                  label="Merged Issue Title"
                   .value=${this._mergedTitle}
                   @sl-input=${(e: any) => (this._mergedTitle = e.target.value)}
                 ></sl-input>
                 <sl-textarea
-                  label="Merged Issue Description"
                   .value=${this._mergedDescription}
                   @sl-input=${(e: any) =>
                     (this._mergedDescription = e.target.value)}
@@ -311,13 +336,29 @@ export class ResolveIssueModal extends LitElement {
                 ></sl-textarea>
               </div>
             `}
+
         <div class="footer-buttons">
           <sl-button @click="${this.goBack}">Back</sl-button>
+          <sl-button-group label="Merge Direction">
+            <sl-button
+              variant=${this._mergeTarget === 'A' ? 'primary' : 'default'}
+              @click=${() => (this._mergeTarget = 'A')}
+              ?disabled=${this._isLoadingSuggestion}
+              >Merge into ${issueA?.key}</sl-button
+            >
+            <sl-button
+              variant=${this._mergeTarget === 'B' ? 'primary' : 'default'}
+              @click=${() => (this._mergeTarget = 'B')}
+              ?disabled=${this._isLoadingSuggestion}
+              >Merge into ${issueB?.key}</sl-button
+            >
+          </sl-button-group>
           <sl-button
             variant="primary"
             .loading=${this._isSubmitting}
+            ?disabled=${this._isLoadingSuggestion}
             @click="${() => this.handleFinalResolve('MERGE')}"
-            >Resolve Merge</sl-button
+            >Resolve by Merging</sl-button
           >
         </div>
       </div>
@@ -330,59 +371,68 @@ export class ResolveIssueModal extends LitElement {
     const issueB = this.duplicatePair?.issue2;
     return html`
       <div class="step-container">
-        <h2>Deconflict Issues</h2>
-        <p>
-          Edit the titles and descriptions to make these issues distinct. Both
-          will be updated.
-        </p>
+
+        <h2 class="issue-comparison-header">Original Issues</h2>
+        <div class="issue-comparison">
+          <div class="issue-panel">
+            <div class="issue-header"><a href="${issueA?.url}" target="_blank">${issueA?.key}</a></div>
+            <h3 class="issue-title">${issueA?.title}</h3>
+            <div class="issue-description">${issueA?.description}</div>
+          </div>
+          <div class="issue-panel">
+            <div class="issue-header"><a href="${issueB?.url}" target="_blank">${issueB?.key}</a></div>
+            <h3 class="issue-title">${issueB?.title}</h3>
+            <div class="issue-description">${issueB?.description}</div>
+          </div>
+        </div>
+
+        <h2 class="issue-comparison-header">Proposed Changes</h2>
         ${this._isLoadingSuggestion
           ? html`<div class="loading-suggestion">
               <sl-spinner></sl-spinner>
               <div>Generating suggestion...</div>
             </div>`
           : html`
-              <div class="form-group">
-                <div class="sub-form-group">
-                  <h3>${issueA?.key}: ${issueA?.title}</h3>
+              <div class="issue-comparison">
+                <div class="issue-panel form-group">
+                  <div class="issue-header">${issueA?.key}</div>
                   <sl-input
-                    label="New Title"
                     .value=${this._deconflictedTitle1}
                     @sl-input=${(e: any) =>
                       (this._deconflictedTitle1 = e.target.value)}
                   ></sl-input>
                   <sl-textarea
-                    label="New Description"
                     .value=${this._deconflictedDescription1}
                     @sl-input=${(e: any) =>
                       (this._deconflictedDescription1 = e.target.value)}
-                    rows="6"
+                    rows="8"
                   ></sl-textarea>
                 </div>
-                <div class="sub-form-group">
-                  <h3>${issueB?.key}: ${issueB?.title}</h3>
+                <div class="issue-panel form-group">
+                  <div class="issue-header">${issueB?.key}</div>
                   <sl-input
-                    label="New Title"
                     .value=${this._deconflictedTitle2}
                     @sl-input=${(e: any) =>
                       (this._deconflictedTitle2 = e.target.value)}
                   ></sl-input>
                   <sl-textarea
-                    label="New Description"
                     .value=${this._deconflictedDescription2}
                     @sl-input=${(e: any) =>
                       (this._deconflictedDescription2 = e.target.value)}
-                    rows="6"
+                    rows="8"
                   ></sl-textarea>
                 </div>
               </div>
             `}
+
         <div class="footer-buttons">
           <sl-button @click="${this.goBack}">Back</sl-button>
           <sl-button
             variant="primary"
             .loading=${this._isSubmitting}
+            ?disabled=${this._isLoadingSuggestion}
             @click="${() => this.handleFinalResolve('DECONFLICT')}"
-            >Resolve Conflict</sl-button
+            >Resolve by Deconflicting</sl-button
           >
         </div>
       </div>
@@ -405,109 +455,145 @@ export class ResolveIssueModal extends LitElement {
         content = this.renderInitialStep();
     }
 
-    const issueAKey = this.duplicatePair?.issue1?.key || 'Issue A';
-    const issueBKey = this.duplicatePair?.issue2?.key || 'Issue B';
+    const issue1 = this.duplicatePair?.issue1;
+    const issue2 = this.duplicatePair?.issue2;
 
     return html`
       <sl-dialog
-        label="Resolve Duplicates: ${issueAKey} & ${issueBKey}"
+        label=${this._modalTitle}
         .open=${this.isOpen}
         @sl-show=${this.handleOpen}
-        @sl-hide=${this.handleClose}
+        @sl-after-hide=${this.handleClose}
+        @sl-initial-focus=${(e: Event) => e.preventDefault()}
+        class="resolve-issue-dialog"
       >
+        ${this._resolutionStep !== 'merge' && this._resolutionStep !== 'deconflict'
+          ? html`
+              <div class="issue-comparison">
+                <div class="issue-panel">
+                  <div class="issue-header"><a href="${issue1?.url}" target="_blank">${issue1?.key}</a></div>
+                  <h3 class="issue-title">${issue1?.title}</h3>
+                  <div class="issue-description">${issue1?.description}</div>
+                </div>
+                <div class="issue-panel">
+                  <div class="issue-header"><a href="${issue2?.url}" target="_blank">${issue2?.key}</a></div>
+                  <h3 class="issue-title">${issue2?.title}</h3>
+                  <div class="issue-description">${issue2?.description}</div>
+                </div>
+              </div>
+            `
+          : ''}
+
         ${content}
       </sl-dialog>
     `;
   }
 
-  static styles = css`
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
     sl-dialog::part(panel) {
-      max-width: 80ch;
+      width: 1280px;
+      padding: 1rem;
     }
-    sl-dialog::part(header) {
-      border-bottom: 1px solid var(--sl-color-neutral-0);
+
+    h2 {
+      position: relative;
+      text-align: left;
+      font-size: 1.2rem;
+      font-weight: 300;
+      margin-bottom: 1rem;
     }
-    p,
-    ul,
-    li {
-      line-height: 1.6;
-    }
-    .step-container,
-    .form-group,
-    .sub-form-group {
-      display: flex;
-      flex-direction: column;
-      gap: var(--sl-spacing-large);
-    }
-    .llm-suggestion {
-      background-color: var(--sl-color-neutral-50);
-      border: 1px solid var(--sl-color-neutral-200);
-      border-radius: var(--sl-border-radius-medium);
-      padding: var(--sl-spacing-medium);
-    }
-    .suggestion-header {
-      display: flex;
-      align-items: center;
-      gap: var(--sl-spacing-small);
-      margin-bottom: var(--sl-spacing-small);
-      font-weight: var(--sl-font-weight-semibold);
-    }
-    .suggestion-reason {
-      font-size: var(--sl-font-size-medium);
-      color: var(--sl-color-neutral-700);
-      margin: 0;
-    }
+
     .initial-options-group {
-      display: flex;
-      flex-direction: column;
-      gap: var(--sl-spacing-medium);
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      margin-top: 1rem;
     }
+
+    @media (min-width: 992px) {
+      .initial-options-group {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
     .action-card {
-      padding: var(--sl-spacing-large);
-      border: 1px solid var(--sl-color-neutral-200);
+      border: 1px solid var(--sl-color-neutral-300);
       border-radius: var(--sl-border-radius-medium);
+      padding: 1rem;
       cursor: pointer;
-      transition: all 0.2s ease-in-out;
+      transition: all 0.2s ease;
     }
     .action-card:hover {
+      background-color: var(--sl-color-primary-50);
       border-color: var(--sl-color-primary-300);
-      background-color: var(--sl-color-neutral-50);
     }
     .action-title {
-      color: var(--sl-color-neutral-800);
-      margin-bottom: var(--sl-spacing-x-small);
+      font-weight: var(--sl-font-weight-semibold);
     }
     .action-description {
+      font-size: var(--sl-font-size-small);
       color: var(--sl-color-neutral-600);
-    }
-    .options-group {
-      display: flex;
-      justify-content: center;
-      gap: var(--sl-spacing-medium);
+      margin-top: 0.5rem;
     }
     .footer-buttons {
       display: flex;
-      justify-content: flex-start;
-      margin-top: var(--sl-spacing-large);
+      justify-content: space-between;
+      margin-top: 1.5rem;
     }
-    .footer-buttons:not(:has(sl-button:nth-child(2))) {
-      justify-content: flex-start;
+    sl-radio-group {
+      margin-bottom: 1rem;
     }
-    .footer-buttons sl-button:first-child:not(:only-child) {
-      margin-right: auto;
+    sl-radio-group::part(label) {
+      font-weight: bold;
     }
-    .sub-form-group h3 {
-      margin-bottom: calc(-1 * var(--sl-spacing-small));
+
+    .issue-comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .issue-header {
+      font-size: var(--sl-font-size-medium);
+      margin-bottom: 0.5rem;
+    }
+    .issue-title {
+      font-size: var(--sl-font-size-medium);
+      font-weight: var(--sl-font-weight-semibold);
+      margin-top: 0;
+      margin-bottom: 1rem;
+    }
+    .issue-description {
+      font-size: var(--sl-font-size-small);
+      white-space: pre-wrap; /* Allows wrapping of long lines */
+      max-height: 300px;
+      overflow-y: auto;
+      background-color: var(--sl-color-neutral-100);
+      padding: 0.75rem;
+      border-radius: var(--sl-border-radius-medium);
+      color: var(--sl-color-neutral-700);
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    sl-textarea::part(textarea) {
+      font-size: var(--sl-font-size-small);
+      max-height: 200px;
+      overflow-y: auto;
     }
     .loading-suggestion {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: var(--sl-spacing-medium);
-      padding: var(--sl-spacing-large) 0;
+      justify-content: center;
+      padding: 2rem;
+      gap: 1rem;
+      color: var(--sl-color-neutral-600);
     }
-    .step-container {
-      padding: var(--sl-spacing-medium);
-    }
-  `;
+  `,
+];
 }
