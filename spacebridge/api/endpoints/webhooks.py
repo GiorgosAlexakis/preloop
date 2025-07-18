@@ -56,10 +56,10 @@ DEFAULT_JIRA_SUBSCRIBED_EVENTS = [
 ]
 
 
-@router.post("/private/webhooks/{tracker_type}/{identifier_in_url}")
+@router.post("/private/webhooks/{tracker_type}/{organization_id}")
 async def receive_webhook(
     tracker_type: str,
-    identifier_in_url: str,
+    organization_id: str,
     request: Request,
     db: Session = Depends(get_db_session),
 ):
@@ -70,7 +70,7 @@ async def receive_webhook(
     last_webhook_update timestamp.
     """
     logger.info(
-        f"Received webhook for tracker_type={tracker_type}, identifier_in_url={identifier_in_url}"
+        f"Received webhook for tracker_type={tracker_type}, organization_id={organization_id}"
     )
 
     # --- 1. Read Raw Body ---
@@ -102,21 +102,19 @@ async def receive_webhook(
     organization_data = (
         db.query(Organization)
         .options(joinedload(Organization.tracker))
-        .filter(Organization.identifier == identifier_in_url)
+        .filter(Organization.id == organization_id)
         .first()
     )
     if not organization_data:
         logger.warning(
-            f"Organization not found for identifier={identifier_in_url}, tracker_type={tracker_type}"
+            f"Organization not found for id={organization_id}, tracker_type={tracker_type}"
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
         )
 
     if not organization_data.tracker:
-        logger.error(
-            f"Tracker not found for organization ID {organization_data.id}, identifier {identifier_in_url}"
-        )
+        logger.error(f"Tracker not found for organization ID {organization_data.id}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Tracker configuration error",
@@ -137,7 +135,7 @@ async def receive_webhook(
 
     if not resolved_tracker:
         logger.error(
-            f"Failed to resolve tracker for {tracker_type} with identifier {identifier_in_url}"
+            f"Failed to resolve tracker for {tracker_type} with organization_id {organization_id}"
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

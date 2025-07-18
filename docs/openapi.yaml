@@ -2394,7 +2394,7 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/private/webhooks/{tracker_type}/{identifier_in_url}:
+  /api/v1/private/webhooks/{tracker_type}/{organization_id}:
     post:
       tags:
       - Webhooks
@@ -2405,7 +2405,7 @@ paths:
         Parses the payload to identify the organization and updates its
 
         last_webhook_update timestamp.'
-      operationId: receive_webhook_api_v1_private_webhooks__tracker_type___identifier_in_url__post
+      operationId: receive_webhook_api_v1_private_webhooks__tracker_type___organization_id__post
       parameters:
       - name: tracker_type
         in: path
@@ -2413,12 +2413,12 @@ paths:
         schema:
           type: string
           title: Tracker Type
-      - name: identifier_in_url
+      - name: organization_id
         in: path
         required: true
         schema:
           type: string
-          title: Identifier In Url
+          title: Organization Id
       responses:
         '200':
           description: Successful Response

@@ -25,7 +25,7 @@ def test_client():
 def configured_mock_org_fixture():
     """A basic mock organization instance. webhook_secret is configured per-test."""
     org = MagicMock(name="configured_org_instance_mock")
-    org.id = "org-123"
+    org.id = 123
     org.name = "Test Organization"
     org.identifier = "test-org-fixture"
     org.last_webhook_update = None
@@ -74,7 +74,7 @@ class TestWebhooksEndpoint:
         self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = None
 
         response = self.test_client.post(
-            "/api/v1/private/webhooks/github/nonexistent-org",  # Assuming github for this test case
+            "/api/v1/private/webhooks/github/123",  # Assuming github for this test case
             json={"event": "test"},
             headers={
                 "X-Hub-Signature-256": "sha256=dummy"
@@ -109,7 +109,7 @@ class TestWebhooksEndpoint:
         self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/github/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/github/{current_org_mock.id}",
             json={"event": "test"},
             headers={
                 "X-Hub-Signature-256": "sha256=dummy"
@@ -142,7 +142,7 @@ class TestWebhooksEndpoint:
         self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/github/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/github/{current_org_mock.id}",
             json={"event": "test"},
             headers={},  # No signature header
         )
@@ -171,7 +171,7 @@ class TestWebhooksEndpoint:
         self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/github/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/github/{current_org_mock.id}",
             json={"event": "test"},
             headers={
                 "X-Hub-Signature-256": "sha1=invalid-signature-format"
@@ -213,7 +213,7 @@ class TestWebhooksEndpoint:
         ).hexdigest()
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/github/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/github/{current_org_mock.id}",
             json=payload_dict,
             headers={"X-Hub-Signature-256": f"sha256={invalid_signature}"},
         )
@@ -277,7 +277,7 @@ class TestWebhooksEndpoint:
         ).hexdigest()
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/github/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/github/{current_org_mock.id}",
             json=payload_dict,
             headers={
                 "X-Hub-Signature-256": f"sha256={signature}",
@@ -308,7 +308,7 @@ class TestWebhooksEndpoint:
         self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/gitlab/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/gitlab/{current_org_mock.id}",
             json={"event": "test"},
             headers={},  # No token header
         )
@@ -337,7 +337,7 @@ class TestWebhooksEndpoint:
         self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/gitlab/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/gitlab/{current_org_mock.id}",
             json={"event": "test"},
             headers={"X-Gitlab-Token": "invalid-token"},
         )
@@ -383,7 +383,7 @@ class TestWebhooksEndpoint:
         mock_crud_issue.create.return_value = MagicMock()
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/gitlab/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/gitlab/{current_org_mock.id}",
             json={
                 "object_kind": "issue",
                 "object_attributes": {
@@ -424,7 +424,7 @@ class TestWebhooksEndpoint:
 
         tracker_name = "unsupported-tracker"
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/{tracker_name}/any-identifier",  # Identifier doesn't matter
+            f"/api/v1/private/webhooks/{tracker_name}/123",  # Identifier doesn't matter
             json={"event": "test"},
         )
         # mock_crud_instance.get_by_identifier.assert_not_called() # DB query for org should not happen
@@ -461,7 +461,7 @@ class TestWebhooksEndpoint:
         ).hexdigest()
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/github/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/github/{current_org_mock.id}",
             content=invalid_payload_bytes,
             headers={
                 "X-Hub-Signature-256": f"sha256={signature}",
@@ -520,7 +520,7 @@ class TestWebhooksEndpoint:
         ).hexdigest()
 
         response = self.test_client.post(
-            f"/api/v1/private/webhooks/github/{current_org_mock.identifier}",
+            f"/api/v1/private/webhooks/github/{current_org_mock.id}",
             json=payload_dict,
             headers={
                 "X-Hub-Signature-256": f"sha256={signature}",

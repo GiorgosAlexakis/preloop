@@ -85,6 +85,13 @@ spec:
             - name: SMTP_FROM_NAME
               value: {{ .Values.config.smtp.fromName | quote }}
             {{- end }}
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
         - name: spacesync
           command:
             - spacesync
@@ -145,6 +152,13 @@ spec:
             - name: SMTP_FROM_NAME
               value: {{ .Values.config.smtp.fromName | quote }}
             {{- end }}
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
         - name: spacelit
           image: "{{ .Values.spacelit.repository }}:{{ .Values.spacelit.tag }}"
           imagePullPolicy: {{ .Values.spacelit.pullPolicy }}
@@ -156,7 +170,12 @@ spec:
             - name: nginx-config
               mountPath: /etc/nginx/templates
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
       volumes:
         - name: nginx-config
           configMap:
