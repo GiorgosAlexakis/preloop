@@ -38,11 +38,12 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = {"id": "12345"}
         self.mock_jira_client._session.post.return_value = mock_response
-
+        mock_project = MagicMock()
+        mock_project.id = "proj-db-id"
+        mock_project.identifier = "TEST"
         result = self.tracker.register_webhook(
             db=self.mock_db_session,
-            project_id="proj-db-id",
-            project_key="TEST",
+            project=mock_project,
             webhook_url="https://example.com/webhook",
             secret="mysecret",
         )
@@ -59,11 +60,12 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         self.mock_crud_webhook.get_by_project_id.return_value = Webhook(
             id="wh-id", project_id="proj-db-id", external_id="123"
         )
-
+        mock_project = MagicMock()
+        mock_project.id = "proj-db-id"
+        mock_project.identifier = "TEST"
         result = self.tracker.register_webhook(
             db=self.mock_db_session,
-            project_id="proj-db-id",
-            project_key="TEST",
+            project=mock_project,
             webhook_url="https://example.com/webhook",
             secret="mysecret",
         )
@@ -80,63 +82,81 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         mock_webhook = Webhook(
             id="wh-db-id", project_id="proj-db-id", external_id="12345"
         )
-        self.mock_crud_webhook.get_by_project_id.return_value = mock_webhook
         self.mock_jira_client._session.delete.return_value = MagicMock(status_code=204)
-
         result = self.tracker.unregister_webhook(
-            db=self.mock_db_session, project_id="proj-db-id"
+            db=self.mock_db_session, webhook=mock_webhook
         )
 
         self.assertTrue(result)
-        self.mock_crud_webhook.get_by_project_id.assert_called_once_with(
-            self.mock_db_session, project_id="proj-db-id"
-        )
         self.mock_jira_client._session.delete.assert_called_once_with(
             "https://myjira.atlassian.net/rest/webhooks/1.0/webhook/12345"
         )
         self.mock_crud_webhook.remove.assert_called_once_with(
             self.mock_db_session, id="wh-db-id"
         )
-
-    def test_unregister_webhook_not_in_db(self):
-        """Test unregistration is skipped if no webhook is in the DB."""
-        self.mock_crud_webhook.get_by_project_id.return_value = None
-
-        result = self.tracker.unregister_webhook(
-            db=self.mock_db_session, project_id="proj-db-id"
-        )
-
-        self.assertTrue(result)
-        self.mock_crud_webhook.get_by_project_id.assert_called_once_with(
-            self.mock_db_session, project_id="proj-db-id"
-        )
-        self.mock_jira_client._session.delete.assert_not_called()
-        self.mock_crud_webhook.remove.assert_not_called()
 
     def test_unregister_webhook_not_in_jira(self):
         """Test unregistration when webhook is in DB but not in Jira (404)."""
         mock_webhook = Webhook(
             id="wh-db-id", project_id="proj-db-id", external_id="12345"
         )
-        self.mock_crud_webhook.get_by_project_id.return_value = mock_webhook
         self.mock_jira_client._session.delete.side_effect = JIRAError(
             status_code=404, text="Not Found"
         )
-
         result = self.tracker.unregister_webhook(
-            db=self.mock_db_session, project_id="proj-db-id"
+            db=self.mock_db_session, webhook=mock_webhook
         )
 
         self.assertTrue(result)
-        self.mock_crud_webhook.get_by_project_id.assert_called_once_with(
-            self.mock_db_session, project_id="proj-db-id"
-        )
         self.mock_jira_client._session.delete.assert_called_once_with(
             "https://myjira.atlassian.net/rest/webhooks/1.0/webhook/12345"
         )
         self.mock_crud_webhook.remove.assert_called_once_with(
             self.mock_db_session, id="wh-db-id"
         )
+
+    def test_cleanup_stale_webhooks(self):
+        """Test cleaning up stale webhooks."""
+        spacebridge_url = "https://stale-spacebridge.com"
+        mock_webhooks_data = [
+            {"id": "1", "url": f"{spacebridge_url}/webhook"},
+            {"id": "2", "url": "https://another-service.com/webhook"},
+            {"id": "3", "url": f"{spacebridge_url}/another_webhook"},
+        ]
+        mock_response = MagicMock()
+        mock_response.json.return_value = mock_webhooks_data
+        self.mock_jira_client._session.get.return_value = mock_response
+        result = self.tracker.cleanup_stale_webhooks(spacebridge_url)
+        self.assertEqual(result, {"unregistered": 2, "failed": 0})
+        self.mock_jira_client._session.get.assert_called_once_with(
+            "https://myjira.atlassian.net/rest/webhooks/1.0/webhook"
+        )
+        self.mock_jira_client.delete_webhook.assert_any_call("1")
+        self.mock_jira_client.delete_webhook.assert_any_call("3")
+        self.assertEqual(self.mock_jira_client.delete_webhook.call_count, 2)
+
+    def test_cleanup_stale_webhooks_with_failures(self):
+        """Test cleanup with some deletions failing."""
+        spacebridge_url = "https://stale-spacebridge.com"
+        mock_webhooks_data = [
+            {"id": "1", "url": f"{spacebridge_url}/webhook"},
+            {"id": "2", "url": f"{spacebridge_url}/failing"},
+        ]
+        mock_response = MagicMock()
+        mock_response.json.return_value = mock_webhooks_data
+        self.mock_jira_client._session.get.return_value = mock_response
+        self.mock_jira_client.delete_webhook.side_effect = [
+            None,
+            JIRAError(status_code=500, text="Internal Server Error"),
+        ]
+        result = self.tracker.cleanup_stale_webhooks(spacebridge_url)
+        self.assertEqual(result, {"unregistered": 1, "failed": 1})
+        self.mock_jira_client._session.get.assert_called_once_with(
+            "https://myjira.atlassian.net/rest/webhooks/1.0/webhook"
+        )
+        self.mock_jira_client.delete_webhook.assert_any_call("1")
+        self.mock_jira_client.delete_webhook.assert_any_call("2")
+        self.assertEqual(self.mock_jira_client.delete_webhook.call_count, 2)
 
 
 if __name__ == "__main__":
