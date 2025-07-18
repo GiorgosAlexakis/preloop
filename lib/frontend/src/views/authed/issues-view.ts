@@ -604,21 +604,6 @@ export class IssuesView extends LitElement {
     return 'neutral';
   }
 
-  private renderVerdictForPair(pair: DuplicatePair) {
-    const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-    const verdict = this._llmVerdicts[pairKey];
-
-    if (pair.resolution && verdict) {
-      verdict.resolution = pair.resolution;
-    }
-
-    if (this._loadingVerdicts[pairKey]) {
-      return html`<sl-spinner></sl-spinner>`;
-    }
-
-    return renderVerdict(verdict);
-  }
-
   render() {
     return html`
       <div class="container x-large">
