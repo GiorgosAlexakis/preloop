@@ -123,6 +123,26 @@ class CRUDProject(CRUDBase[Project]):
             )
         return query.first()
 
+    def get_for_tracker(
+        self,
+        db: Session,
+        *,
+        tracker_id: str,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
+    ) -> List[Project]:
+        """Get projects for a tracker."""
+        query = (
+            db.query(Project)
+            .join(Organization)
+            .join(Tracker)
+            .filter(Tracker.id == tracker_id)
+        )
+        if account_id:
+            query = query.filter(Tracker.account_id == account_id)
+        return query.offset(skip).limit(limit).all()
+
     def get_for_organization(
         self,
         db: Session,
