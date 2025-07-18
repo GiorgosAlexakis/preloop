@@ -25,6 +25,7 @@ import {
   DuplicatesResponse,
   listOrganizations,
   Organization,
+  Issue,
 } from '../../api';
 import {
   DEFAULT_SIMILARITY_THRESHOLD,
@@ -33,33 +34,6 @@ import {
 import { LlmVerdict, renderVerdict } from '../../utils/verdict';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
-// Define the structure of an issue and a duplicate pair based on the API response
-interface Issue {
-  project_id: string;
-  id: string;
-  title: string;
-  description: string;
-  key: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  url: string;
-  meta_data?: { [key: string]: any };
-}
-
-interface DuplicatePair {
-  issue1: Issue;
-  issue2: Issue;
-  similarity: number;
-}
-
-interface DuplicatesResponse {
-  project_ids: string[];
-  model_id_used: string;
-  threshold_used: number;
-  duplicates: DuplicatePair[];
-}
-
 @customElement('issues-view')
 export class IssuesView extends LitElement {
   @state()
@@ -67,6 +41,9 @@ export class IssuesView extends LitElement {
 
   @state()
   private _llmVerdicts: Record<string, LlmVerdict> = {};
+
+  @state()
+  private _loadingVerdicts: Record<string, boolean> = {};
 
   @state()
   private _loading = false;
@@ -90,6 +67,9 @@ export class IssuesView extends LitElement {
   private _isFilterModalOpen = false;
 
   @state()
+  private _resolutionSummary: string | null = null;
+
+  @state()
   private _isResolveModalOpen = false;
 
   @state()
@@ -100,6 +80,9 @@ export class IssuesView extends LitElement {
 
   @state()
   private _selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+
+  @state()
+  private _selectedResolutionStatus: 'resolved' | 'unresolved' | 'all' = 'all';
 
   private _similarityThreshold = DEFAULT_SIMILARITY_THRESHOLD;
 
@@ -181,6 +164,8 @@ export class IssuesView extends LitElement {
       }
 
       .issue-description {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-700);
         background-color: var(--sl-color-neutral-100);
         border: 1px solid var(--sl-color-neutral-200);
         border-radius: var(--sl-border-radius-medium);
@@ -251,9 +236,75 @@ export class IssuesView extends LitElement {
     `,
   ];
 
-  connectedCallback() {
+  async connectedCallback() {
     super.connectedCallback();
-    this.fetchInitialData();
+    // Fetch projects first so we can map short IDs from the URL to full IDs.
+    await this.fetchProjects();
+    this.parseUrlAndUpdateState();
+    this.fetchDuplicates();
+    this.fetchOrganizations();
+    window.addEventListener('popstate', this.handlePopState);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('popstate', this.handlePopState);
+
+    // Check if we are still on the issues path before cleaning up.
+    // This prevents a race condition where the URL of the *next* page is cleaned.
+    if (window.location.pathname.includes('/issues')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }
+
+  private handlePopState = () => {
+    this.parseUrlAndUpdateState();
+    this.fetchDuplicates();
+  };
+
+  private parseUrlAndUpdateState() {
+    const params = new URLSearchParams(window.location.search);
+    this._currentPage = parseInt(params.get('page') || '1', 10);
+    this._selectedStatus = (params.get('status') || 'opened') as
+      | 'opened'
+      | 'closed'
+      | 'all';
+    this._selectedResolutionStatus = (params.get('resolution') || 'all') as
+      | 'resolved'
+      | 'unresolved'
+      | 'all';
+    const shortProjectIds = params.get('projects');
+    if (shortProjectIds && this._allProjects.length > 0) {
+      const shortIdSet = new Set(shortProjectIds.split(','));
+      this._selectedProjectIds = this._allProjects
+        .filter((p) => shortIdSet.has(p.id.split('-')[0]))
+        .map((p) => p.id);
+    } else {
+      this._selectedProjectIds = [];
+    }
+  }
+
+  private _updateUrl() {
+    // Only update the URL if we are on the issues page.
+    if (!window.location.pathname.includes('/issues')) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('page', this._currentPage.toString());
+    params.set('status', this._selectedStatus);
+    if (this._selectedResolutionStatus !== 'all') {
+      params.set('resolution', this._selectedResolutionStatus);
+    }
+    if (this._selectedProjectIds.length > 0) {
+      const shortProjectIds = this._selectedProjectIds.map(
+        (id) => id.split('-')[0]
+      );
+      params.set('projects', shortProjectIds.join(','));
+    }
+
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.pushState({}, '', newUrl);
   }
 
   async fetchInitialData() {
@@ -291,11 +342,13 @@ export class IssuesView extends LitElement {
         skip: skip,
         project_ids: this._selectedProjectIds,
         status: this._selectedStatus,
+        resolution: this._selectedResolutionStatus,
         similarity_threshold: this._similarityThreshold,
       });
 
       this._duplicates = data.duplicates;
       this._hasMorePages = data.duplicates.length === this._pageSize;
+      this._updateUrl(); // Update URL after fetching
       this.fetchLlmVerdicts(); // Fetch verdicts after getting duplicates
     } catch (error) {
       this._error =
@@ -307,40 +360,35 @@ export class IssuesView extends LitElement {
   }
 
   async fetchLlmVerdicts() {
-    for (const pair of this._duplicates) {
-      if (pair.similarity < 0.999) {
-        const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-        // Set initial state to 'checking'
-        this._llmVerdicts = {
-          ...this._llmVerdicts,
-          [pairKey]: { decision: 'checking' },
-        };
+    const newVerdicts = { ...this._llmVerdicts };
+    const newLoadingVerdicts = { ...this._loadingVerdicts };
 
-        try {
-          const verdictData = await checkLlmVerdict(
-            pair.issue1.id,
-            pair.issue2.id
-          );
-
-          this._llmVerdicts = {
-            ...this._llmVerdicts,
-            [pairKey]: {
-              decision: verdictData.decision || 'undecided',
-              reason: verdictData.reason,
-            },
-          };
-        } catch (error) {
-          console.error(
-            `Failed to fetch LLM verdict for pair ${pairKey}:`,
-            error
-          );
-          this._llmVerdicts = {
-            ...this._llmVerdicts,
-            [pairKey]: { decision: 'undecided', reason: 'Failed to load' },
-          };
-        }
+    const promises = this._duplicates.map((pair) => {
+      const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+      if (newVerdicts[pairKey]) {
+        return Promise.resolve();
       }
-    }
+
+      newLoadingVerdicts[pairKey] = true;
+
+      return checkLlmVerdict(pair.issue1.id, pair.issue2.id)
+        .then((verdict) => {
+          newVerdicts[pairKey] = verdict;
+        })
+        .catch((error) => {
+          console.error(`Failed to fetch LLM verdict for ${pairKey}:`, error);
+          // Store a failed state if needed, or just remove loading indicator
+        })
+        .finally(() => {
+          newLoadingVerdicts[pairKey] = false;
+        });
+    });
+
+    this._loadingVerdicts = newLoadingVerdicts;
+
+    await Promise.all(promises);
+
+    this._llmVerdicts = newVerdicts;
   }
 
   private _toggleRow(pairKey: string) {
@@ -379,6 +427,17 @@ export class IssuesView extends LitElement {
     this._selectedPair = null;
   }
 
+  private async handleResolution(e: CustomEvent) {
+    if (e.detail.summary) {
+      this._resolutionSummary = e.detail.summary;
+      // Auto-hide after 5 seconds
+      setTimeout(() => {
+        this._resolutionSummary = null;
+      }, 5000);
+    }
+    this.fetchDuplicates();
+  }
+
   private _handleResolved() {
     this._isResolveModalOpen = false;
     this._selectedPair = null;
@@ -411,7 +470,7 @@ export class IssuesView extends LitElement {
             ${verdict
               ? html`
                   <div class="detail-section">
-                    <h3>LLM Review</h3>
+                    <h3>AI Review</h3>
                     <p>
                       <strong>Status:</strong>
                       ${renderVerdict(verdict)}
@@ -466,7 +525,8 @@ export class IssuesView extends LitElement {
   private _renderActiveFilters() {
     if (
       this._selectedProjectIds.length === 0 &&
-      this._selectedStatus === 'opened'
+      this._selectedStatus === 'opened' &&
+      this._selectedResolutionStatus === 'all'
     ) {
       return html``;
     }
@@ -501,6 +561,19 @@ export class IssuesView extends LitElement {
               </sl-tag>
             `
           : ''}
+        ${this._selectedResolutionStatus !== 'all'
+          ? html`
+              <sl-tag
+                size="medium"
+                removable
+                @sl-remove=${() => this._clearResolutionFilter()}
+              >
+                ${this._selectedResolutionStatus === 'resolved'
+                  ? 'Resolved'
+                  : 'Unresolved'}
+              </sl-tag>
+            `
+          : ''}
         <sl-button size="small" pill @click=${this._clearAllFilters}
           >Clear all</sl-button
         >
@@ -510,6 +583,11 @@ export class IssuesView extends LitElement {
 
   private _clearStatusFilter() {
     this._selectedStatus = 'opened';
+    this.fetchDuplicates();
+  }
+
+  private _clearResolutionFilter() {
+    this._selectedResolutionStatus = 'all';
     this.fetchDuplicates();
   }
 
@@ -541,10 +619,24 @@ export class IssuesView extends LitElement {
           <sl-icon slot="icon" name="info-circle"></sl-icon>
           <strong>Find similar issues and resolve duplicates</strong><br />
           Identify similar and potential duplicate issues across your projects.
-          Review each suggested pair, check the similarity score, and use the
-          LLM review to resolve or dismiss the suggestion.
+          Review each suggested pair, check the similarity score, and use the AI
+          review to resolve or dismiss the suggestion.
         </sl-alert>
 
+        ${when(
+          this._resolutionSummary,
+          () => html`
+            <sl-alert
+              variant="success"
+              open
+              closable
+              @sl-after-hide=${() => (this._resolutionSummary = null)}
+            >
+              <sl-icon slot="icon" name="check-circle"></sl-icon>
+              ${this._resolutionSummary}
+            </sl-alert>
+          `
+        )}
         ${this._renderActiveFilters()}
         ${when(
           this._loading,
@@ -575,6 +667,7 @@ export class IssuesView extends LitElement {
                     .hasProjects=${this._hasProjects}
                     .projectIds=${this._selectedProjectIds}
                     .selectedStatus=${this._selectedStatus}
+                    .selectedResolution=${this._selectedResolutionStatus}
                     .similarityThreshold=${this._similarityThresholdCharts}
                     ?interactive=${true}
                     @project-selected=${this._handleProjectSelectedFromChart}
@@ -587,7 +680,7 @@ export class IssuesView extends LitElement {
                         <th>Issue 1</th>
                         <th>Issue 2</th>
                         <th class="text-right">Similarity</th>
-                        <th class="text-right">LLM Review</th>
+                        <th class="text-right">AI Review</th>
                         <th class="text-right">Actions</th>
                       </tr>
                     </thead>
@@ -598,10 +691,7 @@ export class IssuesView extends LitElement {
 
                         return html`
                           <tr
-                            class="clickable-row ${verdict?.decision ===
-                            'rejected'
-                              ? 'faint-row'
-                              : ''}"
+                            class="clickable-row"
                             @click=${() => this._toggleRow(pairKey)}
                           >
                             <td>
@@ -669,23 +759,32 @@ export class IssuesView extends LitElement {
                             </td>
                             <td>
                               <div class="actions-container">
-                                <sl-button
-                                  size="small"
-                                  variant="primary"
-                                  @click=${(e: Event) => {
-                                    e.stopPropagation();
-                                    this._openResolveModal(pair);
-                                  }}
-                                  >Resolve</sl-button
-                                >
-                                <sl-icon-button
-                                  name="x-circle"
-                                  label="Dismiss"
-                                  @click=${(e: Event) => {
-                                    e.stopPropagation();
-                                    this._handleDismiss(pair);
-                                  }}
-                                ></sl-icon-button>
+                                ${when(
+                                  !verdict?.resolution,
+                                  () => html`
+                                    <sl-button
+                                      size="small"
+                                      variant="primary"
+                                      @click=${(e: Event) => {
+                                        e.stopPropagation();
+                                        this._openResolveModal(pair);
+                                      }}
+                                      >Resolve</sl-button
+                                    >
+                                    <sl-tooltip
+                                      content="Dismiss this suggestion"
+                                    >
+                                      <sl-icon-button
+                                        name="x-circle"
+                                        label="Dismiss"
+                                        @click=${(e: Event) => {
+                                          e.stopPropagation();
+                                          this._handleDismiss(pair);
+                                        }}
+                                      ></sl-icon-button>
+                                    </sl-tooltip>
+                                  `
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -698,19 +797,21 @@ export class IssuesView extends LitElement {
                   </table>
                 </sl-card>
                 <div class="pagination-controls">
-                  <sl-button
-                    size="small"
-                    @click=${this._previousPage}
-                    ?disabled=${this._currentPage === 1}
-                    >Previous</sl-button
-                  >
+                  <sl-button-group>
+                    <sl-button
+                      @click=${() => this._goToPage(this._currentPage - 1)}
+                      ?disabled=${this._currentPage <= 1}
+                    >
+                      Previous
+                    </sl-button>
+                    <sl-button
+                      @click=${() => this._goToPage(this._currentPage + 1)}
+                      ?disabled=${!this._hasMorePages}
+                    >
+                      Next
+                    </sl-button>
+                  </sl-button-group>
                   <span>Page ${this._currentPage}</span>
-                  <sl-button
-                    size="small"
-                    @click=${this._nextPage}
-                    ?disabled=${!this._hasMorePages}
-                    >Next</sl-button
-                  >
                 </div>
               `
             : html`
@@ -726,38 +827,37 @@ export class IssuesView extends LitElement {
         )}
       </div>
       <project-filter-modal
-        .open=${this._isFilterModalOpen}
+        .isOpen=${this._isFilterModalOpen}
+        .allProjects=${this._allProjects}
         .organizations=${this._organizations}
         .projects=${this._allProjects}
         .selectedProjectIds=${this._selectedProjectIds}
         .selectedStatus=${this._selectedStatus}
-        @close-modal=${() => (this._isFilterModalOpen = false)}
-        @apply-filters=${(event: CustomEvent) => {
-          const { selectedProjectIds, selectedStatus } = event.detail;
-          this._selectedProjectIds = selectedProjectIds;
-          this._selectedStatus = selectedStatus;
-          this.fetchDuplicates(); // Re-fetch data with new filters
-          this._isFilterModalOpen = false;
-        }}
+        .selectedResolution=${this._selectedResolutionStatus}
+        @on-close=${() => (this._isFilterModalOpen = false)}
+        @on-apply=${this._applyFilters}
       ></project-filter-modal>
       <resolve-issue-modal
-        .open=${this._isResolveModalOpen}
+        .isOpen=${this._isResolveModalOpen}
         .duplicatePair=${this._selectedPair}
-        @closed=${this._handleModalClose}
-        @resolved=${this._handleResolved}
+        @on-close=${() => (this._isResolveModalOpen = false)}
+        @on-resolved=${this.handleResolution}
       ></resolve-issue-modal>
     `;
   }
 
-  private _previousPage() {
-    if (this._currentPage > 1) {
-      this._currentPage--;
-      this.fetchDuplicates();
-    }
+  private _goToPage(page: number) {
+    if (page < 1) return;
+    this._currentPage = page;
+    this.fetchDuplicates();
   }
 
-  private _nextPage() {
-    this._currentPage++;
+  private _applyFilters(event: CustomEvent) {
+    this._selectedProjectIds = event.detail.projectIds;
+    this._selectedStatus = event.detail.status;
+    this._selectedResolutionStatus = event.detail.resolution;
+    this._isFilterModalOpen = false;
+    this._currentPage = 1; // Reset to first page
     this.fetchDuplicates();
   }
 }

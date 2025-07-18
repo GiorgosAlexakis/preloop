@@ -11,9 +11,27 @@ export interface LlmVerdict {
     | 'checking'
     | 'unrelated';
   reason?: string;
+  resolution?: string;
 }
 
 export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
+  if (verdict?.resolution) {
+    return html`
+      <sl-badge
+        variant="success"
+        style="--sl-color-success-text: var(--sl-color-green-50); --sl-color-success-600: var(--sl-color-green-600);"
+        pill
+      >
+        <sl-icon
+          name="check-all"
+          style="margin-right: var(--sl-spacing-2x-small);"
+        ></sl-icon>
+        ${verdict.resolution.charAt(0).toUpperCase() +
+        verdict.resolution.slice(1)}
+      </sl-badge>
+    `;
+  }
+
   if (!verdict || verdict.decision === 'checking') {
     return html`
       <sl-badge variant="neutral" pill>
@@ -35,7 +53,7 @@ export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
             name="check-circle"
             style="margin-right: var(--sl-spacing-2x-small);"
           ></sl-icon>
-          Confirmed
+          Duplicate
         </sl-badge>
       `;
     case 'overlapping':

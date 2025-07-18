@@ -21,6 +21,10 @@ export class ConsoleShell extends LitElement {
         height: 100vh;
       }
 
+      a:hover {
+        text-decoration: none;
+      }
+
       .console-container {
         display: flex;
         flex-direction: row;
