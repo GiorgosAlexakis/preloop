@@ -5,17 +5,18 @@ import logging
 import openai
 import os
 import json
+from datetime import datetime
 
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate as IssueDuplicateSchema,
-    IssueDuplicateCreate,
-    IssueDuplicateResolve,
+    IssueDuplicateSuggestionRequest,
     IssueDuplicateSuggestionResponse,
+    IssueDuplicateResolutionRequest,
+    IssueDuplicateResolutionResponse,
 )
-from spacemodels.crud import issue as issue_crud
 from spacemodels.crud import issue_duplicate as issue_duplicate_crud
 
-from spacebridge.schemas.issue import IssueResponse
+from spacebridge.schemas.issue import IssueResponse, IssueUpdate
 
 from fastapi import Query
 from SpaceModels.spacemodels.crud.issue_duplicate import crud_issue_duplicate
@@ -36,12 +37,16 @@ from spacebridge.schemas.duplicates import (
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateProjectStats,
     IssueDuplicateStats,
+    IssueDuplicateUpdate,
+    IssueDuplicate,
 )
 from spacemodels.models.account import Account  # Import Account model
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.issue import Issue
 from spacemodels.models.tracker import Tracker
+
+from .issues import update_issue
 
 from spacebridge.api.auth import get_current_active_user  # Import user dependency
 
@@ -143,7 +148,9 @@ def check_or_create_issue_duplicate(
         logger.warning(detail)
         raise HTTPException(status_code=404, detail=detail)
 
-    default_model = crud_llm_model.get_default_active_model(db, include_ownerless=True)
+    default_model = crud_llm_model.get_default_active_model(
+        db, account_id=current_user.id
+    )
     if not default_model:
         logger.error("No default active LLM model configured.")
         raise HTTPException(
@@ -217,7 +224,7 @@ def check_or_create_issue_duplicate(
             parsed_status = "undecided"
             reason = llm_response_text
 
-        duplicate_create_data = IssueDuplicateCreate(
+        duplicate_create_data = IssueDuplicate(
             issue1_id=issue1.id,
             issue2_id=issue2.id,
             decision=parsed_status,
@@ -247,18 +254,21 @@ def check_or_create_issue_duplicate(
 
 
 @router.patch(
-    "/issue-duplicates/resolve",
+    "/issue-duplicates/propose-resolution",
     response_model=IssueDuplicateSchema,
     tags=["Issue Duplicates"],
 )
-async def resolve_issue_duplicate(
-    resolution: IssueDuplicateResolve,
+def propose_issue_duplicate_resolution(
+    resolution: IssueDuplicateSuggestionRequest,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
-    """Resolve an issue duplicate."""
+    """Propose a resolution for an issue duplicate."""
     existing_duplicate = crud_issue_duplicate.get_by_issue_ids(
-        db, issue1_id=resolution.issue1_id, issue2_id=resolution.issue2_id
+        db,
+        issue1_id=resolution.issue1_id,
+        issue2_id=resolution.issue2_id,
+        account_id=current_user.id,
     )
     if not existing_duplicate:
         raise HTTPException(status_code=404, detail="Duplicate entry not found.")
@@ -280,14 +290,16 @@ async def resolve_issue_duplicate(
                 status_code=400,
                 detail="Merge resolution requires resulting_issue1_id, merged_title, and merged_description.",
             )
-        issue_to_update = await issue_crud.get(db=db, id=resolution.resulting_issue1_id)
+        issue_to_update = crud_issue.get(
+            db=db, id=resolution.resulting_issue1_id, account_id=current_user.id
+        )
         if not issue_to_update:
             raise HTTPException(status_code=404, detail="Resulting issue not found.")
         update_data = {
             "title": resolution.merged_title,
             "description": resolution.merged_description,
         }
-        await issue_crud.update(db=db, db_obj=issue_to_update, obj_in=update_data)
+        crud_issue.update(db=db, db_obj=issue_to_update, obj_in=update_data)
 
     elif resolution.resolution == "deconflict":
         if not all(
@@ -303,8 +315,12 @@ async def resolve_issue_duplicate(
                 detail="Deconflict resolution requires titles and descriptions for both issues.",
             )
 
-        issue1_to_update = await issue_crud.get(db=db, id=resolution.issue1_id)
-        issue2_to_update = await issue_crud.get(db=db, id=resolution.issue2_id)
+        issue1_to_update = crud_issue.get(
+            db=db, id=resolution.issue1_id, account_id=current_user.id
+        )
+        issue2_to_update = crud_issue.get(
+            db=db, id=resolution.issue2_id, account_id=current_user.id
+        )
         if not issue1_to_update or not issue2_to_update:
             raise HTTPException(status_code=404, detail="One or both issues not found.")
 
@@ -312,15 +328,15 @@ async def resolve_issue_duplicate(
             "title": resolution.deconflicted_title1,
             "description": resolution.deconflicted_description1,
         }
-        await issue_crud.update(db=db, db_obj=issue1_to_update, obj_in=update_data1)
+        crud_issue.update(db=db, db_obj=issue1_to_update, obj_in=update_data1)
 
         update_data2 = {
             "title": resolution.deconflicted_title2,
             "description": resolution.deconflicted_description2,
         }
-        await issue_crud.update(db=db, db_obj=issue2_to_update, obj_in=update_data2)
+        crud_issue.update(db=db, db_obj=issue2_to_update, obj_in=update_data2)
 
-    db_duplicate = await issue_duplicate_crud.update_resolution(
+    db_duplicate = issue_duplicate_crud.update_resolution(
         db=db,
         issue1_id=resolution.issue1_id,
         issue2_id=resolution.issue2_id,
@@ -333,6 +349,174 @@ async def resolve_issue_duplicate(
     return db_duplicate
 
 
+@router.patch(
+    "/issue-duplicates/execute-resolution",
+    response_model=IssueDuplicateResolutionResponse,
+    tags=["Issue Duplicates"],
+)
+async def execute_issue_duplicate_resolution(
+    resolution: IssueDuplicateResolutionRequest,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+):
+    """Execute the resolution for a pair of duplicate issues."""
+    issue_a = crud_issue.get(db=db, id=resolution.issue1_id, account_id=current_user.id)
+    issue_b = crud_issue.get(db=db, id=resolution.issue2_id, account_id=current_user.id)
+
+    if not issue_a or not issue_b:
+        raise HTTPException(status_code=404, detail="One or both issues not found")
+
+    resolution_type = resolution.resolution
+
+    # Map the detailed resolution to a canonical string value.
+    resolution_map = {
+        "close_a": "closed",
+        "close_b": "closed",
+        "merge_a_to_b": "merged",
+        "merge_b_to_a": "merged",
+        "deconflict": "deconflicted",
+        "not_a_duplicate": "not_a_duplicate",
+    }
+    db_resolution_value = resolution_map.get(resolution_type)
+
+    if db_resolution_value is None:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid resolution type: {resolution_type}"
+        )
+
+    if resolution_type == "close_a":
+        await update_issue(
+            issue_id=issue_a.id,
+            issue_update=IssueUpdate(
+                status="closed",
+                comment=f"Closed as duplicate of issue {issue_b.key}.",
+            ),
+            db=db,
+            current_user=current_user,
+        )
+        await update_issue(
+            issue_id=issue_b.id,
+            issue_update=IssueUpdate(
+                comment=f"Issue {issue_a.key} was closed as a duplicate of this issue."
+            ),
+            db=db,
+            current_user=current_user,
+        )
+
+    elif resolution_type == "close_b":
+        await update_issue(
+            issue_id=issue_b.id,
+            issue_update=IssueUpdate(
+                status="closed",
+                comment=f"Closed as duplicate of issue {issue_a.key}.",
+            ),
+            db=db,
+            current_user=current_user,
+        )
+        await update_issue(
+            issue_id=issue_a.id,
+            issue_update=IssueUpdate(
+                comment=f"Issue {issue_b.key} was closed as a duplicate of this issue."
+            ),
+            db=db,
+            current_user=current_user,
+        )
+
+    elif resolution_type == "merge_a_to_b":
+        await update_issue(
+            issue_id=issue_b.id,
+            issue_update=IssueUpdate(
+                title=resolution.resulting_issue_2_title,
+                description=resolution.resulting_issue_2_description,
+                comment=f"Merged content from issue {issue_a.key}.",
+            ),
+            db=db,
+            current_user=current_user,
+        )
+        await update_issue(
+            issue_id=issue_a.id,
+            issue_update=IssueUpdate(
+                status="closed",
+                comment=f"Merged into and closed as duplicate of issue {issue_b.key}.",
+            ),
+            db=db,
+            current_user=current_user,
+        )
+
+    elif resolution_type == "merge_b_to_a":
+        await update_issue(
+            issue_id=issue_a.id,
+            issue_update=IssueUpdate(
+                title=resolution.resulting_issue_1_title,
+                description=resolution.resulting_issue_1_description,
+                comment=f"Merged content from issue {issue_b.key}.",
+            ),
+            db=db,
+            current_user=current_user,
+        )
+        await update_issue(
+            issue_id=issue_b.id,
+            issue_update=IssueUpdate(
+                status="closed",
+                comment=f"Merged into and closed as duplicate of issue {issue_a.key}.",
+            ),
+            db=db,
+            current_user=current_user,
+        )
+
+    elif resolution_type == "deconflict":
+        await update_issue(
+            issue_id=issue_a.id,
+            issue_update=IssueUpdate(
+                title=resolution.resulting_issue_1_title,
+                description=resolution.resulting_issue_1_description,
+                comment=f"Deconflicted with issue {issue_b.key}. Title and description updated.",
+            ),
+            db=db,
+            current_user=current_user,
+        )
+        await update_issue(
+            issue_id=issue_b.id,
+            issue_update=IssueUpdate(
+                title=resolution.resulting_issue_2_title,
+                description=resolution.resulting_issue_2_description,
+                comment=f"Deconflicted with issue {issue_a.key}. Title and description updated.",
+            ),
+            db=db,
+            current_user=current_user,
+        )
+
+    elif resolution_type == "not_a_duplicate":
+        # No action needed for the issues themselves, only for the duplicate record.
+        pass
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid resolution type")
+
+    # Update the issue_duplicate record
+    duplicate_record = crud_issue_duplicate.get_by_issue_ids(
+        db=db, issue1_id=issue_a.id, issue2_id=issue_b.id, account_id=current_user.id
+    )
+    if duplicate_record:
+        update_data = IssueDuplicateUpdate(
+            resolution=db_resolution_value,
+            resolution_at=datetime.utcnow(),
+            resolution_reason=resolution.resolution_reason,
+        )
+        crud_issue_duplicate.update(
+            db=db, db_obj=duplicate_record, obj_in=update_data.dict(exclude_unset=True)
+        )
+    else:
+        # This case should ideally not be reached if the frontend is behaving correctly.
+        raise HTTPException(status_code=404, detail="Issue duplicate record not found")
+
+    return IssueDuplicateResolutionResponse(
+        issue1_id=issue_a.id,
+        issue2_id=issue_b.id,
+        resolution=resolution.resolution,
+    )
+
+
 def _find_issue_duplicates_logic(
     db: Session,
     current_user: Account,
@@ -342,6 +526,7 @@ def _find_issue_duplicates_logic(
     skip: int,
     limit_per_issue: int,
     status: Optional[str],
+    resolution: Optional[str] = None,
 ) -> Tuple[List[DuplicateIssuePair], str]:
     """Shared logic to find potential duplicate issues within specified projects."""
     active_models = crud_embedding_model.get_active(db)
@@ -416,6 +601,24 @@ def _find_issue_duplicates_logic(
                 pair_key = frozenset([id1_str, id2_str])
 
                 if pair_key not in reported_pairs:
+                    duplicate_record = crud_issue_duplicate.get_by_issue_ids(
+                        db,
+                        issue1_id=id1_str,
+                        issue2_id=id2_str,
+                        account_id=current_user.id,
+                    )
+                    record_resolution = (
+                        duplicate_record.resolution if duplicate_record else None
+                    )
+
+                    # Apply resolution filter
+                    if resolution and resolution != "all":
+                        is_resolved = bool(record_resolution)
+                        if resolution == "resolved" and not is_resolved:
+                            continue
+                        if resolution == "unresolved" and is_resolved:
+                            continue
+
                     try:
                         duplicate_pair = DuplicateIssuePair(
                             issue1=IssueResponse(
@@ -457,6 +660,7 @@ def _find_issue_duplicates_logic(
                                 project_id=project_id,
                             ),
                             similarity=score,
+                            resolution=record_resolution,
                         )
                         all_duplicates_pairs.append(duplicate_pair)
                         reported_pairs.add(pair_key)
@@ -525,6 +729,9 @@ def find_issue_duplicates(
     status: Literal["opened", "closed", "all"] = Query(
         "opened", description="Filter issues by status."
     ),
+    resolution: Literal["resolved", "unresolved", "all"] = Query(
+        "all", description="Filter by resolution status."
+    ),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
@@ -544,6 +751,7 @@ def find_issue_duplicates(
         skip=skip,
         limit_per_issue=limit_per_issue,
         status=status,
+        resolution=resolution,
     )
 
     return ProjectDuplicatesResponse(
@@ -680,7 +888,9 @@ def get_resolution_suggestion(
     ):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    default_model = crud_llm_model.get_default_active_model(db, include_ownerless=True)
+    default_model = crud_llm_model.get_default_active_model(
+        db, account_id=current_user.id
+    )
     if not default_model:
         logger.error("No default active LLM model configured.")
         raise HTTPException(
@@ -698,6 +908,7 @@ def get_resolution_suggestion(
                 description1=issue1.description,
                 title2=issue2.title,
                 description2=issue2.description,
+                explanation="",
             )
             llm_response = client.chat.completions.create(
                 model=default_model.model_name,
@@ -713,6 +924,7 @@ def get_resolution_suggestion(
                 description1=issue1.description,
                 title2=issue2.title,
                 description2=issue2.description,
+                explanation="",
             )
             llm_response = client.chat.completions.create(
                 model=default_model.model_name,
