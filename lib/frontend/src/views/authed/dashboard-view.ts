@@ -238,77 +238,7 @@ export class DashboardView extends AuthedElement {
                     )}
                   </sl-alert>
                 `}
-            <sl-card>
-              <div slot="header">Needs Attention: Definition of Ready</div>
-              <ul class="dor-suggestion-list">
-                <li class="dor-suggestion-item">
-                  <span class="issue-title"
-                    ><strong>PROJ-123:</strong> Login button unresponsive</span
-                  >
-                  <span class="fail-reason">No priority or labels set</span>
-                </li>
-                <li class="dor-suggestion-item">
-                  <span class="issue-title"
-                    ><strong>PROJ-125:</strong> User profile page crashes</span
-                  >
-                  <span class="fail-reason">Missing description</span>
-                </li>
-                <li class="dor-suggestion-item">
-                  <span class="issue-title"
-                    ><strong>PROJ-128:</strong> API returns 500 error</span
-                  >
-                  <span class="fail-reason">No priority set</span>
-                </li>
-              </ul>
-            </sl-card>
-            <sl-card>
-              <div slot="header">Active Flows</div>
-              <table class="flows-table">
-                <thead>
-                  <tr>
-                    <th>Triggers</th>
-                    <th>Prompt</th>
-                    <th>Tools</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>New Issue Created</td>
-                    <td class="prompt-cell">
-                      Summarize the issue, check for duplicates, and if none are
-                      found, add the 'needs-triage' label.
-                    </td>
-                    <td class="tools-cell">
-                      <sl-tag size="small">spacebridge.search_issues</sl-tag>
-                      <sl-tag size="small">spacebridge.update_issue</sl-tag>
-                    </td>
-                    <td class="actions-cell">
-                      <sl-button size="small">Edit</sl-button>
-                      <sl-button size="small" variant="danger"
-                        >Deactivate</sl-button
-                      >
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Comment added with "@release-bot"</td>
-                    <td class="prompt-cell">
-                      Generate a release note snippet based on the issue title
-                      and description.
-                    </td>
-                    <td class="tools-cell">
-                      <sl-tag size="small">spacebridge.get_issue</sl-tag>
-                    </td>
-                    <td class="actions-cell">
-                      <sl-button size="small">Edit</sl-button>
-                      <sl-button size="small" variant="danger"
-                        >Deactivate</sl-button
-                      >
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </sl-card>
+
             <!-- Future widgets can be added here -->
           </div>
           <div class="side-column">
