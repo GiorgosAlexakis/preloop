@@ -122,6 +122,51 @@ helm uninstall spacebridge
 | `autoscaling.maxReplicas`      | Maximum number of replicas                            | `5`         |
 | `autoscaling.targetCPUUtilizationPercentage` | Target CPU utilization percentage      | `80`        |
 
+### Observability
+
+This Helm chart includes several features to enhance the observability of the SpaceBridge application. These features are disabled by default and can be enabled and configured through the `values.yaml` file.
+
+#### Performance Profiling
+
+Performance profiling is provided by `pyinstrument`. When enabled, it profiles all API requests and saves the reports to a persistent volume.
+
+To enable profiling, set the following values in your `values.yaml` file:
+
+```yaml
+profiling:
+  enabled: true
+  storage:
+    pvc:
+      create: true
+      size: 1Gi
+```
+
+#### Error Tracking with Sentry
+
+Error tracking is provided by the Sentry SDK. When enabled, it captures and reports all unhandled exceptions to your Sentry project.
+
+To enable Sentry, set the following values in your `values.yaml` file:
+
+```yaml
+sentry:
+  enabled: true
+  dsn: "YOUR_SENTRY_DSN"
+```
+
+#### Distributed Tracing with Datadog
+
+Distributed tracing is provided by `ddtrace`. When enabled, it traces all API requests and sends them to the Datadog agent.
+
+To enable Datadog tracing, set the following values in your `values.yaml` file:
+
+```yaml
+datadog:
+  tracing:
+    enabled: true
+```
+
+If you are running the Datadog agent as a `DaemonSet`, the chart will automatically use the host IP to connect to the agent. If you are running the agent as a separate deployment, you will need to configure the `host` and `port` values accordingly.
+
 ## Configuration
 
 ### PostgreSQL with PGVector

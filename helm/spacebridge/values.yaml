@@ -148,3 +148,33 @@ database:
     # PGVector extension for vector search
     pgvector:
       enabled: true
+
+# Sentry configuration for error tracking
+sentry:
+  enabled: false
+  # The DSN for your Sentry project
+  dsn: ""
+
+# Performance profiling configuration
+profiling:
+  enabled: false
+  # Configuration for the PersistentVolumeClaim for storing profiling reports
+  storage:
+    pvc:
+      # If true, a PVC will be created
+      create: true
+      # If undefined or null, the default StorageClass will be used.
+      # Set to "-" to disable dynamic provisioning.
+      storageClassName: ""
+      # Size of the PVC
+      size: 1Gi
+
+# Datadog configuration
+datadog:
+  tracing:
+    enabled: false
+    # Set to true if you are running the Datadog agent as a DaemonSet
+    daemonSet: true
+    # The host and port of the Datadog agent
+    host: "datadog-agent.datadog.svc.cluster.local"
+    port: 8126

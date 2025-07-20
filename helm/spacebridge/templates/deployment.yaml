@@ -85,6 +85,34 @@ spec:
             - name: SMTP_FROM_NAME
               value: {{ .Values.config.smtp.fromName | quote }}
             {{- end }}
+            {{- if .Values.sentry.enabled }}
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "spacebridge.fullname" . }}
+                  key: sentry-dsn
+            {{- end }}
+            - name: PROFILING_ENABLED
+              value: {{ .Values.profiling.enabled | quote }}
+            {{- if .Values.datadog.tracing.enabled }}
+            - name: DD_TRACE_ENABLED
+              value: "true"
+            - name: DD_AGENT_HOST
+              {{- if .Values.datadog.tracing.daemonSet }}
+              valueFrom:
+                fieldRef:
+                   fieldPath: status.hostIP
+              {{- else }}
+              value: {{ .Values.datadog.tracing.host | quote }}
+              {{- end }}
+            - name: DD_AGENT_PORT
+              value: {{ .Values.datadog.tracing.port | quote }}
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.profiling.enabled }}
+            - name: profiling-storage
+              mountPath: /tmp/profiling
+            {{- end }}
           resources:
             requests:
               cpu: "500m"
@@ -180,6 +208,11 @@ spec:
         - name: nginx-config
           configMap:
             name: {{ include "spacebridge.fullname" . }}-nginx
+      {{- if .Values.profiling.enabled }}
+        - name: profiling-storage
+          persistentVolumeClaim:
+            claimName: {{ include "spacebridge.fullname" . }}-profiling
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

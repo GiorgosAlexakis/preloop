@@ -5,6 +5,7 @@ variables:
   GIT_SUBMODULE_STRATEGY: "recursive"
   GITLAB_TOKEN: $GITLAB_TOKEN
   STAGING_DOMAIN: "staging.spacebridge.io"
+  SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
 
 cache:
   paths:
@@ -45,7 +46,7 @@ pre-commit:
   script:
     - pre-commit install
     - ruff check
-    - pre-commit run --all-files
+    - pre-commit run --all-files --show-diff
 
 pytest:
   stage: test
@@ -97,6 +98,11 @@ staging:
       --set ingress.tls[0].hosts[0]=${STAGING_DOMAIN}
       --set ingress.tls[0].secretName=spacebridge-staging-tls
       --set environment.spacebridgeUrl=https://${STAGING_DOMAIN}
+      --set sentry.enabled=true
+      --set sentry.dsn=${SENTRY_DSN}
+      --set profiling.enabled=true
+      --set datadog.tracing.enabled=true
+
     - echo "Helm deployment finished."
   artifacts:
     paths:
