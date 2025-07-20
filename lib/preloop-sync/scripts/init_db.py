@@ -48,8 +48,8 @@ def init_db(force: bool):
                 text(
                     """
                     CREATE INDEX IF NOT EXISTS idx_issueembedding_vector_{vector_size} ON issueembedding
-                    using hnsw ((subvector(embedding, 1, {vector_size})::vector({vector_size})) vector_ip_ops)
-                    with (m = 32, ef_construction = 200);
+                    using hnsw ((subvector(embedding, 1, {vector_size})::vector({vector_size})) vector_cosine_ops)
+                    with (m = 16, ef_construction = 40);
                     """.format(vector_size=TRUNCATED_VECTOR_SIZE)
                 )
             )
