@@ -14,7 +14,7 @@ from ..models.project import Project
 from ..models.tracker import Tracker
 from .base import CRUDBase
 
-# Import optional pgvector functionality
+from ..db.vector_types import TRUNCATED_VECTOR_SIZE
 
 
 class CRUDEmbeddingModel(CRUDBase[EmbeddingModel]):
@@ -412,7 +412,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
 
         common_where_clauses = ["e.embedding_model_id = :model_id"]
 
-        # Issue-related filters (applied via JOIN with 'issue' table)
         if tracker_ids:
             common_where_clauses.append("i.tracker_id = ANY(:tracker_ids)")
             params["tracker_ids"] = tracker_ids
@@ -426,7 +425,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             common_where_clauses.append("i.priority = :priority")
             params["priority"] = priority
         if labels:
-            # Ensure labels are passed as a JSON string for the @> operator
             common_where_clauses.append(
                 "i.meta_data->'labels' @> CAST(:labels AS JSONB)"
             )
@@ -457,7 +455,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 )
             where_sql = " AND ".join(specific_where_clauses)
             sql = f"""
-                WITH results AS (
+                WITH shortlist AS (
                     SELECT
                         i.id, i.title, i.description, i.status, i.priority,
                         i.issue_type, i.external_id, i.external_url, i.key,
@@ -465,7 +463,8 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         i.last_updated_external, i.last_synced,
                         i.created_at AS issue_created_at,
                         i.updated_at AS issue_updated_at,
-                        (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
+                        e.embedding AS embedding,
+                        (1 - (subvector(e.embedding, 1, {TRUNCATED_VECTOR_SIZE})::vector({TRUNCATED_VECTOR_SIZE}) <=> subvector(CAST(:query_vector AS vector), 1, {TRUNCATED_VECTOR_SIZE}))) as sim
                     FROM
                         issueembedding e
                     JOIN
@@ -473,9 +472,11 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     JOIN
                         tracker t ON i.tracker_id = t.id
                     WHERE {where_sql}
+                    ORDER BY sim DESC
+                    LIMIT :limit
                 )
-                SELECT * FROM results
-                ORDER BY sim DESC
+                SELECT * FROM shortlist
+                ORDER BY (1 - (embedding <=> CAST(:query_vector AS vector))) DESC
                 LIMIT :limit
             """
             query_results = db.execute(text(sql), params).fetchall()
@@ -504,7 +505,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
 
         elif embedding_type == "comment":
             specific_where_clauses = common_where_clauses + ["e.comment_id IS NOT NULL"]
-            # For comments, common_where_clauses join on 'i' via 'c.issue_id = i.id'
             if similarity is not None:
                 specific_where_clauses.append(
                     "(1 - (e.embedding <=> CAST(:query_vector AS vector))) >= :similarity"

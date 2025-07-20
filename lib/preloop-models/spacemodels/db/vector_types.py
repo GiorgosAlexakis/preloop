@@ -8,6 +8,8 @@ from sqlalchemy.engine.interfaces import Dialect
 
 from pgvector.sqlalchemy import Vector
 
+TRUNCATED_VECTOR_SIZE = 256
+
 
 class VectorType(TypeDecorator):
     """
