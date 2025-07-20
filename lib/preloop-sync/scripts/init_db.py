@@ -9,11 +9,14 @@ import os
 
 import click
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 from spacemodels.db.session import get_engine, get_db_session
 from spacemodels.db.setup import setup_database
 from spacemodels.models import Base
 from spacemodels.crud import crud_embedding_model
+
+from spacemodels.db.vector_types import TRUNCATED_VECTOR_SIZE
 
 
 @click.command()
@@ -38,6 +41,19 @@ def init_db(force: bool):
         # Get engine and create tables
         engine = get_engine()
         Base.metadata.create_all(engine)
+
+        # Add the adaptive similarity search function to the database
+        with engine.connect() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_issueembedding_vector_{vector_size} ON issueembedding
+                    using hnsw ((subvector(embedding, 1, {vector_size})::vector({vector_size})) vector_ip_ops)
+                    with (m = 32, ef_construction = 200);
+                    """.format(vector_size=TRUNCATED_VECTOR_SIZE)
+                )
+            )
+
         click.echo("Database tables created successfully!")
         # Embedding model setup
         provider = os.getenv("EMBEDDING_PROVIDER", "openai")
