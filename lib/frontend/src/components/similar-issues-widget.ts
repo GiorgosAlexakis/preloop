@@ -19,9 +19,9 @@ export class SimilarIssuesWidget extends LitElement {
     :host {
       display: flex; /* Use flexbox to control child layout */
     }
-      ::part(body) {
-    padding: 0;
-}
+    ::part(body) {
+      padding: 0;
+    }
     a {
       color: var(--sl-color-primary-600);
       text-decoration: none;

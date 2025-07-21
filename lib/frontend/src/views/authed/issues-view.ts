@@ -100,7 +100,7 @@ export class IssuesView extends LitElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
-    .table-card {
+      .table-card {
         width: 100%;
         --padding: 0;
         border-spacing: 0;
