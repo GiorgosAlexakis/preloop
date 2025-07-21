@@ -29,3 +29,13 @@ a:hover {
     align-items: center;
     margin-bottom: var(--sl-spacing-large);
 }
+
+.table-card {
+    width: 100%;
+    --padding: 0;
+    border-spacing: 0;
+}
+
+.table-card::part(body) {
+    padding: 0;
+}

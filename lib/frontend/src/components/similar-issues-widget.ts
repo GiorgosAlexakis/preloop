@@ -19,6 +19,9 @@ export class SimilarIssuesWidget extends LitElement {
     :host {
       display: flex; /* Use flexbox to control child layout */
     }
+      ::part(body) {
+    padding: 0;
+}
     a {
       color: var(--sl-color-primary-600);
       text-decoration: none;
@@ -39,11 +42,16 @@ export class SimilarIssuesWidget extends LitElement {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: var(--sl-spacing-x-small) 0;
-      border-bottom: 1px solid var(--sl-color-neutral-200);
+      padding: var(--sl-spacing-x-small) var(--sl-spacing-large);
+      border-top: 1px solid var(--sl-color-neutral-200);
+    }
+    .sub-header {
+      font-size: var(--sl-font-size-small);
+      padding: var(--sl-spacing-small) var(--sl-spacing-large);
+      padding-top: var(--sl-spacing-large);
     }
     .suggestion-item:last-child {
-      border-bottom: none;
+      border-bottom: 1px solid var(--sl-color-neutral-200);
     }
     .issue-titles {
       font-size: var(--sl-font-size-small);
@@ -58,9 +66,7 @@ export class SimilarIssuesWidget extends LitElement {
     }
     .see-all-container {
       text-align: center;
-      margin-top: var(--sl-spacing-medium);
-      padding-top: var(--sl-spacing-medium);
-      border-top: 1px solid var(--sl-color-neutral-200);
+      padding: var(--sl-spacing-medium);
     }
   `;
 
@@ -165,14 +171,14 @@ export class SimilarIssuesWidget extends LitElement {
       `;
     }
     return html`
-      <sl-card>
+      <sl-card class="table-card">
         <div slot="header">Similar Issue Suggestions</div>
 
         ${when(this._loading, () => html`<div>Loading...</div>`)}
         ${when(this._error, () => html`<div>${this._error}</div>`)}
         ${when(!this._loading && !this._error, () => {
           return html`
-            <p>
+            <div class="sub-header">
               You have
               <a href="/console/issues"
                 ><strong
@@ -182,7 +188,7 @@ export class SimilarIssuesWidget extends LitElement {
                 >
                 unresolved suggestions</a
               >. ${renderTopSuggestionsText()}
-            </p>
+            </div>
             <ul class="suggestion-list">
               ${this._topSuggestions.map((pair) => {
                 const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
