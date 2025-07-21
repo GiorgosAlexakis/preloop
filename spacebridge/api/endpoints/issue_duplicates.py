@@ -540,43 +540,27 @@ def _find_issue_duplicates_logic(
         )
     model = active_models[0]
 
-    issues_query = db.query(Issue).filter(
-        Issue.project_id.in_([p.id for p in accessible_projects])
-    )
-
-    if status and status != "all":
-        issues_query = issues_query.filter(Issue.status == status)
-
-    issue_ids = [row[0] for row in issues_query.with_entities(Issue.id).all()]
-
-    if not issue_ids:
-        return [], model.id
-
     all_duplicates_pairs: List[DuplicateIssuePair] = []
     reported_pairs = set()
 
-    for i in range(0, len(issue_ids), 100):
-        batch_ids = issue_ids[i : i + 100]
-        issues_batch = (
+    for project in accessible_projects:
+        project_issues = (
             db.query(Issue)
             .options(selectinload(Issue.embeddings))
-            .filter(Issue.id.in_(batch_ids))
+            .filter(Issue.project_id == project.id)
+            .filter(Issue.status.in_([status]) if status and status != "all" else True)
             .all()
         )
-        for current_issue_obj in issues_batch:
+
+        for issue in project_issues:
             query_embedding_vector = next(
                 (
                     emb.embedding
-                    for emb in current_issue_obj.embeddings
+                    for emb in issue.embeddings
                     if emb.embedding_model_id == model.id
                 ),
                 None,
             )
-
-            if query_embedding_vector is None:
-                continue
-
-            project_id = str(current_issue_obj.project_id)
 
             similar_issue_score_tuples: List[Tuple[Issue, float]] = (
                 crud_issue_embedding.similarity_search(
@@ -584,7 +568,7 @@ def _find_issue_duplicates_logic(
                     model_id=model.id,
                     query_vector=query_embedding_vector,
                     limit=limit_per_issue + 1,
-                    project_ids=[project_id],
+                    project_ids=[project.id],
                     embedding_type="issue",
                     similarity=similarity_threshold,
                     status=status if status and status != "all" else None,
@@ -593,10 +577,10 @@ def _find_issue_duplicates_logic(
             )
 
             for similar_issue_obj, score in similar_issue_score_tuples:
-                if similar_issue_obj.id == current_issue_obj.id:
+                if similar_issue_obj.id == issue.id:
                     continue
 
-                id1_str = str(current_issue_obj.id)
+                id1_str = str(issue.id)
                 id2_str = str(similar_issue_obj.id)
                 pair_key = frozenset([id1_str, id2_str])
 
@@ -622,23 +606,23 @@ def _find_issue_duplicates_logic(
                     try:
                         duplicate_pair = DuplicateIssuePair(
                             issue1=IssueResponse(
-                                id=str(current_issue_obj.id),
-                                external_id=current_issue_obj.external_id,
-                                key=current_issue_obj.key,
+                                id=str(issue.id),
+                                external_id=issue.external_id,
+                                key=issue.key,
                                 organization="",
                                 project="",
-                                url=current_issue_obj.external_url or "",
-                                created_at=current_issue_obj.created_at,
-                                updated_at=current_issue_obj.updated_at,
-                                title=current_issue_obj.title,
-                                description=current_issue_obj.description or "",
-                                status=current_issue_obj.status or "",
-                                priority=current_issue_obj.priority or "",
+                                url=issue.external_url or "",
+                                created_at=issue.created_at,
+                                updated_at=issue.updated_at,
+                                title=issue.title,
+                                description=issue.description or "",
+                                status=issue.status or "",
+                                priority=issue.priority or "",
                                 author="",
                                 assignees=[],
                                 labels=[],
                                 comments=[],
-                                project_id=project_id,
+                                project_id=project.id,
                             ),
                             issue2=IssueResponse(
                                 id=str(similar_issue_obj.id),
@@ -657,7 +641,7 @@ def _find_issue_duplicates_logic(
                                 assignees=[],
                                 labels=[],
                                 comments=[],
-                                project_id=project_id,
+                                project_id=project.id,
                             ),
                             similarity=score,
                             resolution=record_resolution,
