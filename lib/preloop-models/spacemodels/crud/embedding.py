@@ -492,7 +492,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 ORDER BY sim DESC
                 LIMIT :limit
             """
-            print(sql)
             query_results = db.execute(text(sql), params).fetchall()
             for row in query_results:
                 issue = Issue(
