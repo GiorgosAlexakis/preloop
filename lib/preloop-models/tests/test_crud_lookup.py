@@ -650,16 +650,15 @@ def test_get_comment_by_external_id_simple(
     """Test retrieving a comment by external_id with a simpler setup."""
     # Setup: Create an author, an issue, and a comment
     author = create_account()
-    issue1 = create_issue()  # Corrected: Removed author_id
+    issue1 = create_issue()
     # Create a second, distinct issue to test the issue_id filter
-    issue2 = create_issue()  # Corrected: Removed author_id
+    issue2 = create_issue()
 
     comment_external_id = "ext_comment_simple_001"
     comment_body = "This is a simple test comment."
-
     created_comment = create_comment(
-        issue_id=issue1.id,
-        author_id=author.id,
+        issue_id=str(issue1.id),
+        author=author,
         external_id=comment_external_id,
         body=comment_body,
     )
@@ -674,7 +673,7 @@ def test_get_comment_by_external_id_simple(
 
     # 2. Retrieve by external_id and correct issue_id
     retrieved_by_external_id_and_issue_id = crud_comment.get_by_external_id(
-        db_session, external_id=comment_external_id, issue_id=issue1.id
+        db_session, external_id=comment_external_id, issue_id=str(issue1.id)
     )
     assert retrieved_by_external_id_and_issue_id is not None
     assert retrieved_by_external_id_and_issue_id.id == created_comment.id
@@ -683,7 +682,7 @@ def test_get_comment_by_external_id_simple(
     retrieved_with_wrong_issue_id = crud_comment.get_by_external_id(
         db_session,
         external_id=comment_external_id,
-        issue_id=issue2.id,  # Using issue2.id
+        issue_id=str(issue2.id),  # Using issue2.id
     )
     assert retrieved_with_wrong_issue_id is None
 
@@ -701,19 +700,20 @@ def test_comment_create_with_author(db_session: Session, create_issue, create_ac
     comment_data_in = {
         "body": "This is a test comment!",
         "type": "issue",
-        "issue_id": issue.id,
+        "issue_id": str(issue.id),
         "external_id": "901",
     }
 
     comment = crud_comment.create_with_author(
-        db_session, obj_in=comment_data_in, author_id=author.id
+        db_session, obj_in=comment_data_in, author=author.username
     )
 
     assert comment is not None
     assert comment.body == "This is a test comment!"
     assert comment.type == "issue"
-    assert comment.issue_id == issue.id
+    assert comment.issue_id == str(issue.id)
     assert comment.author_id == author.id
+    assert comment.author.username == author.username
     assert comment.id is not None
     assert comment.created_at is not None
     assert comment.updated_at is not None
@@ -741,21 +741,25 @@ def test_comment_get_multi_by_issue(
     )
 
     # Test for issue1
-    comments_issue1 = crud_comment.get_multi_by_issue(db_session, issue_id=issue1.id)
+    comments_issue1 = crud_comment.get_multi_by_issue(
+        db_session, issue_id=str(issue1.id)
+    )
     assert len(comments_issue1) == 2
     comment_ids_issue1 = {c.id for c in comments_issue1}
     assert comment1_issue1.id in comment_ids_issue1
     assert comment2_issue1.id in comment_ids_issue1
 
     # Test for issue2
-    comments_issue2 = crud_comment.get_multi_by_issue(db_session, issue_id=issue2.id)
+    comments_issue2 = crud_comment.get_multi_by_issue(
+        db_session, issue_id=str(issue2.id)
+    )
     assert len(comments_issue2) == 1
     assert comments_issue2[0].id == comment1_issue2.id
 
     # Test for an issue with no comments
     issue_no_comments = create_issue(title="Issue With No Comments")
     comments_no_issue = crud_comment.get_multi_by_issue(
-        db_session, issue_id=issue_no_comments.id
+        db_session, issue_id=str(issue_no_comments.id)
     )
     assert len(comments_no_issue) == 0
 
@@ -780,7 +784,7 @@ def test_comment_get_multi_by_author(
 
     # Test for author1
     comments_author1 = crud_comment.get_multi_by_author(
-        db_session, author_id=author1.id
+        db_session, author=author1.username
     )
     assert len(comments_author1) == 2
     comment_ids_author1 = {c.id for c in comments_author1}
@@ -789,7 +793,7 @@ def test_comment_get_multi_by_author(
 
     # Test for author2
     comments_author2 = crud_comment.get_multi_by_author(
-        db_session, author_id=author2.id
+        db_session, author=author2.username
     )
     assert len(comments_author2) == 1
     assert comments_author2[0].id == comment1_author2.id
@@ -797,7 +801,7 @@ def test_comment_get_multi_by_author(
     # Test for an author with no comments
     author_no_comments = create_account(username="author_no_comments")
     comments_no_author = crud_comment.get_multi_by_author(
-        db_session, author_id=author_no_comments.id
+        db_session, author=author_no_comments.username
     )
     assert len(comments_no_author) == 0
 

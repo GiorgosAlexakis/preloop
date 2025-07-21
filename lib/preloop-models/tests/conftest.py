@@ -200,23 +200,42 @@ def create_comment(db_session, create_issue, create_account):
     """Create a test comment.
     Handles 'issue_id' or 'issue' object passed in kwargs,
     or creates a default issue.
+    Handles 'author' (as username string or Account object) passed in kwargs,
+    or creates a default author.
     """
     from spacemodels.crud import crud_comment
+    from spacemodels.models import Account
 
     def _create_comment(body="Test comment body", type="issue", **kwargs):
         current_issue_id: str
 
         if "issue_id" in kwargs:
-            current_issue_id = kwargs.pop("issue_id")
+            current_issue_id = str(kwargs.pop("issue_id"))
         elif "issue" in kwargs:
             issue_obj = kwargs.pop("issue")
-            current_issue_id = issue_obj.id
+            current_issue_id = str(issue_obj.id)
         else:
-            # Default: Create a new issue if no specific identifier or object was provided
             new_issue_obj = create_issue()
-            current_issue_id = new_issue_obj.id
+            current_issue_id = str(new_issue_obj.id)
 
-        author_obj = kwargs.pop("author", create_account())
+        author_obj = None
+        if "author" in kwargs:
+            author_arg = kwargs.pop("author")
+            if isinstance(author_arg, str):  # Username provided
+                author_obj = (
+                    db_session.query(Account)
+                    .filter(Account.username == author_arg)
+                    .first()
+                )
+                if not author_obj:
+                    raise ValueError(
+                        f"Test setup error: author with username '{author_arg}' not found."
+                    )
+            elif isinstance(author_arg, Account):  # Account object provided
+                author_obj = author_arg
+
+        if not author_obj:
+            author_obj = create_account()
 
         comment_data = {
             "body": body,

@@ -537,6 +537,8 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         issueembedding e ON c.id = e.comment_id
                     JOIN
                         issue i ON c.issue_id = i.id
+                    JOIN
+                        tracker t ON i.tracker_id = t.id
                     WHERE {where_sql}
                 )
                 SELECT * FROM results
@@ -560,24 +562,13 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 processed_results.append((comment, row.sim))
 
         elif embedding_type is None:
-            where_issues_specific = common_where_clauses + [
-                "e.issue_id IS NOT NULL",
-                "e.comment_id IS NULL",
-            ]
-            if similarity is not None:
-                where_issues_specific.append(
-                    "(1 - (e.embedding <=> CAST(:query_vector AS vector))) >= :similarity"
-                )
-            where_sql_issues_part = " AND ".join(where_issues_specific)
-
-            where_comments_specific = common_where_clauses + [
-                "e.comment_id IS NOT NULL"
-            ]
-            if similarity is not None:
-                where_comments_specific.append(
-                    "(1 - (e.embedding <=> CAST(:query_vector AS vector))) >= :similarity"
-                )
-            where_sql_comments_part = " AND ".join(where_comments_specific)
+            # Build separate WHERE clauses for issues and comments
+            where_sql_issues_part = " AND ".join(
+                common_where_clauses + ["e.comment_id IS NULL"]
+            )
+            where_sql_comments_part = " AND ".join(
+                common_where_clauses + ["e.comment_id IS NOT NULL"]
+            )
 
             sql = f"""
                 WITH combined_embeddings AS (
@@ -593,6 +584,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         NULL AS comment_author_id, NULL AS comment_meta_data,
                         NULL AS comment_created_at, NULL AS comment_updated_at
                     FROM issueembedding e JOIN issue i ON e.issue_id = i.id
+                    JOIN tracker t ON i.tracker_id = t.id
                     WHERE {where_sql_issues_part}
 
                     UNION ALL
@@ -611,6 +603,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     FROM issueembedding e
                         JOIN comment c ON e.comment_id = c.id
                         JOIN issue i ON c.issue_id = i.id
+                        JOIN tracker t ON i.tracker_id = t.id
                     WHERE {where_sql_comments_part}
                 )
                 SELECT
@@ -680,6 +673,12 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         results: Dict[str, List[IssueEmbedding]] = {
             issue_id: [] for issue_id in issue_ids
         }
-        for emb in embeddings_query:
-            results[emb.issue_id].append(emb)
+        for embedding in embeddings_query:
+            results[embedding.issue_id].append(embedding)
+
         return results
+
+
+# Initialize CRUDIssueEmbedding instance for easy import
+crud_embedding_model = CRUDEmbeddingModel(EmbeddingModel)
+crud_issue_embedding = CRUDIssueEmbedding(IssueEmbedding)
