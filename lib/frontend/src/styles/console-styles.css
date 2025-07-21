@@ -23,6 +23,12 @@ a:hover {
     padding: var(--sl-spacing-x-large);
 }
 
+.header h1 {
+    text-align: left;
+    font-size: 2.2rem;
+    font-weight: 300;
+  }
+
 .header {
     display: flex;
     justify-content: space-between;
