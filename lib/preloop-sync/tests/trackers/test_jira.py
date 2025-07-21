@@ -131,9 +131,13 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         self.mock_jira_client._session.get.assert_called_once_with(
             "https://myjira.atlassian.net/rest/webhooks/1.0/webhook"
         )
-        self.mock_jira_client.delete_webhook.assert_any_call("1")
-        self.mock_jira_client.delete_webhook.assert_any_call("3")
-        self.assertEqual(self.mock_jira_client.delete_webhook.call_count, 2)
+        self.mock_jira_client._session.delete.assert_any_call(
+            "https://myjira.atlassian.net/rest/webhooks/1.0/webhook/1"
+        )
+        self.mock_jira_client._session.delete.assert_any_call(
+            "https://myjira.atlassian.net/rest/webhooks/1.0/webhook/3"
+        )
+        self.assertEqual(self.mock_jira_client._session.delete.call_count, 2)
 
     def test_cleanup_stale_webhooks_with_failures(self):
         """Test cleanup with some deletions failing."""
@@ -145,8 +149,8 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = mock_webhooks_data
         self.mock_jira_client._session.get.return_value = mock_response
-        self.mock_jira_client.delete_webhook.side_effect = [
-            None,
+        self.mock_jira_client._session.delete.side_effect = [
+            MagicMock(status_code=204),
             JIRAError(status_code=500, text="Internal Server Error"),
         ]
         result = self.tracker.cleanup_stale_webhooks(spacebridge_url)
@@ -154,9 +158,13 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         self.mock_jira_client._session.get.assert_called_once_with(
             "https://myjira.atlassian.net/rest/webhooks/1.0/webhook"
         )
-        self.mock_jira_client.delete_webhook.assert_any_call("1")
-        self.mock_jira_client.delete_webhook.assert_any_call("2")
-        self.assertEqual(self.mock_jira_client.delete_webhook.call_count, 2)
+        self.mock_jira_client._session.delete.assert_any_call(
+            "https://myjira.atlassian.net/rest/webhooks/1.0/webhook/1"
+        )
+        self.mock_jira_client._session.delete.assert_any_call(
+            "https://myjira.atlassian.net/rest/webhooks/1.0/webhook/2"
+        )
+        self.assertEqual(self.mock_jira_client._session.delete.call_count, 2)
 
 
 if __name__ == "__main__":

@@ -92,7 +92,7 @@ class BaseTracker(ABC):
                 Each comment dict should contain at least:
                 - id: External ID of the comment
                 - body: Text content of the comment
-                - author_id: External ID of the author (if available, from tracker)
+                - author: Name of the author (if available, from tracker)
                 - created_at: Creation datetime of the comment
                 - updated_at: Last update datetime of the comment
         """
@@ -244,13 +244,13 @@ class BaseTracker(ABC):
         return {
             "issue_id": issue_db_id,
             "external_id": external_id,
-            "author_id": None,
+            "author": None,
             "body": comment_data.get("body", ""),
             "type": "issue",
             "meta_data": {
                 "comment_id": external_id,
-                "external_author_id": str(comment_data.get("author_id"))
-                if comment_data.get("author_id")
+                "external_author": str(comment_data.get("author"))
+                if comment_data.get("author")
                 else None,
                 "url": comment_data.get("url"),
                 "source": "spacesync",

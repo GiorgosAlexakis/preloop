@@ -103,7 +103,7 @@ class TestGitHubTrackerComments(unittest.TestCase):
         comment_data = issue_data["comments"][0]
         self.assertEqual(comment_data["id"], "101")
         self.assertEqual(comment_data["body"], "This is a comment on the issue.")
-        self.assertEqual(comment_data["author_id"], "2")
+        self.assertEqual(comment_data["author"], "commenter")
         self.assertEqual(
             comment_data["created_at"],
             datetime.strptime("2011-04-22T14:00:00Z", "%Y-%m-%dT%H:%M:%SZ"),

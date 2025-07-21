@@ -292,9 +292,9 @@ class GitHubTracker(BaseTracker):
                             "id": str(comment_item["id"]),
                             "body": comment_item.get("body", "")
                             or "",  # Ensure body is not None
-                            "author_id": str(comment_item["user"]["id"])
+                            "author": str(comment_item["user"]["login"])
                             if comment_item.get("user")
-                            and comment_item["user"].get("id")
+                            and comment_item["user"].get("login")
                             else None,
                             "created_at": created_at_dt,
                             "updated_at": updated_at_dt,
