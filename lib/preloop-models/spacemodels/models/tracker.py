@@ -17,6 +17,7 @@ from .tracker_scope_rule import TrackerScopeRule
 
 if TYPE_CHECKING:
     from .account import Account
+    from .comment import Comment
     from .issue import Issue
     from .organization import Organization
 
@@ -126,6 +127,9 @@ class Tracker(Base):
         "TrackerScopeRule",
         back_populates="tracker",
         cascade="all, delete-orphan",
+    )
+    comments: Mapped[List["Comment"]] = relationship(
+        "Comment", back_populates="tracker", cascade="all, delete-orphan"
     )
 
     # Validation status

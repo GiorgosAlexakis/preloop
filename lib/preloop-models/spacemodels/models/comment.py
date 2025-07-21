@@ -12,7 +12,6 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .issue import Issue
-    from .account import Account
     from .embedding import IssueEmbedding
 
 
@@ -41,20 +40,21 @@ class Comment(Base):
         nullable=True,
         index=True,
     )
-    author_id: Mapped[Optional[str]] = mapped_column(  # Reverted to Optional[str]
-        String(36),  # Reverted to String(36)
-        ForeignKey(
-            "account.id", ondelete="SET NULL"
-        ),  # Or CASCADE, depending on desired behavior
+    author: Mapped[Optional[str]] = mapped_column(  # Reverted to Optional[str]
+        String(255),  # Reverted to String(36)
         nullable=True,  # Allow comments from deleted users or system
+        index=True,
+    )
+    tracker_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tracker.id", ondelete="CASCADE"),
+        nullable=False,
         index=True,
     )
 
     # Relationships
     issue: Mapped["Issue"] = relationship("Issue", back_populates="comments")
-    author: Mapped[Optional["Account"]] = relationship(
-        "Account"
-    )  # Add back_populates if a 'comments' relationship is added to Account
+    tracker: Mapped["Tracker"] = relationship("Tracker", back_populates="comments")
     embeddings: Mapped[List["IssueEmbedding"]] = relationship(
         "IssueEmbedding", back_populates="comment", cascade="all, delete-orphan"
     )
@@ -63,4 +63,4 @@ class Comment(Base):
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
     def __repr__(self) -> str:
-        return f"<Comment(id={self.id}, type='{self.type}', issue_id='{self.issue_id}', author_id='{self.author_id}')>"
+        return f"<Comment(id={self.id}, type='{self.type}', issue_id='{self.issue_id}', author='{self.author}')>"
