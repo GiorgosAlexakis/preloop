@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-import sentry_sdk
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
@@ -201,6 +200,8 @@ async def lifespan(app: FastAPI):
     # Initialize Sentry if DSN is configured
     sentry_dsn = os.getenv("SENTRY_DSN")
     if sentry_dsn:
+        import sentry_sdk  # noqa: F401
+
         sentry_sdk.init(
             dsn=sentry_dsn,
             # Set traces_sample_rate to 1.0 to capture 100%

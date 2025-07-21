@@ -1678,16 +1678,16 @@ paths:
           description: Filter comments by parent issue's organization ID (UUID)
           title: Organization Id
         description: Filter comments by parent issue's organization ID (UUID)
-      - name: author_id
+      - name: author
         in: query
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          description: Filter comments by author ID (UUID)
-          title: Author Id
-        description: Filter comments by author ID (UUID)
+          description: Filter comments by author (username)
+          title: Author
+        description: Filter comments by author (username)
       responses:
         '200':
           description: Successful Response
@@ -1808,16 +1808,16 @@ paths:
           description: Filter search results by organization name.
           title: Organization
         description: Filter search results by organization name.
-      - name: author_id
+      - name: author
         in: query
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          description: Filter comments by author ID (UUID)
-          title: Author Id
-        description: Filter comments by author ID (UUID)
+          description: Filter comments by author (username)
+          title: Author
+        description: Filter comments by author (username)
       responses:
         '200':
           description: Successful Response

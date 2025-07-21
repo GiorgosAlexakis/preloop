@@ -45,8 +45,8 @@ pre-commit:
     - cp -r /app/SpaceLit/dist ./SpaceLit/dist
   script:
     - pre-commit install
-    - ruff check
     - pre-commit run --all-files --show-diff
+    - ruff check
 
 pytest:
   stage: test

@@ -171,8 +171,8 @@ async def search_comments(
     organization_id: Optional[str] = Query(
         None, description="Filter comments by parent issue's organization ID (UUID)"
     ),
-    author_id: Optional[str] = Query(
-        None, description="Filter comments by author ID (UUID)"
+    author: Optional[str] = Query(
+        None, description="Filter comments by author (username)"
     ),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
@@ -262,7 +262,7 @@ async def search_comments(
                     CommentResponse(
                         id=comment_obj.id,
                         body=comment_obj.body,
-                        author=comment_obj.author_id or "",
+                        author=comment_obj.author or "",
                         created_at=comment_obj.created_at,
                         updated_at=comment_obj.updated_at,
                         issue_id=comment_obj.issue_id,
@@ -282,7 +282,7 @@ async def search_comments(
                 issue_id=issue_id,
                 project_id=project_id,  # Pass single string or None
                 organization_id=organization_id,  # Pass single string or None
-                author_id=author_id,
+                author=author,
                 account_id=current_user.id,
                 # TODO: Consider if accessible_tracker_ids needs to be passed to search_full_text for pre-filtering
             )
@@ -315,7 +315,7 @@ async def search_comments(
                     CommentResponse(
                         id=comment_obj.id,
                         body=comment_obj.body,
-                        author=comment_obj.author_id,
+                        author=comment_obj.author,
                         created_at=comment_obj.created_at,
                         updated_at=comment_obj.updated_at,
                         issue_id=comment_obj.issue_id,
