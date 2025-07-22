@@ -260,6 +260,7 @@ class TrackerClient:
                 xformed_comment_data = self.client.transform_comment(
                     single_comment_data, current_issue_model.id
                 )
+                xformed_comment_data["tracker_id"] = self.tracker.id
                 db_comment = crud_comment.get_by_external_id(
                     db,
                     external_id=xformed_comment_data["external_id"],

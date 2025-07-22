@@ -257,11 +257,9 @@ class GitLabTracker(BaseTracker):
                 if note.system:
                     continue
 
-                author_id_str = None
+                author = None
                 if hasattr(note, "author") and isinstance(note.author, dict):
-                    author_id_str = (
-                        str(note.author.get("id")) if note.author.get("id") else None
-                    )
+                    author = note.author.get("username")
 
                 try:
                     created_at_dt = datetime.strptime(
@@ -290,7 +288,7 @@ class GitLabTracker(BaseTracker):
                     {
                         "id": str(note.id),
                         "body": note.body or "",
-                        "author_id": author_id_str,
+                        "author": author,
                         "created_at": created_at_dt,
                         "updated_at": updated_at_dt,
                         "url": f"{issue_obj.web_url}#note_{note.id}",

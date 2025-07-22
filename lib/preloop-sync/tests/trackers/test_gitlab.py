@@ -136,7 +136,7 @@ class TestGitLabTrackerComments(unittest.TestCase):
         comment_data = issue_data["comments"][0]
         self.assertEqual(comment_data["id"], str(mock_note_user.id))
         self.assertEqual(comment_data["body"], mock_note_user.body)
-        self.assertEqual(comment_data["author_id"], mock_note_user.author["id"])
+        self.assertEqual(comment_data["author"], mock_note_user.author["username"])
         self.assertEqual(
             comment_data["created_at"],
             datetime.strptime(mock_note_user.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"),

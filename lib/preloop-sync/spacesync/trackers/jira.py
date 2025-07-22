@@ -218,17 +218,18 @@ class JiraTracker(BaseTracker):
                         comment_updated_dt = comment_created_dt
 
                     author = comment_item.get("author", {})
-                    author_id = (
-                        author.get("accountId")
+                    author_name = (
+                        author.get("name")
+                        or author.get("displayName")
                         or author.get("key")
-                        or author.get("name")
+                        or author.get("accountId")
                     )
 
                     comments_transformed.append(
                         {
                             "id": str(comment_item["id"]),
                             "body": comment_item.get("body", ""),
-                            "author_id": str(author_id) if author_id else None,
+                            "author": author_name,
                             "created_at": comment_created_dt,
                             "updated_at": comment_updated_dt,
                             "url": f"{self.jira_url}/browse/{issue_data['key']}?focusedCommentId={comment_item['id']}#comment-{comment_item['id']}",
