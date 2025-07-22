@@ -78,11 +78,6 @@ export class DuplicateStatsChart extends LitElement {
     }
   `;
 
-  connectedCallback() {
-    super.connectedCallback();
-    this.fetchData();
-  }
-
   updated(changedProperties: Map<string, any>) {
     if (
       changedProperties.has('projectIds') ||

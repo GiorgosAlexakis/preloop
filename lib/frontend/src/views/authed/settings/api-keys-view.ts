@@ -331,13 +331,6 @@ export class ApiKeysView extends LitElement {
         width: 100%;
         text-align: left;
       }
-      .table-card {
-        width: 100%;
-        --padding: 0;
-      }
-      .table-card::part(body) {
-        padding: 0;
-      }
       table {
         width: 100%;
         border-collapse: collapse;

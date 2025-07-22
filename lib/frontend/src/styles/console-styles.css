@@ -23,9 +23,25 @@ a:hover {
     padding: var(--sl-spacing-x-large);
 }
 
+.header h1 {
+    text-align: left;
+    font-size: 2.2rem;
+    font-weight: 300;
+  }
+
 .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--sl-spacing-large);
+}
+
+.table-card {
+    width: 100%;
+    --padding: 0;
+    border-spacing: 0;
+}
+
+.table-card::part(body) {
+    padding: 0;
 }

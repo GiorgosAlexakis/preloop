@@ -59,13 +59,6 @@ export class LlmModelsView extends LitElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
-      .table-card {
-        width: 100%;
-        --padding: 0;
-      }
-      .table-card::part(body) {
-        padding: 0;
-      }
       table {
         width: 100%;
         border-collapse: collapse;

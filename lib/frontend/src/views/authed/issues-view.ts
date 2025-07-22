@@ -97,9 +97,17 @@ export class IssuesView extends LitElement {
   @state()
   private _organizations: Organization[] = [];
 
+  @state()
+  private _initialLoadComplete = false;
+
   static styles = [
     unsafeCSS(consoleStyles),
     css`
+      .table-card {
+        width: 100%;
+        --padding: 0;
+        border-spacing: 0;
+      }
       .styled-table th,
       .styled-table td {
         padding: var(--sl-spacing-medium);
@@ -243,6 +251,7 @@ export class IssuesView extends LitElement {
     this.parseUrlAndUpdateState();
     this.fetchDuplicates();
     this.fetchOrganizations();
+    this._initialLoadComplete = true;
     window.addEventListener('popstate', this.handlePopState);
   }
 
@@ -624,6 +633,31 @@ export class IssuesView extends LitElement {
         </sl-alert>
 
         ${when(
+          this._initialLoadComplete && this._hasProjects,
+          () => html`
+            <sl-card class="embedding-card">
+              <div slot="header" class="chart-header">
+                Similar Issues per Project
+                <sl-tooltip
+                  content="Showing issues with a similarity score of ${this
+                    ._similarityThresholdCharts * 100}% or higher."
+                >
+                  <sl-icon name="question-circle"></sl-icon>
+                </sl-tooltip>
+              </div>
+              <duplicate-stats-chart
+                .hasProjects=${this._hasProjects}
+                .projectIds=${this._selectedProjectIds}
+                .selectedStatus=${this._selectedStatus}
+                .selectedResolution=${this._selectedResolutionStatus}
+                .similarityThreshold=${this._similarityThresholdCharts}
+                ?interactive=${true}
+                @project-selected=${this._handleProjectSelectedFromChart}
+              ></duplicate-stats-chart>
+            </sl-card>
+          `
+        )}
+        ${when(
           this._resolutionSummary,
           () => html`
             <sl-alert
@@ -653,26 +687,6 @@ export class IssuesView extends LitElement {
         ${when(!this._loading && !this._error, () =>
           this._duplicates.length > 0
             ? html`
-                <sl-card class="embedding-card">
-                  <div slot="header" class="chart-header">
-                    Similar Issues per Project
-                    <sl-tooltip
-                      content="Showing issues with a similarity score of ${this
-                        ._similarityThresholdCharts * 100}% or higher."
-                    >
-                      <sl-icon name="question-circle"></sl-icon>
-                    </sl-tooltip>
-                  </div>
-                  <duplicate-stats-chart
-                    .hasProjects=${this._hasProjects}
-                    .projectIds=${this._selectedProjectIds}
-                    .selectedStatus=${this._selectedStatus}
-                    .selectedResolution=${this._selectedResolutionStatus}
-                    .similarityThreshold=${this._similarityThresholdCharts}
-                    ?interactive=${true}
-                    @project-selected=${this._handleProjectSelectedFromChart}
-                  ></duplicate-stats-chart>
-                </sl-card>
                 <sl-card class="table-card">
                   <table class="styled-table">
                     <thead>
