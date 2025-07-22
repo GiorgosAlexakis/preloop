@@ -657,7 +657,6 @@ export class IssuesView extends LitElement {
             </sl-card>
           `
         )}
-
         ${when(
           this._resolutionSummary,
           () => html`
@@ -688,7 +687,6 @@ export class IssuesView extends LitElement {
         ${when(!this._loading && !this._error, () =>
           this._duplicates.length > 0
             ? html`
-                
                 <sl-card class="table-card">
                   <table class="styled-table">
                     <thead>
