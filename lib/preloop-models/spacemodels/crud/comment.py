@@ -6,18 +6,17 @@ from sqlalchemy.orm import Session
 
 from ..models.comment import Comment
 from ..models.account import Account
+from ..models.tracker import Tracker
 from .base import CRUDBase
 
 
 class CRUDComment(CRUDBase[Comment]):
     """CRUD operations for Comment model."""
 
-    def create_with_author(
-        self, db: Session, *, obj_in: dict, author_id: str
-    ) -> Comment:
+    def create_with_author(self, db: Session, *, obj_in: dict, author: str) -> Comment:
         """Create a new comment with an author."""
         comment_data = obj_in.copy()
-        comment_data["author_id"] = author_id
+        comment_data["author"] = author
         return super().create(db, obj_in=comment_data)
 
     def get_by_external_id(
@@ -33,7 +32,7 @@ class CRUDComment(CRUDBase[Comment]):
         if issue_id:
             query = query.filter(self.model.issue_id == issue_id)
         if account_id:
-            query = query.join(Account).filter(Account.id == account_id)
+            query = query.join(Tracker).join(Account).filter(Account.id == account_id)
         return query.first()
 
     def get_multi_by_issue(
@@ -48,7 +47,7 @@ class CRUDComment(CRUDBase[Comment]):
         """Get multiple comments for a specific issue."""
         query = db.query(self.model).filter(self.model.issue_id == issue_id)
         if account_id:
-            query = query.join(Account).filter(Account.id == account_id)
+            query = query.join(Tracker).join(Account).filter(Account.id == account_id)
         return (
             query.order_by(self.model.created_at.asc()).offset(skip).limit(limit).all()
         )
@@ -57,15 +56,15 @@ class CRUDComment(CRUDBase[Comment]):
         self,
         db: Session,
         *,
-        author_id: str,
+        author: str,
         skip: int = 0,
         limit: int = 100,
         account_id: Optional[str] = None,
     ) -> List[Comment]:
         """Get multiple comments by a specific author."""
-        query = db.query(self.model).filter(self.model.author_id == author_id)
+        query = db.query(self.model).filter(self.model.author == author)
         if account_id:
-            query = query.join(Account).filter(Account.id == account_id)
+            query = query.join(Tracker).join(Account).filter(Account.id == account_id)
         return (
             query.order_by(self.model.created_at.desc()).offset(skip).limit(limit).all()
         )
