@@ -457,7 +457,7 @@ class GitLabTracker(BaseTracker):
                         "external_id": str(hook.id),
                         "url": webhook_url,
                         "secret": secret,
-                        "tracker_id": self.tracker_id,
+                        "events": "all",
                         "organization_id": organization.id,
                     },
                 )
@@ -586,7 +586,7 @@ class GitLabTracker(BaseTracker):
                         "external_id": str(hook.id),
                         "url": webhook_url,
                         "secret": secret,
-                        "tracker_id": self.tracker_id,
+                        "events": "all",
                         "project_id": project.id,
                     },
                 )
