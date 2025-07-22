@@ -527,6 +527,8 @@ def _find_issue_duplicates_logic(
     limit_per_issue: int,
     status: Optional[str],
     resolution: Optional[str] = None,
+    max_issues_per_project: int = 5000,  # New parameter with reasonable default
+    max_total_pairs: int = 50000,  # New parameter to prevent memory overflow
 ) -> Tuple[List[DuplicateIssuePair], str]:
     """Shared logic to find potential duplicate issues within specified projects."""
     active_models = crud_embedding_model.get_active(db)
@@ -542,17 +544,29 @@ def _find_issue_duplicates_logic(
 
     all_duplicates_pairs: List[DuplicateIssuePair] = []
     reported_pairs = set()
+    processed_issues = 0  # Track total processed issues
 
     for project in accessible_projects:
+        # Limit issues per project to prevent memory overload
         project_issues = (
             db.query(Issue)
             .options(selectinload(Issue.embeddings))
             .filter(Issue.project_id == project.id)
             .filter(Issue.status.in_([status]) if status and status != "all" else True)
+            .limit(max_issues_per_project)  # Add limit here
             .all()
         )
 
         for issue in project_issues:
+            processed_issues += 1
+
+            # Early exit if we have enough pairs
+            if len(all_duplicates_pairs) >= max_total_pairs:
+                logger.warning(
+                    f"Reached maximum pairs limit ({max_total_pairs}), stopping early"
+                )
+                break
+
             query_embedding_vector = next(
                 (
                     emb.embedding
@@ -562,35 +576,52 @@ def _find_issue_duplicates_logic(
                 None,
             )
 
-            similar_issue_score_tuples: List[Tuple[Issue, float]] = (
-                crud_issue_embedding.similarity_search(
-                    db=db,
-                    model_id=model.id,
-                    query_vector=query_embedding_vector,
-                    limit=limit_per_issue + 1,
-                    project_ids=[project.id],
-                    embedding_type="issue",
-                    similarity=similarity_threshold,
-                    status=status if status and status != "all" else None,
-                    account_id=current_user.id,
+            # Skip if no embedding found
+            if query_embedding_vector is None:
+                continue
+
+            try:
+                similar_issue_score_tuples: List[Tuple[Issue, float]] = (
+                    crud_issue_embedding.similarity_search(
+                        db=db,
+                        model_id=model.id,
+                        query_vector=query_embedding_vector,
+                        limit=min(limit_per_issue + 1, 20),  # Cap similarity results
+                        project_ids=[project.id],
+                        embedding_type="issue",
+                        similarity=similarity_threshold,
+                        status=status if status and status != "all" else None,
+                        account_id=current_user.id,
+                    )
                 )
-            )
+            except Exception as e:
+                logger.error(f"Similarity search failed for issue {issue.id}: {e}")
+                continue
 
             for similar_issue_obj, score in similar_issue_score_tuples:
                 if similar_issue_obj.id == issue.id:
                     continue
+
+                # Early exit if we have enough pairs
+                if len(all_duplicates_pairs) >= max_total_pairs:
+                    break
 
                 id1_str = str(issue.id)
                 id2_str = str(similar_issue_obj.id)
                 pair_key = frozenset([id1_str, id2_str])
 
                 if pair_key not in reported_pairs:
-                    duplicate_record = crud_issue_duplicate.get_by_issue_ids(
-                        db,
-                        issue1_id=id1_str,
-                        issue2_id=id2_str,
-                        account_id=current_user.id,
-                    )
+                    try:
+                        duplicate_record = crud_issue_duplicate.get_by_issue_ids(
+                            db,
+                            issue1_id=id1_str,
+                            issue2_id=id2_str,
+                            account_id=current_user.id,
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to get duplicate record: {e}")
+                        continue
+
                     record_resolution = (
                         duplicate_record.resolution if duplicate_record else None
                     )
@@ -607,14 +638,14 @@ def _find_issue_duplicates_logic(
                         duplicate_pair = DuplicateIssuePair(
                             issue1=IssueResponse(
                                 id=str(issue.id),
-                                external_id=issue.external_id,
-                                key=issue.key,
+                                external_id=issue.external_id or "",  # Handle None
+                                key=issue.key or "",  # Handle None
                                 organization="",
                                 project="",
                                 url=issue.external_url or "",
                                 created_at=issue.created_at,
                                 updated_at=issue.updated_at,
-                                title=issue.title,
+                                title=issue.title or "",  # Handle None
                                 description=issue.description or "",
                                 status=issue.status or "",
                                 priority=issue.priority or "",
@@ -626,14 +657,15 @@ def _find_issue_duplicates_logic(
                             ),
                             issue2=IssueResponse(
                                 id=str(similar_issue_obj.id),
-                                external_id=similar_issue_obj.external_id,
-                                key=similar_issue_obj.key,
+                                external_id=similar_issue_obj.external_id
+                                or "",  # Handle None
+                                key=similar_issue_obj.key or "",  # Handle None
                                 organization="",
                                 project="",
                                 url=similar_issue_obj.external_url or "",
                                 created_at=similar_issue_obj.created_at,
                                 updated_at=similar_issue_obj.updated_at,
-                                title=similar_issue_obj.title,
+                                title=similar_issue_obj.title or "",  # Handle None
                                 description=similar_issue_obj.description or "",
                                 status=similar_issue_obj.status or "",
                                 priority=similar_issue_obj.priority or "",
@@ -653,6 +685,18 @@ def _find_issue_duplicates_logic(
                             f"Error creating issue response for duplicate pair: {e}"
                         )
                         continue
+
+            del similar_issue_score_tuples
+
+            # Sparse garbage collection - only every 1000 processed issues
+            if processed_issues % 1000 == 0:
+                gc.collect()
+
+        # Early exit if we have enough pairs
+        if len(all_duplicates_pairs) >= max_total_pairs:
+            break
+
+        del project_issues
 
     all_duplicates_pairs.sort(key=lambda x: x.similarity, reverse=True)
     paginated_duplicates = all_duplicates_pairs[skip : skip + limit]
