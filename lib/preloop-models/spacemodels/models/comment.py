@@ -12,6 +12,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .issue import Issue
+    from .tracker import Tracker
     from .embedding import IssueEmbedding
 
 

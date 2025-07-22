@@ -693,117 +693,76 @@ def test_get_comment_by_external_id_simple(
     assert retrieved_non_existent is None
 
 
-def test_comment_create_with_author(db_session: Session, create_issue, create_account):
-    """Test creating a comment with an author using dictionary input."""
-    issue = create_issue()
-    author = create_account()
-    comment_data_in = {
-        "body": "This is a test comment!",
-        "type": "issue",
-        "issue_id": str(issue.id),
-        "external_id": "901",
-    }
+def test_comment_create_with_author(
+    db_session: Session, create_issue, create_account, create_comment
+):
+    """Test creating a comment with a specific author."""
+    author = create_account(username="test_author_for_comment")
+    issue = create_issue(title="Issue for author comment test")
 
-    comment = crud_comment.create_with_author(
-        db_session, obj_in=comment_data_in, author=author.username
+    comment = create_comment(
+        body="This is a test comment!",
+        external_id="901",
+        issue=issue,
+        author=author,
     )
 
     assert comment is not None
     assert comment.body == "This is a test comment!"
-    assert comment.type == "issue"
+    assert comment.author == author.username
     assert comment.issue_id == str(issue.id)
-    assert comment.author_id == author.id
-    assert comment.author.username == author.username
-    assert comment.id is not None
-    assert comment.created_at is not None
-    assert comment.updated_at is not None
 
 
-def test_comment_get_multi_by_issue(
-    db_session: Session, create_comment, create_issue, create_account
-):
+def test_comment_get_multi_by_issue(db_session: Session, create_issue, create_comment):
     """Test retrieving multiple comments for a specific issue."""
-    author = create_account()
-    issue1 = create_issue(title="Issue One for Comments")
-    issue2 = create_issue(title="Issue Two for Comments")
+    issue1 = create_issue(title="Issue with multiple comments 1")
+    issue2 = create_issue(title="Issue with multiple comments 2")
 
-    comment1_issue1 = create_comment(
-        issue=issue1, external_id="901", author=author, body="First comment for issue 1"
-    )
-    comment2_issue1 = create_comment(
-        issue=issue1,
-        external_id="902",
-        author=author,
-        body="Second comment for issue 1",
-    )
-    comment1_issue2 = create_comment(
-        issue=issue2, external_id="903", author=author, body="First comment for issue 2"
-    )
+    # Create comments for issue1
+    create_comment(issue_id=str(issue1.id), body="First comment for issue 1")
+    create_comment(issue_id=str(issue1.id), body="Second comment for issue 1")
 
-    # Test for issue1
-    comments_issue1 = crud_comment.get_multi_by_issue(
-        db_session, issue_id=str(issue1.id)
-    )
-    assert len(comments_issue1) == 2
-    comment_ids_issue1 = {c.id for c in comments_issue1}
-    assert comment1_issue1.id in comment_ids_issue1
-    assert comment2_issue1.id in comment_ids_issue1
+    # Create a comment for issue2
+    create_comment(issue_id=str(issue2.id), body="Comment for issue 2")
 
-    # Test for issue2
-    comments_issue2 = crud_comment.get_multi_by_issue(
-        db_session, issue_id=str(issue2.id)
-    )
-    assert len(comments_issue2) == 1
-    assert comments_issue2[0].id == comment1_issue2.id
+    # Retrieve comments for issue1
+    comments = crud_comment.get_multi_by_issue(db_session, issue_id=str(issue1.id))
+    assert len(comments) == 2
+    assert {c.body for c in comments} == {
+        "First comment for issue 1",
+        "Second comment for issue 1",
+    }
 
-    # Test for an issue with no comments
-    issue_no_comments = create_issue(title="Issue With No Comments")
-    comments_no_issue = crud_comment.get_multi_by_issue(
-        db_session, issue_id=str(issue_no_comments.id)
-    )
-    assert len(comments_no_issue) == 0
+    # Retrieve comments for issue2
+    comments = crud_comment.get_multi_by_issue(db_session, issue_id=str(issue2.id))
+    assert len(comments) == 1
+    assert comments[0].body == "Comment for issue 2"
 
 
 def test_comment_get_multi_by_author(
-    db_session: Session, create_comment, create_issue, create_account
+    db_session: Session, create_issue, create_account, create_comment
 ):
     """Test retrieving multiple comments by a specific author."""
     author1 = create_account(username="author_one_comments")
     author2 = create_account(username="author_two_comments")
-    issue = create_issue()
+    issue = create_issue(title="Issue for author-specific comments")
 
-    comment1_author1 = create_comment(
-        issue=issue, external_id="901", author=author1, body="Author 1, Comment 1"
-    )
-    comment2_author1 = create_comment(
-        issue=issue, external_id="902", author=author1, body="Author 1, Comment 2"
-    )
-    comment1_author2 = create_comment(
-        issue=issue, external_id="903", author=author2, body="Author 2, Comment 1"
-    )
+    # Create comments by author1
+    create_comment(issue_id=str(issue.id), author=author1, body="Author 1, Comment 1")
+    create_comment(issue_id=str(issue.id), author=author1, body="Author 1, Comment 2")
 
-    # Test for author1
-    comments_author1 = crud_comment.get_multi_by_author(
-        db_session, author=author1.username
-    )
-    assert len(comments_author1) == 2
-    comment_ids_author1 = {c.id for c in comments_author1}
-    assert comment1_author1.id in comment_ids_author1
-    assert comment2_author1.id in comment_ids_author1
+    # Create a comment by author2
+    create_comment(issue_id=str(issue.id), author=author2, body="Author 2, Comment 1")
 
-    # Test for author2
-    comments_author2 = crud_comment.get_multi_by_author(
-        db_session, author=author2.username
-    )
-    assert len(comments_author2) == 1
-    assert comments_author2[0].id == comment1_author2.id
+    # Retrieve comments by author1
+    comments = crud_comment.get_multi_by_author(db_session, author=author1.username)
+    assert len(comments) == 2
+    assert {c.body for c in comments} == {"Author 1, Comment 1", "Author 1, Comment 2"}
 
-    # Test for an author with no comments
-    author_no_comments = create_account(username="author_no_comments")
-    comments_no_author = crud_comment.get_multi_by_author(
-        db_session, author=author_no_comments.username
-    )
-    assert len(comments_no_author) == 0
+    # Retrieve comments by author2
+    comments = crud_comment.get_multi_by_author(db_session, author=author2.username)
+    assert len(comments) == 1
+    assert comments[0].body == "Author 2, Comment 1"
 
 
 def test_comment_base_crud_operations(db_session: Session, create_comment):

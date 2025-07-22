@@ -15,17 +15,8 @@ class CRUDComment(CRUDBase[Comment]):
 
     def create_with_author(self, db: Session, *, obj_in: dict, author: str) -> Comment:
         """Create a new comment with an author."""
-        author_obj = db.query(Account).filter(Account.username == author).first()
-        if not author_obj:
-            raise ValueError(f"Author with username '{author}' not found.")
-
         comment_data = obj_in.copy()
-        comment_data["author_id"] = author_obj.id
-        # The 'author' relationship is now correctly handled by SQLAlchemy
-        # through the back-populates mechanism via the author_id foreign key.
-        if "author" in comment_data:
-            del comment_data["author"]
-
+        comment_data["author"] = author
         return super().create(db, obj_in=comment_data)
 
     def get_by_external_id(
@@ -71,13 +62,9 @@ class CRUDComment(CRUDBase[Comment]):
         account_id: Optional[str] = None,
     ) -> List[Comment]:
         """Get multiple comments by a specific author."""
-        query = (
-            db.query(self.model)
-            .join(self.model.author)
-            .filter(Account.username == author)
-        )
+        query = db.query(self.model).filter(self.model.author == author)
         if account_id:
-            query = query.join(Tracker).filter(Account.id == account_id)
+            query = query.join(Tracker).join(Account).filter(Account.id == account_id)
         return (
             query.order_by(self.model.created_at.desc()).offset(skip).limit(limit).all()
         )

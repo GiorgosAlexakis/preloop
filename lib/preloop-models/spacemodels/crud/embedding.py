@@ -526,7 +526,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             sql = f"""
                 WITH results AS (
                     SELECT
-                        c.id, c.body, c.type, c.issue_id, c.author_id,
+                        c.id, c.body, c.type, c.issue_id, c.author,
                         c.meta_data AS comment_meta_data,
                         c.created_at AS comment_created_at,
                         c.updated_at AS comment_updated_at,
@@ -552,7 +552,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     body=row.body,
                     type=row.type,
                     issue_id=row.issue_id,
-                    author_id=row.author_id,
+                    author=row.author,
                     meta_data=json.loads(row.comment_meta_data)
                     if row.comment_meta_data and isinstance(row.comment_meta_data, str)
                     else row.comment_meta_data,
@@ -581,7 +581,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         i.meta_data AS issue_meta_data, i.last_updated_external, i.last_synced,
                         i.created_at AS issue_created_at, i.updated_at AS issue_updated_at,
                         NULL AS comment_obj_id, NULL AS comment_body, NULL AS comment_type, NULL AS comment_issue_id,
-                        NULL AS comment_author_id, NULL AS comment_meta_data,
+                        NULL AS comment_author, NULL AS comment_meta_data,
                         NULL AS comment_created_at, NULL AS comment_updated_at
                     FROM issueembedding e JOIN issue i ON e.issue_id = i.id
                     JOIN tracker t ON i.tracker_id = t.id
@@ -598,7 +598,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         NULL, NULL, NULL, -- Issue specific metadata/timestamps
                         NULL, NULL, -- Issue specific timestamps
                         c.id AS comment_obj_id, c.body AS comment_body, c.type AS comment_type, c.issue_id AS comment_issue_id,
-                        c.author_id AS comment_author_id, c.meta_data AS comment_meta_data,
+                        c.author AS comment_author, c.meta_data AS comment_meta_data,
                         c.created_at AS comment_created_at, c.updated_at AS comment_updated_at
                     FROM issueembedding e
                         JOIN comment c ON e.comment_id = c.id
@@ -644,7 +644,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         body=row.comment_body,
                         type=row.comment_type,
                         issue_id=row.comment_issue_id,
-                        author_id=row.comment_author_id,
+                        author=row.comment_author,
                         meta_data=json.loads(row.comment_meta_data)
                         if row.comment_meta_data
                         and isinstance(row.comment_meta_data, str)
