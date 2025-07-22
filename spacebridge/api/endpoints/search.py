@@ -91,8 +91,8 @@ async def search_all(
     organization: Optional[str] = Query(
         None, description="Filter search results by organization name."
     ),
-    author_id: Optional[str] = Query(
-        None, description="Filter comments by author ID (UUID)"
+    author: Optional[str] = Query(
+        None, description="Filter comments by author (username)"
     ),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
@@ -102,7 +102,7 @@ async def search_all(
     - **query**: The natural language query.
     - **embedding_type**: 'issue', 'comment', or null (for both).
     - **search_type**: 'similarity' or 'full_text'.
-    - Filters: project_id, limit, etc. Note: issue_id, organization_id, author_id are not used for similarity search.
+    - Filters: project_id, limit, etc. Note: issue_id, organization_id, author are not used for similarity search.
     """
     # --- Project and Organization Resolution Logic ---
     resolved_project_ids_param: Optional[List[str]] = None
@@ -236,9 +236,6 @@ async def search_all(
             limit=limit,
             project_ids=resolved_project_ids_param,  # Use the new resolved list
             embedding_type=embedding_type,
-            # Consider passing issue_id and author_id if supported by CRUD for similarity search
-            # issue_id=issue_id,
-            # author_id=author_id,
         )
 
         # print(resolved_project_ids_param) # Optional: for debugging
@@ -303,7 +300,7 @@ async def search_all(
             item_schema = CommentResponse(
                 id=str(db_obj.id),
                 body=db_obj.body,
-                author=db_obj.author_id,
+                author=db_obj.author,
                 created_at=db_obj.created_at,
                 updated_at=db_obj.updated_at,
                 issue_id=str(db_obj.issue_id),

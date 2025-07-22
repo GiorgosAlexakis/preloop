@@ -7,6 +7,7 @@ of issue tracking systems.
 import logging
 import os
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -18,11 +19,13 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pyinstrument import Profiler
+from pyinstrument.renderers import SpeedscopeRenderer
 from starlette.middleware.base import BaseHTTPMiddleware
-from spacebridge.api.middleware import UIRoutingMiddleware
-from fastapi.encoders import jsonable_encoder
 
 from spacebridge import __version__
+from spacebridge.api.middleware import UIRoutingMiddleware
+from fastapi.encoders import jsonable_encoder
 from spacebridge.api.auth import auth_router, get_current_active_user
 from spacebridge.api.endpoints import (
     comments,
@@ -44,6 +47,58 @@ from spacemodels.db.setup import setup_database
 from spacemodels.models.api_usage import ApiUsage
 
 logger = logging.getLogger(__name__)
+
+
+class PyinstrumentMiddleware(BaseHTTPMiddleware):
+    """Middleware to profile requests using pyinstrument."""
+
+    async def dispatch(self, request: Request, call_next):
+        """Process a request and profile it.
+        Args:
+            request: The request to process.
+            call_next: The next middleware to call.
+        Returns:
+            The response from the next middleware.
+        """
+        profiling_enabled = os.getenv("PROFILING_ENABLED", "false").lower() == "true"
+        if not profiling_enabled or not request.url.path.startswith("/api/v1"):
+            return await call_next(request)
+
+        profiler = Profiler()
+        start_time = time.time()
+
+        profiler.start()
+        response = await call_next(request)
+        profiler.stop()
+
+        duration = time.time() - start_time
+
+        # Ensure the profiling directory exists
+        output_dir = Path("/tmp/profiling")
+        output_dir.mkdir(exist_ok=True)
+
+        # Generate a unique filename
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        path_slug = request.url.path.replace("/", "_").strip("_")
+        filename_base = f"{timestamp}_{request.method}_{path_slug}"
+
+        # Save HTML report
+        html_path = output_dir / f"{filename_base}.html"
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(profiler.output_html())
+
+        # Save speedscope report
+        speedscope_path = output_dir / f"{filename_base}.speedscope.json"
+        renderer = SpeedscopeRenderer()
+        with open(speedscope_path, "w", encoding="utf-8") as f:
+            f.write(renderer.render(profiler.last_session))
+
+        logger.info(
+            f"Profiled request {request.method} {request.url.path} in {duration:.4f}s. "
+            f"Reports saved to {html_path} and {speedscope_path}"
+        )
+
+        return response
 
 
 class ApiUsageMiddleware(BaseHTTPMiddleware):
@@ -141,6 +196,24 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Starting up application and database...")
+
+    # Initialize Sentry if DSN is configured
+    sentry_dsn = os.getenv("SENTRY_DSN")
+    if sentry_dsn:
+        import sentry_sdk  # noqa: F401
+
+        sentry_sdk.init(
+            dsn=sentry_dsn,
+            # Set traces_sample_rate to 1.0 to capture 100%
+            # of transactions for performance monitoring.
+            traces_sample_rate=1.0,
+            # Set profiles_sample_rate to 1.0 to profile 100%
+            # of sampled transactions.
+            profiles_sample_rate=1.0,
+            enable_tracing=True,
+        )
+        logger.info("Sentry SDK initialized.")
+
     # Initialize database connection and optionally create tables.
     logger.info("Setting up database connection...")
     try:
@@ -250,6 +323,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Add profiling middleware
+    app.add_middleware(PyinstrumentMiddleware)
 
     # Add API usage tracking
     app.add_middleware(ApiUsageMiddleware)
