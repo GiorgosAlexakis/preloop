@@ -103,79 +103,79 @@ export class IssueDetailView extends LitElement {
     const { issue1, issue2 } = this.pair;
 
     return html`
-        <div class="detail-section">
-          <h3>
-            <span>
-              ${issue1.title}
-            </span>
-            <sl-badge variant=${getStatusVariant(issue1.status)} class="issue-status"
-              >${issue1.status}</sl-badge
-            >
-          </h3>
-          ${when(
-            issue1.description,
-            () => html`<div class="issue-description">
+      <div class="detail-section">
+        <h3>
+          <span> ${issue1.title} </span>
+          <sl-badge
+            variant=${getStatusVariant(issue1.status)}
+            class="issue-status"
+            >${issue1.status}</sl-badge
+          >
+        </h3>
+        ${when(
+          issue1.description,
+          () =>
+            html`<div class="issue-description">
               ${unsafeHTML(issue1.description)}
             </div>`
-          )}
-        </div>
+        )}
+      </div>
 
-        <div class="detail-section">
-          <h3>
-            <span>
-              ${issue2.title}
-            </span>
-            <sl-badge variant=${getStatusVariant(issue2.status)} class="issue-status"
-              >${issue2.status}</sl-badge
-            >
-          </h3>
-          ${when(
-            issue2.description,
-            () => html`<div class="issue-description">
+      <div class="detail-section">
+        <h3>
+          <span> ${issue2.title} </span>
+          <sl-badge
+            variant=${getStatusVariant(issue2.status)}
+            class="issue-status"
+            >${issue2.status}</sl-badge
+          >
+        </h3>
+        ${when(
+          issue2.description,
+          () =>
+            html`<div class="issue-description">
               ${unsafeHTML(issue2.description)}
             </div>`
-          )}
-        </div>
+        )}
+      </div>
 
-        <div class="detail-section">
-          <h3>AI Review</h3>
-          ${when(
-            this.loadingVerdict,
-            () => html`<sl-spinner></sl-spinner>`,
-            () =>
-              when(
-                this.llmVerdict,
-                () => html`
-                  <div>
-                    ${renderVerdict(this.llmVerdict)}
-                  </div>
-                  <p class="verdict-reasoning">
-                    ${this.llmVerdict?.reason || 'No reasoning provided.'}
-                  </p>
-                `,
-                () => html`<p>Could not load verdict.</p>`
-              )
-          )}
-        </div>
+      <div class="detail-section">
+        <h3>AI Review</h3>
+        ${when(
+          this.loadingVerdict,
+          () => html`<sl-spinner></sl-spinner>`,
+          () =>
+            when(
+              this.llmVerdict,
+              () => html`
+                <div>${renderVerdict(this.llmVerdict)}</div>
+                <p class="verdict-reasoning">
+                  ${this.llmVerdict?.reason || 'No reasoning provided.'}
+                </p>
+              `,
+              () => html`<p>Could not load verdict.</p>`
+            )
+        )}
+      </div>
 
-        <sl-button-group>
-          <sl-button
-            variant="success"
-            @click=${() => this.dispatchEvent(new CustomEvent('resolve'))}
-            ?disabled=${this.llmVerdict?.resolution === 'resolved'}
-          >
-            <sl-icon slot="prefix" name="check-circle"></sl-icon>
-            Resolve
-          </sl-button>
-          <sl-button
-            variant="danger"
-            @click=${() => this.dispatchEvent(new CustomEvent('dismiss'))}
-            ?disabled=${this.llmVerdict?.resolution === 'dismissed'}
-          >
-            <sl-icon slot="prefix" name="x-circle"></sl-icon>
-            Dismiss
-          </sl-button>
-        </sl-button-group>
+      <sl-button-group>
+        <sl-button
+          variant="success"
+          @click=${() => this.dispatchEvent(new CustomEvent('resolve'))}
+          ?disabled=${this.llmVerdict?.resolution === 'resolved'}
+        >
+          <sl-icon slot="prefix" name="check-circle"></sl-icon>
+          Resolve
+        </sl-button>
+        <sl-button
+          variant="danger"
+          @click=${() => this.dispatchEvent(new CustomEvent('dismiss'))}
+          ?disabled=${this.llmVerdict?.resolution === 'dismissed'}
+        >
+          <sl-icon slot="prefix" name="x-circle"></sl-icon>
+          Dismiss
+        </sl-button>
+      </sl-button-group>
     `;
   }
 }
