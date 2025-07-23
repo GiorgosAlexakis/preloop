@@ -63,13 +63,13 @@ export class IssueDetailView extends LitElement {
       font-size: var(--sl-font-size-x-small);
       text-transform: uppercase;
     }
-    .card-actions {
-      display: flex;
-      gap: var(--sl-spacing-x-small);
-    }
     .verdict-reasoning {
       font-style: italic;
       color: var(--sl-color-neutral-600);
+    }
+    .actions-container {
+      display: flex;
+      justify-content: flex-end;
     }
   `;
 
@@ -158,24 +158,17 @@ export class IssueDetailView extends LitElement {
         )}
       </div>
 
-      <sl-button-group>
+      <div class="actions-container">
         <sl-button
-          variant="success"
+          variant="primary"
+          size="small"
           @click=${() => this.dispatchEvent(new CustomEvent('resolve'))}
           ?disabled=${this.llmVerdict?.resolution === 'resolved'}
         >
           <sl-icon slot="prefix" name="check-circle"></sl-icon>
           Resolve
         </sl-button>
-        <sl-button
-          variant="danger"
-          @click=${() => this.dispatchEvent(new CustomEvent('dismiss'))}
-          ?disabled=${this.llmVerdict?.resolution === 'dismissed'}
-        >
-          <sl-icon slot="prefix" name="x-circle"></sl-icon>
-          Dismiss
-        </sl-button>
-      </sl-button-group>
+      </div>
     `;
   }
 }

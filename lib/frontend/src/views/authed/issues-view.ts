@@ -154,13 +154,6 @@ export class IssuesView extends LitElement {
         transition: opacity 0.3s ease-in-out;
       }
 
-      .actions-container {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: var(--sl-spacing-x-small);
-      }
-
       .clickable-row {
         cursor: pointer;
       }

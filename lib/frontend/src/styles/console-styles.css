@@ -77,6 +77,12 @@ a:hover {
     border-bottom: 1px solid var(--sl-color-neutral-200);
 }
 
+.actions-container {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sl-spacing-x-small);
+}
+
 .full-width {
     width: 100%;
 }
