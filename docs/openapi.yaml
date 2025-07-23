@@ -1487,6 +1487,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issues-count:
+    get:
+      tags:
+      - Issues
+      summary: Get Issue Count
+      description: Get the total number of issues for the current user's account.
+      operationId: get_issue_count_api_v1_issues_count_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: integer
+                type: object
+                title: Response Get Issue Count Api V1 Issues Count Get
+      security:
+      - bearerAuth: []
   /api/v1/issues/{issue_id}/comments:
     get:
       tags:
