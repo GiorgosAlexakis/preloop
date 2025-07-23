@@ -14,27 +14,28 @@ export class AppearanceView extends LitElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
-    :host {
-      display: block;
-    }
-    sl-card {
-      width: 100%;
-    }
-    h1 {
-      font-size: var(--sl-font-size-x-large);
-      font-weight: var(--sl-font-weight-bold);
-      margin-bottom: var(--sl-spacing-large);
-    }
-    .description {
-      margin-bottom: var(--sl-spacing-large);
-      color: var(--sl-color-neutral-600);
-    }
-    sl-radio-group::part(label) {
-      font-size: var(--sl-font-size-medium);
-      font-weight: var(--sl-font-weight-semibold);
-      margin-bottom: var(--sl-spacing-medium);
-    }
-  `];
+      :host {
+        display: block;
+      }
+      sl-card {
+        width: 100%;
+      }
+      h1 {
+        font-size: var(--sl-font-size-x-large);
+        font-weight: var(--sl-font-weight-bold);
+        margin-bottom: var(--sl-spacing-large);
+      }
+      .description {
+        margin-bottom: var(--sl-spacing-large);
+        color: var(--sl-color-neutral-600);
+      }
+      sl-radio-group::part(label) {
+        font-size: var(--sl-font-size-medium);
+        font-weight: var(--sl-font-weight-semibold);
+        margin-bottom: var(--sl-spacing-medium);
+      }
+    `,
+  ];
 
   connectedCallback() {
     super.connectedCallback();
@@ -53,13 +54,12 @@ export class AppearanceView extends LitElement {
 
   render() {
     return html`
-
-    <div class="container large">
+      <div class="container large">
         <div class="header">
           <h1 class="title">Appearance</h1>
         </div>
 
-                  <sl-card>
+        <sl-card>
           <sl-radio-group
             label="Theme"
             value=${this.selectedTheme}
@@ -70,8 +70,7 @@ export class AppearanceView extends LitElement {
             <sl-radio-button value="system">System</sl-radio-button>
           </sl-radio-group>
         </sl-card>
-        </div>
-
+      </div>
     `;
   }
 }
