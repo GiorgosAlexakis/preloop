@@ -30,7 +30,8 @@ window.addEventListener('theme-change', (e: CustomEvent) => {
 window
   .matchMedia('(prefers-color-scheme: dark)')
   .addEventListener('change', () => {
-    const currentTheme = (localStorage.getItem('theme') as Theme) || DEFAULT_THEME;
+    const currentTheme =
+      (localStorage.getItem('theme') as Theme) || DEFAULT_THEME;
     if (currentTheme === 'system') {
       applyTheme('system');
     }
