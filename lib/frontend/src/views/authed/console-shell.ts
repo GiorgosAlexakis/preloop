@@ -176,6 +176,9 @@ export class ConsoleShell extends LitElement {
                 <a href="/console/settings/llm-models">
                   <sl-menu-item>Models</sl-menu-item>
                 </a>
+                <a href="/console/settings/appearance">
+                  <sl-menu-item>Appearance</sl-menu-item>
+                </a>
               </sl-menu>
             </sl-details>
           </sl-menu>
