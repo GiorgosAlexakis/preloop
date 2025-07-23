@@ -40,6 +40,10 @@ interface ApiUsageStat {
   issues_closed: number;
 }
 
+interface IssueCount {
+  total_issues: number;
+}
+
 @customElement('dashboard-view')
 export class DashboardView extends AuthedElement {
   @state()
@@ -52,6 +56,9 @@ export class DashboardView extends AuthedElement {
   private apiUsageStats: ApiUsageStat[] = [];
 
   @state()
+  private totalIssues = 0;
+
+  @state()
   private isLoading = true;
 
   async connectedCallback() {
@@ -62,16 +69,20 @@ export class DashboardView extends AuthedElement {
   async fetchDashboardData() {
     this.isLoading = true;
     try {
-      const [trackers, apiUsage, apiUsageStats] = await Promise.all([
-        api.getTrackers(),
-        api.getApiUsageStats(),
-        this.fetchData('/api/v1/auth/api-usage?timeseries=true') as Promise<
-          ApiUsageStat[]
-        >,
-      ]);
+      const [trackers, apiUsage, apiUsageStats, issueCount] = await Promise.all(
+        [
+          api.getTrackers(),
+          api.getApiUsageStats(),
+          this.fetchData('/api/v1/auth/api-usage?timeseries=true') as Promise<
+            ApiUsageStat[]
+          >,
+          api.getIssueCount(),
+        ]
+      );
       this.trackers = trackers;
       this.apiUsage = apiUsage;
       this.apiUsageStats = apiUsageStats;
+      this.totalIssues = issueCount.total_issues;
     } catch (error) {
       console.error('Failed to fetch dashboard data', error);
     } finally {
@@ -87,23 +98,6 @@ export class DashboardView extends AuthedElement {
       }
       h1 {
         margin-bottom: var(--sl-spacing-large);
-      }
-      .overview-layout {
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: var(--sl-spacing-large);
-        align-items: start;
-      }
-      .main-column,
-      .side-column {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-large);
-      }
-      .side-column {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-large);
       }
       .summary-list {
         list-style: none;
@@ -202,17 +196,12 @@ export class DashboardView extends AuthedElement {
       return html`<sl-spinner></sl-spinner>`;
     }
 
-    const totalIssuesProcessed =
-      (this.apiUsage?.issues_created || 0) +
-      (this.apiUsage?.issues_updated || 0) +
-      (this.apiUsage?.issues_closed || 0);
-
     return html`
       <div class="container">
         <div class="header">
           <h1>Overview</h1>
         </div>
-        <div class="overview-layout">
+        <div class="column-layout">
           <div class="main-column">
             ${this.trackers.length > 0
               ? html`
@@ -254,6 +243,10 @@ export class DashboardView extends AuthedElement {
                 <li class="summary-item">
                   <a href="/console/settings/api-keys">Total API Requests</a>
                   <strong>${this.apiUsage?.total_requests || 0}</strong>
+                </li>
+                <li class="summary-item">
+                  <span>Total Issues Processed</span>
+                  <strong>${this.totalIssues}</strong>
                 </li>
               </ul>
             </sl-card>

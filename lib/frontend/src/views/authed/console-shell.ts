@@ -174,7 +174,10 @@ export class ConsoleShell extends LitElement {
                   <sl-menu-item>API Keys</sl-menu-item>
                 </a>
                 <a href="/console/settings/llm-models">
-                  <sl-menu-item>LLM Models</sl-menu-item>
+                  <sl-menu-item>Models</sl-menu-item>
+                </a>
+                <a href="/console/settings/appearance">
+                  <sl-menu-item>Appearance</sl-menu-item>
                 </a>
               </sl-menu>
             </sl-details>

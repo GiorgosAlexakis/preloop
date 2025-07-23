@@ -19,6 +19,7 @@ import '../views/authed/settings/api-keys-view.ts';
 import '../views/authed/settings/llm-models-view.ts';
 import '../views/authed/settings/profile-view.ts';
 import '../views/authed/settings/security-view.ts';
+import '../views/authed/settings/appearance-view.ts';
 import './app-header.ts';
 import './app-footer.ts';
 
@@ -71,6 +72,7 @@ export class LitApp extends LitElement {
               { path: 'security', component: 'security-view' },
               { path: 'api-keys', component: 'api-keys-view' },
               { path: 'llm-models', component: 'llm-models-view' },
+              { path: 'appearance', component: 'appearance-view' },
             ],
           },
         ],

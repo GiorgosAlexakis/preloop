@@ -221,6 +221,14 @@ export async function getDuplicateIssues(
   return response.json();
 }
 
+export async function getIssueCount(): Promise<{ total_issues: number }> {
+  const response = await fetchWithAuth('/api/v1/issues-count');
+  if (!response.ok) {
+    throw new Error('Failed to fetch issue count');
+  }
+  return response.json();
+}
+
 export async function post(url: string, body: any) {
   const response = await window.fetch(url, {
     method: 'POST',

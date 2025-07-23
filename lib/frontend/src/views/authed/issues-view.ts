@@ -15,6 +15,7 @@ import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '../../components/project-filter-modal.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/resolve-issue-modal.ts';
+import '../../components/issue-detail-view.ts';
 import {
   listProjects,
   Project,
@@ -31,11 +32,21 @@ import {
   DEFAULT_SIMILARITY_THRESHOLD,
   DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
 } from '../../config';
-import { LlmVerdict, renderVerdict } from '../../utils/verdict';
+import {
+  LlmVerdict,
+  renderVerdict,
+  getStatusVariant,
+} from '../../utils/verdict';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 @customElement('issues-view')
 export class IssuesView extends LitElement {
+  private readonly INFO_ALERT_DISMISSED_KEY =
+    'spacebridge-issues-info-alert-dismissed';
+
+  @state()
+  private _isInfoAlertOpen = false;
+
   @state()
   private _duplicates: DuplicatePair[] = [];
 
@@ -108,21 +119,23 @@ export class IssuesView extends LitElement {
         --padding: 0;
         border-spacing: 0;
       }
+
       .styled-table th,
       .styled-table td {
         padding: var(--sl-spacing-medium);
         text-align: left;
         border-bottom: 1px solid var(--sl-color-neutral-200);
       }
-      .styled-table th {
-        background-color: var(--sl-color-neutral-50);
-        font-weight: var(--sl-font-weight-semibold);
-      }
+
       .styled-table tr:last-child td {
         border-bottom: none;
       }
       .styled-table th:last-child {
         text-align: right;
+      }
+
+      .styled-table .issue-id {
+        font-weight: var(--sl-font-weight-semibold);
       }
 
       .issue-key {
@@ -141,85 +154,11 @@ export class IssuesView extends LitElement {
         transition: opacity 0.3s ease-in-out;
       }
 
-      .actions-container {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: var(--sl-spacing-x-small);
-      }
-
       .clickable-row {
         cursor: pointer;
       }
-
-      .detail-row > td {
-        padding: 0;
-        border-top: none;
-      }
-
-      .detail-view-card {
-        padding: var(--sl-spacing-large);
-      }
-
-      .detail-section h3 {
-        font-size: var(--sl-font-size-medium);
-        margin-top: 0;
-      }
-
-      .detail-issue-key {
-        color: var(--sl-color-neutral-600);
-        font-weight: normal;
-      }
-
-      .issue-description {
-        font-size: var(--sl-font-size-small);
-        color: var(--sl-color-neutral-700);
-        background-color: var(--sl-color-neutral-100);
-        border: 1px solid var(--sl-color-neutral-200);
-        border-radius: var(--sl-border-radius-medium);
-        padding: var(--sl-spacing-medium);
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        max-height: 200px;
-        overflow-y: auto;
-      }
-
-      .active-filters {
-        display: flex;
-        align-items: center;
-        gap: var(--sl-spacing-x-small);
-        padding: var(--sl-spacing-small) 0;
-        flex-wrap: wrap;
-      }
-
-      .active-filters span {
-        font-size: var(--sl-font-size-small);
-        color: var(--sl-color-neutral-600);
-        margin-right: var(--sl-spacing-x-small);
-      }
-
-      .card-actions {
-        display: flex;
-        gap: var(--sl-spacing-x-small);
-      }
-
-      .issue-id-link {
-        color: var(--sl-color-primary-600);
-        text-decoration: none;
-      }
-
-      .issue-id-link:hover {
-        text-decoration: underline;
-      }
-
-      .issue-id {
-        font-weight: 400;
-        margin-right: var(--sl-spacing-x-small);
-      }
-
-      .issue-status {
-        font-size: var(--sl-font-size-x-small);
-        text-transform: uppercase;
+      .row-expanded {
+        background-color: var(--sl-color-primary-50);
       }
 
       .loading-overlay {
@@ -231,7 +170,6 @@ export class IssuesView extends LitElement {
         gap: var(--sl-spacing-medium);
         z-index: 10000;
       }
-
       .chart-header {
         display: flex;
         align-items: center;
@@ -241,11 +179,30 @@ export class IssuesView extends LitElement {
       sl-icon {
         font-size: 1rem;
       }
+
+      .side-column {
+        display: none;
+      }
+
+      .placeholder-content {
+        text-align: center;
+      }
+
+      @media (min-width: 1720px) {
+        .side-column {
+          display: flex;
+        }
+        .inline-detail-row {
+          display: none;
+        }
+      }
     `,
   ];
 
   async connectedCallback() {
     super.connectedCallback();
+    const isDismissed = localStorage.getItem(this.INFO_ALERT_DISMISSED_KEY);
+    this._isInfoAlertOpen = isDismissed !== 'true';
     // Fetch projects first so we can map short IDs from the URL to full IDs.
     await this.fetchProjects();
     this.parseUrlAndUpdateState();
@@ -291,6 +248,7 @@ export class IssuesView extends LitElement {
     } else {
       this._selectedProjectIds = [];
     }
+    this._expandedRowKey = params.get('selectedPair') || null;
   }
 
   private _updateUrl() {
@@ -310,6 +268,11 @@ export class IssuesView extends LitElement {
         (id) => id.split('-')[0]
       );
       params.set('projects', shortProjectIds.join(','));
+    }
+    if (this._expandedRowKey) {
+      params.set('selectedPair', this._expandedRowKey);
+    } else {
+      params.delete('selectedPair');
     }
 
     const newUrl = `${window.location.pathname}?${params.toString()}`;
@@ -406,6 +369,7 @@ export class IssuesView extends LitElement {
     } else {
       this._expandedRowKey = pairKey;
     }
+    this._updateUrl();
   }
 
   private _openResolveModal(pair: DuplicatePair) {
@@ -454,46 +418,19 @@ export class IssuesView extends LitElement {
     this.fetchDuplicates();
   }
 
-  private _renderDetailView(
-    pair: DuplicatePair,
-    verdict: LlmVerdict | undefined
-  ) {
+  private renderDetailRow(pair: DuplicatePair) {
+    const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+    const llmVerdict = this._llmVerdicts[pairKey];
+    const loadingVerdict = this._loadingVerdicts[pairKey];
+
     return html`
-      <tr class="detail-row">
-        <td colspan="5">
-          <div class="detail-view-card">
-            <div class="detail-section">
-              <h3>
-                <span class="detail-issue-key">${pair.issue1.key}</span
-                ><br />${pair.issue1.title}
-              </h3>
-              <p class="issue-description">${pair.issue1.description}</p>
-            </div>
-            <div class="detail-section">
-              <h3>
-                <span class="detail-issue-key">${pair.issue2.key}</span
-                ><br />${pair.issue2.title}
-              </h3>
-              <p class="issue-description">${pair.issue2.description}</p>
-            </div>
-            ${verdict
-              ? html`
-                  <div class="detail-section">
-                    <h3>AI Review</h3>
-                    <p>
-                      <strong>Status:</strong>
-                      ${renderVerdict(verdict)}
-                    </p>
-                    <p>
-                      <strong>Reasoning:</strong>
-                      ${verdict.reason || 'No reasoning provided.'}
-                    </p>
-                  </div>
-                `
-              : ''}
-          </div>
-        </td>
-      </tr>
+      <issue-detail-view
+        .pair=${pair}
+        .llmVerdict=${llmVerdict}
+        .loadingVerdict=${loadingVerdict}
+        @resolve=${() => this._openResolveModal(pair)}
+        @dismiss=${() => this._handleDismiss(pair)}
+      ></issue-detail-view>
     `;
   }
 
@@ -600,245 +537,288 @@ export class IssuesView extends LitElement {
     this.fetchDuplicates();
   }
 
-  private getStatusVariant(
-    status: string
-  ): 'primary' | 'success' | 'neutral' | 'warning' | 'danger' {
-    const lowerCaseStatus = status.toLowerCase();
-    if (['closed', 'done', 'resolved'].includes(lowerCaseStatus)) {
-      return 'success';
-    }
-    if (['open', 'opened', 'to do', 'in progress'].includes(lowerCaseStatus)) {
-      return 'primary';
-    }
-    return 'neutral';
+  private handleInfoAlertHide() {
+    localStorage.setItem(this.INFO_ALERT_DISMISSED_KEY, 'true');
+    this._isInfoAlertOpen = false;
   }
 
   render() {
     return html`
-      <div class="container x-large">
-        <div class="header">
-          <h1>Similar Issues</h1>
-          <sl-button @click=${this._openFilterModal}>
-            <sl-icon slot="prefix" name="filter"></sl-icon>
-            Filter
-          </sl-button>
-        </div>
-
-        <sl-alert variant="primary" open>
-          <sl-icon slot="icon" name="info-circle"></sl-icon>
-          <strong>Find similar issues and resolve duplicates</strong><br />
-          Identify similar and potential duplicate issues across your projects.
-          Review each suggested pair, check the similarity score, and use the AI
-          review to resolve or dismiss the suggestion.
-        </sl-alert>
-
-        ${when(
-          this._initialLoadComplete && this._hasProjects,
-          () => html`
-            <sl-card class="embedding-card">
-              <div slot="header" class="chart-header">
-                Similar Issues per Project
-                <sl-tooltip
-                  content="Showing issues with a similarity score of ${this
-                    ._similarityThresholdCharts * 100}% or higher."
-                >
-                  <sl-icon name="question-circle"></sl-icon>
-                </sl-tooltip>
-              </div>
-              <duplicate-stats-chart
-                .hasProjects=${this._hasProjects}
-                .projectIds=${this._selectedProjectIds}
-                .selectedStatus=${this._selectedStatus}
-                .selectedResolution=${this._selectedResolutionStatus}
-                .similarityThreshold=${this._similarityThresholdCharts}
-                ?interactive=${true}
-                @project-selected=${this._handleProjectSelectedFromChart}
-              ></duplicate-stats-chart>
-            </sl-card>
-          `
-        )}
-        ${when(
-          this._resolutionSummary,
-          () => html`
+      <div class="header">
+        <h1>Similar Issues</h1>
+        <sl-button @click=${this._openFilterModal}>
+          <sl-icon slot="prefix" name="filter"></sl-icon>
+          Filter
+        </sl-button>
+      </div>
+      <div class="column-layout">
+        <div class="main-column">
+          <div class="container">
             <sl-alert
-              variant="success"
-              open
+              variant="primary"
+              ?open=${this._isInfoAlertOpen}
               closable
-              @sl-after-hide=${() => (this._resolutionSummary = null)}
+              @sl-hide=${this.handleInfoAlertHide}
             >
-              <sl-icon slot="icon" name="check-circle"></sl-icon>
-              ${this._resolutionSummary}
+              <sl-icon slot="icon" name="info-circle"></sl-icon>
+              <strong>Find similar issues and resolve duplicates</strong><br />
+              Identify similar and potential duplicate issues across your
+              projects. Review each suggested pair, check the similarity score,
+              and use the AI review to resolve or dismiss the suggestion.
             </sl-alert>
-          `
-        )}
-        ${this._renderActiveFilters()}
-        ${when(
-          this._loading,
-          () =>
-            html`<div class="loading-overlay">
-              <sl-spinner></sl-spinner>
-              <span>Loading issues...</span>
-            </div>`
-        )}
-        ${when(
-          this._error,
-          () => html`<div class="error">Error: ${this._error}</div>`
-        )}
-        ${when(!this._loading && !this._error, () =>
-          this._duplicates.length > 0
-            ? html`
-                <sl-card class="table-card">
-                  <table class="styled-table">
-                    <thead>
-                      <tr>
-                        <th>Issue 1</th>
-                        <th>Issue 2</th>
-                        <th class="text-right">Similarity</th>
-                        <th class="text-right">AI Review</th>
-                        <th class="text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${this._duplicates.map((pair) => {
-                        const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-                        const verdict = this._llmVerdicts[pairKey];
 
-                        return html`
-                          <tr
-                            class="clickable-row"
-                            @click=${() => this._toggleRow(pairKey)}
-                          >
-                            <td>
-                              <a
-                                href="${pair.issue1.meta_data?.url ||
-                                pair.issue1.url}"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="issue-id-link"
-                                @click=${(e: Event) => e.stopPropagation()}
-                              >
-                                <strong class="issue-id"
-                                  >${pair.issue1.key}</strong
-                                >
-                                <sl-badge
-                                  pill
-                                  variant=${this.getStatusVariant(
-                                    pair.issue1.status
-                                  )}
-                                  >${pair.issue1.status}</sl-badge
-                                >
-                              </a>
-                              <div class="issue-title">
-                                ${pair.issue1.title}
-                              </div>
-                            </td>
-                            <td>
-                              <a
-                                href="${pair.issue2.meta_data?.url ||
-                                pair.issue2.url}"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="issue-id-link"
-                                @click=${(e: Event) => e.stopPropagation()}
-                              >
-                                <strong class="issue-id"
-                                  >${pair.issue2.key}</strong
-                                >
-                                <sl-badge
-                                  pill
-                                  variant=${this.getStatusVariant(
-                                    pair.issue2.status
-                                  )}
-                                  >${pair.issue2.status}</sl-badge
-                                >
-                              </a>
-                              <div class="issue-title">
-                                ${pair.issue2.title}
-                              </div>
-                            </td>
-                            <td class="text-right">
-                              ${(pair.similarity * 100).toFixed(2)}%
-                            </td>
-                            <td
-                              class="text-right"
-                              id="verdict-${pair.issue1.id}-${pair.issue2.id}"
-                            >
-                              ${pair.similarity >= 0.999
-                                ? html`<sl-badge
-                                    variant="warning"
-                                    style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
-                                    >Identical</sl-badge
-                                  >`
-                                : renderVerdict(verdict)}
-                            </td>
-                            <td>
-                              <div class="actions-container">
-                                ${when(
-                                  !verdict?.resolution,
-                                  () => html`
-                                    <sl-button
-                                      size="small"
-                                      variant="primary"
-                                      @click=${(e: Event) => {
-                                        e.stopPropagation();
-                                        this._openResolveModal(pair);
-                                      }}
-                                      >Resolve</sl-button
-                                    >
-                                    <sl-tooltip
-                                      content="Dismiss this suggestion"
-                                    >
-                                      <sl-icon-button
-                                        name="x-circle"
-                                        label="Dismiss"
-                                        @click=${(e: Event) => {
-                                          e.stopPropagation();
-                                          this._handleDismiss(pair);
-                                        }}
-                                      ></sl-icon-button>
-                                    </sl-tooltip>
-                                  `
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                          ${this._expandedRowKey === pairKey
-                            ? this._renderDetailView(pair, verdict)
-                            : ''}
-                        `;
-                      })}
-                    </tbody>
-                  </table>
+            ${when(
+              this._initialLoadComplete && this._hasProjects,
+              () => html`
+                <sl-card class="embedding-card">
+                  <div slot="header" class="chart-header">
+                    Similar Issues per Project
+                    <sl-tooltip
+                      content="Showing issues with a similarity score of ${this
+                        ._similarityThresholdCharts * 100}% or higher."
+                    >
+                      <sl-icon name="question-circle"></sl-icon>
+                    </sl-tooltip>
+                  </div>
+                  <duplicate-stats-chart
+                    .hasProjects=${this._hasProjects}
+                    .projectIds=${this._selectedProjectIds}
+                    .selectedStatus=${this._selectedStatus}
+                    .selectedResolution=${this._selectedResolutionStatus}
+                    .similarityThreshold=${this._similarityThresholdCharts}
+                    ?interactive=${true}
+                    @project-selected=${this._handleProjectSelectedFromChart}
+                  ></duplicate-stats-chart>
                 </sl-card>
-                <div class="pagination-controls">
-                  <sl-button-group>
-                    <sl-button
-                      @click=${() => this._goToPage(this._currentPage - 1)}
-                      ?disabled=${this._currentPage <= 1}
-                    >
-                      Previous
-                    </sl-button>
-                    <sl-button
-                      @click=${() => this._goToPage(this._currentPage + 1)}
-                      ?disabled=${!this._hasMorePages}
-                    >
-                      Next
-                    </sl-button>
-                  </sl-button-group>
-                  <span>Page ${this._currentPage}</span>
-                </div>
               `
-            : html`
-                <sl-alert variant="primary" open>
-                  <sl-icon slot="icon" name="info-circle"></sl-icon>
-                  ${this._hasProjects
-                    ? 'No duplicate issues found for the current filters.'
-                    : unsafeHTML(
-                        'No projects found. Did you <a href="/console/trackers">add a tracker</a>?'
-                      )}
+            )}
+            ${when(
+              this._resolutionSummary,
+              () => html`
+                <sl-alert
+                  variant="success"
+                  open
+                  closable
+                  @sl-after-hide=${() => (this._resolutionSummary = null)}
+                >
+                  <sl-icon slot="icon" name="check-circle"></sl-icon>
+                  ${this._resolutionSummary}
                 </sl-alert>
               `
-        )}
+            )}
+            ${this._renderActiveFilters()}
+            ${when(
+              this._loading,
+              () =>
+                html`<div class="loading-overlay">
+                  <sl-spinner></sl-spinner>
+                  <span>Loading issues...</span>
+                </div>`
+            )}
+            ${when(
+              this._error,
+              () => html`<div class="error">Error: ${this._error}</div>`
+            )}
+            ${when(!this._loading && !this._error, () =>
+              this._duplicates.length > 0
+                ? html`
+                    <sl-card class="table-card">
+                      <table class="styled-table">
+                        <thead>
+                          <tr>
+                            <th>Issue 1</th>
+                            <th>Issue 2</th>
+                            <th class="text-right">Similarity</th>
+                            <th class="text-right">AI Review</th>
+                            <th class="text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${this._duplicates.map((pair) => {
+                            const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+                            const verdict = this._llmVerdicts[pairKey];
+                            const isFaint = this._loadingVerdicts[pairKey];
+                            const isExpanded = this._expandedRowKey === pairKey;
+
+                            return html`
+                              <tr
+                                class="clickable-row ${isFaint
+                                  ? 'faint-row'
+                                  : ''} ${isExpanded ? 'row-expanded' : ''}"
+                                @click=${() => this._toggleRow(pairKey)}
+                              >
+                                <td>
+                                  <a
+                                    href="${pair.issue1.meta_data?.url ||
+                                    pair.issue1.url}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="issue-id-link"
+                                    @click=${(e: Event) => e.stopPropagation()}
+                                  >
+                                    <strong class="issue-id"
+                                      >${pair.issue1.key}</strong
+                                    >
+                                    <sl-badge
+                                      pill
+                                      variant=${getStatusVariant(
+                                        pair.issue1.status
+                                      )}
+                                      >${pair.issue1.status}</sl-badge
+                                    >
+                                  </a>
+                                  <div class="issue-title">
+                                    ${pair.issue1.title}
+                                  </div>
+                                </td>
+                                <td>
+                                  <a
+                                    href="${pair.issue2.meta_data?.url ||
+                                    pair.issue2.url}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="issue-id-link"
+                                    @click=${(e: Event) => e.stopPropagation()}
+                                  >
+                                    <strong class="issue-id"
+                                      >${pair.issue2.key}</strong
+                                    >
+                                    <sl-badge
+                                      pill
+                                      variant=${getStatusVariant(
+                                        pair.issue2.status
+                                      )}
+                                      >${pair.issue2.status}</sl-badge
+                                    >
+                                  </a>
+                                  <div class="issue-title">
+                                    ${pair.issue2.title}
+                                  </div>
+                                </td>
+                                <td class="text-right">
+                                  ${(pair.similarity * 100).toFixed(2)}%
+                                </td>
+                                <td
+                                  class="text-right"
+                                  id="verdict-${pair.issue1.id}-${pair.issue2
+                                    .id}"
+                                >
+                                  ${pair.similarity >= 0.999
+                                    ? html`<sl-badge
+                                        variant="warning"
+                                        style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
+                                        >Identical</sl-badge
+                                      >`
+                                    : renderVerdict(verdict)}
+                                </td>
+                                <td>
+                                  <div class="actions-container">
+                                    ${when(
+                                      !verdict?.resolution,
+                                      () => html`
+                                        <sl-button
+                                          size="small"
+                                          variant="primary"
+                                          @click=${(e: Event) => {
+                                            e.stopPropagation();
+                                            this._openResolveModal(pair);
+                                          }}
+                                          >Resolve</sl-button
+                                        >
+                                        <sl-tooltip
+                                          content="Dismiss this suggestion"
+                                        >
+                                          <sl-icon-button
+                                            name="x-circle"
+                                            label="Dismiss"
+                                            @click=${(e: Event) => {
+                                              e.stopPropagation();
+                                              this._handleDismiss(pair);
+                                            }}
+                                          ></sl-icon-button>
+                                        </sl-tooltip>
+                                      `
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                              ${when(
+                                isExpanded,
+                                () => html`
+                                  <tr class="inline-detail-row">
+                                    <td colspan="5">
+                                      ${this.renderDetailRow(pair)}
+                                    </td>
+                                  </tr>
+                                `
+                              )}
+                            `;
+                          })}
+                        </tbody>
+                      </table>
+                    </sl-card>
+                    <div class="pagination-controls">
+                      <sl-button-group>
+                        <sl-button
+                          @click=${() => this._goToPage(this._currentPage - 1)}
+                          ?disabled=${this._currentPage <= 1}
+                        >
+                          Previous
+                        </sl-button>
+                        <sl-button
+                          @click=${() => this._goToPage(this._currentPage + 1)}
+                          ?disabled=${!this._hasMorePages}
+                        >
+                          Next
+                        </sl-button>
+                      </sl-button-group>
+                      <span>Page ${this._currentPage}</span>
+                    </div>
+                  `
+                : html`
+                    <sl-alert variant="primary" open>
+                      <sl-icon slot="icon" name="info-circle"></sl-icon>
+                      ${this._hasProjects
+                        ? 'No duplicate issues found for the current filters.'
+                        : unsafeHTML(
+                            'No projects found. Did you <a href="/console/trackers">add a tracker</a>?'
+                          )}
+                    </sl-alert>
+                  `
+            )}
+          </div>
+        </div>
+        <div class="side-column">
+          ${when(
+            this._expandedRowKey,
+            () => {
+              const expandedPair = this._duplicates.find(
+                (p) => `${p.issue1.id}-${p.issue2.id}` === this._expandedRowKey
+              );
+              return expandedPair
+                ? html`
+                    <div class="side-column-detail">
+                      <sl-card>
+                        <div slot="header">Issue Pair Details</div>
+                        ${this.renderDetailRow(expandedPair)}
+                      </sl-card>
+                    </div>
+                  `
+                : '';
+            },
+            () => html`
+              <div class="side-column-detail">
+                <sl-card class="full-width">
+                  <div slot="header">Issue Pair Details</div>
+                  <div class="placeholder-content">
+                    <sl-icon name="info-circle"></sl-icon>
+                    <p>Select an issue pair to see the details here.</p>
+                  </div>
+                </sl-card>
+              </div>
+            `
+          )}
+        </div>
       </div>
       <project-filter-modal
         .isOpen=${this._isFilterModalOpen}
