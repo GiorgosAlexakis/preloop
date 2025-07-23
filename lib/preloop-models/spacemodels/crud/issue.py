@@ -132,10 +132,28 @@ class CRUDIssue(CRUDBase[Issue]):
             query = query.filter(Issue.project_id.in_(project_ids))
 
         if account_id:
-            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+            query = query.join(Tracker).filter(
+                Tracker.account_id == account_id,
+                Tracker.is_active,
+                ~Tracker.is_deleted,
+            )
 
         result = query.group_by(Issue.project_id).all()
         return {project_id: {"total": count} for project_id, count in result}
+
+    def get_issue_count(self, db: Session, *, account_id: str) -> int:
+        """Get the total number of issues for an account from non-deleted trackers."""
+        count = (
+            db.query(func.count(Issue.id))
+            .join(Tracker, Issue.tracker_id == Tracker.id)
+            .filter(
+                Tracker.account_id == account_id,
+                Tracker.is_active,
+                ~Tracker.is_deleted,
+            )
+            .scalar()
+        )
+        return count or 0
 
     def get_for_tracker(
         self,
