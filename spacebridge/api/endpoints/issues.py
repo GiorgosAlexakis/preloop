@@ -1228,6 +1228,16 @@ def get_issue(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/issues-count", response_model=Dict[str, int])
+def get_issue_count(
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+):
+    """Get the total number of issues for the current user's account."""
+    count = crud_issue.get_issue_count(db=db, account_id=current_user.id)
+    return {"total_issues": count}
+
+
 @router.put("/issues/{issue_id:path}", response_model=IssueResponse)
 async def update_issue(
     issue_id: str,  # Issue key, Issue ID or external ID
