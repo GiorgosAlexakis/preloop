@@ -88,23 +88,6 @@ export class DashboardView extends AuthedElement {
       h1 {
         margin-bottom: var(--sl-spacing-large);
       }
-      .overview-layout {
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: var(--sl-spacing-large);
-        align-items: start;
-      }
-      .main-column,
-      .side-column {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-large);
-      }
-      .side-column {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-large);
-      }
       .summary-list {
         list-style: none;
         padding: 0;
@@ -212,7 +195,7 @@ export class DashboardView extends AuthedElement {
         <div class="header">
           <h1>Overview</h1>
         </div>
-        <div class="overview-layout">
+        <div class="column-layout">
           <div class="main-column">
             ${this.trackers.length > 0
               ? html`

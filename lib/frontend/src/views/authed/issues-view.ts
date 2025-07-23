@@ -15,6 +15,7 @@ import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '../../components/project-filter-modal.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/resolve-issue-modal.ts';
+import '../../components/issue-detail-view.ts';
 import {
   listProjects,
   Project,
@@ -31,11 +32,17 @@ import {
   DEFAULT_SIMILARITY_THRESHOLD,
   DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
 } from '../../config';
-import { LlmVerdict, renderVerdict } from '../../utils/verdict';
+import { LlmVerdict, renderVerdict, getStatusVariant } from '../../utils/verdict';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 @customElement('issues-view')
 export class IssuesView extends LitElement {
+  private readonly INFO_ALERT_DISMISSED_KEY =
+    'spacebridge-issues-info-alert-dismissed';
+
+  @state()
+  private _isInfoAlertOpen = false;
+
   @state()
   private _duplicates: DuplicatePair[] = [];
 
@@ -108,16 +115,14 @@ export class IssuesView extends LitElement {
         --padding: 0;
         border-spacing: 0;
       }
+
       .styled-table th,
       .styled-table td {
         padding: var(--sl-spacing-medium);
         text-align: left;
         border-bottom: 1px solid var(--sl-color-neutral-200);
       }
-      .styled-table th {
-        background-color: var(--sl-color-neutral-50);
-        font-weight: var(--sl-font-weight-semibold);
-      }
+      
       .styled-table tr:last-child td {
         border-bottom: none;
       }
@@ -125,6 +130,10 @@ export class IssuesView extends LitElement {
         text-align: right;
       }
 
+      .styled-table .issue-id {
+        font-weight: var(--sl-font-weight-semibold);
+      }
+      
       .issue-key {
         color: var(--sl-color-neutral-600);
       }
@@ -151,75 +160,8 @@ export class IssuesView extends LitElement {
       .clickable-row {
         cursor: pointer;
       }
-
-      .detail-row > td {
-        padding: 0;
-        border-top: none;
-      }
-
-      .detail-view-card {
-        padding: var(--sl-spacing-large);
-      }
-
-      .detail-section h3 {
-        font-size: var(--sl-font-size-medium);
-        margin-top: 0;
-      }
-
-      .detail-issue-key {
-        color: var(--sl-color-neutral-600);
-        font-weight: normal;
-      }
-
-      .issue-description {
-        font-size: var(--sl-font-size-small);
-        color: var(--sl-color-neutral-700);
-        background-color: var(--sl-color-neutral-100);
-        border: 1px solid var(--sl-color-neutral-200);
-        border-radius: var(--sl-border-radius-medium);
-        padding: var(--sl-spacing-medium);
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        max-height: 200px;
-        overflow-y: auto;
-      }
-
-      .active-filters {
-        display: flex;
-        align-items: center;
-        gap: var(--sl-spacing-x-small);
-        padding: var(--sl-spacing-small) 0;
-        flex-wrap: wrap;
-      }
-
-      .active-filters span {
-        font-size: var(--sl-font-size-small);
-        color: var(--sl-color-neutral-600);
-        margin-right: var(--sl-spacing-x-small);
-      }
-
-      .card-actions {
-        display: flex;
-        gap: var(--sl-spacing-x-small);
-      }
-
-      .issue-id-link {
-        color: var(--sl-color-primary-600);
-        text-decoration: none;
-      }
-
-      .issue-id-link:hover {
-        text-decoration: underline;
-      }
-
-      .issue-id {
-        font-weight: 400;
-        margin-right: var(--sl-spacing-x-small);
-      }
-
-      .issue-status {
-        font-size: var(--sl-font-size-x-small);
-        text-transform: uppercase;
+      .row-expanded {
+        background-color: var(--sl-color-primary-50);
       }
 
       .loading-overlay {
@@ -231,7 +173,6 @@ export class IssuesView extends LitElement {
         gap: var(--sl-spacing-medium);
         z-index: 10000;
       }
-
       .chart-header {
         display: flex;
         align-items: center;
@@ -241,11 +182,30 @@ export class IssuesView extends LitElement {
       sl-icon {
         font-size: 1rem;
       }
+
+      .side-column {
+        display: none;
+      }
+
+      .placeholder-content {
+        text-align: center;
+      }
+
+      @media (min-width: 1720px) {
+        .side-column {
+          display: flex;
+        }
+        .inline-detail-row {
+          display: none;
+        }
+      }
     `,
   ];
 
   async connectedCallback() {
     super.connectedCallback();
+    const isDismissed = localStorage.getItem(this.INFO_ALERT_DISMISSED_KEY);
+    this._isInfoAlertOpen = isDismissed !== 'true';
     // Fetch projects first so we can map short IDs from the URL to full IDs.
     await this.fetchProjects();
     this.parseUrlAndUpdateState();
@@ -454,46 +414,19 @@ export class IssuesView extends LitElement {
     this.fetchDuplicates();
   }
 
-  private _renderDetailView(
-    pair: DuplicatePair,
-    verdict: LlmVerdict | undefined
-  ) {
+  private renderDetailRow(pair: DuplicatePair) {
+    const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+    const llmVerdict = this._llmVerdicts[pairKey];
+    const loadingVerdict = this._loadingVerdicts[pairKey];
+
     return html`
-      <tr class="detail-row">
-        <td colspan="5">
-          <div class="detail-view-card">
-            <div class="detail-section">
-              <h3>
-                <span class="detail-issue-key">${pair.issue1.key}</span
-                ><br />${pair.issue1.title}
-              </h3>
-              <p class="issue-description">${pair.issue1.description}</p>
-            </div>
-            <div class="detail-section">
-              <h3>
-                <span class="detail-issue-key">${pair.issue2.key}</span
-                ><br />${pair.issue2.title}
-              </h3>
-              <p class="issue-description">${pair.issue2.description}</p>
-            </div>
-            ${verdict
-              ? html`
-                  <div class="detail-section">
-                    <h3>AI Review</h3>
-                    <p>
-                      <strong>Status:</strong>
-                      ${renderVerdict(verdict)}
-                    </p>
-                    <p>
-                      <strong>Reasoning:</strong>
-                      ${verdict.reason || 'No reasoning provided.'}
-                    </p>
-                  </div>
-                `
-              : ''}
-          </div>
-        </td>
-      </tr>
+      <issue-detail-view
+        .pair=${pair}
+        .llmVerdict=${llmVerdict}
+        .loadingVerdict=${loadingVerdict}
+        @resolve=${() => this._openResolveModal(pair)}
+        @dismiss=${() => this._handleDismiss(pair)}
+      ></issue-detail-view>
     `;
   }
 
@@ -600,31 +533,31 @@ export class IssuesView extends LitElement {
     this.fetchDuplicates();
   }
 
-  private getStatusVariant(
-    status: string
-  ): 'primary' | 'success' | 'neutral' | 'warning' | 'danger' {
-    const lowerCaseStatus = status.toLowerCase();
-    if (['closed', 'done', 'resolved'].includes(lowerCaseStatus)) {
-      return 'success';
-    }
-    if (['open', 'opened', 'to do', 'in progress'].includes(lowerCaseStatus)) {
-      return 'primary';
-    }
-    return 'neutral';
+  private handleInfoAlertHide() {
+    localStorage.setItem(this.INFO_ALERT_DISMISSED_KEY, 'true');
+    this._isInfoAlertOpen = false;
   }
 
   render() {
     return html`
-      <div class="container x-large">
-        <div class="header">
+    <div class="header">
           <h1>Similar Issues</h1>
           <sl-button @click=${this._openFilterModal}>
             <sl-icon slot="prefix" name="filter"></sl-icon>
             Filter
           </sl-button>
         </div>
+    <div class="column-layout">
+    <div class="main-column">
+      <div class="container">
+        
 
-        <sl-alert variant="primary" open>
+        <sl-alert
+          variant="primary"
+          ?open=${this._isInfoAlertOpen}
+          closable
+          @sl-hide=${this.handleInfoAlertHide}
+        >
           <sl-icon slot="icon" name="info-circle"></sl-icon>
           <strong>Find similar issues and resolve duplicates</strong><br />
           Identify similar and potential duplicate issues across your projects.
@@ -702,10 +635,14 @@ export class IssuesView extends LitElement {
                       ${this._duplicates.map((pair) => {
                         const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
                         const verdict = this._llmVerdicts[pairKey];
+                        const isFaint = this._loadingVerdicts[pairKey];
+                        const isExpanded = this._expandedRowKey === pairKey;
 
                         return html`
                           <tr
-                            class="clickable-row"
+                            class="clickable-row ${isFaint ? 'faint-row' : ''} ${
+                              isExpanded ? 'row-expanded' : ''
+                            }"
                             @click=${() => this._toggleRow(pairKey)}
                           >
                             <td>
@@ -722,7 +659,7 @@ export class IssuesView extends LitElement {
                                 >
                                 <sl-badge
                                   pill
-                                  variant=${this.getStatusVariant(
+                                  variant=${getStatusVariant(
                                     pair.issue1.status
                                   )}
                                   >${pair.issue1.status}</sl-badge
@@ -746,7 +683,7 @@ export class IssuesView extends LitElement {
                                 >
                                 <sl-badge
                                   pill
-                                  variant=${this.getStatusVariant(
+                                  variant=${getStatusVariant(
                                     pair.issue2.status
                                   )}
                                   >${pair.issue2.status}</sl-badge
@@ -802,9 +739,14 @@ export class IssuesView extends LitElement {
                               </div>
                             </td>
                           </tr>
-                          ${this._expandedRowKey === pairKey
-                            ? this._renderDetailView(pair, verdict)
-                            : ''}
+                          ${when(
+                            isExpanded,
+                            () => html`
+                              <tr class="inline-detail-row">
+                                <td colspan="5">${this.renderDetailRow(pair)}</td>
+                              </tr>
+                            `
+                          )}
                         `;
                       })}
                     </tbody>
@@ -840,23 +782,56 @@ export class IssuesView extends LitElement {
               `
         )}
       </div>
-      <project-filter-modal
-        .isOpen=${this._isFilterModalOpen}
-        .allProjects=${this._allProjects}
-        .organizations=${this._organizations}
-        .projects=${this._allProjects}
-        .selectedProjectIds=${this._selectedProjectIds}
-        .selectedStatus=${this._selectedStatus}
-        .selectedResolution=${this._selectedResolutionStatus}
-        @on-close=${() => (this._isFilterModalOpen = false)}
-        @on-apply=${this._applyFilters}
-      ></project-filter-modal>
-      <resolve-issue-modal
-        .isOpen=${this._isResolveModalOpen}
-        .duplicatePair=${this._selectedPair}
-        @on-close=${() => (this._isResolveModalOpen = false)}
-        @on-resolved=${this.handleResolution}
-      ></resolve-issue-modal>
+    </div>
+    <div class="side-column">
+      ${when(
+        this._expandedRowKey,
+        () => {
+          const expandedPair = this._duplicates.find(
+            (p) => `${p.issue1.id}-${p.issue2.id}` === this._expandedRowKey
+          );
+          return expandedPair
+            ? html`
+                <div class="side-column-detail">
+                  <sl-card>
+                    <div slot="header">Issue Pair Details</div>
+                    ${this.renderDetailRow(expandedPair)}
+                  </sl-card>
+                </div>
+              `
+            : '';
+        },
+        () => html`
+          <div class="side-column-detail">
+            <sl-card class="full-width">
+              <div slot="header">Issue Pair Details</div>
+              <div class="placeholder-content">
+                <sl-icon name="info-circle"></sl-icon>
+                <p>Select an issue pair to see the details here.</p>
+              </div>
+            </sl-card>
+          </div>
+        `
+      )}
+    </div>
+    </div>
+    <project-filter-modal
+      .isOpen=${this._isFilterModalOpen}
+      .allProjects=${this._allProjects}
+      .organizations=${this._organizations}
+      .projects=${this._allProjects}
+      .selectedProjectIds=${this._selectedProjectIds}
+      .selectedStatus=${this._selectedStatus}
+      .selectedResolution=${this._selectedResolutionStatus}
+      @on-close=${() => (this._isFilterModalOpen = false)}
+      @on-apply=${this._applyFilters}
+    ></project-filter-modal>
+    <resolve-issue-modal
+      .isOpen=${this._isResolveModalOpen}
+      .duplicatePair=${this._selectedPair}
+      @on-close=${() => (this._isResolveModalOpen = false)}
+      @on-resolved=${this.handleResolution}
+    ></resolve-issue-modal>
     `;
   }
 

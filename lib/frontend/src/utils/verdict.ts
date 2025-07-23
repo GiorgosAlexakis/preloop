@@ -93,3 +93,16 @@ export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
       `;
   }
 }
+
+export function getStatusVariant(
+  status: string
+): 'primary' | 'success' | 'neutral' | 'warning' | 'danger' {
+  const lowerCaseStatus = status.toLowerCase();
+  if (['closed', 'done', 'resolved'].includes(lowerCaseStatus)) {
+    return 'success';
+  }
+  if (['open', 'opened', 'to do', 'in progress'].includes(lowerCaseStatus)) {
+    return 'primary';
+  }
+  return 'neutral';
+}

@@ -26,6 +26,12 @@ import consoleStyles from '../../../styles/console-styles.css?inline';
 
 @customElement('llm-models-view')
 export class LlmModelsView extends LitElement {
+  private readonly INFO_ALERT_DISMISSED_KEY =
+    'spacebridge-llm-models-info-alert-dismissed';
+
+  @state()
+  private _isInfoAlertOpen = false;
+
   @state()
   private models: LlmModel[] = [];
 
@@ -115,6 +121,8 @@ export class LlmModelsView extends LitElement {
 
   async connectedCallback() {
     super.connectedCallback();
+    const isDismissed = localStorage.getItem(this.INFO_ALERT_DISMISSED_KEY);
+    this._isInfoAlertOpen = isDismissed !== 'true';
     await this.fetchModels();
   }
 
@@ -155,7 +163,7 @@ export class LlmModelsView extends LitElement {
     return html`
       <div class="container large">
         <div class="header">
-          <h1 class="title">LLM Models</h1>
+          <h1 class="title">Models</h1>
           <sl-button variant="primary" @click=${this.openAddModelModal}>
             <sl-icon slot="prefix" name="plus-lg"></sl-icon> Add Model
           </sl-button>
@@ -169,9 +177,15 @@ export class LlmModelsView extends LitElement {
 
   renderModelsList() {
     return html`
-      <sl-alert class="info-header" variant="primary" open>
+      <sl-alert
+        class="info-header"
+        variant="primary"
+        ?open=${this._isInfoAlertOpen}
+        closable
+        @sl-hide=${this.handleInfoAlertHide}
+      >
         <sl-icon slot="icon" name="info-circle"></sl-icon>
-        LLMs enable advanced AI features such as improved duplicate issue
+        Models enable advanced AI features such as improved duplicate issue
         detection accuracy.
       </sl-alert>
       <sl-card class="table-card">
@@ -180,7 +194,7 @@ export class LlmModelsView extends LitElement {
           () =>
             html` <sl-alert variant="primary" open>
               <sl-icon slot="icon" name="info-circle"></sl-icon>
-              No LLM models configured yet.
+              No Models configured yet.
               <a
                 href="#"
                 @click=${(e: Event) => {
@@ -260,7 +274,7 @@ export class LlmModelsView extends LitElement {
   renderModal() {
     return html`
       <sl-dialog
-        label="${this.isEditing ? 'Edit' : 'Add'} LLM Model"
+        label="${this.isEditing ? 'Edit' : 'Add'} a Model"
         .open=${this.isModalOpen}
       >
         <div class="form-grid">
@@ -486,5 +500,10 @@ export class LlmModelsView extends LitElement {
     }
     this.isDeleteConfirmOpen = false;
     this.modelToDelete = null;
+  }
+
+  private handleInfoAlertHide() {
+    localStorage.setItem(this.INFO_ALERT_DISMISSED_KEY, 'true');
+    this._isInfoAlertOpen = false;
   }
 }
