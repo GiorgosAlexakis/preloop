@@ -255,6 +255,7 @@ export class IssuesView extends LitElement {
     } else {
       this._selectedProjectIds = [];
     }
+    this._expandedRowKey = params.get('selectedPair') || null;
   }
 
   private _updateUrl() {
@@ -274,6 +275,11 @@ export class IssuesView extends LitElement {
         (id) => id.split('-')[0]
       );
       params.set('projects', shortProjectIds.join(','));
+    }
+    if (this._expandedRowKey) {
+      params.set('selectedPair', this._expandedRowKey);
+    } else {
+      params.delete('selectedPair');
     }
 
     const newUrl = `${window.location.pathname}?${params.toString()}`;
@@ -370,6 +376,7 @@ export class IssuesView extends LitElement {
     } else {
       this._expandedRowKey = pairKey;
     }
+    this._updateUrl();
   }
 
   private _openResolveModal(pair: DuplicatePair) {
