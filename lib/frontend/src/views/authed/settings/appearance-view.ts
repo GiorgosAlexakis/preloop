@@ -1,23 +1,24 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
 import '@shoelace-style/shoelace/dist/components/radio-button/radio-button.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
-import { Theme, DEFAULT_THEME } from '../../../theme';
-
-type Theme = 'light' | 'dark' | 'system';
+import consoleStyles from '../../../styles/console-styles.css?inline';
+import { DEFAULT_THEME, Theme } from '../../../theme';
 
 @customElement('appearance-view')
 export class AppearanceView extends LitElement {
   @state()
   private selectedTheme: Theme = DEFAULT_THEME;
 
-  static styles = css`
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
     :host {
       display: block;
     }
     sl-card {
-      max-width: 600px;
+      width: 100%;
     }
     h1 {
       font-size: var(--sl-font-size-x-large);
@@ -33,7 +34,7 @@ export class AppearanceView extends LitElement {
       font-weight: var(--sl-font-weight-semibold);
       margin-bottom: var(--sl-spacing-medium);
     }
-  `;
+  `];
 
   connectedCallback() {
     super.connectedCallback();
@@ -52,12 +53,13 @@ export class AppearanceView extends LitElement {
 
   render() {
     return html`
-      <div class="container">
-        <h1 class="title">Appearance</h1>
-        <p class="description">
-          Customize the look and feel of the application.
-        </p>
-        <sl-card>
+
+    <div class="container large">
+        <div class="header">
+          <h1 class="title">Appearance</h1>
+        </div>
+
+                  <sl-card>
           <sl-radio-group
             label="Theme"
             value=${this.selectedTheme}
@@ -68,7 +70,8 @@ export class AppearanceView extends LitElement {
             <sl-radio-button value="system">System</sl-radio-button>
           </sl-radio-group>
         </sl-card>
-      </div>
+        </div>
+
     `;
   }
 }
