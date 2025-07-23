@@ -69,14 +69,16 @@ export class DashboardView extends AuthedElement {
   async fetchDashboardData() {
     this.isLoading = true;
     try {
-      const [trackers, apiUsage, apiUsageStats, issueCount] = await Promise.all([
-        api.getTrackers(),
-        api.getApiUsageStats(),
-        this.fetchData('/api/v1/auth/api-usage?timeseries=true') as Promise<
-          ApiUsageStat[]
-        >,
-        api.getIssueCount(),
-      ]);
+      const [trackers, apiUsage, apiUsageStats, issueCount] = await Promise.all(
+        [
+          api.getTrackers(),
+          api.getApiUsageStats(),
+          this.fetchData('/api/v1/auth/api-usage?timeseries=true') as Promise<
+            ApiUsageStat[]
+          >,
+          api.getIssueCount(),
+        ]
+      );
       this.trackers = trackers;
       this.apiUsage = apiUsage;
       this.apiUsageStats = apiUsageStats;
