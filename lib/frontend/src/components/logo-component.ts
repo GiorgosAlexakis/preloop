@@ -38,7 +38,9 @@ export class LogoComponent extends LitElement {
 
   private setTheme(theme: Theme) {
     if (theme === 'system') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const prefersDark = window.matchMedia(
+        '(prefers-color-scheme: dark)'
+      ).matches;
       this.theme = prefersDark ? 'dark' : 'light';
     } else {
       this.theme = theme;
@@ -57,7 +59,10 @@ export class LogoComponent extends LitElement {
   }
 
   render() {
-    const logoSrc = this.theme === 'dark' ? '/images/logo_dark.png' : '/images/logo_light.png';
+    const logoSrc =
+      this.theme === 'dark'
+        ? '/images/logo_dark.png'
+        : '/images/logo_light.png';
     return html`<img src="${logoSrc}" alt=${this.alt} />`;
   }
 }
