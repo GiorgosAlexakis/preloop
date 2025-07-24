@@ -6,6 +6,7 @@ import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '../../components/logo-component';
 
 @customElement('forgot-password-view')
 export class ForgotPasswordView extends LitElement {
@@ -39,7 +40,7 @@ export class ForgotPasswordView extends LitElement {
       <div class="container">
         <div class="logo">
           <a href="/">
-            <img src="/images/logo_dark.png" alt="SpaceBridge MCP" />
+            <logo-component></logo-component>
           </a>
         </div>
         <div class="form-container">

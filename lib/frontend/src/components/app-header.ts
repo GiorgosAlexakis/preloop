@@ -6,6 +6,7 @@ import { getAccountDetails } from '../api';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import './logo-component';
 
 interface User {
   username: string;
@@ -44,7 +45,11 @@ export class AppHeader extends LitElement {
       align-items: center;
       gap: 0.5rem;
     }
-    .logo img {
+    .logo {
+      display: flex;
+      align-items: center;
+    }
+    .logo logo-component {
       height: 36px;
     }
     sl-icon-button::part(base) {
@@ -156,7 +161,7 @@ export class AppHeader extends LitElement {
                 ></sl-icon-button>`
               : html`<div class="logo">
                   <a href="/">
-                    <img src="/images/logo_dark.png" alt="SpaceBridge Logo" />
+                    <logo-component alt="SpaceBridge Logo"></logo-component>
                   </a>
                 </div>`}
           </div>

@@ -9,6 +9,7 @@ import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '../../components/logo-component';
 
 @customElement('request-demo-view')
 export class RequestDemoView extends LitElement {
@@ -118,7 +119,7 @@ export class RequestDemoView extends LitElement {
       <div class="container">
         <div class="logo">
           <a href="/">
-            <img src="/images/logo_dark.png" alt="SpaceBridge MCP" />
+            <logo-component></logo-component>
           </a>
         </div>
         <div class="form-container">
