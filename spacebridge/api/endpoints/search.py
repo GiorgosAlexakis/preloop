@@ -277,6 +277,7 @@ async def search_all(
 
             item_schema = IssueResponse(
                 id=str(db_obj.id),
+                project_id=str(db_obj.project_id),
                 external_id=db_obj.external_id,
                 key=db_obj.key,
                 title=db_obj.title,
