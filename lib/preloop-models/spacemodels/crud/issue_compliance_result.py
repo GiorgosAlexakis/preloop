@@ -1,0 +1,35 @@
+"""CRUD operations for IssueComplianceResult model."""
+
+from .base import CRUDBase
+from ..models.issue import Issue
+from ..models.issue_compliance_result import IssueComplianceResult
+from ..models.tracker import Tracker
+from typing import Optional
+from sqlalchemy.orm import Session
+
+
+class CRUDIssueComplianceResult(CRUDBase[IssueComplianceResult]):
+    """CRUD operations for IssueComplianceResult model."""
+
+    def get_by_issue_id_and_prompt_id(
+        self,
+        db: Session,
+        *,
+        issue_id: str,
+        prompt_id: str,
+        account_id: Optional[str] = None,
+    ) -> Optional[IssueComplianceResult]:
+        """Get a compliance result by issue and prompt, checking account access."""
+        query = db.query(self.model).filter(
+            self.model.issue_id == issue_id, self.model.prompt_id == prompt_id
+        )
+        if account_id:
+            query = (
+                query.join(Issue, self.model.issue_id == Issue.id)
+                .join(Tracker, Issue.tracker_id == Tracker.id)
+                .filter(Tracker.account_id == account_id)
+            )
+        return query.first()
+
+
+issue_compliance_result = CRUDIssueComplianceResult(IssueComplianceResult)
