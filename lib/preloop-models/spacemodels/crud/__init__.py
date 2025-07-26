@@ -29,6 +29,10 @@ from .tracker import CRUDTracker
 from .tracker_scope_rule import CRUDTrackerScopeRule
 from .llm_model import CRUDLLMModel
 from .webhook import CRUDWebhook
+from .issue_compliance_result import (
+    CRUDIssueComplianceResult,
+    issue_compliance_result,
+)
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)
@@ -61,6 +65,7 @@ __all__ = [
     "CRUDComment",
     "CRUDLLMModel",
     "CRUDFlow",
+    "CRUDIssueComplianceResult",
     "crud_account",
     "crud_tracker",
     "crud_tracker_scope_rule",
@@ -75,4 +80,5 @@ __all__ = [
     "crud_llm_model",
     "crud_webhook",
     "crud_flow",
+    "issue_compliance_result",
 ]
