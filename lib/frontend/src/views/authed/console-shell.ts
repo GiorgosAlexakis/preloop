@@ -154,7 +154,10 @@ export class ConsoleShell extends LitElement {
               </span>
               <sl-menu>
                 <a href="/console/issues">
-                  <sl-menu-item>Similar Issues</sl-menu-item>
+                  <sl-menu-item>Similarity</sl-menu-item>
+                </a>
+                <a href="/console/issues/compliance">
+                  <sl-menu-item>Compliance</sl-menu-item>
                 </a>
               </sl-menu>
             </sl-details>

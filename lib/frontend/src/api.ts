@@ -229,6 +229,47 @@ export async function getIssueCount(): Promise<{ total_issues: number }> {
   return response.json();
 }
 
+export interface SearchIssuesParams {
+  query: string;
+  search_type: 'similarity' | 'full_text';
+  embedding_type: 'issue' | 'comment';
+  project_ids?: string[];
+  limit?: number;
+}
+
+export interface SearchResultItem {
+  item_type: 'issue' | 'comment';
+  item: Issue | any; // Using 'any' for comment for now
+  similarity: number;
+}
+
+export interface SearchIssuesResponse {
+  results: SearchResultItem[];
+}
+
+export async function searchIssues(
+  params: SearchIssuesParams
+): Promise<SearchIssuesResponse> {
+  const queryParams = new URLSearchParams({
+    query: params.query,
+    search_type: params.search_type,
+    embedding_type: params.embedding_type,
+  });
+
+  if (params.project_ids && params.project_ids.length > 0) {
+    queryParams.append('project_id', params.project_ids.join(','));
+  }
+  if (params.limit) {
+    queryParams.append('limit', params.limit.toString());
+  }
+
+  const response = await fetchWithAuth(`/api/v1/search?${queryParams.toString()}`);
+  if (!response.ok) {
+    throw new Error('Failed to search issues');
+  }
+  return response.json();
+}
+
 export async function post(url: string, body: any) {
   const response = await window.fetch(url, {
     method: 'POST',
@@ -700,6 +741,43 @@ export async function executeIssueDuplicateResolution(
     );
   }
   return response.json();
+}
+
+export interface Issue {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  status_id: string;
+  priority: string;
+  priority_id: string;
+  project_id: string;
+  project_name: string;
+  organization_id: string;
+  organization_name: string;
+  created_at: string;
+  updated_at: string;
+  key: string;
+  source: string;
+  url: string;
+}
+
+export interface IssueComplianceResult {
+  id: string;
+  prompt_id: string;
+  compliance_factor: number;
+  reason: string;
+  issue_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getIssueCompliance(
+  issueId: string
+): Promise<IssueComplianceResult> {
+  return fetchWithAuth(`/api/v1/issue_compliance/${issueId}`, {
+    method: 'GET',
+  });
 }
 
 export async function proposeResolution(resolutionData: any) {

@@ -123,15 +123,7 @@ export class IssuesView extends LitElement {
       .styled-table th,
       .styled-table td {
         padding: var(--sl-spacing-medium);
-        text-align: left;
         border-bottom: 1px solid var(--sl-color-neutral-200);
-      }
-
-      .styled-table tr:last-child td {
-        border-bottom: none;
-      }
-      .styled-table th:last-child {
-        text-align: right;
       }
 
       .styled-table .issue-id {
@@ -411,13 +403,6 @@ export class IssuesView extends LitElement {
     this.fetchDuplicates();
   }
 
-  private _handleResolved() {
-    this._isResolveModalOpen = false;
-    this._selectedPair = null;
-    // Refresh the data
-    this.fetchDuplicates();
-  }
-
   private renderDetailRow(pair: DuplicatePair) {
     const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
     const llmVerdict = this._llmVerdicts[pairKey];
@@ -436,16 +421,6 @@ export class IssuesView extends LitElement {
 
   private _openFilterModal() {
     this._isFilterModalOpen = true;
-  }
-
-  private _closeFilterModal() {
-    this._isFilterModalOpen = false;
-  }
-
-  private _handleProjectsSelected(event: CustomEvent) {
-    this._selectedProjectIds = event.detail.projectIds;
-    this._isFilterModalOpen = false;
-    this.fetchDuplicates(); // Re-fetch data with the new filter
   }
 
   private _removeProjectFilter(projectIdToRemove: string) {
@@ -545,7 +520,7 @@ export class IssuesView extends LitElement {
   render() {
     return html`
       <div class="header">
-        <h1>Similar Issues</h1>
+        <h1>Issue Similarity</h1>
         <sl-button @click=${this._openFilterModal}>
           <sl-icon slot="prefix" name="filter"></sl-icon>
           Filter

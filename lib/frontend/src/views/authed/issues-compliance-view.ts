@@ -1,0 +1,697 @@
+import { LitElement, html, css, unsafeCSS } from 'lit';
+import { customElement, state, property } from 'lit/decorators.js';
+import { when } from 'lit/directives/when.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import '@shoelace-style/shoelace/dist/components/tag/tag.js';
+import '@shoelace-style/shoelace/dist/components/button-group/button-group.js';
+import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
+import '@shoelace-style/shoelace/dist/components/menu/menu.js';
+import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import '../../components/project-filter-modal.ts';
+import '../../components/single-issue-detail-view.ts';
+import { getStatusVariant } from '../../utils/verdict';
+import {
+  listProjects,
+  Project,
+  listOrganizations,
+  Organization,
+  Issue,
+  searchIssues,
+  getIssueCompliance,
+  IssueComplianceResult,
+} from '../../api';
+
+import consoleStyles from '../../styles/console-styles.css?inline';
+
+@customElement('issues-compliance-view')
+export class IssuesComplianceView extends LitElement {
+  private readonly INFO_ALERT_DISMISSED_KEY =
+    'spacebridge-issues-compliance-info-alert-dismissed';
+
+  @state()
+  private _isInfoAlertOpen = false;
+
+  @state()
+  private _searchQuery = '';
+
+  @state()
+  private _hasSearched = false;
+
+  @state()
+  private _issues: Issue[] = [];
+
+  @state()
+  private _complianceResults: Record<string, IssueComplianceResult> = {};
+
+  @state()
+  private _loadingCompliance: Record<string, boolean> = {};
+
+  @state()
+  private _loading = false;
+
+  @state()
+  private _error: string | null = null;
+
+  @state()
+  private _currentPage = 1;
+
+  @state()
+  private _pageSize = 10;
+
+  @state()
+  private _hasMorePages = true;
+
+  @state()
+  private _expandedRowKey: string | null = null;
+
+  @state()
+  private _isFilterModalOpen = false;
+
+  @state()
+  private _selectedProjectIds: string[] = [];
+
+  @state()
+  private _selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+
+  @state()
+  private _allProjects: Project[] = [];
+
+  @state()
+  private _hasProjects = true;
+
+  @state()
+  private _organizations: Organization[] = [];
+
+  @state()
+  private _initialLoadComplete = false;
+
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      .table-card {
+        width: 100%;
+        --padding: 0;
+        border-spacing: 0;
+      }
+
+      .styled-table .issue-id {
+        font-weight: var(--sl-font-weight-semibold);
+      }
+
+      .issue-key {
+        color: var(--sl-color-neutral-600);
+      }
+
+      .pagination-controls {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: var(--sl-spacing-medium);
+      }
+
+      .faint-row {
+        opacity: 0.5;
+        transition: opacity 0.3s ease-in-out;
+      }
+
+      .clickable-row {
+        cursor: pointer;
+      }
+      .row-expanded {
+        background-color: var(--sl-color-primary-50);
+      }
+
+      .loading-overlay {
+        color: white;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: var(--sl-spacing-medium);
+        z-index: 10000;
+      }
+      .chart-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      sl-icon {
+        font-size: 1rem;
+      }
+
+      .side-column {
+        display: none;
+      }
+
+      .placeholder-content {
+        text-align: center;
+      }
+
+      .search-bar {
+        display: flex;
+        gap: var(--sl-spacing-small);
+        align-items: center;
+        margin-bottom: var(--sl-spacing-medium);
+      }
+
+      .search-bar sl-input {
+        flex-grow: 1;
+      }
+
+      @media (min-width: 1720px) {
+        .side-column {
+          display: flex;
+        }
+        .inline-detail-row {
+          display: none;
+        }
+      }
+    `,
+  ];
+
+  async connectedCallback() {
+    super.connectedCallback();
+    const isDismissed = localStorage.getItem(this.INFO_ALERT_DISMISSED_KEY);
+    this._isInfoAlertOpen = isDismissed !== 'true';
+    // Fetch projects first so we can map short IDs from the URL to full IDs.
+    await this.fetchProjects();
+    this.parseUrlAndUpdateState();
+    if (this._searchQuery) {
+      this.fetchIssues();
+    }
+    this.fetchOrganizations();
+    this._initialLoadComplete = true;
+    window.addEventListener('popstate', this.handlePopState);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('popstate', this.handlePopState);
+
+    // Check if we are still on the issues path before cleaning up.
+    // This prevents a race condition where the URL of the *next* page is cleaned.
+    if (window.location.pathname.includes('/issues')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }
+
+  private handlePopState = () => {
+    this.parseUrlAndUpdateState();
+    if (this._searchQuery) {
+      this.fetchIssues();
+    }
+  };
+
+  private parseUrlAndUpdateState() {
+    const params = new URLSearchParams(window.location.search);
+    this._currentPage = parseInt(params.get('page') || '1', 10);
+    this._selectedStatus = (params.get('status') || 'opened') as
+      | 'opened'
+      | 'closed'
+      | 'all';
+    this._searchQuery = params.get('query') || '';
+    const shortProjectIds = params.get('projects');
+    if (shortProjectIds && this._allProjects.length > 0) {
+      const shortIdSet = new Set(shortProjectIds.split(','));
+      this._selectedProjectIds = this._allProjects
+        .filter((p) => shortIdSet.has(p.id.split('-')[0]))
+        .map((p) => p.id);
+    } else {
+      this._selectedProjectIds = [];
+    }
+    this._expandedRowKey = params.get('selectedIssue') || null;
+  }
+
+  private _updateUrl() {
+    // Only update the URL if we are on the issues page.
+    if (!window.location.pathname.includes('/issues')) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('page', this._currentPage.toString());
+    params.set('status', this._selectedStatus);
+    if (this._searchQuery) {
+      params.set('query', this._searchQuery);
+    }
+    if (this._selectedProjectIds.length > 0) {
+      const shortProjectIds = this._selectedProjectIds.map(
+        (id) => id.split('-')[0]
+      );
+      params.set('projects', shortProjectIds.join(','));
+    }
+    if (this._expandedRowKey) {
+      params.set('selectedIssue', this._expandedRowKey);
+    } else {
+      params.delete('selectedIssue');
+    }
+
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.pushState({}, '', newUrl);
+  }
+
+  async fetchInitialData() {
+    this.fetchIssues();
+    this.fetchProjects();
+    this.fetchOrganizations();
+  }
+
+  async fetchProjects() {
+    try {
+      this._allProjects = await listProjects();
+      this._hasProjects = this._allProjects.length > 0;
+    } catch (error) {
+      console.error('Failed to fetch project list:', error);
+      this._hasProjects = false; // Set to false on error
+    }
+  }
+
+  async fetchOrganizations() {
+    try {
+      this._organizations = await listOrganizations();
+    } catch (error) {
+      console.error('Failed to fetch organization list:', error);
+    }
+  }
+
+  async fetchIssues() {
+    if (!this._searchQuery) return;
+
+    this._loading = true;
+    this._error = null;
+    this._hasSearched = true;
+
+    try {
+      const response = await searchIssues({
+        query: this._searchQuery,
+        search_type: 'similarity',
+        embedding_type: 'issue',
+        project_ids: this._selectedProjectIds,
+        limit: this._pageSize,
+      });
+      this._issues = response.results
+        .filter((r) => r.item_type === 'issue')
+        .map((r) => r.item as Issue);
+      this._hasMorePages = this._issues.length === this._pageSize;
+      this._updateUrl(); // Update URL after fetching
+      this.fetchComplianceResults();
+    } catch (error) {
+      this._error =
+        error instanceof Error ? error.message : 'An unknown error occurred.';
+      console.error('Failed to fetch issues:', error);
+    } finally {
+      this._loading = false;
+    }
+  }
+
+  async fetchComplianceResults() {
+    const newResults = { ...this._complianceResults };
+    const newLoading = { ...this._loadingCompliance };
+
+    const promises = this._issues.map((issue) => {
+      const issueId = issue.id;
+      if (newResults[issueId]) {
+        return Promise.resolve();
+      }
+
+      newLoading[issueId] = true;
+
+      return getIssueCompliance(issueId)
+        .then((result) => {
+          newResults[issueId] = result;
+        })
+        .catch((error) => {
+          console.error(
+            `Failed to fetch compliance result for ${issueId}:`,
+            error
+          );
+        })
+        .finally(() => {
+          newLoading[issueId] = false;
+        });
+    });
+
+    this._loadingCompliance = newLoading;
+    await Promise.all(promises);
+    this._complianceResults = newResults;
+  }
+
+  private _toggleRow(issueId: string) {
+    if (this._expandedRowKey === issueId) {
+      this._expandedRowKey = null;
+    } else {
+      this._expandedRowKey = issueId;
+    }
+    this._updateUrl();
+  }
+
+  private _openFilterModal() {
+    this._isFilterModalOpen = true;
+  }
+
+  private _removeProjectFilter(projectIdToRemove: string) {
+    this._selectedProjectIds = this._selectedProjectIds.filter(
+      (id) => id !== projectIdToRemove
+    );
+    this.fetchIssues();
+  }
+
+  private _clearAllFilters() {
+    this._selectedProjectIds = [];
+    this.fetchIssues();
+  }
+
+  private _renderActiveFilters() {
+    if (
+      this._selectedProjectIds.length === 0 &&
+      this._selectedStatus === 'opened'
+    ) {
+      return html``;
+    }
+
+    const selectedProjects = this._selectedProjectIds
+      .map((id) => this._allProjects.find((p) => p.id.toString() === id))
+      .filter(Boolean) as Project[];
+
+    return html`
+      <div class="active-filters">
+        <span>Filtered by:</span>
+        ${selectedProjects.map(
+          (project) => html`
+            <sl-tag
+              size="medium"
+              removable
+              @sl-remove=${() =>
+                this._removeProjectFilter(project.id.toString())}
+            >
+              ${project.name}
+            </sl-tag>
+          `
+        )}
+        ${this._selectedStatus !== 'opened'
+          ? html`
+              <sl-tag
+                size="medium"
+                removable
+                @sl-remove=${() => this._clearStatusFilter()}
+              >
+                ${this._selectedStatus === 'closed' ? 'Closed' : 'All'}
+              </sl-tag>
+            `
+          : ''}
+        <sl-button size="small" pill @click=${this._clearAllFilters}
+          >Clear all</sl-button
+        >
+      </div>
+    `;
+  }
+
+  private _clearStatusFilter() {
+    this._selectedStatus = 'opened';
+    this.fetchIssues();
+  }
+
+  private handleInfoAlertHide() {
+    localStorage.setItem(this.INFO_ALERT_DISMISSED_KEY, 'true');
+    this._isInfoAlertOpen = false;
+  }
+
+  private handleSearchInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this._searchQuery = input.value;
+  }
+
+  private handleSearch(event: Event) {
+    event.preventDefault();
+    this._currentPage = 1;
+    this.fetchIssues();
+  }
+
+  private getComplianceVariant(factor: number) {
+    if (factor > 0.8) return 'success';
+    if (factor > 0.5) return 'warning';
+    return 'danger';
+  }
+
+  private _handleMenuAction(event: CustomEvent, issue: Issue) {
+    const selectedValue = event.detail.item.value;
+    if (selectedValue === 'improve-compliance') {
+      // Placeholder for the logic to improve compliance
+      console.log(`Improve compliance for issue: ${issue.id}`);
+    }
+  }
+
+  render() {
+    return html`
+      <div class="header">
+        <h1>Issue Compliance</h1>
+        <sl-button @click=${this._openFilterModal}>
+          <sl-icon slot="prefix" name="filter"></sl-icon>
+          Filter
+        </sl-button>
+      </div>
+      <div class="column-layout">
+        <div class="main-column">
+          <div class="container">
+            <sl-alert
+              variant="primary"
+              ?open=${this._isInfoAlertOpen}
+              closable
+              @sl-hide=${this.handleInfoAlertHide}
+            >
+              <sl-icon slot="icon" name="info-circle"></sl-icon>
+              <strong>Check issues for compliance with guidelines and templates</strong><br />
+              Identify issues that do not comply with your organization's guidelines and templates. Review each issue, check the compliance score,
+              and use the AI review to resolve or dismiss the suggestion.
+            </sl-alert>
+
+            <form class="search-bar" @submit=${this.handleSearch}>
+              <sl-input
+                placeholder="Search for issues"
+                .value=${this._searchQuery}
+                @sl-input=${this.handleSearchInput}
+                clearable
+              ></sl-input>
+              <sl-button type="submit" variant="primary">Search</sl-button>
+            </form>
+
+            ${this._renderActiveFilters()}
+            ${when(
+              this._loading,
+              () =>
+                html`<div class="loading-overlay">
+                  <sl-spinner></sl-spinner>
+                  <span>Loading issues...</span>
+                </div>`
+            )}
+            ${when(
+              this._error,
+              () => html`<div class="error">Error: ${this._error}</div>`
+            )}
+            ${when(!this._loading && !this._error && this._hasSearched, () =>
+              this._issues.length > 0
+                ? html`
+                    <div class="table-container">
+                      <sl-card class="table-card">
+                        <table class="styled-table">
+                          <thead>
+                            <tr>
+                              <th>ID</th>
+                              <th>Title</th>
+                              <th>Project</th>
+                              <th>Status</th>
+                              <th>Priority</th>
+                              <th>Compliance</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${this._issues.map((issue) => {
+                              const issueId = issue.id;
+                              const isExpanded = this._expandedRowKey === issueId;
+                              const project = this._allProjects.find(
+                                (p) => p.id === issue.project_id
+                              );
+
+                              return html`
+                                <tr
+                                  class="clickable-row ${isExpanded
+                                    ? 'row-expanded'
+                                    : ''}"
+                                  @click=${() => this._toggleRow(issueId)}
+                                >
+                                  <td>
+                                    <a href="${issue.url}" target="_blank" @click=${(e: Event) => e.stopPropagation()}>${issue.key}</a>
+                                  </td>
+                                  <td>${issue.title}</td>
+                                  <td>${project?.name || 'N/A'}</td>
+                                  <td>
+                                    <sl-badge variant=${getStatusVariant(issue.status)}>
+                                      ${issue.status}
+                                    </sl-badge>
+                                  </td>
+                                  <td>${issue.priority}</td>
+                                  <td>
+                                    ${when(
+                                      this._loadingCompliance[issue.id],
+                                      () => html`<sl-spinner></sl-spinner>`,
+                                      () => {
+                                        const result = this._complianceResults[issue.id];
+                                        return result
+                                          ? html`
+                                              <sl-tooltip content=${result.reason}>
+                                                <sl-badge
+                                                  variant=${this.getComplianceVariant(
+                                                    result.compliance_factor
+                                                  )}
+                                                  pill
+                                                >
+                                                  ${(result.compliance_factor * 100).toFixed(
+                                                    0
+                                                  )}%
+                                                </sl-badge>
+                                              </sl-tooltip>
+                                            `
+                                          : html`<span>-</span>`;
+                                      }
+                                    )}
+                                  </td>
+                                  <td>
+                                    <sl-dropdown @click=${(e: Event) => e.stopPropagation()}>
+                                      <sl-icon-button
+                                        slot="trigger"
+                                        name="three-dots-vertical"
+                                        label="Actions"
+                                      ></sl-icon-button>
+                                      <sl-menu
+                                        @sl-select=${(e: CustomEvent) =>
+                                          this._handleMenuAction(e, issue)}
+                                      >
+                                        <sl-menu-item value="improve-compliance">
+                                          <sl-icon
+                                            name="graph-up-arrow"
+                                            slot="prefix"
+                                          ></sl-icon>
+                                          Improve Compliance
+                                        </sl-menu-item>
+                                      </sl-menu>
+                                    </sl-dropdown>
+                                  </td>
+                                </tr>
+                                ${isExpanded
+                                  ? html`
+                                      <tr class="inline-detail-row">
+                                        <td colspan="8">
+                                          <single-issue-detail-view
+                                            .issue=${issue}
+                                          ></single-issue-detail-view>
+                                        </td>
+                                      </tr>
+                                    `
+                                  : ''}
+                              `;
+                            })}
+                          </tbody>
+                        </table>
+                      </sl-card>
+                    </div>
+                    <div class="pagination-controls">
+                      <sl-button
+                        @click=${this._previousPage}
+                        ?disabled=${this._currentPage === 1}
+                      >
+                        Previous
+                      </sl-button>
+                      <span>Page ${this._currentPage}</span>
+                      <sl-button
+                        @click=${this._nextPage}
+                        ?disabled=${!this._hasMorePages}
+                      >
+                        Next
+                      </sl-button>
+                    </div>
+                  `
+                : html`
+                    <div class="placeholder-content">
+                      <h3>No issues found</h3>
+                      <p>Your search did not return any issues.</p>
+                    </div>
+                  `
+            )}
+          </div>
+        </div>
+        <div class="side-column">
+          <sl-card class="detail-view-card">
+            <div slot="header">Issue Details</div>
+            ${when(
+              this._expandedRowKey,
+              () => {
+                const issue = this._issues.find(
+                  (i) => i.id === this._expandedRowKey
+                );
+                return issue
+                  ? html`<single-issue-detail-view
+                      .issue=${issue}
+                    ></single-issue-detail-view>`
+                  : html`<div class="placeholder-content">
+                    <sl-icon name="info-circle"></sl-icon>
+                    <p>Select an issue to see details.</p>
+                  </div>`;
+              },
+              () =>
+                html`<div class="placeholder-content">
+                  <sl-icon name="info-circle"></sl-icon>
+                  <p>Select an issue to see details.</p>
+                </div>`
+            )}
+          </sl-card>
+        </div>
+      </div>
+
+      <project-filter-modal
+        .isOpen=${this._isFilterModalOpen}
+        .allProjects=${this._allProjects}
+        .selectedProjectIds=${this._selectedProjectIds}
+        .organizations=${this._organizations}
+        @on-close=${() => (this._isFilterModalOpen = false)}
+        @on-apply=${this._applyFilters}
+      ></project-filter-modal>
+    `;
+  }
+
+  private _applyFilters(e: CustomEvent) {
+    this._selectedProjectIds = e.detail.selectedProjectIds;
+    this._isFilterModalOpen = false;
+    this.fetchIssues();
+  }
+
+  private _previousPage() {
+    if (this._currentPage > 1) {
+      this._currentPage--;
+      this.fetchIssues();
+    }
+  }
+
+  private _nextPage() {
+    if (this._hasMorePages) {
+      this._currentPage++;
+      this.fetchIssues();
+    }
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'issues-compliance-view': IssuesComplianceView;
+  }
+}

@@ -64,17 +64,33 @@ a:hover {
 }
 
 .styled-table {
+    width: 100%;
     border-collapse: collapse;
     color: var(--sl-color-neutral-900);
+}
+
+.styled-table th,
+.styled-table td {
+  padding: var(--sl-spacing-medium);
+  text-align: left;
+  border-bottom: 1px solid var(--sl-color-neutral-200);
 }
 
 .styled-table th {
     background-color: var(--sl-color-neutral-100);
     font-weight: var(--sl-font-weight-semibold);
-  }
+}
 
 .styled-table tr {
     border-bottom: 1px solid var(--sl-color-neutral-200);
+}
+
+.styled-table tr:last-child td {
+    border-bottom: none;
+}
+
+.styled-table th:last-child, .styled-table td:last-child {
+    text-align: right;
 }
 
 .actions-container {

@@ -11,6 +11,7 @@ import '../views/authed/console-shell.ts';
 import '../views/authed/dashboard-view.ts';
 import '../views/authed/trackers-view.ts';
 import '../views/authed/issues-view.ts';
+import '../views/authed/issues-compliance-view.ts';
 import '../views/authed/issues/duplicates-view.ts';
 import '../views/authed/issues/assignments-view.ts';
 import '../views/authed/api-usage-view.ts';
@@ -59,6 +60,7 @@ export class LitApp extends LitElement {
             path: 'issues',
             children: [
               { path: '', component: 'issues-view' },
+              { path: 'compliance', component: 'issues-compliance-view' },
               { path: 'duplicates', component: 'duplicates-view' },
               { path: 'assignments', component: 'assignments-view' },
             ],
