@@ -20,6 +20,7 @@ from spacemodels.crud import (
     CRUDOrganization,
     CRUDProject,
     CRUDTracker,
+    CRUDIssueComplianceResult,
     crud_embedding_model,
     crud_issue_embedding,
     crud_tracker_scope_rule,
@@ -29,18 +30,26 @@ from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
+from spacemodels.models.issue_compliance_result import IssueComplianceResult
 from spacebridge.trackers.factory import TrackerFactory
 from spacebridge.trackers.base import (
     IssueCreate,
     IssueUpdate,
 )
+
 from spacebridge.api.auth import get_current_active_user
+from spacebridge.config import get_settings, Settings
+from spacebridge.schemas.issue_compliance import (
+    IssueComplianceResultCreate,
+    IssueComplianceResultResponse,
+)
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
 crud_tracker = CRUDTracker(Tracker)
+crud_issue_compliance = CRUDIssueComplianceResult(IssueComplianceResult)
 
 
 # Define the filter class for issue searching
@@ -1559,3 +1568,92 @@ async def update_issue(
         raise HTTPException(
             status_code=500, detail="Internal server error during issue update."
         )
+
+
+@router.get(
+    "/issue_compliance/{issue_id}",
+    response_model=IssueComplianceResultResponse,
+    tags=["Issues"],
+)
+async def get_issue_compliance(
+    issue_id: str,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+    settings: Settings = Depends(get_settings),
+):
+    """Get or calculate the compliance result for a given issue."""
+
+    prompt_id = "issue_compliance_v1"
+
+    # 1. Check if a result already exists for this prompt_id
+    existing_result = crud_issue_compliance.get_by_issue_id_and_prompt_id(
+        db, issue_id=issue_id, prompt_id=prompt_id, account_id=current_user.id
+    )
+    if existing_result:
+        return existing_result
+
+    # 2. Get the issue
+    issue = crud_issue.get(db, id=issue_id, account_id=current_user.id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    # 3. Get the default active LLM model
+    default_model = crud_embedding_model.get_default_active(
+        db, account_id=current_user.id
+    )
+    if not default_model:
+        raise HTTPException(
+            status_code=500, detail="No default active LLM model configured."
+        )
+
+    # 4. Get prompt from config and call the LLM
+    prompt_template = settings.prompts.get(prompt_id)
+    if not prompt_template:
+        raise HTTPException(
+            status_code=500, detail=f"Prompt '{prompt_id}' not found in configuration."
+        )
+
+    user_prompt = prompt_template["user"].format(
+        issue_title=issue.title or "N/A",
+        issue_description=issue.description or "No description provided.",
+    )
+
+    messages: List[Dict[str, str]] = [
+        {"role": "system", "content": prompt_template["system"]},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        # Call the LLM
+        response = await crud_issue_compliance.call_llm(
+            db, default_model.id, messages, account_id=current_user.id
+        )
+        compliance_factor = response.compliance_factor
+        reason = response.reason
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error processing LLM response: {e}"
+        )
+
+    # 5. Store the new result
+    compliance_result_in = IssueComplianceResultCreate(
+        prompt_id=prompt_id,
+        compliance_factor=float(compliance_factor),
+        reason=str(reason),
+    )
+
+    try:
+        crud_issue_compliance.create(db, obj_in=compliance_result_in)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500, detail=f"Error storing compliance result: {e}"
+        )
+
+    return IssueComplianceResultResponse(
+        id=compliance_result_in.id,
+        prompt_id=compliance_result_in.prompt_id,
+        compliance_factor=compliance_result_in.compliance_factor,
+        reason=compliance_result_in.reason,
+    )

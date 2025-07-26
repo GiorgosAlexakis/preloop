@@ -1,0 +1,28 @@
+prompts:
+  issue_compliance_v1:
+    system: >
+      You are a compliance analysis expert. Your task is to evaluate a given issue
+      based on a set of compliance criteria. The issue should be well-defined,
+      actionable, and contain sufficient detail for an engineer to begin work.
+    user: >
+      Please evaluate the following issue for its compliance with our quality standards.
+      A compliant issue must be clear, actionable, and provide enough context for an
+      engineer to understand the task.
+
+      Issue Title: {issue_title}
+      Issue Description:
+      ---
+      {issue_description}
+      ---
+
+      Based on the content, please provide a compliance score from 0.0 to 1.0, where 1.0
+      is perfectly compliant. Also, provide a brief, single-sentence reason for your score.
+
+      Your response MUST be a JSON object with two keys: "compliance_factor" (a float)
+      and "reason" (a string). Do not add any other text before or after the JSON object.
+
+      Example response:
+      {
+        "compliance_factor": 0.8,
+        "reason": "The issue is well-described, but could benefit from including specific code snippets to pinpoint the problem area."
+      }

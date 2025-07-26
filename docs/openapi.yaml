@@ -1506,6 +1506,36 @@ paths:
                 title: Response Get Issue Count Api V1 Issues Count Get
       security:
       - bearerAuth: []
+  /api/v1/issue_compliance/{issue_id}:
+    get:
+      tags:
+      - Issues
+      - Issues
+      summary: Get Issue Compliance
+      description: Get or calculate the compliance result for a given issue.
+      operationId: get_issue_compliance_api_v1_issue_compliance__issue_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: issue_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Issue Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueComplianceResultResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issues/{issue_id}/comments:
     get:
       tags:
@@ -3039,6 +3069,41 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    IssueComplianceResultResponse:
+      properties:
+        prompt_id:
+          type: string
+          title: Prompt Id
+        compliance_factor:
+          type: number
+          title: Compliance Factor
+        reason:
+          type: string
+          title: Reason
+        issue_id:
+          type: string
+          title: Issue Id
+        id:
+          type: string
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - prompt_id
+      - compliance_factor
+      - reason
+      - issue_id
+      - id
+      - created_at
+      - updated_at
+      title: IssueComplianceResultResponse
     IssueCreate:
       properties:
         title:
