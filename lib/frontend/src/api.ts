@@ -263,7 +263,9 @@ export async function searchIssues(
     queryParams.append('limit', params.limit.toString());
   }
 
-  const response = await fetchWithAuth(`/api/v1/search?${queryParams.toString()}`);
+  const response = await fetchWithAuth(
+    `/api/v1/search?${queryParams.toString()}`
+  );
   if (!response.ok) {
     throw new Error('Failed to search issues');
   }

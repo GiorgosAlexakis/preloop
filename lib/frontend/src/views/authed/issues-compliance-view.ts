@@ -470,9 +470,13 @@ export class IssuesComplianceView extends LitElement {
               @sl-hide=${this.handleInfoAlertHide}
             >
               <sl-icon slot="icon" name="info-circle"></sl-icon>
-              <strong>Check issues for compliance with guidelines and templates</strong><br />
-              Identify issues that do not comply with your organization's guidelines and templates. Review each issue, check the compliance score,
-              and use the AI review to resolve or dismiss the suggestion.
+              <strong
+                >Check issues for compliance with guidelines and
+                templates</strong
+              ><br />
+              Identify issues that do not comply with your organization's
+              guidelines and templates. Review each issue, check the compliance
+              score, and use the AI review to resolve or dismiss the suggestion.
             </sl-alert>
 
             <form class="search-bar" @submit=${this.handleSearch}>
@@ -518,7 +522,8 @@ export class IssuesComplianceView extends LitElement {
                           <tbody>
                             ${this._issues.map((issue) => {
                               const issueId = issue.id;
-                              const isExpanded = this._expandedRowKey === issueId;
+                              const isExpanded =
+                                this._expandedRowKey === issueId;
                               const project = this._allProjects.find(
                                 (p) => p.id === issue.project_id
                               );
@@ -531,12 +536,20 @@ export class IssuesComplianceView extends LitElement {
                                   @click=${() => this._toggleRow(issueId)}
                                 >
                                   <td>
-                                    <a href="${issue.url}" target="_blank" @click=${(e: Event) => e.stopPropagation()}>${issue.key}</a>
+                                    <a
+                                      href="${issue.url}"
+                                      target="_blank"
+                                      @click=${(e: Event) =>
+                                        e.stopPropagation()}
+                                      >${issue.key}</a
+                                    >
                                   </td>
                                   <td>${issue.title}</td>
                                   <td>${project?.name || 'N/A'}</td>
                                   <td>
-                                    <sl-badge variant=${getStatusVariant(issue.status)}>
+                                    <sl-badge
+                                      variant=${getStatusVariant(issue.status)}
+                                    >
                                       ${issue.status}
                                     </sl-badge>
                                   </td>
@@ -546,19 +559,23 @@ export class IssuesComplianceView extends LitElement {
                                       this._loadingCompliance[issue.id],
                                       () => html`<sl-spinner></sl-spinner>`,
                                       () => {
-                                        const result = this._complianceResults[issue.id];
+                                        const result =
+                                          this._complianceResults[issue.id];
                                         return result
                                           ? html`
-                                              <sl-tooltip content=${result.reason}>
+                                              <sl-tooltip
+                                                content=${result.reason}
+                                              >
                                                 <sl-badge
                                                   variant=${this.getComplianceVariant(
                                                     result.compliance_factor
                                                   )}
                                                   pill
                                                 >
-                                                  ${(result.compliance_factor * 100).toFixed(
-                                                    0
-                                                  )}%
+                                                  ${(
+                                                    result.compliance_factor *
+                                                    100
+                                                  ).toFixed(0)}%
                                                 </sl-badge>
                                               </sl-tooltip>
                                             `
@@ -567,7 +584,10 @@ export class IssuesComplianceView extends LitElement {
                                     )}
                                   </td>
                                   <td>
-                                    <sl-dropdown @click=${(e: Event) => e.stopPropagation()}>
+                                    <sl-dropdown
+                                      @click=${(e: Event) =>
+                                        e.stopPropagation()}
+                                    >
                                       <sl-icon-button
                                         slot="trigger"
                                         name="three-dots-vertical"
@@ -577,7 +597,9 @@ export class IssuesComplianceView extends LitElement {
                                         @sl-select=${(e: CustomEvent) =>
                                           this._handleMenuAction(e, issue)}
                                       >
-                                        <sl-menu-item value="improve-compliance">
+                                        <sl-menu-item
+                                          value="improve-compliance"
+                                        >
                                           <sl-icon
                                             name="graph-up-arrow"
                                             slot="prefix"
@@ -644,9 +666,9 @@ export class IssuesComplianceView extends LitElement {
                       .issue=${issue}
                     ></single-issue-detail-view>`
                   : html`<div class="placeholder-content">
-                    <sl-icon name="info-circle"></sl-icon>
-                    <p>Select an issue to see details.</p>
-                  </div>`;
+                      <sl-icon name="info-circle"></sl-icon>
+                      <p>Select an issue to see details.</p>
+                    </div>`;
               },
               () =>
                 html`<div class="placeholder-content">
