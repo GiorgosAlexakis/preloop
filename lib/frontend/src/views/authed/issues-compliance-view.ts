@@ -18,7 +18,7 @@ import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '../../components/project-filter-modal.ts';
 import '../../components/single-issue-detail-view.ts';
-import { getStatusVariant } from '../../utils/verdict';
+import { getStatusVariant, getComplianceVariant } from '../../utils/verdict';
 import {
   listProjects,
   Project,
@@ -62,15 +62,6 @@ export class IssuesComplianceView extends LitElement {
   private _error: string | null = null;
 
   @state()
-  private _currentPage = 1;
-
-  @state()
-  private _pageSize = 10;
-
-  @state()
-  private _hasMorePages = true;
-
-  @state()
   private _expandedRowKey: string | null = null;
 
   @state()
@@ -94,6 +85,8 @@ export class IssuesComplianceView extends LitElement {
   @state()
   private _initialLoadComplete = false;
 
+  private _pageSize = 10;
+
   static styles = [
     unsafeCSS(consoleStyles),
     css`
@@ -109,13 +102,6 @@ export class IssuesComplianceView extends LitElement {
 
       .issue-key {
         color: var(--sl-color-neutral-600);
-      }
-
-      .pagination-controls {
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        gap: var(--sl-spacing-medium);
       }
 
       .faint-row {
@@ -186,9 +172,8 @@ export class IssuesComplianceView extends LitElement {
     // Fetch projects first so we can map short IDs from the URL to full IDs.
     await this.fetchProjects();
     this.parseUrlAndUpdateState();
-    if (this._searchQuery) {
-      this.fetchIssues();
-    }
+    // Fetch issues on initial load, regardless of search query
+    this.fetchIssues();
     this.fetchOrganizations();
     this._initialLoadComplete = true;
     window.addEventListener('popstate', this.handlePopState);
@@ -207,18 +192,11 @@ export class IssuesComplianceView extends LitElement {
 
   private handlePopState = () => {
     this.parseUrlAndUpdateState();
-    if (this._searchQuery) {
-      this.fetchIssues();
-    }
+    this.fetchIssues();
   };
 
   private parseUrlAndUpdateState() {
     const params = new URLSearchParams(window.location.search);
-    this._currentPage = parseInt(params.get('page') || '1', 10);
-    this._selectedStatus = (params.get('status') || 'opened') as
-      | 'opened'
-      | 'closed'
-      | 'all';
     this._searchQuery = params.get('query') || '';
     const shortProjectIds = params.get('projects');
     if (shortProjectIds && this._allProjects.length > 0) {
@@ -239,7 +217,6 @@ export class IssuesComplianceView extends LitElement {
     }
 
     const params = new URLSearchParams();
-    params.set('page', this._currentPage.toString());
     params.set('status', this._selectedStatus);
     if (this._searchQuery) {
       params.set('query', this._searchQuery);
@@ -285,25 +262,18 @@ export class IssuesComplianceView extends LitElement {
   }
 
   async fetchIssues() {
-    if (!this._searchQuery) return;
-
     this._loading = true;
     this._error = null;
     this._hasSearched = true;
 
     try {
-      const response = await searchIssues({
+      const project_ids = this._selectedProjectIds.length > 0 ? this._selectedProjectIds : undefined;
+      const issues = await searchIssues({
         query: this._searchQuery,
-        search_type: 'similarity',
-        embedding_type: 'issue',
-        project_ids: this._selectedProjectIds,
+        project_ids: project_ids,
         limit: this._pageSize,
       });
-      this._issues = response.results
-        .filter((r) => r.item_type === 'issue')
-        .map((r) => r.item as Issue);
-      this._hasMorePages = this._issues.length === this._pageSize;
-      this._updateUrl(); // Update URL after fetching
+      this._issues = issues;
       this.fetchComplianceResults();
     } catch (error) {
       this._error =
@@ -319,25 +289,24 @@ export class IssuesComplianceView extends LitElement {
     const newLoading = { ...this._loadingCompliance };
 
     const promises = this._issues.map((issue) => {
-      const issueId = issue.id;
-      if (newResults[issueId]) {
+      if (newResults[issue.id] || newLoading[issue.id]) {
         return Promise.resolve();
       }
 
-      newLoading[issueId] = true;
+      newLoading[issue.id] = true;
 
-      return getIssueCompliance(issueId)
+      return getIssueCompliance(issue.id)
         .then((result) => {
-          newResults[issueId] = result;
+          newResults[issue.id] = result;
         })
         .catch((error) => {
           console.error(
-            `Failed to fetch compliance result for ${issueId}:`,
+            `Failed to fetch compliance result for issue ${issue.id}:`,
             error
           );
         })
         .finally(() => {
-          newLoading[issueId] = false;
+          newLoading[issue.id] = false;
         });
     });
 
@@ -433,14 +402,7 @@ export class IssuesComplianceView extends LitElement {
 
   private handleSearch(event: Event) {
     event.preventDefault();
-    this._currentPage = 1;
     this.fetchIssues();
-  }
-
-  private getComplianceVariant(factor: number) {
-    if (factor > 0.8) return 'success';
-    if (factor > 0.5) return 'warning';
-    return 'danger';
   }
 
   private _handleMenuAction(event: CustomEvent, issue: Issue) {
@@ -449,6 +411,152 @@ export class IssuesComplianceView extends LitElement {
       // Placeholder for the logic to improve compliance
       console.log(`Improve compliance for issue: ${issue.id}`);
     }
+  }
+
+  private _renderIssueList() {
+    if (this._loading && this._issues.length === 0) {
+      return html`<div class="loading-overlay">
+        <sl-spinner></sl-spinner>
+        <span>Loading issues...</span>
+      </div>`;
+    }
+
+    if (this._error) {
+      return html`<div class="error">${this._error}</div>`;
+    }
+
+    if (this._issues.length === 0) {
+      return html`<div class="placeholder-content">
+        <h3>No issues found</h3>
+        <p>Your search did not return any issues.</p>
+      </div>`;
+    }
+
+    return html`
+      <div class="table-container">
+        <sl-card class="table-card">
+          <table class="styled-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Project</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Compliance</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${this._issues.map((issue) => {
+                const issueId = issue.id;
+                const isExpanded =
+                  this._expandedRowKey === issueId;
+                const project = this._allProjects.find(
+                  (p) => p.id === issue.project_id
+                );
+
+                return html`
+                  <tr
+                    class="clickable-row ${isExpanded
+                      ? 'row-expanded'
+                      : ''}"
+                    @click=${() => this._toggleRow(issueId)}
+                  >
+                    <td>
+                      <a
+                        href="${issue.url}"
+                        target="_blank"
+                        @click=${(e: Event) =>
+                          e.stopPropagation()}
+                        >${issue.key}</a
+                      >
+                    </td>
+                    <td>${issue.title}</td>
+                    <td>${project?.name || 'N/A'}</td>
+                    <td>
+                      <sl-badge
+                        variant=${getStatusVariant(issue.status)}
+                      >
+                        ${issue.status}
+                      </sl-badge>
+                    </td>
+                    <td>${issue.priority}</td>
+                    <td>
+                      ${when(
+                        this._loadingCompliance[issue.id],
+                        () => html`<sl-spinner></sl-spinner>`,
+                        () => {
+                          const result =
+                            this._complianceResults[issue.id];
+                          return result
+                            ? html`
+                                <sl-tooltip
+                                  content=${result.reason}
+                                >
+                                  <sl-badge
+                                    variant=${getComplianceVariant(
+                                      result.compliance_factor
+                                    )}
+                                    pill
+                                  >
+                                    ${(
+                                      result.compliance_factor *
+                                      100
+                                    ).toFixed(0)}%
+                                  </sl-badge>
+                                </sl-tooltip>
+                              `
+                            : html`<span>-</span>`;
+                        }
+                      )}
+                    </td>
+                    <td>
+                      <sl-dropdown
+                        @click=${(e: Event) =>
+                          e.stopPropagation()}
+                      >
+                        <sl-icon-button
+                          slot="trigger"
+                          name="three-dots-vertical"
+                          label="Actions"
+                        ></sl-icon-button>
+                        <sl-menu
+                          @sl-select=${(e: CustomEvent) =>
+                            this._handleMenuAction(e, issue)}
+                        >
+                          <sl-menu-item
+                            value="improve-compliance"
+                          >
+                            <sl-icon
+                              name="graph-up-arrow"
+                              slot="prefix"
+                            ></sl-icon>
+                            Improve Compliance
+                          </sl-menu-item>
+                        </sl-menu>
+                      </sl-dropdown>
+                    </td>
+                  </tr>
+                  ${isExpanded
+                    ? html`
+                        <tr class="inline-detail-row">
+                          <td colspan="8">
+                            <single-issue-detail-view
+                              .issue=${issue}
+                              .complianceResult=${this._complianceResults[issue.id]}
+                            ></single-issue-detail-view>
+                          </td>
+                        </tr>
+                      `
+                    : ''}
+                `;
+              })}
+            </tbody>
+          </table>
+        </sl-card>
+      </div>
+    `;
   }
 
   render() {
@@ -500,155 +608,10 @@ export class IssuesComplianceView extends LitElement {
             )}
             ${when(
               this._error,
-              () => html`<div class="error">Error: ${this._error}</div>`
+              () => html`<div class="error">${this._error}</div>`
             )}
             ${when(!this._loading && !this._error && this._hasSearched, () =>
-              this._issues.length > 0
-                ? html`
-                    <div class="table-container">
-                      <sl-card class="table-card">
-                        <table class="styled-table">
-                          <thead>
-                            <tr>
-                              <th>ID</th>
-                              <th>Title</th>
-                              <th>Project</th>
-                              <th>Status</th>
-                              <th>Priority</th>
-                              <th>Compliance</th>
-                              <th>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            ${this._issues.map((issue) => {
-                              const issueId = issue.id;
-                              const isExpanded =
-                                this._expandedRowKey === issueId;
-                              const project = this._allProjects.find(
-                                (p) => p.id === issue.project_id
-                              );
-
-                              return html`
-                                <tr
-                                  class="clickable-row ${isExpanded
-                                    ? 'row-expanded'
-                                    : ''}"
-                                  @click=${() => this._toggleRow(issueId)}
-                                >
-                                  <td>
-                                    <a
-                                      href="${issue.url}"
-                                      target="_blank"
-                                      @click=${(e: Event) =>
-                                        e.stopPropagation()}
-                                      >${issue.key}</a
-                                    >
-                                  </td>
-                                  <td>${issue.title}</td>
-                                  <td>${project?.name || 'N/A'}</td>
-                                  <td>
-                                    <sl-badge
-                                      variant=${getStatusVariant(issue.status)}
-                                    >
-                                      ${issue.status}
-                                    </sl-badge>
-                                  </td>
-                                  <td>${issue.priority}</td>
-                                  <td>
-                                    ${when(
-                                      this._loadingCompliance[issue.id],
-                                      () => html`<sl-spinner></sl-spinner>`,
-                                      () => {
-                                        const result =
-                                          this._complianceResults[issue.id];
-                                        return result
-                                          ? html`
-                                              <sl-tooltip
-                                                content=${result.reason}
-                                              >
-                                                <sl-badge
-                                                  variant=${this.getComplianceVariant(
-                                                    result.compliance_factor
-                                                  )}
-                                                  pill
-                                                >
-                                                  ${(
-                                                    result.compliance_factor *
-                                                    100
-                                                  ).toFixed(0)}%
-                                                </sl-badge>
-                                              </sl-tooltip>
-                                            `
-                                          : html`<span>-</span>`;
-                                      }
-                                    )}
-                                  </td>
-                                  <td>
-                                    <sl-dropdown
-                                      @click=${(e: Event) =>
-                                        e.stopPropagation()}
-                                    >
-                                      <sl-icon-button
-                                        slot="trigger"
-                                        name="three-dots-vertical"
-                                        label="Actions"
-                                      ></sl-icon-button>
-                                      <sl-menu
-                                        @sl-select=${(e: CustomEvent) =>
-                                          this._handleMenuAction(e, issue)}
-                                      >
-                                        <sl-menu-item
-                                          value="improve-compliance"
-                                        >
-                                          <sl-icon
-                                            name="graph-up-arrow"
-                                            slot="prefix"
-                                          ></sl-icon>
-                                          Improve Compliance
-                                        </sl-menu-item>
-                                      </sl-menu>
-                                    </sl-dropdown>
-                                  </td>
-                                </tr>
-                                ${isExpanded
-                                  ? html`
-                                      <tr class="inline-detail-row">
-                                        <td colspan="8">
-                                          <single-issue-detail-view
-                                            .issue=${issue}
-                                          ></single-issue-detail-view>
-                                        </td>
-                                      </tr>
-                                    `
-                                  : ''}
-                              `;
-                            })}
-                          </tbody>
-                        </table>
-                      </sl-card>
-                    </div>
-                    <div class="pagination-controls">
-                      <sl-button
-                        @click=${this._previousPage}
-                        ?disabled=${this._currentPage === 1}
-                      >
-                        Previous
-                      </sl-button>
-                      <span>Page ${this._currentPage}</span>
-                      <sl-button
-                        @click=${this._nextPage}
-                        ?disabled=${!this._hasMorePages}
-                      >
-                        Next
-                      </sl-button>
-                    </div>
-                  `
-                : html`
-                    <div class="placeholder-content">
-                      <h3>No issues found</h3>
-                      <p>Your search did not return any issues.</p>
-                    </div>
-                  `
+              this._renderIssueList()
             )}
           </div>
         </div>
@@ -661,14 +624,19 @@ export class IssuesComplianceView extends LitElement {
                 const issue = this._issues.find(
                   (i) => i.id === this._expandedRowKey
                 );
-                return issue
-                  ? html`<single-issue-detail-view
-                      .issue=${issue}
-                    ></single-issue-detail-view>`
-                  : html`<div class="placeholder-content">
-                      <sl-icon name="info-circle"></sl-icon>
-                      <p>Select an issue to see details.</p>
-                    </div>`;
+                if (issue) {
+                  const complianceResult =
+                    this._complianceResults[issue.id];
+                  return html`<single-issue-detail-view
+                    .issue=${issue}
+                    .complianceResult=${complianceResult}
+                  ></single-issue-detail-view>`;
+                } else {
+                  return html`<div class="placeholder-content">
+                    <sl-icon name="info-circle"></sl-icon>
+                    <p>Select an issue to see details.</p>
+                  </div>`;
+                }
               },
               () =>
                 html`<div class="placeholder-content">
@@ -697,18 +665,9 @@ export class IssuesComplianceView extends LitElement {
     this.fetchIssues();
   }
 
-  private _previousPage() {
-    if (this._currentPage > 1) {
-      this._currentPage--;
-      this.fetchIssues();
-    }
-  }
-
-  private _nextPage() {
-    if (this._hasMorePages) {
-      this._currentPage++;
-      this.fetchIssues();
-    }
+  private _handleProjectFilterChange(e: CustomEvent) {
+    this._selectedProjectIds = e.detail.selectedProjectIds;
+    this.fetchIssues();
   }
 }
 

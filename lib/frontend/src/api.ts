@@ -229,6 +229,61 @@ export async function getIssueCount(): Promise<{ total_issues: number }> {
   return response.json();
 }
 
+export interface FetchIssuesListParams {
+  query?: string;
+  project_ids?: string[];
+  limit?: number;
+  sort_by?: string;
+  sort_order?: string;
+}
+
+export async function searchIssues(
+  params: FetchIssuesListParams
+): Promise<any[]> {
+  const queryParams = new URLSearchParams();
+  queryParams.append('search_type', 'similarity');
+  queryParams.append('embedding_type', 'issue');
+
+  if (params.query) {
+    queryParams.append('query', params.query);
+  } else {
+    // The new endpoint requires a query, so we'll use an empty one to get all issues.
+    queryParams.append('query', '');
+  }
+
+  if (params.limit) {
+    queryParams.append('limit', params.limit.toString());
+  }
+
+  // The new endpoint only accepts a single project_id, so we must handle multiple
+  if (params.project_ids && params.project_ids.length > 0) {
+    const promises = params.project_ids.map(async (projectId) => {
+      const singleProjectParams = new URLSearchParams(queryParams);
+      singleProjectParams.append('project_id', projectId);
+      const response = await fetchWithAuth(
+        `/api/v1/search?${singleProjectParams.toString()}`
+      );
+      if (!response.ok) {
+        console.error(`Failed to fetch issues for project ${projectId}`);
+        return [];
+      }
+      const data = await response.json();
+      return data.results.map((r: any) => r.item);
+    });
+    const results = await Promise.all(promises);
+    return results.flat();
+  } else {
+    const response = await fetchWithAuth(
+      `/api/v1/search?${queryParams.toString()}`
+    );
+    if (!response.ok) {
+      throw new Error('Failed to fetch issues list');
+    }
+    const data = await response.json();
+    return data.results.map((r: any) => r.item);
+  }
+}
+
 export interface SearchIssuesParams {
   query: string;
   search_type: 'similarity' | 'full_text';
@@ -239,37 +294,12 @@ export interface SearchIssuesParams {
 
 export interface SearchResultItem {
   item_type: 'issue' | 'comment';
-  item: Issue | any; // Using 'any' for comment for now
+  item: any; // Using 'any' for comment for now
   similarity: number;
 }
 
 export interface SearchIssuesResponse {
   results: SearchResultItem[];
-}
-
-export async function searchIssues(
-  params: SearchIssuesParams
-): Promise<SearchIssuesResponse> {
-  const queryParams = new URLSearchParams({
-    query: params.query,
-    search_type: params.search_type,
-    embedding_type: params.embedding_type,
-  });
-
-  if (params.project_ids && params.project_ids.length > 0) {
-    queryParams.append('project_id', params.project_ids.join(','));
-  }
-  if (params.limit) {
-    queryParams.append('limit', params.limit.toString());
-  }
-
-  const response = await fetchWithAuth(
-    `/api/v1/search?${queryParams.toString()}`
-  );
-  if (!response.ok) {
-    throw new Error('Failed to search issues');
-  }
-  return response.json();
 }
 
 export async function post(url: string, body: any) {
@@ -777,9 +807,13 @@ export interface IssueComplianceResult {
 export async function getIssueCompliance(
   issueId: string
 ): Promise<IssueComplianceResult> {
-  return fetchWithAuth(`/api/v1/issue_compliance/${issueId}`, {
+  const response = await fetchWithAuth(`/api/v1/issue_compliance/${issueId}`, {
     method: 'GET',
   });
+  if (!response.ok) {
+    throw new Error('Failed to fetch issue compliance');
+  }
+  return response.json();
 }
 
 export async function proposeResolution(resolutionData: any) {

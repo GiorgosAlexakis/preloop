@@ -106,3 +106,9 @@ export function getStatusVariant(
   }
   return 'neutral';
 }
+
+export function getComplianceVariant(factor: number) {
+  if (factor > 0.8) return 'success';
+  if (factor > 0.5) return 'warning';
+  return 'danger';
+}
