@@ -9,7 +9,8 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 @customElement('single-issue-detail-view')
 export class SingleIssueDetailView extends LitElement {
   @property({ type: Object }) issue: Issue | null = null;
-  @property({ type: Object }) complianceResult: IssueComplianceResult | null = null;
+  @property({ type: Object }) complianceResult: IssueComplianceResult | null =
+    null;
 
   static styles = css`
     .detail-view-card {
@@ -28,7 +29,7 @@ export class SingleIssueDetailView extends LitElement {
       justify-content: space-between;
       align-items: center;
     }
-    
+
     .issue-description {
       font-size: var(--sl-font-size-small);
       color: var(--sl-color-neutral-700);
@@ -97,16 +98,15 @@ export class SingleIssueDetailView extends LitElement {
               <div class="row">
                 <span>Compliance Factor</span>
                 <sl-badge
-                                    variant=${getComplianceVariant(
-                                      this.complianceResult!.compliance_factor
-                                    )}
-                                    pill
-                                  >
-                                    ${(
-                                      this.complianceResult!.compliance_factor *
-                                      100
-                                    ).toFixed(0)}%
-                                  </sl-badge>
+                  variant=${getComplianceVariant(
+                    this.complianceResult!.compliance_factor
+                  )}
+                  pill
+                >
+                  ${(this.complianceResult!.compliance_factor * 100).toFixed(
+                    0
+                  )}%
+                </sl-badge>
               </div>
               <div class="issue-description compliance-reason">
                 ${this.complianceResult!.reason}
