@@ -20,9 +20,3 @@ prompts:
 
       Your response MUST be a JSON object with two keys: "compliance_factor" (a float)
       and "reason" (a string). Do not add any other text before or after the JSON object.
-
-      Example response:
-      {
-        "compliance_factor": 0.8,
-        "reason": "The issue is well-described, but could benefit from including specific code snippets to pinpoint the problem area."
-      }

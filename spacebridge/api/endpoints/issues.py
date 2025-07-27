@@ -2,6 +2,7 @@
 
 import logging
 from typing import Optional, List, Dict, Any
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -24,6 +25,7 @@ from spacemodels.crud import (
     crud_embedding_model,
     crud_issue_embedding,
     crud_tracker_scope_rule,
+    crud_llm_model,
 )
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
@@ -43,6 +45,8 @@ from spacebridge.schemas.issue_compliance import (
     IssueComplianceResultCreate,
     IssueComplianceResultResponse,
 )
+import openai
+import os
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
@@ -521,9 +525,7 @@ async def search_issues(
         if search_type == "similarity" and query:
             try:
                 # Get the active embedding model
-                active_models = crud_embedding_model.get_active(
-                    db, account_id=current_user.id
-                )
+                active_models = crud_embedding_model.get_active(db)
                 if not active_models:
                     logger.error(
                         "similarity search requested, but no active embedding model found."
@@ -1585,20 +1587,17 @@ async def get_issue_compliance(
 
     prompt_id = "issue_compliance_v1"
 
-    # 1. Check if a result already exists for this prompt_id
     existing_result = crud_issue_compliance.get_by_issue_id_and_prompt_id(
         db, issue_id=issue_id, prompt_id=prompt_id, account_id=current_user.id
     )
     if existing_result:
         return existing_result
 
-    # 2. Get the issue
     issue = crud_issue.get(db, id=issue_id, account_id=current_user.id)
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
-    # 3. Get the default active LLM model
-    default_model = crud_embedding_model.get_default_active(
+    default_model = crud_llm_model.get_default_active_model(
         db, account_id=current_user.id
     )
     if not default_model:
@@ -1606,54 +1605,59 @@ async def get_issue_compliance(
             status_code=500, detail="No default active LLM model configured."
         )
 
-    # 4. Get prompt from config and call the LLM
     prompt_template = settings.prompts.get(prompt_id)
     if not prompt_template:
         raise HTTPException(
             status_code=500, detail=f"Prompt '{prompt_id}' not found in configuration."
         )
 
-    user_prompt = prompt_template["user"].format(
+    user_prompt = prompt_template.user.format(
         issue_title=issue.title or "N/A",
         issue_description=issue.description or "No description provided.",
     )
 
     messages: List[Dict[str, str]] = [
-        {"role": "system", "content": prompt_template["system"]},
+        {"role": "system", "content": prompt_template.system},
         {"role": "user", "content": user_prompt},
     ]
 
     try:
-        # Call the LLM
-        response = await crud_issue_compliance.call_llm(
-            db, default_model.id, messages, account_id=current_user.id
-        )
-        compliance_factor = response.compliance_factor
-        reason = response.reason
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error processing LLM response: {e}"
-        )
+        api_key = default_model.api_key
+        if not api_key:
+            api_key = os.getenv("OPENAI_API_KEY")
 
-    # 5. Store the new result
+        if not api_key:
+            raise HTTPException(
+                status_code=500, detail="OpenAI API key not configured."
+            )
+
+        client = openai.OpenAI(api_key=api_key)
+
+        response = client.chat.completions.create(
+            model=default_model.model_name,
+            messages=messages,
+        )
+        llm_response_text = response.choices[0].message.content.strip()
+
+        response_obj = json.loads(llm_response_text)
+
+        compliance_factor = response_obj.get("compliance_factor")
+        reason = response_obj.get("reason")
+
+    except openai.APIError as e:
+        raise HTTPException(status_code=500, detail=f"LLM API error: {e}")
+    except (ValueError, IndexError) as e:
+        raise HTTPException(status_code=500, detail=f"Error parsing LLM response: {e}")
+
     compliance_result_in = IssueComplianceResultCreate(
+        issue_id=issue_id,
         prompt_id=prompt_id,
-        compliance_factor=float(compliance_factor),
-        reason=str(reason),
+        compliance_factor=compliance_factor,
+        reason=reason,
     )
 
-    try:
-        crud_issue_compliance.create(db, obj_in=compliance_result_in)
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=500, detail=f"Error storing compliance result: {e}"
-        )
-
-    return IssueComplianceResultResponse(
-        id=compliance_result_in.id,
-        prompt_id=compliance_result_in.prompt_id,
-        compliance_factor=compliance_result_in.compliance_factor,
-        reason=compliance_result_in.reason,
+    new_result = crud_issue_compliance.create(
+        db, obj_in=compliance_result_in.model_dump()
     )
+
+    return new_result
