@@ -11,6 +11,7 @@ class IssueComplianceResult(Base):
     """Model for storing compliance results for an issue."""
 
     prompt_id: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
     compliance_factor: Mapped[float] = mapped_column(Float, nullable=False)
     reason: Mapped[str] = mapped_column(String, nullable=False)
 
