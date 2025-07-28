@@ -40,6 +40,15 @@ export class SingleIssueDetailView extends LitElement {
       margin-top: 3rem;
     }
 
+    .review-section h3 {
+      font-size: var(--sl-font-size-large);
+      font-weight: var(--sl-font-weight-semibold);
+      color: var(--sl-color-neutral-800);
+      padding-bottom: var(--sl-spacing-small);
+      border-bottom: 1px solid var(--sl-color-neutral-200);
+      margin-bottom: var(--sl-spacing-medium);
+    }
+
     .issue-description {
       font-size: var(--sl-font-size-small);
       color: var(--sl-color-neutral-700);
