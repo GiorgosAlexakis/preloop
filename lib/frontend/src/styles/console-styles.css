@@ -102,3 +102,18 @@ a:hover {
 .full-width {
     width: 100%;
 }
+
+/* Modals */
+
+sl-dialog.large::part(panel) {
+    width: 80vw;
+    max-width: 1200px;
+    padding: 1rem;
+}
+
+.comparison-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sl-spacing-2x-large);
+    margin-bottom: var(--sl-spacing-large);
+}

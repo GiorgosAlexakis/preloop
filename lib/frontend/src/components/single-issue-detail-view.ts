@@ -108,6 +108,10 @@ export class SingleIssueDetailView extends LitElement {
                   )}%
                 </sl-badge>
               </div>
+              <div class="row">
+                <span>Last Updated</span>
+                <span>${new Date(this.issue.updated_at).toLocaleString()}</span>
+              </div>
               <div class="issue-description compliance-reason">
                 ${this.complianceResult!.reason}
               </div>

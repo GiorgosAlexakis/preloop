@@ -18,6 +18,7 @@ import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '../../components/project-filter-modal.ts';
 import '../../components/single-issue-detail-view.ts';
+import '../../components/improve-compliance-modal.ts';
 import { getStatusVariant, getComplianceVariant } from '../../utils/verdict';
 import {
   listProjects,
@@ -66,6 +67,12 @@ export class IssuesComplianceView extends LitElement {
 
   @state()
   private _isFilterModalOpen = false;
+
+  @state()
+  private _isImproveComplianceModalOpen = false;
+
+  @state()
+  private _selectedIssueForCompliance: Issue | null = null;
 
   @state()
   private _selectedProjectIds: string[] = [];
@@ -327,6 +334,30 @@ export class IssuesComplianceView extends LitElement {
     this._updateUrl();
   }
 
+  private _openImproveComplianceModal(issue: Issue) {
+    this._selectedIssueForCompliance = issue;
+    this._isImproveComplianceModalOpen = true;
+  }
+
+  private _handleComplianceModalClose() {
+    this._isImproveComplianceModalOpen = false;
+    this._selectedIssueForCompliance = null;
+  }
+
+  private _handleComplianceUpdate(event: CustomEvent) {
+    const { issueId } = event.detail;
+    // Refetch the specific issue and its compliance to update the UI
+    this.fetchIssues(); // For simplicity, refetching all. Could be optimized.
+    this.fetchComplianceResults();
+  }
+
+  private _handleMenuAction(e: CustomEvent, issue: Issue) {
+    const action = e.detail.item.value;
+    if (action === 'improve-compliance') {
+      this._openImproveComplianceModal(issue);
+    }
+  }
+
   private _openFilterModal() {
     this._isFilterModalOpen = true;
   }
@@ -408,14 +439,6 @@ export class IssuesComplianceView extends LitElement {
     this.fetchIssues();
   }
 
-  private _handleMenuAction(event: CustomEvent, issue: Issue) {
-    const selectedValue = event.detail.item.value;
-    if (selectedValue === 'improve-compliance') {
-      // Placeholder for the logic to improve compliance
-      console.log(`Improve compliance for issue: ${issue.id}`);
-    }
-  }
-
   private _renderIssueList() {
     if (this._loading && this._issues.length === 0) {
       return html`<div class="loading-overlay">
@@ -457,6 +480,7 @@ export class IssuesComplianceView extends LitElement {
                 const project = this._allProjects.find(
                   (p) => p.id === issue.project_id
                 );
+                const complianceResult = this._complianceResults[issue.id];
 
                 return html`
                   <tr
@@ -484,17 +508,16 @@ export class IssuesComplianceView extends LitElement {
                         this._loadingCompliance[issue.id],
                         () => html`<sl-spinner></sl-spinner>`,
                         () => {
-                          const result = this._complianceResults[issue.id];
-                          return result
+                          return complianceResult
                             ? html`
-                                <sl-tooltip content=${result.reason}>
+                                <sl-tooltip content=${complianceResult.reason}>
                                   <sl-badge
                                     variant=${getComplianceVariant(
-                                      result.compliance_factor
+                                      complianceResult.compliance_factor
                                     )}
                                     pill
                                   >
-                                    ${(result.compliance_factor * 100).toFixed(
+                                    ${(complianceResult.compliance_factor * 100).toFixed(
                                       0
                                     )}%
                                   </sl-badge>
@@ -530,12 +553,12 @@ export class IssuesComplianceView extends LitElement {
                     ? html`
                         <tr class="inline-detail-row">
                           <td colspan="8">
-                            <single-issue-detail-view
-                              .issue=${issue}
-                              .complianceResult=${this._complianceResults[
-                                issue.id
-                              ]}
-                            ></single-issue-detail-view>
+                            <div class="detail-view-card">
+                              <single-issue-detail-view
+                                .issue=${issue}
+                                .complianceResult=${complianceResult}
+                              ></single-issue-detail-view>
+                            </div>
                           </td>
                         </tr>
                       `
@@ -645,6 +668,13 @@ export class IssuesComplianceView extends LitElement {
         @on-close=${() => (this._isFilterModalOpen = false)}
         @on-apply=${this._applyFilters}
       ></project-filter-modal>
+
+      <improve-compliance-modal
+        .isOpen=${this._isImproveComplianceModalOpen}
+        .issue=${this._selectedIssueForCompliance}
+        @on-close=${this._handleComplianceModalClose}
+        @on-submit=${this._handleComplianceUpdate}>
+      </improve-compliance-modal>
     `;
   }
 

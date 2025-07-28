@@ -243,6 +243,7 @@ export async function searchIssues(
   const queryParams = new URLSearchParams();
   queryParams.append('search_type', 'similarity');
   queryParams.append('embedding_type', 'issue');
+  queryParams.append('sort', 'newest');
 
   if (params.query) {
     queryParams.append('query', params.query);
@@ -821,4 +822,39 @@ export async function proposeResolution(resolutionData: any) {
     method: 'PATCH',
     body: JSON.stringify(resolutionData),
   });
+}
+
+export async function getComplianceImprovementSuggestion(
+  issueId: string
+): Promise<{ title: string; description: string }> {
+  console.log(`Fetching compliance suggestion for issue ${issueId}...`);
+  // Placeholder: Simulate API call delay
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
+  // Placeholder: return a hardcoded suggestion
+  return {
+    title: 'Suggested Title: More Compliant and Clearer',
+    description:
+      'This is a suggested description that is much more compliant with our standards. It includes details and context that were previously missing.',
+  };
+}
+
+export async function updateIssueContent(
+  issueId: string,
+  title: string,
+  description: string
+): Promise<void> {
+  console.log(`Updating issue ${issueId} with new content...`);
+  // Placeholder: Simulate API call
+  const response = await fetchWithAuth(`/api/v1/issues/${issueId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, description }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to update issue content');
+  }
+
+  console.log('Issue updated successfully.');
 }
