@@ -23,7 +23,6 @@ export class SingleIssueDetailView extends LitElement {
       align-items: center;
     }
     .detail-section {
-      
       margin-bottom: var(--sl-spacing-large);
     }
     .detail-section:last-child {
@@ -38,7 +37,7 @@ export class SingleIssueDetailView extends LitElement {
     }
 
     .review-section {
-    margin-top: 3rem;
+      margin-top: 3rem;
     }
 
     .issue-description {
@@ -57,7 +56,6 @@ export class SingleIssueDetailView extends LitElement {
       font-size: var(--sl-font-size-x-small);
       text-transform: uppercase;
     }
-
   `;
 
   render() {
@@ -94,21 +92,20 @@ export class SingleIssueDetailView extends LitElement {
         () => html`
           <div class="review-section">
             <h3>
-            <span>${this.complianceResult!.name} Review</span>
-            <sl-badge
-                  variant=${getComplianceVariant(
-                    this.complianceResult!.compliance_factor
-                  )}
-                  pill
-                >
-                  Score: ${(this.complianceResult!.compliance_factor * 100).toFixed(
-                    0
-                  )}%
-                </sl-badge>
+              <span>${this.complianceResult!.name} Review</span>
+              <sl-badge
+                variant=${getComplianceVariant(
+                  this.complianceResult!.compliance_factor
+                )}
+                pill
+              >
+                Score:
+                ${(this.complianceResult!.compliance_factor * 100).toFixed(0)}%
+              </sl-badge>
             </h3>
             <div class="issue-description compliance-reason">
-                ${this.complianceResult!.reason}
-              </div>
+              ${this.complianceResult!.reason}
+            </div>
           </div>
         `
       )}
