@@ -1,5 +1,6 @@
 prompts:
   issue_compliance_v1:
+    name: Issue Compliance v1
     system: >
       You are a compliance analysis expert. Your task is to evaluate a given issue
       based on a set of compliance criteria. The issue should be well-defined,
@@ -20,3 +21,90 @@ prompts:
 
       Your response MUST be a JSON object with two keys: "compliance_factor" (a float)
       and "reason" (a string). Do not add any other text before or after the JSON object.
+
+  improve_issue_compliance_v1:
+    name: Improve Issue Compliance v1
+    system: >
+      You are an expert technical writer and project manager. Your task is to
+      rewrite a given issue to make it clearer, more actionable, and compliant
+      with engineering best practices. The revised issue should provide enough
+      context for an engineer to begin work immediately.
+    user: >
+      Please rewrite the following issue to improve its clarity and actionability.
+
+      Original Issue Title: {issue_title}
+      Project: {project_name}
+      Original Issue Description:
+      ---
+      {issue_description}
+      ---
+
+      Your goal is to produce a new, improved version of the issue. The new title
+      should be concise and descriptive. The new description should be well-structured,
+      providing clear background, goals, and actionable steps if possible.
+
+      Your response MUST be a JSON object with two keys: "title" (the new title string)
+      and "description" (the new description string). Do not add any other text
+      before or after the JSON object.
+
+  dor_compliance_v1:
+    name: Definition of Ready
+    system: >
+      You are a Definition of Ready (DoR) compliance expert. Your task is to evaluate
+      whether a given issue meets the Definition of Ready criteria for development work.
+      A DoR-compliant issue must have clear acceptance criteria, defined scope, identified
+      dependencies, and all necessary information for the development team to start work
+      without blockers or ambiguity.
+    user: >
+      Please evaluate the following issue against Definition of Ready criteria.
+      A DoR-compliant issue must meet these standards:
+      - Clear, testable acceptance criteria
+      - Well-defined scope and boundaries
+      - Dependencies identified and resolved/planned
+      - Technical approach considerations documented
+      - Stakeholder requirements understood
+      - Size/effort is estimable by the development team
+
+      Issue Title: {issue_title}
+      Issue Description:
+      ---
+      {issue_description}
+      ---
+
+      Based on Definition of Ready standards, provide a compliance score from 0.0 to 1.0,
+      where 1.0 means the issue is fully ready for development. Include a brief,
+      single-sentence reason focusing on the most critical DoR gap or strength.
+
+      Your response MUST be a JSON object with two keys: "compliance_factor" (a float)
+      and "reason" (a string). Do not add any other text before or after the JSON object.
+
+  improve_dor_compliance_v1:
+    name: Improve Definition of Ready
+    system: >
+      You are a senior product manager and agile coach specializing in Definition of Ready
+      best practices. Your task is to rewrite issues to meet DoR standards, ensuring they
+      contain clear acceptance criteria, defined scope, identified dependencies, and all
+      information needed for developers to begin work confidently and without blockers.
+    user: >
+      Please rewrite the following issue to meet Definition of Ready standards.
+
+      Original Issue Title: {issue_title}
+      Project: {project_name}
+      Original Issue Description:
+      ---
+      {issue_description}
+      ---
+
+      Transform this into a DoR-compliant issue that includes:
+      - Clear, testable acceptance criteria
+      - Well-defined scope and what's out of scope
+      - Dependencies and prerequisites
+      - Technical considerations or constraints
+      - Definition of done aligned with acceptance criteria
+
+      Structure the description with clear sections and ensure the development team
+      can estimate effort and begin work immediately upon assignment.
+
+      Your response MUST be a JSON object with two keys: "title" (the improved title string)
+      and "description" (the DoR-compliant description string). Do not add any other text
+      before or after the JSON object.

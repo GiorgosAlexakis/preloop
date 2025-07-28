@@ -37,6 +37,7 @@ class SecuritySettings(BaseModel):
 
 
 class Prompt(BaseModel):
+    name: str
     system: str
     user: str
 

@@ -6,6 +6,7 @@ from datetime import datetime
 
 class IssueComplianceResultBase(BaseModel):
     prompt_id: str
+    name: str
     compliance_factor: float
     reason: str
     issue_id: str
@@ -22,3 +23,8 @@ class IssueComplianceResultResponse(IssueComplianceResultBase):
 
     class Config:
         from_attributes = True
+
+
+class ComplianceSuggestionResponse(BaseModel):
+    title: str
+    description: str

@@ -1536,6 +1536,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue_compliance_suggestion/{issue_id}:
+    get:
+      tags:
+      - Issues
+      summary: Get Compliance Improvement Suggestion
+      description: Generate a compliance improvement suggestion for a given issue.
+      operationId: get_compliance_improvement_suggestion_api_v1_issue_compliance_suggestion__issue_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: issue_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Issue Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceSuggestionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issues/{issue_id}/comments:
     get:
       tags:
@@ -2988,6 +3017,19 @@ components:
       - query
       title: CommentSearchResults
       description: Response model for comment search results.
+    ComplianceSuggestionResponse:
+      properties:
+        title:
+          type: string
+          title: Title
+        description:
+          type: string
+          title: Description
+      type: object
+      required:
+      - title
+      - description
+      title: ComplianceSuggestionResponse
     DuplicateIssuePair:
       properties:
         issue1:
@@ -3086,6 +3128,9 @@ components:
         prompt_id:
           type: string
           title: Prompt Id
+        name:
+          type: string
+          title: Name
         compliance_factor:
           type: number
           title: Compliance Factor
@@ -3109,6 +3154,7 @@ components:
       type: object
       required:
       - prompt_id
+      - name
       - compliance_factor
       - reason
       - issue_id

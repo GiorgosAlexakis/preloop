@@ -44,6 +44,7 @@ from spacebridge.config import get_settings, Settings
 from spacebridge.schemas.issue_compliance import (
     IssueComplianceResultCreate,
     IssueComplianceResultResponse,
+    ComplianceSuggestionResponse,
 )
 import openai
 import os
@@ -1585,7 +1586,7 @@ async def get_issue_compliance(
 ):
     """Get or calculate the compliance result for a given issue."""
 
-    prompt_id = "issue_compliance_v1"
+    prompt_id = "dor_compliance_v1"
 
     existing_result = crud_issue_compliance.get_by_issue_id_and_prompt_id(
         db, issue_id=issue_id, prompt_id=prompt_id, account_id=current_user.id
@@ -1652,6 +1653,7 @@ async def get_issue_compliance(
     compliance_result_in = IssueComplianceResultCreate(
         issue_id=issue_id,
         prompt_id=prompt_id,
+        name=prompt_template.name,
         compliance_factor=compliance_factor,
         reason=reason,
     )
@@ -1661,3 +1663,68 @@ async def get_issue_compliance(
     )
 
     return new_result
+
+
+@router.get(
+    "/issue_compliance_suggestion/{issue_id}",
+    response_model=ComplianceSuggestionResponse,
+)
+def get_compliance_improvement_suggestion(
+    issue_id: str,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+    settings: Settings = Depends(get_settings),
+):
+    """Generate a compliance improvement suggestion for a given issue."""
+    issue = crud_issue.get(db, id=issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    # Authorization check
+    project = crud_project.get(db, id=issue.project_id)
+    organization = crud_organization.get(db, id=project.organization_id)
+    if (
+        not organization
+        or not organization.tracker
+        or organization.tracker.account_id != current_user.id
+    ):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    default_model = crud_llm_model.get_default_active_model(
+        db, account_id=current_user.id
+    )
+    if not default_model:
+        logger.error("No default active LLM model configured.")
+        raise HTTPException(
+            status_code=500, detail="No default active LLM model configured."
+        )
+
+    prompt_template = settings.prompts.get("improve_dor_compliance_v1")
+    system_prompt = prompt_template.system
+    user_prompt = prompt_template.user.format(
+        issue_title=issue.title,
+        issue_description=issue.description or "",
+        project_name=project.name,
+    )
+
+    client = openai.OpenAI()
+    try:
+        llm_response = client.chat.completions.create(
+            model=default_model.model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+        )
+        suggestion_data = json.loads(llm_response.choices[0].message.content)
+        return ComplianceSuggestionResponse(**suggestion_data)
+
+    except openai.APIError as e:
+        logger.error(f"OpenAI API call failed: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to get compliance suggestion from LLM."
+        )
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Failed to parse LLM response: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse LLM response.")
