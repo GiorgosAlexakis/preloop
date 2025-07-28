@@ -17,17 +17,28 @@ export class SingleIssueDetailView extends LitElement {
       padding: var(--sl-spacing-large);
       background-color: var(--sl-color-neutral-0);
     }
+    h3 {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
     .detail-section {
+      
       margin-bottom: var(--sl-spacing-large);
     }
     .detail-section:last-child {
       margin-bottom: 0;
     }
+
     .detail-section .row {
       font-size: var(--sl-font-size-medium);
       display: flex;
       justify-content: space-between;
       align-items: center;
+    }
+
+    .review-section {
+    margin-top: 3rem;
     }
 
     .issue-description {
@@ -37,8 +48,8 @@ export class SingleIssueDetailView extends LitElement {
       border: 1px solid var(--sl-color-neutral-200);
       border-radius: var(--sl-border-radius-medium);
       padding: var(--sl-spacing-medium);
-      white-space: pre-wrap;
-      word-wrap: break-word;
+      white-space: pre-line;
+      overflow-wrap: break-word;
       max-height: 400px;
       overflow-y: auto;
     }
@@ -46,14 +57,7 @@ export class SingleIssueDetailView extends LitElement {
       font-size: var(--sl-font-size-x-small);
       text-transform: uppercase;
     }
-    .compliance-reason {
-      margin-top: var(--sl-spacing-small);
-    }
-    .compliance-rows {
-      display: flex;
-      flex-direction: column;
-      gap: var(--sl-spacing-small);
-    }
+
   `;
 
   render() {
@@ -88,34 +92,23 @@ export class SingleIssueDetailView extends LitElement {
       ${when(
         this.complianceResult,
         () => html`
-          <div class="detail-section">
-            <h3>Compliance Review</h3>
-            <div class="compliance-rows">
-              <div class="row">
-                <span>Template</span>
-                <span>${this.complianceResult!.prompt_id}</span>
-              </div>
-              <div class="row">
-                <span>Compliance Factor</span>
-                <sl-badge
+          <div class="review-section">
+            <h3>
+            <span>${this.complianceResult!.name} Review</span>
+            <sl-badge
                   variant=${getComplianceVariant(
                     this.complianceResult!.compliance_factor
                   )}
                   pill
                 >
-                  ${(this.complianceResult!.compliance_factor * 100).toFixed(
+                  Score: ${(this.complianceResult!.compliance_factor * 100).toFixed(
                     0
                   )}%
                 </sl-badge>
-              </div>
-              <div class="row">
-                <span>Last Updated</span>
-                <span>${new Date(this.issue.updated_at).toLocaleString()}</span>
-              </div>
-              <div class="issue-description compliance-reason">
+            </h3>
+            <div class="issue-description compliance-reason">
                 ${this.complianceResult!.reason}
               </div>
-            </div>
           </div>
         `
       )}

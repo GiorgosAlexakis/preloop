@@ -94,6 +94,11 @@ export class IssuesComplianceView extends LitElement {
 
   private _pageSize = 10;
 
+  private get _complianceMetricName() {
+    const firstResult = Object.values(this._complianceResults)[0];
+    return firstResult ? firstResult.name : 'Compliance';
+  }
+
   static styles = [
     unsafeCSS(consoleStyles),
     css`
@@ -295,19 +300,25 @@ export class IssuesComplianceView extends LitElement {
   }
 
   async fetchComplianceResults() {
-    const newResults = { ...this._complianceResults };
-    const newLoading = { ...this._loadingCompliance };
-
-    const promises = this._issues.map((issue) => {
-      if (newResults[issue.id] || newLoading[issue.id]) {
-        return Promise.resolve();
+    this._issues.forEach((issue) => {
+      if (
+        this._complianceResults[issue.id] ||
+        this._loadingCompliance[issue.id]
+      ) {
+        return;
       }
 
-      newLoading[issue.id] = true;
+      this._loadingCompliance = {
+        ...this._loadingCompliance,
+        [issue.id]: true,
+      };
 
-      return getIssueCompliance(issue.id)
+      getIssueCompliance(issue.id)
         .then((result) => {
-          newResults[issue.id] = result;
+          this._complianceResults = {
+            ...this._complianceResults,
+            [issue.id]: result,
+          };
         })
         .catch((error) => {
           console.error(
@@ -316,13 +327,12 @@ export class IssuesComplianceView extends LitElement {
           );
         })
         .finally(() => {
-          newLoading[issue.id] = false;
+          this._loadingCompliance = {
+            ...this._loadingCompliance,
+            [issue.id]: false,
+          };
         });
     });
-
-    this._loadingCompliance = newLoading;
-    await Promise.all(promises);
-    this._complianceResults = newResults;
   }
 
   private _toggleRow(issueId: string) {
@@ -469,7 +479,7 @@ export class IssuesComplianceView extends LitElement {
                 <th>Project</th>
                 <th>Status</th>
                 <th>Priority</th>
-                <th>Compliance</th>
+                <th>DoR Compliance</th>
                 <th>Actions</th>
               </tr>
             </thead>

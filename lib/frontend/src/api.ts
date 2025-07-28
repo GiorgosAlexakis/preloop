@@ -798,6 +798,7 @@ export interface Issue {
 export interface IssueComplianceResult {
   id: string;
   prompt_id: string;
+  name: string;
   compliance_factor: number;
   reason: string;
   issue_id: string;
@@ -827,16 +828,13 @@ export async function proposeResolution(resolutionData: any) {
 export async function getComplianceImprovementSuggestion(
   issueId: string
 ): Promise<{ title: string; description: string }> {
-  console.log(`Fetching compliance suggestion for issue ${issueId}...`);
-  // Placeholder: Simulate API call delay
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-
-  // Placeholder: return a hardcoded suggestion
-  return {
-    title: 'Suggested Title: More Compliant and Clearer',
-    description:
-      'This is a suggested description that is much more compliant with our standards. It includes details and context that were previously missing.',
-  };
+  const response = await fetchWithAuth(
+    `/api/v1/issue_compliance_suggestion/${issueId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch compliance suggestion');
+  }
+  return response.json();
 }
 
 export async function updateIssueContent(
