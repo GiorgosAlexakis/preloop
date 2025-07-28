@@ -517,9 +517,9 @@ export class IssuesComplianceView extends LitElement {
                                     )}
                                     pill
                                   >
-                                    ${(complianceResult.compliance_factor * 100).toFixed(
-                                      0
-                                    )}%
+                                    ${(
+                                      complianceResult.compliance_factor * 100
+                                    ).toFixed(0)}%
                                   </sl-badge>
                                 </sl-tooltip>
                               `
@@ -673,7 +673,8 @@ export class IssuesComplianceView extends LitElement {
         .isOpen=${this._isImproveComplianceModalOpen}
         .issue=${this._selectedIssueForCompliance}
         @on-close=${this._handleComplianceModalClose}
-        @on-submit=${this._handleComplianceUpdate}>
+        @on-submit=${this._handleComplianceUpdate}
+      >
       </improve-compliance-modal>
     `;
   }

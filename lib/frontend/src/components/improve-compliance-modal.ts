@@ -1,6 +1,10 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { Issue, getComplianceImprovementSuggestion, updateIssueContent } from '../api';
+import {
+  Issue,
+  getComplianceImprovementSuggestion,
+  updateIssueContent,
+} from '../api';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
@@ -26,7 +30,6 @@ export class ImproveComplianceModal extends LitElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
-
       .comparison-panel h3 {
         margin-top: 0;
         font-size: var(--sl-font-size-large);
@@ -64,12 +67,15 @@ export class ImproveComplianceModal extends LitElement {
     if (!this.issue) return;
     this._isLoadingSuggestion = true;
     try {
-      const suggestion = await getComplianceImprovementSuggestion(this.issue.id);
+      const suggestion = await getComplianceImprovementSuggestion(
+        this.issue.id
+      );
       this._suggestedTitle = suggestion.title;
       this._suggestedDescription = suggestion.description;
     } catch (error) {
-        this._suggestionError = error instanceof Error ? error.message : 'Failed to load suggestion.';
-        console.error('Failed to get compliance suggestion:', error);
+      this._suggestionError =
+        error instanceof Error ? error.message : 'Failed to load suggestion.';
+      console.error('Failed to get compliance suggestion:', error);
     } finally {
       this._isLoadingSuggestion = false;
     }
@@ -109,38 +115,50 @@ export class ImproveComplianceModal extends LitElement {
         @sl-after-show=${this.handleOpen}
         @sl-hide=${this.handleClose}
       >
-        ${this.issue ? html`
-          <div class="comparison-container">
-            <div class="comparison-panel">
-              <h3>Original Issue</h3>
-              <single-issue-detail-view .issue=${this.issue}></single-issue-detail-view>
-            </div>
-            <div class="comparison-panel">
-              <h3>Suggested Improvement</h3>
-              ${this._isLoadingSuggestion
-                ? html`<div class="loading-suggestion">
-                    <sl-spinner></sl-spinner>
-                    <span>Generating suggestion...</span>
-                  </div>`
-                : this._suggestionError
-                ? html`<sl-alert variant="danger" open><sl-icon slot="icon" name="exclamation-octagon"></sl-icon>${this._suggestionError}</sl-alert>`
-                : html`
-                    <sl-input
-                      label="Title"
-                      .value=${this._suggestedTitle}
-                      @sl-input=${(e: any) => (this._suggestedTitle = e.target.value)}
-                    ></sl-input>
-                    <br />
-                    <sl-textarea
-                      label="Description"
-                      .value=${this._suggestedDescription}
-                      @sl-input=${(e: any) => (this._suggestedDescription = e.target.value)}
-                      rows="10"
-                    ></sl-textarea>
-                  `}
-            </div>
-          </div>
-        ` : ''}
+        ${this.issue
+          ? html`
+              <div class="comparison-container">
+                <div class="comparison-panel">
+                  <h3>Original Issue</h3>
+                  <single-issue-detail-view
+                    .issue=${this.issue}
+                  ></single-issue-detail-view>
+                </div>
+                <div class="comparison-panel">
+                  <h3>Suggested Improvement</h3>
+                  ${this._isLoadingSuggestion
+                    ? html`<div class="loading-suggestion">
+                        <sl-spinner></sl-spinner>
+                        <span>Generating suggestion...</span>
+                      </div>`
+                    : this._suggestionError
+                      ? html`<sl-alert variant="danger" open
+                          ><sl-icon
+                            slot="icon"
+                            name="exclamation-octagon"
+                          ></sl-icon
+                          >${this._suggestionError}</sl-alert
+                        >`
+                      : html`
+                          <sl-input
+                            label="Title"
+                            .value=${this._suggestedTitle}
+                            @sl-input=${(e: any) =>
+                              (this._suggestedTitle = e.target.value)}
+                          ></sl-input>
+                          <br />
+                          <sl-textarea
+                            label="Description"
+                            .value=${this._suggestedDescription}
+                            @sl-input=${(e: any) =>
+                              (this._suggestedDescription = e.target.value)}
+                            rows="10"
+                          ></sl-textarea>
+                        `}
+                </div>
+              </div>
+            `
+          : ''}
         <sl-button slot="footer" @click=${this.handleClose}>Cancel</sl-button>
         <sl-button
           slot="footer"
