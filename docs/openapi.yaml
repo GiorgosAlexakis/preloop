@@ -1807,6 +1807,18 @@ paths:
           default: 10
           title: Limit
         description: Maximum number of comments to return
+      - name: sort
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Sort order. 'newest' sorts by creation date descending.
+          enum:
+          - newest
+          title: Sort
+        description: Sort order. 'newest' sorts by creation date descending.
       - name: issue_id
         in: query
         required: false

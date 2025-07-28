@@ -76,6 +76,11 @@ async def search_all(
     limit: int = Query(
         10, ge=1, le=100, description="Maximum number of comments to return"
     ),
+    sort: Optional[str] = Query(
+        None,
+        enum=["newest"],
+        description="Sort order. 'newest' sorts by creation date descending.",
+    ),
     issue_id: Optional[str] = Query(
         None, description="Filter comments by a specific issue ID (UUID)"
     ),
@@ -252,7 +257,12 @@ async def search_all(
             detail=f"Invalid search_type: '{search_type}'. Must be 'similarity' or 'full_text'.",
         )
 
-    # 4. Transform Results to Pydantic Schemas
+    # 4. Post-process results (e.g., sorting)
+    if sort == "newest":
+        # Sorts in-place, newest first. The first element of the tuple is the DB object.
+        db_results_with_scores.sort(key=lambda x: x[0].updated_at, reverse=True)
+
+    # 5. Transform Results to Pydantic Schemas
     response_items: List[SearchResultItem] = []
     for db_obj, score in db_results_with_scores:
         item_schema: Union[IssueResponse, CommentResponse]
