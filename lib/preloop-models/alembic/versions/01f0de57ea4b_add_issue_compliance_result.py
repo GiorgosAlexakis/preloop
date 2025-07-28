@@ -24,6 +24,7 @@ def upgrade() -> None:
     op.create_table(
         "issuecomplianceresult",
         sa.Column("prompt_id", sa.String(), nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
         sa.Column("compliance_factor", sa.Float(), nullable=False),
         sa.Column("reason", sa.String(), nullable=False),
         sa.Column("issue_id", sa.String(length=36), nullable=False),
