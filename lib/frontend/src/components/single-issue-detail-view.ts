@@ -18,7 +18,6 @@ export class SingleIssueDetailView extends LitElement {
       background-color: var(--sl-color-neutral-0);
     }
     .detail-section {
-      
       margin-bottom: var(--sl-spacing-large);
     }
     .detail-section:last-child {
@@ -33,7 +32,7 @@ export class SingleIssueDetailView extends LitElement {
     }
 
     .review-section {
-    margin-top: 3rem;
+      margin-top: 3rem;
     }
 
     .issue-description {
@@ -97,18 +96,16 @@ export class SingleIssueDetailView extends LitElement {
           <div class="review-section">
             <h3>${this.complianceResult!.name} Review</h3>
             <sl-badge
-                  variant=${getComplianceVariant(
-                    this.complianceResult!.compliance_factor
-                  )}
-                  pill
-                >
-                  ${(this.complianceResult!.compliance_factor * 100).toFixed(
-                    0
-                  )}%
-                </sl-badge>
+              variant=${getComplianceVariant(
+                this.complianceResult!.compliance_factor
+              )}
+              pill
+            >
+              ${(this.complianceResult!.compliance_factor * 100).toFixed(0)}%
+            </sl-badge>
             <div class="issue-description compliance-reason">
-                ${this.complianceResult!.reason}
-              </div>
+              ${this.complianceResult!.reason}
+            </div>
           </div>
         `
       )}
