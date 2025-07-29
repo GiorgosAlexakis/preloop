@@ -42,6 +42,13 @@ class Prompt(BaseModel):
     user: str
 
 
+class NestedPrompt(BaseModel):
+    name: str
+    short_name: str
+    evaluate: Prompt
+    propose_improvement: Prompt
+
+
 class ServerSettings(BaseModel):
     """Server configuration."""
 
@@ -66,7 +73,9 @@ class Settings(BaseSettings):
     database: DatabaseSettings
     security: SecuritySettings
     server: ServerSettings
-    prompts: Dict[str, Prompt] = Field({}, description="Loaded prompts from YAML file")
+    prompts: Dict[str, NestedPrompt] = Field(
+        {}, description="Loaded prompts from YAML file"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

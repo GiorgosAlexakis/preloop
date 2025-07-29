@@ -8,6 +8,7 @@ __all__ = [
     "comments",
     "health",
     "issues",
+    "issue_compliance",
     "organizations",
     "projects",
     "search",  # Added new search endpoint

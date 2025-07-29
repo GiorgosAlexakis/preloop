@@ -18,6 +18,7 @@ class IssueComplianceResultCreate(IssueComplianceResultBase):
 
 class IssueComplianceResultResponse(IssueComplianceResultBase):
     id: str
+    short_name: str
     created_at: datetime
     updated_at: datetime
 
@@ -28,3 +29,9 @@ class IssueComplianceResultResponse(IssueComplianceResultBase):
 class ComplianceSuggestionResponse(BaseModel):
     title: str
     description: str
+
+
+class CompliancePromptMetadata(BaseModel):
+    id: str
+    name: str
+    short_name: str

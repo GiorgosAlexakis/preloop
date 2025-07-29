@@ -1506,6 +1506,27 @@ paths:
                 title: Response Get Issue Count Api V1 Issues Count Get
       security:
       - bearerAuth: []
+  /api/v1/issue_compliance_prompts:
+    get:
+      tags:
+      - Issues
+      - Issues
+      summary: Get Compliance Prompts
+      description: Get a list of available compliance prompts.
+      operationId: get_compliance_prompts_api_v1_issue_compliance_prompts_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/CompliancePromptMetadata'
+                type: array
+                title: Response Get Compliance Prompts Api V1 Issue Compliance Prompts
+                  Get
+      security:
+      - bearerAuth: []
   /api/v1/issue_compliance/{issue_id}:
     get:
       tags:
@@ -1523,6 +1544,12 @@ paths:
         schema:
           type: string
           title: Issue Id
+      - name: prompt_name
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Prompt Name
       responses:
         '200':
           description: Successful Response
@@ -1552,6 +1579,12 @@ paths:
         schema:
           type: string
           title: Issue Id
+      - name: prompt_name
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Prompt Name
       responses:
         '200':
           description: Successful Response
@@ -3017,6 +3050,23 @@ components:
       - query
       title: CommentSearchResults
       description: Response model for comment search results.
+    CompliancePromptMetadata:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        short_name:
+          type: string
+          title: Short Name
+      type: object
+      required:
+      - id
+      - name
+      - short_name
+      title: CompliancePromptMetadata
     ComplianceSuggestionResponse:
       properties:
         title:
@@ -3143,6 +3193,9 @@ components:
         id:
           type: string
           title: Id
+        short_name:
+          type: string
+          title: Short Name
         created_at:
           type: string
           format: date-time
@@ -3159,6 +3212,7 @@ components:
       - reason
       - issue_id
       - id
+      - short_name
       - created_at
       - updated_at
       title: IssueComplianceResultResponse
