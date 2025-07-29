@@ -223,7 +223,7 @@ export class IssuesComplianceView extends LitElement {
     const params = new URLSearchParams(window.location.search);
     this._searchQuery = params.get('query') || '';
     const prompt = params.get('prompt');
-    if (prompt && this._compliancePrompts.some(p => p.id === prompt)) {
+    if (prompt && this._compliancePrompts.some((p) => p.id === prompt)) {
       this._selectedCompliancePrompt = prompt;
     }
     const shortProjectIds = params.get('projects');
@@ -294,7 +294,11 @@ export class IssuesComplianceView extends LitElement {
     try {
       this._compliancePrompts = await getCompliancePrompts();
       // Ensure a valid prompt is always selected
-      if (!this._compliancePrompts.some(p => p.id === this._selectedCompliancePrompt)) {
+      if (
+        !this._compliancePrompts.some(
+          (p) => p.id === this._selectedCompliancePrompt
+        )
+      ) {
         this._selectedCompliancePrompt = this._compliancePrompts[0]?.id || '';
       }
     } catch (error) {
@@ -480,7 +484,7 @@ export class IssuesComplianceView extends LitElement {
 
   private _handleComplianceTypeSelect(e: CustomEvent) {
     const selectedValue = e.detail.item.value;
-    if (this._compliancePrompts.some(p => p.id === selectedValue)) {
+    if (this._compliancePrompts.some((p) => p.id === selectedValue)) {
       this._selectedCompliancePrompt = selectedValue;
       // When the type changes, we need to refetch the compliance data.
       this._complianceResults = {}; // Clear old results
@@ -491,7 +495,7 @@ export class IssuesComplianceView extends LitElement {
 
   private _renderSearchBar() {
     const selectedPrompt = this._compliancePrompts.find(
-      p => p.id === this._selectedCompliancePrompt
+      (p) => p.id === this._selectedCompliancePrompt
     );
 
     return html`
@@ -514,7 +518,7 @@ export class IssuesComplianceView extends LitElement {
           </sl-button>
           <sl-menu @sl-select=${this._handleComplianceTypeSelect}>
             ${this._compliancePrompts.map(
-              prompt =>
+              (prompt) =>
                 html`<sl-menu-item value=${prompt.id}
                   >${prompt.name}</sl-menu-item
                 >`
@@ -696,9 +700,7 @@ export class IssuesComplianceView extends LitElement {
               score, and use the AI review to resolve or dismiss the suggestion.
             </sl-alert>
 
-            ${this._renderSearchBar()}
-
-            ${this._renderActiveFilters()}
+            ${this._renderSearchBar()} ${this._renderActiveFilters()}
             ${when(
               this._loading,
               () =>

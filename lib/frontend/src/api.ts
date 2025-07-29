@@ -688,7 +688,9 @@ export async function updateIssueContent(
   console.log('Issue updated successfully.');
 }
 
-export async function getCompliancePrompts(): Promise<CompliancePromptMetadata[]> {
+export async function getCompliancePrompts(): Promise<
+  CompliancePromptMetadata[]
+> {
   const response = await fetchWithAuth('/api/v1/issue_compliance_prompts');
   if (!response.ok) {
     throw new Error('Failed to fetch compliance prompts');
