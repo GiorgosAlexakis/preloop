@@ -98,11 +98,18 @@ export interface IssueComplianceResult {
   id: string;
   prompt_id: string;
   name: string;
+  short_name: string;
   compliance_factor: number;
   reason: string;
   issue_id: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CompliancePromptMetadata {
+  id: string;
+  name: string;
+  short_name: string;
 }
 
 export interface IssueEmbedding {

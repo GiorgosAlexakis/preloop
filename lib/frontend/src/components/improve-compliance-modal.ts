@@ -17,8 +17,9 @@ import consoleStyles from '../styles/console-styles.css?inline';
 
 @customElement('improve-compliance-modal')
 export class ImproveComplianceModal extends LitElement {
-  @property({ type: Boolean }) isOpen = false;
+  @property({ type: Boolean }) open = false;
   @property({ type: Object }) issue: Issue | null = null;
+  @property({ type: String }) promptName = '';
 
   @state() private _isSubmitting = false;
   @state() private _isLoadingSuggestion = false;
@@ -48,6 +49,12 @@ export class ImproveComplianceModal extends LitElement {
     `,
   ];
 
+  updated(changedProperties: Map<string, unknown>) {
+    if (changedProperties.has('open') && this.open) {
+      this.handleOpen();
+    }
+  }
+
   private async handleOpen() {
     if (!this.issue) return;
     this._suggestionError = null;
@@ -57,18 +64,20 @@ export class ImproveComplianceModal extends LitElement {
   }
 
   private handleClose() {
-    this.isOpen = false;
+    this.open = false;
     this.dispatchEvent(
-      new CustomEvent('on-close', { bubbles: true, composed: true })
+      new CustomEvent('close', { bubbles: true, composed: true })
     );
   }
 
   private async fetchSuggestion() {
     if (!this.issue) return;
     this._isLoadingSuggestion = true;
+    this._suggestionError = null;
     try {
       const suggestion = await getComplianceImprovementSuggestion(
-        this.issue.id
+        this.issue.id,
+        this.promptName
       );
       this._suggestedTitle = suggestion.title;
       this._suggestedDescription = suggestion.description;
@@ -111,8 +120,7 @@ export class ImproveComplianceModal extends LitElement {
       <sl-dialog
         label="Improve Issue Compliance"
         class="dialog-overview large"
-        .open=${this.isOpen}
-        @sl-after-show=${this.handleOpen}
+        .open=${this.open}
         @sl-hide=${this.handleClose}
       >
         ${this.issue

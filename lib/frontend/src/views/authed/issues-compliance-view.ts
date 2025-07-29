@@ -25,12 +25,14 @@ import {
   listOrganizations,
   searchIssues,
   getIssueCompliance,
+  getCompliancePrompts,
 } from '../../api';
 import type {
   Project,
   Organization,
   Issue,
   IssueComplianceResult,
+  CompliancePromptMetadata,
 } from '../../types';
 
 import consoleStyles from '../../styles/console-styles.css?inline';
@@ -83,6 +85,12 @@ export class IssuesComplianceView extends LitElement {
   private _selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
 
   @state()
+  private _selectedCompliancePrompt = 'invest_compliance_v1';
+
+  @state()
+  private _compliancePrompts: CompliancePromptMetadata[] = [];
+
+  @state()
   private _allProjects: Project[] = [];
 
   @state()
@@ -98,7 +106,7 @@ export class IssuesComplianceView extends LitElement {
 
   private get _complianceMetricName() {
     const firstResult = Object.values(this._complianceResults)[0];
-    return firstResult ? firstResult.name : 'Compliance';
+    return firstResult ? firstResult.short_name : 'Compliance';
   }
 
   static styles = [
@@ -183,8 +191,10 @@ export class IssuesComplianceView extends LitElement {
     super.connectedCallback();
     const isDismissed = localStorage.getItem(this.INFO_ALERT_DISMISSED_KEY);
     this._isInfoAlertOpen = isDismissed !== 'true';
-    // Fetch projects first so we can map short IDs from the URL to full IDs.
+    // Fetch dynamic data first
+    await this.fetchCompliancePrompts();
     await this.fetchProjects();
+
     this.parseUrlAndUpdateState();
     // Fetch issues on initial load, regardless of search query
     this.fetchIssues();
@@ -212,6 +222,10 @@ export class IssuesComplianceView extends LitElement {
   private parseUrlAndUpdateState() {
     const params = new URLSearchParams(window.location.search);
     this._searchQuery = params.get('query') || '';
+    const prompt = params.get('prompt');
+    if (prompt && this._compliancePrompts.some(p => p.id === prompt)) {
+      this._selectedCompliancePrompt = prompt;
+    }
     const shortProjectIds = params.get('projects');
     if (shortProjectIds && this._allProjects.length > 0) {
       const shortIdSet = new Set(shortProjectIds.split(','));
@@ -232,6 +246,7 @@ export class IssuesComplianceView extends LitElement {
 
     const params = new URLSearchParams();
     params.set('status', this._selectedStatus);
+    params.set('prompt', this._selectedCompliancePrompt);
     if (this._searchQuery) {
       params.set('query', this._searchQuery);
     }
@@ -275,6 +290,18 @@ export class IssuesComplianceView extends LitElement {
     }
   }
 
+  async fetchCompliancePrompts() {
+    try {
+      this._compliancePrompts = await getCompliancePrompts();
+      // Ensure a valid prompt is always selected
+      if (!this._compliancePrompts.some(p => p.id === this._selectedCompliancePrompt)) {
+        this._selectedCompliancePrompt = this._compliancePrompts[0]?.id || '';
+      }
+    } catch (error) {
+      console.error('Failed to fetch compliance prompts:', error);
+    }
+  }
+
   async fetchIssues() {
     this._loading = true;
     this._error = null;
@@ -315,7 +342,7 @@ export class IssuesComplianceView extends LitElement {
         [issue.id]: true,
       };
 
-      getIssueCompliance(issue.id)
+      getIssueCompliance(issue.id, this._selectedCompliancePrompt)
         .then((result) => {
           this._complianceResults = {
             ...this._complianceResults,
@@ -451,6 +478,63 @@ export class IssuesComplianceView extends LitElement {
     this.fetchIssues();
   }
 
+  private _handleComplianceTypeSelect(e: CustomEvent) {
+    const selectedValue = e.detail.item.value;
+    if (this._compliancePrompts.some(p => p.id === selectedValue)) {
+      this._selectedCompliancePrompt = selectedValue;
+      // When the type changes, we need to refetch the compliance data.
+      this._complianceResults = {}; // Clear old results
+      this.fetchComplianceResults();
+      this._updateUrl(); // Also update the URL
+    }
+  }
+
+  private _renderSearchBar() {
+    const selectedPrompt = this._compliancePrompts.find(
+      p => p.id === this._selectedCompliancePrompt
+    );
+
+    return html`
+      <div class="search-bar">
+        <sl-input
+          placeholder="Search issues by title, description, or ID..."
+          .value=${this._searchQuery}
+          @sl-input=${(e: Event) =>
+            (this._searchQuery = (e.target as HTMLInputElement).value)}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === 'Enter') this.fetchIssues();
+          }}
+          clearable
+        >
+          <sl-icon name="search" slot="prefix"></sl-icon>
+        </sl-input>
+        <sl-dropdown>
+          <sl-button slot="trigger" caret>
+            ${selectedPrompt ? selectedPrompt.name : 'Select Type'}
+          </sl-button>
+          <sl-menu @sl-select=${this._handleComplianceTypeSelect}>
+            ${this._compliancePrompts.map(
+              prompt =>
+                html`<sl-menu-item value=${prompt.id}
+                  >${prompt.name}</sl-menu-item
+                >`
+            )}
+          </sl-menu>
+        </sl-dropdown>
+        <sl-button-group>
+          <sl-button @click=${this.fetchIssues} variant="primary">
+            Search
+          </sl-button>
+          <sl-tooltip content="Filter by project">
+            <sl-button @click=${this._openFilterModal}>
+              <sl-icon name="filter"></sl-icon>
+            </sl-button>
+          </sl-tooltip>
+        </sl-button-group>
+      </div>
+    `;
+  }
+
   private _renderIssueList() {
     if (this._loading && this._issues.length === 0) {
       return html`<div class="loading-overlay">
@@ -481,7 +565,7 @@ export class IssuesComplianceView extends LitElement {
                 <th>Project</th>
                 <th>Status</th>
                 <th>Priority</th>
-                <th>DoR Compliance</th>
+                <th>${this._complianceMetricName}</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -612,15 +696,7 @@ export class IssuesComplianceView extends LitElement {
               score, and use the AI review to resolve or dismiss the suggestion.
             </sl-alert>
 
-            <form class="search-bar" @submit=${this.handleSearch}>
-              <sl-input
-                placeholder="Search for issues"
-                .value=${this._searchQuery}
-                @sl-input=${this.handleSearchInput}
-                clearable
-              ></sl-input>
-              <sl-button type="submit" variant="primary">Search</sl-button>
-            </form>
+            ${this._renderSearchBar()}
 
             ${this._renderActiveFilters()}
             ${when(
@@ -673,7 +749,7 @@ export class IssuesComplianceView extends LitElement {
       </div>
 
       <project-filter-modal
-        .isOpen=${this._isFilterModalOpen}
+        .open=${this._isFilterModalOpen}
         .allProjects=${this._allProjects}
         .selectedProjectIds=${this._selectedProjectIds}
         .organizations=${this._organizations}
@@ -682,10 +758,11 @@ export class IssuesComplianceView extends LitElement {
       ></project-filter-modal>
 
       <improve-compliance-modal
-        .isOpen=${this._isImproveComplianceModalOpen}
+        .open=${this._isImproveComplianceModalOpen}
         .issue=${this._selectedIssueForCompliance}
-        @on-close=${this._handleComplianceModalClose}
-        @on-submit=${this._handleComplianceUpdate}
+        .promptName=${this._selectedCompliancePrompt}
+        @close=${this._handleComplianceModalClose}
+        @compliance-updated=${this._handleComplianceUpdate}
       >
       </improve-compliance-modal>
     `;

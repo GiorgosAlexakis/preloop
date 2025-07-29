@@ -12,6 +12,7 @@ import type {
   DuplicatePair,
   DuplicatesResponse,
   IssueComplianceResult,
+  CompliancePromptMetadata,
 } from './types';
 
 async function refreshToken(): Promise<string | null> {
@@ -632,13 +633,30 @@ export async function executeIssueDuplicateResolution(
 }
 
 export async function getIssueCompliance(
-  issueId: string
+  issueId: string,
+  promptName: string
 ): Promise<IssueComplianceResult> {
-  const response = await fetchWithAuth(`/api/v1/issue_compliance/${issueId}`, {
-    method: 'GET',
-  });
+  const response = await fetchWithAuth(
+    `/api/v1/issue_compliance/${issueId}?prompt_name=${promptName}`,
+    {
+      method: 'GET',
+    }
+  );
   if (!response.ok) {
     throw new Error('Failed to fetch issue compliance');
+  }
+  return response.json();
+}
+
+export async function getComplianceImprovementSuggestion(
+  issueId: string,
+  promptName: string
+): Promise<{ title: string; description: string }> {
+  const response = await fetchWithAuth(
+    `/api/v1/issue_compliance_suggestion/${issueId}?prompt_name=${promptName}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch compliance suggestion');
   }
   return response.json();
 }
@@ -648,18 +666,6 @@ export async function proposeResolution(resolutionData: any) {
     method: 'PATCH',
     body: JSON.stringify(resolutionData),
   });
-}
-
-export async function getComplianceImprovementSuggestion(
-  issueId: string
-): Promise<{ title: string; description: string }> {
-  const response = await fetchWithAuth(
-    `/api/v1/issue_compliance_suggestion/${issueId}`
-  );
-  if (!response.ok) {
-    throw new Error('Failed to fetch compliance suggestion');
-  }
-  return response.json();
 }
 
 export async function updateIssueContent(
@@ -680,4 +686,12 @@ export async function updateIssueContent(
   }
 
   console.log('Issue updated successfully.');
+}
+
+export async function getCompliancePrompts(): Promise<CompliancePromptMetadata[]> {
+  const response = await fetchWithAuth('/api/v1/issue_compliance_prompts');
+  if (!response.ok) {
+    throw new Error('Failed to fetch compliance prompts');
+  }
+  return response.json();
 }
