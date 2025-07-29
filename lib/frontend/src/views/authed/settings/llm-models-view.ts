@@ -3,12 +3,12 @@ import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
 import {
-  LlmModel,
   getLlmModels,
   updateLlmModel,
   createLlmModel,
   deleteLlmModel,
 } from '../../../api';
+import type { LlmModel } from '../../../types';
 import type { SlSelect } from '@shoelace-style/shoelace/dist/components/select/select.js';
 import type { SlInput } from '@shoelace-style/shoelace/dist/components/input/input.js';
 

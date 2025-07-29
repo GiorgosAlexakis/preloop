@@ -2,8 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Deck } from '@deck.gl/core';
 import { ScatterplotLayer } from '@deck.gl/layers';
-import * as tsnejs from 'tsne-js';
-import { getEmbeddingsForProjects, IssueEmbedding } from '../api';
+import { getEmbeddingsForProjects } from '../api';
 import { when } from 'lit/directives/when.js';
 
 const TSNE_ITERATIONS = 500;

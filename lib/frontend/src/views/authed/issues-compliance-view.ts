@@ -22,14 +22,16 @@ import '../../components/improve-compliance-modal.ts';
 import { getStatusVariant, getComplianceVariant } from '../../utils/verdict';
 import {
   listProjects,
-  Project,
   listOrganizations,
-  Organization,
-  Issue,
   searchIssues,
   getIssueCompliance,
-  IssueComplianceResult,
 } from '../../api';
+import type {
+  Project,
+  Organization,
+  Issue,
+  IssueComplianceResult,
+} from '../../types';
 
 import consoleStyles from '../../styles/console-styles.css?inline';
 

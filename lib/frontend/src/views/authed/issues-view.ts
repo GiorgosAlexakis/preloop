@@ -18,16 +18,18 @@ import '../../components/resolve-issue-modal.ts';
 import '../../components/issue-detail-view.ts';
 import {
   listProjects,
-  Project,
   listIssueDuplicates,
   checkLlmVerdict,
   dismissDuplicatePair,
+  listOrganizations,
+} from '../../api';
+import type {
+  Project,
   DuplicatePair,
   DuplicatesResponse,
-  listOrganizations,
   Organization,
   Issue,
-} from '../../api';
+} from '../../types';
 import {
   DEFAULT_SIMILARITY_THRESHOLD,
   DEFAULT_SIMILARITY_THRESHOLD_CHARTS,

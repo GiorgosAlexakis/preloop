@@ -1,7 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
-import { listIssueDuplicates, DuplicatePair, checkLlmVerdict } from '../api';
+import { listIssueDuplicates, checkLlmVerdict } from '../api';
+import type { DuplicatePair } from '../types';
 import { LlmVerdict, renderVerdict } from '../utils/verdict';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
