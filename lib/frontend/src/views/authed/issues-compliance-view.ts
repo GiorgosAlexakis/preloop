@@ -557,14 +557,14 @@ export class IssuesComplianceView extends LitElement {
           </sl-menu>
         </sl-dropdown>
         <sl-button-group>
-          <sl-button @click=${this.handleSearch} variant="primary">
-            Search
-          </sl-button>
           <sl-tooltip content="Filter by project">
             <sl-button @click=${this._openFilterModal}>
               <sl-icon name="filter"></sl-icon>
             </sl-button>
           </sl-tooltip>
+          <sl-button @click=${this.handleSearch} variant="primary">
+            Search
+          </sl-button>
         </sl-button-group>
       </div>
     `;
@@ -659,25 +659,34 @@ export class IssuesComplianceView extends LitElement {
                       )}
                     </td>
                     <td>
-                      <sl-dropdown @click=${(e: Event) => e.stopPropagation()}>
-                        <sl-icon-button
-                          slot="trigger"
-                          name="three-dots-vertical"
-                          label="Actions"
-                        ></sl-icon-button>
-                        <sl-menu
-                          @sl-select=${(e: CustomEvent) =>
-                            this._handleMenuAction(e, issue)}
+                      <sl-button-group>
+                        <sl-button
+                          size="small"
+                          @click=${(e: Event) => {
+                            e.stopPropagation();
+                            this._openImproveComplianceModal(issue);
+                          }}
                         >
-                          <sl-menu-item value="improve-compliance">
-                            <sl-icon
-                              name="graph-up-arrow"
-                              slot="prefix"
-                            ></sl-icon>
-                            Improve Compliance
-                          </sl-menu-item>
-                        </sl-menu>
-                      </sl-dropdown>
+                          Improve
+                        </sl-button>
+                        <sl-dropdown @click=${(e: Event) => e.stopPropagation()}>
+                          <sl-button slot="trigger" size="small" title="Actions">
+                            <sl-icon name="three-dots-vertical"></sl-icon>
+                          </sl-button>
+                          <sl-menu
+                            @sl-select=${(e: CustomEvent) =>
+                              this._handleMenuAction(e, issue)}
+                          >
+                            <sl-menu-item value="improve-compliance">
+                              <sl-icon
+                                name="graph-up-arrow"
+                                slot="prefix"
+                              ></sl-icon>
+                              Improve Compliance
+                            </sl-menu-item>
+                          </sl-menu>
+                        </sl-dropdown>
+                      </sl-button-group>
                     </td>
                   </tr>
                   ${isExpanded
@@ -740,10 +749,6 @@ export class IssuesComplianceView extends LitElement {
     return html`
       <div class="header">
         <h1>Issue Compliance</h1>
-        <sl-button @click=${this._openFilterModal}>
-          <sl-icon slot="prefix" name="filter"></sl-icon>
-          Filter
-        </sl-button>
       </div>
       <div class="column-layout">
         <div class="main-column">

@@ -523,15 +523,16 @@ export class IssuesView extends LitElement {
 
   render() {
     return html`
-      <div class="header">
-        <h1>Issue Similarity</h1>
-        <sl-button @click=${this._openFilterModal}>
-          <sl-icon slot="prefix" name="filter"></sl-icon>
-          Filter
-        </sl-button>
-      </div>
+      
       <div class="column-layout">
         <div class="main-column">
+          <div class="header">
+            <h1>Issue Similarity</h1>
+            <sl-button @click=${this._openFilterModal}>
+              <sl-icon slot="prefix" name="filter"></sl-icon>
+              Filter
+            </sl-button>
+          </div>
           <div class="container">
             <sl-alert
               variant="primary"
@@ -758,6 +759,8 @@ export class IssuesView extends LitElement {
           </div>
         </div>
         <div class="side-column">
+        <div class="header">
+        </div>
           ${when(
             this._expandedRowKey,
             () => {

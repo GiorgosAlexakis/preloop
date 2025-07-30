@@ -51,6 +51,7 @@ a:hover {
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--sl-spacing-large);
+    min-height: 88.16px;
 }
 
 .table-card {
