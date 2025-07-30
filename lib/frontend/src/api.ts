@@ -677,11 +677,14 @@ export async function updateIssueContent(
   title: string,
   description: string
 ): Promise<Issue> {
-  const response = await fetchWithAuth(`/api/v1/issue_compliance_update/${issueId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, description }),
-  });
+  const response = await fetchWithAuth(
+    `/api/v1/issue_compliance_update/${issueId}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description }),
+    }
+  );
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

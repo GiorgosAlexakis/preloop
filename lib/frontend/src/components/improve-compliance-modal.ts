@@ -102,7 +102,10 @@ export class ImproveComplianceModal extends LitElement {
     this._suggestionError = null;
 
     console.log('[Modal] Handling submit for issue:', this.issue.id);
-    console.log('[Modal] With data:', { title: this._suggestedTitle, description: this._suggestedDescription });
+    console.log('[Modal] With data:', {
+      title: this._suggestedTitle,
+      description: this._suggestedDescription,
+    });
 
     try {
       const response = await updateIssueContent(
@@ -169,13 +172,19 @@ export class ImproveComplianceModal extends LitElement {
                           <sl-input
                             label="Title"
                             .value=${this._suggestedTitle}
-                            @sl-input=${(e: Event) => (this._suggestedTitle = (e.target as HTMLInputElement).value)}
+                            @sl-input=${(e: Event) =>
+                              (this._suggestedTitle = (
+                                e.target as HTMLInputElement
+                              ).value)}
                           ></sl-input>
                           <br />
                           <sl-textarea
                             label="Description"
                             .value=${this._suggestedDescription}
-                            @sl-input=${(e: Event) => (this._suggestedDescription = (e.target as HTMLInputElement).value)}
+                            @sl-input=${(e: Event) =>
+                              (this._suggestedDescription = (
+                                e.target as HTMLInputElement
+                              ).value)}
                             rows="10"
                           ></sl-textarea>
                         `}
