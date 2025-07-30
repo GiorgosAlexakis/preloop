@@ -361,6 +361,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         model_id: str,
         query_vector: List[float],
         limit: int = 10,
+        skip: int = 0,
         similarity: Optional[float] = None,
         distance_type: str = "cosine",  # Note: distance_type is not used in this SQL version
         tracker_ids: Optional[List[str]] = None,
@@ -382,6 +383,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             model_id: ID of the embedding model to search within
             query_vector: Vector to search for
             limit: Maximum number of results to return
+            skip: Number of results to skip before returning
             similarity: Optional similarity score to filter by. If provided, only results with
                         a similarity score greater than or equal to this value will be returned.
             distance_type: (Currently unused in this SQL implementation) Distance metric.
@@ -406,6 +408,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             "model_id": model_id,
             "query_vector": query_vector,  # pgvector expects a string representation of a list
             "limit": limit,
+            "skip": skip,
         }
         if similarity is not None:
             params["similarity"] = similarity
@@ -490,7 +493,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     (1 - (embedding <=> (select CAST(:query_vector AS vector)))) as sim
                 FROM shortlist
                 ORDER BY sim DESC
-                LIMIT :limit
+                LIMIT :limit OFFSET :skip
             """
             query_results = db.execute(text(sql), params).fetchall()
             for row in query_results:
@@ -543,7 +546,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 )
                 SELECT * FROM results
                 ORDER BY sim DESC
-                LIMIT :limit
+                LIMIT :limit OFFSET :skip
             """
             query_results = db.execute(text(sql), params).fetchall()
             for row in query_results:
@@ -611,7 +614,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     (1 - (embedding_vector <=> CAST(:query_vector AS vector))) as sim
                 FROM combined_embeddings
                 ORDER BY sim DESC
-                LIMIT :limit
+                LIMIT :limit OFFSET :skip
             """
             query_results = db.execute(text(sql), params).fetchall()
             for row in query_results:
