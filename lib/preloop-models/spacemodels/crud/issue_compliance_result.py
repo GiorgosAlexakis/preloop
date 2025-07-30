@@ -31,5 +31,13 @@ class CRUDIssueComplianceResult(CRUDBase[IssueComplianceResult]):
             )
         return query.first()
 
+    def delete_by_issue_id(self, db: Session, *, issue_id: str) -> int:
+        """Delete all compliance results for a given issue_id."""
+        num_deleted = (
+            db.query(self.model).filter(self.model.issue_id == issue_id).delete()
+        )
+        db.commit()
+        return num_deleted
+
 
 issue_compliance_result = CRUDIssueComplianceResult(IssueComplianceResult)
