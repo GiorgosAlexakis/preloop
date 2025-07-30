@@ -76,6 +76,7 @@ async def search_all(
     limit: int = Query(
         10, ge=1, le=100, description="Maximum number of comments to return"
     ),
+    skip: int = Query(0, ge=0, description="Number of results to skip for pagination"),
     sort: Optional[str] = Query(
         None,
         enum=["newest"],
@@ -239,6 +240,7 @@ async def search_all(
             model_id=model.id,
             query_vector=query_vector,
             limit=limit,
+            skip=skip,
             project_ids=resolved_project_ids_param,  # Use the new resolved list
             embedding_type=embedding_type,
         )
