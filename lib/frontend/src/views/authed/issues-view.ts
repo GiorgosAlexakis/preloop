@@ -523,7 +523,6 @@ export class IssuesView extends LitElement {
 
   render() {
     return html`
-      
       <div class="column-layout">
         <div class="main-column">
           <div class="header">
@@ -759,8 +758,7 @@ export class IssuesView extends LitElement {
           </div>
         </div>
         <div class="side-column">
-        <div class="header">
-        </div>
+          <div class="header"></div>
           ${when(
             this._expandedRowKey,
             () => {

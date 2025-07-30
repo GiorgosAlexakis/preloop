@@ -669,8 +669,14 @@ export class IssuesComplianceView extends LitElement {
                         >
                           Improve
                         </sl-button>
-                        <sl-dropdown @click=${(e: Event) => e.stopPropagation()}>
-                          <sl-button slot="trigger" size="small" title="Actions">
+                        <sl-dropdown
+                          @click=${(e: Event) => e.stopPropagation()}
+                        >
+                          <sl-button
+                            slot="trigger"
+                            size="small"
+                            title="Actions"
+                          >
                             <sl-icon name="three-dots-vertical"></sl-icon>
                           </sl-button>
                           <sl-menu
