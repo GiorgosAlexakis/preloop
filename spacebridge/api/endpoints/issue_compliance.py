@@ -11,12 +11,16 @@ from sqlalchemy.orm import Session
 
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.config import get_settings, Settings
+from spacebridge.schemas.issue import IssueResponse, IssueUpdate
 from spacebridge.schemas.issue_compliance import (
-    IssueComplianceResultCreate,
-    IssueComplianceResultResponse,
     ComplianceSuggestionResponse,
     CompliancePromptMetadata,
 )
+from spacebridge.schemas.issue_compliance import (
+    IssueComplianceResultCreate,
+    IssueComplianceResultResponse,
+)
+from .issues import update_issue
 from spacemodels.crud import (
     CRUDIssue,
     CRUDIssueComplianceResult,
@@ -37,7 +41,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 crud_issue = CRUDIssue(Issue)
-crud_issue_compliance = CRUDIssueComplianceResult(IssueComplianceResult)
+crud_issue_compliance_result = CRUDIssueComplianceResult(IssueComplianceResult)
 crud_llm_model = CRUDLLMModel(LLMModel)
 crud_project = CRUDProject(Project)
 crud_organization = CRUDOrganization(Organization)
@@ -77,7 +81,7 @@ async def get_issue_compliance(
 ):
     """Get or calculate the compliance result for a given issue."""
 
-    existing_result = crud_issue_compliance.get_by_issue_id_and_prompt_id(
+    existing_result = crud_issue_compliance_result.get_by_issue_id_and_prompt_id(
         db, issue_id=issue_id, prompt_id=prompt_name, account_id=current_user.id
     )
     if existing_result:
@@ -151,7 +155,7 @@ async def get_issue_compliance(
         reason=reason,
     )
 
-    new_result = crud_issue_compliance.create(
+    new_result = crud_issue_compliance_result.create(
         db, obj_in=compliance_result_in.model_dump()
     )
 
@@ -233,3 +237,48 @@ def get_compliance_improvement_suggestion(
         raise HTTPException(
             status_code=500, detail="Failed to get compliance suggestion from LLM."
         )
+
+
+@router.patch(
+    "/issue_compliance_update/{issue_id}", response_model=IssueResponse, tags=["Issues"]
+)
+async def update_issue_content(
+    issue_id: str,
+    issue_update: IssueUpdate,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+):
+    """Update the title and description of an issue and sync to tracker."""
+    # Delete any existing compliance results for this issue
+    crud_issue_compliance_result.delete_by_issue_id(db, issue_id=issue_id)
+
+    # Convert the compliance-specific update schema to the general API update schema
+    api_issue_update = IssueUpdate(
+        title=issue_update.title,
+        description=issue_update.description,
+        comment="Issue content updated for compliance.",
+    )
+
+    # Call the centralized update_issue function which handles DB and tracker updates
+    return await update_issue(
+        issue_id=issue_id,
+        issue_update=api_issue_update,
+        db=db,
+        current_user=current_user,
+    )
+
+
+def get_prompts_from_config(config_path: str) -> List[CompliancePromptMetadata]:
+    if not os.path.exists(config_path):
+        return []
+    with open(config_path, "r") as f:
+        config_data = json.load(f)
+    prompts_metadata = [
+        CompliancePromptMetadata(
+            id=prompt_id,
+            name=prompt_data["name"],
+            short_name=prompt_data["short_name"],
+        )
+        for prompt_id, prompt_data in config_data.items()
+    ]
+    return prompts_metadata

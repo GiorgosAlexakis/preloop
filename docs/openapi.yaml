@@ -1598,6 +1598,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue_compliance_update/{issue_id}:
+    patch:
+      tags:
+      - Issues
+      - Issues
+      summary: Update Issue Content
+      description: Update the title and description of an issue and sync to tracker.
+      operationId: update_issue_content_api_v1_issue_compliance_update__issue_id__patch
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: issue_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Issue Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issues/{issue_id}/comments:
     get:
       tags:
