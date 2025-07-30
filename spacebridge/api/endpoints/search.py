@@ -243,6 +243,7 @@ async def search_all(
             skip=skip,
             project_ids=resolved_project_ids_param,  # Use the new resolved list
             embedding_type=embedding_type,
+            sort=sort,  # Pass sort parameter to the CRUD method
         )
 
         # print(resolved_project_ids_param) # Optional: for debugging
@@ -259,12 +260,7 @@ async def search_all(
             detail=f"Invalid search_type: '{search_type}'. Must be 'similarity' or 'full_text'.",
         )
 
-    # 4. Post-process results (e.g., sorting)
-    if sort == "newest":
-        # Sorts in-place, newest first. The first element of the tuple is the DB object.
-        db_results_with_scores.sort(key=lambda x: x[0].updated_at, reverse=True)
-
-    # 5. Transform Results to Pydantic Schemas
+    # 4. Transform Results to Pydantic Schemas
     response_items: List[SearchResultItem] = []
     for db_obj, score in db_results_with_scores:
         item_schema: Union[IssueResponse, CommentResponse]
