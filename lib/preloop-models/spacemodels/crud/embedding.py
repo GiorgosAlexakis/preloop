@@ -139,11 +139,34 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         Get raw embedding vectors for issues, with optional filtering.
         Returns a list of (issue_id, embedding_vector, issue_title, issue_type, issue_last_updated_external) tuples.
         """
+        params = {
+            "model_id": embedding_model_id,
+            "query_vector": None,  # Not used in this function
+            "limit": limit,
+            "skip": skip,
+        }
+        if embedding_model_id:
+            params["embedding_model_id"] = embedding_model_id
+
+        if project_ids:
+            params["project_ids"] = project_ids
+        if project_names:
+            lowercase_project_names = [name.lower() for name in project_names]
+            params["project_names"] = lowercase_project_names
+        if tracker_id:
+            params["tracker_id"] = tracker_id
+        if organization_ids:
+            params["organization_ids"] = organization_ids
+        if organization_names:
+            lowercase_org_names = [name.lower() for name in organization_names]
+            params["organization_names"] = lowercase_org_names
+        if account_id:
+            params["account_id"] = account_id
+
         query = db.query(
             IssueEmbedding.issue_id,
             IssueEmbedding.embedding,
             Issue.title,
-            Issue.project_id,
             Issue.issue_type,
             Issue.last_updated_external,
         ).join(Issue, IssueEmbedding.issue_id == Issue.id)
@@ -157,7 +180,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             query = query.filter(Issue.project_id.in_(project_ids))
 
         if project_names:
-            lowercase_project_names = [name.lower() for name in project_names]
             query = query.join(Project, Issue.project_id == Project.id).filter(
                 func.lower(Project.name).in_(lowercase_project_names)
             )
@@ -171,7 +193,6 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             query = query.filter(Project.organization_id.in_(organization_ids))
 
         if organization_names:
-            lowercase_org_names = [name.lower() for name in organization_names]
             query = (
                 query.join(Project, Issue.project_id == Project.id)
                 .join(Organization, Project.organization_id == Organization.id)
@@ -374,6 +395,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         last_updated_after: Optional[datetime] = None,
         embedding_type: Optional[str] = None,  # "issue", "comment", or None
         account_id: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> List[Union[Tuple[Issue, float], Tuple[Comment, float]]]:
         """
         Search for similar issues or comments based on vector similarity using raw SQL with pgvector.
@@ -397,6 +419,8 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
             last_updated_after: Optional lower bound for issue updated_at.
             embedding_type: Optional type of embedding to filter by.
                             Can be "issue", "comment". If None, results can be a mix of Issues and Comments.
+            account_id: Optional account ID to filter by.
+            sort: Optional sort order. 'newest' sorts by creation date descending.
 
         Returns:
             List of (Issue, similarity_score) tuples if embedding_type is "issue".
@@ -412,6 +436,12 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         }
         if similarity is not None:
             params["similarity"] = similarity
+
+        # Determine the sorting order
+        order_by_sql = "sim DESC"
+        if sort == "newest":
+            # This alias is defined in each of the subqueries below
+            order_by_sql = "updated_at DESC"
 
         common_where_clauses = ["e.embedding_model_id = :model_id"]
 
@@ -466,7 +496,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         i.project_id, i.tracker_id, i.meta_data AS issue_meta_data,
                         i.last_updated_external, i.last_synced,
                         i.created_at AS issue_created_at,
-                        i.updated_at AS issue_updated_at,
+                        i.updated_at AS updated_at, -- Alias for sorting
                         e.embedding AS embedding,
                         (1 - (subvector(embedding, 1, {TRUNCATED_VECTOR_SIZE})::vector({TRUNCATED_VECTOR_SIZE}) <=> (select subvector(CAST(:query_vector AS vector), 1, {TRUNCATED_VECTOR_SIZE})))) as sim_trunc
                     FROM
@@ -489,10 +519,10 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     project_id, tracker_id, issue_meta_data,
                     last_updated_external, last_synced,
                     issue_created_at,
-                    issue_updated_at,
+                    updated_at,
                     (1 - (embedding <=> (select CAST(:query_vector AS vector)))) as sim
                 FROM shortlist
-                ORDER BY sim DESC
+                ORDER BY {order_by_sql}
                 LIMIT :limit OFFSET :skip
             """
             query_results = db.execute(text(sql), params).fetchall()
@@ -515,7 +545,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     last_updated_external=row.last_updated_external,
                     last_synced=row.last_synced,
                     created_at=row.issue_created_at,
-                    updated_at=row.issue_updated_at,
+                    updated_at=row.updated_at,
                 )
                 processed_results.append((issue, row.sim))
 
@@ -532,7 +562,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         c.id, c.body, c.type, c.issue_id, c.author,
                         c.meta_data AS comment_meta_data,
                         c.created_at AS comment_created_at,
-                        c.updated_at AS comment_updated_at,
+                        c.updated_at AS updated_at, -- Alias for sorting
                         (1 - (e.embedding <=> CAST(:query_vector AS vector))) as sim
                     FROM
                         comment c
@@ -545,7 +575,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     WHERE {where_sql}
                 )
                 SELECT * FROM results
-                ORDER BY sim DESC
+                ORDER BY {order_by_sql}
                 LIMIT :limit OFFSET :skip
             """
             query_results = db.execute(text(sql), params).fetchall()
@@ -560,7 +590,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     if row.comment_meta_data and isinstance(row.comment_meta_data, str)
                     else row.comment_meta_data,
                     created_at=row.comment_created_at,
-                    updated_at=row.comment_updated_at,
+                    updated_at=row.updated_at,
                 )
                 processed_results.append((comment, row.sim))
 
@@ -579,6 +609,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     SELECT
                         'issue' AS item_type,
                         e.embedding AS embedding_vector,
+                        i.updated_at AS updated_at, -- Unified sort column
                         i.id AS issue_obj_id, i.title, i.description, i.status, i.priority, i.issue_type,
                         i.external_id, i.external_url, i.key, i.project_id AS issue_project_id, i.tracker_id AS issue_tracker_id,
                         i.meta_data AS issue_meta_data, i.last_updated_external, i.last_synced,
@@ -596,10 +627,10 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     SELECT
                         'comment' AS item_type,
                         e.embedding AS embedding_vector,
+                        c.updated_at AS updated_at, -- Unified sort column
                         NULL, NULL, NULL, NULL, NULL, NULL, -- Issue specific fields
                         NULL, NULL, NULL, i.project_id, i.tracker_id, -- Parent issue's project/tracker id
-                        NULL, NULL, NULL, -- Issue specific metadata/timestamps
-                        NULL, NULL, -- Issue specific timestamps
+                        NULL, NULL, NULL, NULL, NULL, -- More issue fields
                         c.id AS comment_obj_id, c.body AS comment_body, c.type AS comment_type, c.issue_id AS comment_issue_id,
                         c.author AS comment_author, c.meta_data AS comment_meta_data,
                         c.created_at AS comment_created_at, c.updated_at AS comment_updated_at
@@ -613,7 +644,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                     *,
                     (1 - (embedding_vector <=> CAST(:query_vector AS vector))) as sim
                 FROM combined_embeddings
-                ORDER BY sim DESC
+                ORDER BY {order_by_sql}
                 LIMIT :limit OFFSET :skip
             """
             query_results = db.execute(text(sql), params).fetchall()
@@ -638,7 +669,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                         last_updated_external=row.last_updated_external,
                         last_synced=row.last_synced,
                         created_at=row.issue_created_at,
-                        updated_at=row.issue_updated_at,
+                        updated_at=row.updated_at,
                     )
                     processed_results.append((issue, sim_score))
                 elif row.item_type == "comment":
