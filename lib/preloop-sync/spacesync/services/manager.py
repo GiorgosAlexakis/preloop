@@ -4,13 +4,13 @@ Tracker update service manager.
 """
 
 from typing import Set, Dict, Any
-
+import nats
+import json
+import os
 import pytz
 from datetime import datetime, timedelta  # Import timedelta, timezone
 from sqlalchemy.orm import Session
-from apscheduler.schedulers.base import (
-    BaseScheduler,
-)  # Import BaseScheduler for type hinting
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger  # Import IntervalTrigger
 from apscheduler.jobstores.base import JobLookupError  # Import specific error
 
@@ -29,15 +29,42 @@ POLLING_THRESHOLD = timedelta(hours=1)
 TRACKER_JOB_PREFIX = "tracker_update_"
 
 
-def update_tracker(tracker_id: str) -> Dict[str, Any]:
+async def poll_tracker(tracker_id: str) -> Dict[str, Any]:
     logger.info(f"Starting update poll for tracker {tracker_id}")
-    db = next(get_db_session())
-    tracker = crud_tracker.get_by_id(db, id=tracker_id)
-    return scan_tracker(db, tracker)
+    nats_url = os.getenv("NATS_URL")
+    if not nats_url:
+        db = next(get_db_session())
+        tracker = crud_tracker.get(db, id=tracker_id)
+        stats = await scan_tracker(db, tracker)
+        logger.info(f"Scan for tracker {tracker_id} completed. Stats: {stats}")
+        db.close()
+        return stats
+
+    nc = await nats.connect(nats_url)
+    js = nc.jetstream()
+
+    await js.add_stream(
+        name="tasks", subjects=["spacesync.tasks"], retention="workqueue"
+    )
+
+    # Define the task payload
+    task_payload = {"function": "scan_tracker_task", "args": [tracker_id], "kwargs": {}}
+
+    # Encode payload as JSON and publish
+    payload_bytes = json.dumps(task_payload).encode()
+    ack = await js.publish("spacesync.tasks", payload_bytes)
+
+    logger.info(
+        f"Published task '{task_payload['function']}', Stream: {ack.stream}, Seq: {ack.seq}"
+    )
+
+    await nc.close()
+
+    return ack
 
 
 # --- APScheduler Job Synchronization Function ---
-def sync_scheduled_jobs(scheduler: BaseScheduler, db: Session):
+def sync_scheduled_jobs(scheduler: AsyncIOScheduler, db: Session):
     """
     Synchronizes APScheduler jobs with active trackers in the database.
 
@@ -72,7 +99,7 @@ def sync_scheduled_jobs(scheduler: BaseScheduler, db: Session):
         trackers_to_add = {
             tid for tid in active_tracker_ids if tid not in current_job_ids
         }
-        logger.debug(f"Trackers to add jobs for: {trackers_to_add}")
+        logger.info(f"Trackers to add jobs for: {trackers_to_add}")
 
         # 4. Identify jobs to remove (for deactivated trackers)
         jobs_to_remove = {
@@ -111,7 +138,7 @@ def sync_scheduled_jobs(scheduler: BaseScheduler, db: Session):
                 continue
 
             scheduler.add_job(
-                update_tracker,
+                poll_tracker,
                 id=f"{TRACKER_JOB_PREFIX}{tracker_id}",
                 name=f"Update Tracker {tracker_id}",
                 replace_existing=True,

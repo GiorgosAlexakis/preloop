@@ -350,7 +350,8 @@ class GitLabTracker(BaseTracker):
         """
         if "key" not in issue_data:
             issue_data["key"] = f"{project.slug}#{issue_data['iid']}"
-
+        if issue_data["state"] in ["closed", "done", "completed", "fixed"]:
+            issue_data["state"] = "closed"
         transformed_data = super().transform_issue(issue_data, project)
         labels = transformed_data.get("meta_data", {}).get("labels", [])
         new_labels = [

@@ -3,7 +3,7 @@ Scan commands for SpaceSync CLI.
 """
 
 import click
-
+import datetime
 
 from spacemodels.crud import crud_account, crud_tracker
 from spacemodels.db.session import get_db_session
@@ -43,19 +43,21 @@ def scan_all_cmd(verbose: bool, force_update: bool):
     click.echo("Scanning all accounts and trackers...")
 
     # Scan all accounts (pass force_update)
+    start = datetime.datetime.now()
     stats = scan_all_accounts(db=db, verbose=verbose, force_update=force_update)
+    end = datetime.datetime.now()
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
     click.echo(f"Accounts scanned: {stats['accounts_scanned']}")
     click.echo(f"Accounts with errors: {stats['accounts_with_errors']}")
-    click.echo(f"Total trackers scanned: {stats['total_trackers_scanned']}")
-    click.echo(f"Total trackers with errors: {stats['total_trackers_with_errors']}")
-    click.echo(f"Total organizations: {stats['total_organizations']}")
-    click.echo(f"Total projects: {stats['total_projects']}")
-    click.echo(f"Total issues: {stats['total_issues']}")
-    click.echo(f"Total embeddings updated: {stats['total_embeddings_updated']}")
-    click.echo(f"Total duration: {stats['total_duration_seconds']:.2f} seconds")
+    click.echo(f"Trackers scanned: {stats['trackers_scanned']}")
+    click.echo(f"Trackers with errors: {stats['trackers_with_errors']}")
+    click.echo(f"Organizations: {stats['organizations']['total']}")
+    click.echo(f"Projects: {stats['projects']}")
+    click.echo(f"Issues: {stats['issues']}")
+    click.echo(f"Embeddings updated: {stats['embeddings_updated']}")
+    click.echo(f"Duration: {(end - start).total_seconds():.2f} seconds")
 
     db.close()
 
@@ -87,19 +89,20 @@ def scan_account_cmd(account_id: str, verbose: bool, force_update: bool):
     click.echo(f"Scanning account: {account.username} (ID: {account.id})...")
 
     # Scan the account (pass force_update)
+    start = datetime.datetime.now()
     stats = scan_account(
         db=db, account_id=account_id, verbose=verbose, force_update=force_update
     )
+    end = datetime.datetime.now()
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
-    click.echo(f"Trackers scanned: {stats['trackers_scanned']}")
-    click.echo(f"Trackers with errors: {stats['trackers_with_errors']}")
-    click.echo(f"Total organizations: {stats['organizations']}")
-    click.echo(f"Total projects: {stats['projects']}")
-    click.echo(f"Total issues: {stats['issues']}")
-    click.echo(f"Total embeddings updated: {stats['embeddings_updated']}")
-    click.echo(f"Total duration: {stats['duration_seconds']:.2f} seconds")
+    click.echo(f"Trackers: {stats['trackers']}")
+    click.echo(f"Organizations: {stats['organizations']}")
+    click.echo(f"Projects: {stats['projects']}")
+    click.echo(f"Issues: {stats['issues']}")
+    click.echo(f"Embeddings updated: {stats['embeddings_updated']}")
+    click.echo(f"Duration: {(end - start).total_seconds():.2f} seconds")
 
     db.close()
 
@@ -131,16 +134,19 @@ def scan_tracker_cmd(tracker_id: str, force_update: bool, verbose: bool):
     click.echo(f"Scanning tracker: ID {tracker.id} ({tracker.tracker_type})...")
 
     # Scan the tracker (pass force_update)
+    start = datetime.datetime.now()
     stats = scan_tracker_func(
         db=db, tracker=tracker, force_update=force_update, verbose=verbose
     )
+    end = datetime.datetime.now()
 
     # Print summary
     click.echo("\n=== Scan Complete ===")
-    click.echo(f"Organizations scanned: {stats['organizations']}")
+    click.echo(f"Organizations: {stats['organizations']}")
     click.echo(f"Projects: {stats['projects']}")
     click.echo(f"Issues: {stats['issues']}")
     click.echo(f"Embeddings updated: {stats['embeddings_updated']}")
     click.echo(f"Errors: {stats['errors']}")
+    click.echo(f"Duration: {(end - start).total_seconds():.2f} seconds")
 
     db.close()
