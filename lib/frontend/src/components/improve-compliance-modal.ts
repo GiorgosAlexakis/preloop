@@ -17,6 +17,32 @@ import consoleStyles from '../styles/console-styles.css?inline';
 
 @customElement('improve-compliance-modal')
 export class ImproveComplianceModal extends LitElement {
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      .comparison-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--sl-spacing-medium);
+      }
+
+      .comparison-panel h3 {
+        margin-top: 0;
+        padding-bottom: var(--sl-spacing-small);
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+        margin-bottom: var(--sl-spacing-medium);
+      }
+
+      .loading-suggestion {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        gap: var(--sl-spacing-small);
+      }
+    `,
+  ];
+
   @property({ type: Boolean }) open = false;
   @property({ type: Object }) issue: Issue | null = null;
   @property({ type: String }) promptName = '';
@@ -27,27 +53,6 @@ export class ImproveComplianceModal extends LitElement {
 
   @state() private _suggestedTitle = '';
   @state() private _suggestedDescription = '';
-
-  static styles = [
-    unsafeCSS(consoleStyles),
-    css`
-      .comparison-panel h3 {
-        margin-top: 0;
-        font-size: var(--sl-font-size-large);
-        font-weight: var(--sl-font-weight-semibold);
-      }
-
-      .loading-suggestion {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: var(--sl-spacing-medium);
-        min-height: 200px;
-        color: var(--sl-color-neutral-500);
-      }
-    `,
-  ];
 
   updated(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('open') && this.open) {
@@ -90,25 +95,38 @@ export class ImproveComplianceModal extends LitElement {
     }
   }
 
-  private async handleSubmit() {
+  private async _handleSubmit() {
     if (!this.issue) return;
+
     this._isSubmitting = true;
+    this._suggestionError = null;
+
+    console.log('[Modal] Handling submit for issue:', this.issue.id);
+    console.log('[Modal] With data:', { title: this._suggestedTitle, description: this._suggestedDescription });
+
     try {
-      await updateIssueContent(
+      const response = await updateIssueContent(
         this.issue.id,
         this._suggestedTitle,
         this._suggestedDescription
       );
+
+      console.log('[Modal] API call successful, response:', response);
+
+      const summary = `Issue ${this.issue.key} was successfully updated.`;
+      const detail = { issueId: this.issue.id, summary };
+
+      console.log('[Modal] Dispatching on-submit event with detail:', detail);
       this.dispatchEvent(
         new CustomEvent('on-submit', {
           bubbles: true,
           composed: true,
-          detail: { issueId: this.issue.id },
+          detail,
         })
       );
       this.handleClose();
     } catch (error) {
-      console.error('Failed to update issue:', error);
+      console.error('[Modal] API call failed:', error);
       // Consider showing a toast notification on error
     } finally {
       this._isSubmitting = false;
@@ -151,15 +169,13 @@ export class ImproveComplianceModal extends LitElement {
                           <sl-input
                             label="Title"
                             .value=${this._suggestedTitle}
-                            @sl-input=${(e: any) =>
-                              (this._suggestedTitle = e.target.value)}
+                            @sl-input=${(e: Event) => (this._suggestedTitle = (e.target as HTMLInputElement).value)}
                           ></sl-input>
                           <br />
                           <sl-textarea
                             label="Description"
                             .value=${this._suggestedDescription}
-                            @sl-input=${(e: any) =>
-                              (this._suggestedDescription = e.target.value)}
+                            @sl-input=${(e: Event) => (this._suggestedDescription = (e.target as HTMLInputElement).value)}
                             rows="10"
                           ></sl-textarea>
                         `}
@@ -170,13 +186,12 @@ export class ImproveComplianceModal extends LitElement {
         <sl-button slot="footer" @click=${this.handleClose}>Cancel</sl-button>
         <sl-button
           slot="footer"
+          type="button"
           variant="primary"
           .loading=${this._isSubmitting}
-          ?disabled=${this._isLoadingSuggestion || this._suggestionError}
-          @click=${this.handleSubmit}
+          @click=${this._handleSubmit}
+          >Update Issue</sl-button
         >
-          Update Issue
-        </sl-button>
       </sl-dialog>
     `;
   }

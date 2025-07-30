@@ -120,3 +120,8 @@ export interface IssueEmbedding {
   issue_created_at: string;
   embedding: number[];
 }
+
+export interface ComplianceSuggestion {
+  title: string;
+  description: string;
+}

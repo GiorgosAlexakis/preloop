@@ -13,6 +13,7 @@ import type {
   DuplicatesResponse,
   IssueComplianceResult,
   CompliancePromptMetadata,
+  ComplianceSuggestion,
 } from './types';
 
 async function refreshToken(): Promise<string | null> {
@@ -651,12 +652,15 @@ export async function getIssueCompliance(
 export async function getComplianceImprovementSuggestion(
   issueId: string,
   promptName: string
-): Promise<{ title: string; description: string }> {
+): Promise<ComplianceSuggestion> {
   const response = await fetchWithAuth(
     `/api/v1/issue_compliance_suggestion/${issueId}?prompt_name=${promptName}`
   );
   if (!response.ok) {
-    throw new Error('Failed to fetch compliance suggestion');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || 'Failed to get compliance improvement suggestion'
+    );
   }
   return response.json();
 }
@@ -672,20 +676,19 @@ export async function updateIssueContent(
   issueId: string,
   title: string,
   description: string
-): Promise<void> {
-  console.log(`Updating issue ${issueId} with new content...`);
-  // Placeholder: Simulate API call
-  const response = await fetchWithAuth(`/api/v1/issues/${issueId}`, {
-    method: 'PUT',
+): Promise<Issue> {
+  const response = await fetchWithAuth(`/api/v1/issue_compliance_update/${issueId}`, {
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, description }),
   });
 
   if (!response.ok) {
-    throw new Error('Failed to update issue content');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update issue content');
   }
 
-  console.log('Issue updated successfully.');
+  return response.json();
 }
 
 export async function getCompliancePrompts(): Promise<

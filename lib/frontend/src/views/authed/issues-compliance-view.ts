@@ -102,6 +102,9 @@ export class IssuesComplianceView extends LitElement {
   @state()
   private _initialLoadComplete = false;
 
+  @state()
+  private _updateSummary: string | null = null;
+
   private _pageSize = 10;
 
   private get _complianceMetricName() {
@@ -333,7 +336,7 @@ export class IssuesComplianceView extends LitElement {
   }
 
   async fetchComplianceResults() {
-    this._issues.forEach((issue) => {
+    const compliancePromises = this._issues.map(async (issue) => {
       if (
         this._complianceResults[issue.id] ||
         this._loadingCompliance[issue.id]
@@ -346,26 +349,29 @@ export class IssuesComplianceView extends LitElement {
         [issue.id]: true,
       };
 
-      getIssueCompliance(issue.id, this._selectedCompliancePrompt)
-        .then((result) => {
-          this._complianceResults = {
-            ...this._complianceResults,
-            [issue.id]: result,
-          };
-        })
-        .catch((error) => {
-          console.error(
-            `Failed to fetch compliance result for issue ${issue.id}:`,
-            error
-          );
-        })
-        .finally(() => {
-          this._loadingCompliance = {
-            ...this._loadingCompliance,
-            [issue.id]: false,
-          };
-        });
+      try {
+        const result = await getIssueCompliance(
+          issue.id,
+          this._selectedCompliancePrompt
+        );
+        this._complianceResults = {
+          ...this._complianceResults,
+          [issue.id]: result,
+        };
+      } catch (error) {
+        console.error(
+          `Failed to fetch compliance result for issue ${issue.id}:`,
+          error
+        );
+      } finally {
+        this._loadingCompliance = {
+          ...this._loadingCompliance,
+          [issue.id]: false,
+        };
+      }
     });
+
+    await Promise.all(compliancePromises);
   }
 
   private _toggleRow(issueId: string) {
@@ -388,10 +394,21 @@ export class IssuesComplianceView extends LitElement {
   }
 
   private _handleComplianceUpdate(event: CustomEvent) {
-    const { issueId } = event.detail;
-    // Refetch the specific issue and its compliance to update the UI
-    this.fetchIssues(); // For simplicity, refetching all. Could be optimized.
-    this.fetchComplianceResults();
+    const { issueId, summary } = event.detail;
+
+    if (summary) {
+      this._updateSummary = summary;
+    }
+
+    // Delete the stale local compliance data to allow it to be refetched.
+    const newComplianceResults = { ...this._complianceResults };
+    if (issueId in newComplianceResults) {
+      delete newComplianceResults[issueId];
+      this._complianceResults = newComplianceResults;
+    }
+
+    // Refetch the issues list. `fetchComplianceResults` will be called automatically.
+    this.fetchIssues();
   }
 
   private _handleMenuAction(e: CustomEvent, issue: Issue) {
@@ -702,6 +719,20 @@ export class IssuesComplianceView extends LitElement {
 
             ${this._renderSearchBar()} ${this._renderActiveFilters()}
             ${when(
+              this._updateSummary,
+              () => html`
+                <sl-alert
+                  variant="success"
+                  open
+                  closable
+                  @sl-after-hide=${() => (this._updateSummary = null)}
+                >
+                  <sl-icon slot="icon" name="check-circle"></sl-icon>
+                  ${this._updateSummary}
+                </sl-alert>
+              `
+            )}
+            ${when(
               this._loading,
               () =>
                 html`<div class="loading-overlay">
@@ -764,7 +795,7 @@ export class IssuesComplianceView extends LitElement {
         .issue=${this._selectedIssueForCompliance}
         .promptName=${this._selectedCompliancePrompt}
         @close=${this._handleComplianceModalClose}
-        @compliance-updated=${this._handleComplianceUpdate}
+        @on-submit=${this._handleComplianceUpdate}
       >
       </improve-compliance-modal>
     `;

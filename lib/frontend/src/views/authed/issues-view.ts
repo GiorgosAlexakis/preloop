@@ -397,10 +397,6 @@ export class IssuesView extends LitElement {
   private async handleResolution(e: CustomEvent) {
     if (e.detail.summary) {
       this._resolutionSummary = e.detail.summary;
-      // Auto-hide after 5 seconds
-      setTimeout(() => {
-        this._resolutionSummary = null;
-      }, 5000);
     }
     this.fetchDuplicates();
   }
