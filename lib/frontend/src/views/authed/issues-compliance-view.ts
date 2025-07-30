@@ -19,6 +19,7 @@ import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '../../components/project-filter-modal.ts';
 import '../../components/single-issue-detail-view.ts';
 import '../../components/improve-compliance-modal.ts';
+import '../../components/pagination-controls.ts';
 import { getStatusVariant, getComplianceVariant } from '../../utils/verdict';
 import {
   listProjects,
@@ -104,6 +105,12 @@ export class IssuesComplianceView extends LitElement {
 
   @state()
   private _updateSummary: string | null = null;
+
+  @state()
+  private _currentPage = 1;
+
+  @state()
+  private _hasMorePages = false;
 
   private _pageSize = 10;
 
@@ -239,6 +246,7 @@ export class IssuesComplianceView extends LitElement {
       this._selectedProjectIds = [];
     }
     this._expandedRowKey = params.get('selectedIssue') || null;
+    this._currentPage = Number(params.get('page')) || 1;
   }
 
   private _updateUrl() {
@@ -264,6 +272,7 @@ export class IssuesComplianceView extends LitElement {
     } else {
       params.delete('selectedIssue');
     }
+    params.set('page', this._currentPage.toString());
 
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.pushState({}, '', newUrl);
@@ -319,12 +328,16 @@ export class IssuesComplianceView extends LitElement {
         this._selectedProjectIds.length > 0
           ? this._selectedProjectIds
           : undefined;
+      const skip = (this._currentPage - 1) * this._pageSize;
       const issues = await searchIssues({
         query: this._searchQuery,
         project_ids: project_ids,
         limit: this._pageSize,
+        skip: skip,
       });
       this._issues = issues;
+      this._hasMorePages = issues.length === this._pageSize;
+      this._updateUrl(); // Update URL after fetching
       this.fetchComplianceResults();
     } catch (error) {
       this._error =
@@ -496,6 +509,7 @@ export class IssuesComplianceView extends LitElement {
 
   private handleSearch(event: Event) {
     event.preventDefault();
+    this._currentPage = 1;
     this.fetchIssues();
   }
 
@@ -523,7 +537,7 @@ export class IssuesComplianceView extends LitElement {
           @sl-input=${(e: Event) =>
             (this._searchQuery = (e.target as HTMLInputElement).value)}
           @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Enter') this.fetchIssues();
+            if (e.key === 'Enter') this.handleSearch(e);
           }}
           clearable
         >
@@ -543,7 +557,7 @@ export class IssuesComplianceView extends LitElement {
           </sl-menu>
         </sl-dropdown>
         <sl-button-group>
-          <sl-button @click=${this.fetchIssues} variant="primary">
+          <sl-button @click=${this.handleSearch} variant="primary">
             Search
           </sl-button>
           <sl-tooltip content="Filter by project">
@@ -556,9 +570,9 @@ export class IssuesComplianceView extends LitElement {
     `;
   }
 
-  private _renderIssueList() {
+  private renderIssueTable() {
     if (this._loading && this._issues.length === 0) {
-      return html`<div class="loading-overlay">
+      return html`<div class="loading-container">
         <sl-spinner></sl-spinner>
         <span>Loading issues...</span>
       </div>`;
@@ -685,6 +699,39 @@ export class IssuesComplianceView extends LitElement {
             </tbody>
           </table>
         </sl-card>
+        <pagination-controls
+          .currentPage=${this._currentPage}
+          .hasMorePages=${this._hasMorePages}
+          .loading=${this._loading}
+          @prev-page=${this._goToPreviousPage}
+          @next-page=${this._goToNextPage}
+        ></pagination-controls>
+      </div>
+    `;
+  }
+
+  private _goToNextPage() {
+    if (this._hasMorePages) {
+      this._currentPage += 1;
+      this.fetchIssues();
+    }
+  }
+
+  private _goToPreviousPage() {
+    if (this._currentPage > 1) {
+      this._currentPage -= 1;
+      this.fetchIssues();
+    }
+  }
+
+  private _renderNoProjectsState() {
+    return html`
+      <div class="placeholder-content">
+        <h3>No projects found</h3>
+        <p>
+          You don't have any projects. Please create a project to start tracking
+          issues.
+        </p>
       </div>
     `;
   }
@@ -745,7 +792,7 @@ export class IssuesComplianceView extends LitElement {
               () => html`<div class="error">${this._error}</div>`
             )}
             ${when(!this._loading && !this._error && this._hasSearched, () =>
-              this._renderIssueList()
+              this.renderIssueTable()
             )}
           </div>
         </div>
@@ -804,11 +851,13 @@ export class IssuesComplianceView extends LitElement {
   private _applyFilters(e: CustomEvent) {
     this._selectedProjectIds = e.detail.selectedProjectIds;
     this._isFilterModalOpen = false;
+    this._currentPage = 1;
     this.fetchIssues();
   }
 
   private _handleProjectFilterChange(e: CustomEvent) {
     this._selectedProjectIds = e.detail.selectedProjectIds;
+    this._currentPage = 1;
     this.fetchIssues();
   }
 }

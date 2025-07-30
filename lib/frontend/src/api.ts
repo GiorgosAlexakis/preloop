@@ -262,33 +262,22 @@ export async function searchIssues(
     queryParams.append('limit', params.limit.toString());
   }
 
-  // The new endpoint only accepts a single project_id, so we must handle multiple
-  if (params.project_ids && params.project_ids.length > 0) {
-    const promises = params.project_ids.map(async (projectId) => {
-      const singleProjectParams = new URLSearchParams(queryParams);
-      singleProjectParams.append('project_id', projectId);
-      const response = await fetchWithAuth(
-        `/api/v1/search?${singleProjectParams.toString()}`
-      );
-      if (!response.ok) {
-        console.error(`Failed to fetch issues for project ${projectId}`);
-        return [];
-      }
-      const data = await response.json();
-      return data.results.map((r: any) => r.item);
-    });
-    const results = await Promise.all(promises);
-    return results.flat();
-  } else {
-    const response = await fetchWithAuth(
-      `/api/v1/search?${queryParams.toString()}`
-    );
-    if (!response.ok) {
-      throw new Error('Failed to fetch issues list');
-    }
-    const data = await response.json();
-    return data.results.map((r: any) => r.item);
+  if (params.skip) {
+    queryParams.append('skip', params.skip.toString());
   }
+
+  if (params.project_ids && params.project_ids.length > 0) {
+    params.project_ids.forEach((id) => queryParams.append('project_id', id));
+  }
+
+  const response = await fetchWithAuth(
+    `/api/v1/search?${queryParams.toString()}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch issues list');
+  }
+  const data = await response.json();
+  return data.results.map((r: any) => r.item);
 }
 
 export async function post(url: string, body: any) {

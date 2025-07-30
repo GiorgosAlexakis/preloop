@@ -16,6 +16,7 @@ import '../../components/project-filter-modal.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/resolve-issue-modal.ts';
 import '../../components/issue-detail-view.ts';
+import '../../components/pagination-controls.ts';
 import {
   listProjects,
   listIssueDuplicates,
@@ -134,13 +135,6 @@ export class IssuesView extends LitElement {
 
       .issue-key {
         color: var(--sl-color-neutral-600);
-      }
-
-      .pagination-controls {
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        gap: var(--sl-spacing-medium);
       }
 
       .faint-row {
@@ -515,6 +509,18 @@ export class IssuesView extends LitElement {
     this._isInfoAlertOpen = false;
   }
 
+  private _goToPreviousPage() {
+    if (this._currentPage > 1) {
+      this._currentPage--;
+      this.fetchDuplicates();
+    }
+  }
+
+  private _goToNextPage() {
+    this._currentPage++;
+    this.fetchDuplicates();
+  }
+
   render() {
     return html`
       <div class="header">
@@ -730,23 +736,13 @@ export class IssuesView extends LitElement {
                         </tbody>
                       </table>
                     </sl-card>
-                    <div class="pagination-controls">
-                      <sl-button-group>
-                        <sl-button
-                          @click=${() => this._goToPage(this._currentPage - 1)}
-                          ?disabled=${this._currentPage <= 1}
-                        >
-                          Previous
-                        </sl-button>
-                        <sl-button
-                          @click=${() => this._goToPage(this._currentPage + 1)}
-                          ?disabled=${!this._hasMorePages}
-                        >
-                          Next
-                        </sl-button>
-                      </sl-button-group>
-                      <span>Page ${this._currentPage}</span>
-                    </div>
+                    <pagination-controls
+                      .currentPage=${this._currentPage}
+                      .hasMorePages=${this._hasMorePages}
+                      .loading=${this._loading}
+                      @prev-page=${this._goToPreviousPage}
+                      @next-page=${this._goToNextPage}
+                    ></pagination-controls>
                   `
                 : html`
                     <sl-alert variant="primary" open>
@@ -811,12 +807,6 @@ export class IssuesView extends LitElement {
         @on-resolved=${this.handleResolution}
       ></resolve-issue-modal>
     `;
-  }
-
-  private _goToPage(page: number) {
-    if (page < 1) return;
-    this._currentPage = page;
-    this.fetchDuplicates();
   }
 
   private _applyFilters(event: CustomEvent) {
