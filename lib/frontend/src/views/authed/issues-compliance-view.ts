@@ -349,42 +349,36 @@ export class IssuesComplianceView extends LitElement {
   }
 
   async fetchComplianceResults() {
-    const compliancePromises = this._issues.map(async (issue) => {
-      if (
-        this._complianceResults[issue.id] ||
-        this._loadingCompliance[issue.id]
-      ) {
-        return;
+    for (const issue of this._issues) {
+      const issueId = issue.id;
+      // Skip if we already have the result or if it's already loading.
+      if (this._complianceResults[issueId] || this._loadingCompliance[issueId]) {
+        continue;
       }
 
-      this._loadingCompliance = {
-        ...this._loadingCompliance,
-        [issue.id]: true,
-      };
+      this._loadingCompliance = { ...this._loadingCompliance, [issueId]: true };
 
       try {
         const result = await getIssueCompliance(
-          issue.id,
+          issueId,
           this._selectedCompliancePrompt
         );
         this._complianceResults = {
           ...this._complianceResults,
-          [issue.id]: result,
+          [issueId]: result,
         };
       } catch (error) {
         console.error(
-          `Failed to fetch compliance result for issue ${issue.id}:`,
+          `Failed to fetch compliance result for issue ${issueId}:`,
           error
         );
       } finally {
         this._loadingCompliance = {
           ...this._loadingCompliance,
-          [issue.id]: false,
+          [issueId]: false,
         };
       }
-    });
-
-    await Promise.all(compliancePromises);
+    }
   }
 
   private _toggleRow(issueId: string) {
