@@ -86,7 +86,7 @@ export class IssuesComplianceView extends LitElement {
   private _selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
 
   @state()
-  private _selectedCompliancePrompt = 'invest_compliance_v1';
+  private _selectedCompliancePrompt = 'dor_compliance_v1';
 
   @state()
   private _compliancePrompts: CompliancePromptMetadata[] = [];
@@ -418,6 +418,7 @@ export class IssuesComplianceView extends LitElement {
     }
 
     // Refetch the issues list. `fetchComplianceResults` will be called automatically.
+    this._currentPage = 1;
     this.fetchIssues();
   }
 
