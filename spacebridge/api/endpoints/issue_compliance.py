@@ -28,6 +28,7 @@ from spacemodels.crud import (
     CRUDOrganization,
     CRUDProject,
 )
+from spacemodels.crud.issue_duplicate import crud_issue_duplicate
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.account import Account
 from spacemodels.models.issue import Issue
@@ -251,6 +252,9 @@ async def update_issue_content(
     """Update the title and description of an issue and sync to tracker."""
     # Delete any existing compliance results for this issue
     crud_issue_compliance_result.delete_by_issue_id(db, issue_id=issue_id)
+
+    # Remove any duplicate pairs associated with this issue
+    crud_issue_duplicate.remove_by_issue_id(db, issue_id=issue_id)
 
     # Convert the compliance-specific update schema to the general API update schema
     api_issue_update = IssueUpdate(
