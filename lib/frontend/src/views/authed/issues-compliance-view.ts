@@ -352,7 +352,10 @@ export class IssuesComplianceView extends LitElement {
     for (const issue of this._issues) {
       const issueId = issue.id;
       // Skip if we already have the result or if it's already loading.
-      if (this._complianceResults[issueId] || this._loadingCompliance[issueId]) {
+      if (
+        this._complianceResults[issueId] ||
+        this._loadingCompliance[issueId]
+      ) {
         continue;
       }
 
