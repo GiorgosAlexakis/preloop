@@ -262,8 +262,8 @@ export class DuplicateStatsChart extends LitElement {
         ${this._loading
           ? html`<div class="spinner-container"><sl-spinner></sl-spinner></div>`
           : this._error
-          ? html`<div>Error: ${this._error}</div>`
-          : ''}
+            ? html`<div>Error: ${this._error}</div>`
+            : ''}
       </div>
     `;
   }

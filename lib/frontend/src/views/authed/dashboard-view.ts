@@ -193,7 +193,9 @@ export class DashboardView extends AuthedElement {
 
   render() {
     if (this.isLoading) {
-      return html`<div class="spinner-container"><sl-spinner></sl-spinner></div>`;
+      return html`<div class="spinner-container">
+        <sl-spinner></sl-spinner>
+      </div>`;
     }
 
     return html`
