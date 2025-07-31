@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from spacemodels.crud.base import CRUDBase
 from ..models.issue_duplicate import IssueDuplicate
@@ -87,6 +88,13 @@ class CRUDIssueDuplicate(CRUDBase[IssueDuplicate]):
                 .filter(Tracker.account_id == account_id)
             )
         return query.all()
+
+    def remove_by_issue_id(self, db: Session, *, issue_id: str) -> None:
+        """Remove all duplicate entries associated with a given issue ID."""
+        db.query(self.model).filter(
+            or_(self.model.issue1_id == issue_id, self.model.issue2_id == issue_id)
+        ).delete(synchronize_session=False)
+        db.commit()
 
 
 crud_issue_duplicate = CRUDIssueDuplicate(IssueDuplicate)
