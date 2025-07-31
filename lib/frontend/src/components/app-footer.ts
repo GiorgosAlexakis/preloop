@@ -10,8 +10,7 @@ export class AppFooter extends LitElement {
       :host {
         display: block;
         color: var(--sl-color-neutral-700);
-        padding: 48px 0;
-        margin-top: auto;
+        padding: 0 0 48px 0;
         flex-shrink: 0;
       }
 
@@ -109,6 +108,7 @@ export class AppFooter extends LitElement {
   render() {
     return html`
       <div class="footer-container sl-theme-dark">
+        <div class="divider"></div>
         <div class="footer-main">
           <div>
             <logo-component

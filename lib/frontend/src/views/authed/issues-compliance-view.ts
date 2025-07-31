@@ -114,6 +114,8 @@ export class IssuesComplianceView extends LitElement {
 
   private _pageSize = 10;
 
+  private _isViewActive = false;
+
   private get _complianceMetricName() {
     const firstResult = Object.values(this._complianceResults)[0];
     return firstResult ? firstResult.short_name : 'Compliance';
@@ -199,6 +201,7 @@ export class IssuesComplianceView extends LitElement {
 
   async connectedCallback() {
     super.connectedCallback();
+    this._isViewActive = true;
     const isDismissed = localStorage.getItem(this.INFO_ALERT_DISMISSED_KEY);
     this._isInfoAlertOpen = isDismissed !== 'true';
     // Fetch dynamic data first
@@ -215,6 +218,7 @@ export class IssuesComplianceView extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._isViewActive = false;
     window.removeEventListener('popstate', this.handlePopState);
 
     // Check if we are still on the issues path before cleaning up.
@@ -350,6 +354,10 @@ export class IssuesComplianceView extends LitElement {
 
   async fetchComplianceResults() {
     for (const issue of this._issues) {
+      if (!this._isViewActive) {
+        break;
+      }
+
       const issueId = issue.id;
       // Skip if we already have the result or if it's already loading.
       if (

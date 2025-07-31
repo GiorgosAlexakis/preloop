@@ -67,13 +67,13 @@ p.lead {
 
 .hero-content {
   flex: 1;
-  max-width: 960px;
-  text-align: center;
+  max-width: 1280px;
+  text-align: left;
 }
 
 .hero-content h1 {
-  font-size: 3.6rem;
-  font-weight: 700;
+  font-size: 4.2rem;
+  font-weight: 300;
   line-height: 1.1;
   margin-bottom: 1.8rem;
 }
@@ -81,14 +81,14 @@ p.lead {
 .hero-content .lead {
   font-size: 1.4rem;
   margin-bottom: 2.8rem;
-  margin: 0 auto 2rem auto;
+  margin: 0 0 2rem 0;
 }
 
 .hero-buttons {
   display: flex;
   gap: 1rem;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .hero-image {
@@ -102,7 +102,9 @@ p.lead {
 }
 
 .gradient-faster,
-.gradient-safer {
+.gradient-safer,
+.gradient-product,
+.gradient-ai {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -123,6 +125,22 @@ p.lead {
     45deg,
     hsl(220, 80%, 60%),
     hsl(260, 80%, 70%)
+  );
+}
+
+.gradient-product {
+  background-image: linear-gradient(
+    45deg,
+    hsl(190, 80%, 55%),
+    hsl(140, 70%, 50%)
+  );
+}
+
+.gradient-ai {
+  background-image: linear-gradient(
+    45deg,
+    hsl(260, 90%, 70%),
+    hsl(320, 85%, 65%)
   );
 }
 
@@ -194,8 +212,7 @@ p.lead {
   text-align: left;
   font-size: 2.2rem;
   font-weight: 300;
-  margin-bottom: 2.5rem;
-  padding-bottom: 15px;
+  padding-bottom: 16px;
 }
 
 .main-section h2::after {
@@ -335,9 +352,6 @@ p.lead {
   top: -7px;
 }
 
-.title-container h2 {
-}
-
 /* FAQ Section */
 .faq-section {
   background-color: #21262f;
@@ -380,13 +394,23 @@ p.lead {
 }
 
 /* Final CTA Section */
-.final-cta {
-  text-align: center;
-  padding: 60px 0;
+.final-cta .section-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-app-footer {
-  background-color: #21262f;
+.final-cta h2 {
+  text-align: left;
+  padding-bottom: 0;
+}
+
+.final-cta h2::after {
+  display: none;
+}
+
+.final-cta .hero-buttons {
+  justify-content: flex-end;
 }
 
 /* Responsive Styles */
@@ -424,6 +448,19 @@ app-footer {
   .ide-logo-container.active {
     border-left: none;
     border-bottom: 3px solid #fff;
+  }
+
+  .final-cta .section-container {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .final-cta h2 {
+    margin-bottom: 1.5rem;
+  }
+
+  .final-cta .hero-buttons {
+    justify-content: center;
   }
 }
 
