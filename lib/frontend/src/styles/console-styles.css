@@ -64,6 +64,10 @@ a:hover {
     padding: 0;
 }
 
+sl-card::part(header) {
+    background-color: var(--sl-color-neutral-100);
+}
+
 .styled-table {
     width: 100%;
     border-collapse: collapse;
@@ -117,4 +121,11 @@ sl-dialog.large::part(panel) {
     grid-template-columns: 1fr 1fr;
     gap: var(--sl-spacing-2x-large);
     margin-bottom: var(--sl-spacing-large);
+}
+
+.spinner-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--sl-spacing-2x-large);
 }

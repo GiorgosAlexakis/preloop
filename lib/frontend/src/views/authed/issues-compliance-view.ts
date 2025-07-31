@@ -597,7 +597,6 @@ export class IssuesComplianceView extends LitElement {
                 <th>Title</th>
                 <th>Project</th>
                 <th>Status</th>
-                <th>Priority</th>
                 <th>${this._complianceMetricName}</th>
                 <th>Actions</th>
               </tr>
@@ -631,7 +630,6 @@ export class IssuesComplianceView extends LitElement {
                         ${issue.status}
                       </sl-badge>
                     </td>
-                    <td>${issue.priority}</td>
                     <td>
                       ${when(
                         this._loadingCompliance[issue.id],
@@ -696,7 +694,7 @@ export class IssuesComplianceView extends LitElement {
                   ${isExpanded
                     ? html`
                         <tr class="inline-detail-row">
-                          <td colspan="8">
+                          <td colspan="6">
                             <div class="detail-view-card">
                               <single-issue-detail-view
                                 .issue=${issue}
