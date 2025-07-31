@@ -76,7 +76,10 @@ export class LandingView extends LitElement {
         <section class="hero main-section">
           <div class="section-container hero-inner">
             <div class="hero-content">
-              <h1 class="fw-bold">Drive your <span class="gradient-product">Product</span> with <span class="gradient-ai">AI</span></h1>
+              <h1 class="fw-bold">
+                Drive your <span class="gradient-product">Product</span> with
+                <span class="gradient-ai">AI</span>
+              </h1>
               <p class="lead">
                 Spacebridge curates your backlog, automates high value, low-risk
                 work, and safeguards critical actions.
