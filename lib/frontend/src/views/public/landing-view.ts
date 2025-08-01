@@ -558,7 +558,7 @@ export class LandingView extends LitElement {
 
         <section class="final-cta main-section special-cta">
           <div class="section-container">
-            <h2>Start Driving Your Product with AI</h2>
+            <h2>Stop curating. Start creating.</h2>
             <div class="hero-buttons">
               <sl-button variant="primary" size="large" href="/register"
                 >Get Started for Free</sl-button
