@@ -1299,8 +1299,7 @@ async def update_issue(
                                 or_(
                                     Issue.external_id == external_id_from_key,
                                     Issue.key == issue_id,
-                                    Issue.key
-                                    == f"{project.organization.name}/{project.name}#{issue_id}",
+                                    Issue.key == f"{project.slug}#{issue_id}",
                                     Issue.id == issue_id,
                                 ),
                                 Issue.tracker_id.in_(
@@ -1335,7 +1334,8 @@ async def update_issue(
             issue = (
                 db.query(Issue)
                 .filter(
-                    Issue.external_id == issue_id, Issue.tracker_id.in_(tracker_ids)
+                    _or(Issue.external_id == issue_id, Issue.key == issue_id),
+                    Issue.tracker_id.in_(tracker_ids),
                 )
                 .order_by(Issue.last_updated_external.desc())
                 .first()
