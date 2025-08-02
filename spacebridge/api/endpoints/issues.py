@@ -1143,6 +1143,7 @@ def get_issue(
                 Issue.external_id == issue_external_id,
                 Issue.key == issue_external_id,
                 Issue.key == issue_id,
+                Issue.key == f"{organization}/{project}#{issue_id}",
                 Issue.id == issue_id,
             ),
         )
@@ -1298,6 +1299,8 @@ async def update_issue(
                                 or_(
                                     Issue.external_id == external_id_from_key,
                                     Issue.key == issue_id,
+                                    Issue.key
+                                    == f"{project.organization.name}/{project.name}#{issue_id}",
                                     Issue.id == issue_id,
                                 ),
                                 Issue.tracker_id.in_(
@@ -1394,7 +1397,6 @@ async def update_issue(
             raise HTTPException(
                 status_code=500, detail="Error preparing tracker connection."
             )
-
         # --- Prepare Update Payload for Tracker ---
         # Use the base IssueUpdate schema expected by the tracker client
         tracker_update_payload = IssueUpdate(

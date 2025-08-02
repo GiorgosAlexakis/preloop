@@ -2644,6 +2644,8 @@ paths:
             text/html:
               schema:
                 type: string
+      security:
+      - bearerAuth: []
   /reset-password:
     get:
       tags:
@@ -2657,6 +2659,8 @@ paths:
             text/html:
               schema:
                 type: string
+      security:
+      - bearerAuth: []
   /verify-email:
     get:
       tags:
@@ -2670,6 +2674,8 @@ paths:
             text/html:
               schema:
                 type: string
+      security:
+      - bearerAuth: []
   /logout:
     get:
       tags:

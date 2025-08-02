@@ -846,7 +846,12 @@ class GitLabClient(TrackerInterface):
         if issue_data.description is not None:
             body["description"] = issue_data.description
         if issue_data.status is not None:
-            body["state_event"] = "close" if issue_data.status == "closed" else "reopen"
+            body["state_event"] = (
+                "close"
+                if issue_data.status
+                in ["done", "completed", "fixed", "resolved", "close", "closed"]
+                else "reopen"
+            )
         if issue_data.assignee is not None:
             body["assignee_ids"] = [int(issue_data.assignee.id)]
         if issue_data.labels is not None:

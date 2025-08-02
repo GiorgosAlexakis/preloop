@@ -458,9 +458,6 @@ def create_app() -> FastAPI:
             "/static",
             "/docs",  # Exclude the main docs path and subpaths
             "/register",
-            "/verify-email",
-            "/forgot-password",
-            "/reset-password",
             "/logout",
             "/api/v1/health",
         ]

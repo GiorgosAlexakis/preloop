@@ -21,7 +21,7 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "hello@spacecode.ai")
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "SpaceBridge")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://spacebridge.io")
+FRONTEND_URL = os.getenv("SPACEBRIDGE_URL", "https://spacebridge.io")
 
 
 class EmailError(Exception):
@@ -174,7 +174,7 @@ def send_tracker_registered_email(
         tracker_name: The name of the registered tracker.
         tracker_type: The type of tracker (e.g., 'github', 'gitlab', 'jira').
     """
-    trackers_link = f"{FRONTEND_URL}/trackers"
+    trackers_link = f"{FRONTEND_URL}/console/trackers"
 
     subject = f"New {tracker_type.title()} tracker registered: {tracker_name}"
     text_body = f"""
