@@ -2603,195 +2603,167 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /:
-    get:
+  /api/v1/:
+    post:
       tags:
-      - Pages
-      summary: Landing Page
-      operationId: landing_page__get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            text/html:
-              schema:
-                type: string
-  /login:
-    get:
-      tags:
-      - Pages
-      summary: Login Page
-      operationId: login_page_login_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            text/html:
-              schema:
-                type: string
+      - Flows
+      summary: Create Flow
+      description: Create new flow.
+      operationId: create_flow_api_v1__post
       security:
       - bearerAuth: []
-  /forgot-password:
-    get:
-      tags:
-      - Pages
-      summary: Forgot Password Page
-      operationId: forgot_password_page_forgot_password_get
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowCreate'
       responses:
         '200':
           description: Successful Response
           content:
-            text/html:
+            application/json:
               schema:
-                type: string
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Flows
+      summary: Read Flows
+      description: Retrieve flows for the user's organization.
+      operationId: read_flows_api_v1__get
       security:
       - bearerAuth: []
-  /reset-password:
-    get:
-      tags:
-      - Pages
-      summary: Reset Password Page
-      operationId: reset_password_page_reset_password_get
+      parameters:
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Skip
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
       responses:
         '200':
           description: Successful Response
           content:
-            text/html:
+            application/json:
               schema:
-                type: string
+                type: array
+                items:
+                  $ref: '#/components/schemas/FlowResponse'
+                title: Response Read Flows Api V1  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/{flow_id}:
+    get:
+      tags:
+      - Flows
+      summary: Read Flow
+      description: Get flow by ID.
+      operationId: read_flow_api_v1__flow_id__get
       security:
       - bearerAuth: []
-  /verify-email:
-    get:
-      tags:
-      - Pages
-      summary: Verify Email Page
-      operationId: verify_email_page_verify_email_get
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
       responses:
         '200':
           description: Successful Response
           content:
-            text/html:
+            application/json:
               schema:
-                type: string
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Flows
+      summary: Update Flow
+      description: Update a flow.
+      operationId: update_flow_api_v1__flow_id__put
       security:
       - bearerAuth: []
-  /logout:
-    get:
-      tags:
-      - Pages
-      summary: Logout Page
-      operationId: logout_page_logout_get
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowUpdate'
       responses:
         '200':
           description: Successful Response
           content:
-            text/html:
+            application/json:
               schema:
-                type: string
-  /register:
-    get:
-      tags:
-      - Pages
-      summary: Register Page
-      operationId: register_page_register_get
-      responses:
-        '200':
-          description: Successful Response
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
           content:
-            text/html:
+            application/json:
               schema:
-                type: string
-  /dashboard:
-    get:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
       tags:
-      - Pages
-      summary: Dashboard Page
-      operationId: dashboard_page_dashboard_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            text/html:
-              schema:
-                type: string
+      - Flows
+      summary: Delete Flow
+      description: Delete a flow.
+      operationId: delete_flow_api_v1__flow_id__delete
       security:
       - bearerAuth: []
-  /explore:
-    get:
-      tags:
-      - Pages
-      summary: Explore Page
-      operationId: explore_page_explore_get
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
       responses:
         '200':
           description: Successful Response
           content:
-            text/html:
+            application/json:
               schema:
-                type: string
-      security:
-      - bearerAuth: []
-  /trackers:
-    get:
-      tags:
-      - Pages
-      summary: Trackers Page
-      operationId: trackers_page_trackers_get
-      responses:
-        '200':
-          description: Successful Response
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
           content:
-            text/html:
+            application/json:
               schema:
-                type: string
-      security:
-      - bearerAuth: []
-  /privacy:
-    get:
-      tags:
-      - Pages
-      summary: Privacy Page
-      operationId: privacy_page_privacy_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            text/html:
-              schema:
-                type: string
-      security:
-      - bearerAuth: []
-  /terms:
-    get:
-      tags:
-      - Pages
-      summary: Terms Page
-      operationId: terms_page_terms_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            text/html:
-              schema:
-                type: string
-      security:
-      - bearerAuth: []
-  /whatis-mcp:
-    get:
-      tags:
-      - Pages
-      summary: Whatis Mcp Page
-      operationId: whatis_mcp_page_whatis_mcp_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            text/html:
-              schema:
-                type: string
-      security:
-      - bearerAuth: []
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     ApiKeyCreate:
@@ -3217,6 +3189,273 @@ components:
       - data
       title: EmbeddingRawResponse
       description: Response model for the raw embeddings endpoint.
+    FlowCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        trigger_event_source:
+          type: string
+          title: Trigger Event Source
+        trigger_event_type:
+          type: string
+          title: Trigger Event Type
+        trigger_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Trigger Config
+        prompt_template:
+          type: string
+          title: Prompt Template
+        model_configuration_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Model Configuration Id
+        openhands_agent_config:
+          additionalProperties: true
+          type: object
+          title: Openhands Agent Config
+        allowed_mcp_servers:
+          items:
+            type: string
+          type: array
+          title: Allowed Mcp Servers
+          default: []
+        allowed_mcp_tools:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Allowed Mcp Tools
+          default: []
+        is_preset:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Preset
+          default: false
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+          default: true
+        created_by_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Created By User Id
+        organization_id:
+          type: string
+          format: uuid
+          title: Organization Id
+      type: object
+      required:
+      - name
+      - trigger_event_source
+      - trigger_event_type
+      - prompt_template
+      - openhands_agent_config
+      - organization_id
+      title: FlowCreate
+    FlowResponse:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        trigger_event_source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Event Source
+        trigger_event_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Event Type
+        trigger_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Trigger Config
+        prompt_template:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Template
+        model_configuration_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Model Configuration Id
+        openhands_agent_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Openhands Agent Config
+        allowed_mcp_servers:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Allowed Mcp Servers
+        allowed_mcp_tools:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Allowed Mcp Tools
+        is_preset:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Preset
+          default: false
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+          default: true
+        created_by_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Created By User Id
+        organization_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Organization Id
+        id:
+          type: string
+          format: uuid
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - created_at
+      - updated_at
+      title: FlowResponse
+    FlowUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        trigger_event_source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Event Source
+        trigger_event_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Event Type
+        trigger_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Trigger Config
+        prompt_template:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Template
+        model_configuration_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Model Configuration Id
+        openhands_agent_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Openhands Agent Config
+        allowed_mcp_servers:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Allowed Mcp Servers
+        allowed_mcp_tools:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Allowed Mcp Tools
+        is_preset:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Preset
+          default: false
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+          default: true
+        created_by_user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Created By User Id
+        organization_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Organization Id
+      type: object
+      title: FlowUpdate
     HTTPValidationError:
       properties:
         detail:

@@ -33,7 +33,6 @@ RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e s
 
 # Copy application code (this changes most frequently, so put it last)
 COPY spacebridge/ spacebridge/
-COPY static/ static/
 COPY docs/ docs/
 COPY mkdocs.yml .
 
