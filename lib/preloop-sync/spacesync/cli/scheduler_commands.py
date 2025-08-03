@@ -1,36 +1,23 @@
 import click
-import time
 import logging
 import atexit
 import signal  # Import signal
 import pytz
 from datetime import datetime  # Import datetime
-
+import asyncio
+import os
+import sys
+import nats
 
 from spacemodels.db.session import get_db_session
 from ..services.manager import sync_scheduled_jobs
 
 
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.triggers.interval import IntervalTrigger
 from ..config import logger
 
-
-# --- Signal Handling for Graceful Shutdown ---
-keep_running = True
-
-
-def handle_shutdown_signal(sig, frame):
-    """Sets the flag to stop the main loop."""
-    global keep_running
-    logger.info(f"Received signal {sig}, initiating shutdown...")
-    keep_running = False
-
-
-signal.signal(signal.SIGINT, handle_shutdown_signal)
-signal.signal(signal.SIGTERM, handle_shutdown_signal)
-# --- End Signal Handling ---
 
 # --- Scheduler Setup ---
 # Global scheduler instance
@@ -51,6 +38,58 @@ def shutdown_scheduler():
 
 # Register the shutdown hook globally for the CLI process
 atexit.register(shutdown_scheduler)
+
+
+async def run_scheduler_async(
+    scheduler: AsyncIOScheduler, reload_interval: int, db, max_workers: int
+):
+    """Runs the scheduler in an asyncio event loop."""
+
+    nats_url = os.getenv("NATS_URL")
+    if nats_url:
+        logger.info(f"NATS URL: {nats_url}")
+        try:
+            nc = await nats.connect(nats_url)
+            js = nc.jetstream()
+            await js.add_stream(
+                name="tasks", subjects=["spacesync.tasks"], retention="workqueue"
+            )
+            logger.info("Connected to NATS successfully.")
+            await nc.close()
+        except Exception as e:
+            logger.error(f"Error connecting to NATS: {e}")
+            sys.exit(1)
+    else:
+        logger.info("NATS URL not set, using sync mode")
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+
+    def shutdown_handler(sig):
+        logger.info(f"Received signal {sig}, stopping scheduler...")
+        stop_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, shutdown_handler, sig)
+
+    scheduler.start()
+    logger.info(f"APScheduler started with max_workers={max_workers}")
+
+    scheduler.add_job(
+        sync_scheduled_jobs,
+        trigger=IntervalTrigger(seconds=reload_interval),
+        args=[scheduler, db],
+        id="tracker_reload_job",
+        name="Sync Tracker Jobs",
+        replace_existing=True,
+        misfire_grace_time=60,
+        next_run_time=datetime.now(pytz.utc),
+    )
+    logger.info(
+        f"Scheduled tracker job synchronization every {reload_interval} seconds."
+    )
+
+    await stop_event.wait()
+    logger.info("Scheduler event loop stopped.")
 
 
 @click.option(
@@ -105,42 +144,17 @@ def scheduler_cmd(reload_interval: int, max_workers: int, log_level: str):
     db = next(get_db_session())
 
     # Configure scheduler executor
-    executors = {"default": ThreadPoolExecutor(max_workers)}
+    executors = {"default": AsyncIOExecutor()}
     job_defaults = {"coalesce": False, "max_instances": 1}
 
     # Initialize the scheduler
-    scheduler = BackgroundScheduler(
+    scheduler = AsyncIOScheduler(
         executors=executors, job_defaults=job_defaults, timezone="UTC"
     )
 
     try:
-        # Start the scheduler
-        scheduler.start()
-        logger.info(f"APScheduler started with max_workers={max_workers}")
-
-        # Add the recurring job to sync tracker jobs
-        # Run it once immediately, then schedule subsequent runs
-        scheduler.add_job(
-            sync_scheduled_jobs,
-            trigger=IntervalTrigger(seconds=reload_interval),
-            args=[scheduler, db],
-            id="tracker_reload_job",
-            name="Sync Tracker Jobs",
-            replace_existing=True,
-            misfire_grace_time=60,
-            next_run_time=datetime.now(pytz.utc),
-        )
-        logger.info(
-            f"Scheduled tracker job synchronization every {reload_interval} seconds."
-        )
-
-        # Keep main thread alive while the scheduler runs in the background.
-        # Exit loop when keep_running flag is set by signal handler.
-        while keep_running:
-            time.sleep(1)
-
-        # No need for explicit except KeyboardInterrupt/SystemExit here,
-        # the signal handler sets the flag, the loop exits, and finally runs.
+        # Run the scheduler in an asyncio event loop
+        asyncio.run(run_scheduler_async(scheduler, reload_interval, db, max_workers))
         logger.info("Main loop exited.")
 
     finally:

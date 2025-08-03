@@ -302,11 +302,21 @@ def _process_organization(
     org: Organization,
     since: datetime.datetime,
     force_update: bool,
-) -> Tuple[Dict[str, Any], bool]:
+) -> Tuple[Dict[str, Any]]:
     """Processes a single organization."""
-    org_stats = {"projects": 0, "issues": 0, "embeddings_updated": 0, "errors": 0}
+    org_stats = {
+        "organizations": {
+            "processed": 0,
+            "skipped_webhook": 0,
+            "skipped_polling": 0,
+            "errors": 0,
+        },
+        "projects": 0,
+        "issues": 0,
+        "embeddings_updated": 0,
+        "errors": 0,
+    }
     now = datetime.datetime.now(datetime.timezone.utc)
-
     projects = client.scan_projects(db, org)
     org_stats["projects"] = len(projects)
     spacebridge_url_str = os.getenv("SPACEBRIDGE_URL")
@@ -334,7 +344,7 @@ def _process_organization(
                             f"Error registering webhook for Jira project {project.identifier}: {e}",
                             exc_info=True,
                         )
-                        org_stats["errors"] += 1
+                        org_stats["organizations"]["errors"] += 1
             elif client.tracker_type == "github":
                 try:
                     client.client.register_webhook(
@@ -348,7 +358,7 @@ def _process_organization(
                         f"Error registering webhook for GitHub organization {org.identifier}: {e}",
                         exc_info=True,
                     )
-                    org_stats["errors"] += 1
+                    org_stats["organizations"]["errors"] += 1
             elif client.tracker_type == "gitlab":
                 try:
                     result = client.client.register_group_webhook(
@@ -374,13 +384,13 @@ def _process_organization(
                                     f"Error registering webhook for GitLab project {project.identifier}: {e}",
                                     exc_info=True,
                                 )
-                                org_stats["errors"] += 1
+                                org_stats["organizations"]["errors"] += 1
                 except Exception as e:
                     logger.error(
                         f"Error registering webhook for GitLab organization {org.identifier}: {e}",
                         exc_info=True,
                     )
-                    org_stats["errors"] += 1
+                    org_stats["organizations"]["errors"] += 1
             else:
                 # Handle other tracker types here if necessary
                 pass
@@ -391,7 +401,6 @@ def _process_organization(
                     db_obj=org,
                     obj_in={
                         "webhook_secret": current_secret_to_use,
-                        "last_webhook_update": now,
                     },
                 )
 
@@ -400,7 +409,7 @@ def _process_organization(
                 f"Error during webhook registration for org {org.id}: {e}",
                 exc_info=True,
             )
-            org_stats["errors"] += 1
+            org_stats["organizations"]["errors"] += 1
 
     # Polling logic
     for project in projects:
@@ -411,7 +420,7 @@ def _process_organization(
         org_stats["embeddings_updated"] += embeddings_updated
 
     crud_organization.update(db, db_obj=org, obj_in={"last_polling_update": now})
-    return org_stats, False
+    return org_stats
 
 
 def scan_tracker(
@@ -424,7 +433,13 @@ def scan_tracker(
     """Scan a single tracker."""
     logger.info(f"Scanning tracker {tracker.id} ({tracker.tracker_type})")
     stats = {
-        "organizations": 0,
+        "organizations": {
+            "total": 0,
+            "processed": 0,
+            "skipped_webhook": 0,
+            "skipped_polling": 0,
+            "errors": 0,
+        },
         "projects": 0,
         "issues": 0,
         "embeddings_updated": 0,
@@ -434,14 +449,27 @@ def scan_tracker(
     try:
         client = TrackerClient(tracker)
         organizations = client.scan_organizations(db)
-        stats["organizations"] = len(organizations)
+        stats["organizations"]["total"] = len(organizations)
 
         for org in organizations:
-            org_stats, skipped = _process_organization(
-                db, client, org, since, force_update
-            )
+            now = datetime.datetime.now(datetime.timezone.utc)
+            if (
+                org.last_webhook_update
+                and (now - org.last_webhook_update) < POLLING_THRESHOLD
+            ):
+                stats["organizations"]["skipped_webhook"] += 1
+                continue
+            if (
+                org.last_polling_update
+                and (now - org.last_polling_update) < POLLING_THRESHOLD
+            ):
+                stats["organizations"]["skipped_polling"] += 1
+                continue
+            org_stats = _process_organization(db, client, org, since, force_update)
+            stats["organizations"]["processed"] += 1
             for key in stats:
-                stats[key] += org_stats.get(key, 0)
+                if not isinstance(stats[key], dict):
+                    stats[key] += org_stats.get(key, 0)
     except Exception as e:
         logger.error(f"Failed to scan tracker {tracker.id}: {e}", exc_info=True)
         stats["errors"] += 1
@@ -460,13 +488,20 @@ def scan_account(
 ) -> Dict[str, Any]:
     """Scan all trackers for a given account."""
     account = crud_account.get(db, id=account_id)
+    logger.info(f"Scanning account {account.id} ({account.username})...")
     if not account:
         logger.error(f"Account with id {account_id} not found.")
         return {}
 
     total_stats = {
         "trackers": 0,
-        "organizations": 0,
+        "organizations": {
+            "total": 0,
+            "processed": 0,
+            "skipped_webhook": 0,
+            "skipped_polling": 0,
+            "errors": 0,
+        },
         "projects": 0,
         "issues": 0,
         "embeddings_updated": 0,
@@ -477,7 +512,13 @@ def scan_account(
             total_stats["trackers"] += 1
             tracker_stats = scan_tracker(db, tracker, force_update, since, verbose)
             for key in total_stats:
-                total_stats[key] += tracker_stats.get(key, 0)
+                if isinstance(total_stats[key], dict):
+                    for subkey in total_stats[key]:
+                        total_stats[key][subkey] += tracker_stats.get(key, {}).get(
+                            subkey, 0
+                        )
+                else:
+                    total_stats[key] += tracker_stats.get(key, 0)
     if verbose:
         logger.info(f"Stats for account {account_id}: {total_stats}")
     return total_stats
@@ -492,13 +533,19 @@ def scan_all_accounts(
     overall_stats = {
         "accounts_scanned": 0,
         "accounts_with_errors": 0,
-        "total_trackers_scanned": 0,
-        "total_trackers_with_errors": 0,
-        "total_organizations": 0,
-        "total_projects": 0,
-        "total_issues": 0,
-        "total_embeddings_updated": 0,
-        "total_duration_seconds": 0.0,
+        "trackers_scanned": 0,
+        "trackers_with_errors": 0,
+        "organizations": {
+            "total": 0,
+            "processed": 0,
+            "skipped_webhook": 0,
+            "skipped_polling": 0,
+            "errors": 0,
+        },
+        "projects": 0,
+        "issues": 0,
+        "embeddings_updated": 0,
+        "duration_seconds": 0.0,
     }
     for account in accounts:
         if account.is_active:
@@ -506,15 +553,25 @@ def scan_all_accounts(
             account_stats = scan_account(db, account.id, force_update, verbose=verbose)
             if account_stats.get("errors", 0) > 0:
                 overall_stats["accounts_with_errors"] += 1
-            overall_stats["total_trackers_scanned"] += account_stats.get("trackers", 0)
-            overall_stats["total_organizations"] += account_stats.get(
-                "organizations", 0
-            )
-            overall_stats["total_projects"] += account_stats.get("projects", 0)
-            overall_stats["total_issues"] += account_stats.get("issues", 0)
-            overall_stats["total_embeddings_updated"] += account_stats.get(
-                "embeddings_updated", 0
-            )
+            overall_stats["trackers_scanned"] += account_stats.get("trackers", 0)
+            overall_stats["organizations"]["total"] += account_stats["organizations"][
+                "total"
+            ]
+            overall_stats["organizations"]["processed"] += account_stats[
+                "organizations"
+            ]["processed"]
+            overall_stats["organizations"]["skipped_webhook"] += account_stats[
+                "organizations"
+            ]["skipped_webhook"]
+            overall_stats["organizations"]["skipped_polling"] += account_stats[
+                "organizations"
+            ]["skipped_polling"]
+            overall_stats["organizations"]["errors"] += account_stats["organizations"][
+                "errors"
+            ]
+            overall_stats["projects"] += account_stats["projects"]
+            overall_stats["issues"] += account_stats["issues"]
+            overall_stats["embeddings_updated"] += account_stats["embeddings_updated"]
             # Note: duration is not summed up from individual accounts.
             # This would require more complex logic to run scans in parallel and measure total time.
 

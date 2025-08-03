@@ -20,6 +20,8 @@ from ..scanner.core import TrackerClient  # For instantiating tracker clients
 from spacemodels.db.session import get_db_session
 from .scan_commands import scan
 from .scheduler_commands import scheduler_cmd
+from .worker_commands import worker_cmd
+from .monitor_commands import monitor_cmd
 
 
 @click.group()
@@ -38,6 +40,8 @@ def cli() -> None:
 # Add command groups
 cli.add_command(scan)
 cli.add_command(scheduler_cmd, name="scheduler")
+cli.add_command(worker_cmd, name="worker")
+cli.add_command(monitor_cmd, name="monitor")
 
 
 @cli.command()

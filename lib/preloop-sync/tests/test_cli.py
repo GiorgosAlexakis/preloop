@@ -27,13 +27,19 @@ class TestScanCommands(unittest.TestCase):
         mock_stats = {
             "accounts_scanned": 3,
             "accounts_with_errors": 1,
-            "total_trackers_scanned": 10,
-            "total_trackers_with_errors": 2,
-            "total_organizations": 5,
-            "total_projects": 20,
-            "total_issues": 150,
-            "total_embeddings_updated": 75,
-            "total_duration_seconds": 35.8,
+            "trackers_scanned": 10,
+            "trackers_with_errors": 2,
+            "organizations": {
+                "total": 5,
+                "processed": 5,
+                "skipped_webhook": 0,
+                "skipped_polling": 0,
+                "errors": 0,
+            },
+            "projects": 20,
+            "issues": 150,
+            "embeddings_updated": 75,
+            "duration_seconds": 35.8,
         }
         mock_scan_all_accounts.return_value = mock_stats
 
@@ -69,15 +75,12 @@ class TestScanCommands(unittest.TestCase):
             )  # Match actual output format
             self.assertIn("Accounts scanned: 3", result.output)
             self.assertIn("Accounts with errors: 1", result.output)
-            self.assertIn(
-                "Total trackers scanned: 10", result.output
-            )  # Check total count
-            self.assertIn("Total trackers with errors: 2", result.output)
-            self.assertIn("Total organizations: 5", result.output)
-            self.assertIn("Total projects: 20", result.output)  # Corrected assertion
-            self.assertIn("Total issues: 150", result.output)  # Corrected assertion
-            self.assertIn("Total embeddings updated: 75", result.output)
-            self.assertIn("Total duration: 35.8", result.output)  # Check for substring
+            self.assertIn("Trackers scanned: 10", result.output)  # Check total count
+            self.assertIn("Trackers with errors: 2", result.output)
+            self.assertIn("Organizations: 5", result.output)
+            self.assertIn("Projects: 20", result.output)  # Corrected assertion
+            self.assertIn("Issues: 150", result.output)  # Corrected assertion
+            self.assertIn("Embeddings updated: 75", result.output)
 
     @patch("spacesync.cli.scan_commands.scan_all_accounts")
     @patch("spacesync.cli.scan_commands.get_db_session")
@@ -89,13 +92,19 @@ class TestScanCommands(unittest.TestCase):
         mock_stats = {
             "accounts_scanned": 0,
             "accounts_with_errors": 0,
-            "total_trackers_scanned": 0,
-            "total_trackers_with_errors": 0,
-            "total_organizations": 0,
-            "total_projects": 0,
-            "total_issues": 0,
-            "total_embeddings_updated": 0,
-            "total_duration_seconds": 0.0,
+            "trackers_scanned": 0,
+            "trackers_with_errors": 0,
+            "organizations": {
+                "total": 0,
+                "processed": 0,
+                "skipped_webhook": 0,
+                "skipped_polling": 0,
+                "errors": 0,
+            },
+            "projects": 0,
+            "issues": 0,
+            "embeddings_updated": 0,
+            "duration_seconds": 0.0,
         }
         mock_scan_all_accounts.return_value = mock_stats
 
@@ -122,13 +131,19 @@ class TestScanCommands(unittest.TestCase):
         mock_stats = {
             "accounts_scanned": 0,
             "accounts_with_errors": 0,
-            "total_trackers_scanned": 0,
-            "total_trackers_with_errors": 0,
-            "total_organizations": 0,
-            "total_projects": 0,
-            "total_issues": 0,
-            "total_embeddings_updated": 0,
-            "total_duration_seconds": 0.0,
+            "trackers_scanned": 0,
+            "trackers_with_errors": 0,
+            "organizations": {
+                "total": 0,
+                "processed": 0,
+                "skipped_webhook": 0,
+                "skipped_polling": 0,
+                "errors": 0,
+            },
+            "projects": 0,
+            "issues": 0,
+            "embeddings_updated": 0,
+            "duration_seconds": 0.0,
         }
         mock_scan_all_accounts.return_value = mock_stats
 
@@ -162,9 +177,14 @@ class TestScanCommands(unittest.TestCase):
 
         # Mock the scan_account function
         mock_scan_account.return_value = {
-            "trackers_scanned": 2,
-            "trackers_with_errors": 0,
-            "organizations": 1,
+            "trackers": 2,
+            "organizations": {
+                "total": 1,
+                "processed": 1,
+                "skipped_webhook": 0,
+                "skipped_polling": 0,
+                "errors": 0,
+            },
             "projects": 3,
             "issues": 25,
             "embeddings_updated": 10,
@@ -211,9 +231,13 @@ class TestScanCommands(unittest.TestCase):
 
         # Mock the scan_tracker_func
         mock_scan_tracker_func.return_value = {
-            "organizations": 1,
-            "organizations_skipped_webhook": 0,
-            "organizations_skipped_polling": 0,
+            "organizations": {
+                "total": 1,
+                "processed": 1,
+                "skipped_webhook": 0,
+                "skipped_polling": 0,
+                "errors": 0,
+            },
             "projects": 3,
             "issues": 25,
             "embeddings_updated": 10,
