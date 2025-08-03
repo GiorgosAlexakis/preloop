@@ -29,7 +29,7 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
-      '/static': {
+      '/docs': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         ws: true,

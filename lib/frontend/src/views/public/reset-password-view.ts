@@ -8,8 +8,11 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '../../components/logo-component';
 
-@customElement('forgot-password-view')
-export class ForgotPasswordView extends LitElement {
+@customElement('reset-password-view')
+export class ResetPasswordView extends LitElement {
+  @state()
+  private token = '';
+
   @state()
   private message = '';
 
@@ -18,20 +21,37 @@ export class ForgotPasswordView extends LitElement {
 
   static styles = [formStyles];
 
-  private async handleForgotPassword(event: SubmitEvent) {
+  firstUpdated() {
+    const params = new URLSearchParams(window.location.search);
+    this.token = params.get('token') || '';
+    if (!this.token) {
+      this.error = 'No reset token found in the URL.';
+    }
+  }
+
+  private async handleResetPassword(event: SubmitEvent) {
     event.preventDefault();
     const form = event.target as HTMLFormElement;
     const formData = new FormData(form);
-    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+    const confirmPassword = formData.get('confirmPassword') as string;
+
+    if (password !== confirmPassword) {
+      this.error = 'Passwords do not match.';
+      return;
+    }
 
     try {
-      await post('/api/v1/auth/forgot-password', { email });
+      await post('/api/v1/auth/reset-password', {
+        token: this.token,
+        new_password: password,
+      });
       this.message =
-        'If an account with that email exists, a password reset link has been sent.';
+        'Your password has been reset successfully. You can now log in.';
       this.error = '';
     } catch (error) {
-      this.error = 'An unexpected error occurred. Please try again.';
-      console.error('Forgot password failed', error);
+      this.error = 'Invalid or expired reset token.';
+      console.error('Password reset failed', error);
     }
   }
 
@@ -44,7 +64,7 @@ export class ForgotPasswordView extends LitElement {
           </a>
         </div>
         <div class="form-container">
-          <h2>Forgot Password</h2>
+          <h2>Reset Password</h2>
           ${this.message
             ? html`<sl-alert
                 variant="success"
@@ -67,16 +87,24 @@ export class ForgotPasswordView extends LitElement {
                 ${this.error}
               </sl-alert>`
             : ''}
-          <form @submit=${this.handleForgotPassword}>
+          <form @submit=${this.handleResetPassword}>
             <sl-input
-              type="email"
-              label="Email"
-              name="email"
+              type="password"
+              label="New Password"
+              name="password"
               required
+              password-toggle
+            ></sl-input>
+            <sl-input
+              type="password"
+              label="Confirm New Password"
+              name="confirmPassword"
+              required
+              password-toggle
             ></sl-input>
             <div class="form-actions">
               <sl-button type="submit" variant="primary"
-                >Send Reset Link</sl-button
+                >Reset Password</sl-button
               >
             </div>
             <div class="form-links">

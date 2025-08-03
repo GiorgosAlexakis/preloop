@@ -75,11 +75,14 @@ export class LandingView extends LitElement {
       <main>
         <section class="hero main-section">
           <div class="section-container hero-inner">
-            <div class="hero-content text-center">
-              <h1 class="fw-bold">Drive your Product with AI</h1>
+            <div class="hero-content">
+              <h1 class="fw-bold">
+                Drive your <span class="gradient-product">Product</span> with
+                <span class="gradient-ai">AI</span>
+              </h1>
               <p class="lead">
                 Spacebridge curates your backlog, automates high value, low-risk
-                work, and safeguards the critical.
+                work, and safeguards critical actions.
               </p>
               <div class="hero-buttons">
                 <sl-button variant="primary" size="large" href="/register"
@@ -555,10 +558,10 @@ export class LandingView extends LitElement {
 
         <section class="final-cta main-section special-cta">
           <div class="section-container">
-            <h2>The Trust Layer for Enterprise AI</h2>
+            <h2>Stop curating. Start creating.</h2>
             <div class="hero-buttons">
               <sl-button variant="primary" size="large" href="/register"
-                >Get Started</sl-button
+                >Get Started for Free</sl-button
               >
               <sl-button variant="text" size="large" href="/request-demo"
                 >Request a Demo</sl-button

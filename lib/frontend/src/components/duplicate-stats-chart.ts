@@ -43,6 +43,10 @@ export class DuplicateStatsChart extends LitElement {
   private charts: Chart[] = [];
 
   static styles = css`
+    :host {
+      display: block;
+    }
+
     #chart-container {
       display: flex;
       justify-content: space-around;
@@ -170,8 +174,7 @@ export class DuplicateStatsChart extends LitElement {
                 'hsl(350, 70%, 50%)',
                 'hsl(210, 60%, 65%)',
               ],
-              borderColor: 'var(--sl-color-neutral-1000)',
-              borderWidth: 1,
+              borderWidth: 0,
               hoverOffset: 8,
             },
           ],
@@ -253,13 +256,15 @@ export class DuplicateStatsChart extends LitElement {
   }
 
   render() {
-    if (this._loading) {
-      return html`<sl-spinner></sl-spinner>`;
-    }
-    if (this._error) {
-      return html`<div>Error: ${this._error}</div>`;
-    }
-    return html`<div id="chart-container"></div>`;
+    return html`
+      <div id="chart-container">
+        ${this._loading
+          ? html`<div class="spinner-container"><sl-spinner></sl-spinner></div>`
+          : this._error
+            ? html`<div>Error: ${this._error}</div>`
+            : ''}
+      </div>
+    `;
   }
 }
 

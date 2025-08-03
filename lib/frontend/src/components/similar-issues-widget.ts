@@ -1,7 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
-import { listIssueDuplicates, DuplicatePair, checkLlmVerdict } from '../api';
+import { listIssueDuplicates, checkLlmVerdict } from '../api';
+import type { DuplicatePair } from '../types';
 import { LlmVerdict, renderVerdict } from '../utils/verdict';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -32,6 +33,9 @@ export class SimilarIssuesWidget extends LitElement {
     sl-alert::part(base),
     sl-card {
       width: 100%;
+    }
+    sl-card::part(header) {
+      background-color: var(--sl-color-neutral-100);
     }
     .suggestion-list {
       list-style: none;
@@ -67,6 +71,11 @@ export class SimilarIssuesWidget extends LitElement {
     .see-all-container {
       text-align: center;
       padding: var(--sl-spacing-medium);
+    }
+    .spinner-container {
+      display: flex;
+      justify-content: center;
+      padding: var(--sl-spacing-large);
     }
   `;
 
@@ -151,6 +160,35 @@ export class SimilarIssuesWidget extends LitElement {
   }
 
   render() {
+    if (this._loading) {
+      return html`
+        <sl-card class="table-card">
+          <div slot="header">Similar Issue Suggestions</div>
+          <div class="spinner-container">
+            <sl-spinner></sl-spinner>
+          </div>
+        </sl-card>
+      `;
+    }
+
+    if (this._error) {
+      return html`
+        <sl-alert variant="danger" open>
+          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+          ${this._error}
+        </sl-alert>
+      `;
+    }
+
+    if (this._totalSuggestions === 0) {
+      return html`
+        <sl-alert variant="primary" open>
+          <sl-icon slot="icon" name="info-circle"></sl-icon>
+          No similar issues found for the current filters.
+        </sl-alert>
+      `;
+    }
+
     const renderTopSuggestionsText = () => {
       const count = this._topSuggestions.length;
       if (count === 0) {
@@ -162,71 +200,58 @@ export class SimilarIssuesWidget extends LitElement {
       return `Here are the top ${count} suggestions:`;
     };
 
-    if (this._totalSuggestions === 0) {
-      return html`
-        <sl-alert variant="primary" open>
-          <sl-icon slot="icon" name="info-circle"></sl-icon>
-          No similar issues found for the current filters.
-        </sl-alert>
-      `;
-    }
     return html`
       <sl-card class="table-card">
         <div slot="header">Similar Issue Suggestions</div>
-
-        ${when(this._loading, () => html`<div>Loading...</div>`)}
-        ${when(this._error, () => html`<div>${this._error}</div>`)}
-        ${when(!this._loading && !this._error, () => {
-          return html`
-            <div class="sub-header">
-              You have
-              <a href="/console/issues"
-                ><strong
-                  >${this._totalSuggestions > 100
-                    ? '100+'
-                    : this._totalSuggestions}</strong
+        <div class="sub-header">
+          You have
+          <a href="/console/issues"
+            ><strong
+              >${this._totalSuggestions > 100
+                ? '100+'
+                : this._totalSuggestions}</strong
+            >
+            unresolved suggestions</a
+          >. ${renderTopSuggestionsText()}
+        </div>
+        <ul class="suggestion-list">
+          ${this._topSuggestions.map((pair) => {
+            const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+            return html`
+              <li class="suggestion-item">
+                <div
+                  class="issue-titles"
+                  title="${pair.issue1.title} vs ${pair.issue2.title}"
                 >
-                unresolved suggestions</a
-              >. ${renderTopSuggestionsText()}
-            </div>
-            <ul class="suggestion-list">
-              ${this._topSuggestions.map((pair) => {
-                const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-                return html`
-                  <li class="suggestion-item">
-                    <div
-                      class="issue-titles"
-                      title="${pair.issue1.title} vs ${pair.issue2.title}"
-                    >
-                      <strong>${pair.issue1.key}</strong> vs
-                      <strong>${pair.issue2.key}</strong>
-                    </div>
-                    <div>
-                      <sl-badge variant="neutral"
-                        >${(pair.similarity * 100).toFixed(0)}%</sl-badge
-                      >
-                      <div class="verdict-container">
-                        ${pair.similarity > 0.999
-                          ? html`<sl-badge
-                              variant="warning"
-                              style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
-                              pill
-                              >Identical</sl-badge
-                            >`
-                          : renderVerdict(this._llmVerdicts[pairKey])}
-                      </div>
-                    </div>
-                  </li>
-                `;
-              })}
-            </ul>
-            ${this._totalSuggestions > 0
-              ? html` <div class="see-all-container">
-                  <a href="/console/issues">See all...</a>
-                </div>`
-              : ''}
-          `;
-        })}
+                  <strong>${pair.issue1.key}</strong> vs
+                  <strong>${pair.issue2.key}</strong>
+                </div>
+                <div>
+                  <sl-badge variant="neutral"
+                    >${(pair.similarity * 100).toFixed(0)}%</sl-badge
+                  >
+                  <div class="verdict-container">
+                    ${pair.similarity > 0.999
+                      ? html`<sl-badge
+                          variant="warning"
+                          style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
+                          pill
+                          >Identical</sl-badge
+                        >`
+                      : renderVerdict(this._llmVerdicts[pairKey])}
+                  </div>
+                </div>
+              </li>
+            `;
+          })}
+        </ul>
+        ${this._totalSuggestions > 0
+          ? html`
+              <div class="see-all-container">
+                <a href="/console/issues">See all...</a>
+              </div>
+            `
+          : ''}
       </sl-card>
     `;
   }

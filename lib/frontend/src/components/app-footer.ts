@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { router } from '../router';
+import './logo-component';
 
 @customElement('app-footer')
 export class AppFooter extends LitElement {
@@ -9,8 +10,7 @@ export class AppFooter extends LitElement {
       :host {
         display: block;
         color: var(--sl-color-neutral-700);
-        padding: 48px 0;
-        margin-top: auto;
+        padding: 0 0 48px 0;
         flex-shrink: 0;
       }
 
@@ -107,15 +107,14 @@ export class AppFooter extends LitElement {
 
   render() {
     return html`
-      <div class="footer-container">
+      <div class="footer-container sl-theme-dark">
+        <div class="divider"></div>
         <div class="footer-main">
           <div>
-            <img
-              src="/images/logo_dark.png"
-              alt="SpaceBridge MCP"
+            <logo-component
               height="40"
               style="margin-bottom: 16px"
-            />
+            ></logo-component>
           </div>
           <nav class="footer-nav">
             <ul>
@@ -125,11 +124,6 @@ export class AppFooter extends LitElement {
               <li><a href="/privacy">Privacy Policy</a></li>
               <li><a href="/terms">Terms of Service</a></li>
               <li><a href="/whatis-mcp" target="_blank">What is MCP?</a></li>
-              <li>
-                <a href="#" @click=${this.switchToOldUI}
-                  >Switch to the old UI</a
-                >
-              </li>
             </ul>
           </nav>
         </div>

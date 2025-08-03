@@ -16,18 +16,21 @@ import '../../components/project-filter-modal.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/resolve-issue-modal.ts';
 import '../../components/issue-detail-view.ts';
+import '../../components/pagination-controls.ts';
 import {
   listProjects,
-  Project,
   listIssueDuplicates,
   checkLlmVerdict,
   dismissDuplicatePair,
+  listOrganizations,
+} from '../../api';
+import type {
+  Project,
   DuplicatePair,
   DuplicatesResponse,
-  listOrganizations,
   Organization,
   Issue,
-} from '../../api';
+} from '../../types';
 import {
   DEFAULT_SIMILARITY_THRESHOLD,
   DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
@@ -123,15 +126,7 @@ export class IssuesView extends LitElement {
       .styled-table th,
       .styled-table td {
         padding: var(--sl-spacing-medium);
-        text-align: left;
         border-bottom: 1px solid var(--sl-color-neutral-200);
-      }
-
-      .styled-table tr:last-child td {
-        border-bottom: none;
-      }
-      .styled-table th:last-child {
-        text-align: right;
       }
 
       .styled-table .issue-id {
@@ -140,13 +135,6 @@ export class IssuesView extends LitElement {
 
       .issue-key {
         color: var(--sl-color-neutral-600);
-      }
-
-      .pagination-controls {
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        gap: var(--sl-spacing-medium);
       }
 
       .faint-row {
@@ -403,18 +391,7 @@ export class IssuesView extends LitElement {
   private async handleResolution(e: CustomEvent) {
     if (e.detail.summary) {
       this._resolutionSummary = e.detail.summary;
-      // Auto-hide after 5 seconds
-      setTimeout(() => {
-        this._resolutionSummary = null;
-      }, 5000);
     }
-    this.fetchDuplicates();
-  }
-
-  private _handleResolved() {
-    this._isResolveModalOpen = false;
-    this._selectedPair = null;
-    // Refresh the data
     this.fetchDuplicates();
   }
 
@@ -436,16 +413,6 @@ export class IssuesView extends LitElement {
 
   private _openFilterModal() {
     this._isFilterModalOpen = true;
-  }
-
-  private _closeFilterModal() {
-    this._isFilterModalOpen = false;
-  }
-
-  private _handleProjectsSelected(event: CustomEvent) {
-    this._selectedProjectIds = event.detail.projectIds;
-    this._isFilterModalOpen = false;
-    this.fetchDuplicates(); // Re-fetch data with the new filter
   }
 
   private _removeProjectFilter(projectIdToRemove: string) {
@@ -542,17 +509,29 @@ export class IssuesView extends LitElement {
     this._isInfoAlertOpen = false;
   }
 
+  private _goToPreviousPage() {
+    if (this._currentPage > 1) {
+      this._currentPage--;
+      this.fetchDuplicates();
+    }
+  }
+
+  private _goToNextPage() {
+    this._currentPage++;
+    this.fetchDuplicates();
+  }
+
   render() {
     return html`
-      <div class="header">
-        <h1>Similar Issues</h1>
-        <sl-button @click=${this._openFilterModal}>
-          <sl-icon slot="prefix" name="filter"></sl-icon>
-          Filter
-        </sl-button>
-      </div>
       <div class="column-layout">
         <div class="main-column">
+          <div class="header">
+            <h1>Issue Similarity</h1>
+            <sl-button @click=${this._openFilterModal}>
+              <sl-icon slot="prefix" name="filter"></sl-icon>
+              Filter
+            </sl-button>
+          </div>
           <div class="container">
             <sl-alert
               variant="primary"
@@ -757,23 +736,13 @@ export class IssuesView extends LitElement {
                         </tbody>
                       </table>
                     </sl-card>
-                    <div class="pagination-controls">
-                      <sl-button-group>
-                        <sl-button
-                          @click=${() => this._goToPage(this._currentPage - 1)}
-                          ?disabled=${this._currentPage <= 1}
-                        >
-                          Previous
-                        </sl-button>
-                        <sl-button
-                          @click=${() => this._goToPage(this._currentPage + 1)}
-                          ?disabled=${!this._hasMorePages}
-                        >
-                          Next
-                        </sl-button>
-                      </sl-button-group>
-                      <span>Page ${this._currentPage}</span>
-                    </div>
+                    <pagination-controls
+                      .currentPage=${this._currentPage}
+                      .hasMorePages=${this._hasMorePages}
+                      .loading=${this._loading}
+                      @prev-page=${this._goToPreviousPage}
+                      @next-page=${this._goToNextPage}
+                    ></pagination-controls>
                   `
                 : html`
                     <sl-alert variant="primary" open>
@@ -789,6 +758,7 @@ export class IssuesView extends LitElement {
           </div>
         </div>
         <div class="side-column">
+          <div class="header"></div>
           ${when(
             this._expandedRowKey,
             () => {
@@ -838,12 +808,6 @@ export class IssuesView extends LitElement {
         @on-resolved=${this.handleResolution}
       ></resolve-issue-modal>
     `;
-  }
-
-  private _goToPage(page: number) {
-    if (page < 1) return;
-    this._currentPage = page;
-    this.fetchDuplicates();
   }
 
   private _applyFilters(event: CustomEvent) {

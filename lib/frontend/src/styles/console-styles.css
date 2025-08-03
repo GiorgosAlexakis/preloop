@@ -51,6 +51,7 @@ a:hover {
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--sl-spacing-large);
+    min-height: 88.16px;
 }
 
 .table-card {
@@ -63,18 +64,38 @@ a:hover {
     padding: 0;
 }
 
+sl-card::part(header) {
+    background-color: var(--sl-color-neutral-100);
+}
+
 .styled-table {
+    width: 100%;
     border-collapse: collapse;
     color: var(--sl-color-neutral-900);
+}
+
+.styled-table th,
+.styled-table td {
+  padding: var(--sl-spacing-medium);
+  text-align: left;
+  border-bottom: 1px solid var(--sl-color-neutral-200);
 }
 
 .styled-table th {
     background-color: var(--sl-color-neutral-100);
     font-weight: var(--sl-font-weight-semibold);
-  }
+}
 
 .styled-table tr {
     border-bottom: 1px solid var(--sl-color-neutral-200);
+}
+
+.styled-table tr:last-child td {
+    border-bottom: none;
+}
+
+.styled-table th:last-child, .styled-table td:last-child {
+    text-align: right;
 }
 
 .actions-container {
@@ -85,4 +106,26 @@ a:hover {
 
 .full-width {
     width: 100%;
+}
+
+/* Modals */
+
+sl-dialog.large::part(panel) {
+    width: 80vw;
+    max-width: 1200px;
+    padding: 1rem;
+}
+
+.comparison-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sl-spacing-2x-large);
+    margin-bottom: var(--sl-spacing-large);
+}
+
+.spinner-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--sl-spacing-2x-large);
 }

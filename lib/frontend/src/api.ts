@@ -1,6 +1,20 @@
 import { LitElement } from 'lit';
 import { Router } from '@vaadin/router';
 import { DEFAULT_SIMILARITY_THRESHOLD } from './config';
+import type {
+  FetchIssuesListParams,
+  SearchIssuesParams,
+  SearchIssuesResponse,
+  ApiKey,
+  Project,
+  Organization,
+  Issue,
+  DuplicatePair,
+  DuplicatesResponse,
+  IssueComplianceResult,
+  CompliancePromptMetadata,
+  ComplianceSuggestion,
+} from './types';
 
 async function refreshToken(): Promise<string | null> {
   const refreshToken = localStorage.getItem('refreshToken');
@@ -229,6 +243,43 @@ export async function getIssueCount(): Promise<{ total_issues: number }> {
   return response.json();
 }
 
+export async function searchIssues(
+  params: FetchIssuesListParams
+): Promise<any[]> {
+  const queryParams = new URLSearchParams();
+  queryParams.append('search_type', 'similarity');
+  queryParams.append('embedding_type', 'issue');
+  queryParams.append('sort', 'newest');
+
+  if (params.query) {
+    queryParams.append('query', params.query);
+  } else {
+    // The new endpoint requires a query, so we'll use an empty one to get all issues.
+    queryParams.append('query', '');
+  }
+
+  if (params.limit) {
+    queryParams.append('limit', params.limit.toString());
+  }
+
+  if (params.skip) {
+    queryParams.append('skip', params.skip.toString());
+  }
+
+  if (params.project_ids && params.project_ids.length > 0) {
+    params.project_ids.forEach((id) => queryParams.append('project_id', id));
+  }
+
+  const response = await fetchWithAuth(
+    `/api/v1/search?${queryParams.toString()}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch issues list');
+  }
+  const data = await response.json();
+  return data.results.map((r: any) => r.item);
+}
+
 export async function post(url: string, body: any) {
   const response = await window.fetch(url, {
     method: 'POST',
@@ -284,15 +335,6 @@ export async function changePassword(passwords: {
 }
 
 // API Keys
-export interface ApiKey {
-  id: string;
-  name: string;
-  created_at: string;
-  last_used_at: string | null;
-  expires_at: string | null;
-  key?: string;
-}
-
 export async function getApiKeys(): Promise<ApiKey[]> {
   const response = await fetchWithAuth('/api/v1/auth/api-keys');
   if (!response.ok) {
@@ -369,26 +411,7 @@ export async function deleteLlmModel(modelId: string) {
 }
 
 // Flows
-export interface Flow {
-  id: string;
-  name: string;
-  description: string;
-  trigger_event_source: string;
-  trigger_event_type: string;
-  trigger_config: any;
-  prompt_template: string;
-  model_configuration_id: string;
-  openhands_agent_config: any;
-  allowed_mcp_servers: string[];
-  allowed_mcp_tools: any[];
-  is_preset: boolean;
-  is_enabled: boolean;
-  created_by_user_id: string;
-  organization_id: string;
-  created_at: string;
-}
-
-export async function getFlows(): Promise<Flow[]> {
+export async function getFlows(): Promise<any[]> {
   const response = await fetchWithAuth('/api/v1/flows');
   if (!response.ok) {
     throw new Error('Failed to fetch flows');
@@ -396,7 +419,7 @@ export async function getFlows(): Promise<Flow[]> {
   return response.json();
 }
 
-export async function createFlow(flow: Partial<Flow>): Promise<Flow> {
+export async function createFlow(flow: any): Promise<any> {
   const response = await fetchWithAuth('/api/v1/flows', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -408,10 +431,7 @@ export async function createFlow(flow: Partial<Flow>): Promise<Flow> {
   return response.json();
 }
 
-export async function updateFlow(
-  flowId: string,
-  flow: Partial<Flow>
-): Promise<Flow> {
+export async function updateFlow(flowId: string, flow: any): Promise<any> {
   const response = await fetchWithAuth(`/api/v1/flows/${flowId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -432,25 +452,6 @@ export async function deleteFlow(flowId: string) {
   }
 }
 
-export interface Project {
-  id: number;
-  name: string;
-  identifier: string;
-  organization_id: number;
-}
-
-export interface Organization {
-  id: number;
-  name: string;
-}
-
-export interface Paginated<T> {
-  items: T[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
 export async function listProjects(): Promise<Project[]> {
   const response = await fetchWithAuth('/api/v1/projects');
   if (!response.ok) {
@@ -459,18 +460,9 @@ export async function listProjects(): Promise<Project[]> {
   return response.json();
 }
 
-export interface IssueEmbedding {
-  issue_id: string;
-  project_id: string;
-  issue_key: string;
-  issue_title: string;
-  issue_created_at: string;
-  embedding: number[];
-}
-
 export async function getEmbeddingsForProjects(
   projectIds: string[]
-): Promise<{ data: IssueEmbedding[] } | null> {
+): Promise<{ data: any[] } | null> {
   const params = new URLSearchParams();
   if (projectIds.length > 0) {
     params.append('project_ids', projectIds.join(','));
@@ -499,36 +491,8 @@ export async function listOrganizations(): Promise<Organization[]> {
   if (!response.ok) {
     throw new Error('Failed to fetch organizations');
   }
-  const data: Paginated<Organization> = await response.json();
+  const data: any = await response.json();
   return data.items;
-}
-
-// Add interfaces for the issue duplicates endpoint
-export interface Issue {
-  project_id: string;
-  id: string;
-  title: string;
-  description: string;
-  key: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  url: string;
-  meta_data?: { [key: string]: any };
-}
-
-export interface DuplicatePair {
-  issue1: Issue;
-  issue2: Issue;
-  similarity: number;
-  resolution: string;
-}
-
-export interface DuplicatesResponse {
-  project_ids: string[];
-  model_id_used: string;
-  threshold_used: number;
-  duplicates: DuplicatePair[];
 }
 
 export async function listIssueDuplicates(
@@ -580,22 +544,11 @@ export async function checkLlmVerdict(issue1_id: string, issue2_id: string) {
   return response.json();
 }
 
-export interface ProjectStats {
-  project_id: string;
-  project_name: string;
-  total: number;
-  duplicates: number;
-}
-
-export interface DuplicateStatsResponse {
-  projects: { [key: string]: ProjectStats };
-}
-
 export async function getProjectDuplicateStats(options: {
   project_ids?: string[];
   status?: 'opened' | 'closed' | 'all';
   similarity_threshold?: number;
-}): Promise<DuplicateStatsResponse> {
+}): Promise<any> {
   const {
     project_ids = [],
     status = 'opened',
@@ -629,27 +582,11 @@ export async function dismissDuplicatePair(
   return Promise.resolve({ success: true });
 }
 
-export interface SimilarIssue {
-  id: number;
-  title: string;
-}
-
-export interface SuggestionResponse {
-  resolution: 'MERGE' | 'DISAMBIGUATE';
-  merged_title?: string;
-  merged_description?: string;
-  deconflicted_title1?: string;
-  deconflicted_description1?: string;
-  deconflicted_title2?: string;
-  deconflicted_description2?: string;
-  explanation: string;
-}
-
 export async function getResolutionSuggestion(
   issue1_id: string,
   issue2_id: string,
   resolution: 'merged' | 'deconflicted'
-): Promise<SuggestionResponse> {
+): Promise<any> {
   const response = await fetchWithAuth('/api/v1/LLM-suggestion', {
     method: 'POST',
     headers: {
@@ -665,26 +602,9 @@ export async function getResolutionSuggestion(
   return response.json();
 }
 
-export interface IssueDuplicateResolutionRequest {
-  issue1_id: string;
-  issue2_id: string;
-  resolution: string;
-  resolution_reason?: string;
-  resulting_issue_1_title?: string;
-  resulting_issue_1_description?: string;
-  resulting_issue_2_title?: string;
-  resulting_issue_2_description?: string;
-}
-
-export interface IssueDuplicateResolutionResponse {
-  issue1_id: string;
-  issue2_id: string;
-  resolution: string;
-}
-
 export async function executeIssueDuplicateResolution(
-  resolutionData: IssueDuplicateResolutionRequest
-): Promise<IssueDuplicateResolutionResponse> {
+  resolutionData: any
+): Promise<any> {
   const response = await fetchWithAuth(
     '/api/v1/issue-duplicates/execute-resolution',
     {
@@ -702,9 +622,73 @@ export async function executeIssueDuplicateResolution(
   return response.json();
 }
 
+export async function getIssueCompliance(
+  issueId: string,
+  promptName: string
+): Promise<IssueComplianceResult> {
+  const response = await fetchWithAuth(
+    `/api/v1/issue_compliance/${issueId}?prompt_name=${promptName}`,
+    {
+      method: 'GET',
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch issue compliance');
+  }
+  return response.json();
+}
+
+export async function getComplianceImprovementSuggestion(
+  issueId: string,
+  promptName: string
+): Promise<ComplianceSuggestion> {
+  const response = await fetchWithAuth(
+    `/api/v1/issue_compliance_suggestion/${issueId}?prompt_name=${promptName}`
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || 'Failed to get compliance improvement suggestion'
+    );
+  }
+  return response.json();
+}
+
 export async function proposeResolution(resolutionData: any) {
   return await fetchWithAuth('/api/v1/issue-duplicates/propose-resolution', {
     method: 'PATCH',
     body: JSON.stringify(resolutionData),
   });
+}
+
+export async function updateIssueContent(
+  issueId: string,
+  title: string,
+  description: string
+): Promise<Issue> {
+  const response = await fetchWithAuth(
+    `/api/v1/issue_compliance_update/${issueId}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update issue content');
+  }
+
+  return response.json();
+}
+
+export async function getCompliancePrompts(): Promise<
+  CompliancePromptMetadata[]
+> {
+  const response = await fetchWithAuth('/api/v1/issue_compliance_prompts');
+  if (!response.ok) {
+    throw new Error('Failed to fetch compliance prompts');
+  }
+  return response.json();
 }

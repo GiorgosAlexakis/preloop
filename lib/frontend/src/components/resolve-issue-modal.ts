@@ -303,7 +303,7 @@ export class ResolveIssueModal extends LitElement {
     return html`
       <div class="step-container">
         <h2 class="issue-comparison-header">Original Issues</h2>
-        <div class="issue-comparison">
+        <div class="comparison-container">
           <div class="issue-panel">
             <div class="issue-header">
               <a href="${issueA?.url}" target="_blank">${issueA?.key}</a>
@@ -376,7 +376,7 @@ export class ResolveIssueModal extends LitElement {
     return html`
       <div class="step-container">
         <h2 class="issue-comparison-header">Original Issues</h2>
-        <div class="issue-comparison">
+        <div class="comparison-container">
           <div class="issue-panel">
             <div class="issue-header">
               <a href="${issueA?.url}" target="_blank">${issueA?.key}</a>
@@ -400,7 +400,7 @@ export class ResolveIssueModal extends LitElement {
               <div>Generating suggestion...</div>
             </div>`
           : html`
-              <div class="issue-comparison">
+              <div class="comparison-container">
                 <div class="issue-panel form-group">
                   <div class="issue-header">${issueA?.key}</div>
                   <sl-input
@@ -472,12 +472,12 @@ export class ResolveIssueModal extends LitElement {
         @sl-show=${this.handleOpen}
         @sl-after-hide=${this.handleClose}
         @sl-initial-focus=${(e: Event) => e.preventDefault()}
-        class="resolve-issue-dialog"
+        class="resolve-issue-dialog large"
       >
         ${this._resolutionStep !== 'merge' &&
         this._resolutionStep !== 'deconflict'
           ? html`
-              <div class="issue-comparison">
+              <div class="comparison-container">
                 <div class="issue-panel">
                   <div class="issue-header">
                     <a href="${issue1?.url}" target="_blank">${issue1?.key}</a>
@@ -503,11 +503,6 @@ export class ResolveIssueModal extends LitElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
-      sl-dialog::part(panel) {
-        width: 1280px;
-        padding: 1rem;
-      }
-
       h2 {
         position: relative;
         text-align: left;
@@ -561,21 +556,15 @@ export class ResolveIssueModal extends LitElement {
         font-weight: bold;
       }
 
-      .issue-comparison {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-      }
       .issue-header {
         font-size: var(--sl-font-size-medium);
-        margin-bottom: 0.5rem;
+        margin-bottom: var(--sl-spacing-small);
       }
       .issue-title {
         font-size: var(--sl-font-size-medium);
         font-weight: var(--sl-font-weight-semibold);
         margin-top: 0;
-        margin-bottom: 1rem;
+        margin-bottom: var(--sl-spacing-medium);
       }
       .issue-description {
         font-size: var(--sl-font-size-small);

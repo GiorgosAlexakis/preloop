@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { Organization, Project } from '../api';
+import type { Organization, Project } from '../types';
 import type { SlTree } from '@shoelace-style/shoelace';
 
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';

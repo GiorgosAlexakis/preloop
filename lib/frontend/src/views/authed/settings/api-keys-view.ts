@@ -1,7 +1,8 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
-import { getApiKeys, createApiKey, deleteApiKey, ApiKey } from '../../../api';
+import { getApiKeys, createApiKey, deleteApiKey } from '../../../api';
+import type { ApiKey } from '../../../types';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';

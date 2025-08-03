@@ -4,6 +4,7 @@ import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/details/details.js';
+import '../../components/logo-component';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 // static styles = [formStyles, css`
@@ -130,7 +131,7 @@ export class ConsoleShell extends LitElement {
       <div class="console-container">
         <div class="sidebar">
           <div class="logo">
-            <img src="/images/logo_dark.png" alt="SpaceBridge.io" />
+            <logo-component></logo-component>
           </div>
           <sl-menu style="font-size: 16px;">
             <a href="/console">
@@ -153,7 +154,10 @@ export class ConsoleShell extends LitElement {
               </span>
               <sl-menu>
                 <a href="/console/issues">
-                  <sl-menu-item>Similar Issues</sl-menu-item>
+                  <sl-menu-item>Similarity</sl-menu-item>
+                </a>
+                <a href="/console/issues/compliance">
+                  <sl-menu-item>Compliance</sl-menu-item>
                 </a>
               </sl-menu>
             </sl-details>

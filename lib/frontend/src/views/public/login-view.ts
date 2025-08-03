@@ -5,6 +5,7 @@ import { post } from '../../api';
 import { formStyles } from '../../styles/form-styles';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '../../components/logo-component';
 
 @customElement('login-view')
 export class LoginView extends LitElement {
@@ -72,7 +73,7 @@ export class LoginView extends LitElement {
       <div class="container">
         <div class="logo">
           <a href="/">
-            <img src="/images/logo_dark.png" alt="SpaceBridge MCP" />
+            <logo-component></logo-component>
           </a>
         </div>
         <div class="form-container">
