@@ -58,6 +58,11 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateSuggestionResponse,
     IssueDuplicateUpdate,
 )
+from spacebridge.schemas.issue_compliance import (
+    IssueComplianceResultBase,
+    IssueComplianceResultCreate,
+    IssueComplianceResultResponse,
+)
 
 __all__ = [
     # Auth schemas
@@ -106,4 +111,8 @@ __all__ = [
     "IssueDuplicateSuggestionRequest",
     "IssueDuplicateSuggestionResponse",
     "IssueDuplicateUpdate",
+    # IssueCompliance schemas
+    "IssueComplianceResultBase",
+    "IssueComplianceResultCreate",
+    "IssueComplianceResultResponse",
 ]

@@ -76,6 +76,12 @@ async def search_all(
     limit: int = Query(
         10, ge=1, le=100, description="Maximum number of comments to return"
     ),
+    skip: int = Query(0, ge=0, description="Number of results to skip for pagination"),
+    sort: Optional[str] = Query(
+        None,
+        enum=["newest"],
+        description="Sort order. 'newest' sorts by creation date descending.",
+    ),
     issue_id: Optional[str] = Query(
         None, description="Filter comments by a specific issue ID (UUID)"
     ),
@@ -234,8 +240,10 @@ async def search_all(
             model_id=model.id,
             query_vector=query_vector,
             limit=limit,
+            skip=skip,
             project_ids=resolved_project_ids_param,  # Use the new resolved list
             embedding_type=embedding_type,
+            sort=sort,  # Pass sort parameter to the CRUD method
         )
 
         # print(resolved_project_ids_param) # Optional: for debugging
@@ -277,6 +285,7 @@ async def search_all(
 
             item_schema = IssueResponse(
                 id=str(db_obj.id),
+                project_id=str(db_obj.project_id),
                 external_id=db_obj.external_id,
                 key=db_obj.key,
                 title=db_obj.title,

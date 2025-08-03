@@ -34,7 +34,9 @@ from spacebridge.trackers.base import (
     IssueCreate,
     IssueUpdate,
 )
+
 from spacebridge.api.auth import get_current_active_user
+
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
@@ -512,9 +514,7 @@ async def search_issues(
         if search_type == "similarity" and query:
             try:
                 # Get the active embedding model
-                active_models = crud_embedding_model.get_active(
-                    db, account_id=current_user.id
-                )
+                active_models = crud_embedding_model.get_active(db)
                 if not active_models:
                     logger.error(
                         "similarity search requested, but no active embedding model found."

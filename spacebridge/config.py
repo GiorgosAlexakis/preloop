@@ -2,9 +2,11 @@
 
 import logging
 import os
+import yaml
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,19 @@ class SecuritySettings(BaseModel):
     algorithm: str = Field("HS256", description="JWT algorithm")
 
 
+class Prompt(BaseModel):
+    name: str
+    system: str
+    user: str
+
+
+class NestedPrompt(BaseModel):
+    name: str
+    short_name: str
+    evaluate: Prompt
+    propose_improvement: Prompt
+
+
 class ServerSettings(BaseModel):
     """Server configuration."""
 
@@ -58,6 +73,9 @@ class Settings(BaseSettings):
     database: DatabaseSettings
     security: SecuritySettings
     server: ServerSettings
+    prompts: Dict[str, NestedPrompt] = Field(
+        {}, description="Loaded prompts from YAML file"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -103,13 +121,24 @@ class Settings(BaseSettings):
 
         # Create server settings
         server = ServerSettings(
-            host=os.getenv("HOST", "0.0.0.0"),
-            port=int(os.getenv("PORT", "8000")),
-            debug=os.getenv("DEBUG", "false").lower() == "true",
+            host=os.getenv("SERVER_HOST", "0.0.0.0"),
+            port=int(os.getenv("SERVER_PORT", "8000")),
+            debug=os.getenv("DEBUG", "False").lower() in ("true", "1", "t"),
             allowed_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
         )
 
-        # Create settings
+        # Load prompts from YAML file
+        prompts_path = os.getenv("PROMPTS_PATH", "spacebridge/prompts.yaml")
+        prompts_data = {}
+        try:
+            with open(prompts_path, "r") as f:
+                loaded_yaml = yaml.safe_load(f)
+                prompts_data = loaded_yaml.get("prompts", {})
+        except FileNotFoundError:
+            logger.warning(f"Prompts file not found at {prompts_path}")
+        except yaml.YAMLError as e:
+            logger.error(f"Error parsing prompts YAML file: {e}")
+
         return cls(
             app_name=os.getenv("APP_NAME", "SpaceBridge"),
             environment=os.getenv("ENVIRONMENT", "development"),
@@ -118,8 +147,18 @@ class Settings(BaseSettings):
             database=database,
             security=security,
             server=server,
+            prompts=prompts_data,
         )
 
 
+def get_settings() -> Settings:
+    """Get application settings.
+
+    Returns:
+        Settings: Application settings.
+    """
+    return Settings.from_env()
+
+
 # Create settings instance
-settings = Settings.from_env()
+settings = get_settings()

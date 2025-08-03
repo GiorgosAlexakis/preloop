@@ -1506,6 +1506,134 @@ paths:
                 title: Response Get Issue Count Api V1 Issues Count Get
       security:
       - bearerAuth: []
+  /api/v1/issue_compliance_prompts:
+    get:
+      tags:
+      - Issues
+      - Issues
+      summary: Get Compliance Prompts
+      description: Get a list of available compliance prompts.
+      operationId: get_compliance_prompts_api_v1_issue_compliance_prompts_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/CompliancePromptMetadata'
+                type: array
+                title: Response Get Compliance Prompts Api V1 Issue Compliance Prompts
+                  Get
+      security:
+      - bearerAuth: []
+  /api/v1/issue_compliance/{issue_id}:
+    get:
+      tags:
+      - Issues
+      - Issues
+      summary: Get Issue Compliance
+      description: Get or calculate the compliance result for a given issue.
+      operationId: get_issue_compliance_api_v1_issue_compliance__issue_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: issue_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Issue Id
+      - name: prompt_name
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Prompt Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueComplianceResultResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue_compliance_suggestion/{issue_id}:
+    get:
+      tags:
+      - Issues
+      summary: Get Compliance Improvement Suggestion
+      description: Generate a compliance improvement suggestion for a given issue.
+      operationId: get_compliance_improvement_suggestion_api_v1_issue_compliance_suggestion__issue_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: issue_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Issue Id
+      - name: prompt_name
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Prompt Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceSuggestionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/issue_compliance_update/{issue_id}:
+    patch:
+      tags:
+      - Issues
+      - Issues
+      summary: Update Issue Content
+      description: Update the title and description of an issue and sync to tracker.
+      operationId: update_issue_content_api_v1_issue_compliance_update__issue_id__patch
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: issue_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Issue Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issues/{issue_id}/comments:
     get:
       tags:
@@ -1777,6 +1905,28 @@ paths:
           default: 10
           title: Limit
         description: Maximum number of comments to return
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of results to skip for pagination
+          default: 0
+          title: Skip
+        description: Number of results to skip for pagination
+      - name: sort
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Sort order. 'newest' sorts by creation date descending.
+          enum:
+          - newest
+          title: Sort
+        description: Sort order. 'newest' sorts by creation date descending.
       - name: issue_id
         in: query
         required: false
@@ -2946,6 +3096,36 @@ components:
       - query
       title: CommentSearchResults
       description: Response model for comment search results.
+    CompliancePromptMetadata:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        short_name:
+          type: string
+          title: Short Name
+      type: object
+      required:
+      - id
+      - name
+      - short_name
+      title: CompliancePromptMetadata
+    ComplianceSuggestionResponse:
+      properties:
+        title:
+          type: string
+          title: Title
+        description:
+          type: string
+          title: Description
+      type: object
+      required:
+      - title
+      - description
+      title: ComplianceSuggestionResponse
     DuplicateIssuePair:
       properties:
         issue1:
@@ -3039,6 +3219,49 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    IssueComplianceResultResponse:
+      properties:
+        prompt_id:
+          type: string
+          title: Prompt Id
+        name:
+          type: string
+          title: Name
+        compliance_factor:
+          type: number
+          title: Compliance Factor
+        reason:
+          type: string
+          title: Reason
+        issue_id:
+          type: string
+          title: Issue Id
+        id:
+          type: string
+          title: Id
+        short_name:
+          type: string
+          title: Short Name
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - prompt_id
+      - name
+      - compliance_factor
+      - reason
+      - issue_id
+      - id
+      - short_name
+      - created_at
+      - updated_at
+      title: IssueComplianceResultResponse
     IssueCreate:
       properties:
         title:
