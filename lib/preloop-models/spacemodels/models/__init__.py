@@ -15,6 +15,7 @@ from .llm_model import LLMModel
 from .flow import Flow
 from .webhook import Webhook
 from .tracker_scope_rule import TrackerScopeRule
+from .issue_compliance_result import IssueComplianceResult
 
 __all__ = [
     "Base",
@@ -36,4 +37,5 @@ __all__ = [
     "Flow",
     "Webhook",
     "TrackerScopeRule",
+    "IssueComplianceResult",
 ]
