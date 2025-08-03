@@ -122,7 +122,7 @@ class TrackerResponse(TrackerBase):
     id: str = Field(..., description="Tracker unique identifier (UUID)")
     account_id: str = Field(..., description="Account ID owning this tracker")
     is_valid: bool = Field(False, description="Whether the connection is validated")
-    last_validation: Optional[str] = Field(
+    last_validation: Optional[datetime] = Field(
         None, description="Timestamp of the last validation attempt"
     )
     validation_message: Optional[str] = Field(

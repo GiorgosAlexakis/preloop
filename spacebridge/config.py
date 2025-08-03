@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     product_team_email: str = Field(
         "product@spacecode.ai", description="Product team email address"
     )
+    nats_url: str = Field("nats://localhost:4222", description="NATS server URL")
 
     database: DatabaseSettings
     security: SecuritySettings
@@ -144,6 +145,7 @@ class Settings(BaseSettings):
             environment=os.getenv("ENVIRONMENT", "development"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             product_team_email=os.getenv("PRODUCT_TEAM_EMAIL", "product@spacecode.ai"),
+            nats_url=os.getenv("NATS_URL", "nats://localhost:4222"),
             database=database,
             security=security,
             server=server,

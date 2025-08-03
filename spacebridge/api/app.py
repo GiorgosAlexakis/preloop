@@ -18,7 +18,6 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pyinstrument import Profiler
 from pyinstrument.renderers import SpeedscopeRenderer
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -41,11 +40,12 @@ from spacebridge.api.endpoints import (
     llm_models,
     issue_duplicates,
     webhooks,
-    # flows,
+    flows,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
 from spacemodels.models.api_usage import ApiUsage
+from spacesync.services.event_bus import connect_nats, close_nats  # NATS integration
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,6 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
             not path.startswith("/api/v1")
             or path.startswith("/api/v1/health")
             or path.startswith("/docs")
-            or path.startswith("/static")
             or path == "/"
         ):
             return await call_next(request)
@@ -242,12 +241,27 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         logger.error(f"Database setup failed: {e}", exc_info=True)
-        # Depending on the severity, you might want to exit or handle differently
-        # raise RuntimeError("Database setup failed") from e
+        raise RuntimeError("Database setup failed") from e
+
+    # Connect to NATS
+    logger.info("Connecting to NATS...")
+    try:
+        await connect_nats()
+        logger.info("NATS connection established.")
+    except Exception as e:
+        logger.error(f"NATS connection failed: {e}", exc_info=True)
+        raise RuntimeError("NATS connection failed") from e
 
     yield
 
     # Shutdown logic
+    logger.info("Shutting down NATS connection...")
+    try:
+        await close_nats()
+        logger.info("NATS connection closed.")
+    except Exception as e:
+        logger.error(f"Error closing NATS connection: {e}", exc_info=True)
+
     logger.info("Shutting down application...")
     # Restore the original jsonable_encoder
     import fastapi.encoders
@@ -333,22 +347,9 @@ def create_app() -> FastAPI:
     app.add_middleware(UIRoutingMiddleware)
 
     # --- Static Files Setup ---
-    static_dir = base_dir / "static"
-    static_css_dir = static_dir / "css"
-    static_js_dir = static_dir / "js"
-    templates_dir = base_dir / "templates"
     mkdocs_site_dir = base_dir / "site"  # Directory where 'mkdocs build' outputs
 
-    os.makedirs(static_dir, exist_ok=True)
-    os.makedirs(static_css_dir, exist_ok=True)
-    os.makedirs(static_js_dir, exist_ok=True)
-    os.makedirs(templates_dir, exist_ok=True)
-
-    logger.info(f"Static files directory: {static_dir}")
-    logger.info(f"Templates directory: {templates_dir}")
-
     # Mount general static files (CSS, JS for landing/auth pages)
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     try:
         app.mount(
             "/assets",
@@ -442,9 +443,6 @@ def create_app() -> FastAPI:
             "/static",
             "/docs",  # Exclude the main docs path and subpaths
             "/register",
-            "/verify-email",
-            "/forgot-password",
-            "/reset-password",
             "/logout",
             "/api/v1/health",
         ]
@@ -539,96 +537,7 @@ def create_app() -> FastAPI:
         version.router, prefix="/api/v1", tags=["Version"]
     )  # No auth dependency for version check
     app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
-    # app.include_router(flows.router, prefix="/api/v1", tags=["Flows"])
-
-    # --- HTML Page Routes ---
-    templates = Jinja2Templates(directory=str(templates_dir))
-
-    # Create landing page template if not exists (simplified)
-    landing_page_path = templates_dir / "landing.html"
-    if not landing_page_path.exists():
-        # (HTML content omitted for brevity - assume it exists or is created elsewhere)
-        logger.warning(f"{landing_page_path} not found. Landing page will not work.")
-        pass  # Don't overwrite if managed elsewhere
-
-    # Create other page templates if not exist (simplified)
-    for page_name in [
-        "login",
-        "register",
-        "forgot-password",
-        "reset-password",
-        "verify-email",
-        "logout",
-        "dashboard",
-        "trackers",
-        "privacy",
-        "terms",
-    ]:
-        page_path = templates_dir / f"{page_name}.html"
-        if not page_path.exists():
-            # (HTML content omitted for brevity)
-            logger.warning(f"{page_path} not found. Page / {page_name} will not work.")
-            pass  # Don't overwrite
-
-    @app.get("/", response_class=HTMLResponse, tags=["Pages"])
-    async def landing_page(request: Request):
-        return templates.TemplateResponse("landing.html", {"request": request})
-
-    @app.get("/login", response_class=HTMLResponse, tags=["Pages"])
-    async def login_page(request: Request):
-        return templates.TemplateResponse("login.html", {"request": request})
-
-    @app.get("/forgot-password", response_class=HTMLResponse, tags=["Pages"])
-    async def forgot_password_page(request: Request):
-        # Placeholder - Implement actual logic if needed
-        return templates.TemplateResponse("forgot-password.html", {"request": request})
-
-    @app.get("/reset-password", response_class=HTMLResponse, tags=["Pages"])
-    async def reset_password_page(request: Request):
-        # Placeholder - Implement actual logic if needed
-        return templates.TemplateResponse("reset-password.html", {"request": request})
-
-    @app.get("/verify-email", response_class=HTMLResponse, tags=["Pages"])
-    async def verify_email_page(request: Request):
-        # Placeholder - Implement actual logic if needed
-        return templates.TemplateResponse("verify-email.html", {"request": request})
-
-    @app.get("/logout", response_class=HTMLResponse, tags=["Pages"])
-    async def logout_page(request: Request):
-        # Placeholder - Implement actual logic if needed
-        return templates.TemplateResponse("logout.html", {"request": request})
-
-    @app.get("/register", response_class=HTMLResponse, tags=["Pages"])
-    async def register_page(request: Request):
-        return templates.TemplateResponse("register.html", {"request": request})
-
-    @app.get("/dashboard", response_class=HTMLResponse, tags=["Pages"])
-    async def dashboard_page(request: Request):
-        # Placeholder - Requires auth
-        return templates.TemplateResponse("dashboard.html", {"request": request})
-
-    @app.get("/explore", response_class=HTMLResponse, tags=["Pages"])
-    async def explore_page(request: Request):
-        # Placeholder - Requires auth
-        return templates.TemplateResponse("explore.html", {"request": request})
-
-    @app.get("/trackers", response_class=HTMLResponse, tags=["Pages"])
-    async def trackers_page(request: Request):
-        # Placeholder - Requires auth
-        return templates.TemplateResponse("trackers.html", {"request": request})
-
-    @app.get("/privacy", response_class=HTMLResponse, tags=["Pages"])
-    async def privacy_page(request: Request):
-        return templates.TemplateResponse("privacy.html", {"request": request})
-
-    @app.get("/terms", response_class=HTMLResponse, tags=["Pages"])
-    async def terms_page(request: Request):
-        return templates.TemplateResponse("terms.html", {"request": request})
-
-    @app.get("/whatis-mcp", response_class=HTMLResponse, tags=["Pages"])
-    async def whatis_mcp_page(request: Request):
-        # Placeholder - Implement actual logic if needed
-        return templates.TemplateResponse("whatis-mcp.html", {"request": request})
+    app.include_router(flows.router, prefix="/api/v1", tags=["Flows"])
 
     # --- SPA Static Files (Production) ---
     # In production, serve the built Lit frontend from the root

@@ -30,7 +30,7 @@ dependencies = [
     "aiohttp>=3.9.0", # Added for Jira client
     "sentry-sdk[fastapi]>=2.9.0",
     "pyinstrument>=4.6.2",
-    "ddtrace>=2.8.0",
+    "nats-py>=2.6.0", # Added for NATS integration
     # Using SpaceModels for database models and operations
     # "spacemodels @ file://${PROJECT_ROOT}/SpaceModels",
     # "spacesync @ file://${PROJECT_ROOT}/spacesync",
@@ -66,7 +66,7 @@ target-version = ["py310"]
 profile = "black"
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

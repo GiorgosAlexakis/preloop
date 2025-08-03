@@ -1,9 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "spacebridge.fullname" . }}
+  name: {{ include "spacebridge.fullname" . }}-api
   labels:
     {{- include "spacebridge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -11,6 +12,7 @@ spec:
   selector:
     matchLabels:
       {{- include "spacebridge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -19,6 +21,7 @@ spec:
       {{- end }}
       labels:
         {{- include "spacebridge.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -85,6 +88,8 @@ spec:
             - name: SMTP_FROM_NAME
               value: {{ .Values.config.smtp.fromName | quote }}
             {{- end }}
+            - name: NATS_URL
+              value: {{ .Values.nats.url | default (printf "nats://%s-nats:4222" (include "spacebridge.fullname" .)) }}
             {{- if .Values.sentry.enabled }}
             - name: SENTRY_DSN
               valueFrom:
@@ -94,20 +99,10 @@ spec:
             {{- end }}
             - name: PROFILING_ENABLED
               value: {{ .Values.profiling.enabled | quote }}
-            {{- if .Values.datadog.tracing.enabled }}
-            - name: DD_TRACE_ENABLED
-              value: "true"
-            - name: DD_AGENT_HOST
-              {{- if .Values.datadog.tracing.daemonSet }}
-              valueFrom:
-                fieldRef:
-                   fieldPath: status.hostIP
-              {{- else }}
-              value: {{ .Values.datadog.tracing.host | quote }}
-              {{- end }}
-            - name: DD_AGENT_PORT
-              value: {{ .Values.datadog.tracing.port | quote }}
-            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
           volumeMounts:
             {{- if .Values.profiling.enabled }}
             - name: profiling-storage
@@ -120,94 +115,7 @@ spec:
             limits:
               cpu: "1"
               memory: "1Gi"
-        - name: spacesync
-          command:
-            - spacesync
-            - scheduler
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          env:
-            - name: SPACEBRIDGE_URL
-              value: {{ .Values.environment.spacebridgeUrl | quote }}
-            - name: HOST
-              value: {{ .Values.environment.host | quote }}
-            - name: PORT
-              value: {{ .Values.environment.port | quote }}
-            - name: DEBUG
-              value: {{ .Values.environment.debug | quote }}
-            - name: DATABASE_URL
-              value: {{ .Values.environment.databaseUrl | quote }}
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
-                  key: jwt-secret
-            - name: JWT_ALGORITHM
-              value: {{ .Values.environment.jwtAlgorithm | quote }}
-            - name: JWT_EXPIRE_MINUTES
-              value: {{ .Values.environment.jwtExpireMinutes | quote }}
-            - name: LOG_LEVEL
-              value: "INFO"
-            - name: LOG_FORMAT
-              value: "json"
-            {{- if .Values.config.openai.apiKey }}
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
-                  key: openai-api-key
-            {{- end }}
-            {{- if .Values.config.anthropic.apiKey }}
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
-                  key: anthropic-api-key
-            {{- end }}
-            {{- if .Values.config.smtp.host }}
-            - name: SMTP_HOST
-              value: {{ .Values.config.smtp.host | quote }}
-            - name: SMTP_PORT
-              value: {{ .Values.config.smtp.port | quote }}
-            - name: SMTP_USERNAME
-              value: {{ .Values.config.smtp.username | quote }}
-            - name: SMTP_PASSWORD
-              value: {{ .Values.config.smtp.password | quote }}
-            - name: SMTP_FROM
-              value: {{ .Values.config.smtp.from | quote }}
-            - name: SMTP_FROM_NAME
-              value: {{ .Values.config.smtp.fromName | quote }}
-            {{- end }}
-          resources:
-            requests:
-              cpu: "500m"
-              memory: "512Mi"
-            limits:
-              cpu: "1"
-              memory: "1Gi"
-        - name: spacelit
-          image: "{{ .Values.spacelit.repository }}:{{ .Values.spacelit.tag }}"
-          imagePullPolicy: {{ .Values.spacelit.pullPolicy }}
-          ports:
-            - name: http
-              containerPort: 80
-              protocol: TCP
-          volumeMounts:
-            - name: nginx-config
-              mountPath: /etc/nginx/templates
-          resources:
-            requests:
-              cpu: "500m"
-              memory: "512Mi"
-            limits:
-              cpu: "1"
-              memory: "1Gi"
       volumes:
-        - name: nginx-config
-          configMap:
-            name: {{ include "spacebridge.fullname" . }}-nginx
       {{- if .Values.profiling.enabled }}
         - name: profiling-storage
           persistentVolumeClaim:

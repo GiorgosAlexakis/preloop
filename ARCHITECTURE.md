@@ -346,14 +346,30 @@ graph TD
     *   Can be owned by users or organizations and optionally shared.
 *   **Event Ingestion:**
     *   Primarily through the existing webhook endpoint (e.g., `/api/v1/private/webhooks/{tracker_type}/{org_identifier}`) for tracker events.
-    *   This endpoint will be enhanced to publish all relevant incoming events to the **Internal Event Bus (NATS)**.
-    *   Future event sources (e.g., OpenTelemetry, custom incident systems) will also publish to this Event Bus.
+    *   This endpoint validates incoming webhooks, standardizes them into a `StandardizedNatsEvent` format, and then publishes them to the **Internal Event Bus (NATS)**.
+    *   Future event sources (e.g., OpenTelemetry, custom incident systems) will also publish to this Event Bus, adhering to the same standardized event schema.
 *   **Internal Event Bus (NATS):**
     *   NATS is chosen for its high performance, scalability, and simplicity for messaging.
     *   Decouples event producers from consumers, improving resilience and scalability.
+    *   **NATS Subject Naming Convention:** Events are published to subjects following the pattern: `spacebridge.events.{event_source}.{specific_event_type}`.
+        *   Example: `spacebridge.events.github.issues.opened`, `spacebridge.events.jira.issue_created.commented`.
+        *   This hierarchical structure allows consumers (like the Flow Trigger Service or future SpaceSync workers) to subscribe to specific event categories or granular event types.
+    *   **Standardized NATS Event Schema (`StandardizedNatsEvent`):** All events published to NATS adhere to a common Pydantic model:
+        ```python
+        class StandardizedNatsEvent(BaseModel):
+            event_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+            event_source: str  # e.g., "github", "gitlab", "jira", "spacebridge_internal"
+            event_type: str    # e.g., "github.push", "gitlab.issues.opened", "jira.issue_created"
+            tracker_id: Optional[uuid.UUID] = None
+            organization_id: Optional[uuid.UUID] = None
+            timestamp: datetime = Field(default_factory=datetime.utcnow)
+            data: Dict[str, Any]  # Original webhook payload or specific internal event data
+            source_event_id: Optional[str] = None # e.g., GitHub's delivery ID
+        ```
+        This schema ensures consistency and provides essential metadata for event processing.
 *   **Flow Trigger Service:**
-    *   A new, dedicated service or module that subscribes to the NATS Event Bus.
-    *   It matches incoming events against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.
+    *   A new, dedicated service or module that subscribes to specific NATS subjects on the Event Bus.
+    *   It matches incoming `StandardizedNatsEvent` objects against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.
     *   Upon a match, it initiates a Flow execution by invoking the Flow Execution Orchestrator.
 *   **Flow Execution Orchestrator:**
     *   Responsible for managing the lifecycle of a single Flow execution.

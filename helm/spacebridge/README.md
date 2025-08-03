@@ -153,20 +153,6 @@ sentry:
   dsn: "YOUR_SENTRY_DSN"
 ```
 
-#### Distributed Tracing with Datadog
-
-Distributed tracing is provided by `ddtrace`. When enabled, it traces all API requests and sends them to the Datadog agent.
-
-To enable Datadog tracing, set the following values in your `values.yaml` file:
-
-```yaml
-datadog:
-  tracing:
-    enabled: true
-```
-
-If you are running the Datadog agent as a `DaemonSet`, the chart will automatically use the host IP to connect to the agent. If you are running the agent as a separate deployment, you will need to configure the `host` and `port` values accordingly.
-
 ## Configuration
 
 ### PostgreSQL with PGVector

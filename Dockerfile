@@ -5,7 +5,7 @@ COPY SpaceLit /app
 RUN npm install && npm run build
 
 # Stage 2: Build SpaceBridge
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -17,19 +17,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first to leverage Docker cache
+# Copy requirements files first to leverage Docker cache
 COPY pyproject.toml .
+COPY SpaceModels/pyproject.toml SpaceModels/
+COPY spacesync/setup.py spacesync/
+COPY spacesync/requirements.txt spacesync/
 
-# Install build dependencies
+# Install build dependencies and Python packages in separate layers for better caching
 RUN pip install -U --no-cache-dir build setuptools pip wheel mkdocs mkdocs-material mkdocs-mermaid2-plugin
 
-# Copy application code
-COPY . .
+# Copy only necessary files for SpaceModels and spacesync installation
+COPY SpaceModels/ SpaceModels/
+COPY spacesync/ spacesync/
+RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync
 
+# Copy application code (this changes most frequently, so put it last)
+COPY spacebridge/ spacebridge/
+COPY docs/ docs/
+COPY mkdocs.yml .
+
+# Copy built frontend assets
 COPY --from=space-lit-build /app/dist /app/SpaceLit/dist
 
-# Install the application
-RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync && pip install --no-cache-dir -e . && mkdocs build
+# Install the main application and build docs
+RUN pip install --no-cache-dir -e . && mkdocs build
 
 # Expose the port
 EXPOSE 8000

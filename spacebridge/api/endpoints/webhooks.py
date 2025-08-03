@@ -19,6 +19,11 @@ from spacemodels.models.organization import Organization  # Added
 from spacemodels.models.tracker import Tracker
 from spacesync.scanner.core import TrackerClient
 
+from spacesync.services.event_bus import (
+    NatsPublisher,
+    get_nats_publisher,
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -62,9 +67,10 @@ async def receive_webhook(
     organization_id: str,
     request: Request,
     db: Session = Depends(get_db_session),
+    nats_publisher: NatsPublisher = Depends(get_nats_publisher),  # NATS Integration
 ):
     """
-    Receive webhook events from external trackers (GitHub, GitLab).
+    Receive webhook events from external trackers (GitHub, GitLab, Jira).
 
     Parses the payload to identify the organization and updates its
     last_webhook_update timestamp.
@@ -563,6 +569,21 @@ async def receive_webhook(
             db.add(resolved_tracker)
             logger.info(f"Updated last_updated for tracker ID {resolved_tracker.id}")
         db.commit()
+
+        # Send NATS event
+        from spacebridge.schemas.events import StandardizedNatsEvent
+
+        event = StandardizedNatsEvent(
+            event_source=tracker_type.lower(),
+            event_type=actual_event_type,
+            tracker_id=resolved_tracker.id,
+            organization_id=organization_data.id,
+            data=parsed_payload,
+            source_event_id=request.headers.get("X-GitHub-Delivery")
+            or request.headers.get("X-Gitlab-Event-UUID")
+            or parsed_payload.get("id"),
+        )
+        await nats_publisher.publish_event(event)
     except Exception as e:
         db.rollback()
         logger.error(

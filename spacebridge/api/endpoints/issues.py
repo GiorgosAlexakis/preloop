@@ -1139,7 +1139,13 @@ def get_issue(
         # Find the issue by external_id
         issue_query = db.query(Issue).filter(
             Issue.tracker_id.in_(tracker_ids),
-            or_(Issue.external_id == issue_external_id, Issue.key == issue_external_id),
+            or_(
+                Issue.external_id == issue_external_id,
+                Issue.key == issue_external_id,
+                Issue.key == issue_id,
+                Issue.key == f"{organization}/{project}#{issue_id}",
+                Issue.id == issue_id,
+            ),
         )
         # Get the project and organization
         if project_slug:
@@ -1290,7 +1296,12 @@ async def update_issue(
                             db.query(Issue)
                             .filter(
                                 Issue.project_id == project.id,
-                                Issue.external_id == external_id_from_key,
+                                or_(
+                                    Issue.external_id == external_id_from_key,
+                                    Issue.key == issue_id,
+                                    Issue.key == f"{project.slug}#{issue_id}",
+                                    Issue.id == issue_id,
+                                ),
                                 Issue.tracker_id.in_(
                                     tracker_ids
                                 ),  # Redundant check, but safe
@@ -1323,7 +1334,8 @@ async def update_issue(
             issue = (
                 db.query(Issue)
                 .filter(
-                    Issue.external_id == issue_id, Issue.tracker_id.in_(tracker_ids)
+                    _or(Issue.external_id == issue_id, Issue.key == issue_id),
+                    Issue.tracker_id.in_(tracker_ids),
                 )
                 .order_by(Issue.last_updated_external.desc())
                 .first()
@@ -1385,7 +1397,6 @@ async def update_issue(
             raise HTTPException(
                 status_code=500, detail="Error preparing tracker connection."
             )
-
         # --- Prepare Update Payload for Tracker ---
         # Use the base IssueUpdate schema expected by the tracker client
         tracker_update_payload = IssueUpdate(

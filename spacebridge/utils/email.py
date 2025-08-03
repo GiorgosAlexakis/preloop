@@ -21,7 +21,7 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "hello@spacecode.ai")
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "SpaceBridge")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://spacebridge.io")
+SPACEBRIDGE_URL = os.getenv("SPACEBRIDGE_URL", "https://spacebridge.io")
 
 
 class EmailError(Exception):
@@ -94,7 +94,7 @@ def send_verification_email(user_email: str, token: str) -> None:
         user_email: The user's email address.
         token: The verification token.
     """
-    verification_link = f"{FRONTEND_URL}/verify-email?token={token}"
+    verification_link = f"{SPACEBRIDGE_URL}/verify-email?token={token}"
 
     subject = "Verify your SpaceBridge account"
     text_body = f"""
@@ -132,7 +132,7 @@ def send_password_reset_email(user_email: str, token: str) -> None:
         user_email: The user's email address.
         token: The password reset token.
     """
-    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
+    reset_link = f"{SPACEBRIDGE_URL}/reset-password?token={token}"
 
     subject = "Reset your SpaceBridge password"
     text_body = f"""
@@ -174,7 +174,7 @@ def send_tracker_registered_email(
         tracker_name: The name of the registered tracker.
         tracker_type: The type of tracker (e.g., 'github', 'gitlab', 'jira').
     """
-    trackers_link = f"{FRONTEND_URL}/trackers"
+    trackers_link = f"{SPACEBRIDGE_URL}/console/trackers"
 
     subject = f"New {tracker_type.title()} tracker registered: {tracker_name}"
     text_body = f"""
