@@ -90,6 +90,8 @@ class IssueCreate(IssueBase):
 class IssueUpdate(BaseModel):
     """Model for updating an issue."""
 
+    organization: Optional[str] = Field(None, description="Organization name")
+    project: Optional[str] = Field(None, description="Project name")
     title: Optional[str] = Field(None, description="New issue title")
     description: Optional[str] = Field(None, description="New issue description")
     status: Optional[str] = Field(None, description="New issue status")

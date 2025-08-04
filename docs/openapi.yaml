@@ -3924,6 +3924,18 @@ components:
       description: Response model for issue data.
     IssueUpdate:
       properties:
+        organization:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization
+          description: Organization name
+        project:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project
+          description: Project name
         title:
           anyOf:
           - type: string
