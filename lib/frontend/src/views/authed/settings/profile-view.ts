@@ -44,39 +44,43 @@ export class ProfileView extends LitElement {
 
   render() {
     return html`
-      <div class="container large">
-        <div class="header">
-          <h1 class="title">Profile</h1>
+      <view-header headerText="Profile">
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
         </div>
-
-        <div class="card">
-          <div class="card-body">
-            <form @submit="${this.handleUpdateProfile}">
-              <sl-input
-                label="Username"
-                .value="${this.user?.username || ''}"
-                readonly
-              ></sl-input>
-              <sl-input
-                label="Email"
-                .value="${this.user?.email || ''}"
-                readonly
-              ></sl-input>
-              <sl-input
-                label="Full Name"
-                .value="${this.fullName}"
-                @sl-input="${(e: Event) =>
-                  (this.fullName = (e.target as HTMLInputElement).value)}"
-              ></sl-input>
-              <sl-button variant="primary" type="submit"
-                >Update Profile</sl-button
-              >
-              ${this.updateProfileMessage
-                ? html`<p>${this.updateProfileMessage}</p>`
-                : ''}
-            </form>
+      </view-header>
+      <div class="column-layout">
+        <div class="main-column">
+          <div class="card">
+            <div class="card-body">
+              <form @submit="${this.handleUpdateProfile}">
+                <sl-input
+                  label="Username"
+                  .value="${this.user?.username || ''}"
+                  readonly
+                ></sl-input>
+                <sl-input
+                  label="Email"
+                  .value="${this.user?.email || ''}"
+                  readonly
+                ></sl-input>
+                <sl-input
+                  label="Full Name"
+                  .value="${this.fullName}"
+                  @sl-input="${(e: Event) =>
+                    (this.fullName = (e.target as HTMLInputElement).value)}"
+                ></sl-input>
+                <sl-button variant="primary" type="submit"
+                  >Update Profile</sl-button
+                >
+                ${this.updateProfileMessage
+                  ? html`<p>${this.updateProfileMessage}</p>`
+                  : ''}
+              </form>
+            </div>
           </div>
         </div>
+        <div class="side-column"></div>
       </div>
     `;
   }

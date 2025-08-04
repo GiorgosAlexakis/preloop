@@ -161,7 +161,7 @@ export class AppHeader extends LitElement {
                 ></sl-icon-button>`
               : html`<div class="logo">
                   <a href="/">
-                    <logo-component alt="SpaceBridge Logo"></logo-component>
+                    <logo-component alt="SpaceBridge Logo" override-theme="dark"></logo-component>
                   </a>
                 </div>`}
           </div>

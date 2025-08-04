@@ -55,7 +55,7 @@ p.lead {
   );
   background-size: 400% 400%;
   animation: moveGradient 30s ease infinite;
-  padding: 7rem 0;
+  padding: 8rem 0;
 }
 
 .hero-inner {

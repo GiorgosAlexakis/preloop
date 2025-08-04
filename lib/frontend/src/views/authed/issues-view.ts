@@ -17,6 +17,7 @@ import '../../components/duplicate-stats-chart.ts';
 import '../../components/resolve-issue-modal.ts';
 import '../../components/issue-detail-view.ts';
 import '../../components/pagination-controls.ts';
+import '../../components/view-header.ts';
 import {
   listProjects,
   listIssueDuplicates,
@@ -167,19 +168,13 @@ export class IssuesView extends LitElement {
       sl-icon {
         font-size: 1rem;
       }
-
-      .side-column {
-        display: none;
-      }
-
+ 
       .placeholder-content {
         text-align: center;
       }
 
       @media (min-width: 1720px) {
-        .side-column {
-          display: flex;
-        }
+        
         .inline-detail-row {
           display: none;
         }
@@ -523,15 +518,19 @@ export class IssuesView extends LitElement {
 
   render() {
     return html`
+      <view-header headerText="Issue Similarity">
+        <div slot="main-column">
+          <sl-button @click=${this._openFilterModal}>
+            <sl-icon slot="prefix" name="filter"></sl-icon>
+            Filter
+          </sl-button>
+        </div>
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
+        </div>
+      </view-header>
       <div class="column-layout">
         <div class="main-column">
-          <div class="header">
-            <h1>Issue Similarity</h1>
-            <sl-button @click=${this._openFilterModal}>
-              <sl-icon slot="prefix" name="filter"></sl-icon>
-              Filter
-            </sl-button>
-          </div>
           <div class="container">
             <sl-alert
               variant="primary"
@@ -758,7 +757,6 @@ export class IssuesView extends LitElement {
           </div>
         </div>
         <div class="side-column">
-          <div class="header"></div>
           ${when(
             this._expandedRowKey,
             () => {

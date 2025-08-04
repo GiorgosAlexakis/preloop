@@ -13,6 +13,8 @@ import * as api from '../../api';
 import { AuthedElement } from '../../api';
 import '../../components/similar-issues-widget.ts';
 import '../../components/duplicate-stats-chart.ts';
+import '../../components/tracker-pill.ts';
+import '../../components/theme-switcher.ts';
 import {
   DEFAULT_SIMILARITY_THRESHOLD,
   DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
@@ -188,24 +190,27 @@ export class DashboardView extends AuthedElement {
           grid-template-columns: 1fr;
         }
       }
+      .tracker-pills {
+        display: flex;
+        gap: var(--sl-spacing-2x-small);
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
     `,
   ];
 
   render() {
-    if (this.isLoading) {
-      return html`<div class="spinner-container">
-        <sl-spinner></sl-spinner>
-      </div>`;
-    }
 
     return html`
-      <div class="container">
-        <div class="header">
-          <h1>Overview</h1>
-        </div>
+        <view-header headerText="Overview">
+          <div slot="side-column">
+            <theme-switcher></theme-switcher>
+          </div>
+        </view-header>
         <div class="column-layout">
           <div class="main-column">
-            ${this.trackers.length > 0
+            ${this.trackers.length > 0 || this.isLoading
               ? html`
                   <similar-issues-widget></similar-issues-widget>
                   <sl-card>
@@ -240,7 +245,32 @@ export class DashboardView extends AuthedElement {
               <ul class="summary-list">
                 <li class="summary-item">
                   <a href="/console/trackers">Connected Trackers</a>
-                  <strong>${this.trackers.length}</strong>
+                  <div class="tracker-pills">
+                    ${this.trackers.slice(0, 2).map(
+                      tracker => html`
+                        <sl-tooltip content="${tracker.name}">
+                          <tracker-pill .tracker=${tracker}></tracker-pill>
+                        </sl-tooltip>
+                      `
+                    )}
+                    ${this.trackers.length > 2
+                      ? html`
+                          <sl-tooltip
+                            content="${this.trackers
+                              .slice(2)
+                              .map(t => t.name)
+                              .join(', ')}"
+                          >
+                            <sl-tag size="small" pill
+                              >+${this.trackers.length - 2}</sl-tag
+                            >
+                          </sl-tooltip>
+                        `
+                      : ''}
+                    ${this.trackers.length === 0
+                      ? html`<strong>0</strong>`
+                      : ''}
+                  </div>
                 </li>
                 <li class="summary-item">
                   <a href="/console/settings/api-keys">Total API Requests</a>
@@ -254,7 +284,6 @@ export class DashboardView extends AuthedElement {
             </sl-card>
           </div>
         </div>
-      </div>
     `;
   }
 }

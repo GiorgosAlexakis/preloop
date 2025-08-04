@@ -46,14 +46,19 @@ export class TrackersView extends LitElement {
 
   render() {
     return html`
-      <div class="container large">
-        <div class="header">
-          <h1 class="title">Trackers</h1>
+      <view-header headerText="Trackers">
+        <div slot="main-column">
           <sl-button variant="primary" @click=${this._openAddTrackerForm}>
             <sl-icon slot="prefix" name="plus-lg"></sl-icon>
             Add New Tracker
           </sl-button>
         </div>
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
+        </div>
+      </view-header>
+      <div class="column-layout">
+        <div class="main-column">
         ${this.isAddingTracker
           ? html`<add-tracker-modal
               @tracker-added=${this._handleTrackerAdded}
@@ -69,6 +74,8 @@ export class TrackersView extends LitElement {
           : ''}
         <tracker-list @tracker-edit=${this._handleTrackerEdit}></tracker-list>
       </div>
+      <div class="side-column"></div>
+    </div>
     `;
   }
 }

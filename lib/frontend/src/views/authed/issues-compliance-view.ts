@@ -757,9 +757,14 @@ export class IssuesComplianceView extends LitElement {
 
   render() {
     return html`
-      <div class="header">
-        <h1>Issue Compliance</h1>
-      </div>
+      <view-header headerText="Issue Compliance">
+        <div slot="main-column">
+          ${this._renderSearchBar()}
+        </div>
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
+        </div>
+      </view-header>
       <div class="column-layout">
         <div class="main-column">
           <div class="container">
@@ -779,7 +784,7 @@ export class IssuesComplianceView extends LitElement {
               score, and use the AI review to resolve or dismiss the suggestion.
             </sl-alert>
 
-            ${this._renderSearchBar()} ${this._renderActiveFilters()}
+            ${this._renderActiveFilters()}
             ${when(
               this._updateSummary,
               () => html`
