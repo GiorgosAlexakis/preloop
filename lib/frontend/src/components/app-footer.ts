@@ -112,6 +112,11 @@ export class AppFooter extends LitElement {
         <div class="footer-main">
           <div>
             <logo-component override-theme="dark"></logo-component>
+            <p style="margin-top: 1rem;">
+              Spacecode.AI, Inc.<br />
+              166 Geary Street, Suite 1500<br />
+              San Francisco, CA 94108
+            </p>
           </div>
           <nav class="footer-nav">
             <ul>
