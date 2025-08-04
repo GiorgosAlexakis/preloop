@@ -418,7 +418,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
         if project_ids:
             common_where_clauses.append("i.project_id = ANY(:project_ids)")
             params["project_ids"] = project_ids
-        if status:
+        if status and status != "all":
             common_where_clauses.append("i.status = :status")
             params["status"] = status
         if priority:
