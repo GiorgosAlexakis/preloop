@@ -15,6 +15,7 @@ export interface LlmModel {
 export interface FetchIssuesListParams {
   query?: string;
   project_ids?: string[];
+  status?: 'opened' | 'closed' | 'all';
   limit?: number;
   sort_by?: string;
   sort_order?: string;

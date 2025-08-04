@@ -251,6 +251,10 @@ export class IssuesComplianceView extends LitElement {
     }
     this._expandedRowKey = params.get('selectedIssue') || null;
     this._currentPage = Number(params.get('page')) || 1;
+    const status = params.get('status');
+    if (status && ['opened', 'closed', 'all'].includes(status)) {
+      this._selectedStatus = status;
+    }
   }
 
   private _updateUrl() {
@@ -333,9 +337,11 @@ export class IssuesComplianceView extends LitElement {
           ? this._selectedProjectIds
           : undefined;
       const skip = (this._currentPage - 1) * this._pageSize;
+      console.log(`Searching with query: "${this._searchQuery}"`);
       const issues = await searchIssues({
         query: this._searchQuery,
         project_ids: project_ids,
+        status: this._selectedStatus,
         limit: this._pageSize,
         skip: skip,
       });
@@ -564,7 +570,7 @@ export class IssuesComplianceView extends LitElement {
         </sl-dropdown>
         <sl-button-group>
           <sl-tooltip content="Filter by project">
-            <sl-button @click=${this._openFilterModal}>
+            <sl-button @click=${() => (this._isFilterModalOpen = true)}>
               <sl-icon name="filter"></sl-icon>
             </sl-button>
           </sl-tooltip>
@@ -763,6 +769,17 @@ export class IssuesComplianceView extends LitElement {
           <theme-switcher></theme-switcher>
         </div>
       </view-header>
+
+      <project-filter-modal
+        .isOpen=${this._isFilterModalOpen}
+        .projects=${this._allProjects}
+        .selectedProjectIds=${this._selectedProjectIds}
+        .selectedStatus=${this._selectedStatus}
+        .organizations=${this._organizations}
+        @on-close=${() => (this._isFilterModalOpen = false)}
+        @on-apply=${this._applyFilters}
+      ></project-filter-modal>
+
       <div class="column-layout">
         <div class="main-column">
           <div class="container">
@@ -846,15 +863,6 @@ export class IssuesComplianceView extends LitElement {
         </div>
       </div>
 
-      <project-filter-modal
-        .open=${this._isFilterModalOpen}
-        .allProjects=${this._allProjects}
-        .selectedProjectIds=${this._selectedProjectIds}
-        .organizations=${this._organizations}
-        @on-close=${() => (this._isFilterModalOpen = false)}
-        @on-apply=${this._applyFilters}
-      ></project-filter-modal>
-
       <improve-compliance-modal
         .open=${this._isImproveComplianceModalOpen}
         .issue=${this._selectedIssueForCompliance}
@@ -867,7 +875,8 @@ export class IssuesComplianceView extends LitElement {
   }
 
   private _applyFilters(e: CustomEvent) {
-    this._selectedProjectIds = e.detail.selectedProjectIds;
+    this._selectedProjectIds = e.detail.projectIds;
+    this._selectedStatus = e.detail.status;
     this._isFilterModalOpen = false;
     this._currentPage = 1;
     this.fetchIssues();

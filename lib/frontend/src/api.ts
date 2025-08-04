@@ -249,13 +249,13 @@ export async function searchIssues(
   const queryParams = new URLSearchParams();
   queryParams.append('search_type', 'similarity');
   queryParams.append('embedding_type', 'issue');
-  queryParams.append('sort', 'newest');
 
   if (params.query) {
     queryParams.append('query', params.query);
   } else {
     // The new endpoint requires a query, so we'll use an empty one to get all issues.
     queryParams.append('query', '');
+    queryParams.append('sort', 'newest');
   }
 
   if (params.limit) {
@@ -268,6 +268,10 @@ export async function searchIssues(
 
   if (params.project_ids && params.project_ids.length > 0) {
     params.project_ids.forEach((id) => queryParams.append('project_id', id));
+  }
+
+  if (params.status) {
+    queryParams.append('status', params.status);
   }
 
   const response = await fetchWithAuth(
