@@ -10,9 +10,7 @@ export class ThemeSwitcher extends LitElement {
   @state()
   private selectedTheme: Theme = DEFAULT_THEME;
 
-  static styles = css`
-
-  `;
+  static styles = css``;
 
   connectedCallback() {
     super.connectedCallback();
@@ -31,19 +29,22 @@ export class ThemeSwitcher extends LitElement {
   render() {
     return html`
       <sl-button-group label="Theme">
-        <sl-button size="small"
+        <sl-button
+          size="small"
           variant="${this.selectedTheme === 'light' ? 'primary' : 'default'}"
           @click=${() => this.handleThemeChange('light')}
         >
           <sl-icon name="sun" label="Light theme"></sl-icon>
         </sl-button>
-        <sl-button size="small"
+        <sl-button
+          size="small"
           variant="${this.selectedTheme === 'dark' ? 'primary' : 'default'}"
           @click=${() => this.handleThemeChange('dark')}
         >
           <sl-icon name="moon" label="Dark theme"></sl-icon>
         </sl-button>
-        <sl-button size="small"
+        <sl-button
+          size="small"
           variant="${this.selectedTheme === 'system' ? 'primary' : 'default'}"
           @click=${() => this.handleThemeChange('system')}
         >

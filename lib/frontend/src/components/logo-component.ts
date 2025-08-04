@@ -45,7 +45,9 @@ export class LogoComponent extends LitElement {
 
   private setTheme(theme: Theme) {
     if (theme === 'system') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const prefersDark = window.matchMedia(
+        '(prefers-color-scheme: dark)'
+      ).matches;
       this.theme = prefersDark ? 'dark' : 'light';
     } else if (theme === 'dark' || theme === 'light') {
       this.theme = theme;

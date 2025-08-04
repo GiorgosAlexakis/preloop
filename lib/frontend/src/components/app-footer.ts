@@ -111,9 +111,7 @@ export class AppFooter extends LitElement {
         <div class="divider"></div>
         <div class="footer-main">
           <div>
-            <logo-component
-              override-theme="dark"
-            ></logo-component>
+            <logo-component override-theme="dark"></logo-component>
           </div>
           <nav class="footer-nav">
             <ul>

@@ -172,9 +172,7 @@ export class LlmModelsView extends LitElement {
         </div>
       </view-header>
       <div class="column-layout">
-        <div class="main-column">
-          ${renderContent()}
-        </div>
+        <div class="main-column">${renderContent()}</div>
         <div class="side-column"></div>
       </div>
       ${this.renderModal()} ${this.renderDeleteConfirm()}

@@ -168,13 +168,12 @@ export class IssuesView extends LitElement {
       sl-icon {
         font-size: 1rem;
       }
- 
+
       .placeholder-content {
         text-align: center;
       }
 
       @media (min-width: 1720px) {
-        
         .inline-detail-row {
           display: none;
         }

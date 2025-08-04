@@ -201,89 +201,86 @@ export class DashboardView extends AuthedElement {
   ];
 
   render() {
-
     return html`
-        <view-header headerText="Overview">
-          <div slot="side-column">
-            <theme-switcher></theme-switcher>
-          </div>
-        </view-header>
-        <div class="column-layout">
-          <div class="main-column">
-            ${this.trackers.length > 0 || this.isLoading
-              ? html`
-                  <similar-issues-widget></similar-issues-widget>
-                  <sl-card>
-                    <div slot="header" class="chart-header">
-                      Similar Issues per Project
-                      <sl-tooltip
-                        content="Showing issues with a similarity score of ${DEFAULT_SIMILARITY_THRESHOLD_CHARTS *
-                        100}% or higher."
-                      >
-                        <sl-icon name="question-circle"></sl-icon>
-                      </sl-tooltip>
-                    </div>
-                    <duplicate-stats-chart
-                      .similarityThreshold=${DEFAULT_SIMILARITY_THRESHOLD_CHARTS}
-                    ></duplicate-stats-chart>
-                  </sl-card>
-                `
-              : html`
-                  <sl-alert variant="primary" open>
-                    <sl-icon slot="icon" name="info-circle"></sl-icon>
-                    ${unsafeHTML(
-                      'No projects found. <a href="/console/trackers">Add a tracker</a> to see project-specific widgets.'
-                    )}
-                  </sl-alert>
-                `}
+      <view-header headerText="Overview">
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
+        </div>
+      </view-header>
+      <div class="column-layout">
+        <div class="main-column">
+          ${this.trackers.length > 0 || this.isLoading
+            ? html`
+                <similar-issues-widget></similar-issues-widget>
+                <sl-card>
+                  <div slot="header" class="chart-header">
+                    Similar Issues per Project
+                    <sl-tooltip
+                      content="Showing issues with a similarity score of ${DEFAULT_SIMILARITY_THRESHOLD_CHARTS *
+                      100}% or higher."
+                    >
+                      <sl-icon name="question-circle"></sl-icon>
+                    </sl-tooltip>
+                  </div>
+                  <duplicate-stats-chart
+                    .similarityThreshold=${DEFAULT_SIMILARITY_THRESHOLD_CHARTS}
+                  ></duplicate-stats-chart>
+                </sl-card>
+              `
+            : html`
+                <sl-alert variant="primary" open>
+                  <sl-icon slot="icon" name="info-circle"></sl-icon>
+                  ${unsafeHTML(
+                    'No projects found. <a href="/console/trackers">Add a tracker</a> to see project-specific widgets.'
+                  )}
+                </sl-alert>
+              `}
 
-            <!-- Future widgets can be added here -->
-          </div>
-          <div class="side-column">
-            <sl-card>
-              <div slot="header">Key Metrics</div>
-              <ul class="summary-list">
-                <li class="summary-item">
-                  <a href="/console/trackers">Connected Trackers</a>
-                  <div class="tracker-pills">
-                    ${this.trackers.slice(0, 2).map(
-                      tracker => html`
-                        <sl-tooltip content="${tracker.name}">
-                          <tracker-pill .tracker=${tracker}></tracker-pill>
+          <!-- Future widgets can be added here -->
+        </div>
+        <div class="side-column">
+          <sl-card>
+            <div slot="header">Key Metrics</div>
+            <ul class="summary-list">
+              <li class="summary-item">
+                <a href="/console/trackers">Connected Trackers</a>
+                <div class="tracker-pills">
+                  ${this.trackers.slice(0, 2).map(
+                    (tracker) => html`
+                      <sl-tooltip content="${tracker.name}">
+                        <tracker-pill .tracker=${tracker}></tracker-pill>
+                      </sl-tooltip>
+                    `
+                  )}
+                  ${this.trackers.length > 2
+                    ? html`
+                        <sl-tooltip
+                          content="${this.trackers
+                            .slice(2)
+                            .map((t) => t.name)
+                            .join(', ')}"
+                        >
+                          <sl-tag size="small" pill
+                            >+${this.trackers.length - 2}</sl-tag
+                          >
                         </sl-tooltip>
                       `
-                    )}
-                    ${this.trackers.length > 2
-                      ? html`
-                          <sl-tooltip
-                            content="${this.trackers
-                              .slice(2)
-                              .map(t => t.name)
-                              .join(', ')}"
-                          >
-                            <sl-tag size="small" pill
-                              >+${this.trackers.length - 2}</sl-tag
-                            >
-                          </sl-tooltip>
-                        `
-                      : ''}
-                    ${this.trackers.length === 0
-                      ? html`<strong>0</strong>`
-                      : ''}
-                  </div>
-                </li>
-                <li class="summary-item">
-                  <a href="/console/settings/api-keys">Total API Requests</a>
-                  <strong>${this.apiUsage?.total_requests || 0}</strong>
-                </li>
-                <li class="summary-item">
-                  <span>Total Issues Processed</span>
-                  <strong>${this.totalIssues}</strong>
-                </li>
-              </ul>
-            </sl-card>
-          </div>
+                    : ''}
+                  ${this.trackers.length === 0 ? html`<strong>0</strong>` : ''}
+                </div>
+              </li>
+              <li class="summary-item">
+                <a href="/console/settings/api-keys">Total API Requests</a>
+                <strong>${this.apiUsage?.total_requests || 0}</strong>
+              </li>
+              <li class="summary-item">
+                <span>Total Issues Processed</span>
+                <strong>${this.totalIssues}</strong>
+              </li>
+            </ul>
+          </sl-card>
         </div>
+      </div>
     `;
   }
 }

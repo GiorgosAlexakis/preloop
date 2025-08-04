@@ -209,7 +209,7 @@ export class ApiKeysView extends LitElement {
     };
 
     return html`
-    <view-header headerText="API Keys">
+      <view-header headerText="API Keys">
         <div slot="main-column">
           <sl-button
             variant="primary"
@@ -224,11 +224,9 @@ export class ApiKeysView extends LitElement {
         </div>
       </view-header>
       <div class="column-layout">
-        <div class="main-column">
-        ${renderContent()}
+        <div class="main-column">${renderContent()}</div>
+        <div class="side-column"></div>
       </div>
-      <div class="side-column"></div>
-    </div>
 
       <sl-dialog label="Create API Key" .open=${this.isCreateModalOpen}>
         <sl-input

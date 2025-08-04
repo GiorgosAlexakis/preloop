@@ -59,23 +59,23 @@ export class TrackersView extends LitElement {
       </view-header>
       <div class="column-layout">
         <div class="main-column">
-        ${this.isAddingTracker
-          ? html`<add-tracker-modal
-              @tracker-added=${this._handleTrackerAdded}
-              @close-modal=${this._closeAddTrackerForm}
-            ></add-tracker-modal>`
-          : ''}
-        ${this.editingTracker
-          ? html`<add-tracker-modal
-              .tracker=${this.editingTracker}
-              @tracker-updated=${this._handleTrackerUpdated}
-              @close-modal=${this._closeAddTrackerForm}
-            ></add-tracker-modal>`
-          : ''}
-        <tracker-list @tracker-edit=${this._handleTrackerEdit}></tracker-list>
+          ${this.isAddingTracker
+            ? html`<add-tracker-modal
+                @tracker-added=${this._handleTrackerAdded}
+                @close-modal=${this._closeAddTrackerForm}
+              ></add-tracker-modal>`
+            : ''}
+          ${this.editingTracker
+            ? html`<add-tracker-modal
+                .tracker=${this.editingTracker}
+                @tracker-updated=${this._handleTrackerUpdated}
+                @close-modal=${this._closeAddTrackerForm}
+              ></add-tracker-modal>`
+            : ''}
+          <tracker-list @tracker-edit=${this._handleTrackerEdit}></tracker-list>
+        </div>
+        <div class="side-column"></div>
       </div>
-      <div class="side-column"></div>
-    </div>
     `;
   }
 }
