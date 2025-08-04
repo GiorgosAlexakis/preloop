@@ -1278,6 +1278,29 @@ async def update_issue(
                 )
                 issue = None  # Treat as not found if not accessible
 
+        organization = None
+        project = None
+        if issue_update.organization:
+            organization = crud_organization.get_by_name(
+                db,
+                name=issue_update.organization,
+                account_id=current_user.id,
+            )
+        if issue_update.project:
+            if organization:
+                project = crud_project.get_by_slug_or_identifier(
+                    db,
+                    slug_or_identifier=issue_update.project,
+                    organization_id=organization.id,
+                    account_id=current_user.id,
+                )
+            else:
+                project = crud_project.get_by_slug_or_identifier(
+                    db,
+                    slug_or_identifier=issue_update.project,
+                    account_id=current_user.id,
+                )
+
         # 2. Try combined key (project_slug#external_id)
         if not issue and "#" in issue_id:
             logger.debug(f"Attempting lookup by combined key: {issue_id}")
@@ -1326,20 +1349,26 @@ async def update_issue(
             except ValueError:
                 logger.warning(f"Invalid combined key format: {issue_id}")
                 # Proceed to next lookup method
+        elif not issue:  # 3. Try constructing combined key
+            logger.debug(f"Attempting lookup by constructing combined key: {issue_id}")
+            issue_key = f"{project.slug}#{issue_id}"
+            issue = crud_issue.get_by_key(db, key=issue_key, account_id=current_user.id)
 
-        # 3. Try direct external ID
+        # 4. Try direct external ID
         if not issue:
             logger.debug(f"Attempting lookup by direct external ID: {issue_id}")
+
             # Search across all accessible trackers for this external ID
-            issue = (
-                db.query(Issue)
-                .filter(
-                    or_(Issue.external_id == issue_id, Issue.key == issue_id),
-                    Issue.tracker_id.in_(tracker_ids),
-                )
-                .order_by(Issue.last_updated_external.desc())
-                .first()
+            query = db.query(Issue).filter(
+                or_(Issue.external_id == issue_id, Issue.key == issue_id),
+                Issue.tracker_id.in_(tracker_ids),
             )
+
+            # If project is specified, filter by it
+            if project:
+                query = query.filter(Issue.project_id == project.id)
+
+            issue = query.order_by(Issue.last_updated_external.desc()).first()
 
         if not issue:
             logger.warning(
