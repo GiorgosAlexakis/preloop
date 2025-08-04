@@ -1334,7 +1334,7 @@ async def update_issue(
             issue = (
                 db.query(Issue)
                 .filter(
-                    _or(Issue.external_id == issue_id, Issue.key == issue_id),
+                    or_(Issue.external_id == issue_id, Issue.key == issue_id),
                     Issue.tracker_id.in_(tracker_ids),
                 )
                 .order_by(Issue.last_updated_external.desc())
