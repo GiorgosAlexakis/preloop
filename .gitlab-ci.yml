@@ -84,12 +84,14 @@ staging:
   environment:
     name: staging
   script:
+    - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
     - helm dependency update ./helm/spacebridge
     - helm dependency build ./helm/spacebridge
     - helm upgrade --install spacebridge ./helm/spacebridge
       --namespace spacebridge-staging
       --set image.tag=${CI_COMMIT_SHA}
+      --set spacelit.tag=${SPACELIT_COMMIT_SHA}
       --set config.openai.apiKey=${OPENAI_API_KEY}
       --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
       --set config.smtp.host=${SMTP_HOST}
@@ -129,6 +131,7 @@ prod:
     name: production
   script:
     - set -e
+    - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - export POD_BACKUP_PATH="/run/tmp/db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
     - export LOCAL_BACKUP_FILENAME="db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
     - echo "Starting database backup inside pod $DB_POD_NAME to $POD_BACKUP_PATH..."
@@ -149,6 +152,7 @@ prod:
     - helm upgrade --install spacebridge ./helm/spacebridge
       --namespace spacebridge
       --set image.tag=${CI_COMMIT_SHA}
+      --set spacelit.tag=${SPACELIT_COMMIT_SHA}
       --set config.openai.apiKey=${OPENAI_API_KEY}
       --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
       --set config.smtp.host=${SMTP_HOST}

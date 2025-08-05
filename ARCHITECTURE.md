@@ -345,13 +345,13 @@ graph TD
     *   Models are linked to an `Account`.
 *   **Event Ingestion:**
     *   Primarily through the existing webhook endpoint (e.g., `/api/v1/private/webhooks/{tracker_type}/{org_identifier}`) for tracker events.
-    *   This endpoint validates incoming webhooks and then publishes a `process_tracker_event` task to the **Internal Task Queue (NATS)**.
+    *   This endpoint validates incoming webhooks and then publishes a `process_webhook_event` task to the **Internal Task Queue (NATS)**.
 *   **Internal Task Queue (NATS):**
     *   NATS is used as a simple, reliable task queue. It decouples the API from the background processing of events and flows.
     *   The `TaskPublisher` service is used to enqueue tasks.
     *   Workers consume tasks from the `spacesync.tasks` subject.
 *   **Flow Trigger Service:**
-    *   This logic is part of the NATS worker. When a `process_tracker_event` task is received, the worker acts as the trigger service.
+    *   This logic is part of the NATS worker. When a `process_webhook_event` task is received, the worker acts as the trigger service.
     *   It matches the incoming event data against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.
     *   Upon a match, it initiates a Flow execution by invoking the Flow Execution Orchestrator.
 *   **Flow Execution Orchestrator:**
@@ -450,7 +450,7 @@ sequenceDiagram
     participant FlowExecOrch as Flow Execution Orchestrator
 
     ExtSrc->>+WebhookEP: Sends Webhook (e.g., push event)
-    WebhookEP->>+TaskQueue: Publishes `process_tracker_event` Task
+    WebhookEP->>+TaskQueue: Publishes `process_webhook_event` Task
     TaskQueue-->>-Worker: Delivers Task
     Worker->>+FlowsDB: Queries for matching Flow definitions
     FlowsDB-->>-Worker: Returns matching Flow(s)
@@ -497,7 +497,7 @@ sequenceDiagram
     *   CRUD operations for these new entities will be added to `SpaceModels`.
     *   Will be queried by the Flow Execution Orchestrator to resolve dynamic prompt content.
 *   **`SpaceSync` / Webhook Infrastructure:**
-    *   The existing webhook ingestion mechanism within the main `SpaceBridge API` will publish a `process_tracker_event` task to the NATS task queue.
+    *   The existing webhook ingestion mechanism within the main `SpaceBridge API` will publish a `process_webhook_event` task to the NATS task queue.
     *   The `SpaceSync` worker, upon receiving this task, will be responsible for triggering the appropriate Agentic Flows.
 *   **`SpaceBridge API`:**
     *   Will be extended with new RESTful API endpoints for:
@@ -555,7 +555,7 @@ sequenceDiagram
     *   The orchestrator will manage the lifecycle of these containerized jobs.
 *   **Database:** `SpaceModels` (PostgreSQL) should be monitored for performance. Read replicas can be used for read-heavy operations like fetching Flow definitions or execution logs.
 *   **Extensibility:**
-    *   **New Event Sources:** Add new parsers/adapters to publish `process_tracker_event` tasks. The Flow Trigger Service can then match these new event types.
+    *   **New Event Sources:** Add new parsers/adapters to publish `process_webhook_event` tasks. The Flow Trigger Service can then match these new event types.
     *   **New AI Models:** Add new `AIModel` records. The Flow Execution Orchestrator and OpenHands need to be compatible with the new model's API.
     *   **New MCP Tools/Servers:** Update the allowlist options. OpenHands agents need to be able to make calls to these new tools.
     *   **New Agent Capabilities:** As OpenHands evolves or new agent frameworks emerge, the Flow Execution Orchestrator can be adapted to integrate with them.
