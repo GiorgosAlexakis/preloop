@@ -15,7 +15,7 @@ from spacemodels.db.session import get_engine, get_db_session
 from spacemodels.db.setup import setup_database
 from spacemodels.models import Base
 from spacemodels.crud import crud_embedding_model
-from spacemodels.crud import crud_llm_model
+from spacemodels.crud import crud_ai_model
 
 from spacemodels.db.vector_types import TRUNCATED_VECTOR_SIZE
 
@@ -88,34 +88,34 @@ def init_db(force: bool):
         else:
             click.echo("EMBEDDING_API_KEY not set, skipping embedding model creation.")
 
-        # LLM model setup
-        llm_provider = os.getenv("LLM_PROVIDER", "openai")
-        llm_model_name = os.getenv("LLM_MODEL_NAME", "o4-mini")
-        llm_api_key = os.getenv("OPENAI_API_KEY")
-        llm_api_url = os.getenv("LLM_API_URL", "https://api.openai.com/v1")
-        llm_model_version = os.getenv("LLM_MODEL_VERSION", llm_model_name)
+        # AI model setup
+        ai_provider = os.getenv("AI_PROVIDER", "openai")
+        ai_model_name = os.getenv("AI_MODEL_NAME", "o4-mini")
+        ai_model_api_key = os.getenv("OPENAI_API_KEY")
+        ai_model_api_url = os.getenv("AI_API_URL", "https://api.openai.com/v1")
+        ai_model_version = os.getenv("AI_MODEL_VERSION", ai_model_name)
 
-        if llm_api_key:
-            if not crud_llm_model.default_model_exists(db_session):
-                click.echo(f"Adding default LLM model '{llm_model_name}'...")
-                crud_llm_model.create_with_account(
+        if ai_model_api_key:
+            if not crud_ai_model.default_model_exists(db_session):
+                click.echo(f"Adding default AI model '{ai_model_name}'...")
+                ai_model_data = {
+                    "name": ai_model_name,
+                    "provider_name": ai_provider,
+                    "api_key": ai_model_api_key,
+                    "api_endpoint": ai_model_api_url,
+                    "model_identifier": ai_model_version,
+                    "is_default": True,
+                }
+                crud_ai_model.create_with_account(
                     db=db_session,
-                    name=llm_model_name,
-                    provider_name=llm_provider,
-                    api_key=llm_api_key,
-                    api_url=llm_api_url,
-                    model_name=llm_model_name,
-                    model_version=llm_model_version,
-                    is_default=True,
+                    obj_in=ai_model_data,
                     account_id=None,
                 )
-                click.echo(
-                    f"Default LLM model '{llm_model_name}' created successfully."
-                )
+                click.echo(f"Default AI model '{ai_model_name}' created successfully.")
             else:
-                click.echo("Default LLM model already exists, skipping.")
+                click.echo("Default AI model already exists, skipping.")
         else:
-            click.echo("OPENAI_API_KEY not set, skipping LLM model creation.")
+            click.echo("OPENAI_API_KEY not set, skipping AI model creation.")
 
     except Exception as e:
         click.echo(f"ERROR: Failed to create tables: {str(e)}")

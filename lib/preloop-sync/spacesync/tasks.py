@@ -1,24 +1,7 @@
-import asyncio
 from spacesync.config import logger
-from spacebridge.utils.email import send_email
-from spacebridge.config import settings
 from spacemodels.db.session import get_db_session
 from spacemodels.crud import crud_tracker
 from spacesync.scanner.core import scan_tracker
-
-
-def add(x, y):
-    """A simple synchronous task."""
-    print(f"  > Executing add({x}, {y})")
-    return x + y
-
-
-async def send_report(email: str, content: str):
-    """An asynchronous task simulating an I/O operation."""
-    print(f"  > Executing send_report to {email}...")
-    await asyncio.sleep(2)  # Simulate sending an email
-    print(f"  > Report sent successfully to {email}.")
-    return True
 
 
 def poll_tracker(tracker_id: int):
@@ -39,6 +22,9 @@ def scan_tracker_task(tracker_id: int, since=None):
 
 
 def notify_admins(subject: str, message: str, message_html: str = None):
+    from spacebridge.utils.email import send_email  # noqa: E402
+    from spacebridge.config import settings  # noqa: E402
+
     logger.info(f"Notifying admins: {subject} - {message}")
     admin_email = settings.product_team_email
     send_email(admin_email, subject, message, message_html)

@@ -456,12 +456,14 @@ def scan_tracker(
             if (
                 org.last_webhook_update
                 and (now - org.last_webhook_update) < POLLING_THRESHOLD
+                and not force_update
             ):
                 stats["organizations"]["skipped_webhook"] += 1
                 continue
             if (
                 org.last_polling_update
                 and (now - org.last_polling_update) < POLLING_THRESHOLD
+                and not force_update
             ):
                 stats["organizations"]["skipped_polling"] += 1
                 continue
