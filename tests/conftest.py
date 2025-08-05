@@ -7,6 +7,8 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session, sessionmaker
 
+from unittest.mock import patch, MagicMock
+
 # Try to import FastAPI, but don't fail if it's not available
 try:
     import fastapi  # noqa: F401
@@ -19,6 +21,18 @@ except ImportError:
 # from spacebridge.api.app import create_app
 # from spacebridge.db.base import Base
 # from spacebridge.db.session import get_db
+
+
+@pytest.fixture(autouse=True)
+def mock_openai_client():
+    """Mock the OpenAI client to avoid real API calls."""
+    with patch("openai.Client") as mock_client:
+        mock_embedding = MagicMock()
+        mock_embedding.embedding = [0.1] * 1536
+        mock_response = MagicMock()
+        mock_response.data = [mock_embedding]
+        mock_client.return_value.embeddings.create.return_value = mock_response
+        yield mock_client
 
 
 def pytest_configure(config):

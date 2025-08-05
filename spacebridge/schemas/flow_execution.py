@@ -30,7 +30,8 @@ class FlowExecutionBase(BaseModel):
         None, description="The full prompt after placeholder resolution"
     )
     model_output_summary: Optional[str] = Field(
-        None, description="A concise summary of the LLM's final output or key findings"
+        None,
+        description="A concise summary of the AI model's final output or key findings",
     )
     actions_taken_summary: Optional[List[Dict[str, Any]]] = Field(
         None,

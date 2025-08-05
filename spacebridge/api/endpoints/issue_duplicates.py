@@ -24,7 +24,7 @@ from spacemodels.crud import (
     crud_issue_embedding,
     crud_embedding_model,
     crud_issue,
-    crud_llm_model,
+    crud_ai_model,
     crud_project,
     crud_organization,
 )
@@ -54,8 +54,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-LLM_DUPLICATE_SYSTEM_PROMPT = "You are an expert issue tracker assistant. Your task is to classify the relationship between two issues based on their content."
-LLM_DUPLICATE_USER_PROMPT_TEMPLATE = """
+AI_MODEL_DUPLICATE_SYSTEM_PROMPT = "You are an expert issue tracker assistant. Your task is to classify the relationship between two issues based on their content."
+AI_MODEL_DUPLICATE_USER_PROMPT_TEMPLATE = """
 Use your expert judgement to classify the relationship between the following two issues based on their content.
 
 - `DUPLICATE`: The issues describe the same core problem, request, or task, even if the wording differs slightly.
@@ -132,7 +132,7 @@ def check_or_create_issue_duplicate(
         return existing_duplicate
 
     logger.info(
-        f"No existing duplicate entry for issues {issue1_id} and {issue2_id}. Proceeding with LLM analysis."
+        f"No existing duplicate entry for issues {issue1_id} and {issue2_id}. Proceeding with AI model analysis."
     )
 
     issue1 = crud_issue.get(db, id=issue1_id, account_id=current_user.id)
@@ -148,18 +148,18 @@ def check_or_create_issue_duplicate(
         logger.warning(detail)
         raise HTTPException(status_code=404, detail=detail)
 
-    default_model = crud_llm_model.get_default_active_model(
+    default_model = crud_ai_model.get_default_active_model(
         db, account_id=current_user.id
     )
     if not default_model:
-        logger.error("No default active LLM model configured.")
+        logger.error("No default active AI model configured.")
         raise HTTPException(
-            status_code=500, detail="No default active LLM model configured."
+            status_code=500, detail="No default active AI model configured."
         )
 
-    logger.info(f"Using LLM model '{default_model.model_name}'.")
+    logger.info(f"Using AI model '{default_model.model_identifier}'.")
 
-    prompt_text = LLM_DUPLICATE_USER_PROMPT_TEMPLATE.format(
+    prompt_text = AI_MODEL_DUPLICATE_USER_PROMPT_TEMPLATE.format(
         issue1_id=issue1.id,
         issue1_title=issue1.title or "N/A",
         issue1_description=issue1.description or "No description provided.",
@@ -169,7 +169,7 @@ def check_or_create_issue_duplicate(
     )
 
     messages: List[Dict[str, str]] = [
-        {"role": "system", "content": LLM_DUPLICATE_SYSTEM_PROMPT},
+        {"role": "system", "content": AI_MODEL_DUPLICATE_SYSTEM_PROMPT},
         {"role": "user", "content": prompt_text},
     ]
 
@@ -178,13 +178,13 @@ def check_or_create_issue_duplicate(
         api_key = default_model.api_key
         if not api_key:
             logger.warning(
-                f"API key not found in credentials for model {default_model.model_name}. Trying OPENAI_API_KEY env var."
+                f"API key not found in credentials for model {default_model.model_identifier}. Trying OPENAI_API_KEY env var."
             )
             api_key = os.getenv("OPENAI_API_KEY")
 
         if not api_key:
             logger.error(
-                f"OpenAI API key not found for model {default_model.model_name} or environment variable."
+                f"OpenAI API key not found for model {default_model.model_identifier} or environment variable."
             )
             raise HTTPException(
                 status_code=500, detail="OpenAI API key not configured."
@@ -193,19 +193,20 @@ def check_or_create_issue_duplicate(
         client = openai.OpenAI(api_key=api_key)
 
         response = client.chat.completions.create(
-            model=default_model.model_name,
+            model=default_model.model_identifier,
             messages=messages,
         )
         llm_response_text = response.choices[0].message.content.strip()
         logger.info(
-            f"LLM response for issues {issue1_id}, {issue2_id}: '{llm_response_text}'"
+            f"AI model response for issues {issue1_id}, {issue2_id}: '{llm_response_text}'"
         )
 
         response_lines = llm_response_text.split("\n")
 
         if len(response_lines) < 2:
             raise HTTPException(
-                status_code=500, detail="LLM response is not in the expected format."
+                status_code=500,
+                detail="AI model response is not in the expected format.",
             )
 
         decision_word = response_lines[0].strip().upper()
@@ -219,7 +220,7 @@ def check_or_create_issue_duplicate(
             parsed_status = "unrelated"
         else:
             logger.warning(
-                f"LLM returned unexpected status: '{decision_word}'. Defaulting to 'undecided'."
+                f"AI model returned unexpected status: '{decision_word}'. Defaulting to 'undecided'."
             )
             parsed_status = "undecided"
             reason = llm_response_text
@@ -228,8 +229,8 @@ def check_or_create_issue_duplicate(
             issue1_id=issue1.id,
             issue2_id=issue2.id,
             decision=parsed_status,
-            llm_model_id=default_model.id,
-            llm_model_name=default_model.model_name,
+            ai_model_id=default_model.id,
+            ai_model_name=default_model.model_identifier,
             reason=reason,
         )
 
@@ -243,14 +244,16 @@ def check_or_create_issue_duplicate(
 
     except openai.APIError as e:
         logger.exception(
-            f"OpenAI API call for model '{default_model.model_name}' failed: {e}"
+            f"OpenAI API call for model '{default_model.model_identifier}' failed: {e}"
         )
-        raise HTTPException(status_code=500, detail="LLM API error")
+        raise HTTPException(status_code=500, detail="AI model API error")
     except Exception as e:
         logger.exception(
-            f"An unexpected error occurred during LLM invocation for model '{default_model.model_name}': {e}"
+            f"An unexpected error occurred during AI model invocation for model '{default_model.model_identifier}': {e}"
         )
-        raise HTTPException(status_code=500, detail=f"LLM processing error: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"AI model processing error: {str(e)}"
+        )
 
 
 @router.patch(
@@ -890,7 +893,7 @@ Format your response as a single JSON object with the keys "deconflicted_title1"
 """
 
 
-@router.post("/LLM-suggestion", response_model=IssueDuplicateSuggestionResponse)
+@router.post("/ai-suggestion", response_model=IssueDuplicateSuggestionResponse)
 def get_resolution_suggestion(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
@@ -916,16 +919,16 @@ def get_resolution_suggestion(
     ):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    default_model = crud_llm_model.get_default_active_model(
+    default_model = crud_ai_model.get_default_active_model(
         db, account_id=current_user.id
     )
     if not default_model:
-        logger.error("No default active LLM model configured.")
+        logger.error("No default active AI model configured.")
         raise HTTPException(
-            status_code=500, detail="No default active LLM model configured."
+            status_code=500, detail="No default active AI model configured."
         )
 
-    logger.info(f"Using LLM model '{default_model.model_name}'.")
+    logger.info(f"Using AI model '{default_model.model_identifier}'.")
 
     client = openai.OpenAI()
 
@@ -939,7 +942,7 @@ def get_resolution_suggestion(
                 explanation="",
             )
             llm_response = client.chat.completions.create(
-                model=default_model.model_name,
+                model=default_model.model_identifier,
                 messages=[{"content": prompt, "role": "user"}],
                 response_format={"type": "json_object"},
             )
@@ -955,7 +958,7 @@ def get_resolution_suggestion(
                 explanation="",
             )
             llm_response = client.chat.completions.create(
-                model=default_model.model_name,
+                model=default_model.model_identifier,
                 messages=[{"content": prompt, "role": "user"}],
                 response_format={"type": "json_object"},
             )
@@ -970,10 +973,10 @@ def get_resolution_suggestion(
     except openai.APIError as e:
         logger.error(f"OpenAI API call failed: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to generate suggestion from LLM."
+            status_code=500, detail="Failed to generate suggestion from AI model."
         )
     except Exception as e:
-        logger.error(f"LLM suggestion failed: {e}")
+        logger.error(f"AI model suggestion failed: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to generate suggestion from LLM."
+            status_code=500, detail="Failed to generate suggestion from AI model."
         )

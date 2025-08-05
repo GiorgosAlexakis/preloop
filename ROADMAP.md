@@ -65,16 +65,16 @@
 #### Epic 2: Core Flow Infrastructure & Database Models
 - [ ] **Task 2.1: Implement `Flows` Database Model in `SpaceModels`** ([Issue #59](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/59))
     *   *Description:* Create the `Flows` SQLAlchemy model, Pydantic schema, and CRUD operations as detailed in `ARCHITECTURE.md`.
-- [ ] **Task 2.2: Implement `ModelConfigurations` Database Model in `SpaceModels`** ([Issue #60](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/60))
-    *   *Description:* Create the `ModelConfigurations` SQLAlchemy model, Pydantic schema (including initial encrypted API key storage), and CRUD operations.
+- [ ] **Task 2.2: Implement `AIModel` Database Model in `SpaceModels`** ([Issue #60](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/60))
+    *   *Description:* Create the `AIModel` SQLAlchemy model, Pydantic schema (including initial unencrypted API key storage), and CRUD operations.
 - [ ] **Task 2.3: Implement `FlowExecutions` Database Model in `SpaceModels`** ([Issue #61](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/61))
     *   *Description:* Create the `FlowExecutions` SQLAlchemy model, Pydantic schema, and CRUD operations for logging Flow runs and outcomes.
 
 #### Epic 3: Flow Definition & Management (API & UI)
 - [ ] **Task 3.1: Develop Flow Definition & Management APIs** ([Issue #62](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/62))
-    *   *Description:* Create REST API endpoints in SpaceBridge for CRUD operations on `Flows` and `ModelConfigurations`.
-- [ ] **Task 3.2: Build UI Components for Flow & ModelConfiguration Management** ([Issue #63](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/63))
-    *   *Description:* Develop user interface elements for creating, viewing, editing, deleting, enabling/disabling `Flows`, and managing `ModelConfigurations`.
+    *   *Description:* Create REST API endpoints in SpaceBridge for CRUD operations on `Flows` and `AIModels`.
+- [ ] **Task 3.2: Build UI Components for Flow & AIModel Management** ([Issue #63](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/63))
+    *   *Description:* Develop user interface elements for creating, viewing, editing, deleting, enabling/disabling `Flows`, and managing `AIModels`.
 - [ ] **Task 3.3: Implement Flow Presets System** ([Issue #64](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/64))
     *   *Description:* Design and implement a system for defining, managing, and allowing users to utilize or clone pre-defined Flow templates.
 
@@ -93,8 +93,8 @@
     *   *Description:* Ensure detailed logging of Flow executions into the `FlowExecutions` table, and integrate with centralized logging for OpenHands agent operational logs.
 
 #### Epic 5: Security & Initial Content
-- [ ] **Task 5.1: Secure `ModelConfiguration` API Keys (Initial Implementation)** ([Issue #71](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/71))
-    *   *Description:* Implement robust encrypted storage for API keys within the `ModelConfigurations` table. Ensure secure decryption by the Flow Execution Orchestrator. Track future OpenBAO integration as a separate issue.
+- [ ] **Task 5.1: Secure `AIModel` API Keys (Initial Implementation)** ([Issue #71](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/71))
+    *   *Description:* Implement robust encrypted storage for API keys within the `AIModel` table. Ensure secure decryption by the Flow Execution Orchestrator. Track future OpenBAO integration as a separate issue.
 - [ ] **Task 5.2: Create and Deploy Initial Flow Presets** ([Issue #72](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/72))
     *   *Description:* Define, implement, and make available a set of useful initial Flow presets to demonstrate capabilities and provide value to users.
 

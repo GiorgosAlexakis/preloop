@@ -24,7 +24,7 @@ from .issues import update_issue
 from spacemodels.crud import (
     CRUDIssue,
     CRUDIssueComplianceResult,
-    CRUDLLMModel,
+    CRUDAIModel,
     CRUDOrganization,
     CRUDProject,
 )
@@ -33,7 +33,7 @@ from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.account import Account
 from spacemodels.models.issue import Issue
 from spacemodels.models.issue_compliance_result import IssueComplianceResult
-from spacemodels.models.llm_model import LLMModel
+from spacemodels.models.ai_model import AIModel
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 
@@ -43,7 +43,7 @@ router = APIRouter()
 
 crud_issue = CRUDIssue(Issue)
 crud_issue_compliance_result = CRUDIssueComplianceResult(IssueComplianceResult)
-crud_llm_model = CRUDLLMModel(LLMModel)
+crud_ai_model = CRUDAIModel(AIModel)
 crud_project = CRUDProject(Project)
 crud_organization = CRUDOrganization(Organization)
 
@@ -95,12 +95,12 @@ async def get_issue_compliance(
 
     project = crud_project.get(db, id=issue.project_id)
 
-    default_model = crud_llm_model.get_default_active_model(
+    default_model = crud_ai_model.get_default_active_model(
         db, account_id=current_user.id
     )
     if not default_model:
         raise HTTPException(
-            status_code=500, detail="No default active LLM model configured."
+            status_code=500, detail="No default active AI model configured."
         )
 
     prompt_template = settings.prompts.get(prompt_name)
@@ -136,7 +136,7 @@ async def get_issue_compliance(
         client = openai.OpenAI(api_key=api_key)
 
         response = client.chat.completions.create(
-            model=default_model.model_name,
+            model=default_model.model_identifier,
             messages=messages,
             response_format={"type": "json_object"},
         )
@@ -148,9 +148,11 @@ async def get_issue_compliance(
         reason = response_obj.get("reason")
 
     except openai.APIError as e:
-        raise HTTPException(status_code=500, detail=f"LLM API error: {e}")
+        raise HTTPException(status_code=500, detail=f"AI model API error: {e}")
     except (ValueError, IndexError) as e:
-        raise HTTPException(status_code=500, detail=f"Error parsing LLM response: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error parsing AI model response: {e}"
+        )
 
     compliance_result_in = IssueComplianceResultCreate(
         issue_id=issue_id,
@@ -194,13 +196,13 @@ def get_compliance_improvement_suggestion(
     ):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    default_model = crud_llm_model.get_default_active_model(
+    default_model = crud_ai_model.get_default_active_model(
         db, account_id=current_user.id
     )
     if not default_model:
-        logger.error("No default active LLM model configured.")
+        logger.error("No default active AI model configured.")
         raise HTTPException(
-            status_code=500, detail="No default active LLM model configured."
+            status_code=500, detail="No default active AI model configured."
         )
 
     prompt_template = settings.prompts.get(prompt_name)
@@ -227,7 +229,7 @@ def get_compliance_improvement_suggestion(
     client = openai.OpenAI()
     try:
         llm_response = client.chat.completions.create(
-            model=default_model.model_name,
+            model=default_model.model_identifier,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -240,7 +242,7 @@ def get_compliance_improvement_suggestion(
     except openai.APIError as e:
         logger.error(f"OpenAI API call failed: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to get compliance suggestion from LLM."
+            status_code=500, detail="Failed to get compliance suggestion from AI model."
         )
 
 
