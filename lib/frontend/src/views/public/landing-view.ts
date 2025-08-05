@@ -255,7 +255,7 @@ export class LandingView extends LitElement {
                 <div class="feature-icon">
                   <sl-icon name="journal-plus"></sl-icon>
                 </div>
-                <h3>Augment your LLM context</h3>
+                <h3>Augment your AI context</h3>
                 <p>
                   Seamless issue data access that supercharges your AI tools'
                   effectiveness

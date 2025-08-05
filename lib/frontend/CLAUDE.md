@@ -78,7 +78,7 @@ npm run docker:test   # Run tests in container
       ├── /profile - User profile
       ├── /security - Security settings
       ├── /api-keys - API key management
-      └── /llm-models - LLM model configuration
+      └── /ai-models - AI model configuration
 ```
 
 ### Development Server Configuration

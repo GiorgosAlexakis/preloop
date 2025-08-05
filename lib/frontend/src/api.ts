@@ -372,45 +372,45 @@ export async function deleteApiKey(keyId: string) {
   }
 }
 
-// LLM Models
-export async function getLlmModels() {
-  const response = await fetchWithAuth('/api/v1/llm-models');
+// AI Models
+export async function getAIModels() {
+  const response = await fetchWithAuth('/api/v1/ai-models');
   if (!response.ok) {
-    throw new Error('Failed to fetch LLM models');
+    throw new Error('Failed to fetch AI models');
   }
   return response.json();
 }
 
-export async function createLlmModel(model: any) {
-  const response = await fetchWithAuth('/api/v1/llm-models', {
+export async function createAIModel(model: any) {
+  const response = await fetchWithAuth('/api/v1/ai-models', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(model),
   });
   if (!response.ok) {
-    throw new Error('Failed to create LLM model');
+    throw new Error('Failed to create AI model');
   }
   return response.json();
 }
 
-export async function updateLlmModel(modelId: string, model: any) {
-  const response = await fetchWithAuth(`/api/v1/llm-models/${modelId}`, {
+export async function updateAIModel(modelId: string, model: any) {
+  const response = await fetchWithAuth(`/api/v1/ai-models/${modelId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(model),
   });
   if (!response.ok) {
-    throw new Error('Failed to update LLM model');
+    throw new Error('Failed to update AI model');
   }
   return response.json();
 }
 
-export async function deleteLlmModel(modelId: string) {
-  const response = await fetchWithAuth(`/api/v1/llm-models/${modelId}`, {
+export async function deleteAIModel(modelId: string) {
+  const response = await fetchWithAuth(`/api/v1/ai-models/${modelId}`, {
     method: 'DELETE',
   });
   if (!response.ok) {
-    throw new Error('Failed to delete LLM model');
+    throw new Error('Failed to delete AI model');
   }
 }
 
@@ -538,12 +538,12 @@ export async function listIssueDuplicates(
   return response.json();
 }
 
-export async function checkLlmVerdict(issue1_id: string, issue2_id: string) {
+export async function checkAIVerdict(issue1_id: string, issue2_id: string) {
   const response = await fetchWithAuth(
     `/api/v1/issue-duplicates/check?issue1_id=${issue1_id}&issue2_id=${issue2_id}`
   );
   if (!response.ok) {
-    throw new Error('Failed to fetch LLM verdict');
+    throw new Error('Failed to fetch AI verdict');
   }
   return response.json();
 }
@@ -591,7 +591,7 @@ export async function getResolutionSuggestion(
   issue2_id: string,
   resolution: 'merged' | 'deconflicted'
 ): Promise<any> {
-  const response = await fetchWithAuth('/api/v1/LLM-suggestion', {
+  const response = await fetchWithAuth('/api/v1/ai-suggestion', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

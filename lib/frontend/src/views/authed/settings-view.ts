@@ -23,7 +23,7 @@ export class SettingsView extends LitElement {
   private tabs = [
     { path: '/settings/account', label: 'Account' },
     { path: '/settings/api-keys', label: 'API Keys' },
-    { path: '/settings/llm-models', label: 'LLM Models' },
+    { path: '/settings/ai-models', label: 'AI Models' },
   ];
 
   private onTabSelected(e: CustomEvent) {

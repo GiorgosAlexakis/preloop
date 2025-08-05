@@ -1,11 +1,10 @@
-export interface LlmModel {
+export interface AIModel {
   id: string;
   name: string;
   provider_name: string;
   api_key: string;
   api_url: string;
-  model_name: string;
-  model_version?: string;
+  model_identifier: string;
   is_default?: boolean;
   created_at: string;
   updated_at: string;

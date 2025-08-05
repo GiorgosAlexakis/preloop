@@ -1,9 +1,9 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
-import { listIssueDuplicates, checkLlmVerdict } from '../api';
+import { listIssueDuplicates, checkAIVerdict } from '../api';
 import type { DuplicatePair } from '../types';
-import { LlmVerdict, renderVerdict } from '../utils/verdict';
+import { AIModelVerdict, renderVerdict } from '../utils/verdict';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
@@ -14,7 +14,7 @@ export class SimilarIssuesWidget extends LitElement {
   @state() private _totalSuggestions = 0;
   @state() private _loading = true;
   @state() private _error: string | null = null;
-  @state() private _llmVerdicts: Record<string, LlmVerdict> = {};
+  @state() private _aiVerdicts: Record<string, AIModelVerdict> = {};
 
   static styles = css`
     :host {
@@ -95,7 +95,7 @@ export class SimilarIssuesWidget extends LitElement {
       this._topSuggestions = allPairs.slice(0, 3);
       this._totalSuggestions = allPairs.length;
       this._error = null;
-      await this.fetchLlmVerdicts();
+      await this.fetchAIModelVerdicts();
     } catch (error) {
       console.error('Failed to fetch similar issues:', error);
       this._error = 'Could not load suggestions.';
@@ -104,9 +104,9 @@ export class SimilarIssuesWidget extends LitElement {
     }
   }
 
-  async fetchLlmVerdicts() {
+  async fetchAIModelVerdicts() {
     // 1. Set all to 'checking' and update the UI once.
-    const initialVerdicts: Record<string, LlmVerdict> = {};
+    const initialVerdicts: Record<string, AIModelVerdict> = {};
     const pairsToFetch: DuplicatePair[] = [];
 
     for (const pair of this._topSuggestions) {
@@ -116,13 +116,13 @@ export class SimilarIssuesWidget extends LitElement {
         pairsToFetch.push(pair);
       }
     }
-    this._llmVerdicts = initialVerdicts;
+    this._aiVerdicts = initialVerdicts;
 
     // 2. Create an array of promises for all the API calls.
     const verdictPromises = pairsToFetch.map((pair) =>
-      checkLlmVerdict(pair.issue1.id, pair.issue2.id).catch((error) => {
+      checkAIVerdict(pair.issue1.id, pair.issue2.id).catch((error) => {
         console.error(
-          `[similar-issues-widget] fetchLlmVerdicts: API call failed for pair ${pair.issue1.id}-${pair.issue2.id}`,
+          `[similar-issues-widget] fetchAIModelVerdicts: API call failed for pair ${pair.issue1.id}-${pair.issue2.id}`,
           error
         );
         // Return a specific error object so Promise.all doesn't fail completely
@@ -138,7 +138,7 @@ export class SimilarIssuesWidget extends LitElement {
     const results = await Promise.all(verdictPromises);
 
     // 4. Process the results and update the state a final time.
-    const finalVerdicts = { ...this._llmVerdicts };
+    const finalVerdicts = { ...this._aiVerdicts };
     results.forEach((result, index) => {
       const pair = pairsToFetch[index];
       const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
@@ -156,7 +156,7 @@ export class SimilarIssuesWidget extends LitElement {
       }
     });
 
-    this._llmVerdicts = finalVerdicts;
+    this._aiVerdicts = finalVerdicts;
   }
 
   render() {
@@ -238,7 +238,7 @@ export class SimilarIssuesWidget extends LitElement {
                           pill
                           >Identical</sl-badge
                         >`
-                      : renderVerdict(this._llmVerdicts[pairKey])}
+                      : renderVerdict(this._aiVerdicts[pairKey])}
                   </div>
                 </div>
               </li>
