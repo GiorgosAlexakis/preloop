@@ -290,14 +290,14 @@ graph TD
     subgraph "SpaceBridge Core"
         direction TB
         WebhookEndpoint["Webhook Endpoint (/api/v1/private/webhooks/...)"]
-        EventBus["Internal Event Bus (NATS)"]
+        TaskQueue["Internal Task Queue (NATS)"]
         APIExt["SpaceBridge API (Flow/AIModel CRUD, Logs)"]
         SpaceModelsDB["SpaceModels (PostgreSQL - Flows, AIModels, Executions)"]
     end
 
     subgraph "Flows Subsystem"
         direction TB
-        FlowTriggerService["Flow Trigger Service"]
+        FlowTriggerService["Flow Trigger Service (part of Worker)"]
         FlowExecOrchestrator["Flow Execution Orchestrator"]
         OpenHandsInfra["OpenHands Execution Infrastructure (Docker/Kubernetes)"]
         subgraph "OpenHands Agent Session (Container)"
@@ -313,9 +313,8 @@ graph TD
     end
 
     Trackers -- Webhook Event --> WebhookEndpoint
-    OtherSources -- Event (future) --> EventBus
-    WebhookEndpoint -- Publishes Event --> EventBus
-    EventBus -- Consumes Event --> FlowTriggerService
+    WebhookEndpoint -- Publishes Task --> TaskQueue
+    TaskQueue -- Delivers Task --> FlowTriggerService
     FlowTriggerService -- Reads Flow Defs --> SpaceModelsDB
     FlowTriggerService -- Initiates Execution --> FlowExecOrchestrator
     FlowExecOrchestrator -- Reads Flow/AIModel --> SpaceModelsDB
@@ -330,9 +329,9 @@ graph TD
     APIExt -- Manages --> SpaceModelsDB
     APIExt -- Serves Logs --> UserClient["User Client (UI/CLI)"]
 
-    style SpaceBridge Core fill:#ccf,stroke:#333,stroke-width:1px
-    style Flows Subsystem fill:#cfc,stroke:#333,stroke-width:1px
-    style OpenHands Agent Session (Container) fill:#eef,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5
+    style "SpaceBridge Core" fill:#ccf,stroke:#333,stroke-width:1px
+    style "Flows Subsystem" fill:#cfc,stroke:#333,stroke-width:1px
+    style "OpenHands Agent Session (Container)" fill:#eef,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5
 ```
 
 *   **Flow Definition (`Flows`):**
@@ -346,30 +345,14 @@ graph TD
     *   Models are linked to an `Account`.
 *   **Event Ingestion:**
     *   Primarily through the existing webhook endpoint (e.g., `/api/v1/private/webhooks/{tracker_type}/{org_identifier}`) for tracker events.
-    *   This endpoint validates incoming webhooks and then publishes them to the **Internal Event Bus (NATS)**.
-    *   Future event sources (e.g., OpenTelemetry, custom incident systems) will also publish to this Event Bus, adhering to the same standardized event schema.
-*   **Internal Event Bus (NATS):**
-    *   NATS is chosen for its high performance, scalability, and simplicity for messaging.
-    *   Decouples event producers from consumers, improving resilience and scalability.
-    *   **NATS Subject Naming Convention:** Events are published to subjects following the pattern: `spacebridge.events.{event_source}.{specific_event_type}`.
-        *   Example: `spacebridge.events.github.issues.opened`, `spacebridge.events.jira.issue_created.commented`.
-        *   This hierarchical structure allows consumers (like the Flow Trigger Service or future SpaceSync workers) to subscribe to specific event categories or granular event types.
-    *   **Standardized NATS Event Schema (`StandardizedNatsEvent`):** All events published to NATS adhere to a common Pydantic model:
-        ```python
-        class StandardizedNatsEvent(BaseModel):
-            event_id: uuid.UUID = Field(default_factory=uuid.uuid4)
-            event_source: str  # e.g., "github", "gitlab", "jira", "spacebridge_internal"
-            event_type: str    # e.g., "github.push", "gitlab.issues.opened", "jira.issue_created"
-            tracker_id: Optional[uuid.UUID] = None
-            organization_id: Optional[uuid.UUID] = None
-            timestamp: datetime = Field(default_factory=datetime.utcnow)
-            data: Dict[str, Any]  # Original webhook payload or specific internal event data
-            source_event_id: Optional[str] = None # e.g., GitHub's delivery ID
-        ```
-        This schema ensures consistency and provides essential metadata for event processing.
+    *   This endpoint validates incoming webhooks and then publishes a `process_tracker_event` task to the **Internal Task Queue (NATS)**.
+*   **Internal Task Queue (NATS):**
+    *   NATS is used as a simple, reliable task queue. It decouples the API from the background processing of events and flows.
+    *   The `TaskPublisher` service is used to enqueue tasks.
+    *   Workers consume tasks from the `spacesync.tasks` subject.
 *   **Flow Trigger Service:**
-    *   A new, dedicated service or module that subscribes to specific NATS subjects on the Event Bus.
-    *   It matches incoming `StandardizedNatsEvent` objects against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.
+    *   This logic is part of the NATS worker. When a `process_tracker_event` task is received, the worker acts as the trigger service.
+    *   It matches the incoming event data against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.
     *   Upon a match, it initiates a Flow execution by invoking the Flow Execution Orchestrator.
 *   **Flow Execution Orchestrator:**
     *   Responsible for managing the lifecycle of a single Flow execution.
@@ -384,7 +367,7 @@ graph TD
     *   The Flow Execution Orchestrator will interact with this infrastructure to start, monitor, and terminate agent sessions.
 *   **OpenHands Agent (running in a container):**
     *   The core agentic execution environment provided by the OpenHands library.
-    *   Receives the resolved prompt, AI model configuration (including the decrypted API key), and allowed MCP toolset from the Flow Execution Orchestrator.
+    *   Receives the resolved prompt, AI model configuration , and allowed MCP toolset from the Flow Execution Orchestrator.
     *   Manages the interaction with the configured AI model.
     *   **Direct MCP Calls:** The AI model, operating within the OpenHands agent, will directly call the allowed MCP tools on the specified MCP servers. OpenHands will need to be configured or provided with the necessary network access and potentially authentication details (if any) for these MCP servers.
 *   **Flow Execution Log (`FlowExecutions`):**
@@ -461,20 +444,19 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
 sequenceDiagram
     participant ExtSrc as External Event Source (e.g., GitHub)
     participant WebhookEP as SpaceBridge Webhook Endpoint
-    participant EventBusNATS as Internal Event Bus (NATS)
-    participant FlowTriggerSvc as Flow Trigger Service
+    participant TaskQueue as Internal Task Queue (NATS)
+    participant Worker as SpaceSync Worker (Flow Trigger)
     participant FlowsDB as Flows Database (SpaceModels)
     participant FlowExecOrch as Flow Execution Orchestrator
 
     ExtSrc->>+WebhookEP: Sends Webhook (e.g., push event)
-    WebhookEP->>+EventBusNATS: Publishes Raw Event
-    Note over WebhookEP, EventBusNATS: Event enriched with metadata
-    EventBusNATS-->>-FlowTriggerSvc: Delivers Event
-    FlowTriggerSvc->>+FlowsDB: Queries for matching Flow definitions
-    FlowsDB-->>-FlowTriggerSvc: Returns matching Flow(s)
+    WebhookEP->>+TaskQueue: Publishes `process_tracker_event` Task
+    TaskQueue-->>-Worker: Delivers Task
+    Worker->>+FlowsDB: Queries for matching Flow definitions
+    FlowsDB-->>-Worker: Returns matching Flow(s)
     alt If match found
-        FlowTriggerSvc->>+FlowExecOrch: Initiates Flow Execution (with Flow ID, Event Data)
-        FlowExecOrch-->>-FlowTriggerSvc: Acknowledges (e.g., Execution ID)
+        Worker->>+FlowExecOrch: Initiates Flow Execution (with Flow ID, Event Data)
+        FlowExecOrch-->>-Worker: Acknowledges (e.g., Execution ID)
     end
 ```
 
@@ -508,18 +490,6 @@ sequenceDiagram
     FlowExecOrch->>+ModelsDB: Store execution results in FlowExecutions table
 ```
 
-**c. Results & Logging:**
-
-```mermaid
-graph LR
-    FlowExecOrchestrator -- Writes --> FlowExecutionsDB["FlowExecutions Table (SpaceModels)"]
-    OpenHandsAgent["OpenHands Agent Container"] -- Streams Logs --> CentralizedLogging["Centralized Logging (e.g., ELK, CloudWatch)"]
-    FlowExecutionsDB -- Referenced by --> OpenHandsSessionRef["OpenHands Session Reference (in FlowExecutions)"]
-    CentralizedLogging -- Correlated via --> OpenHandsSessionRef
-    SpaceBridgeAPI["SpaceBridge API (/flows/executions)"] -- Reads --> FlowExecutionsDB
-    UserClient["User Client (UI/CLI)"] -- Views Logs --> SpaceBridgeAPI
-```
-
 ### 5. Interaction with Existing Components
 
 *   **`SpaceModels`:**
@@ -527,8 +497,8 @@ graph LR
     *   CRUD operations for these new entities will be added to `SpaceModels`.
     *   Will be queried by the Flow Execution Orchestrator to resolve dynamic prompt content.
 *   **`SpaceSync` / Webhook Infrastructure:**
-    *   The existing webhook ingestion mechanism within the main `SpaceBridge API` (currently handling events for `SpaceSync`) will be augmented. Instead of or in addition to direct processing by `SpaceSync`, it will publish validated and relevant events to the new Internal Event Bus (NATS).
-    *   `SpaceSync` itself might become a subscriber to this bus for its synchronization tasks, or continue its current polling/webhook processing in parallel, depending on the desired event handling architecture. The primary path for "Flows" will be via the NATS Event Bus.
+    *   The existing webhook ingestion mechanism within the main `SpaceBridge API` will publish a `process_tracker_event` task to the NATS task queue.
+    *   The `SpaceSync` worker, upon receiving this task, will be responsible for triggering the appropriate Agentic Flows.
 *   **`SpaceBridge API`:**
     *   Will be extended with new RESTful API endpoints for:
         *   Managing `Flows` (CRUD, enable/disable, list presets).
@@ -576,7 +546,7 @@ graph LR
 
 ### 8. Scalability and Extensibility
 
-*   **Event Bus (NATS):** NATS is chosen for its high performance, lightweight nature, and scalability, allowing the system to handle a high volume of incoming events.
+*   **Task Queue (NATS):** NATS is chosen for its high performance, lightweight nature, and scalability, allowing the system to handle a high volume of incoming tasks.
 *   **Flow Trigger Service:** Can be scaled horizontally if event processing becomes a bottleneck. It should be stateless.
 *   **Flow Execution Orchestrator:** Can also be scaled, though individual orchestration tasks might be stateful for the duration of a Flow.
 *   **OpenHands Execution Infrastructure:**
@@ -585,7 +555,7 @@ graph LR
     *   The orchestrator will manage the lifecycle of these containerized jobs.
 *   **Database:** `SpaceModels` (PostgreSQL) should be monitored for performance. Read replicas can be used for read-heavy operations like fetching Flow definitions or execution logs.
 *   **Extensibility:**
-    *   **New Event Sources:** Add new parsers/adapters to publish events to the common NATS Event Bus format. The Flow Trigger Service can then match these new event types.
+    *   **New Event Sources:** Add new parsers/adapters to publish `process_tracker_event` tasks. The Flow Trigger Service can then match these new event types.
     *   **New AI Models:** Add new `AIModel` records. The Flow Execution Orchestrator and OpenHands need to be compatible with the new model's API.
     *   **New MCP Tools/Servers:** Update the allowlist options. OpenHands agents need to be able to make calls to these new tools.
     *   **New Agent Capabilities:** As OpenHands evolves or new agent frameworks emerge, the Flow Execution Orchestrator can be adapted to integrate with them.
