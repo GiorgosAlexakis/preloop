@@ -3,64 +3,41 @@ Tracker update service manager.
 (Refactored for APScheduler integration)
 """
 
-from typing import Set, Dict, Any
-import nats
-import json
-import os
+from typing import Set
 import pytz
-from datetime import datetime, timedelta  # Import timedelta, timezone
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger  # Import IntervalTrigger
-from apscheduler.jobstores.base import JobLookupError  # Import specific error
+from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.jobstores.base import JobLookupError
 
 from spacemodels.crud import crud_tracker
 from spacemodels.db.session import get_db_session
-from spacesync.scanner.core import scan_tracker  # Import the helper
+from spacesync.services.event_bus import task_publisher_service
+from ..config import logger, SERVICE_POLL_INTERVAL
 
-from ..config import logger, SERVICE_POLL_INTERVAL  # Import default interval
-
-# Define the polling threshold (consistency with core.py)
-# TODO: Make this configurable centrally
 POLLING_THRESHOLD = timedelta(hours=1)
-
-
-# Define a constant for the job ID prefix to easily identify tracker jobs
 TRACKER_JOB_PREFIX = "tracker_update_"
 
 
-async def poll_tracker(tracker_id: str) -> Dict[str, Any]:
-    logger.info(f"Starting update poll for tracker {tracker_id}")
-    nats_url = os.getenv("NATS_URL")
-    if not nats_url:
-        db = next(get_db_session())
-        tracker = crud_tracker.get(db, id=tracker_id)
-        stats = await scan_tracker(db, tracker)
-        logger.info(f"Scan for tracker {tracker_id} completed. Stats: {stats}")
-        db.close()
-        return stats
-
-    nc = await nats.connect(nats_url)
-    js = nc.jetstream()
-
-    await js.add_stream(
-        name="tasks", subjects=["spacesync.tasks"], retention="workqueue"
-    )
-
-    # Define the task payload
-    task_payload = {"function": "scan_tracker_task", "args": [tracker_id], "kwargs": {}}
-
-    # Encode payload as JSON and publish
-    payload_bytes = json.dumps(task_payload).encode()
-    ack = await js.publish("spacesync.tasks", payload_bytes)
-
-    logger.info(
-        f"Published task '{task_payload['function']}', Stream: {ack.stream}, Seq: {ack.seq}"
-    )
-
-    await nc.close()
-
-    return ack
+async def poll_tracker(tracker_id: str):
+    """
+    Scheduled job to publish a 'scan_tracker_task' to the NATS queue.
+    """
+    logger.info(f"Publishing scan task for tracker {tracker_id}")
+    try:
+        ack = await task_publisher_service.publish_task("scan_tracker_task", tracker_id)
+        if ack:
+            logger.info(
+                f"Successfully published scan task for tracker {tracker_id}. ACK: stream={ack.stream}, seq={ack.seq}"
+            )
+        else:
+            logger.error(f"Failed to publish scan task for tracker {tracker_id}.")
+    except Exception as e:
+        logger.error(
+            f"An exception occurred while trying to publish scan task for tracker {tracker_id}: {e}",
+            exc_info=True,
+        )
 
 
 # --- APScheduler Job Synchronization Function ---

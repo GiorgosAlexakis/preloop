@@ -5,12 +5,9 @@ import signal  # Import signal
 import pytz
 from datetime import datetime  # Import datetime
 import asyncio
-import os
-import sys
-import nats
-
 from spacemodels.db.session import get_db_session
 from ..services.manager import sync_scheduled_jobs
+from ..services.event_bus import task_publisher_service
 
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -45,22 +42,14 @@ async def run_scheduler_async(
 ):
     """Runs the scheduler in an asyncio event loop."""
 
-    nats_url = os.getenv("NATS_URL")
-    if nats_url:
-        logger.info(f"NATS URL: {nats_url}")
-        try:
-            nc = await nats.connect(nats_url)
-            js = nc.jetstream()
-            await js.add_stream(
-                name="tasks", subjects=["spacesync.tasks"], retention="workqueue"
-            )
-            logger.info("Connected to NATS successfully.")
-            await nc.close()
-        except Exception as e:
-            logger.error(f"Error connecting to NATS: {e}")
-            sys.exit(1)
-    else:
-        logger.info("NATS URL not set, using sync mode")
+    # Connect to NATS using the shared task publisher service
+    # This ensures the stream is created with the correct, robust configuration.
+    try:
+        await task_publisher_service.connect()
+    except Exception as e:
+        logger.error(f"Scheduler failed to connect to NATS: {e}", exc_info=True)
+        # Depending on strictness, you might want to exit here.
+        # For now, we'll allow the scheduler to run but it won't be able to queue tasks.
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 

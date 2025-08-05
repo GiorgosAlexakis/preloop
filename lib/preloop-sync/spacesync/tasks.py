@@ -30,5 +30,5 @@ def notify_admins(subject: str, message: str, message_html: str = None):
     send_email(admin_email, subject, message, message_html)
 
 
-def process_tracker_event(tracker_id: int, event_type: str, payload: dict):
+def process_webhook_event(tracker_id: int, event_type: str, payload: dict):
     logger.info(f"Processing tracker event: {tracker_id} - {event_type}")

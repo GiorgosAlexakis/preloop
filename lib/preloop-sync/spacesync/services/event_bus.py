@@ -1,21 +1,24 @@
 import nats
 from nats.aio.client import Client as NATSClient
 from nats.aio.errors import ErrConnectionClosed, ErrTimeout, ErrNoServers
+from nats.js.api import StreamConfig
+from nats.js.errors import APIError
 
 import logging
 from typing import Optional
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
+import json
 from spacebridge.config import settings
-from spacebridge.schemas.events import StandardizedNatsEvent
 
 
 logger = logging.getLogger(__name__)
 
 
-class NatsPublisher:
+class TaskPublisher:
     def __init__(self):
         self.nc: Optional[NATSClient] = None
+        self.js = None
         self.nats_url: str = settings.nats_url
 
     async def connect(self):
@@ -34,19 +37,42 @@ class NatsPublisher:
                 name="spacebridge-publisher",
             )
             self.js = self.nc.jetstream()
-            self.stream = await self.js.add_stream(
-                name="tasks", subjects=["spacesync.tasks"], retention="workqueue"
+
+            # Define the desired stream configuration
+            config = StreamConfig(
+                name="tasks",
+                subjects=["spacesync.tasks"],
+                retention="limits",
             )
+
+            # Check if the stream exists and update if its configuration is different
+            try:
+                stream = await self.js.stream_info("tasks")
+                # The retention policy cannot be changed, so we only update the subjects.
+                if set(stream.config.subjects) != set(config.subjects):
+                    logger.warning(
+                        "Stream 'tasks' exists with different subjects. Updating..."
+                    )
+                    await self.js.update_stream(config)
+                    logger.info("Stream 'tasks' subjects updated successfully.")
+            except APIError as e:
+                if e.err_code == 10059:  # Stream not found
+                    logger.info("Stream 'tasks' not found. Creating it...")
+                    await self.js.add_stream(config)
+                    logger.info("Stream 'tasks' created successfully.")
+                else:
+                    raise e
+
             logger.info(f"Successfully connected to NATS server: {self.nats_url}")
         except ErrNoServers as e:
             logger.error(
                 f"Could not connect to NATS: No servers available at {self.nats_url}. Error: {e}"
             )
-            self.nc = None  # Ensure nc is None if connection failed
+            self.nc = None
             self.js = None
         except Exception as e:
             logger.error(f"Error connecting to NATS at {self.nats_url}: {e}")
-            self.nc = None  # Ensure nc is None if connection failed
+            self.nc = None
             self.js = None
 
     async def _error_cb(self, e: Exception):
@@ -63,49 +89,39 @@ class NatsPublisher:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_fixed(2),  # Wait 2 seconds between retries
+        wait=wait_fixed(2),
         retry=retry_if_exception_type((ErrTimeout, ErrConnectionClosed)),
-        reraise=True,  # Reraise the exception if all retries fail
+        reraise=True,
     )
-    async def _do_publish(self, subject: str, payload: bytes):
-        """Internal method to perform the actual publish, wrapped with retry."""
-        if not self.nc:  # Should not happen if connect was successful
-            raise ErrConnectionClosed("NATS client not initialized.")
-        ack = await self.js.publish(subject, payload)
-        logger.info(f"Published task '{subject}', Stream: {ack.stream}, Seq: {ack.seq}")
-        return ack
-
-    async def publish_event(self, event: "StandardizedNatsEvent"):
+    async def publish_task(self, function_name: str, *args, **kwargs):
         """
-        Publishes a standardized event to the appropriate NATS subject.
-
-        Args:
-            event: A StandardizedNatsEvent object.
+        Publishes a task to the NATS 'spacesync.tasks' subject.
         """
-        if not self.nc or not self.nc.is_connected:
-            logger.info("NATS client not connected. Attempting to reconnect...")
+        if not self.js:
+            logger.error("JetStream not initialized. Cannot publish task.")
+            # Optionally, attempt to connect here or raise an exception
             await self.connect()
-            if not self.nc or not self.nc.is_connected:
-                logger.error("Failed to reconnect to NATS. Event not published.")
+            if not self.js:
+                logger.error("Failed to reconnect to NATS. Task not published.")
                 return None
 
-        subject = f"spacebridge.events.{event.event_source}.{event.event_type}"
-        payload = event.model_dump_json().encode("utf-8")
+        subject = "spacesync.tasks"
+        task_payload = {"function": function_name, "args": args, "kwargs": kwargs}
+        payload_bytes = json.dumps(task_payload).encode("utf-8")
 
         try:
-            ack = await self._do_publish(subject, payload)
-            logger.info(f"Successfully published event to NATS subject '{subject}'")
+            ack = await self.js.publish(subject, payload_bytes)
+            logger.info(
+                f"Published task '{function_name}', Stream: {ack.stream}, Seq: {ack.seq}"
+            )
             return ack
-        except (
-            ErrTimeout,
-            ErrConnectionClosed,
-        ) as e:  # Catch exceptions reraised by tenacity
+        except (ErrTimeout, ErrConnectionClosed) as e:
             logger.error(
-                f"Failed to publish event to NATS subject '{subject}' after multiple retries: {e}"
+                f"Failed to publish task '{function_name}' to NATS subject '{subject}' after multiple retries: {e}"
             )
         except Exception as e:
             logger.error(
-                f"An unexpected error occurred while publishing event to NATS subject '{subject}': {e}"
+                f"An unexpected error occurred while publishing task '{function_name}' to NATS subject '{subject}': {e}"
             )
         return None
 
@@ -113,7 +129,7 @@ class NatsPublisher:
         if self.nc and not self.nc.is_closed:
             logger.info("Closing NATS client connection...")
             try:
-                await self.nc.drain()  # Drain ensures all buffered messages are sent
+                await self.nc.drain()
                 logger.info("NATS client connection drained and closed.")
             except Exception as e:
                 logger.error(f"Error closing NATS client connection: {e}")
@@ -124,26 +140,21 @@ class NatsPublisher:
 
 
 # Global instance for FastAPI dependency injection
-nats_publisher_service = NatsPublisher()
+task_publisher_service = TaskPublisher()
 
 
-async def get_nats_publisher() -> NatsPublisher:
-    # The connection is managed by startup/shutdown events in the main app
-    if nats_publisher_service.nc is None or not nats_publisher_service.nc.is_connected:
-        # This might happen if accessed before startup or after shutdown,
-        # or if initial connection failed.
-        # Depending on strictness, could raise an error or attempt to connect.
-        # For now, we rely on startup to have connected.
+async def get_task_publisher() -> TaskPublisher:
+    if task_publisher_service.nc is None or not task_publisher_service.nc.is_connected:
         logger.warning(
-            "NATS publisher accessed but not connected. Ensure connect() is called on app startup."
+            "Task publisher accessed but not connected. Ensure connect() is called on app startup."
         )
-    return nats_publisher_service
+    return task_publisher_service
 
 
 # Functions to be called by FastAPI startup/shutdown events
 async def connect_nats():
-    await nats_publisher_service.connect()
+    await task_publisher_service.connect()
 
 
 async def close_nats():
-    await nats_publisher_service.close()
+    await task_publisher_service.close()
