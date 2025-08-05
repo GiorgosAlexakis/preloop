@@ -2,7 +2,7 @@ import uuid
 
 from sqlalchemy import Boolean, Column, ForeignKey, String, Text, JSON  # Added JSON
 
-# from sqlalchemy.dialects.postgresql import JSONB, UUID # Removed
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -21,10 +21,11 @@ class Flow(Base, TimestampMixin):
     trigger_event_type = Column(String, nullable=False)
     trigger_config = Column(JSON, nullable=True)  # Changed from JSONB
     prompt_template = Column(Text, nullable=False)
-    model_configuration_id = Column(
-        String(36),
-        nullable=True,  # Changed from UUID
-    )  # TODO: Add ForeignKeyConstraint to model_configuration.id when ModelConfiguration model is created (Issue #60)
+    ai_model_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("ai_model.id"),
+        nullable=True,
+    )
     openhands_agent_config = Column(JSON, nullable=False)  # Changed from JSONB
     allowed_mcp_servers = Column(
         JSON,
@@ -49,6 +50,7 @@ class Flow(Base, TimestampMixin):
     )
 
     organization = relationship("Organization")
+    ai_model = relationship("AIModel", back_populates="flows")
 
     def __repr__(self) -> str:
         return f"<Flow(id={self.id}, name='{self.name}')>"

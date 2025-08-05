@@ -20,7 +20,7 @@ from spacemodels.models import api_key  # noqa: F401
 from spacemodels.models import api_usage  # noqa: F401
 from spacemodels.models import client_version_log  # noqa: F401
 from spacemodels.models import comment  # noqa: F401
-from spacemodels.models import llm_model  # noqa: F401
+from spacemodels.models import ai_model  # noqa: F401
 from spacemodels.models import issue_duplicate  # noqa: F401
 
 # Load .env file from the parent directory (project root)

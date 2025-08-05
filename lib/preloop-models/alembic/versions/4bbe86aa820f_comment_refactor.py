@@ -5,6 +5,7 @@ Revises: b31b0996ab89
 Create Date: 2025-07-21 20:42:10.351043
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -41,7 +42,12 @@ def upgrade() -> None:
     )
     op.drop_constraint("comment_author_id_fkey", "comment", type_="foreignkey")
     op.create_foreign_key(
-        None, "comment", "tracker", ["tracker_id"], ["id"], ondelete="CASCADE"
+        "fk_comment_tracker_id",
+        "comment",
+        "tracker",
+        ["tracker_id"],
+        ["id"],
+        ondelete="CASCADE",
     )
     op.drop_column("comment", "author_id")
     # ### end Alembic commands ###

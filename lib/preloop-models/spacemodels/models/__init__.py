@@ -11,7 +11,7 @@ from .organization import Organization
 from .project import Project
 from .tracker import Tracker, TrackerType
 from .client_version_log import ClientVersionLog
-from .llm_model import LLMModel
+from .ai_model import AIModel
 from .flow import Flow
 from .webhook import Webhook
 from .tracker_scope_rule import TrackerScopeRule
@@ -33,7 +33,7 @@ __all__ = [
     "ApiUsage",
     "ClientVersionLog",
     "Comment",
-    "LLMModel",
+    "AIModel",
     "Flow",
     "Webhook",
     "TrackerScopeRule",

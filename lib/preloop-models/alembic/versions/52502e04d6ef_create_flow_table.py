@@ -87,8 +87,9 @@ def upgrade() -> None:
             ["organization.id"],
             name=op.f("fk_flow_organization_id_organization"),
         ),
-        # TODO: Add ForeignKeyConstraint for model_configuration_id when ModelConfiguration model is created (Issue #60)
-        # sa.ForeignKeyConstraint(["model_configuration_id"], ["model_configuration.id"], name=op.f("fk_flow_model_configuration_id_model_configuration")),
+        sa.ForeignKeyConstraint(
+            ["ai_model_id"], ["ai_model.id"], name=op.f("fk_flow_ai_model_id_ai_model")
+        ),
         # TODO: Add ForeignKeyConstraint for created_by_user_id when User model is finalized
         # sa.ForeignKeyConstraint(["created_by_user_id"], ["user.id"], name=op.f("fk_flow_created_by_user_id_user")),
     )
