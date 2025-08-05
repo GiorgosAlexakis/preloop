@@ -1987,6 +1987,16 @@ paths:
           description: Filter comments by author (username)
           title: Author
         description: Filter comments by author (username)
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter issues by status ('opened', 'closed', 'all').
+          title: Status
+        description: Filter issues by status ('opened', 'closed', 'all').
       responses:
         '200':
           description: Successful Response

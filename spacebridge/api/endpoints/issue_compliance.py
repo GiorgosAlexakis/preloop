@@ -93,6 +93,8 @@ async def get_issue_compliance(
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
+    project = crud_project.get(db, id=issue.project_id)
+
     default_model = crud_llm_model.get_default_active_model(
         db, account_id=current_user.id
     )
@@ -113,6 +115,7 @@ async def get_issue_compliance(
     user_prompt = evaluate_prompt.user.format(
         issue_title=issue.title or "N/A",
         issue_description=issue.description or "No description provided.",
+        project_name=project.name,
     )
 
     messages: List[Dict[str, str]] = [
@@ -135,6 +138,7 @@ async def get_issue_compliance(
         response = client.chat.completions.create(
             model=default_model.model_name,
             messages=messages,
+            response_format={"type": "json_object"},
         )
         llm_response_text = response.choices[0].message.content.strip()
 

@@ -74,18 +74,17 @@ prompts:
         provide a score from 0.0 to 1.0. The final "compliance_factor" should be the
         average of these six scores.
 
-        Your response MUST be a JSON object with two keys:
-        1.  "compliance_factor": A float between 0.0 and 1.0, representing the average score.
-        2.  "reason": A Markdown-formatted string explaining the score for each principle with a brief justification.
+        Your response MUST be a JSON object with two keys: "compliance_factor", a float between 0.0 and 1.0,
+        and "reason", a string. Do not add any other text before or after the JSON object.
 
         Example for "reason":
         """
-        *   **Independent:** 0.8/1.0 - The story is mostly self-contained.
-        *   **Negotiable:** 1.0/1.0 - The scope is clear but allows for discussion.
-        *   **Valuable:** 0.5/1.0 - The user benefit is not clearly stated.
-        *   **Estimable:** 0.7/1.0 - The scope is defined enough for a high-level estimate.
-        *   **Small:** 1.0/1.0 - This can be completed in a single sprint.
-        *   **Testable:** 0.2/1.0 - Acceptance criteria are missing.
+        Independent 0.8/1.0; The story is mostly self-contained.
+        Negotiable 1.0/1.0; The scope is clear but allows for discussion.
+        Valuable 0.5/1.0; The user benefit is not clearly stated.
+        Estimable 0.7/1.0; The scope is defined enough for a high-level estimate.
+        Small 1.0/1.0; This can be completed in a single sprint.
+        Testable 0.2/1.0; Acceptance criteria are missing.
         """
       user: >
         Please evaluate the following issue against the INVEST criteria:
@@ -129,15 +128,14 @@ prompts:
         User Impact, and Security Vulnerabilities. For each factor, provide a score
         from 0.0 to 1.0. The final "risk_score" should be the average of these three scores.
 
-        Your response MUST be a JSON object with two keys:
-        1.  "risk_score": A float between 0.0 and 1.0, representing the average risk.
-        2.  "reason": A Markdown-formatted string explaining the score for each factor.
+        Your response MUST be a JSON object with two keys: "compliance_factor", a float between 0.0 and 1.0,
+        and "reason", a string. Do not add any other text before or after the JSON object.
 
         Example for "reason":
         """
-        *   **Technical Complexity:** 0.7/1.0 - Involves legacy code and multiple service integrations.
-        *   **User Impact:** 0.9/1.0 - Affects a core user workflow for all customers.
-        *   **Security Vulnerabilities:** 0.2/1.0 - No direct exposure of sensitive data, but input validation is required.
+        Technical Complexity x.x/1.0; Involves legacy code and multiple service integrations.
+        User Impact x.x/1.0; Affects a core user workflow for all customers.
+        Security Vulnerabilities x.x/1.0; No direct exposure of sensitive data, but input validation is required.
         """
       user: >
         Please evaluate the risk for the following issue:

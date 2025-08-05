@@ -100,6 +100,9 @@ async def search_all(
     author: Optional[str] = Query(
         None, description="Filter comments by author (username)"
     ),
+    status: Optional[str] = Query(
+        None, description="Filter issues by status ('opened', 'closed', 'all')."
+    ),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
@@ -244,6 +247,7 @@ async def search_all(
             project_ids=resolved_project_ids_param,  # Use the new resolved list
             embedding_type=embedding_type,
             sort=sort,  # Pass sort parameter to the CRUD method
+            status=status,
         )
 
         # print(resolved_project_ids_param) # Optional: for debugging
