@@ -46,28 +46,35 @@ export class TrackersView extends LitElement {
 
   render() {
     return html`
-      <div class="container large">
-        <div class="header">
-          <h1 class="title">Trackers</h1>
+      <view-header headerText="Trackers">
+        <div slot="main-column">
           <sl-button variant="primary" @click=${this._openAddTrackerForm}>
             <sl-icon slot="prefix" name="plus-lg"></sl-icon>
             Add New Tracker
           </sl-button>
         </div>
-        ${this.isAddingTracker
-          ? html`<add-tracker-modal
-              @tracker-added=${this._handleTrackerAdded}
-              @close-modal=${this._closeAddTrackerForm}
-            ></add-tracker-modal>`
-          : ''}
-        ${this.editingTracker
-          ? html`<add-tracker-modal
-              .tracker=${this.editingTracker}
-              @tracker-updated=${this._handleTrackerUpdated}
-              @close-modal=${this._closeAddTrackerForm}
-            ></add-tracker-modal>`
-          : ''}
-        <tracker-list @tracker-edit=${this._handleTrackerEdit}></tracker-list>
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
+        </div>
+      </view-header>
+      <div class="column-layout">
+        <div class="main-column">
+          ${this.isAddingTracker
+            ? html`<add-tracker-modal
+                @tracker-added=${this._handleTrackerAdded}
+                @close-modal=${this._closeAddTrackerForm}
+              ></add-tracker-modal>`
+            : ''}
+          ${this.editingTracker
+            ? html`<add-tracker-modal
+                .tracker=${this.editingTracker}
+                @tracker-updated=${this._handleTrackerUpdated}
+                @close-modal=${this._closeAddTrackerForm}
+              ></add-tracker-modal>`
+            : ''}
+          <tracker-list @tracker-edit=${this._handleTrackerEdit}></tracker-list>
+        </div>
+        <div class="side-column"></div>
       </div>
     `;
   }

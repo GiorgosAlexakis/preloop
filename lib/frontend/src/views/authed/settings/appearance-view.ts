@@ -54,22 +54,26 @@ export class AppearanceView extends LitElement {
 
   render() {
     return html`
-      <div class="container large">
-        <div class="header">
-          <h1 class="title">Appearance</h1>
+      <view-header headerText="Appearance">
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
         </div>
-
-        <sl-card>
-          <sl-radio-group
-            label="Theme"
-            value=${this.selectedTheme}
-            @sl-change=${this.handleThemeChange}
-          >
-            <sl-radio-button value="light">Light</sl-radio-button>
-            <sl-radio-button value="dark">Dark</sl-radio-button>
-            <sl-radio-button value="system">System</sl-radio-button>
-          </sl-radio-group>
-        </sl-card>
+      </view-header>
+      <div class="column-layout">
+        <div class="main-column">
+          <sl-card>
+            <sl-radio-group
+              label="Theme"
+              value=${this.selectedTheme}
+              @sl-change=${this.handleThemeChange}
+            >
+              <sl-radio-button value="light">Light</sl-radio-button>
+              <sl-radio-button value="dark">Dark</sl-radio-button>
+              <sl-radio-button value="system">System</sl-radio-button>
+            </sl-radio-group>
+          </sl-card>
+        </div>
+        <div class="side-column"></div>
       </div>
     `;
   }

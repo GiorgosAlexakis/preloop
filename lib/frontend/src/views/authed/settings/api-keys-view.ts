@@ -209,9 +209,8 @@ export class ApiKeysView extends LitElement {
     };
 
     return html`
-      <div class="container large">
-        <div class="header">
-          <h1 class="title">API Keys</h1>
+      <view-header headerText="API Keys">
+        <div slot="main-column">
           <sl-button
             variant="primary"
             @click=${() => {
@@ -220,8 +219,13 @@ export class ApiKeysView extends LitElement {
             >Create New API Key</sl-button
           >
         </div>
-
-        ${renderContent()}
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
+        </div>
+      </view-header>
+      <div class="column-layout">
+        <div class="main-column">${renderContent()}</div>
+        <div class="side-column"></div>
       </div>
 
       <sl-dialog label="Create API Key" .open=${this.isCreateModalOpen}>

@@ -54,6 +54,11 @@ a:hover {
     min-height: 88.16px;
 }
 
+
+.side-column .header {
+    justify-content: flex-end;
+}
+
 .table-card {
     width: 100%;
     --padding: 0;

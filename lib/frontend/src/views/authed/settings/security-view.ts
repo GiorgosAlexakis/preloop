@@ -50,58 +50,62 @@ export class SecurityView extends LitElement {
 
   render() {
     return html`
-      <div class="container large">
-        <div class="header">
-          <h1 class="title">Security</h1>
+      <view-header headerText="Security">
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
         </div>
-
-        <div class="card">
-          <div class="card-header">
-            <h3>Change Password</h3>
-          </div>
-          <div class="card-body">
-            <form @submit="${this.handleChangePassword}">
-              <sl-input
-                type="password"
-                label="Current Password"
-                .value="${this.currentPassword}"
-                @sl-input="${(e: Event) =>
-                  (this.currentPassword = (
-                    e.target as HTMLInputElement
-                  ).value)}"
-                required
-                password-toggle
-              ></sl-input>
-              <sl-input
-                type="password"
-                label="New Password"
-                .value="${this.newPassword}"
-                @sl-input="${(e: Event) =>
-                  (this.newPassword = (e.target as HTMLInputElement).value)}"
-                required
-                minlength="8"
-                password-toggle
-              ></sl-input>
-              <sl-input
-                type="password"
-                label="Confirm New Password"
-                .value="${this.confirmNewPassword}"
-                @sl-input="${(e: Event) =>
-                  (this.confirmNewPassword = (
-                    e.target as HTMLInputElement
-                  ).value)}"
-                required
-                password-toggle
-              ></sl-input>
-              <sl-button variant="primary" type="submit"
-                >Change Password</sl-button
-              >
-              ${this.changePasswordMessage
-                ? html`<p>${this.changePasswordMessage}</p>`
-                : ''}
-            </form>
+      </view-header>
+      <div class="column-layout">
+        <div class="main-column">
+          <div class="card">
+            <div class="card-header">
+              <h3>Change Password</h3>
+            </div>
+            <div class="card-body">
+              <form @submit="${this.handleChangePassword}">
+                <sl-input
+                  type="password"
+                  label="Current Password"
+                  .value="${this.currentPassword}"
+                  @sl-input="${(e: Event) =>
+                    (this.currentPassword = (
+                      e.target as HTMLInputElement
+                    ).value)}"
+                  required
+                  password-toggle
+                ></sl-input>
+                <sl-input
+                  type="password"
+                  label="New Password"
+                  .value="${this.newPassword}"
+                  @sl-input="${(e: Event) =>
+                    (this.newPassword = (e.target as HTMLInputElement).value)}"
+                  required
+                  minlength="8"
+                  password-toggle
+                ></sl-input>
+                <sl-input
+                  type="password"
+                  label="Confirm New Password"
+                  .value="${this.confirmNewPassword}"
+                  @sl-input="${(e: Event) =>
+                    (this.confirmNewPassword = (
+                      e.target as HTMLInputElement
+                    ).value)}"
+                  required
+                  password-toggle
+                ></sl-input>
+                <sl-button variant="primary" type="submit"
+                  >Change Password</sl-button
+                >
+                ${this.changePasswordMessage
+                  ? html`<p>${this.changePasswordMessage}</p>`
+                  : ''}
+              </form>
+            </div>
           </div>
         </div>
+        <div class="side-column"></div>
       </div>
     `;
   }

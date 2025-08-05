@@ -9,7 +9,7 @@ export class AppFooter extends LitElement {
     css`
       :host {
         display: block;
-        color: var(--sl-color-neutral-700);
+        color: rgb(161, 161, 170);
         padding: 0 0 48px 0;
         flex-shrink: 0;
       }
@@ -48,14 +48,14 @@ export class AppFooter extends LitElement {
 
       .footer-nav a {
         font-size: 0.9rem;
-        color: var(--sl-color-neutral-700);
+        color: rgb(161, 161, 170);
         transition: color 0.2s ease;
         text-decoration: none;
         cursor: pointer;
       }
 
       .footer-nav a:hover {
-        color: white;
+        color: rgb(178, 178, 182);
       }
 
       .divider {
@@ -107,14 +107,16 @@ export class AppFooter extends LitElement {
 
   render() {
     return html`
-      <div class="footer-container sl-theme-dark">
+      <div class="footer-container">
         <div class="divider"></div>
         <div class="footer-main">
           <div>
-            <logo-component
-              height="40"
-              style="margin-bottom: 16px"
-            ></logo-component>
+            <logo-component override-theme="dark"></logo-component>
+            <p style="margin-top: 1rem;">
+              Spacecode.AI, Inc.<br />
+              166 Geary Street, Suite 1500<br />
+              San Francisco, CA 94108
+            </p>
           </div>
           <nav class="footer-nav">
             <ul>

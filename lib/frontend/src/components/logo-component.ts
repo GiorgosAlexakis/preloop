@@ -7,8 +7,11 @@ export class LogoComponent extends LitElement {
   @property({ type: String })
   alt = 'SpaceBridge.io';
 
+  @property({ type: String, attribute: 'override-theme' })
+  themeOverride?: Theme;
+
   @state()
-  private theme: Theme = 'dark';
+  private theme: 'light' | 'dark' = 'dark';
 
   static styles = css`
     :host {
@@ -23,8 +26,12 @@ export class LogoComponent extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.setThemeFromClass();
-    window.addEventListener('theme-change', this.handleThemeChange);
+    if (this.themeOverride) {
+      this.setTheme(this.themeOverride);
+    } else {
+      this.setThemeFromClass();
+      window.addEventListener('theme-change', this.handleThemeChange);
+    }
   }
 
   disconnectedCallback() {
@@ -42,7 +49,7 @@ export class LogoComponent extends LitElement {
         '(prefers-color-scheme: dark)'
       ).matches;
       this.theme = prefersDark ? 'dark' : 'light';
-    } else {
+    } else if (theme === 'dark' || theme === 'light') {
       this.theme = theme;
     }
   }

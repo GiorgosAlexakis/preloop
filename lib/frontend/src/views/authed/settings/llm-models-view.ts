@@ -161,15 +161,19 @@ export class LlmModelsView extends LitElement {
     };
 
     return html`
-      <div class="container large">
-        <div class="header">
-          <h1 class="title">Models</h1>
+      <view-header headerText="Models">
+        <div slot="main-column">
           <sl-button variant="primary" @click=${this.openAddModelModal}>
             <sl-icon slot="prefix" name="plus-lg"></sl-icon> Add Model
           </sl-button>
         </div>
-
-        ${renderContent()}
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
+        </div>
+      </view-header>
+      <div class="column-layout">
+        <div class="main-column">${renderContent()}</div>
+        <div class="side-column"></div>
       </div>
       ${this.renderModal()} ${this.renderDeleteConfirm()}
     `;
