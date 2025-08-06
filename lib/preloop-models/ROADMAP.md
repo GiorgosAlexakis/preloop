@@ -9,7 +9,6 @@
 - [x] Implement Account model
 - [x] Implement Tracker model and TrackerType enum
 - [x] Implement Organization model
-- [x] Implement AccountOrganization join model
 - [x] Implement Project model
 - [x] Implement Issue model
 - [x] Implement EmbeddingModel model

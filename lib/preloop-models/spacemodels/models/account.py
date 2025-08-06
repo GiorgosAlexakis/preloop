@@ -1,14 +1,13 @@
-"""Account and AccountOrganization models."""
+"""Account model."""
 
 from datetime import datetime
 
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from sqlalchemy import DateTime, ForeignKey, func, String  # Added String back
+from sqlalchemy import DateTime, func, String  # Added String back
 
 # from sqlalchemy.dialects.postgresql import UUID  # Removed UUID
-from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -21,10 +20,14 @@ if TYPE_CHECKING:
     from .tracker import Tracker
     from .client_version_log import ClientVersionLog
     from .ai_model import AIModel
+    from .plan import Subscription
+    from .flow import Flow
 
 
 class Account(Base):
     """Account model for user authentication and authorization."""
+
+    __tablename__ = "account"
 
     # Account details
     username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
@@ -57,9 +60,6 @@ class Account(Base):
         "Tracker", back_populates="account", cascade="all, delete-orphan"
     )
     # Organizations this account is a member of (but not necessarily the owner)
-    organization_memberships: Mapped[List["AccountOrganization"]] = relationship(
-        "AccountOrganization", back_populates="account", cascade="all, delete-orphan"
-    )
     ai_models: Mapped[List["AIModel"]] = relationship(
         "AIModel", back_populates="account", cascade="all, delete-orphan"
     )
@@ -72,13 +72,17 @@ class Account(Base):
     client_version_logs: Mapped[List["ClientVersionLog"]] = relationship(
         "ClientVersionLog", back_populates="account", cascade="all, delete-orphan"
     )
+    subscriptions: Mapped[List["Subscription"]] = relationship(
+        "Subscription", back_populates="account", cascade="all, delete-orphan"
+    )
+    flows: Mapped[List["Flow"]] = relationship(
+        "Flow",
+        back_populates="account",
+        cascade="all, delete-orphan",
+        foreign_keys="[Flow.account_id]",
+    )
 
     # Many-to-many relationship helper for organizational roles
-    organization_roles: Mapped[Dict[str, str]] = association_proxy(
-        "organization_memberships",
-        "role",
-        creator=lambda k, v: AccountOrganization(organization_id=k, role=v),
-    )
 
     # Property to get organizations this account owns through trackers
     @property
@@ -88,38 +92,3 @@ class Account(Base):
         for tracker in self.trackers:
             owned_orgs.extend(tracker.organizations)
         return owned_orgs
-
-
-class AccountOrganization(Base):
-    """Join table for accounts and organizations with roles.
-
-    This represents memberships/collaborations in an organization, separate from
-    ownership which is determined by the tracker relationship.
-    """
-
-    __tablename__ = "accountorganization"
-
-    # Composite primary key
-    account_id: Mapped[str] = mapped_column(  # Reverted to str
-        String(36),  # Reverted to String(36)
-        ForeignKey("account.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    organization_id: Mapped[str] = mapped_column(  # Reverted to str
-        String(36),  # Reverted to String(36)
-        ForeignKey("organization.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-
-    # Role in the organization
-    role: Mapped[str] = mapped_column(String(50), default="member")
-
-    # Timestamps are inherited from Base. id is also inherited as PK.
-
-    # Relationships
-    account: Mapped["Account"] = relationship(
-        "Account", back_populates="organization_memberships"
-    )
-    organization: Mapped["Organization"] = relationship(
-        "Organization", back_populates="members"
-    )

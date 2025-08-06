@@ -39,18 +39,15 @@ class Flow(Base, TimestampMixin):
     )  # Assuming JSON Array of objects
     is_preset = Column(Boolean, default=False, nullable=False)
     is_enabled = Column(Boolean, default=True, nullable=False)
-    created_by_user_id = Column(
+    account_id = Column(
         String(36),
-        nullable=True,  # Changed from UUID
-    )  # TODO: Add ForeignKeyConstraint to user.id when User model is finalized and available
-    organization_id = Column(
-        String(36),
-        ForeignKey("organization.id"),
-        nullable=False,  # Changed from UUID
+        ForeignKey("account.id"),
+        nullable=False,
+        index=True,
     )
 
-    organization = relationship("Organization")
     ai_model = relationship("AIModel", back_populates="flows")
+    account = relationship("Account", back_populates="flows", foreign_keys=[account_id])
 
     def __repr__(self) -> str:
         return f"<Flow(id={self.id}, name='{self.name}')>"

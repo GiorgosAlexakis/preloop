@@ -40,7 +40,7 @@ async def get_flow_executions_by_flow(
         .order_by(FlowExecution.start_time.desc())
     )
     if account_id:
-        query = query.join(Flow).filter(Flow.created_by_user_id == account_id)
+        query = query.join(Flow).filter(Flow.account_id == account_id)
 
     result = await db.execute(query.offset(skip).limit(limit))
     return result.scalars().all()

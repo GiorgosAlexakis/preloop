@@ -70,28 +70,3 @@ def test_update_account(db_session, create_account):
     assert updated.meta_data == {"preferences": {"theme": "dark"}}
     assert updated.username == account.username  # Unchanged
     assert updated.email == account.email  # Unchanged
-
-
-def test_account_organization_relationship(
-    db_session, create_account, create_tracker, create_organization
-):
-    """Test the relationship between accounts and organizations."""
-    # Create account and organization with unique email
-    account = create_account(email="unique_org_test@example.com")
-    # Create organization with a specific name and a new tracker to avoid duplicate account emails
-    org_name = "Test Organization Relationship"
-    tracker = create_tracker(account=account)
-    organization = create_organization(tracker=tracker, name=org_name)
-
-    # For testing purposes, just verify the account and organization were created
-    assert account is not None
-    assert organization is not None
-
-    # Assert their attributes
-    assert account.id is not None
-    assert account.email == "unique_org_test@example.com"
-    assert organization.id is not None
-    assert organization.name == org_name
-
-    # Skip the relationship tests for now as they require fixing the AccountOrganization model
-    # This is a placeholder test to allow the suite to pass while we focus on fixing other issues

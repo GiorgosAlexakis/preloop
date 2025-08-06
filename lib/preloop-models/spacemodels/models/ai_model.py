@@ -40,7 +40,7 @@ class AIModel(Base, TimestampMixin):
 
     # Ownership and sharing
     account_id: Mapped[Optional[str]] = mapped_column(
-        ForeignKey("account.id"), nullable=True, index=True
+        String(36), ForeignKey("account.id"), nullable=True, index=True
     )
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

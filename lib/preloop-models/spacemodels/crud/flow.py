@@ -27,22 +27,17 @@ class CRUDFlow(CRUDBase[models.Flow]):
         """
         return db.query(self.model).filter(self.model.id == id).first()
 
-    def get_by_organization(
+    def get_by_account(
         self,
         db: Session,
-        organization_id: uuid.UUID,
+        account_id: uuid.UUID,
         skip: int = 0,
         limit: int = 100,
-        account_id: Optional[str] = None,
     ) -> List[models.Flow]:
         """
-        Retrieve flows for a specific organization with pagination.
+        Retrieve flows for a specific account with pagination.
         """
-        query = db.query(self.model).filter(
-            self.model.organization_id == organization_id
-        )
-        if account_id:
-            query = query.filter(self.model.created_by_user_id == account_id)
+        query = db.query(self.model).filter(self.model.account_id == account_id)
         return query.offset(skip).limit(limit).all()
 
     def create(self, db: Session, *, flow_in: schemas.FlowCreate) -> models.Flow:

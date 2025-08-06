@@ -1,0 +1,81 @@
+"""
+SQLAlchemy models for Plans, Subscriptions, and Usage.
+"""
+
+from sqlalchemy import (
+    Column,
+    String,
+    Boolean,
+    Float,
+    ForeignKey,
+    DateTime,
+    Date,
+)
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from .base import Base
+from .mixins import TimestampMixin
+
+
+class Plan(Base, TimestampMixin):
+    """A subscription plan."""
+
+    __tablename__ = "plan"
+
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    name = Column(String, nullable=False, unique=True)
+    price_monthly = Column(Float, nullable=False)
+    price_annually = Column(Float, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    features = Column(JSONB, nullable=False)
+
+    subscription = relationship("Subscription", back_populates="plan")
+
+
+class Subscription(Base, TimestampMixin):
+    """A subscription linking an organization to a plan."""
+
+    __tablename__ = "subscription"
+
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    account_id = Column(
+        String(36), ForeignKey("account.id"), nullable=False, index=True
+    )
+    plan_id = Column(
+        UUID(as_uuid=True), ForeignKey("plan.id"), nullable=False, index=True
+    )
+    status = Column(String, nullable=False, default="active")
+    current_period_start = Column(DateTime(timezone=True), nullable=False)
+    current_period_end = Column(DateTime(timezone=True), nullable=False)
+    stripe_subscription_id = Column(String, nullable=True, unique=True)
+    stripe_customer_id = Column(String, nullable=True, unique=True)
+
+    account = relationship("Account", back_populates="subscriptions")
+    plan = relationship("Plan", back_populates="subscription")
+    monthly_usage = relationship(
+        "MonthlyUsage", back_populates="subscription", cascade="all, delete-orphan"
+    )
+
+
+class MonthlyUsage(Base, TimestampMixin):
+    """Aggregated monthly usage for a subscription."""
+
+    __tablename__ = "monthly_usage"
+
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    subscription_id = Column(
+        UUID(as_uuid=True), ForeignKey("subscription.id"), nullable=False, index=True
+    )
+    billing_cycle_start = Column(Date, nullable=False)
+    billing_cycle_end = Column(Date, nullable=False)
+    usage_counts = Column(JSONB, nullable=False, server_default="{}")
+
+    subscription = relationship("Subscription", back_populates="monthly_usage")
