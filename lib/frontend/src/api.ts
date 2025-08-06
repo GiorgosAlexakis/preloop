@@ -144,9 +144,9 @@ export async function updateTracker(trackerId: string, trackerData: any) {
 }
 
 export async function validateTrackerToken(
-  id?: string,
   type: string,
   token: string,
+  id?: string,
   url?: string,
   username?: string
 ) {
@@ -693,6 +693,26 @@ export async function getCompliancePrompts(): Promise<
   const response = await fetchWithAuth('/api/v1/issue_compliance_prompts');
   if (!response.ok) {
     throw new Error('Failed to fetch compliance prompts');
+  }
+  return response.json();
+}
+
+// Billing
+export async function fetchPlans() {
+  const response = await fetchWithAuth('/api/v1/billing/plans');
+  if (!response.ok) {
+    throw new Error('Failed to fetch plans');
+  }
+  return response.json();
+}
+
+export async function getCurrentSubscription() {
+  const response = await fetchWithAuth('/api/v1/billing/subscription');
+  if (!response.ok) {
+    if (response.status === 404) {
+      return null; // No subscription found
+    }
+    throw new Error('Failed to fetch subscription');
   }
   return response.json();
 }

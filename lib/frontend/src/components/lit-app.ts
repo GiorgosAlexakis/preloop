@@ -23,6 +23,7 @@ import '../views/authed/settings/ai-models-view.ts';
 import '../views/authed/settings/profile-view.ts';
 import '../views/authed/settings/security-view.ts';
 import '../views/authed/settings/appearance-view.ts';
+import '../views/authed/pricing-view.ts';
 import './app-header.ts';
 import './app-footer.ts';
 
@@ -81,6 +82,7 @@ export class LitApp extends LitElement {
               { path: 'appearance', component: 'appearance-view' },
             ],
           },
+          { path: 'pricing', component: 'pricing-view' },
         ],
       },
     ]);

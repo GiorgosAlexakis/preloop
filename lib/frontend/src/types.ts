@@ -16,6 +16,7 @@ export interface FetchIssuesListParams {
   project_ids?: string[];
   status?: 'opened' | 'closed' | 'all';
   limit?: number;
+  skip?: number;
   sort_by?: string;
   sort_order?: string;
 }
