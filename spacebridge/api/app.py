@@ -41,6 +41,7 @@ from spacebridge.api.endpoints import (
     webhooks,
     flows,
     ai_models,
+    billing,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -538,6 +539,12 @@ def create_app() -> FastAPI:
     )  # No auth dependency for version check
     app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
     app.include_router(flows.router, prefix="/api/v1", tags=["Flows"])
+    app.include_router(
+        billing.router,
+        prefix="/api/v1/billing",
+        tags=["Billing"],
+        dependencies=[Depends(get_current_active_user)],
+    )
 
     # --- SPA Static Files (Production) ---
     # In production, serve the built Lit frontend from the root

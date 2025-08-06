@@ -18,8 +18,6 @@ class FlowBase(BaseModel):
     allowed_mcp_tools: Optional[List[Dict[str, Any]]] = None
     is_preset: Optional[bool] = False
     is_enabled: Optional[bool] = True
-    created_by_user_id: Optional[uuid.UUID] = None
-    organization_id: Optional[uuid.UUID] = None
 
 
 class FlowCreate(FlowBase):
@@ -30,7 +28,6 @@ class FlowCreate(FlowBase):
     openhands_agent_config: Dict[str, Any]
     allowed_mcp_servers: List[str] = []
     allowed_mcp_tools: List[Dict[str, Any]] = []
-    organization_id: uuid.UUID
 
 
 class FlowUpdate(FlowBase):

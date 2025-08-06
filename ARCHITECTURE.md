@@ -397,7 +397,6 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `allowed_mcp_tools`: JSON Array of objects (e.g., `[{"server_name": "spacebridge-mcp", "tool_name": "search_issues"}, {"server_name": "code_analysis_mcp", "tool_name": "lint_file"}]`)
     *   `is_preset`: Boolean (Indicates if this is a system-defined preset)
     *   `is_enabled`: Boolean (Allows users to enable/disable Flows)
-    *   `created_by_user_id`: Foreign Key to `Users.id` (if user management exists)
     *   `organization_id`: Foreign Key to `Organizations.id`
     *   `created_at`: Timestamp
     *   `updated_at`: Timestamp
@@ -568,3 +567,116 @@ sequenceDiagram
 *   **Downtime Incident (e.g., from PagerDuty/Opsgenie webhook) -> Initial Investigation:** When an incident is triggered, check the deployed version, deployment time, and relevant telemetry data. Attempt to determine the potential cause and suggest or perform initial remediation actions (e.g., rollback, restart service, scale resources) or escalate to a human with a summary.
 *   **New User Feedback (e.g., via a dedicated form or email integration) -> Summarize & Categorize:** Parse incoming user feedback, summarize key points, categorize it (e.g., bug report, feature request, question), and create a corresponding issue in the appropriate tracker.
 *   **Scheduled Code Quality Scan (e.g., triggered by an internal cron-like event) -> Analyze & Report:** Trigger a static analysis tool (or use an MCP tool that does this), have the agent review the results, summarize critical issues, and create tasks for them in the issue tracker.
+
+
+## Usage, Billing, and Plans
+
+To support different subscription tiers and enforce usage limits, a comprehensive usage tracking and billing system is integrated into SpaceBridge. This system is designed to be scalable, accurate, and have minimal performance overhead.
+
+### 1. Architecture Overview
+
+The system introduces a new `Usage & Billing Service` that acts as the central authority for all plan-related logic. It interacts with new database models in `SpaceModels` and is integrated into the API layer via middleware and dependencies.
+
+```mermaid
+graph TD
+    subgraph "SpaceBridge API"
+        direction TB
+        APIMiddleware["Usage Tracking Middleware"]
+        APIEndpoints["API Endpoints (e.g., /issues/search)"]
+        BillingEndpoints["New Billing API (/billing/...)"]
+        FeatureGatedEndpoint["Gated Endpoint (e.g., /ai_models)"]
+    end
+
+    subgraph "Core Services"
+        UsageService["Usage & Billing Service"]
+        AIModelService["Existing AI Model Service"]
+        SpaceSyncService["Existing SpaceSync Service"]
+    end
+
+    subgraph "SpaceModels (Database)"
+        Plans["Plans Table"]
+        Subscriptions["Subscriptions Table"]
+        MonthlyUsage["MonthlyUsage Table"]
+        Account["Account/Organization Table"]
+    end
+
+    subgraph "External Services"
+        Stripe["Stripe API"]
+    end
+
+    %% Connections
+    APIMiddleware -- "Records API Call" --> UsageService
+    APIEndpoints -- "Calls" --> AIModelService
+    AIModelService -- "Records AI Call" --> UsageService
+    SpaceSyncService -- "Records Data Ingestion" --> UsageService
+
+    FeatureGatedEndpoint -- "Checks Feature Flag & Limits" --> UsageService
+    BillingEndpoints -- "Manages Subscriptions & Plans" --> UsageService
+
+    UsageService -- "Reads/Writes" --> Plans
+    UsageService -- "Reads/Writes" --> Subscriptions
+    UsageService -- "Reads/Writes" --> MonthlyUsage
+    UsageService -- "Links to" --> Account
+    UsageService -- "Interacts with" --> Stripe
+
+    %% Styling
+    style UsageService fill:#cfc,stroke:#333,stroke-width:2px
+    style BillingEndpoints fill:#cfc,stroke:#333,stroke-width:2px
+    style Plans fill:#eef,stroke:#666,stroke-width:1px
+    style Subscriptions fill:#eef,stroke:#666,stroke-width:1px
+    style MonthlyUsage fill:#eef,stroke:#666,stroke-width:1px
+```
+
+### 2. Database Schema (`SpaceModels`)
+
+Three new tables are added to manage billing and usage:
+
+*   **`Plans` Table**: Defines the available subscription plans (e.g., Free, Pro, Ultra).
+    *   `id`: Primary Key
+    *   `name`: String
+    *   `price_monthly`: Numeric
+    *   `is_active`: Boolean
+    *   `features`: JSONB. A flexible field to store all limits and feature flags for the plan.
+        *   *Example*: `{"api_calls_monthly": 10000, "ai_calls_monthly": 100, "issues_ingested_monthly": 1000, "custom_ai_models_enabled": false, "custom_compliance_metrics_enabled": false}`
+
+*   **`Subscriptions` Table**: Links an `Organization` to a `Plan` and tracks the billing cycle.
+    *   `id`: Primary Key
+    *   `organization_id`: Foreign Key to `Organizations.id`
+    *   `plan_id`: Foreign Key to `Plans.id`
+    *   `status`: String (e.g., "active", "trialing", "past_due", "canceled")
+    *   `current_period_start`: Timestamp
+    *   `current_period_end`: Timestamp
+    *   `stripe_subscription_id`: String (Links to the subscription in Stripe)
+
+*   **`MonthlyUsage` Table**: Stores aggregated usage data for each organization per billing cycle.
+    *   `id`: Primary Key
+    *   `subscription_id`: Foreign Key to `Subscriptions.id`
+    *   `billing_cycle_start`: Date
+    *   `billing_cycle_end`: Date
+    *   `usage_counts`: JSONB. Stores aggregated counts for each tracked metric.
+        *   *Example*: `{"api_calls": 8500, "ai_calls": 75, "issues_ingested": 450}`
+
+### 3. Core Logic and Data Flow
+
+*   **Usage Recording**:
+    1.  A **FastAPI Middleware** intercepts every API request and calls `UsageService.record_usage(org_id, "api_calls")`.
+    2.  Specific services, like the **AI Model Service** or **SpaceSync**, call `UsageService.record_usage(...)` for more granular events (e.g., `"ai_calls"`, `"issues_ingested"`).
+    3.  The `UsageService` finds the current `MonthlyUsage` record for the organization and atomically increments the relevant counter in the `usage_counts` JSONB field.
+
+*   **Limit Enforcement**:
+    1.  Endpoints that consume a limited resource are protected by a FastAPI dependency.
+    2.  The dependency calls `UsageService.check_limit(org_id, "metric_name")`.
+    3.  The service compares the current value in `MonthlyUsage.usage_counts` against the limit defined in `Plans.features`.
+    4.  If the limit is exceeded, the API returns a `429 Too Many Requests` error, prompting the user to upgrade.
+
+*   **Feature Gating**:
+    1.  Endpoints for plan-specific features (e.g., creating a custom AI model) are protected by a dependency that calls `UsageService.has_feature(org_id, "feature_name")`.
+    2.  The service checks for the presence and value of the feature flag in the organization's `Plans.features` object.
+    3.  If the feature is not enabled, the API returns a `403 Forbidden` error.
+
+### 4. Stripe Integration
+
+The `Usage & Billing Service` will be responsible for all interactions with the Stripe API. This includes:
+*   Creating and managing Stripe Customers and Subscriptions.
+*   Handling webhooks from Stripe to update subscription statuses (e.g., `invoice.payment_succeeded`, `customer.subscription.deleted`).
+*   Initiating checkout sessions for new subscriptions or plan upgrades.

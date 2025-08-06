@@ -2648,7 +2648,7 @@ paths:
       tags:
       - Flows
       summary: Read Flows
-      description: Retrieve flows for the user's organization.
+      description: Retrieve flows for the account.
       operationId: read_flows_api_v1__get
       security:
       - bearerAuth: []
@@ -2777,6 +2777,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/billing/plans:
+    get:
+      tags:
+      - Billing
+      summary: List Plans
+      description: List all available subscription plans.
+      operationId: list_plans_api_v1_billing_plans_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Plan'
+                type: array
+                title: Response List Plans Api V1 Billing Plans Get
+      security:
+      - bearerAuth: []
+    post:
+      tags:
+      - Billing
+      summary: Create Plan
+      description: 'Create a new subscription plan.
+
+        (Requires superuser privileges).'
+      operationId: create_plan_api_v1_billing_plans_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/billing/subscription:
+    get:
+      tags:
+      - Billing
+      summary: Get Subscription
+      description: Get the current user's subscription details.
+      operationId: get_subscription_api_v1_billing_subscription_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+      security:
+      - bearerAuth: []
 components:
   schemas:
     AIModelCreate:
@@ -3442,16 +3506,10 @@ components:
           - type: 'null'
           title: Is Enabled
           default: true
-        created_by_user_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Created By User Id
-        organization_id:
+        account_id:
           type: string
           format: uuid
-          title: Organization Id
+          title: Account Id
       type: object
       required:
       - name
@@ -3459,7 +3517,7 @@ components:
       - trigger_event_type
       - prompt_template
       - openhands_agent_config
-      - organization_id
+      - account_id
       title: FlowCreate
     FlowResponse:
       properties:
@@ -3533,18 +3591,10 @@ components:
           - type: 'null'
           title: Is Enabled
           default: true
-        created_by_user_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Created By User Id
-        organization_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Organization Id
+        account_id:
+          type: string
+          format: uuid
+          title: Account Id
         id:
           type: string
           format: uuid
@@ -3559,6 +3609,7 @@ components:
           title: Updated At
       type: object
       required:
+      - account_id
       - id
       - created_at
       - updated_at
@@ -3635,19 +3686,13 @@ components:
           - type: 'null'
           title: Is Enabled
           default: true
-        created_by_user_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Created By User Id
-        organization_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Organization Id
+        account_id:
+          type: string
+          format: uuid
+          title: Account Id
       type: object
+      required:
+      - account_id
       title: FlowUpdate
     HTTPValidationError:
       properties:
@@ -4370,6 +4415,117 @@ components:
       - email
       title: PasswordResetRequest
       description: Model for password reset requests.
+    Plan:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: Name of the plan.
+        price_monthly:
+          type: number
+          title: Price Monthly
+          description: Monthly price of the plan.
+        price_annually:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Price Annually
+          description: Annual price of the plan, if available.
+        is_active:
+          type: boolean
+          title: Is Active
+          description: Whether the plan is currently active.
+          default: true
+        features:
+          $ref: '#/components/schemas/PlanFeatures'
+          description: Features and limits of the plan.
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Primary key.
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: Timestamp of creation.
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+          description: Timestamp of last update.
+      type: object
+      required:
+      - name
+      - price_monthly
+      - features
+      - id
+      - created_at
+      - updated_at
+      title: Plan
+      description: Schema for a Plan retrieved from the database.
+    PlanCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: Name of the plan.
+        price_monthly:
+          type: number
+          title: Price Monthly
+          description: Monthly price of the plan.
+        price_annually:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Price Annually
+          description: Annual price of the plan, if available.
+        is_active:
+          type: boolean
+          title: Is Active
+          description: Whether the plan is currently active.
+          default: true
+        features:
+          $ref: '#/components/schemas/PlanFeatures'
+          description: Features and limits of the plan.
+      type: object
+      required:
+      - name
+      - price_monthly
+      - features
+      title: PlanCreate
+      description: Schema for creating a new Plan.
+    PlanFeatures:
+      properties:
+        api_calls_monthly:
+          type: integer
+          title: Api Calls Monthly
+          description: Monthly API call limit.
+        ai_calls_monthly:
+          type: integer
+          title: Ai Calls Monthly
+          description: Monthly AI model call limit.
+        issues_ingested_monthly:
+          type: integer
+          title: Issues Ingested Monthly
+          description: Monthly issue/comment ingestion limit.
+        custom_ai_models_enabled:
+          type: boolean
+          title: Custom Ai Models Enabled
+          description: Whether custom AI models are enabled.
+        custom_compliance_metrics_enabled:
+          type: boolean
+          title: Custom Compliance Metrics Enabled
+          description: Whether custom compliance metrics are enabled.
+      type: object
+      required:
+      - api_calls_monthly
+      - ai_calls_monthly
+      - issues_ingested_monthly
+      - custom_ai_models_enabled
+      - custom_compliance_metrics_enabled
+      title: PlanFeatures
+      description: Defines the features and limits for a subscription plan.
     ProjectCreate:
       properties:
         name:
@@ -4609,6 +4765,65 @@ components:
       - item
       - similarity
       title: SearchResultItem
+    Subscription:
+      properties:
+        account_id:
+          type: string
+          format: uuid
+          title: Account Id
+          description: Foreign key to Account.
+        plan_id:
+          type: string
+          format: uuid
+          title: Plan Id
+          description: Foreign key to Plan.
+        status:
+          type: string
+          title: Status
+          description: Subscription status (e.g., active, trialing, canceled).
+          default: active
+        current_period_start:
+          type: string
+          format: date-time
+          title: Current Period Start
+          description: Start of the current billing period.
+        current_period_end:
+          type: string
+          format: date-time
+          title: Current Period End
+          description: End of the current billing period.
+        stripe_subscription_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stripe Subscription Id
+          description: ID of the subscription in Stripe.
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Primary key.
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: Timestamp of creation.
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+          description: Timestamp of last update.
+      type: object
+      required:
+      - account_id
+      - plan_id
+      - current_period_start
+      - current_period_end
+      - id
+      - created_at
+      - updated_at
+      title: Subscription
+      description: Schema for a Subscription retrieved from the database.
     TestConnectionRequest:
       properties:
         organization:
