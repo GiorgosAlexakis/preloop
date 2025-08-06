@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional, Dict
-
+from uuid import UUID
 from pydantic import BaseModel
 
 
@@ -25,7 +25,7 @@ class IssueDuplicate(BaseModel):
     resolution_reason: Optional[str] = None
     resulting_issue1_id: Optional[str] = None
     resulting_issue2_id: Optional[str] = None
-    ai_model_id: Optional[str] = None
+    ai_model_id: Optional[UUID] = None
     ai_model_name: Optional[str] = None
 
 

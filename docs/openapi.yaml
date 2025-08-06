@@ -3838,6 +3838,7 @@ components:
         ai_model_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Ai Model Id
         ai_model_name:
