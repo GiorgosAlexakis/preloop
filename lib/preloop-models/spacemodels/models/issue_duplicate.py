@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, func, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -17,8 +18,8 @@ class IssueDuplicate(Base):
     issue2_id = Column(String, ForeignKey("issue.id"), nullable=False)
     decision = Column(String, nullable=False)
     decision_at = Column(DateTime, server_default=func.now())
-    llm_model_id = Column(String, ForeignKey("llm_model.id"), nullable=False)
-    llm_model_name = Column(String, nullable=True)
+    ai_model_id = Column(UUID, ForeignKey("ai_model.id"), nullable=False)
+    ai_model_name = Column(String, nullable=True)
     reason = Column(Text, nullable=True)
     resolution = Column(String, nullable=True)
     resolution_at = Column(DateTime, nullable=True)
@@ -30,4 +31,4 @@ class IssueDuplicate(Base):
     issue2 = relationship("Issue", foreign_keys=[issue2_id])
     resulting_issue1 = relationship("Issue", foreign_keys=[resulting_issue1_id])
     resulting_issue2 = relationship("Issue", foreign_keys=[resulting_issue2_id])
-    llm_model = relationship("LLMModel", foreign_keys=[llm_model_id])
+    ai_model = relationship("AIModel", foreign_keys=[ai_model_id])

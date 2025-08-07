@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from .organization import Organization
     from .tracker import Tracker
     from .client_version_log import ClientVersionLog
-    from .llm_model import LLMModel
+    from .ai_model import AIModel
 
 
 class Account(Base):
@@ -60,8 +60,8 @@ class Account(Base):
     organization_memberships: Mapped[List["AccountOrganization"]] = relationship(
         "AccountOrganization", back_populates="account", cascade="all, delete-orphan"
     )
-    llm_models: Mapped[List["LLMModel"]] = relationship(
-        "LLMModel", back_populates="account", cascade="all, delete-orphan"
+    ai_models: Mapped[List["AIModel"]] = relationship(
+        "AIModel", back_populates="account", cascade="all, delete-orphan"
     )
     api_keys: Mapped[List["ApiKey"]] = relationship(
         "ApiKey", back_populates="creator", cascade="all, delete-orphan"

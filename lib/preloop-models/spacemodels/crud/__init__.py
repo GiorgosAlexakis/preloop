@@ -8,7 +8,7 @@ from ..models import (
     EmbeddingModel,
     Issue,
     IssueEmbedding,
-    LLMModel,  # Add LLMModel model import
+    AIModel,
     Organization,
     Project,
     Tracker,
@@ -27,7 +27,7 @@ from .organization import CRUDOrganization  # Removed create_organization import
 from .project import CRUDProject
 from .tracker import CRUDTracker
 from .tracker_scope_rule import CRUDTrackerScopeRule
-from .llm_model import CRUDLLMModel
+from .ai_model import CRUDAIModel
 from .webhook import CRUDWebhook
 from .issue_compliance_result import (
     CRUDIssueComplianceResult,
@@ -43,7 +43,7 @@ crud_embedding_model = CRUDEmbeddingModel(EmbeddingModel)
 crud_issue_embedding = CRUDIssueEmbedding(IssueEmbedding)
 crud_api_key = CRUDApiKey(ApiKey)
 crud_api_usage = CRUDApiUsage(ApiUsage)
-crud_llm_model = CRUDLLMModel(LLMModel)  # Instantiate crud_llm_model
+crud_ai_model = CRUDAIModel(AIModel)
 # crud_comment is already instantiated in its own file
 crud_webhook = CRUDWebhook(Webhook)
 crud_flow = CRUDFlow()  # Instantiate CRUDFlow
@@ -63,7 +63,7 @@ __all__ = [
     "CRUDApiKey",
     "CRUDApiUsage",
     "CRUDComment",
-    "CRUDLLMModel",
+    "CRUDAIModel",
     "CRUDFlow",
     "CRUDIssueComplianceResult",
     "crud_account",
@@ -77,7 +77,7 @@ __all__ = [
     "crud_api_key",
     "crud_api_usage",
     "crud_comment",
-    "crud_llm_model",
+    "crud_ai_model",
     "crud_webhook",
     "crud_flow",
     "issue_compliance_result",

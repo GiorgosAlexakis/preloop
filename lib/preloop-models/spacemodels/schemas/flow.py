@@ -12,7 +12,7 @@ class FlowBase(BaseModel):
     trigger_event_type: Optional[str] = None
     trigger_config: Optional[Dict[str, Any]] = None
     prompt_template: Optional[str] = None
-    model_configuration_id: Optional[uuid.UUID] = None
+    ai_model_id: Optional[uuid.UUID] = None
     openhands_agent_config: Optional[Dict[str, Any]] = None
     allowed_mcp_servers: Optional[List[str]] = None
     allowed_mcp_tools: Optional[List[Dict[str, Any]]] = None

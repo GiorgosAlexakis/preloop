@@ -14,7 +14,6 @@ readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -34,6 +33,7 @@ dependencies = [
     "ruff>=0.11.0",
     "pre-commit>=4.1.0",
     "openai>=1.75.0",
+    "pytest-mock>=3.10.0",
 ]
 
 

@@ -12,3 +12,4 @@ pgvector>=0.2.1
 numpy>=1.24.0
 alembic>=1.10.0 # Added for database migrations
 openai
+pytest-mock>=3.10.0
