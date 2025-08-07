@@ -43,11 +43,11 @@ from spacebridge.schemas.duplicates import (
     DuplicateIssuePair,
     ProjectDuplicatesResponse,
 )
-from spacebridge.schemas.llm_model import (
-    LLMModelBase,
-    LLMModelCreate,
-    LLMModelRead,
-    LLMModelUpdate,
+from spacebridge.schemas.ai_model import (
+    AIModelBase,
+    AIModelCreate,
+    AIModelRead,
+    AIModelUpdate,
 )
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateProjectStats,
@@ -105,11 +105,11 @@ __all__ = [
     # Duplicates schemas
     "DuplicateIssuePair",
     "ProjectDuplicatesResponse",
-    # LLMModel schemas
-    "LLMModelBase",
-    "LLMModelCreate",
-    "LLMModelRead",
-    "LLMModelUpdate",
+    # AIModel schemas
+    "AIModelBase",
+    "AIModelCreate",
+    "AIModelRead",
+    "AIModelUpdate",
     # IssueDuplicate schemas
     "IssueDuplicateStats",
     "IssueDuplicateProjectStats",

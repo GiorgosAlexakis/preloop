@@ -290,92 +290,75 @@ graph TD
     subgraph "SpaceBridge Core"
         direction TB
         WebhookEndpoint["Webhook Endpoint (/api/v1/private/webhooks/...)"]
-        EventBus["Internal Event Bus (NATS)"]
-        APIExt["SpaceBridge API (Flow/ModelConfig CRUD, Logs)"]
-        SpaceModelsDB["SpaceModels (PostgreSQL - Flows, ModelConfigs, Executions)"]
+        TaskQueue["Internal Task Queue (NATS)"]
+        APIExt["SpaceBridge API (Flow/AIModel CRUD, Logs)"]
+        SpaceModelsDB["SpaceModels (PostgreSQL - Flows, AIModels, Executions)"]
     end
 
     subgraph "Flows Subsystem"
         direction TB
-        FlowTriggerService["Flow Trigger Service"]
+        FlowTriggerService["Flow Trigger Service (part of Worker)"]
         FlowExecOrchestrator["Flow Execution Orchestrator"]
         OpenHandsInfra["OpenHands Execution Infrastructure (Docker/Kubernetes)"]
         subgraph "OpenHands Agent Session (Container)"
             OpenHandsAgent["OpenHands Agent"]
-            LLMClient["LLM Client (via ModelConfig)"]
+            AIModelClient["AIModel Client (via AIModel)"]
             MCPClient["MCP Client (for allowed tools)"]
         end
     end
 
     subgraph "External Services"
-        LLMAPIs["AI Model APIs (OpenAI, Anthropic, etc.)"]
+        AIModelAPIs["AI Model APIs (OpenAI, Anthropic, etc.)"]
         MCPServers["MCP Servers"]
     end
 
     Trackers -- Webhook Event --> WebhookEndpoint
-    OtherSources -- Event (future) --> EventBus
-    WebhookEndpoint -- Publishes Event --> EventBus
-    EventBus -- Consumes Event --> FlowTriggerService
+    WebhookEndpoint -- Publishes Task --> TaskQueue
+    TaskQueue -- Delivers Task --> FlowTriggerService
     FlowTriggerService -- Reads Flow Defs --> SpaceModelsDB
     FlowTriggerService -- Initiates Execution --> FlowExecOrchestrator
-    FlowExecOrchestrator -- Reads Flow/ModelConfig --> SpaceModelsDB
+    FlowExecOrchestrator -- Reads Flow/AIModel --> SpaceModelsDB
     FlowExecOrchestrator -- Resolves Prompt Data --> SpaceModelsDB
     FlowExecOrchestrator -- Manages --> OpenHandsInfra
     OpenHandsInfra -- Runs --> OpenHandsAgent
-    OpenHandsAgent -- Uses --> LLMClient
-    LLMClient -- Calls --> LLMAPIs
+    OpenHandsAgent -- Uses --> AIModelClient
+    AIModelClient -- Calls --> AIModelAPIs
     OpenHandsAgent -- Uses --> MCPClient
     MCPClient -- Calls --> MCPServers
     FlowExecOrchestrator -- Writes Logs --> SpaceModelsDB
     APIExt -- Manages --> SpaceModelsDB
     APIExt -- Serves Logs --> UserClient["User Client (UI/CLI)"]
 
-    style SpaceBridge Core fill:#ccf,stroke:#333,stroke-width:1px
-    style Flows Subsystem fill:#cfc,stroke:#333,stroke-width:1px
-    style OpenHands Agent Session (Container) fill:#eef,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5
+    style "SpaceBridge Core" fill:#ccf,stroke:#333,stroke-width:1px
+    style "Flows Subsystem" fill:#cfc,stroke:#333,stroke-width:1px
+    style "OpenHands Agent Session (Container)" fill:#eef,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5
 ```
 
 *   **Flow Definition (`Flows`):**
     *   Stored in the `SpaceModels` database.
-    *   Details the triggering event, prompt template, selected `ModelConfiguration` ID, OpenHands agent configuration (e.g., specific agent type, parameters), and a list of allowed MCP servers and specific tools.
+    *   Details the triggering event, prompt template, selected `AIModel` ID, OpenHands agent configuration (e.g., specific agent type, parameters), and a list of allowed MCP servers and specific tools.
     *   Presets are implemented as special, non-editable (or cloneable) records in this table.
-*   **Model Configuration (`ModelConfigurations`):**
+*   **AI Model (`AIModel`):**
     *   Stored in `SpaceModels`.
-    *   Reusable definitions for AI models, including their identifiers (e.g., `openai/gpt-4`), API endpoints.
-    *   For initial implementation, API keys will be stored encrypted directly in the database. A future enhancement (to be tracked via an issue) will integrate OpenBAO (or a similar secrets management solution), at which point the database will store a reference to the secret in the vault.
-    *   Can be owned by users or organizations and optionally shared.
+    *   Reusable definitions for AI models, including their identifiers (e.g., `openai/gpt-4`), API endpoints, and credentials.
+    *   For initial implementation, API keys will be stored unencrypted directly in the database. A future enhancement will integrate a secrets management solution like OpenBAO.
+    *   Models are linked to an `Account`.
 *   **Event Ingestion:**
     *   Primarily through the existing webhook endpoint (e.g., `/api/v1/private/webhooks/{tracker_type}/{org_identifier}`) for tracker events.
-    *   This endpoint validates incoming webhooks, standardizes them into a `StandardizedNatsEvent` format, and then publishes them to the **Internal Event Bus (NATS)**.
-    *   Future event sources (e.g., OpenTelemetry, custom incident systems) will also publish to this Event Bus, adhering to the same standardized event schema.
-*   **Internal Event Bus (NATS):**
-    *   NATS is chosen for its high performance, scalability, and simplicity for messaging.
-    *   Decouples event producers from consumers, improving resilience and scalability.
-    *   **NATS Subject Naming Convention:** Events are published to subjects following the pattern: `spacebridge.events.{event_source}.{specific_event_type}`.
-        *   Example: `spacebridge.events.github.issues.opened`, `spacebridge.events.jira.issue_created.commented`.
-        *   This hierarchical structure allows consumers (like the Flow Trigger Service or future SpaceSync workers) to subscribe to specific event categories or granular event types.
-    *   **Standardized NATS Event Schema (`StandardizedNatsEvent`):** All events published to NATS adhere to a common Pydantic model:
-        ```python
-        class StandardizedNatsEvent(BaseModel):
-            event_id: uuid.UUID = Field(default_factory=uuid.uuid4)
-            event_source: str  # e.g., "github", "gitlab", "jira", "spacebridge_internal"
-            event_type: str    # e.g., "github.push", "gitlab.issues.opened", "jira.issue_created"
-            tracker_id: Optional[uuid.UUID] = None
-            organization_id: Optional[uuid.UUID] = None
-            timestamp: datetime = Field(default_factory=datetime.utcnow)
-            data: Dict[str, Any]  # Original webhook payload or specific internal event data
-            source_event_id: Optional[str] = None # e.g., GitHub's delivery ID
-        ```
-        This schema ensures consistency and provides essential metadata for event processing.
+    *   This endpoint validates incoming webhooks and then publishes a `process_webhook_event` task to the **Internal Task Queue (NATS)**.
+*   **Internal Task Queue (NATS):**
+    *   NATS is used as a simple, reliable task queue. It decouples the API from the background processing of events and flows.
+    *   The `TaskPublisher` service is used to enqueue tasks.
+    *   Workers consume tasks from the `spacesync.tasks` subject.
 *   **Flow Trigger Service:**
-    *   A new, dedicated service or module that subscribes to specific NATS subjects on the Event Bus.
-    *   It matches incoming `StandardizedNatsEvent` objects against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.
+    *   This logic is part of the NATS worker. When a `process_webhook_event` task is received, the worker acts as the trigger service.
+    *   It matches the incoming event data against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.
     *   Upon a match, it initiates a Flow execution by invoking the Flow Execution Orchestrator.
 *   **Flow Execution Orchestrator:**
     *   Responsible for managing the lifecycle of a single Flow execution.
-    *   Retrieves the `Flow` definition and its associated `ModelConfiguration` (including the encrypted API key) from the database.
+    *   Retrieves the `Flow` definition and its associated `AIModel` (including the encrypted API key) from the database.
     *   **Dynamic Prompt Resolution:** Parses the `prompt_template` and resolves any placeholders (e.g., `{{project_docs_summary}}`, `{{relevant_code_files}}`) by querying `SpaceModels` or other SpaceBridge services for the necessary context data.
-    *   Decrypts the API key and prepares the complete execution context for OpenHands, including the fully resolved prompt, LLM details (model name, API endpoint, decrypted API key), and the specific list of allowed MCP servers/tools.
+    *   Decrypts the API key and prepares the complete execution context for OpenHands, including the fully resolved prompt, AI model details (model name, API endpoint, decrypted API key), and the specific list of allowed MCP servers/tools.
     *   Initiates and manages an OpenHands agent session, potentially by requesting a new container from the OpenHands Execution Infrastructure.
     *   Monitors the execution and records results/logs.
 *   **OpenHands Execution Infrastructure:**
@@ -384,15 +367,15 @@ graph TD
     *   The Flow Execution Orchestrator will interact with this infrastructure to start, monitor, and terminate agent sessions.
 *   **OpenHands Agent (running in a container):**
     *   The core agentic execution environment provided by the OpenHands library.
-    *   Receives the resolved prompt, LLM configuration (including the decrypted API key), and allowed MCP toolset from the Flow Execution Orchestrator.
-    *   Manages the interaction with the configured LLM.
+    *   Receives the resolved prompt, AI model configuration , and allowed MCP toolset from the Flow Execution Orchestrator.
+    *   Manages the interaction with the configured AI model.
     *   **Direct MCP Calls:** The AI model, operating within the OpenHands agent, will directly call the allowed MCP tools on the specified MCP servers. OpenHands will need to be configured or provided with the necessary network access and potentially authentication details (if any) for these MCP servers.
 *   **Flow Execution Log (`FlowExecutions`):**
     *   A database table in `SpaceModels` to record the history and outcome of each Flow run.
     *   Includes details like the triggering event, start/end times, status (pending, running, succeeded, failed), the resolved input prompt, a summary of actions taken by the agent, logs of MCP tool usage, and a reference to more detailed logs from the OpenHands session (e.g., container logs or a session ID).
 *   **SpaceBridge API Extensions:**
     *   New API endpoints will be added to the `SpaceBridge API` for:
-        *   CRUD (Create, Read, Update, Delete) operations on `Flows` and `ModelConfigurations`.
+        *   CRUD (Create, Read, Update, Delete) operations on `Flows` and `AIModels`.
         *   Listing and retrieving `FlowExecution` history and logs.
         *   Managing Flow presets (e.g., listing, cloning).
 
@@ -408,7 +391,7 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `trigger_event_type`: String (e.g., 'commit_to_main', 'new_issue_created', 'incident_triggered', 'daily_scan')
     *   `trigger_config`: JSON (Optional, for more complex trigger conditions, e.g., specific branch for commits, specific labels for issues)
     *   `prompt_template`: Text (The prompt template with placeholders like `{{placeholder_name}}`)
-    *   `model_configuration_id`: Foreign Key to `ModelConfigurations.id`
+    *   `ai_model_id`: Foreign Key to `AIModel.id`
     *   `openhands_agent_config`: JSON (Configuration for the OpenHands agent, e.g., `{"agent_type": "CodeActAgent", "max_iterations": 10}`)
     *   `allowed_mcp_servers`: JSON Array of strings (e.g., `["spacebridge-mcp", "code_analysis_mcp"]`)
     *   `allowed_mcp_tools`: JSON Array of objects (e.g., `[{"server_name": "spacebridge-mcp", "tool_name": "search_issues"}, {"server_name": "code_analysis_mcp", "tool_name": "lint_file"}]`)
@@ -419,18 +402,18 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `created_at`: Timestamp
     *   `updated_at`: Timestamp
 
-*   **`ModelConfiguration` Table/Schema:**
-    *   `id`: Primary Key (e.g., UUID)
+*   **`AIModel` Table/Schema:**
+    *   `id`: Primary Key (UUID)
     *   `name`: String (User-defined name for this model configuration)
     *   `description`: Text (Optional description)
-    *   `model_identifier`: String (Standardized identifier, e.g., 'openai/gpt-4-turbo', 'anthropic/claude-3-opus-20240229')
+    *   `provider_name`: String (e.g., 'openai', 'anthropic')
+    *   `model_identifier`: String (Standardized identifier, e.g., 'gpt-4-turbo')
     *   `api_endpoint`: String (URL for the model's API, if not standard)
-    *   `api_key_encrypted`: String (Stores the encrypted API key. **Note: For initial implementation. Future enhancement will move this to a reference to OpenBAO or a similar secrets vault.**)
-    *   `encryption_metadata`: JSON (Optional, metadata related to encryption, e.g., KEK ID, algorithm, if not implicit)
+    *   `api_key`: String (Stores the API key, unencrypted for now)
+    *   `account_id`: Foreign Key to `Account.id`
+    *   `is_default`: Boolean (Indicates if this is the default model for the account)
     *   `model_parameters`: JSON (Optional, for model-specific parameters like temperature, max_tokens)
-    *   `owner_user_id`: Foreign Key to `Users.id`
-    *   `organization_id`: Foreign Key to `Organizations.id`
-    *   `is_shareable`: Boolean (Indicates if this configuration can be used by others in the organization)
+    *   `meta_data`: JSON (Optional, for custom fields, labels, etc.)
     *   `created_at`: Timestamp
     *   `updated_at`: Timestamp
 
@@ -443,7 +426,7 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `start_time`: Timestamp
     *   `end_time`: Timestamp (Nullable)
     *   `resolved_input_prompt`: Text (The full prompt after placeholder resolution)
-    *   `model_output_summary`: Text (Optional, a concise summary of the LLM's final output or key findings)
+    *   `model_output_summary`: Text (Optional, a concise summary of the AI model's final output or key findings)
     *   `actions_taken_summary`: JSON Array (A structured log of significant actions performed by the agent, e.g., files created, MCP tools called with parameters)
     *   `mcp_usage_logs`: JSON Array of objects (Detailed log of each MCP tool call: `{"server_name", "tool_name", "arguments", "timestamp", "status", "result_summary"}`)
     *   `openhands_session_reference`: String (e.g., OpenHands session ID, Kubernetes job ID, Docker container ID, or path to detailed logs)
@@ -461,20 +444,19 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
 sequenceDiagram
     participant ExtSrc as External Event Source (e.g., GitHub)
     participant WebhookEP as SpaceBridge Webhook Endpoint
-    participant EventBusNATS as Internal Event Bus (NATS)
-    participant FlowTriggerSvc as Flow Trigger Service
+    participant TaskQueue as Internal Task Queue (NATS)
+    participant Worker as SpaceSync Worker (Flow Trigger)
     participant FlowsDB as Flows Database (SpaceModels)
     participant FlowExecOrch as Flow Execution Orchestrator
 
     ExtSrc->>+WebhookEP: Sends Webhook (e.g., push event)
-    WebhookEP->>+EventBusNATS: Publishes Raw Event
-    Note over WebhookEP, EventBusNATS: Event enriched with metadata
-    EventBusNATS-->>-FlowTriggerSvc: Delivers Event
-    FlowTriggerSvc->>+FlowsDB: Queries for matching Flow definitions
-    FlowsDB-->>-FlowTriggerSvc: Returns matching Flow(s)
+    WebhookEP->>+TaskQueue: Publishes `process_webhook_event` Task
+    TaskQueue-->>-Worker: Delivers Task
+    Worker->>+FlowsDB: Queries for matching Flow definitions
+    FlowsDB-->>-Worker: Returns matching Flow(s)
     alt If match found
-        FlowTriggerSvc->>+FlowExecOrch: Initiates Flow Execution (with Flow ID, Event Data)
-        FlowExecOrch-->>-FlowTriggerSvc: Acknowledges (e.g., Execution ID)
+        Worker->>+FlowExecOrch: Initiates Flow Execution (with Flow ID, Event Data)
+        FlowExecOrch-->>-Worker: Acknowledges (e.g., Execution ID)
     end
 ```
 
@@ -483,13 +465,13 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant FlowExecOrch as Flow Execution Orchestrator
-    participant ModelsDB as SpaceModels (Flows, ModelConfigs, Context Data)
+    participant ModelsDB as SpaceModels (Flows, AIModels, Context Data)
     participant OpenHandsInfra as OpenHands Execution Infrastructure
     participant OHAgent as OpenHands Agent (in Container)
-    participant LLM_API as AI Model API
+    participant AIModel_API as AI Model API
     participant MCP_Srv as Allowed MCP Server(s)
 
-    FlowExecOrch->>+ModelsDB: Get Flow & ModelConfiguration details (incl. encrypted API key)
+    FlowExecOrch->>+ModelsDB: Get Flow & AIModel details (incl. encrypted API key)
     ModelsDB-->>-FlowExecOrch: Return details
     Note over FlowExecOrch: Decrypts API key
     FlowExecOrch->>+ModelsDB: Get data for dynamic prompt placeholders
@@ -497,9 +479,9 @@ sequenceDiagram
     Note over FlowExecOrch: Resolves prompt, prepares OpenHands context (decrypted API key, allowed MCPs)
     FlowExecOrch->>+OpenHandsInfra: Request OpenHands Agent session (with context)
     OpenHandsInfra->>+OHAgent: Starts Agent in new container
-    OHAgent->>+LLM_API: Interacts with LLM (sends prompt, receives responses)
-    LLM_API-->>-OHAgent: LLM responses
-    alt If LLM decides to use an MCP tool
+    OHAgent->>+AIModel_API: Interacts with AI model (sends prompt, receives responses)
+    AIModel_API-->>-OHAgent: AI model responses
+    alt If AI model decides to use an MCP tool
         OHAgent->>+MCP_Srv: Calls allowed MCP tool directly
         MCP_Srv-->>-OHAgent: Tool result
     end
@@ -508,31 +490,19 @@ sequenceDiagram
     FlowExecOrch->>+ModelsDB: Store execution results in FlowExecutions table
 ```
 
-**c. Results & Logging:**
-
-```mermaid
-graph LR
-    FlowExecOrchestrator -- Writes --> FlowExecutionsDB["FlowExecutions Table (SpaceModels)"]
-    OpenHandsAgent["OpenHands Agent Container"] -- Streams Logs --> CentralizedLogging["Centralized Logging (e.g., ELK, CloudWatch)"]
-    FlowExecutionsDB -- Referenced by --> OpenHandsSessionRef["OpenHands Session Reference (in FlowExecutions)"]
-    CentralizedLogging -- Correlated via --> OpenHandsSessionRef
-    SpaceBridgeAPI["SpaceBridge API (/flows/executions)"] -- Reads --> FlowExecutionsDB
-    UserClient["User Client (UI/CLI)"] -- Views Logs --> SpaceBridgeAPI
-```
-
 ### 5. Interaction with Existing Components
 
 *   **`SpaceModels`:**
-    *   Will house the new SQLAlchemy models and Pydantic schemas for `Flows`, `ModelConfigurations`, and `FlowExecutions`.
+    *   Will house the new SQLAlchemy models and Pydantic schemas for `Flows`, `AIModels`, and `FlowExecutions`.
     *   CRUD operations for these new entities will be added to `SpaceModels`.
     *   Will be queried by the Flow Execution Orchestrator to resolve dynamic prompt content.
 *   **`SpaceSync` / Webhook Infrastructure:**
-    *   The existing webhook ingestion mechanism within the main `SpaceBridge API` (currently handling events for `SpaceSync`) will be augmented. Instead of or in addition to direct processing by `SpaceSync`, it will publish validated and relevant events to the new Internal Event Bus (NATS).
-    *   `SpaceSync` itself might become a subscriber to this bus for its synchronization tasks, or continue its current polling/webhook processing in parallel, depending on the desired event handling architecture. The primary path for "Flows" will be via the NATS Event Bus.
+    *   The existing webhook ingestion mechanism within the main `SpaceBridge API` will publish a `process_webhook_event` task to the NATS task queue.
+    *   The `SpaceSync` worker, upon receiving this task, will be responsible for triggering the appropriate Agentic Flows.
 *   **`SpaceBridge API`:**
     *   Will be extended with new RESTful API endpoints for:
         *   Managing `Flows` (CRUD, enable/disable, list presets).
-        *   Managing `ModelConfigurations` (CRUD, share).
+        *   Managing `AIModels` (CRUD, share).
         *   Retrieving `FlowExecution` history, status, and logs (including links or content from OpenHands logs).
 *   **`SpaceBridge-MCP` (and other MCP Servers):**
     *   MCP servers are *consumers* in this context. The OpenHands agents, as configured per Flow, will directly call tools on these MCP servers.
@@ -540,22 +510,22 @@ graph LR
 
 ### 6. OpenHands Integration - Key Aspects
 
-*   **Flow to OpenHands Configuration:** The `Flow.openhands_agent_config` field will store JSON specifying the OpenHands agent type (e.g., `CodeActAgent`, `PlannerAgent`) and any necessary parameters for that agent. The Flow Execution Orchestrator translates this, along with the resolved prompt and LLM details, into the arguments needed to start an OpenHands session.
+*   **Flow to OpenHands Configuration:** The `Flow.openhands_agent_config` field will store JSON specifying the OpenHands agent type (e.g., `CodeActAgent`, `PlannerAgent`) and any necessary parameters for that agent. The Flow Execution Orchestrator translates this, along with the resolved prompt and AI model details, into the arguments needed to start an OpenHands session.
 *   **Dynamic Prompts:** The Flow Execution Orchestrator resolves placeholders in `Flow.prompt_template` *before* passing the final prompt to OpenHands.
-*   **LLM Selection & API Key Management:**
-    *   `Flow.model_configuration_id` links to a `ModelConfiguration` record.
-    *   `ModelConfiguration.api_key_encrypted` stores the encrypted API key in the database (for initial implementation).
+*   **AI Model Selection & API Key Management:**
+    *   `Flow.ai_model_id` links to a `AIModel` record.
+    *   `AIModel.api_key_encrypted` stores the encrypted API key in the database (for initial implementation).
     *   The Flow Execution Orchestrator is responsible for retrieving this encrypted key, decrypting it, and passing the plaintext API key securely to the OpenHands agent session, ideally as an environment variable or secure input specific to that containerized session. (Future: Retrieve from OpenBAO via a reference).
 *   **MCP Tool Discovery & Invocation:**
     *   The `Flow.allowed_mcp_servers` and `Flow.allowed_mcp_tools` define the explicit allowlist.
     *   The OpenHands agent environment will need to be configured such that it can make network calls to these allowed MCP servers.
     *   If MCPs require authentication, mechanisms for securely providing necessary tokens/keys to the OpenHands agent for *only* the allowed MCPs will be needed. This might involve the Flow Execution Orchestrator injecting temporary credentials or connection details into the OpenHands session.
-    *   OpenHands' own tool/action definition capabilities will be used to represent the allowed MCP tools to the LLM.
+    *   OpenHands' own tool/action definition capabilities will be used to represent the allowed MCP tools to the AI model.
 
 ### 7. Security Considerations
 
 *   **API Key Security:**
-    *   **Initial Implementation:** LLM API keys (`ModelConfiguration.api_key_encrypted`) will be stored encrypted in the database. Strong encryption mechanisms (e.g., AES-256 with a robust key management strategy for the encryption/decryption keys themselves) must be used. The application's master encryption key must be protected (e.g., via environment variables, or a KMS).
+    *   **Initial Implementation:** AI model API keys (`AIModel.api_key`) will be stored unencrypted in the database.
     *   **Future Enhancement (OpenBAO Integration):** An issue should be tracked to migrate to storing API keys in OpenBAO (or a similar dedicated secrets management system). The database would then store only a reference to the secret in OpenBAO.
     *   The Flow Execution Orchestrator needs appropriate permissions to decrypt these keys (initial phase) or retrieve them from the vault (future phase) at runtime and inject them securely into the OpenHands agent's environment.
     *   Least privilege access for the orchestrator to decryption keys or the secrets vault.
@@ -565,18 +535,18 @@ graph LR
     *   Consider if MCPs themselves have authentication/authorization; if so, the Flow execution might need to propagate user/Flow identity or use pre-configured service accounts.
 *   **Input Validation & Sanitization:**
     *   Validate all inputs for Flow definitions, especially prompt templates and configurations.
-    *   Sanitize any data from events or dynamic context before it's incorporated into prompts to prevent injection attacks against the LLM or downstream tools.
+    *   Sanitize any data from events or dynamic context before it's incorporated into prompts to prevent injection attacks against the AI model or downstream tools.
 *   **Resource Limits for Agents:**
     *   OpenHands agents (especially if running in containers) should have resource limits (CPU, memory, execution time) to prevent abuse or runaway processes.
 *   **Logging and Auditing:**
     *   Comprehensive logging of Flow executions, including which MCP tools were called with what parameters (sensitive data redacted).
-    *   Audit trails for changes to `Flows` and `ModelConfigurations`.
+    *   Audit trails for changes to `Flows` and `AIModels`.
 *   **Permissions:**
-    *   Role-based access control (RBAC) for managing `Flows` and `ModelConfigurations` via the SpaceBridge API. Users should only be able to create/edit/view Flows and Model Configurations within their authorized scope (e.g., organization).
+    *   Role-based access control (RBAC) for managing `Flows` and `AIModels` via the SpaceBridge API. Users should only be able to create/edit/view Flows and AIModels within their authorized scope (e.g., organization).
 
 ### 8. Scalability and Extensibility
 
-*   **Event Bus (NATS):** NATS is chosen for its high performance, lightweight nature, and scalability, allowing the system to handle a high volume of incoming events.
+*   **Task Queue (NATS):** NATS is chosen for its high performance, lightweight nature, and scalability, allowing the system to handle a high volume of incoming tasks.
 *   **Flow Trigger Service:** Can be scaled horizontally if event processing becomes a bottleneck. It should be stateless.
 *   **Flow Execution Orchestrator:** Can also be scaled, though individual orchestration tasks might be stateful for the duration of a Flow.
 *   **OpenHands Execution Infrastructure:**
@@ -585,8 +555,8 @@ graph LR
     *   The orchestrator will manage the lifecycle of these containerized jobs.
 *   **Database:** `SpaceModels` (PostgreSQL) should be monitored for performance. Read replicas can be used for read-heavy operations like fetching Flow definitions or execution logs.
 *   **Extensibility:**
-    *   **New Event Sources:** Add new parsers/adapters to publish events to the common NATS Event Bus format. The Flow Trigger Service can then match these new event types.
-    *   **New AI Models:** Add new `ModelConfiguration` records. The Flow Execution Orchestrator and OpenHands need to be compatible with the new model's API.
+    *   **New Event Sources:** Add new parsers/adapters to publish `process_webhook_event` tasks. The Flow Trigger Service can then match these new event types.
+    *   **New AI Models:** Add new `AIModel` records. The Flow Execution Orchestrator and OpenHands need to be compatible with the new model's API.
     *   **New MCP Tools/Servers:** Update the allowlist options. OpenHands agents need to be able to make calls to these new tools.
     *   **New Agent Capabilities:** As OpenHands evolves or new agent frameworks emerge, the Flow Execution Orchestrator can be adapted to integrate with them.
 

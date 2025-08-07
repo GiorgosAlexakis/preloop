@@ -1,7 +1,6 @@
 """Trackers router for registering and managing issue trackers."""
 
 import logging
-import json
 from typing import Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
@@ -22,7 +21,7 @@ from spacebridge.schemas.tracker import (
 )  # Corrected import location
 from spacebridge.trackers.factory import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
-from spacesync.services.event_bus import nats_publisher_service
+from spacesync.services.event_bus import task_publisher_service
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.tracker import Tracker, TrackerType, TrackerScopeRule
@@ -211,12 +210,7 @@ async def register_tracker(
             )
 
         # Send NATS event
-        await nats_publisher_service.publish_event(
-            "spacesync.tasks",
-            json.dumps(
-                {"function": "scan_tracker_task", "args": [new_tracker.id]}
-            ).encode("utf-8"),
-        )
+        await task_publisher_service.publish_task("scan_tracker_task", new_tracker.id)
 
         return {"id": new_tracker.id}  # Return the tracker ID
 
@@ -369,12 +363,7 @@ async def update_tracker(
         db.refresh(tracker)
 
         # Send NATS event
-        await nats_publisher_service.publish_event(
-            "spacesync.tasks",
-            json.dumps({"function": "scan_tracker_task", "args": [tracker.id]}).encode(
-                "utf-8"
-            ),
-        )
+        await task_publisher_service.publish_task("scan_tracker_task", tracker.id)
 
         return tracker
     except IntegrityError as e:

@@ -37,10 +37,10 @@ from spacebridge.api.endpoints import (
     trackers,
     version,
     embedding as embedding_router,
-    llm_models,
     issue_duplicates,
     webhooks,
     flows,
+    ai_models,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -522,9 +522,9 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        llm_models.router,
+        ai_models.router,
         prefix="/api/v1",
-        tags=["LLM Models"],
+        tags=["AI Models"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(

@@ -2109,14 +2109,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/llm-models:
+  /api/v1/ai-models:
     get:
       tags:
-      - LLM Models
-      - LLM Models
-      summary: List LLM Models
-      description: List all LLM Models associated with the authenticated user's account.
-      operationId: list_llm_models_api_v1_llm_models_get
+      - AI Models
+      - AI Models
+      summary: List AI Models
+      description: List all AI Models associated with the authenticated user's account.
+      operationId: list_ai_models_api_v1_ai_models_get
       responses:
         '200':
           description: Successful Response
@@ -2124,23 +2124,23 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: '#/components/schemas/LLMModelRead'
+                  $ref: '#/components/schemas/AIModelRead'
                 type: array
-                title: Response List Llm Models Api V1 Llm Models Get
+                title: Response List Ai Models Api V1 Ai Models Get
       security:
       - bearerAuth: []
     post:
       tags:
-      - LLM Models
-      - LLM Models
-      summary: Create LLM Model
-      description: Create a new LLM Model for the authenticated user's account.
-      operationId: create_llm_model_api_v1_llm_models_post
+      - AI Models
+      - AI Models
+      summary: Create AI Model
+      description: Create a new AI Model for the authenticated user's account.
+      operationId: create_ai_model_api_v1_ai_models_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LLMModelCreate'
+              $ref: '#/components/schemas/AIModelCreate'
         required: true
       responses:
         '201':
@@ -2148,7 +2148,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LLMModelRead'
+                $ref: '#/components/schemas/AIModelRead'
         '422':
           description: Validation Error
           content:
@@ -2157,14 +2157,14 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/llm-models/{model_id}:
+  /api/v1/ai-models/{model_id}:
     get:
       tags:
-      - LLM Models
-      - LLM Models
-      summary: Get LLM Model by ID
-      description: Retrieve a specific LLM Model by its ID.
-      operationId: get_llm_model_api_v1_llm_models__model_id__get
+      - AI Models
+      - AI Models
+      summary: Get AI Model by ID
+      description: Retrieve a specific AI Model by its ID.
+      operationId: get_ai_model_api_v1_ai_models__model_id__get
       security:
       - bearerAuth: []
       parameters:
@@ -2173,6 +2173,7 @@ paths:
         required: true
         schema:
           type: string
+          format: uuid
           title: Model Id
       responses:
         '200':
@@ -2180,7 +2181,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LLMModelRead'
+                $ref: '#/components/schemas/AIModelRead'
         '422':
           description: Validation Error
           content:
@@ -2189,11 +2190,11 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
     put:
       tags:
-      - LLM Models
-      - LLM Models
-      summary: Update LLM Model
-      description: Update an existing LLM Model by its ID.
-      operationId: update_llm_model_api_v1_llm_models__model_id__put
+      - AI Models
+      - AI Models
+      summary: Update AI Model
+      description: Update an existing AI Model by its ID.
+      operationId: update_ai_model_api_v1_ai_models__model_id__put
       security:
       - bearerAuth: []
       parameters:
@@ -2202,20 +2203,21 @@ paths:
         required: true
         schema:
           type: string
+          format: uuid
           title: Model Id
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LLMModelUpdate'
+              $ref: '#/components/schemas/AIModelUpdate'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LLMModelRead'
+                $ref: '#/components/schemas/AIModelRead'
         '422':
           description: Validation Error
           content:
@@ -2224,11 +2226,11 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
     delete:
       tags:
-      - LLM Models
-      - LLM Models
-      summary: Delete LLM Model
-      description: Delete an LLM Model by its ID.
-      operationId: delete_llm_model_api_v1_llm_models__model_id__delete
+      - AI Models
+      - AI Models
+      summary: Delete AI Model
+      description: Delete an AI Model by its ID.
+      operationId: delete_ai_model_api_v1_ai_models__model_id__delete
       security:
       - bearerAuth: []
       parameters:
@@ -2237,6 +2239,7 @@ paths:
         required: true
         schema:
           type: string
+          format: uuid
           title: Model Id
       responses:
         '204':
@@ -2545,18 +2548,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/LLM-suggestion:
+  /api/v1/ai-suggestion:
     post:
       tags:
       - Issue Duplicates
       summary: Get Resolution Suggestion
       description: Generate a suggestion for resolving a duplicate issue pair.
-      operationId: get_resolution_suggestion_api_v1_LLM_suggestion_post
+      operationId: get_resolution_suggestion_api_v1_ai_suggestion_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Body_get_resolution_suggestion_api_v1_LLM_suggestion_post'
+              $ref: '#/components/schemas/Body_get_resolution_suggestion_api_v1_ai_suggestion_post'
         required: true
       responses:
         '200':
@@ -2776,6 +2779,186 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    AIModelCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: User-defined name for this model configuration
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Optional description
+        provider_name:
+          type: string
+          title: Provider Name
+          description: e.g., 'openai', 'anthropic'
+        model_identifier:
+          type: string
+          title: Model Identifier
+          description: Standardized identifier, e.g., 'gpt-4-turbo'
+        api_endpoint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Endpoint
+          description: URL for the model's API, if not standard
+        api_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key
+          description: API key for the model provider
+        is_default:
+          type: boolean
+          title: Is Default
+          description: Indicates if this is the default model for the account
+          default: false
+        model_parameters:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Model Parameters
+          description: Optional, for model-specific parameters like temperature, max_tokens
+        meta_data:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Meta Data
+          description: Optional, for custom fields, labels, etc.
+      type: object
+      required:
+      - name
+      - provider_name
+      - model_identifier
+      title: AIModelCreate
+      description: Schema for creating a new AIModel entry.
+    AIModelRead:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: User-defined name for this model configuration
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Optional description
+        provider_name:
+          type: string
+          title: Provider Name
+          description: e.g., 'openai', 'anthropic'
+        model_identifier:
+          type: string
+          title: Model Identifier
+          description: Standardized identifier, e.g., 'gpt-4-turbo'
+        api_endpoint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Endpoint
+          description: URL for the model's API, if not standard
+        api_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key
+          description: API key for the model provider
+        is_default:
+          type: boolean
+          title: Is Default
+          description: Indicates if this is the default model for the account
+          default: false
+        model_parameters:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Model Parameters
+          description: Optional, for model-specific parameters like temperature, max_tokens
+        meta_data:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Meta Data
+          description: Optional, for custom fields, labels, etc.
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Primary key
+        account_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Id
+          description: Account this model belongs to
+      type: object
+      required:
+      - name
+      - provider_name
+      - model_identifier
+      - id
+      title: AIModelRead
+      description: Schema for reading AIModel entries, including timestamps.
+    AIModelUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        model_identifier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Identifier
+        api_endpoint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Endpoint
+        api_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key
+        is_default:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Default
+        model_parameters:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Model Parameters
+        meta_data:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Meta Data
+      type: object
+      title: AIModelUpdate
+      description: Schema for updating an existing AIModel entry. All fields are optional.
     ApiKeyCreate:
       properties:
         name:
@@ -2917,7 +3100,7 @@ components:
       - requests_by_endpoint
       title: ApiUsageStatistics
       description: Model for API usage statistics.
-    Body_get_resolution_suggestion_api_v1_LLM_suggestion_post:
+    Body_get_resolution_suggestion_api_v1_ai_suggestion_post:
       properties:
         issue1_id:
           type: string
@@ -2933,7 +3116,7 @@ components:
       - issue1_id
       - issue2_id
       - resolution
-      title: Body_get_resolution_suggestion_api_v1_LLM_suggestion_post
+      title: Body_get_resolution_suggestion_api_v1_ai_suggestion_post
     Body_login_form_api_v1_auth_token_post:
       properties:
         grant_type:
@@ -3224,12 +3407,12 @@ components:
         prompt_template:
           type: string
           title: Prompt Template
-        model_configuration_id:
+        ai_model_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Model Configuration Id
+          title: Ai Model Id
         openhands_agent_config:
           additionalProperties: true
           type: object
@@ -3311,12 +3494,12 @@ components:
           - type: string
           - type: 'null'
           title: Prompt Template
-        model_configuration_id:
+        ai_model_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Model Configuration Id
+          title: Ai Model Id
         openhands_agent_config:
           anyOf:
           - additionalProperties: true
@@ -3413,12 +3596,12 @@ components:
           - type: string
           - type: 'null'
           title: Prompt Template
-        model_configuration_id:
+        ai_model_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Model Configuration Id
+          title: Ai Model Id
         openhands_agent_config:
           anyOf:
           - additionalProperties: true
@@ -3652,20 +3835,22 @@ components:
           - type: string
           - type: 'null'
           title: Resulting Issue2 Id
-        llm_model_id:
-          type: string
-          title: Llm Model Id
-        llm_model_name:
+        ai_model_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Ai Model Id
+        ai_model_name:
           anyOf:
           - type: string
           - type: 'null'
-          title: Llm Model Name
+          title: Ai Model Name
       type: object
       required:
       - issue1_id
       - issue2_id
       - decision
-      - llm_model_id
       title: IssueDuplicate
       description: Base schema for IssueDuplicate.
     IssueDuplicateProjectStats:
@@ -3994,139 +4179,6 @@ components:
       type: object
       title: IssueUpdate
       description: Model for updating an issue.
-    LLMModelCreate:
-      properties:
-        name:
-          type: string
-          title: Name
-        provider_name:
-          type: string
-          title: Provider Name
-        api_key:
-          type: string
-          title: Api Key
-        api_url:
-          type: string
-          title: Api Url
-        model_name:
-          type: string
-          title: Model Name
-        model_version:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Model Version
-        is_default:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Is Default
-          default: false
-      type: object
-      required:
-      - name
-      - provider_name
-      - api_key
-      - api_url
-      - model_name
-      title: LLMModelCreate
-      description: Schema for creating a new LLMModel entry.
-    LLMModelRead:
-      properties:
-        name:
-          type: string
-          title: Name
-        provider_name:
-          type: string
-          title: Provider Name
-        api_key:
-          type: string
-          title: Api Key
-        api_url:
-          type: string
-          title: Api Url
-        model_name:
-          type: string
-          title: Model Name
-        model_version:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Model Version
-        is_default:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Is Default
-          default: false
-        id:
-          type: string
-          title: Id
-        account_id:
-          type: string
-          title: Account Id
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-        updated_at:
-          type: string
-          format: date-time
-          title: Updated At
-      type: object
-      required:
-      - name
-      - provider_name
-      - api_key
-      - api_url
-      - model_name
-      - id
-      - account_id
-      - created_at
-      - updated_at
-      title: LLMModelRead
-      description: Schema for reading LLMModel entries, including timestamps.
-    LLMModelUpdate:
-      properties:
-        name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Name
-        provider_name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Provider Name
-        api_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Api Key
-        api_url:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Api Url
-        model_name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Model Name
-        model_version:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Model Version
-        is_default:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Is Default
-      type: object
-      title: LLMModelUpdate
-      description: Schema for updating an existing LLMModel entry. All fields are
-        optional.
     LoginRequest:
       properties:
         username:

@@ -4,16 +4,16 @@
 
 ## Overview
 
-SpaceBridge is a RESTful API server that serves as a unified interface between Spacecode's infrastructure and multiple issue tracking systems. It enables seamless searching, creation, and updating of issues across different platforms through a standardized HTTP API.
+SpaceBridge.io drives your product using AI. It ingests issues, comments, documentation and (optionally) code from your issue tracker. It detects duplication and overlap of issues, evaluates compliance metrics and provides suggestions with the most impactful actions to improve your issue tracker.
 
 ## Key Features
 
-- RESTful API for interacting with multiple issue tracking systems
-- Vector-based similarity search across all integrated issue trackers
-- Intelligent duplicate detection and issue management
-- Automated assignment suggestions and effort estimation
-- Self-service organization and project configuration
-- AI-friendly interfaces for both human and agent interaction
+- Continuous ingestion of issues, comments, projects, and organizations from your issue tracker
+- Vector-based similarity search across issue trackers and projects
+- Intelligent detection of duplication and overlap of issues
+- Evaluation of compliance metrics and recommendations for improvement
+- Event Driven Agentic Flows triggered by issue tracker events
+- MCP server & RESTful API & Web UI
 
 ## Supported Issue Trackers
 
@@ -29,7 +29,8 @@ SpaceBridge is designed with a modular architecture:
 1.  **SpaceBridge** (this repository): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
 2.  **SpaceModels** (submodule `./SpaceModels`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
 3.  **SpaceSync** (submodule `./spacesync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
-4.  **SpaceBridge-MCP** (separate repository): A Model Context Protocol (MCP) server that uses stdio transport and serves as a bridge between MCP clients (like Claude Code) and the SpaceBridge API.
+4.  **SpaceLit** (submodule `./SpaceLit`): A web application built using Lit, Vite, TypeScript, and Shoelace Web Components.
+5.  **SpaceBridge-MCP** (submodule `./mcp`): A Model Context Protocol (MCP) server that uses stdio transport and serves as a bridge between MCP clients (like Claude Code) and the SpaceBridge API.
 
 This structure allows:
 - Clear separation of concerns between the API layer, data models, synchronization logic, and MCP integration.
@@ -38,18 +39,15 @@ This structure allows:
 
 ## Frontend
 
-### V2 (Work in Progress)
-
-A new frontend is under active development in the `SpaceLit` directory. This version is being built from the ground up using modern web technologies to provide a fast, responsive, and feature-rich user experience.
+The frontend is in the `SpaceLit` directory. It is built using modern web technologies to provide a fast, responsive, and feature-rich user experience.
 
 - **Technology Stack**: Lit, Vite, TypeScript, and Material Web Components.
-- **Status**: This frontend is a work in progress and is not yet feature-complete.
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - PostgreSQL 14+
 - PGVector extension for PostgreSQL (for vector search capabilities)
 
@@ -199,28 +197,6 @@ issue = requests.post(
 print(json.dumps(issue.json(), indent=2))
 ```
 
-### For MCP Clients (Claude Code)
-
-For MCP clients like Claude Code, use the companion [SpaceBridge-MCP](https://github.com/spacecode-ai/SpaceBridge-MCP) project, which provides MCP tools that communicate with SpaceBridge.
-
-```bash
-# Install SpaceBridge-MCP
-pip install SpaceBridge-MCP
-
-# Configure Claude Code to use SpaceBridge-MCP
-claude mcp add SpaceBridge-MCP "python -m SpaceBridge-MCP.server"
-
-# Set environment variables for SpaceBridge-MCP
-export SPACEBRIDGE_URL="http://localhost:8000/api/v1"
-export SPACEBRIDGE_API_KEY="your-api-key"
-
-# List available tools in Claude Code
-claude tools list
-
-# Use SpaceBridge tools via Claude
-claude "Search for issues related to authentication in the Astrobot project"
-```
-
 ## API Endpoints
 
 SpaceBridge provides a RESTful API with the following key endpoints:
@@ -304,4 +280,4 @@ Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Copyright (c) 2025 SpaceCode. All rights reserved.
