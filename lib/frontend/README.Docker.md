@@ -90,7 +90,7 @@ The mock API provides realistic responses for testing:
 - `GET /api/v1/auth/api-usage` - API usage stats
 - `GET /api/v1/issue-duplicates/` - Duplicate issues
 - `GET /api/v1/auth/api-keys` - API keys
-- `GET /api/v1/llm-models` - LLM models
+- `GET /api/v1/ai-models` - AI models
 
 All endpoints include proper CORS headers and realistic JSON responses.
 

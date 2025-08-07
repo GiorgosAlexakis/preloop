@@ -3,12 +3,12 @@ import { customElement, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
 import {
-  getLlmModels,
-  updateLlmModel,
-  createLlmModel,
-  deleteLlmModel,
+  getAIModels,
+  updateAIModel,
+  createAIModel,
+  deleteAIModel,
 } from '../../../api';
-import type { LlmModel } from '../../../types';
+import type { AIModel } from '../../../types';
 import type { SlSelect } from '@shoelace-style/shoelace/dist/components/select/select.js';
 import type { SlInput } from '@shoelace-style/shoelace/dist/components/input/input.js';
 
@@ -24,16 +24,16 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import consoleStyles from '../../../styles/console-styles.css?inline';
 
-@customElement('llm-models-view')
-export class LlmModelsView extends LitElement {
+@customElement('ai-models-view')
+export class AIModelsView extends LitElement {
   private readonly INFO_ALERT_DISMISSED_KEY =
-    'spacebridge-llm-models-info-alert-dismissed';
+    'spacebridge-ai-models-info-alert-dismissed';
 
   @state()
   private _isInfoAlertOpen = false;
 
   @state()
-  private models: LlmModel[] = [];
+  private models: AIModel[] = [];
 
   @state()
   private isLoading = true;
@@ -48,13 +48,13 @@ export class LlmModelsView extends LitElement {
   private isEditing = false;
 
   @state()
-  private currentModel: Partial<LlmModel> = {};
+  private currentModel: Partial<AIModel> = {};
 
   @state()
   private isDeleteConfirmOpen = false;
 
   @state()
-  private modelToDelete: LlmModel | null = null;
+  private modelToDelete: AIModel | null = null;
 
   @state()
   private modelSuggestions: string[] = [];
@@ -130,10 +130,10 @@ export class LlmModelsView extends LitElement {
     this.isLoading = true;
     this.error = null;
     try {
-      this.models = await getLlmModels();
+      this.models = await getAIModels();
     } catch (error) {
       this.error =
-        error instanceof Error ? error.message : 'Failed to fetch LLM models';
+        error instanceof Error ? error.message : 'Failed to fetch AI models';
     } finally {
       this.isLoading = false;
     }
@@ -227,7 +227,7 @@ export class LlmModelsView extends LitElement {
                     <tr>
                       <td>${model.name}</td>
                       <td>${model.provider_name}</td>
-                      <td>${model.model_name}</td>
+                      <td>${model.model_identifier}</td>
                       <td>
                         ${when(
                           model.is_default,
@@ -303,7 +303,7 @@ export class LlmModelsView extends LitElement {
             label="Model Name / ID"
             .value=${this.isOtherModel
               ? 'other'
-              : this.currentModel.model_name || ''}
+              : this.currentModel.model_identifier || ''}
             @sl-change=${this._handleModelNameChange}
           >
             ${repeat(
@@ -320,7 +320,7 @@ export class LlmModelsView extends LitElement {
               <sl-input
                 label="Custom Model Name / ID"
                 placeholder="Enter custom model name"
-                .value=${this.currentModel.model_name || ''}
+                .value=${this.currentModel.model_identifier || ''}
                 @sl-input=${this._handleCustomModelInput}
               ></sl-input>
             `
@@ -388,14 +388,14 @@ export class LlmModelsView extends LitElement {
     this.isModalOpen = true;
   }
 
-  openEditModal(model: LlmModel) {
+  openEditModal(model: AIModel) {
     this.isEditing = true;
     this.currentModel = { ...model };
     this.modelSuggestions = this.getModelSuggestionsForProvider(
       this.currentModel.provider_name || ''
     );
     this.isOtherModel = !this.modelSuggestions.includes(
-      this.currentModel.model_name || ''
+      this.currentModel.model_identifier || ''
     );
     this.isModalOpen = true;
   }
@@ -408,15 +408,15 @@ export class LlmModelsView extends LitElement {
     const selectedValue = (e.target as SlSelect).value;
     if (selectedValue === 'other') {
       this.isOtherModel = true;
-      this.currentModel.model_name = '';
+      this.currentModel.model_identifier = '';
     } else {
       this.isOtherModel = false;
-      this.currentModel.model_name = selectedValue;
+      this.currentModel.model_identifier = selectedValue;
     }
   }
 
   private _handleCustomModelInput(e: Event) {
-    this.currentModel.model_name = (e.target as SlInput).value;
+    this.currentModel.model_identifier = (e.target as SlInput).value;
   }
 
   private getModelSuggestionsForProvider(provider: string): string[] {
@@ -453,7 +453,7 @@ export class LlmModelsView extends LitElement {
       ...this.currentModel,
       provider_name: provider,
       api_url: defaultUrls[provider] || '',
-      model_name: '',
+      model_identifier: '',
     };
     this.modelSuggestions = this.getModelSuggestionsForProvider(provider);
     this.isOtherModel = false;
@@ -466,7 +466,7 @@ export class LlmModelsView extends LitElement {
     if (
       !this.currentModel.name ||
       !this.currentModel.provider_name ||
-      !this.currentModel.model_name ||
+      !this.currentModel.model_identifier ||
       !this.currentModel.api_url
     ) {
       // In a real app, show a user-friendly error.
@@ -475,22 +475,22 @@ export class LlmModelsView extends LitElement {
     }
 
     if (this.isEditing) {
-      await updateLlmModel(this.currentModel.id!, this.currentModel);
+      await updateAIModel(this.currentModel.id!, this.currentModel);
     } else {
-      await createLlmModel(this.currentModel);
+      await createAIModel(this.currentModel);
     }
     this.closeModal();
     await this.fetchModels();
   }
 
-  openDeleteConfirm(model: LlmModel) {
+  openDeleteConfirm(model: AIModel) {
     this.modelToDelete = model;
     this.isDeleteConfirmOpen = true;
   }
 
-  async handleSetDefault(model: LlmModel) {
+  async handleSetDefault(model: AIModel) {
     try {
-      await updateLlmModel(model.id, { is_default: true });
+      await updateAIModel(model.id, { is_default: true });
       await this.fetchModels();
     } catch (error) {
       console.error('Failed to set default model:', error);
@@ -499,7 +499,7 @@ export class LlmModelsView extends LitElement {
 
   async deleteModel() {
     if (this.modelToDelete) {
-      await deleteLlmModel(this.modelToDelete.id);
+      await deleteAIModel(this.modelToDelete.id);
       await this.fetchModels();
     }
     this.isDeleteConfirmOpen = false;

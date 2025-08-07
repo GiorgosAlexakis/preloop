@@ -3,7 +3,7 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 
-export interface LlmVerdict {
+export interface AIModelVerdict {
   decision:
     | 'duplicate'
     | 'overlapping'
@@ -14,7 +14,9 @@ export interface LlmVerdict {
   resolution?: string;
 }
 
-export function renderVerdict(verdict: LlmVerdict | undefined): TemplateResult {
+export function renderVerdict(
+  verdict: AIModelVerdict | undefined
+): TemplateResult {
   if (verdict?.resolution) {
     return html`
       <sl-badge

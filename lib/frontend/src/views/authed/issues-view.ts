@@ -21,7 +21,7 @@ import '../../components/view-header.ts';
 import {
   listProjects,
   listIssueDuplicates,
-  checkLlmVerdict,
+  checkAIVerdict,
   dismissDuplicatePair,
   listOrganizations,
 } from '../../api';
@@ -37,7 +37,7 @@ import {
   DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
 } from '../../config';
 import {
-  LlmVerdict,
+  AIModelVerdict,
   renderVerdict,
   getStatusVariant,
 } from '../../utils/verdict';
@@ -55,7 +55,7 @@ export class IssuesView extends LitElement {
   private _duplicates: DuplicatePair[] = [];
 
   @state()
-  private _llmVerdicts: Record<string, LlmVerdict> = {};
+  private _aiVerdicts: Record<string, AIModelVerdict> = {};
 
   @state()
   private _loadingVerdicts: Record<string, boolean> = {};
@@ -303,7 +303,7 @@ export class IssuesView extends LitElement {
       this._duplicates = data.duplicates;
       this._hasMorePages = data.duplicates.length === this._pageSize;
       this._updateUrl(); // Update URL after fetching
-      this.fetchLlmVerdicts(); // Fetch verdicts after getting duplicates
+      this.fetchAIModelVerdicts(); // Fetch verdicts after getting duplicates
     } catch (error) {
       this._error =
         error instanceof Error ? error.message : 'An unknown error occurred.';
@@ -313,8 +313,8 @@ export class IssuesView extends LitElement {
     }
   }
 
-  async fetchLlmVerdicts() {
-    const newVerdicts = { ...this._llmVerdicts };
+  async fetchAIModelVerdicts() {
+    const newVerdicts = { ...this._aiVerdicts };
     const newLoadingVerdicts = { ...this._loadingVerdicts };
 
     const promises = this._duplicates.map((pair) => {
@@ -325,12 +325,12 @@ export class IssuesView extends LitElement {
 
       newLoadingVerdicts[pairKey] = true;
 
-      return checkLlmVerdict(pair.issue1.id, pair.issue2.id)
+      return checkAIVerdict(pair.issue1.id, pair.issue2.id)
         .then((verdict) => {
           newVerdicts[pairKey] = verdict;
         })
         .catch((error) => {
-          console.error(`Failed to fetch LLM verdict for ${pairKey}:`, error);
+          console.error(`Failed to fetch AI verdict for ${pairKey}:`, error);
           // Store a failed state if needed, or just remove loading indicator
         })
         .finally(() => {
@@ -342,7 +342,7 @@ export class IssuesView extends LitElement {
 
     await Promise.all(promises);
 
-    this._llmVerdicts = newVerdicts;
+    this._aiVerdicts = newVerdicts;
   }
 
   private _toggleRow(pairKey: string) {
@@ -391,13 +391,13 @@ export class IssuesView extends LitElement {
 
   private renderDetailRow(pair: DuplicatePair) {
     const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-    const llmVerdict = this._llmVerdicts[pairKey];
+    const aiVerdict = this._aiVerdicts[pairKey];
     const loadingVerdict = this._loadingVerdicts[pairKey];
 
     return html`
       <issue-detail-view
         .pair=${pair}
-        .llmVerdict=${llmVerdict}
+        .aiVerdict=${aiVerdict}
         .loadingVerdict=${loadingVerdict}
         @resolve=${() => this._openResolveModal(pair)}
         @dismiss=${() => this._handleDismiss(pair)}
@@ -613,7 +613,7 @@ export class IssuesView extends LitElement {
                         <tbody>
                           ${this._duplicates.map((pair) => {
                             const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-                            const verdict = this._llmVerdicts[pairKey];
+                            const verdict = this._aiVerdicts[pairKey];
                             const isFaint = this._loadingVerdicts[pairKey];
                             const isExpanded = this._expandedRowKey === pairKey;
 

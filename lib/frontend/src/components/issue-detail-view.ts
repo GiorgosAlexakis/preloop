@@ -2,15 +2,19 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { when } from 'lit/directives/when.js';
-import { LlmVerdict, renderVerdict, getStatusVariant } from '../utils/verdict';
-import { DuplicatePair, checkLlmVerdict } from '../api';
+import {
+  AIModelVerdict,
+  renderVerdict,
+  getStatusVariant,
+} from '../utils/verdict';
+import { DuplicatePair, checkAIVerdict } from '../api';
 
 @customElement('issue-detail-view')
 export class IssueDetailView extends LitElement {
   @property({ type: Object }) pair: DuplicatePair | null = null;
 
   @state()
-  private llmVerdict: LlmVerdict | null = null;
+  private aiVerdict: AIModelVerdict | null = null;
 
   @state()
   private loadingVerdict = false;
@@ -82,9 +86,9 @@ export class IssueDetailView extends LitElement {
   async fetchVerdict() {
     if (!this.pair) return;
     this.loadingVerdict = true;
-    this.llmVerdict = null;
+    this.aiVerdict = null;
     try {
-      this.llmVerdict = await checkLlmVerdict(
+      this.aiVerdict = await checkAIVerdict(
         this.pair.issue1.id,
         this.pair.issue2.id
       );
@@ -146,11 +150,11 @@ export class IssueDetailView extends LitElement {
           () => html`<sl-spinner></sl-spinner>`,
           () =>
             when(
-              this.llmVerdict,
+              this.aiVerdict,
               () => html`
-                <div>${renderVerdict(this.llmVerdict)}</div>
+                <div>${renderVerdict(this.aiVerdict)}</div>
                 <p class="verdict-reasoning">
-                  ${this.llmVerdict?.reason || 'No reasoning provided.'}
+                  ${this.aiVerdict?.reason || 'No reasoning provided.'}
                 </p>
               `,
               () => html`<p>Could not load verdict.</p>`
@@ -163,7 +167,7 @@ export class IssueDetailView extends LitElement {
           variant="primary"
           size="small"
           @click=${() => this.dispatchEvent(new CustomEvent('resolve'))}
-          ?disabled=${this.llmVerdict?.resolution === 'resolved'}
+          ?disabled=${this.aiVerdict?.resolution === 'resolved'}
         >
           <sl-icon slot="prefix" name="check-circle"></sl-icon>
           Resolve
