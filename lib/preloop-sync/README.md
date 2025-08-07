@@ -1,6 +1,6 @@
 # SpaceSync
 
-SpaceSync is a read-only system that scans multiple issue trackers across different user accounts, extracts information about issues for each accessible project, and maintains a PostgreSQL database with vector embeddings for advanced querying and analysis.
+SpaceSync is a system that scans multiple issue trackers across different user accounts, extracts information about issues for each accessible project, and maintains a PostgreSQL database with vector embeddings for advanced querying and analysis. It's part of SpaceBridge, a platform for issue tracking and analysis. It requires SpaceModels that provides the database schema and vector embeddings.
 
 ## Features
 
@@ -78,29 +78,30 @@ Note: This command performs a *single* scan run. For continuous, scheduled, or p
 
 ### Continuous Update Service
 
-SpaceSync includes a service that continuously updates the database with changes from trackers. The service uses polling for all trackers.
+SpaceSync includes a scheduler service that continuously updates the database with changes from trackers. The service uses polling for all trackers.
 
 **Starting the service:**
 
 ```bash
-spacesync service start --foreground
+spacesync scheduler
 ```
 
-This starts the service in the foreground. Remove the `--foreground` flag to run it in the background.
+This starts the service in the foreground.
 
-**Using the standalone script:**
+**Using NATS task queue:**
 
-You can also run the service using the standalone script:
-
+You can also configure a NATS_URL environment variable to run the scheduler as a NATS task.
 ```bash
-python scripts/run_service.py --foreground
+NATS_URL=nats://localhost:4222 spacesync scheduler
 ```
 
+Then you can start the spacesync worker that will process the tasks from the NATS queue.
+```bash
+spacesync worker
+```
 Service options:
 
 ```
---foreground         Run in foreground (don't daemonize)
---reload-interval N  Interval (in seconds) to reload tracker list
 --log-level LEVEL    Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 ```
 
