@@ -79,3 +79,8 @@ def verify_token(token: str, token_type: str) -> str:
         return email
     except JWTError:
         raise TokenError("Invalid or expired token")
+
+
+def create_onboarding_token(email: str) -> str:
+    """Creates a short-lived token for the onboarding process."""
+    return create_token(email, "onboarding", expires_delta=timedelta(hours=1))

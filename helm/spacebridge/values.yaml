@@ -179,3 +179,8 @@ nats:
   nats:
     jetstream:
       enabled: true
+
+# Stripe configuration
+stripe:
+  secretKey: ""
+  webhookSecret: ""

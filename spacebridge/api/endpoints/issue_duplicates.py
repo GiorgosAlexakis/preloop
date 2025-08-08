@@ -196,6 +196,7 @@ def check_or_create_issue_duplicate(
             model=default_model.model_identifier,
             messages=messages,
         )
+        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         llm_response_text = response.choices[0].message.content.strip()
         logger.info(
             f"AI model response for issues {issue1_id}, {issue2_id}: '{llm_response_text}'"
@@ -946,6 +947,7 @@ def get_resolution_suggestion(
                 messages=[{"content": prompt, "role": "user"}],
                 response_format={"type": "json_object"},
             )
+            billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
             suggestion_data = json.loads(llm_response.choices[0].message.content)
             return IssueDuplicateSuggestionResponse(**suggestion_data)
 

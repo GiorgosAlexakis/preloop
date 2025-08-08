@@ -444,6 +444,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/complete-onboarding:
+    post:
+      tags:
+      - Auth
+      summary: Complete Onboarding
+      description: 'Completes the onboarding for a new user created via Stripe checkout.
+
+        Sets the password and updates the username.'
+      operationId: complete_onboarding_api_v1_auth_complete_onboarding_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/health:
     get:
       tags:
@@ -2781,9 +2809,9 @@ paths:
     get:
       tags:
       - Billing
-      summary: List Plans
-      description: List all available subscription plans.
-      operationId: list_plans_api_v1_billing_plans_get
+      summary: List Public Plans
+      description: List all available public subscription plans.
+      operationId: list_public_plans_api_v1_billing_plans_get
       responses:
         '200':
           description: Successful Response
@@ -2793,9 +2821,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Plan'
                 type: array
-                title: Response List Plans Api V1 Billing Plans Get
-      security:
-      - bearerAuth: []
+                title: Response List Public Plans Api V1 Billing Plans Get
     post:
       tags:
       - Billing
@@ -2824,6 +2850,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
+      - OAuth2PasswordBearer: []
+  /api/v1/billing/custom-plans:
+    get:
+      tags:
+      - Billing
+      summary: List Custom Plans
+      description: List custom subscription plans for the current user's account.
+      operationId: list_custom_plans_api_v1_billing_custom_plans_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Plan'
+                type: array
+                title: Response List Custom Plans Api V1 Billing Custom Plans Get
+      security:
       - bearerAuth: []
   /api/v1/billing/subscription:
     get:
@@ -2839,6 +2884,162 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Subscription'
+      security:
+      - bearerAuth: []
+  /api/v1/billing/checkout-success:
+    get:
+      tags:
+      - Billing
+      summary: Checkout Success
+      description: 'Handles the synchronous part of a successful checkout.
+
+        Processes the session, creates the user, and redirects to the welcome page.'
+      operationId: checkout_success_api_v1_billing_checkout_success_get
+      parameters:
+      - name: session_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/billing/checkout-session-details:
+    get:
+      tags:
+      - Billing
+      summary: Get Checkout Session Details
+      description: 'Retrieve user details from a completed checkout session.
+
+        This is used by the onboarding/welcome page.'
+      operationId: get_checkout_session_details_api_v1_billing_checkout_session_details_get
+      parameters:
+      - name: session_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionDetailsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/billing/create-checkout-session:
+    post:
+      tags:
+      - Billing
+      summary: Create Checkout Session
+      description: 'Creates a Stripe Checkout session for new subscriptions, or directly
+
+        updates the subscription for existing customers.'
+      operationId: create_checkout_session_api_v1_billing_create_checkout_session_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCheckoutSessionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/billing/create-portal-session:
+    post:
+      tags:
+      - Billing
+      summary: Create Portal Session
+      description: Create a Stripe Customer Portal session.
+      operationId: create_portal_session_api_v1_billing_create_portal_session_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePortalSessionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePortalSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/billing/webhooks:
+    post:
+      tags:
+      - Billing
+      summary: Stripe Webhooks
+      description: Handle incoming Stripe webhooks.
+      operationId: stripe_webhooks_api_v1_billing_webhooks_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearerAuth: []
+  /api/v1/billing/sync-subscription:
+    post:
+      tags:
+      - Billing
+      summary: Sync Subscription
+      description: Synchronizes the user's subscription status from Stripe to the
+        local database.
+      operationId: sync_subscription_api_v1_billing_sync_subscription_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
       security:
       - bearerAuth: []
 components:
@@ -3216,6 +3417,19 @@ components:
       - username
       - password
       title: Body_login_form_api_v1_auth_token_post
+    CheckoutSessionDetailsResponse:
+      properties:
+        email:
+          type: string
+          title: Email
+        username:
+          type: string
+          title: Username
+      type: object
+      required:
+      - email
+      - username
+      title: CheckoutSessionDetailsResponse
     CommentCreate:
       properties:
         body:
@@ -3362,6 +3576,37 @@ components:
       - title
       - description
       title: ComplianceSuggestionResponse
+    CreateCheckoutSessionRequest:
+      properties:
+        plan_id:
+          type: string
+          title: Plan Id
+        interval:
+          type: string
+          title: Interval
+      type: object
+      required:
+      - plan_id
+      - interval
+      title: CreateCheckoutSessionRequest
+    CreatePortalSessionRequest:
+      properties:
+        return_url:
+          type: string
+          title: Return Url
+      type: object
+      required:
+      - return_url
+      title: CreatePortalSessionRequest
+    CreatePortalSessionResponse:
+      properties:
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - url
+      title: CreatePortalSessionResponse
     DuplicateIssuePair:
       properties:
         issue1:
@@ -4238,6 +4483,23 @@ components:
       - password
       title: LoginRequest
       description: Model for login requests.
+    OnboardingRequest:
+      properties:
+        email:
+          type: string
+          title: Email
+        username:
+          type: string
+          title: Username
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - email
+      - username
+      - password
+      title: OnboardingRequest
     OrganizationCreate:
       properties:
         name:
@@ -4422,9 +4684,11 @@ components:
           title: Name
           description: Name of the plan.
         price_monthly:
-          type: number
+          anyOf:
+          - type: number
+          - type: 'null'
           title: Price Monthly
-          description: Monthly price of the plan.
+          description: Monthly price of the plan, if available.
         price_annually:
           anyOf:
           - type: number
@@ -4441,7 +4705,6 @@ components:
           description: Features and limits of the plan.
         id:
           type: string
-          format: uuid
           title: Id
           description: Primary key.
         created_at:
@@ -4457,7 +4720,6 @@ components:
       type: object
       required:
       - name
-      - price_monthly
       - features
       - id
       - created_at
@@ -4471,9 +4733,11 @@ components:
           title: Name
           description: Name of the plan.
         price_monthly:
-          type: number
+          anyOf:
+          - type: number
+          - type: 'null'
           title: Price Monthly
-          description: Monthly price of the plan.
+          description: Monthly price of the plan, if available.
         price_annually:
           anyOf:
           - type: number
@@ -4491,7 +4755,6 @@ components:
       type: object
       required:
       - name
-      - price_monthly
       - features
       title: PlanCreate
       description: Schema for creating a new Plan.
@@ -4774,7 +5037,6 @@ components:
           description: Foreign key to Account.
         plan_id:
           type: string
-          format: uuid
           title: Plan Id
           description: Foreign key to Plan.
         status:

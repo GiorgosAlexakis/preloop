@@ -140,6 +140,7 @@ async def get_issue_compliance(
             messages=messages,
             response_format={"type": "json_object"},
         )
+        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         llm_response_text = response.choices[0].message.content.strip()
 
         response_obj = json.loads(llm_response_text)
@@ -236,6 +237,7 @@ def get_compliance_improvement_suggestion(
             ],
             response_format={"type": "json_object"},
         )
+        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         suggestion_data = json.loads(llm_response.choices[0].message.content)
         return ComplianceSuggestionResponse(**suggestion_data)
 

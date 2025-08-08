@@ -26,6 +26,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # OAuth2 for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/token", auto_error=False
+)
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -390,35 +393,42 @@ async def get_current_active_user(
 
 
 async def get_current_active_user_optional(
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: str = Depends(oauth2_scheme_optional),
 ) -> Optional[Account]:
-    """Get the current active user if a valid token is provided, otherwise return None.
-
-    This is useful for endpoints that can optionally use authentication.
-
-    Args:
-        token: Optional JWT token or API key from the Authorization header.
-
-    Returns:
-        The current active user if authentication is successful, otherwise None.
+    """
+    Get the current active user if a valid token is provided, otherwise return None.
+    This dependency will not raise an error if the token is missing or invalid.
     """
     if token is None:
-        # No token provided in the header
         return None
     try:
-        # Reuse the existing logic, which handles JWT/API key and active status
-        # get_current_user already depends on the token via oauth2_scheme
-        # We pass the token explicitly here to avoid double dependency resolution
-        # and handle the case where the header might be present but empty.
+        # We must call get_current_user with the token parameter, not as a dependency,
+        # to bypass the strict oauth2_scheme it depends on.
+        user = await get_current_user(token=token)
+        if user and user.is_active:
+            return user
+        return None
+    except HTTPException:
+        # Any authentication error (invalid, expired, etc.) should result in None
+        return None
+
+
+async def get_user_from_token_if_valid(
+    token: str, db_session: Any
+) -> Optional[Account]:
+    """
+    Manually attempts to retrieve a user from a token string.
+    Returns None if the token is invalid, expired, or the user doesn't exist.
+    This function does not raise HTTPException.
+    """
+    if not token:
+        return None
+    try:
+        # The get_current_user function contains all the necessary logic
+        # for decoding JWTs, checking API keys, and verifying the user.
+        # We call it directly with the token.
         user = await get_current_user(token=token)
         return user
-    except HTTPException as e:
-        # If authentication fails for any reason (invalid token, expired, inactive user), return None
-        logger.debug(f"Optional authentication failed: {e.detail}")
-        return None
-    except Exception as e:
-        # Catch any other unexpected errors during authentication attempt
-        logger.error(
-            f"Unexpected error during optional authentication: {e}", exc_info=True
-        )
+    except Exception:
+        # If any exception occurs during authentication, we simply return None.
         return None

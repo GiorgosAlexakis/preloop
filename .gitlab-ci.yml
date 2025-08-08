@@ -6,6 +6,10 @@ variables:
   GITLAB_TOKEN: $GITLAB_TOKEN
   STAGING_DOMAIN: "staging.spacebridge.io"
   SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
+  STRIPE_SECRET_KEY_PROD: $STRIPE_SECRET_KEY_PROD
+  STRIPE_WEBHOOK_SECRET_PROD: $STRIPE_WEBHOOK_SECRET_PROD
+  STRIPE_SECRET_KEY_STAGING: $STRIPE_SECRET_KEY_STAGING
+  STRIPE_WEBHOOK_SECRET_STAGING: $STRIPE_WEBHOOK_SECRET_STAGING
 
 cache:
   paths:
@@ -110,6 +114,9 @@ staging:
       --set sentry.enabled=true
       --set sentry.dsn=${SENTRY_DSN}
       --set profiling.enabled=false
+      --set stripe.enabled=true
+      --set stripe.secretKey=${STRIPE_SECRET_KEY_STAGING}
+      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET_STAGING}
 
     - echo "Helm deployment finished."
   artifacts:
@@ -162,6 +169,9 @@ prod:
       --set config.smtp.from=${SMTP_FROM}
       --set config.smtp.fromName=${SMTP_FROM_NAME}
       --set ingress.enabled=true
+      --set stripe.enabled=true
+      --set stripe.secretKey=${STRIPE_SECRET_KEY_PROD}
+      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET_PROD}
     - echo "Helm deployment finished."
   artifacts:
     paths:

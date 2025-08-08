@@ -216,12 +216,12 @@ async def search_all(
     # --- End of Project and Organization Resolution Logic ---
 
     if search_type == "similarity":
-        # Check usage limit before proceeding
-        if not billing_service.check_limit(current_user.id, "ai_calls"):
-            raise HTTPException(
-                status_code=429,
-                detail="You have exceeded the AI model call limit for your current plan.",
-            )
+        # TODO:Check usage limit before proceeding
+        # if not billing_service.check_limit(current_user.id, "ai_calls"):
+        #     raise HTTPException(
+        #         status_code=429,
+        #         detail="You have exceeded the AI model call limit for your current plan.",
+        #     )
 
         # 1. Get Active Embedding Model (since model_id is not in signature)
         active_models = crud_embedding_model.get_active(db)
@@ -261,7 +261,8 @@ async def search_all(
         )
 
         # Record usage after successful search
-        billing_service.record_usage(current_user.id, "ai_calls")
+        # Usage is now recorded in specific services where AI models are directly used.
+        # billing_service.record_usage(current_user.id, "ai_calls")
 
         # print(resolved_project_ids_param) # Optional: for debugging
 

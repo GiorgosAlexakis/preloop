@@ -118,12 +118,12 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
         """
         # Skip tracking for non-api routes
         path = request.url.path
-        # Also skip tracking for the new /docs and existing static/template routes
         if (
             not path.startswith("/api/v1")
             or path.startswith("/api/v1/health")
-            or path.startswith("/docs")
-            or path == "/"
+            or path.startswith("/api/v1/billing/plans")
+            or path.startswith("/api/v1/billing/create-checkout-session")
+            or path.startswith("/api/v1/billing/webhooks")
         ):
             return await call_next(request)
 
@@ -440,6 +440,8 @@ def create_app() -> FastAPI:
         # Apply security to all endpoints except auth endpoints, landing page, health checks, and docs
         excluded_prefixes = [
             "/api/v1/auth",
+            "/api/v1/billing/plans",
+            "/api/v1/billing/create-checkout-session",
             "/",
             "/static",
             "/docs",  # Exclude the main docs path and subpaths
@@ -543,7 +545,7 @@ def create_app() -> FastAPI:
         billing.router,
         prefix="/api/v1/billing",
         tags=["Billing"],
-        dependencies=[Depends(get_current_active_user)],
+        # dependencies=[Depends(get_current_active_user)],
     )
 
     # --- SPA Static Files (Production) ---

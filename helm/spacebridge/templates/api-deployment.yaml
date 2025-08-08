@@ -99,6 +99,10 @@ spec:
             {{- end }}
             - name: PROFILING_ENABLED
               value: {{ .Values.profiling.enabled | quote }}
+            - name: STRIPE_SECRET_KEY
+              value: {{ .Values.stripe.secretKey | quote }}
+            - name: STRIPE_WEBHOOK_SECRET
+              value: {{ .Values.stripe.webhookSecret | quote }}
           ports:
             - name: http
               containerPort: 8000
