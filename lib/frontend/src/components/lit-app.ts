@@ -9,6 +9,8 @@ import '../views/public/reset-password-view.ts';
 import '../views/public/verify-email-view.ts';
 import '../views/public/request-demo-view.ts';
 import '../views/public/whatis-mcp-view.ts';
+import '../views/public/pricing-view.ts';
+import '../views/public/welcome-view.ts';
 import '../views/authed/console-shell.ts';
 import '../views/authed/dashboard-view.ts';
 import '../views/authed/trackers-view.ts';
@@ -23,7 +25,7 @@ import '../views/authed/settings/ai-models-view.ts';
 import '../views/authed/settings/profile-view.ts';
 import '../views/authed/settings/security-view.ts';
 import '../views/authed/settings/appearance-view.ts';
-import '../views/authed/pricing-view.ts';
+import '../views/authed/settings/subscription-view.ts';
 import './app-header.ts';
 import './app-footer.ts';
 
@@ -52,6 +54,8 @@ export class LitApp extends LitElement {
       { path: '/verify-email', component: 'verify-email-view' },
       { path: '/request-demo', component: 'request-demo-view' },
       { path: '/whatis-mcp', component: 'whatis-mcp-view' },
+      { path: '/pricing', component: 'public-pricing-view' },
+      { path: '/welcome', component: 'welcome-view' },
       {
         path: '/console',
         component: 'console-shell',
@@ -80,6 +84,7 @@ export class LitApp extends LitElement {
               { path: 'api-keys', component: 'api-keys-view' },
               { path: 'ai-models', component: 'ai-models-view' },
               { path: 'appearance', component: 'appearance-view' },
+              { path: 'subscription', component: 'subscription-view' },
             ],
           },
           { path: 'pricing', component: 'pricing-view' },

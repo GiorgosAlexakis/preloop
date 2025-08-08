@@ -4,7 +4,10 @@ import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/details/details.js';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '../../components/logo-component';
+import '../../components/global-notice';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 // static styles = [formStyles, css`
@@ -14,6 +17,9 @@ import consoleStyles from '../../styles/console-styles.css?inline';
 
 @customElement('console-shell')
 export class ConsoleShell extends LitElement {
+  @query('#upgrade-modal')
+  private _upgradeModal!: HTMLElement;
+
   static styles = [
     unsafeCSS(consoleStyles),
     css`
@@ -126,8 +132,32 @@ export class ConsoleShell extends LitElement {
     });
   }
 
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('show-upgrade-modal', () => {
+      (this._upgradeModal as any).show();
+    });
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('show-upgrade-modal', () => {
+      (this._upgradeModal as any).show();
+    });
+    super.disconnectedCallback();
+  }
+
   render() {
     return html`
+      <sl-dialog id="upgrade-modal" label="Upgrade Your Plan">
+        You have exceeded the usage limits of your current plan. Please upgrade
+        to continue using this feature.
+        <sl-button slot="footer" href="/console/pricing">
+          View Plans
+        </sl-button>
+      </sl-dialog>
+
+      <global-notice></global-notice>
+
       <div class="console-container">
         <div class="sidebar">
           <div class="logo">
@@ -173,6 +203,9 @@ export class ConsoleShell extends LitElement {
                 </a>
                 <a href="/console/settings/security">
                   <sl-menu-item>Security</sl-menu-item>
+                </a>
+                <a href="/console/settings/subscription">
+                  <sl-menu-item>Subscription</sl-menu-item>
                 </a>
                 <a href="/console/settings/api-keys">
                   <sl-menu-item>API Keys</sl-menu-item>

@@ -170,6 +170,7 @@ export class AppHeader extends LitElement {
           </div>
           <nav class="${this.isMenuOpen ? 'mobile-menu-open' : ''}">
             <sl-button href="/docs" variant="text">Docs</sl-button>
+            <sl-button href="/pricing" variant="text">Pricing</sl-button>
             ${this.isAuthenticated && this.user
               ? html`
                   ${window.location.pathname === '/'

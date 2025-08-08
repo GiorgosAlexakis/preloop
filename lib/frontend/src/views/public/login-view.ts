@@ -61,7 +61,13 @@ export class LoginView extends LitElement {
       window.dispatchEvent(
         new CustomEvent('auth-change', { bubbles: true, composed: true })
       );
-      Router.go('/console');
+      const redirectPath = localStorage.getItem('loginRedirect');
+      if (redirectPath) {
+        localStorage.removeItem('loginRedirect');
+        Router.go(redirectPath);
+      } else {
+        Router.go('/console');
+      }
     } catch (error) {
       this.error = 'Invalid username or password';
       console.error('Sign in failed', error);

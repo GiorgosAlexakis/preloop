@@ -21,9 +21,12 @@ export class SettingsView extends LitElement {
   private location = router.location;
 
   private tabs = [
-    { path: '/settings/account', label: 'Account' },
-    { path: '/settings/api-keys', label: 'API Keys' },
-    { path: '/settings/ai-models', label: 'AI Models' },
+    { path: '/console/settings/profile', label: 'Profile' },
+    { path: '/console/settings/security', label: 'Security' },
+    { path: '/console/settings/subscription', label: 'Subscription' },
+    { path: '/console/settings/api-keys', label: 'API Keys' },
+    { path: '/console/settings/ai-models', label: 'AI Models' },
+    { path: '/console/settings/appearance', label: 'Appearance' },
   ];
 
   private onTabSelected(e: CustomEvent) {

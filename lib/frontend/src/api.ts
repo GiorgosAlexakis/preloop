@@ -84,6 +84,23 @@ export async function fetchWithAuth(
     }
   }
 
+  if (response.status === 429) {
+    window.dispatchEvent(
+      new CustomEvent('show-upgrade-modal', {
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  return response;
+}
+export async function fetchPublic(
+  url: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const response = await fetch(url, options);
+  // You might want to add basic error handling here if needed
   return response;
 }
 
