@@ -6,8 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import DateTime, func, String  # Added String back
-
-# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID
+from sqlalchemy.orm import Session
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -54,6 +53,9 @@ class Account(Base):
 
     # Generic metadata field for extensibility
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
+    stripe_customer_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, unique=True
+    )
 
     # Relationships
     trackers: Mapped[List["Tracker"]] = relationship(
@@ -92,3 +94,15 @@ class Account(Base):
         for tracker in self.trackers:
             owned_orgs.extend(tracker.organizations)
         return owned_orgs
+
+    def get_active_subscription(
+        self, db_session: "Session"
+    ) -> Optional["Subscription"]:
+        """Returns the active subscription for the account, if one exists."""
+        from .plan import Subscription
+
+        return (
+            db_session.query(Subscription)
+            .filter(Subscription.account_id == self.id, Subscription.status == "active")
+            .first()
+        )

@@ -29,7 +29,9 @@ class PlanBase(BaseModel):
     """Base schema for a Plan."""
 
     name: str = Field(..., description="Name of the plan.")
-    price_monthly: float = Field(..., description="Monthly price of the plan.")
+    price_monthly: Optional[float] = Field(
+        None, description="Monthly price of the plan, if available."
+    )
     price_annually: Optional[float] = Field(
         None, description="Annual price of the plan, if available."
     )
@@ -46,7 +48,7 @@ class PlanCreate(PlanBase):
 class Plan(PlanBase):
     """Schema for a Plan retrieved from the database."""
 
-    id: uuid.UUID = Field(..., description="Primary key.")
+    id: str = Field(..., description="Primary key.")
     created_at: datetime = Field(..., description="Timestamp of creation.")
     updated_at: datetime = Field(..., description="Timestamp of last update.")
 
@@ -58,7 +60,7 @@ class SubscriptionBase(BaseModel):
     """Base schema for a Subscription."""
 
     account_id: uuid.UUID = Field(..., description="Foreign key to Account.")
-    plan_id: uuid.UUID = Field(..., description="Foreign key to Plan.")
+    plan_id: str = Field(..., description="Foreign key to Plan.")
     status: str = Field(
         "active", description="Subscription status (e.g., active, trialing, canceled)."
     )

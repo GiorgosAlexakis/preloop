@@ -40,6 +40,21 @@ class CRUDFlow(CRUDBase[models.Flow]):
         query = db.query(self.model).filter(self.model.account_id == account_id)
         return query.offset(skip).limit(limit).all()
 
+    def get_by_trigger(
+        self, db: Session, *, event_source: str, event_type: str
+    ) -> List[models.Flow]:
+        """
+        Retrieve flows that match a specific trigger event.
+        """
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.trigger_event_source == event_source,
+                self.model.trigger_event_type == event_type,
+            )
+            .all()
+        )
+
     def create(self, db: Session, *, flow_in: schemas.FlowCreate) -> models.Flow:
         """
         Create a new flow.
