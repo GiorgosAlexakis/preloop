@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 import secrets
 from sqlalchemy.orm import Session
 
+from spacebridge.services.billing import BillingService
 from spacemodels.crud import (
     crud_account,
     crud_issue,
@@ -220,6 +221,7 @@ class TrackerClient:
         logger.info(
             f"Scanning issues for project {project.id} ({project.name}) since {since}"
         )
+        billing_service = BillingService(db)
         issue_data_list = self.client.get_issues(
             organization_id=organization.identifier,
             project_id=project.identifier,
@@ -280,6 +282,9 @@ class TrackerClient:
                     db_comment = crud_comment.create(db, obj_in=xformed_comment_data)
 
                 if comment_changed or force_update:
+                    billing_service.record_usage(
+                        account_id=self.tracker.account_id, metric="comments_ingested"
+                    )
                     crud_issue_embedding.create_embeddings(
                         db=db,
                         issue_id=current_issue_model.id,
@@ -289,6 +294,9 @@ class TrackerClient:
 
             if issue_changed or force_update:
                 embedding_updates += 1
+                billing_service.record_usage(
+                    account_id=self.tracker.account_id, metric="issues_ingested"
+                )
                 crud_issue_embedding.create_embeddings(
                     db, issue_id=current_issue_model.id
                 )
