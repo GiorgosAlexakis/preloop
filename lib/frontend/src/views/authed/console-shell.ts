@@ -163,6 +163,13 @@ export class ConsoleShell extends LitElement {
               </sl-menu-item>
             </a>
 
+            <a href="/console/flows">
+              <sl-menu-item>
+                <sl-icon name="diagram-3" slot="prefix"></sl-icon>
+                Flows
+              </sl-menu-item>
+            </a>
+
             <sl-details>
               <span slot="summary">
                 <sl-icon name="kanban" style="padding-right: 6px;"></sl-icon>
