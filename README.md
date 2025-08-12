@@ -12,8 +12,9 @@ SpaceBridge.io drives your product using AI. It ingests issues, comments, docume
 - Vector-based similarity search across issue trackers and projects
 - Intelligent detection of duplication and overlap of issues
 - Evaluation of compliance metrics and recommendations for improvement
-- Event Driven Agentic Flows triggered by issue tracker events
-- MCP server & RESTful API & Web UI
+- Event Driven Agentic Flows triggered by issue tracker events, with real-time monitoring.
+- A comprehensive Web UI for managing trackers, projects, and flows.
+- MCP server & RESTful API.
 
 ## Supported Issue Trackers
 

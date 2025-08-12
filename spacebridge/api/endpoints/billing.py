@@ -29,7 +29,7 @@ def get_billing_service(db: Session = Depends(get_db_session)) -> BillingService
     return BillingService(db)
 
 
-@router.post("/plans", response_model=Plan, status_code=201)
+@router.post("/billing/plans", response_model=Plan, status_code=201)
 def create_plan(
     plan: PlanCreate,
     service: BillingService = Depends(get_billing_service),
@@ -44,7 +44,7 @@ def create_plan(
     return service.create_plan(plan)
 
 
-@router.get("/plans", response_model=List[Plan])
+@router.get("/billing/plans", response_model=List[Plan])
 def list_public_plans(service: BillingService = Depends(get_billing_service)):
     """
     List all available public subscription plans.
@@ -57,7 +57,7 @@ def list_public_plans(service: BillingService = Depends(get_billing_service)):
     )
 
 
-@router.get("/custom-plans", response_model=List[Plan])
+@router.get("/billing/custom-plans", response_model=List[Plan])
 def list_custom_plans(
     service: BillingService = Depends(get_billing_service),
     current_user: Account = Depends(get_current_active_user),
@@ -76,7 +76,7 @@ def list_custom_plans(
     )
 
 
-@router.get("/subscription", response_model=Subscription)
+@router.get("/billing/subscription", response_model=Subscription)
 def get_subscription(
     service: BillingService = Depends(get_billing_service),
     current_user: Account = Depends(get_current_active_user),
@@ -95,7 +95,7 @@ def get_subscription(
     return subscription
 
 
-@router.get("/checkout-success")
+@router.get("/billing/checkout-success")
 def checkout_success(
     session_id: str,
     service: BillingService = Depends(get_billing_service),
@@ -133,7 +133,9 @@ class CheckoutSessionDetailsResponse(BaseModel):
     username: str
 
 
-@router.get("/checkout-session-details", response_model=CheckoutSessionDetailsResponse)
+@router.get(
+    "/billing/checkout-session-details", response_model=CheckoutSessionDetailsResponse
+)
 def get_checkout_session_details(
     session_id: str,
     service: BillingService = Depends(get_billing_service),
@@ -162,7 +164,7 @@ class CreateCheckoutSessionResponse(BaseModel):
     url: str
 
 
-@router.post("/create-checkout-session")  # No response model, as it can vary
+@router.post("/billing/create-checkout-session")  # No response model, as it can vary
 async def create_checkout_session(
     request: CreateCheckoutSessionRequest,
     service: BillingService = Depends(get_billing_service),
@@ -195,7 +197,9 @@ class CreatePortalSessionResponse(BaseModel):
     url: str
 
 
-@router.post("/create-portal-session", response_model=CreatePortalSessionResponse)
+@router.post(
+    "/billing/create-portal-session", response_model=CreatePortalSessionResponse
+)
 def create_portal_session(
     request: CreatePortalSessionRequest,
     service: BillingService = Depends(get_billing_service),
@@ -211,7 +215,7 @@ def create_portal_session(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/webhooks")
+@router.post("/billing/webhooks")
 async def stripe_webhooks(
     request: Request, service: BillingService = Depends(get_billing_service)
 ):
@@ -227,7 +231,7 @@ async def stripe_webhooks(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/sync-subscription", status_code=200)
+@router.post("/billing/sync-subscription", status_code=200)
 def sync_subscription(
     service: BillingService = Depends(get_billing_service),
     current_user: Account = Depends(get_current_active_user),

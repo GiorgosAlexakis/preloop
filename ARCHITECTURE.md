@@ -402,7 +402,7 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `allowed_mcp_tools`: JSON Array of objects (e.g., `[{"server_name": "spacebridge-mcp", "tool_name": "search_issues"}, {"server_name": "code_analysis_mcp", "tool_name": "lint_file"}]`)
     *   `is_preset`: Boolean (Indicates if this is a system-defined preset)
     *   `is_enabled`: Boolean (Allows users to enable/disable Flows)
-    *   `organization_id`: Foreign Key to `Organizations.id`
+    *   `account_id`: Foreign Key to `Account.id`
     *   `created_at`: Timestamp
     *   `updated_at`: Timestamp
 
@@ -498,6 +498,71 @@ sequenceDiagram
 
 *   **`SpaceModels`:**
     *   Will house the new SQLAlchemy models and Pydantic schemas for `Flows`, `AIModels`, and `FlowExecutions`.
+
+### 6. Real-Time UI Updates & Interactivity
+
+To provide users with live feedback and enable future interactivity with Flow executions, a structured, message-based real-time architecture will be implemented.
+
+```mermaid
+graph TD
+    subgraph "Flows Subsystem (Worker)"
+        FlowExecOrchestrator["Flow Execution Orchestrator"]
+    end
+
+    subgraph "NATS Messaging"
+        direction LR
+        NatsUpdates["Updates Stream (flow-updates.{exec_id})"]
+        NatsInputs["Inputs Stream (flow-inputs.{exec_id})"]
+    end
+
+    subgraph "API Server"
+        WebSocketServer["WebSocket Server"]
+    end
+
+    subgraph "Browser"
+        FlowExecUI["Flow Executions UI"]
+    end
+
+    %% Data Flow
+    FlowExecOrchestrator -- Publishes structured JSON --> NatsUpdates
+    WebSocketServer -- Subscribes to --> NatsUpdates
+    NatsUpdates -- Streams messages --> WebSocketServer
+    WebSocketServer -- Pushes updates to --> FlowExecUI
+
+    %% Future Interactivity Flow
+    FlowExecUI -- Sends user input --> WebSocketServer
+    WebSocketServer -- Publishes input to --> NatsInputs
+    NatsInputs -- Delivers input to --> FlowExecOrchestrator
+    FlowExecOrchestrator -- Subscribes to --> NatsInputs
+
+    style NatsInputs fill:#eee,stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
+    style FlowExecUI -- Sends user input --> WebSocketServer stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
+    style WebSocketServer -- Publishes input to --> NatsInputs stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
+    style NatsInputs -- Delivers input to --> FlowExecOrchestrator stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
+    style FlowExecOrchestrator -- Subscribes to --> NatsInputs stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
+
+```
+
+**Components & Protocol:**
+
+*   **Structured Messaging:** Communication will use a standardized JSON envelope, allowing for different message types. This is critical for future extensibility.
+    ```json
+    {
+      "execution_id": "uuid-of-the-flow-execution",
+      "timestamp": "iso-8601-timestamp",
+      "type": "message_type",
+      "payload": { ... }
+    }
+    ```
+*   **NATS Streams:**
+    *   **`flow-updates.{execution_id}`:** A server-to-client stream for broadcasting updates from the `FlowExecutionOrchestrator`. This will be implemented now.
+    *   **`flow-inputs.{execution_id}`:** A client-to-server stream for sending user input back to the `FlowExecutionOrchestrator`. This is reserved for future interactive features.
+*   **WebSocket Server:** The server will handle routing messages between the browser and the appropriate NATS streams.
+*   **Initial Message Types:** For the first implementation, the following message types will be supported in the `flow-updates` stream:
+    *   `status_update`: For lifecycle changes (e.g., `RUNNING`, `SUCCEEDED`).
+    *   `log`: For streaming text output from the agent.
+    *   `tool_call`: For structured information about tools being used.
+*   **Future Extensibility:** This design allows for the seamless addition of new message types to support interactivity (`user_input_request`, `user_input_response`) or advanced capabilities (`ui_control_command`) without requiring architectural changes.
     *   CRUD operations for these new entities will be added to `SpaceModels`.
     *   Will be queried by the Flow Execution Orchestrator to resolve dynamic prompt content.
 *   **`SpaceSync` / Webhook Infrastructure:**
