@@ -18,7 +18,7 @@ class FlowBase(BaseModel):
     allowed_mcp_tools: Optional[List[Dict[str, Any]]] = None
     is_preset: Optional[bool] = False
     is_enabled: Optional[bool] = True
-    account_id: UUID
+    account_id: Optional[str] = None
 
 
 class FlowCreate(FlowBase):
@@ -37,6 +37,7 @@ class FlowUpdate(FlowBase):
 
 class FlowResponse(FlowBase):
     id: uuid.UUID
+    account_id: UUID
     created_at: datetime
     updated_at: datetime
 
