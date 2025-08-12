@@ -30,5 +30,29 @@ def notify_admins(subject: str, message: str, message_html: str = None):
     send_email(admin_email, subject, message, message_html)
 
 
-def process_webhook_event(tracker_id: int, event_type: str, payload: dict):
+async def process_webhook_event(tracker_id: int, event_type: str, payload: dict):
+    """
+    This task is triggered when a webhook event is received from a tracker.
+    It uses the FlowTriggerService to check if any flows should be initiated.
+    """
     logger.info(f"Processing tracker event: {tracker_id} - {event_type}")
+    db = next(get_db_session())
+    try:
+        tracker = crud_tracker.get(db, id=tracker_id)
+        if not tracker or not tracker.project or not tracker.project.organization:
+            logger.error(f"Tracker {tracker_id} or its associations not found.")
+            return
+
+        from spacebridge.services.flow_trigger_service import FlowTriggerService
+
+        event_data = {
+            "source": tracker.tracker_type.value,
+            "type": event_type,
+            "payload": payload,
+            "account_id": tracker.project.organization.account_id,
+        }
+
+        trigger_service = FlowTriggerService(db)
+        await trigger_service.process_event(event_data)
+    finally:
+        db.close()
