@@ -97,6 +97,13 @@ spec:
             {{else}}
               value: nats://{{ include "spacebridge.fullname" . }}-nats:4222
             {{end}}
+            {{- if .Values.sentry.enabled }}
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "spacebridge.fullname" . }}
+                  key: sentry-dsn
+            {{- end }}
           resources:
             requests:
               cpu: "500m"

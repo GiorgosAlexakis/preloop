@@ -44,6 +44,7 @@ from spacebridge.api.endpoints import (
     billing,
     websockets,
 )
+from spacemodels.sentry import init_sentry
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
 from spacemodels.models.api_usage import ApiUsage
@@ -200,21 +201,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up application and database...")
 
     # Initialize Sentry if DSN is configured
-    sentry_dsn = os.getenv("SENTRY_DSN")
-    if sentry_dsn:
-        import sentry_sdk  # noqa: F401
-
-        sentry_sdk.init(
-            dsn=sentry_dsn,
-            # Set traces_sample_rate to 1.0 to capture 100%
-            # of transactions for performance monitoring.
-            traces_sample_rate=1.0,
-            # Set profiles_sample_rate to 1.0 to profile 100%
-            # of sampled transactions.
-            profiles_sample_rate=1.0,
-            enable_tracing=True,
-        )
-        logger.info("Sentry SDK initialized.")
+    init_sentry()
 
     # Initialize database connection and optionally create tables.
     logger.info("Setting up database connection...")
