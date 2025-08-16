@@ -159,11 +159,9 @@ export class PublicPricingView extends LitElement {
         flex-wrap: wrap;
       }
       .billing-toggle .label {
-        color: var(--sl-color-neutral-700);
         font-weight: 600;
       }
       .billing-toggle .hint {
-        color: var(--sl-color-neutral-600);
         font-size: 0.95rem;
       }
 
@@ -187,29 +185,18 @@ export class PublicPricingView extends LitElement {
         position: relative;
         display: flex;
         flex-direction: column;
-        border: 1px solid var(--sl-color-neutral-300);
-        border-radius: 16px;
-        padding: 1.25rem;
-        background: var(--sl-color-neutral-0);
-        box-shadow:
-          0 1px 1px rgba(0, 0, 0, 0.02),
-          0 2px 8px rgba(0, 0, 0, 0.04);
-        transition:
-          transform 0.2s ease,
-          box-shadow 0.2s ease,
-          border-color 0.2s ease;
-      }
-      .plan-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-        border-color: var(--sl-color-neutral-400);
+        border: 1px solid var(--sl-color-neutral-600);
+        border-radius: 20px;
+        padding: 1.5rem;
       }
 
       .plan-card.popular {
-        border-color: var(--sl-color-primary-600);
-        box-shadow:
-          0 6px 18px rgba(0, 0, 0, 0.08),
-          0 0 0 2px var(--sl-color-primary-200) inset;
+        border: none;
+        background: linear-gradient(
+          45deg,
+          hsl(220, 60%, 40%),
+          hsl(260, 65%, 38%)
+        );
       }
 
       .badge {
@@ -223,6 +210,7 @@ export class PublicPricingView extends LitElement {
         padding: 0.25rem 0.5rem;
         border-radius: 999px;
       }
+
       .badge.alt {
         background: var(--sl-color-neutral-700);
       }
@@ -235,14 +223,27 @@ export class PublicPricingView extends LitElement {
       .price-wrap {
         margin: 0.25rem 0 0.75rem 0;
       }
+
       .price-main {
         font-size: 2rem;
         font-weight: 800;
       }
+
       .price-sub {
         color: var(--sl-color-neutral-600);
         font-size: 0.95rem;
         margin-top: 0.25rem;
+      }
+
+      .divider {
+        border: none;
+        height: 1px;
+        background-color: var(--sl-color-neutral-600);
+        margin: 1rem 0;
+      }
+
+      .plan-card.popular .divider {
+        background-color: var(--sl-color-primary-500);
       }
 
       .features {
@@ -253,35 +254,21 @@ export class PublicPricingView extends LitElement {
         flex-direction: column;
         gap: 0.5rem;
       }
-      .feature {
-        display: flex;
-        gap: 0.5rem;
-        align-items: baseline;
-        color: var(--sl-color-neutral-800);
-      }
-      .feature.excluded {
-        color: var(--sl-color-neutral-500);
-      }
+
       .feat-icon {
-        font-weight: 800;
-        line-height: 1;
-        width: 1rem;
-        text-align: center;
         color: var(--sl-color-success-600);
       }
       .feature.excluded .feat-icon {
         color: var(--sl-color-neutral-400);
       }
-      .feat-text {
-        flex: 1;
-      }
-      .feat-value {
-        color: var(--sl-color-neutral-700);
-      }
 
       .cta {
         margin-top: auto;
         width: 100%;
+      }
+
+      .cta::part(label) {
+        font-weight: 600;
       }
     `,
   ];
@@ -291,16 +278,19 @@ export class PublicPricingView extends LitElement {
       <app-header></app-header>
       <main>
         <section class="main-section">
-          <div class="section-container">
-            <div class="hero">
-              <h1 class="title">Pricing</h1>
-              <p class="subtitle">
+          <div class="section-container hero-inner">
+            <div class="hero-content">
+              <h1 class="fw-bold">
+                <span class="gradient-product">Pricing</span>
+              </h1>
+              <p class="lead">
                 Choose the plan that fits your team and scale as you grow.
               </p>
             </div>
+          </div>
 
+          <div class="section-container">
             <div class="billing-toggle">
-              <span class="label">Billing</span>
               <sl-button-group>
                 <sl-button
                   variant=${this._interval === 'month' ? 'primary' : 'default'}
@@ -312,14 +302,9 @@ export class PublicPricingView extends LitElement {
                   variant=${this._interval === 'year' ? 'primary' : 'default'}
                   @click=${() => (this._interval = 'year')}
                 >
-                  Annually
+                  Yearly (Best Value)
                 </sl-button>
               </sl-button-group>
-              <span class="hint">
-                ${this._interval === 'year'
-                  ? 'Best value'
-                  : 'Switch to annual for best value'}
-              </span>
             </div>
 
             ${this._loading
@@ -350,6 +335,8 @@ export class PublicPricingView extends LitElement {
                             ${this.formatPrice(plan)}
                           </div>
 
+                          <hr class="divider" />
+
                           <ul class="features">
                             ${this._featureOrder.map((key) =>
                               this.renderFeature(plan.features[key], key)
@@ -359,9 +346,7 @@ export class PublicPricingView extends LitElement {
                           <sl-button
                             class="cta"
                             size="large"
-                            variant="${plan.id === 'ultra'
-                              ? 'primary'
-                              : 'default'}"
+                            variant="default"
                             @click=${() => this._handleSignUp(plan.id)}
                           >
                             ${plan.id === 'enterprise'
