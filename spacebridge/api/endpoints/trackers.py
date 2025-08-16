@@ -210,7 +210,7 @@ async def register_tracker(
             )
 
         # Send NATS event
-        await task_publisher_service.publish_task("scan_tracker_task", new_tracker.id)
+        await task_publisher_service.publish_task("poll_tracker", new_tracker.id)
 
         return {"id": new_tracker.id}  # Return the tracker ID
 
@@ -363,7 +363,7 @@ async def update_tracker(
         db.refresh(tracker)
 
         # Send NATS event
-        await task_publisher_service.publish_task("scan_tracker_task", tracker.id)
+        await task_publisher_service.publish_task("poll_tracker", tracker.id)
 
         return tracker
     except IntegrityError as e:

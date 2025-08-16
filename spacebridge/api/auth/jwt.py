@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any, Dict, Optional
 
 from fastapi import Depends, HTTPException, status
@@ -74,9 +74,9 @@ def create_access_token(
     to_encode = data.copy()
 
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
     to_encode.update({"exp": expire})
 
@@ -158,7 +158,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                     )
 
                     # Check if the API key has expired
-                    if api_key.expires_at and api_key.expires_at < datetime.utcnow():
+                    if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
                         logger.warning(f"API key expired: {api_key.expires_at}")
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -193,7 +193,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                         )
 
                     # Update the last_used_at timestamp
-                    api_key.last_used_at = datetime.utcnow()
+                    api_key.last_used_at = datetime.now(UTC)
                     session.add(api_key)
                     session.commit()
 
@@ -311,7 +311,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                     )
 
                     # Check if the API key has expired
-                    if api_key.expires_at and api_key.expires_at < datetime.utcnow():
+                    if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="API key has expired",
@@ -339,7 +339,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                         )
 
                     # Update the last_used_at timestamp
-                    api_key.last_used_at = datetime.utcnow()
+                    api_key.last_used_at = datetime.now(UTC)
                     session.add(api_key)
                     session.commit()
 

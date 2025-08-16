@@ -8,7 +8,6 @@
 - DO NOT mock everything as soon as you hit a roadblock -- try to find a solution instead
 - Do not create try/except blocks just to log errors and exit! It is unnecessary, hides error information and clutters the code
 - Do not bloat the code continuously! Use concise, smart logic.
-- Always run commands in the "ag2" conda environment
 - Do not wrap everything in try/except blocks, only when meaningful or necessary
 
 ### MCP

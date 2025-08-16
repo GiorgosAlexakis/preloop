@@ -44,8 +44,11 @@ def read_presets(
     current_user: Account = Depends(get_current_active_user),
 ):
     """Retrieve flow presets for the account."""
-    flows = crud_flow.get_multi(db, account_id=current_user.id, is_preset=True)
-    return flows
+    global_presets = crud_flow.get_multi(db, is_preset=True)
+    account_presets = crud_flow.get_multi(
+        db, account_id=current_user.id, is_preset=False
+    )
+    return global_presets + account_presets
 
 
 @router.post("/flows/presets/{flow_id}/clone", response_model=schemas.FlowResponse)
@@ -66,7 +69,7 @@ def clone_preset(
         is_preset=False,
         account_id=current_user.id,
     )
-    cloned_flow = crud_flow.create(db=db, obj_in=cloned_flow_in)
+    cloned_flow = crud_flow.create(db=db, flow_in=cloned_flow_in)
     return cloned_flow
 
 

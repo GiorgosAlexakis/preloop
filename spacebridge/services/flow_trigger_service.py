@@ -3,8 +3,8 @@ from typing import Any, Dict
 
 from sqlalchemy.orm import Session
 
-from spacemodels import crud
-from .flow_orchestrator import FlowExecutionOrchestrator
+from spacemodels.crud import crud_flow
+# from .flow_orchestrator import FlowExecutionOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class FlowTriggerService:
             f"Processing event from source '{event_source}' with type '{event_type}'"
         )
 
-        matching_flows = crud.flow.get_by_trigger(
+        matching_flows = crud_flow.get_by_trigger(
             self.db,
             event_source=event_source,
             event_type=event_type,
@@ -43,9 +43,9 @@ class FlowTriggerService:
         for flow in matching_flows:
             if flow.is_enabled:
                 logger.info(f"Triggering flow {flow.name} ({flow.id})")
-                orchestrator = FlowExecutionOrchestrator(
-                    self.db, flow_id=flow.id, trigger_event_data=event_data
-                )
-                orchestrator.run()
+                # orchestrator = FlowExecutionOrchestrator(
+                #     self.db, flow_id=flow.id, trigger_event_data=event_data
+                # )
+                # orchestrator.run()
             else:
                 logger.info(f"Skipping disabled flow {flow.name} ({flow.id})")

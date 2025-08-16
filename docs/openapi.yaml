@@ -3750,6 +3750,11 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        icon:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon
         trigger_event_source:
           type: string
           title: Trigger Event Source
@@ -3825,6 +3830,11 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        icon:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon
         trigger_event_source:
           anyOf:
           - type: string
@@ -3886,8 +3896,10 @@ components:
           title: Is Enabled
           default: true
         account_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Account Id
         id:
           type: string
@@ -3903,7 +3915,6 @@ components:
           title: Updated At
       type: object
       required:
-      - account_id
       - id
       - created_at
       - updated_at
@@ -3920,6 +3931,11 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        icon:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon
         trigger_event_source:
           anyOf:
           - type: string

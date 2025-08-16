@@ -71,11 +71,11 @@
     *   *Description:* Create the `FlowExecutions` SQLAlchemy model, Pydantic schema, and CRUD operations for logging Flow runs and outcomes.
 
 #### Epic 3: Flow Definition & Management (API & UI)
-- [ ] **Task 3.1: Develop Flow Definition & Management APIs** ([Issue #62](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/62))
+- [x] **Task 3.1: Develop Flow Definition & Management APIs** ([Issue #62](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/62))
     *   *Description:* Create REST API endpoints in SpaceBridge for CRUD operations on `Flows` and `AIModels`.
-- [ ] **Task 3.2: Build UI Components for Flow & AIModel Management** ([Issue #63](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/63))
+- [x] **Task 3.2: Build UI Components for Flow & AIModel Management** ([Issue #63](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/63))
     *   *Description:* Develop user interface elements for creating, viewing, editing, deleting, enabling/disabling `Flows`, and managing `AIModels`.
-- [ ] **Task 3.3: Implement Flow Presets System** ([Issue #64](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/64))
+- [x] **Task 3.3: Implement Flow Presets System** ([Issue #64](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/64))
     *   *Description:* Design and implement a system for defining, managing, and allowing users to utilize or clone pre-defined Flow templates.
 
 #### Epic 4: Flow Execution Engine Development

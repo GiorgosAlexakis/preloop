@@ -7,6 +7,7 @@ SpaceBridge is an AI-driven platform designed to enhance product development by 
 ## High-Level Architecture
 
 ```mermaid
+%%{init: {"flowchart": { "htmlLabels": false}} }%%
 graph LR
     subgraph "External Systems"
         direction TB
@@ -63,15 +64,15 @@ graph LR
 *   **External Systems:** Issue trackers and MCP clients interacting with the SpaceBridge ecosystem.
 
 ## Frontend Architecture
-A new, modern frontend is being developed in the `SpaceLit` directory, aiming to replace the existing static HTML/JavaScript interface.
+The frontend is in the `SpaceLit` directory.
 
 ```mermaid
 graph TD
     subgraph "Browser"
         direction LR
         WebApp["Lit Web Application"]
-        MWC["Material Web Components"]
-        WebApp -- Uses --> MWC
+        Shoelace["Shoelace Web Components"]
+        WebApp -- Uses --> Shoelace
     end
 
     subgraph "Build & Dev Tools"
@@ -98,7 +99,7 @@ graph TD
 *   **Framework:** [Lit](https://lit.dev/) - A simple library for building fast, lightweight web components. It provides reactive state, scoped styles, and a declarative templating system.
 *   **Build Tool:** [Vite](https://vitejs.dev/) - A modern frontend build tool that provides an extremely fast development experience with features like Hot Module Replacement (HMR) and optimized production builds.
 *   **Language:** [TypeScript](https://www.typescriptlang.org/) - A statically typed superset of JavaScript that enhances code quality and maintainability.
-*   **UI Components:** [Material Web Components (MWC)](https://github.com/material-components/material-web) - A set of high-quality, standards-based web components that implement the Material v3 design system.
+*   **UI Components:** [Shoelace](https://shoelace.style/) - A set of high-quality, standards-based web components.
 *   **Testing:** [Web Test Runner](https://modern-web.dev/docs/test-runner/overview/) - A tool for testing web applications in a real browser, ensuring that components behave as expected in a live environment.
 
 ### Structure
@@ -280,7 +281,7 @@ The "Flows" feature allows users to define automated workflows that are initiate
 *   **Configurable AI Models:** Enable users to select and configure different AI models for different Flows, managing API keys securely.
 *   **Controlled Tool Usage:** Provide a mechanism to specify which MCP servers and tools an AI agent can use during a Flow's execution.
 *   **Extensibility:** Design for easy addition of new event sources, AI models, and agent capabilities.
-*   **User Experience:** Allow users to define Flows from presets, customize existing ones, or create them from scratch.
+*   **User Experience:** Allow users to define Flows from presets, customize existing ones, or create them from scratch. The UI should be intuitive and guide the user through the process of creating and configuring a flow.
 
 ### 2. Key Components & Their Roles
 
@@ -334,9 +335,6 @@ graph TD
     APIExt -- Manages --> SpaceModelsDB
     APIExt -- Serves Logs --> UserClient["User Client (UI/CLI)"]
 
-    style "SpaceBridge Core" fill:#ccf,stroke:#333,stroke-width:1px
-    style "Flows Subsystem" fill:#cfc,stroke:#333,stroke-width:1px
-    style "OpenHands Agent Session (Container)" fill:#eef,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5
 ```
 
 *   **Flow Definition (`Flows`):**
@@ -392,6 +390,7 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `id`: Primary Key (e.g., UUID)
     *   `name`: String (User-defined name for the Flow)
     *   `description`: Text (Optional description)
+    *   `icon`: String (Optional, name of a Shoelace icon or a URL to a custom icon)
     *   `trigger_event_source`: String (e.g., 'github', 'jira', 'gitlab', 'custom_event', 'scheduled')
     *   `trigger_event_type`: String (e.g., 'commit_to_main', 'new_issue_created', 'incident_triggered', 'daily_scan')
     *   `trigger_config`: JSON (Optional, for more complex trigger conditions, e.g., specific branch for commits, specific labels for issues)
@@ -534,12 +533,6 @@ graph TD
     WebSocketServer -- Publishes input to --> NatsInputs
     NatsInputs -- Delivers input to --> FlowExecOrchestrator
     FlowExecOrchestrator -- Subscribes to --> NatsInputs
-
-    style NatsInputs fill:#eee,stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
-    style FlowExecUI -- Sends user input --> WebSocketServer stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
-    style WebSocketServer -- Publishes input to --> NatsInputs stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
-    style NatsInputs -- Delivers input to --> FlowExecOrchestrator stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
-    style FlowExecOrchestrator -- Subscribes to --> NatsInputs stroke:#f00,stroke-width:1px,stroke-dasharray: 5 5
 
 ```
 

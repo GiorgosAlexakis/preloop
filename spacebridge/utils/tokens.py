@@ -1,7 +1,7 @@
 """Token generation and validation for SpaceBridge."""
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from jose import JWTError, jwt
 
@@ -31,7 +31,7 @@ def create_email_verification_token(email: str) -> str:
     Returns:
         A JWT token.
     """
-    expire = datetime.utcnow() + timedelta(minutes=EMAIL_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(UTC) + timedelta(minutes=EMAIL_TOKEN_EXPIRE_MINUTES)
     to_encode = {"sub": email, "exp": expire, "type": "email_verification"}
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -45,7 +45,7 @@ def create_password_reset_token(email: str) -> str:
     Returns:
         A JWT token.
     """
-    expire = datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(UTC) + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES)
     to_encode = {"sub": email, "exp": expire, "type": "password_reset"}
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
