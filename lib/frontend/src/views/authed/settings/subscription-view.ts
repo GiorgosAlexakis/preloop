@@ -209,96 +209,96 @@ export class SubscriptionView extends LitElement {
     unsafeCSS(pricingStyles),
     unsafeCSS(consoleStyles),
     css`
-    .status-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 999px;
-      background: var(--sl-color-neutral-200);
-      color: var(--sl-color-neutral-800);
-      font-weight: 600;
-      font-size: 0.85rem;
-    }
-    .status-chip.pending {
-      background: var(--sl-color-warning-200);
-      color: var(--sl-color-warning-800);
-    }
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 999px;
+        background: var(--sl-color-neutral-200);
+        color: var(--sl-color-neutral-800);
+        font-weight: 600;
+        font-size: 0.85rem;
+      }
+      .status-chip.pending {
+        background: var(--sl-color-warning-200);
+        color: var(--sl-color-warning-800);
+      }
 
-    .card {
-      border: 1px solid var(--sl-color-neutral-300);
-      border-radius: 16px;
-      padding: 1rem 1.25rem;
-    }
+      .card {
+        border: 1px solid var(--sl-color-neutral-300);
+        border-radius: 16px;
+        padding: 1rem 1.25rem;
+      }
 
-    .plan-name {
-      font-weight: 700;
-    }
+      .plan-name {
+        font-weight: 700;
+      }
 
-    .actions {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-      margin-top: 0.5rem;
-    }
+      .actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+      }
 
-    .billing-toggle {
-      display: flex;
-      gap: 0.75rem;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .billing-toggle .hint {
-      color: var(--sl-color-neutral-600);
-      font-size: 0.95rem;
-    }
+      .billing-toggle {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .billing-toggle .hint {
+        color: var(--sl-color-neutral-600);
+        font-size: 0.95rem;
+      }
 
-    .features {
-      list-style: none;
-      padding: 0;
-      margin: 0.5rem 0 1rem 0;
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-    .feature {
-      display: flex;
-      gap: 0.5rem;
-      align-items: baseline;
-      color: var(--sl-color-neutral-800);
-    }
-    .feature.excluded {
-      color: var(--sl-color-neutral-500);
-    }
-    .feat-icon {
-      color: var(--sl-color-success-600);
-    }
-    .feature.excluded .feat-icon {
-      color: var(--sl-color-neutral-400);
-    }
-    .feat-text {
-      flex: 1;
-    }
-    .feat-value {
-      color: var(--sl-color-neutral-700);
-    }
-    .more {
-      color: var(--sl-color-neutral-600);
-      font-size: 0.95rem;
-    }
+      .features {
+        list-style: none;
+        padding: 0;
+        margin: 0.5rem 0 1rem 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .feature {
+        display: flex;
+        gap: 0.5rem;
+        align-items: baseline;
+        color: var(--sl-color-neutral-800);
+      }
+      .feature.excluded {
+        color: var(--sl-color-neutral-500);
+      }
+      .feat-icon {
+        color: var(--sl-color-success-600);
+      }
+      .feature.excluded .feat-icon {
+        color: var(--sl-color-neutral-400);
+      }
+      .feat-text {
+        flex: 1;
+      }
+      .feat-value {
+        color: var(--sl-color-neutral-700);
+      }
+      .more {
+        color: var(--sl-color-neutral-600);
+        font-size: 0.95rem;
+      }
 
-    .cta {
-      margin-top: auto;
-      width: 100%;
-    }
+      .cta {
+        margin-top: auto;
+        width: 100%;
+      }
 
-    .loading,
-    .error {
-      text-align: center;
-      margin: 1rem 0;
-      color: var(--sl-color-danger-600);
-    }
-  `
+      .loading,
+      .error {
+        text-align: center;
+        margin: 1rem 0;
+        color: var(--sl-color-danger-600);
+      }
+    `,
   ];
 
   render() {
@@ -317,115 +317,121 @@ export class SubscriptionView extends LitElement {
       : 'Free';
 
     return html`
-    <view-header headerText="Your Subscriptions">
-      <div slot="side-column">
-        <theme-switcher></theme-switcher>
-      </div>
-    </view-header>
-    <div class="column-layout">
-      <div class="main-column">
-        <div class="card current-plan">
-          <div class="current-row">
-            <span class="plan-name">${currentPlanName}</span>
-            <span
-              class="status-chip ${this.subscription?.status ===
-              'pending_cancellation'
-                ? 'pending'
-                : ''}"
-            >
-              ${this.subscription
-                ? this.subscription.status === 'pending_cancellation'
-                  ? 'Pending cancellation'
-                  : this.subscription.status
-                : 'Free'}
-            </span>
-          </div>
-          ${this.subscription
-            ? html`
-                <div class="date">
-                  ${this.subscription.status === 'pending_cancellation'
-                    ? 'Cancels on'
-                    : 'Renews on'}
-                  ${new Date(
-                    this.subscription.current_period_end
-                  ).toLocaleDateString()}
-                </div>
-              `
-            : html`<div class="date">You are currently on the Free plan.</div>`}
-          <div class="actions">
-            <sl-button
-              size="medium"
-              variant="primary"
-              @click=${this._handleManageSubscription}
-            >
-              Manage in Stripe
-            </sl-button>
-          </div>
+      <view-header headerText="Your Subscriptions">
+        <div slot="side-column">
+          <theme-switcher></theme-switcher>
         </div>
-
-        <div>
-          <div class="billing-toggle">
-            <sl-button-group>
-              <sl-button
-                variant=${this._interval === 'monthly' ? 'primary' : 'default'}
-                @click=${() => (this._interval = 'monthly')}
+      </view-header>
+      <div class="column-layout">
+        <div class="main-column">
+          <div class="card current-plan">
+            <div class="current-row">
+              <span class="plan-name">${currentPlanName}</span>
+              <span
+                class="status-chip ${this.subscription?.status ===
+                'pending_cancellation'
+                  ? 'pending'
+                  : ''}"
               >
-                Monthly
-              </sl-button>
-              <sl-button
-                variant=${this._interval === 'annually' ? 'primary' : 'default'}
-                @click=${() => (this._interval = 'annually')}
-              >
-                Annually
-              </sl-button>
-            </sl-button-group>
-            <span class="hint">
-              ${this._interval === 'annually'
-                ? 'Best value'
-                : 'Switch to annual for best value'}
-            </span>
-          </div>
-
-          <div class="plans-grid">
-            ${availablePlans
-              .filter((p) => p.id !== this.subscription?.plan_id)
-              .map((plan) => {
-                const featureEntries = Object.entries(plan.features || {});
-                const visible = featureEntries.slice(0, 6);
-                const remaining = featureEntries.length - visible.length;
-
-                return html`
-                  <div class="plan-card">
-                    <h3 class="plan-name">${plan.name}</h3>
-                    <div class="price-wrap">${this.formatPrice(plan)}</div>
-
-                    <ul class="features">
-                      ${visible.map((entry) => this.renderFeature(entry))}
-                      ${remaining > 0
-                        ? html`<li class="more">
-                            + ${remaining} more features
-                          </li>`
-                        : null}
-                    </ul>
-
-                    <sl-button
-                      class="cta"
-                      size="large"
-                      variant="default"
-                      @click=${() => this._handleUpgrade(plan.id)}
-                    >
-                      ${this.subscription?.plan_id === 'free'
-                        ? 'Upgrade'
-                        : 'Change'}
-                      to ${plan.name}
-                    </sl-button>
+                ${this.subscription
+                  ? this.subscription.status === 'pending_cancellation'
+                    ? 'Pending cancellation'
+                    : this.subscription.status
+                  : 'Free'}
+              </span>
+            </div>
+            ${this.subscription
+              ? html`
+                  <div class="date">
+                    ${this.subscription.status === 'pending_cancellation'
+                      ? 'Cancels on'
+                      : 'Renews on'}
+                    ${new Date(
+                      this.subscription.current_period_end
+                    ).toLocaleDateString()}
                   </div>
-                `;
-              })}
+                `
+              : html`<div class="date">
+                  You are currently on the Free plan.
+                </div>`}
+            <div class="actions">
+              <sl-button
+                size="medium"
+                variant="primary"
+                @click=${this._handleManageSubscription}
+              >
+                Manage in Stripe
+              </sl-button>
+            </div>
+          </div>
+
+          <div>
+            <div class="billing-toggle">
+              <sl-button-group>
+                <sl-button
+                  variant=${this._interval === 'monthly'
+                    ? 'primary'
+                    : 'default'}
+                  @click=${() => (this._interval = 'monthly')}
+                >
+                  Monthly
+                </sl-button>
+                <sl-button
+                  variant=${this._interval === 'annually'
+                    ? 'primary'
+                    : 'default'}
+                  @click=${() => (this._interval = 'annually')}
+                >
+                  Annually
+                </sl-button>
+              </sl-button-group>
+              <span class="hint">
+                ${this._interval === 'annually'
+                  ? 'Best value'
+                  : 'Switch to annual for best value'}
+              </span>
+            </div>
+
+            <div class="plans-grid">
+              ${availablePlans
+                .filter((p) => p.id !== this.subscription?.plan_id)
+                .map((plan) => {
+                  const featureEntries = Object.entries(plan.features || {});
+                  const visible = featureEntries.slice(0, 6);
+                  const remaining = featureEntries.length - visible.length;
+
+                  return html`
+                    <div class="plan-card">
+                      <h3 class="plan-name">${plan.name}</h3>
+                      <div class="price-wrap">${this.formatPrice(plan)}</div>
+
+                      <ul class="features">
+                        ${visible.map((entry) => this.renderFeature(entry))}
+                        ${remaining > 0
+                          ? html`<li class="more">
+                              + ${remaining} more features
+                            </li>`
+                          : null}
+                      </ul>
+
+                      <sl-button
+                        class="cta"
+                        size="large"
+                        variant="default"
+                        @click=${() => this._handleUpgrade(plan.id)}
+                      >
+                        ${this.subscription?.plan_id === 'free'
+                          ? 'Upgrade'
+                          : 'Change'}
+                        to ${plan.name}
+                      </sl-button>
+                    </div>
+                  `;
+                })}
+            </div>
           </div>
         </div>
       </div>
-    </div>
     `;
   }
 }
