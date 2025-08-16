@@ -173,9 +173,9 @@ export class AppHeader extends LitElement {
             <sl-button href="/pricing" variant="text">Pricing</sl-button>
             ${this.isAuthenticated && this.user
               ? html`
-                  ${window.location.pathname === '/'
-                    ? html`<sl-button href="/console">Console</sl-button>`
-                    : html`<sl-button @click=${this.logout}>Logout</sl-button>`}
+                  ${window.location.pathname.startsWith('/console')
+                    ? html`<sl-button @click=${this.logout}>Logout</sl-button>`
+                    : html`<sl-button href="/console">Console</sl-button>`}
                 `
               : html`
                   <sl-button href="/login" variant="text">Sign in</sl-button>

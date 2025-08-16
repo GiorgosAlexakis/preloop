@@ -44,7 +44,7 @@ const storedTheme = (localStorage.getItem('theme') as Theme) || DEFAULT_THEME;
 applyTheme(storedTheme);
 
 // Listen for theme changes from the settings view
-window.addEventListener('theme-change', (e: CustomEvent) => {
+window.addEventListener('theme-change', (e: any) => {
   applyTheme(e.detail.theme);
 });
 

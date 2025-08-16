@@ -18,11 +18,6 @@ export class ViewHeader extends LitElement {
             <slot name="main-column"></slot>
           </div>
         </div>
-        <div class="side-column">
-          <div class="header">
-            <slot name="side-column"></slot>
-          </div>
-        </div>
       </div>
     `;
   }
