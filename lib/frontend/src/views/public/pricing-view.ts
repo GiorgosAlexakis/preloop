@@ -150,20 +150,6 @@ export class PublicPricingView extends LitElement {
   static styles = [
     unsafeCSS(landingStyles),
     css`
-      .hero {
-        text-align: center;
-        margin-bottom: 1.5rem;
-      }
-      .title {
-        margin: 0 0 0.5rem 0;
-        font-size: clamp(2rem, 1.2rem + 2vw, 2.75rem);
-      }
-      .subtitle {
-        margin: 0;
-        color: var(--sl-color-neutral-600);
-        font-size: 1.1rem;
-      }
-
       .billing-toggle {
         display: flex;
         gap: 0.75rem;
@@ -380,7 +366,9 @@ export class PublicPricingView extends LitElement {
                           >
                             ${plan.id === 'enterprise'
                               ? 'Contact Sales'
-                              : 'Get Started'}
+                              : plan.id === 'free'
+                                ? 'Get Free'
+                                : `Get ${plan.name}`}
                           </sl-button>
                         </div>
                       `
