@@ -85,6 +85,17 @@ export class PublicPricingView extends LitElement {
     `;
   }
 
+  private _formatNumber(num: number): string {
+    if (num === -1) return 'Unlimited';
+    if (num < 1000) return num.toString();
+
+    // Using Intl.NumberFormat for robust, localized formatting
+    return new Intl.NumberFormat('en-US', {
+      notation: 'compact',
+      compactDisplay: 'short',
+    }).format(num);
+  }
+
   private renderFeature(value: any, key: string) {
     const label = this._featureLabels[key] ?? key.replace(/_/g, ' ');
     let included = false;
@@ -99,7 +110,7 @@ export class PublicPricingView extends LitElement {
       displayValue = 'Unlimited';
     } else if (typeof value === 'number') {
       included = true;
-      displayValue = String(value);
+      displayValue = this._formatNumber(value);
     }
 
     return html`

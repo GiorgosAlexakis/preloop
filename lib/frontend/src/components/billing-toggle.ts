@@ -22,20 +22,34 @@ export class BillingToggle extends LitElement {
   static styles = css`
     .billing-toggle {
       display: flex;
-      gap: 0.75rem;
-      align-items: center;
       justify-content: center;
       margin: 1.5rem 0 2rem 0;
-      flex-wrap: wrap;
     }
-    .billing-toggle .label {
-      font-weight: 600;
-    }
-    .billing-toggle .hint {
-      font-size: 0.95rem;
-    }
+
     sl-button-group {
+      position: relative;
       --sl-button-group-spacing: 0;
+    }
+
+    .hint {
+      position: absolute;
+      left: 100%;
+      top: 50%;
+      transform: translateY(-50%);
+      margin-left: 0.75rem;
+
+      /* New gradient border style */
+      border: 1px solid transparent;
+      background: linear-gradient(#222244, #222244) padding-box,
+        linear-gradient(45deg, #3b82f6, #8b5cf6) border-box;
+      color: #e5e7eb; /* Light gray for soft text */
+
+      font-size: 0.85rem;
+      font-weight: 400; /* Lighter font weight */
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      line-height: 1;
+      white-space: nowrap;
     }
   `;
 
@@ -53,8 +67,9 @@ export class BillingToggle extends LitElement {
             variant=${this.interval === 'year' ? 'primary' : 'default'}
             @click=${() => this._handleIntervalChange('year')}
           >
-            Yearly (Best Value)
+            Yearly
           </sl-button>
+          <span class="hint">Best Value</span>
         </sl-button-group>
       </div>
     `;
