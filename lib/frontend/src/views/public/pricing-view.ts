@@ -2,6 +2,7 @@ import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { fetchWithAuth, fetchPublic } from '../../api';
 import landingStyles from '../../styles/landing.css?inline';
+import pricingStyles from '../../styles/pricing-styles.css?inline';
 
 interface Plan {
   id: string;
@@ -148,6 +149,7 @@ export class PublicPricingView extends LitElement {
   }
 
   static styles = [
+    unsafeCSS(pricingStyles),
     unsafeCSS(landingStyles),
     css`
       .billing-toggle {
@@ -172,31 +174,6 @@ export class PublicPricingView extends LitElement {
       }
       .error {
         color: var(--sl-color-danger-600);
-      }
-
-      .plans-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 1.25rem;
-        align-items: stretch;
-      }
-
-      .plan-card {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        border: 1px solid var(--sl-color-neutral-600);
-        border-radius: 20px;
-        padding: 1.5rem;
-      }
-
-      .plan-card.popular {
-        border: none;
-        background: linear-gradient(
-          45deg,
-          hsl(220, 60%, 40%),
-          hsl(260, 65%, 38%)
-        );
       }
 
       .badge {

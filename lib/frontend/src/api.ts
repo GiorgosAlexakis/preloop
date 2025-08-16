@@ -163,9 +163,9 @@ export async function updateTracker(trackerId: string, trackerData: any) {
 export async function validateTrackerToken(
   type: string,
   token: string,
-  id?: string,
   url?: string,
-  username?: string
+  username?: string,
+  id?: string
 ) {
   console.log('Validating tracker token', type, token, url, username);
   const payload: {
@@ -202,12 +202,12 @@ export async function validateTrackerToken(
 }
 
 export async function listProjectsForOrg(
-  trackerId: string,
   trackerType: string,
   token: string,
   orgId: string,
   url?: string,
-  username?: string
+  username?: string,
+  trackerId?: string
 ) {
   const payload: any = {
     tracker_id: trackerId,

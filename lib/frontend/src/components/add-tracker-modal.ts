@@ -315,11 +315,11 @@ export class AddTrackerModal extends LitElement {
     this.errorMessage = '';
     try {
       const response = await this._api.validateTrackerToken(
-        this.tracker?.id,
         this.trackerType,
         this.trackerToken,
         this.trackerUrl,
-        this.trackerUsername
+        this.trackerUsername,
+        this.tracker?.id
       );
       if (!response.success) {
         this.errorMessage = response.message.split('\n')[0];
@@ -345,12 +345,12 @@ export class AddTrackerModal extends LitElement {
     }
     try {
       const projects = await this._api.listProjectsForOrg(
-        this.tracker?.id,
         this.trackerType,
         this.trackerToken,
         orgId,
         this.trackerUrl,
-        this.trackerUsername
+        this.trackerUsername,
+        this.tracker?.id
       );
       this.projects = { ...this.projects, [orgId]: projects };
       if (this.selectedOrgs[orgId]) {

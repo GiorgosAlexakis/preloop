@@ -1,6 +1,8 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS, render } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { fetchWithAuth } from '../../../api';
+import consoleStyles from '../../../styles/console-styles.css?inline';
+import pricingStyles from '../../../styles/pricing-styles.css?inline';
 
 interface Plan {
   id: string;
@@ -203,25 +205,10 @@ export class SubscriptionView extends LitElement {
     }
   }
 
-  static styles = css`
-    .container {
-      display: grid;
-      gap: 1.25rem;
-    }
-
-    .header {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-
-    h1.title {
-      margin: 0;
-      font-size: clamp(1.5rem, 1rem + 2vw, 2rem);
-    }
-
+  static styles = [
+    unsafeCSS(pricingStyles),
+    unsafeCSS(consoleStyles),
+    css`
     .status-chip {
       display: inline-flex;
       align-items: center;
@@ -242,27 +229,10 @@ export class SubscriptionView extends LitElement {
       border: 1px solid var(--sl-color-neutral-300);
       border-radius: 16px;
       padding: 1rem 1.25rem;
-      background: var(--sl-color-neutral-0);
-      box-shadow:
-        0 1px 1px rgba(0, 0, 0, 0.02),
-        0 2px 8px rgba(0, 0, 0, 0.04);
     }
 
-    .current-plan {
-      display: grid;
-      gap: 0.5rem;
-    }
-    .current-row {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-    }
     .plan-name {
       font-weight: 700;
-    }
-    .date {
-      color: var(--sl-color-neutral-700);
     }
 
     .actions {
@@ -283,47 +253,6 @@ export class SubscriptionView extends LitElement {
       font-size: 0.95rem;
     }
 
-    .plans-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1.25rem;
-      align-items: stretch;
-    }
-
-    .plan-card {
-      display: flex;
-      flex-direction: column;
-      border: 1px solid var(--sl-color-neutral-300);
-      border-radius: 16px;
-      padding: 1rem 1.25rem;
-      background: var(--sl-color-neutral-0);
-      box-shadow:
-        0 1px 1px rgba(0, 0, 0, 0.02),
-        0 2px 8px rgba(0, 0, 0, 0.04);
-      transition:
-        transform 0.2s ease,
-        box-shadow 0.2s ease,
-        border-color 0.2s ease;
-    }
-    .plan-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-      border-color: var(--sl-color-neutral-400);
-    }
-
-    .price-wrap {
-      margin: 0.25rem 0 0.75rem 0;
-    }
-    .price-main {
-      font-size: 1.5rem;
-      font-weight: 800;
-    }
-    .price-sub {
-      color: var(--sl-color-neutral-600);
-      font-size: 0.95rem;
-      margin-top: 0.25rem;
-    }
-
     .features {
       list-style: none;
       padding: 0;
@@ -342,10 +271,6 @@ export class SubscriptionView extends LitElement {
       color: var(--sl-color-neutral-500);
     }
     .feat-icon {
-      font-weight: 800;
-      line-height: 1;
-      width: 1rem;
-      text-align: center;
       color: var(--sl-color-success-600);
     }
     .feature.excluded .feat-icon {
@@ -371,11 +296,10 @@ export class SubscriptionView extends LitElement {
     .error {
       text-align: center;
       margin: 1rem 0;
-    }
-    .error {
       color: var(--sl-color-danger-600);
     }
-  `;
+  `
+  ];
 
   render() {
     if (this._loading) {
@@ -393,11 +317,13 @@ export class SubscriptionView extends LitElement {
       : 'Free';
 
     return html`
-      <div class="container">
-        <div class="header">
-          <h1 class="title">Your Subscription</h1>
-        </div>
-
+    <view-header headerText="Your Subscriptions">
+      <div slot="side-column">
+        <theme-switcher></theme-switcher>
+      </div>
+    </view-header>
+    <div class="column-layout">
+      <div class="main-column">
         <div class="card current-plan">
           <div class="current-row">
             <span class="plan-name">${currentPlanName}</span>
@@ -437,7 +363,7 @@ export class SubscriptionView extends LitElement {
           </div>
         </div>
 
-        <div class="card">
+        <div>
           <div class="billing-toggle">
             <sl-button-group>
               <sl-button
@@ -499,6 +425,7 @@ export class SubscriptionView extends LitElement {
           </div>
         </div>
       </div>
+    </div>
     `;
   }
 }
