@@ -3,6 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { fetchWithAuth } from '../../../api';
 import consoleStyles from '../../../styles/console-styles.css?inline';
 import pricingStyles from '../../../styles/pricing-styles.css?inline';
+import '../../../components/billing-toggle';
 
 interface Plan {
   id: string;
@@ -25,7 +26,7 @@ export class SubscriptionView extends LitElement {
   @state() private _customPlans: Plan[] = [];
   @state() private _loading = true;
   @state() private _error: string | null = null;
-  @state() private _interval: 'monthly' | 'annually' = 'monthly';
+  @state() private _interval: 'month' | 'year' = 'month';
 
   // Human-readable labels for common feature keys
   private _featureLabels: Record<string, string> = {
@@ -85,7 +86,7 @@ export class SubscriptionView extends LitElement {
   }
 
   private formatPrice(plan: Plan) {
-    const isMonthly = this._interval === 'monthly';
+    const isMonthly = this._interval === 'month';
     const amount = isMonthly ? plan.price_monthly : plan.price_annually;
     const unit = isMonthly ? '/mo' : '/yr';
 
@@ -180,7 +181,7 @@ export class SubscriptionView extends LitElement {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             plan_id: planId,
-            interval: this._interval === 'monthly' ? 'month' : 'year',
+            interval: this._interval,
           }),
         }
       );
@@ -243,14 +244,7 @@ export class SubscriptionView extends LitElement {
       }
 
       .billing-toggle {
-        display: flex;
-        gap: 0.75rem;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-      .billing-toggle .hint {
-        color: var(--sl-color-neutral-600);
-        font-size: 0.95rem;
+        margin-bottom: 1rem;
       }
 
       .features {
@@ -366,31 +360,10 @@ export class SubscriptionView extends LitElement {
           </div>
 
           <div>
-            <div class="billing-toggle">
-              <sl-button-group>
-                <sl-button
-                  variant=${this._interval === 'monthly'
-                    ? 'primary'
-                    : 'default'}
-                  @click=${() => (this._interval = 'monthly')}
-                >
-                  Monthly
-                </sl-button>
-                <sl-button
-                  variant=${this._interval === 'annually'
-                    ? 'primary'
-                    : 'default'}
-                  @click=${() => (this._interval = 'annually')}
-                >
-                  Annually
-                </sl-button>
-              </sl-button-group>
-              <span class="hint">
-                ${this._interval === 'annually'
-                  ? 'Best value'
-                  : 'Switch to annual for best value'}
-              </span>
-            </div>
+            <billing-toggle
+              .interval=${this._interval}
+              @interval-change=${(e: CustomEvent) => (this._interval = e.detail.value)}
+            ></billing-toggle>
 
             <div class="plans-grid">
               ${availablePlans

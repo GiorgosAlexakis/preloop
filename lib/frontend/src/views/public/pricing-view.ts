@@ -3,6 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { fetchWithAuth, fetchPublic } from '../../api';
 import landingStyles from '../../styles/landing.css?inline';
 import pricingStyles from '../../styles/pricing-styles.css?inline';
+import '../../components/billing-toggle';
 
 interface Plan {
   id: string;
@@ -152,21 +153,6 @@ export class PublicPricingView extends LitElement {
     unsafeCSS(pricingStyles),
     unsafeCSS(landingStyles),
     css`
-      .billing-toggle {
-        display: flex;
-        gap: 0.75rem;
-        align-items: center;
-        justify-content: center;
-        margin: 1.5rem 0 2rem 0;
-        flex-wrap: wrap;
-      }
-      .billing-toggle .label {
-        font-weight: 600;
-      }
-      .billing-toggle .hint {
-        font-size: 0.95rem;
-      }
-
       .loading,
       .error {
         text-align: center;
@@ -267,22 +253,10 @@ export class PublicPricingView extends LitElement {
           </div>
 
           <div class="section-container">
-            <div class="billing-toggle">
-              <sl-button-group>
-                <sl-button
-                  variant=${this._interval === 'month' ? 'primary' : 'default'}
-                  @click=${() => (this._interval = 'month')}
-                >
-                  Monthly
-                </sl-button>
-                <sl-button
-                  variant=${this._interval === 'year' ? 'primary' : 'default'}
-                  @click=${() => (this._interval = 'year')}
-                >
-                  Yearly (Best Value)
-                </sl-button>
-              </sl-button-group>
-            </div>
+            <billing-toggle
+              .interval=${this._interval}
+              @interval-change=${(e: CustomEvent) => (this._interval = e.detail.value)}
+            ></billing-toggle>
 
             ${this._loading
               ? html`<div class="loading">Loading plans…</div>`
