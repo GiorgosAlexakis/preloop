@@ -66,7 +66,11 @@ class CRUDFlow(CRUDBase[models.Flow]):
         return query.offset(skip).limit(limit).all()
 
     def create(
-        self, db: Session, *, flow_in: schemas.FlowCreate, account_id: str
+        self,
+        db: Session,
+        *,
+        flow_in: schemas.FlowCreate,
+        account_id: Optional[str] = None,
     ) -> models.Flow:
         """
         Create a new flow.
@@ -79,7 +83,8 @@ class CRUDFlow(CRUDBase[models.Flow]):
             The created flow object.
         """
         db_flow = self.model(**flow_in.model_dump())
-        db_flow.account_id = account_id
+        if account_id:
+            db_flow.account_id = account_id
         db.add(db_flow)
         db.commit()
         db.refresh(db_flow)

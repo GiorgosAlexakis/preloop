@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from enum import Enum as PydanticEnum
 from .tracker_scope_rule import TrackerScopeRule
@@ -59,6 +59,4 @@ class Tracker(TrackerBase):
     is_valid: bool
     last_validation: Optional[datetime] = None
     validation_message: Optional[str] = None
-
-    class Config:
-        from_attributes = True  # Pydantic V2 orm_mode
+    model_config = ConfigDict(from_attributes=True)

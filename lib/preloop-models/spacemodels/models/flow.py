@@ -17,6 +17,7 @@ class Flow(Base, TimestampMixin):
     )  # Changed from UUID
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    icon = Column(String, nullable=True)
     trigger_event_source = Column(String, nullable=False)
     trigger_event_type = Column(String, nullable=False)
     trigger_config = Column(JSON, nullable=True)  # Changed from JSONB
@@ -42,7 +43,7 @@ class Flow(Base, TimestampMixin):
     account_id = Column(
         String(36),
         ForeignKey("account.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 

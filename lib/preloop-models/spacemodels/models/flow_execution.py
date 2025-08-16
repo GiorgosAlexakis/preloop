@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -24,7 +24,7 @@ class FlowExecution(Base):
     status = Column(
         String, nullable=False, default="PENDING", index=True
     )  # PENDING, INITIALIZING, RUNNING, etc.
-    start_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+    start_time = Column(DateTime, default=datetime.now(UTC), nullable=False)
     end_time = Column(DateTime, nullable=True)
     resolved_input_prompt = Column(Text, nullable=True)
     model_output_summary = Column(Text, nullable=True)
@@ -37,9 +37,12 @@ class FlowExecution(Base):
     )  # e.g., OpenHands session ID, K8s job ID
     error_message = Column(Text, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now(UTC), nullable=False)
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.now(UTC),
+        onupdate=datetime.now(UTC),
+        nullable=False,
     )
 
     # Relationships
