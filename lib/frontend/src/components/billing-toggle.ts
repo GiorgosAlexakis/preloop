@@ -40,7 +40,8 @@ export class BillingToggle extends LitElement {
 
       /* New gradient border style */
       border: 1px solid transparent;
-      background: linear-gradient(#222244, #222244) padding-box,
+      background:
+        linear-gradient(#222244, #222244) padding-box,
         linear-gradient(45deg, #3b82f6, #8b5cf6) border-box;
       color: #e5e7eb; /* Light gray for soft text */
 
