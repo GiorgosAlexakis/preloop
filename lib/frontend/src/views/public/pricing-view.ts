@@ -255,7 +255,8 @@ export class PublicPricingView extends LitElement {
           <div class="section-container">
             <billing-toggle
               .interval=${this._interval}
-              @interval-change=${(e: CustomEvent) => (this._interval = e.detail.value)}
+              @interval-change=${(e: CustomEvent) =>
+                (this._interval = e.detail.value)}
             ></billing-toggle>
 
             ${this._loading
