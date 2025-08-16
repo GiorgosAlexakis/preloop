@@ -14,6 +14,7 @@ from ..models import (
     Tracker,
     TrackerScopeRule,
     Webhook,
+    IssueRelationship,
 )
 from .account import CRUDAccount
 from .api_key import CRUDApiKey
@@ -33,6 +34,7 @@ from .issue_compliance_result import (
     CRUDIssueComplianceResult,
     issue_compliance_result,
 )
+from .issue_relationship import CRUDIssueRelationship
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)
@@ -48,6 +50,7 @@ crud_ai_model = CRUDAIModel(AIModel)
 crud_webhook = CRUDWebhook(Webhook)
 crud_flow = CRUDFlow()  # Instantiate CRUDFlow
 crud_tracker_scope_rule = CRUDTrackerScopeRule(TrackerScopeRule)
+crud_issue_relationship = CRUDIssueRelationship(IssueRelationship)
 
 __all__ = [
     "CRUDBase",
@@ -80,5 +83,6 @@ __all__ = [
     "crud_ai_model",
     "crud_webhook",
     "crud_flow",
+    "crud_issue_relationship",
     "issue_compliance_result",
 ]
