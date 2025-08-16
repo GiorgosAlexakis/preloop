@@ -290,6 +290,42 @@ class BaseTracker(ABC):
         """
         pass
 
+    @abstractmethod
+    def is_webhook_registered(self, webhook: "Webhook") -> bool:
+        """
+        Check if a webhook is registered in the tracker.
+
+        Args:
+            webhook: The webhook to check.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        pass
+
+    @abstractmethod
+    def get_webhooks(self) -> List[Dict[str, Any]]:
+        """
+        Get all webhooks for the tracker.
+
+        Returns:
+            A list of webhooks.
+        """
+        pass
+
+    @abstractmethod
+    def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
+        """
+        Delete a webhook from the tracker.
+
+        Args:
+            webhook: The webhook to delete.
+
+        Returns:
+            Whether the webhook was deleted successfully.
+        """
+        pass
+
         @abstractmethod
         def unregister_all_webhooks(
             self, webhook_url_pattern: Optional[str] = None
@@ -314,4 +350,36 @@ class BaseTracker(ABC):
             pass
 
     if __name__ == "__main__":
+        pass
+
+    @abstractmethod
+    def is_webhook_registered_for_project(
+        self, project: "Project", webhook_url: str
+    ) -> bool:
+        """
+        Check if a webhook is registered for a project.
+
+        Args:
+            project: The project to check.
+            webhook_url: The URL of the webhook.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        pass
+
+    @abstractmethod
+    def is_webhook_registered_for_organization(
+        self, organization: "Organization", webhook_url: str
+    ) -> bool:
+        """
+        Check if a webhook is registered for an organization.
+
+        Args:
+            organization: The organization to check.
+            webhook_url: The URL of the webhook.
+
+        Returns:
+            Whether the webhook is registered.
+        """
         pass

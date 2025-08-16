@@ -683,3 +683,132 @@ class JiraTracker(BaseTracker):
             f"Webhook cleanup summary: {results['unregistered']} unregistered, {results['failed']} failed."
         )
         return results
+
+    def is_webhook_registered(self, webhook: "Webhook") -> bool:
+        """
+        Check if a webhook is registered in the tracker.
+
+        Args:
+            webhook: The webhook to check.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        if not self.jira_client:
+            logger.error("Jira client not initialized. Cannot check webhook.")
+            return False
+
+        if not webhook.external_id:
+            return False
+
+        try:
+            all_webhooks = self.get_webhooks()
+            for wh in all_webhooks:
+                if str(wh.get("id")) == webhook.external_id:
+                    return True
+            return False
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(
+                f"Failed to check webhook {webhook.external_id} due to API error: {e}"
+            )
+            return False
+
+    def get_webhooks(self) -> List[Dict[str, Any]]:
+        """
+        Get all webhooks for the tracker.
+
+        Returns:
+            A list of webhooks.
+        """
+        if not self.jira_client:
+            logger.error("Jira client not initialized. Cannot get webhooks.")
+            return []
+
+        try:
+            response = self.jira_client._session.get(
+                f"{self.jira_url}/rest/webhooks/1.0/webhook"
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            raise TrackerConnectionError(
+                f"Jira connection error while getting webhooks: {str(e)}"
+            )
+        except JIRAError as e:
+            self._handle_jira_error(e, "getting webhooks")
+            return []
+
+    def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
+        """
+        Delete a webhook from the tracker.
+
+        Args:
+            webhook: The webhook to delete.
+
+        Returns:
+            Whether the webhook was deleted successfully.
+        """
+        if not self.jira_client:
+            logger.error("Jira client not initialized. Cannot delete webhook.")
+            return False
+
+        webhook_id = webhook.get("id")
+        if not webhook_id:
+            return False
+
+        try:
+            self._make_request("DELETE", f"/rest/webhooks/1.0/webhook/{webhook_id}")
+            return True
+        except TrackerResponseError as e:
+            if "404" in str(e):
+                logger.warning(
+                    f"Webhook {webhook_id} not found in Jira, considering it deleted."
+                )
+                return True
+            logger.error(f"Failed to delete webhook {webhook_id}: {e}")
+            return False
+
+    def is_webhook_registered_for_project(
+        self, project: "Project", webhook_url: str
+    ) -> bool:
+        """
+        Check if a webhook is registered for a project.
+
+        Args:
+            project: The project to check.
+            webhook_url: The URL of the webhook.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        if not self.jira_client:
+            return False
+
+        try:
+            hooks = self.get_webhooks()
+            for hook in hooks:
+                if hook.get("url") == webhook_url:
+                    # Check if the hook is for the correct project
+                    jql = hook.get("jqlFilter", "")
+                    if f"project = {project.identifier.upper()}" in jql:
+                        return True
+            return False
+        except (TrackerConnectionError, TrackerResponseError):
+            return False
+
+    def is_webhook_registered_for_organization(
+        self, organization: "Organization", webhook_url: str
+    ) -> bool:
+        """
+        Check if a webhook is registered for an organization.
+
+        Args:
+            organization: The organization to check.
+            webhook_url: The URL of the webhook.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        # Jira webhooks are not registered at the organization level, but at the project level.
+        # This method will return False to indicate that organization-level webhooks are not supported.
+        return False

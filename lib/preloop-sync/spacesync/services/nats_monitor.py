@@ -31,7 +31,7 @@ async def main():
 
             await asyncio.sleep(1)
 
-        except nats.errors.NotFoundError:
+        except nats.errors.Error:
             print(
                 f"Stream '{stream_name}' or consumer '{consumer_name}' not found. Waiting..."
             )

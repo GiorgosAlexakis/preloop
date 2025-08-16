@@ -22,20 +22,20 @@ TRACKER_JOB_PREFIX = "tracker_update_"
 
 async def poll_tracker(tracker_id: str):
     """
-    Scheduled job to publish a 'scan_tracker_task' to the NATS queue.
+    Scheduled job to publish a 'poll_tracker' task to the NATS queue.
     """
-    logger.info(f"Publishing scan task for tracker {tracker_id}")
+    logger.info(f"Publishing poll task for tracker {tracker_id}")
     try:
-        ack = await task_publisher_service.publish_task("scan_tracker_task", tracker_id)
+        ack = await task_publisher_service.publish_task("poll_tracker", tracker_id)
         if ack:
             logger.info(
-                f"Successfully published scan task for tracker {tracker_id}. ACK: stream={ack.stream}, seq={ack.seq}"
+                f"Successfully published poll task for tracker {tracker_id}. ACK: stream={ack.stream}, seq={ack.seq}"
             )
         else:
-            logger.error(f"Failed to publish scan task for tracker {tracker_id}.")
+            logger.error(f"Failed to publish poll task for tracker {tracker_id}.")
     except Exception as e:
         logger.error(
-            f"An exception occurred while trying to publish scan task for tracker {tracker_id}: {e}",
+            f"An exception occurred while trying to publish poll task for tracker {tracker_id}: {e}",
             exc_info=True,
         )
 

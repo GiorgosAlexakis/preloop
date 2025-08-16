@@ -158,3 +158,12 @@ async def connect_nats():
 
 async def close_nats():
     await task_publisher_service.close()
+
+    async def publish_resync_organization(self, organization_id: str):
+        """
+        Publishes a task to resync an organization.
+        """
+        await self.publish_task(
+            "scan_tracker_task",
+            kwargs={"tracker_id": organization_id, "force_update": True},
+        )
