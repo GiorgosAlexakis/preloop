@@ -271,9 +271,7 @@ export class SubscriptionView extends LitElement {
 
     return html`
       <view-header headerText="Your Subscriptions">
-        <div slot="side-column">
-          
-        </div>
+        <div slot="side-column"></div>
       </view-header>
       <div class="column-layout">
         <div class="main-column">

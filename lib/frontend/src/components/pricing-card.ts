@@ -91,102 +91,102 @@ export class PricingCard extends LitElement {
 
   static styles = css`
     :host {
-        display: flex;
+      display: flex;
     }
     .plan-card {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        border: 1px solid var(--sl-color-neutral-300);
-        border-radius: 20px;
-        padding: 1.5rem;
-        width: 100%;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--sl-color-neutral-300);
+      border-radius: 20px;
+      padding: 1.5rem;
+      width: 100%;
     }
 
     .plan-card.popular {
-        border: none;
-        background: linear-gradient(
+      border: none;
+      background: linear-gradient(
         45deg,
         hsl(220, 60%, 40%),
         hsl(260, 65%, 38%)
-        );
-        color: white;
+      );
+      color: white;
     }
 
     .badge {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        background: var(--sl-color-primary-600);
-        color: white;
-        font-size: 0.75rem;
-        font-weight: 700;
-        padding: 0.25rem 0.5rem;
-        border-radius: 999px;
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: var(--sl-color-primary-600);
+      color: white;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.5rem;
+      border-radius: 999px;
     }
 
     .badge.alt {
-        background: var(--sl-color-neutral-700);
+      background: var(--sl-color-neutral-700);
     }
 
     .plan-name {
-        margin: 0 0 0.25rem 0;
-        font-size: 1.25rem;
+      margin: 0 0 0.25rem 0;
+      font-size: 1.25rem;
     }
 
     .price-wrap {
-        margin: 0.25rem 0 0.75rem 0;
+      margin: 0.25rem 0 0.75rem 0;
     }
 
     .price-main {
-        font-size: 2rem;
-        font-weight: 800;
+      font-size: 2rem;
+      font-weight: 800;
     }
 
     .price-sub {
-        color: var(--sl-color-neutral-600);
-        font-size: 0.95rem;
-        margin-top: 0.25rem;
+      color: var(--sl-color-neutral-600);
+      font-size: 0.95rem;
+      margin-top: 0.25rem;
     }
 
     .plan-card.popular .price-sub {
-        color: var(--sl-color-neutral-700);
+      color: var(--sl-color-neutral-700);
     }
 
     .divider {
-        border: none;
-        height: 1px;
-        background-color: var(--sl-color-neutral-600);
-        margin: 1rem 0;
+      border: none;
+      height: 1px;
+      background-color: var(--sl-color-neutral-600);
+      margin: 1rem 0;
     }
 
     .plan-card.popular .divider {
-        background-color: var(--sl-color-primary-500);
+      background-color: var(--sl-color-primary-500);
     }
 
     .features {
-        list-style: none;
-        padding: 0;
-        margin: 0.5rem 0 1rem 0;
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
+      list-style: none;
+      padding: 0;
+      margin: 0.5rem 0 1rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
     }
 
     .feat-icon {
-        color: var(--sl-color-success-600);
+      color: var(--sl-color-success-600);
     }
     .feature.excluded .feat-icon {
-        color: var(--sl-color-neutral-400);
+      color: var(--sl-color-neutral-400);
     }
 
     .cta {
-        margin-top: auto;
-        width: 100%;
+      margin-top: auto;
+      width: 100%;
     }
 
     .cta::part(label) {
-        font-weight: 600;
+      font-weight: 600;
     }
   `;
 
@@ -201,9 +201,7 @@ export class PricingCard extends LitElement {
           : null}
 
         <h3 class="plan-name">${this.plan.name}</h3>
-        <div class="price-wrap">
-          ${this.formatPrice(this.plan)}
-        </div>
+        <div class="price-wrap">${this.formatPrice(this.plan)}</div>
 
         <hr class="divider" />
 
