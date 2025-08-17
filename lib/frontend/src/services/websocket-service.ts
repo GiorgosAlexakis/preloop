@@ -13,11 +13,11 @@ class WebSocketService {
     };
 
     this.ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message === 'ping') {
+      if (event.data === 'ping') {
         this.ws?.send('pong');
         return;
       }
+      const message = JSON.parse(event.data);
       if (this.onMessageCallback) {
         this.onMessageCallback(message);
       }

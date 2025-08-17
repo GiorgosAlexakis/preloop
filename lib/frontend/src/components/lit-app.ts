@@ -118,7 +118,7 @@ export class LitApp extends LitElement {
   }
 
   connectWebSocket() {
-    const wsUrl = `ws://${window.location.host}/api/v1/ws`;
+    const wsUrl = `ws${window.location.protocol === 'https:' ? 's' : ''}://${window.location.host}/api/v1/ws`;
     webSocketService.connect(wsUrl, (message) => {
       // Handle incoming messages from the server
       // For now, we just log them

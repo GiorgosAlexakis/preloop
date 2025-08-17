@@ -71,7 +71,7 @@ export class FlowExecutionView extends LitElement {
     super.connectedCallback();
     if (this.executionId) {
       this.fetchExecution();
-      const wsUrl = `ws://${window.location.host}/api/v1/ws/flow-updates`;
+      const wsUrl = `ws${window.location.protocol === 'https:' ? 's' : ''}://${window.location.host}/api/v1/ws/flow-updates`;
       webSocketService.connect(wsUrl, (message: FlowExecutionUpdate) => {
         if (message.execution_id === this.executionId) {
           this.logs = [...this.logs, message];
