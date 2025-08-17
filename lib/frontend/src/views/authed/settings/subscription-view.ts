@@ -4,6 +4,7 @@ import { fetchWithAuth } from '../../../api';
 import consoleStyles from '../../../styles/console-styles.css?inline';
 import pricingStyles from '../../../styles/pricing-styles.css?inline';
 import '../../../components/billing-toggle';
+import '../../../components/pricing-card';
 
 interface Plan {
   id: string;
@@ -27,6 +28,14 @@ export class SubscriptionView extends LitElement {
   @state() private _loading = true;
   @state() private _error: string | null = null;
   @state() private _interval: 'month' | 'year' = 'month';
+
+  private _featureOrder = [
+    'api_calls_monthly',
+    'ai_calls_monthly',
+    'issues_ingested_monthly',
+    'custom_ai_models_enabled',
+    'custom_compliance_metrics_enabled',
+  ];
 
   // Human-readable labels for common feature keys
   private _featureLabels: Record<string, string> = {
@@ -85,60 +94,6 @@ export class SubscriptionView extends LitElement {
     }
   }
 
-  private formatPrice(plan: Plan) {
-    const isMonthly = this._interval === 'month';
-    const amount = isMonthly ? plan.price_monthly : plan.price_annually;
-    const unit = isMonthly ? '/mo' : '/yr';
-
-    if (plan.id === 'enterprise' || amount === null) {
-      return html`<div class="price-main">Custom</div>`;
-    }
-
-    const perMo =
-      !isMonthly && typeof plan.price_annually === 'number'
-        ? Math.round((plan.price_annually as number) / 12)
-        : null;
-
-    return html`
-      <div class="price-main">$${amount}${unit}</div>
-      ${!isMonthly && perMo !== null
-        ? html`<div class="price-sub">~$${perMo}/mo billed annually</div>`
-        : null}
-    `;
-  }
-
-  private renderFeature([key, value]: [string, any]) {
-    const label = this._featureLabels[key] ?? key.replace(/_/g, ' ');
-    let included = false;
-    let displayValue: string | null = null;
-
-    if (value === true) {
-      included = true;
-    } else if (value === false) {
-      included = false;
-    } else if (value === -1) {
-      included = true;
-      displayValue = 'Unlimited';
-    } else if (typeof value === 'number') {
-      included = true;
-      displayValue = String(value);
-    } else if (typeof value === 'string') {
-      included = true;
-      displayValue = value;
-    }
-
-    return html`
-      <li class=${included ? 'feature included' : 'feature excluded'}>
-        <span class="feat-icon">${included ? '✓' : '✗'}</span>
-        <span class="feat-text">
-          ${label}${displayValue
-            ? html`<span class="feat-value">: ${displayValue}</span>`
-            : ''}
-        </span>
-      </li>
-    `;
-  }
-
   private async _handleManageSubscription() {
     this._error = null;
     try {
@@ -169,6 +124,10 @@ export class SubscriptionView extends LitElement {
       this._error = (error as Error).message;
       console.error('Failed to create portal session:', error);
     }
+  }
+
+  private _handleUpgradeRequest(e: CustomEvent) {
+    this._handleUpgrade(e.detail.planId);
   }
 
   private async _handleUpgrade(planId: string) {
@@ -313,7 +272,7 @@ export class SubscriptionView extends LitElement {
     return html`
       <view-header headerText="Your Subscriptions">
         <div slot="side-column">
-          <theme-switcher></theme-switcher>
+          
         </div>
       </view-header>
       <div class="column-layout">
@@ -366,42 +325,22 @@ export class SubscriptionView extends LitElement {
                 (this._interval = e.detail.value)}
             ></billing-toggle>
 
-            <div class="plans-grid">
+            <div
+              class="plans-grid"
+              @signup-requested=${this._handleUpgradeRequest}
+            >
               ${availablePlans
                 .filter((p) => p.id !== this.subscription?.plan_id)
-                .map((plan) => {
-                  const featureEntries = Object.entries(plan.features || {});
-                  const visible = featureEntries.slice(0, 6);
-                  const remaining = featureEntries.length - visible.length;
-
-                  return html`
-                    <div class="plan-card">
-                      <h3 class="plan-name">${plan.name}</h3>
-                      <div class="price-wrap">${this.formatPrice(plan)}</div>
-
-                      <ul class="features">
-                        ${visible.map((entry) => this.renderFeature(entry))}
-                        ${remaining > 0
-                          ? html`<li class="more">
-                              + ${remaining} more features
-                            </li>`
-                          : null}
-                      </ul>
-
-                      <sl-button
-                        class="cta"
-                        size="large"
-                        variant="default"
-                        @click=${() => this._handleUpgrade(plan.id)}
-                      >
-                        ${this.subscription?.plan_id === 'free'
-                          ? 'Upgrade'
-                          : 'Change'}
-                        to ${plan.name}
-                      </sl-button>
-                    </div>
-                  `;
-                })}
+                .map(
+                  (plan) => html`
+                    <pricing-card
+                      .plan=${plan}
+                      .interval=${this._interval}
+                      .featureOrder=${this._featureOrder}
+                      .featureLabels=${this._featureLabels}
+                    ></pricing-card>
+                  `
+                )}
             </div>
           </div>
         </div>

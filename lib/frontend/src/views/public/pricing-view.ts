@@ -4,6 +4,7 @@ import { fetchWithAuth, fetchPublic } from '../../api';
 import landingStyles from '../../styles/landing.css?inline';
 import pricingStyles from '../../styles/pricing-styles.css?inline';
 import '../../components/billing-toggle';
+import '../../components/pricing-card';
 
 interface Plan {
   id: string;
@@ -60,69 +61,8 @@ export class PublicPricingView extends LitElement {
     }
   }
 
-  private formatPrice(plan: Plan) {
-    if (plan.id === 'enterprise') {
-      return html`<div class="price-main">Custom</div>`;
-    }
-    const isMonthly = this._interval === 'month';
-    const amount = isMonthly ? plan.price_monthly : plan.price_annually;
-    const unit = isMonthly ? '/mo' : '/yr';
-
-    if (amount === null) {
-      return html`<div class="price-main">Custom</div>`;
-    }
-
-    const perMo =
-      !isMonthly && typeof plan.price_annually === 'number'
-        ? Math.round((plan.price_annually as number) / 12)
-        : null;
-
-    return html`
-      <div class="price-main">$${amount}${unit}</div>
-      ${!isMonthly && perMo !== null
-        ? html`<div class="price-sub">~$${perMo}/mo billed annually</div>`
-        : null}
-    `;
-  }
-
-  private _formatNumber(num: number): string {
-    if (num === -1) return 'Unlimited';
-    if (num < 1000) return num.toString();
-
-    // Using Intl.NumberFormat for robust, localized formatting
-    return new Intl.NumberFormat('en-US', {
-      notation: 'compact',
-      compactDisplay: 'short',
-    }).format(num);
-  }
-
-  private renderFeature(value: any, key: string) {
-    const label = this._featureLabels[key] ?? key.replace(/_/g, ' ');
-    let included = false;
-    let displayValue: string | null = null;
-
-    if (value === true) {
-      included = true;
-    } else if (value === false) {
-      included = false;
-    } else if (value === -1) {
-      included = true;
-      displayValue = 'Unlimited';
-    } else if (typeof value === 'number') {
-      included = true;
-      displayValue = this._formatNumber(value);
-    }
-
-    return html`
-      <li class=${included ? 'feature included' : 'feature excluded'}>
-        <span class="feat-icon">${included ? '✓' : '✗'}</span>
-        <span class="feat-text">
-          ${label}${displayValue
-            ? html`<span class="feat-value">: ${displayValue}</span>`
-            : ''}
-        </span>
-      </li>
-    `;
+  private _handleSignUpRequest(e: CustomEvent) {
+    this._handleSignUp(e.detail.planId);
   }
 
   private async _handleSignUp(planId: string) {
@@ -172,78 +112,6 @@ export class PublicPricingView extends LitElement {
       .error {
         color: var(--sl-color-danger-600);
       }
-
-      .badge {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        background: var(--sl-color-primary-600);
-        color: white;
-        font-size: 0.75rem;
-        font-weight: 700;
-        padding: 0.25rem 0.5rem;
-        border-radius: 999px;
-      }
-
-      .badge.alt {
-        background: var(--sl-color-neutral-700);
-      }
-
-      .plan-name {
-        margin: 0 0 0.25rem 0;
-        font-size: 1.25rem;
-      }
-
-      .price-wrap {
-        margin: 0.25rem 0 0.75rem 0;
-      }
-
-      .price-main {
-        font-size: 2rem;
-        font-weight: 800;
-      }
-
-      .price-sub {
-        color: var(--sl-color-neutral-600);
-        font-size: 0.95rem;
-        margin-top: 0.25rem;
-      }
-
-      .divider {
-        border: none;
-        height: 1px;
-        background-color: var(--sl-color-neutral-600);
-        margin: 1rem 0;
-      }
-
-      .plan-card.popular .divider {
-        background-color: var(--sl-color-primary-500);
-      }
-
-      .features {
-        list-style: none;
-        padding: 0;
-        margin: 0.5rem 0 1rem 0;
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-      }
-
-      .feat-icon {
-        color: var(--sl-color-success-600);
-      }
-      .feature.excluded .feat-icon {
-        color: var(--sl-color-neutral-400);
-      }
-
-      .cta {
-        margin-top: auto;
-        width: 100%;
-      }
-
-      .cta::part(label) {
-        font-weight: 600;
-      }
     `,
   ];
 
@@ -278,47 +146,18 @@ export class PublicPricingView extends LitElement {
               : null}
             ${!this._loading && !this._error
               ? html`
-                  <div class="plans-grid">
+                  <div
+                    class="plans-grid"
+                    @signup-requested=${this._handleSignUpRequest}
+                  >
                     ${this._plans.map(
                       (plan) => html`
-                        <div
-                          class="plan-card ${plan.id === 'ultra'
-                            ? 'popular'
-                            : ''}"
-                        >
-                          ${plan.id === 'ultra'
-                            ? html`<div class="badge">Most popular</div>`
-                            : null}
-                          ${plan.id === 'enterprise'
-                            ? html`<div class="badge alt">Enterprise</div>`
-                            : null}
-
-                          <h3 class="plan-name">${plan.name}</h3>
-                          <div class="price-wrap">
-                            ${this.formatPrice(plan)}
-                          </div>
-
-                          <hr class="divider" />
-
-                          <ul class="features">
-                            ${this._featureOrder.map((key) =>
-                              this.renderFeature(plan.features[key], key)
-                            )}
-                          </ul>
-
-                          <sl-button
-                            class="cta"
-                            size="large"
-                            variant="default"
-                            @click=${() => this._handleSignUp(plan.id)}
-                          >
-                            ${plan.id === 'enterprise'
-                              ? 'Contact Sales'
-                              : plan.id === 'free'
-                                ? 'Get Free'
-                                : `Get ${plan.name}`}
-                          </sl-button>
-                        </div>
+                        <pricing-card
+                          .plan=${plan}
+                          .interval=${this._interval}
+                          .featureOrder=${this._featureOrder}
+                          .featureLabels=${this._featureLabels}
+                        ></pricing-card>
                       `
                     )}
                   </div>
