@@ -162,7 +162,7 @@ export class PublicPricingView extends LitElement {
       .popular {
         position: relative;
         background: linear-gradient(
-        90deg,
+          90deg,
           hsl(220, 60%, 40%),
           hsl(260, 65%, 38%)
         );
@@ -256,10 +256,7 @@ export class PublicPricingView extends LitElement {
 
   private _renderCards() {
     return html`
-      <div
-        class="plans-grid"
-        @signup-requested=${this._handleSignUpRequest}
-      >
+      <div class="plans-grid" @signup-requested=${this._handleSignUpRequest}>
         ${this._plans.map(
           (plan) => html`
             <pricing-card
@@ -299,22 +296,35 @@ export class PublicPricingView extends LitElement {
               let priceHtml;
               if (plan.id === 'enterprise') {
                 priceHtml = html`<div class="price">Custom</div>`;
-              } else if (plan.price_monthly !== null && plan.price_annually !== null) {
+              } else if (
+                plan.price_monthly !== null &&
+                plan.price_annually !== null
+              ) {
                 const isMonthly = this._interval === 'month';
-                const amount = isMonthly ? plan.price_monthly : plan.price_annually;
+                const amount = isMonthly
+                  ? plan.price_monthly
+                  : plan.price_annually;
                 const unit = isMonthly ? '/mo' : '/yr';
                 const perMo = !isMonthly
                   ? Math.round(plan.price_annually / 12)
                   : null;
 
                 priceHtml = html`
-                  <div class="price">$${amount}<span style="font-size: 1rem; font-weight: 400;">${unit}</span></div>
-                  ${perMo ? html`<div class="price-sub">billed annually</div>` : ''}
+                  <div class="price">
+                    $${amount}<span style="font-size: 1rem; font-weight: 400;"
+                      >${unit}</span
+                    >
+                  </div>
+                  ${perMo
+                    ? html`<div class="price-sub">billed annually</div>`
+                    : ''}
                 `;
               } else {
                 priceHtml = html`<div class="price">Free</div>`;
               }
-              return html`<td class="${plan.id === 'ultra' ? 'popular' : ''}">${priceHtml}</td>`;
+              return html`<td class="${plan.id === 'ultra' ? 'popular' : ''}">
+                ${priceHtml}
+              </td>`;
             })}
           </tr>
 
@@ -322,20 +332,29 @@ export class PublicPricingView extends LitElement {
           ${this._featureOrder.map((featureKey) => {
             return html`
               <tr>
-                <td class="feature-label">${this._featureLabels[featureKey]}</td>
+                <td class="feature-label">
+                  ${this._featureLabels[featureKey]}
+                </td>
                 ${this._plans.map((plan) => {
                   const feature = plan.features[featureKey];
                   let value = '';
                   if (typeof feature === 'boolean') {
                     value = feature
-                      ? html`<span class="check-mark"><sl-icon name="check-lg"></sl-icon></span>`
+                      ? html`<span class="check-mark"
+                          ><sl-icon name="check-lg"></sl-icon
+                        ></span>`
                       : '—';
                   } else if (feature) {
-                    value = feature === -1 ? 'Unlimited' : feature.toLocaleString();
+                    value =
+                      feature === -1 ? 'Unlimited' : feature.toLocaleString();
                   } else {
                     value = '—';
                   }
-                  return html`<td class="${plan.id === 'ultra' ? 'popular' : ''}">${value}</td>`;
+                  return html`<td
+                    class="${plan.id === 'ultra' ? 'popular' : ''}"
+                  >
+                    ${value}
+                  </td>`;
                 })}
               </tr>
             `;
@@ -356,8 +375,8 @@ export class PublicPricingView extends LitElement {
                     ${plan.id === 'enterprise'
                       ? 'Contact Sales'
                       : plan.id === 'free'
-                      ? 'Get Free'
-                      : `Get ${plan.name}`}
+                        ? 'Get Free'
+                        : `Get ${plan.name}`}
                   </sl-button>
                 </td>
               `
@@ -398,10 +417,7 @@ export class PublicPricingView extends LitElement {
               ? html`<div class="error">${this._error}</div>`
               : null}
             ${!this._loading && !this._error
-              ? html`
-                  ${this._renderCards()}
-                  ${this._renderTable()}
-                `
+              ? html` ${this._renderCards()} ${this._renderTable()} `
               : null}
           </div>
         </section>
