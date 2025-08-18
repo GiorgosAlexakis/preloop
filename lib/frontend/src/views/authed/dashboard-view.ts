@@ -203,9 +203,6 @@ export class DashboardView extends AuthedElement {
   render() {
     return html`
       <view-header headerText="Overview">
-        <div slot="side-column">
-          <theme-switcher></theme-switcher>
-        </div>
       </view-header>
       <div class="column-layout">
         <div class="main-column">

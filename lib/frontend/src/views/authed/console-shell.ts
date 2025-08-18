@@ -8,6 +8,7 @@ import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '../../components/logo-component';
 import '../../components/global-notice';
+import '../../components/console-header';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 // static styles = [formStyles, css`
@@ -59,10 +60,16 @@ export class ConsoleShell extends LitElement {
         color: var(--sl-color-primary-700);
       }
 
-      .main-content {
+      .main-view {
         flex-grow: 1;
+        display: grid;
+        grid-template-rows: auto 1fr; /* Header row, Content row */
+        overflow-y: hidden;
+      }
+
+      .main-content {
         overflow-y: auto;
-        padding: 2rem;
+        padding: 1rem 2rem 2rem 2rem;
       }
 
       .logo {
@@ -109,27 +116,6 @@ export class ConsoleShell extends LitElement {
       'ui_version=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     // Reload the page
     window.location.reload();
-  }
-
-  async signOut() {
-    // The primary sign-out action is to remove the tokens from local storage.
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-
-    // Dispatch an event to let other parts of the app know the user has signed out.
-    window.dispatchEvent(
-      new CustomEvent('auth-change', { bubbles: true, composed: true })
-    );
-
-    // Redirect to the landing page.
-    window.location.href = '/';
-
-    // We can also make a request to the server's /logout endpoint.
-    // This can be useful for server-side session cleanup or logging.
-    // We'll do this in the background and not let it block the redirect.
-    fetch('/logout', { method: 'GET' }).catch((error) => {
-      console.error('Logout request to server failed:', error);
-    });
   }
 
   connectedCallback() {
@@ -213,23 +199,17 @@ export class ConsoleShell extends LitElement {
                 <a href="/console/settings/ai-models">
                   <sl-menu-item>Models</sl-menu-item>
                 </a>
-                <a href="/console/settings/appearance">
-                  <sl-menu-item>Appearance</sl-menu-item>
-                </a>
               </sl-menu>
             </sl-details>
           </sl-menu>
 
-          <sl-menu class="sign-out-menu">
-            <sl-menu-item @click=${this.signOut}>
-              <sl-icon name="box-arrow-right" slot="prefix"></sl-icon>
-              Sign Out
-            </sl-menu-item>
-          </sl-menu>
         </div>
 
-        <div class="main-content">
-          <slot></slot>
+        <div class="main-view">
+          <console-header></console-header>
+          <div class="main-content">
+            <slot></slot>
+          </div>
         </div>
       </div>
     `;

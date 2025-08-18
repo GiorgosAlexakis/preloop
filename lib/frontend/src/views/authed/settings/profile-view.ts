@@ -45,9 +45,6 @@ export class ProfileView extends LitElement {
   render() {
     return html`
       <view-header headerText="Profile">
-        <div slot="side-column">
-          <theme-switcher></theme-switcher>
-        </div>
       </view-header>
       <div class="column-layout">
         <div class="main-column">

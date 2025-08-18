@@ -219,9 +219,6 @@ export class ApiKeysView extends LitElement {
             >Create New API Key</sl-button
           >
         </div>
-        <div slot="side-column">
-          <theme-switcher></theme-switcher>
-        </div>
       </view-header>
       <div class="column-layout">
         <div class="main-column">${renderContent()}</div>

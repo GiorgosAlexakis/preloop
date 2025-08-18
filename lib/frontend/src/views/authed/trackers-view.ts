@@ -53,9 +53,6 @@ export class TrackersView extends LitElement {
             Add New Tracker
           </sl-button>
         </div>
-        <div slot="side-column">
-          <theme-switcher></theme-switcher>
-        </div>
       </view-header>
       <div class="column-layout">
         <div class="main-column">

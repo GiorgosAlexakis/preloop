@@ -765,9 +765,6 @@ export class IssuesComplianceView extends LitElement {
     return html`
       <view-header headerText="Issue Compliance">
         <div slot="main-column">${this._renderSearchBar()}</div>
-        <div slot="side-column">
-          <theme-switcher></theme-switcher>
-        </div>
       </view-header>
 
       <project-filter-modal
