@@ -270,9 +270,7 @@ export class SubscriptionView extends LitElement {
       : 'Free';
 
     return html`
-      <view-header headerText="Your Subscriptions">
-        <div slot="side-column"></div>
-      </view-header>
+      <view-header headerText="Your Subscriptions"></view-header>
       <div class="column-layout">
         <div class="main-column">
           <div class="card current-plan">

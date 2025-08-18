@@ -243,7 +243,7 @@ export class PublicPricingView extends LitElement {
       }
 
       /* Desktop view */
-      @media (min-width: 992px) {
+      @media (min-width: 860px) {
         .plans-grid {
           display: none;
         }
@@ -264,6 +264,7 @@ export class PublicPricingView extends LitElement {
               .interval=${this._interval}
               .featureOrder=${this._featureOrder}
               .featureLabels=${this._featureLabels}
+              .dark=${true}
             ></pricing-card>
           `
         )}
@@ -370,6 +371,7 @@ export class PublicPricingView extends LitElement {
                     class="pricing-button"
                     style="width: 100%;"
                     variant="default"
+                    size="large"
                     @click=${() => this._handleSignUp(plan.id)}
                   >
                     ${plan.id === 'enterprise'

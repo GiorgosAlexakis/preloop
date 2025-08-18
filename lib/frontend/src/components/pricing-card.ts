@@ -15,6 +15,7 @@ export class PricingCard extends LitElement {
   @property({ type: String }) interval: 'month' | 'year' = 'month';
   @property({ type: Array }) featureOrder: string[] = [];
   @property({ type: Object }) featureLabels: Record<string, string> = {};
+  @property({ type: Boolean }) dark = false;
 
   private formatPrice(plan: Plan) {
     if (plan.id === 'enterprise') {
@@ -101,16 +102,20 @@ export class PricingCard extends LitElement {
       position: relative;
       display: flex;
       flex-direction: column;
-      border: 1px solid var(--sl-color-neutral-300);
       border-radius: 20px;
       padding: 1.5rem;
+      background-color: var(--sl-color-neutral-100);
       width: 100%;
+    }
+
+    .plan-card.sl-theme-dark {
+      background-color: #21262f; /* Dark background from landing page */
     }
 
     .plan-card.popular {
       border: none;
       background: linear-gradient(
-        45deg,
+        90deg,
         hsl(220, 60%, 40%),
         hsl(260, 65%, 38%)
       );
@@ -119,18 +124,28 @@ export class PricingCard extends LitElement {
 
     .badge {
       position: absolute;
-      top: 12px;
-      right: 12px;
-      background: var(--sl-color-primary-600);
+      top: -15px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(45deg, #a777ff, #f777ff);
       color: white;
-      font-size: 0.75rem;
+      padding: 0.4rem 1rem;
+      border-radius: 16px;
+      font-size: 0.9rem;
       font-weight: 700;
-      padding: 0.25rem 0.5rem;
-      border-radius: 999px;
+      white-space: nowrap;
+      z-index: 1;
     }
 
     .badge.alt {
       background: var(--sl-color-neutral-700);
+      top: 12px; /* Reset position for enterprise badge */
+      left: auto;
+      right: 12px;
+      transform: none;
+      box-shadow: none;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
     }
 
     .plan-name {
@@ -148,13 +163,13 @@ export class PricingCard extends LitElement {
     }
 
     .price-sub {
-      color: var(--sl-color-neutral-600);
+      color: var(--sl-color-text-secondary);
       font-size: 0.95rem;
       margin-top: 0.25rem;
     }
 
     .plan-card.popular .price-sub {
-      color: var(--sl-color-neutral-700);
+      color: var(--sl-color-neutral-300);
     }
 
     .divider {
@@ -184,6 +199,15 @@ export class PricingCard extends LitElement {
       color: var(--sl-color-neutral-400);
     }
 
+    .feat-text {
+      font-size: 0.95rem;
+    }
+
+    .feat-value {
+      font-size: 0.85rem;
+      color: var(--sl-color-text-secondary);
+    }
+
     .cta {
       margin-top: auto;
       width: 100%;
@@ -192,11 +216,40 @@ export class PricingCard extends LitElement {
     .cta::part(label) {
       font-weight: 600;
     }
+
+    /* Default outlined button style */
+    .cta::part(base) {
+      background-color: transparent;
+      border: 1px solid #58a6ff;
+      color: #58a6ff;
+      font-weight: 600;
+      transition: all 0.2s ease-in-out;
+    }
+
+    .cta::part(base):hover {
+      background-color: #58a6ff;
+      color: white;
+    }
+
+    /* Solid, gradient button for the popular plan */
+    .popular .cta::part(base) {
+      background: linear-gradient(45deg, #a777ff, #f777ff);
+      border: none;
+      color: white;
+    }
+
+    .popular .cta::part(base):hover {
+      filter: brightness(1.1);
+    }
   `;
 
   render() {
     return html`
-      <div class="plan-card ${this.plan.id === 'ultra' ? 'popular' : ''}">
+      <div
+        class="plan-card ${this.plan.id === 'ultra' ? 'popular' : ''} ${
+          this.dark ? 'sl-theme-dark' : ''
+        }"
+      >
         ${this.plan.id === 'ultra'
           ? html`<div class="badge">Most popular</div>`
           : null}
