@@ -246,9 +246,10 @@ export class PricingCard extends LitElement {
   render() {
     return html`
       <div
-        class="plan-card ${this.plan.id === 'ultra' ? 'popular' : ''} ${
-          this.dark ? 'sl-theme-dark' : ''
-        }"
+        class="plan-card ${this.plan.id === 'ultra' ? 'popular' : ''} ${this
+          .dark
+          ? 'sl-theme-dark'
+          : ''}"
       >
         ${this.plan.id === 'ultra'
           ? html`<div class="badge">Most popular</div>`
