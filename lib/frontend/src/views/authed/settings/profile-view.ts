@@ -44,8 +44,7 @@ export class ProfileView extends LitElement {
 
   render() {
     return html`
-      <view-header headerText="Profile">
-      </view-header>
+      <view-header headerText="Profile"> </view-header>
       <div class="column-layout">
         <div class="main-column">
           <div class="card">

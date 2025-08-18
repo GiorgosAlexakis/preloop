@@ -91,7 +91,9 @@ export class ConsoleHeader extends LitElement {
             ></sl-icon-button>
             <sl-menu>
               <div class="user-info">
-                <div class="user-name">${this._user?.full_name || this._user?.username}</div>
+                <div class="user-name">
+                  ${this._user?.full_name || this._user?.username}
+                </div>
                 <div class="user-email">${this._user?.email}</div>
               </div>
               <sl-divider></sl-divider>

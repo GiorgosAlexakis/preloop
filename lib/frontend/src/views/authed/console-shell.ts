@@ -202,7 +202,6 @@ export class ConsoleShell extends LitElement {
               </sl-menu>
             </sl-details>
           </sl-menu>
-
         </div>
 
         <div class="main-view">

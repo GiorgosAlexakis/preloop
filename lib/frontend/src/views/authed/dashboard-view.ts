@@ -202,8 +202,7 @@ export class DashboardView extends AuthedElement {
 
   render() {
     return html`
-      <view-header headerText="Overview">
-      </view-header>
+      <view-header headerText="Overview"> </view-header>
       <div class="column-layout">
         <div class="main-column">
           ${this.trackers.length > 0 || this.isLoading

@@ -54,8 +54,7 @@ export class AppearanceView extends LitElement {
 
   render() {
     return html`
-      <view-header headerText="Appearance">
-      </view-header>
+      <view-header headerText="Appearance"> </view-header>
       <div class="column-layout">
         <div class="main-column">
           <sl-card>
