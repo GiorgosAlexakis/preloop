@@ -69,7 +69,7 @@ export class PricingCard extends LitElement {
 
     return html`
       <li class=${included ? 'feature included' : 'feature excluded'}>
-        <span class="feat-icon">${included ? '✓' : '✗'}</span>
+        <span class="feat-icon">${included ? html`<sl-icon name="check-lg"></sl-icon>` : html`<sl-icon name="x-lg"></sl-icon>`}</span>
         <span class="feat-text">
           ${label}${displayValue
             ? html`<span class="feat-value">: ${displayValue}</span>`
