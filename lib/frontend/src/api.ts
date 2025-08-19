@@ -440,6 +440,14 @@ export async function getFlows(): Promise<any[]> {
   return response.json();
 }
 
+export async function getFlow(flowId: string): Promise<any> {
+  const response = await fetchWithAuth(`/api/v1/flows/${flowId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow');
+  }
+  return response.json();
+}
+
 export async function createFlow(flow: any): Promise<any> {
   const response = await fetchWithAuth('/api/v1/flows', {
     method: 'POST',
@@ -471,6 +479,35 @@ export async function deleteFlow(flowId: string) {
   if (!response.ok) {
     throw new Error('Failed to delete flow');
   }
+}
+
+export async function getFlowPresets(): Promise<any[]> {
+  const response = await fetchWithAuth('/api/v1/flows/presets');
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow presets');
+  }
+  return response.json();
+}
+
+export async function getFlowExecutions(): Promise<any[]> {
+  const response = await fetchWithAuth('/api/v1/flows/executions');
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow executions');
+  }
+  return response.json();
+}
+
+export async function cloneFlowPreset(presetId: string): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/presets/${presetId}/clone`,
+    {
+      method: 'POST',
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to clone flow preset');
+  }
+  return response.json();
 }
 
 export async function listProjects(): Promise<Project[]> {
