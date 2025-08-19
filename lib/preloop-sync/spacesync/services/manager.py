@@ -13,7 +13,7 @@ from apscheduler.jobstores.base import JobLookupError
 
 from spacemodels.crud import crud_tracker
 from spacemodels.db.session import get_db_session
-from spacesync.services.event_bus import task_publisher_service
+from spacesync.services.event_bus import event_bus_service
 from ..config import logger, SERVICE_POLL_INTERVAL
 
 POLLING_THRESHOLD = timedelta(hours=1)
@@ -26,7 +26,7 @@ async def poll_tracker(tracker_id: str):
     """
     logger.info(f"Publishing poll task for tracker {tracker_id}")
     try:
-        ack = await task_publisher_service.publish_task("poll_tracker", tracker_id)
+        ack = await event_bus_service.publish_task("poll_tracker", tracker_id)
         if ack:
             logger.info(
                 f"Successfully published poll task for tracker {tracker_id}. ACK: stream={ack.stream}, seq={ack.seq}"

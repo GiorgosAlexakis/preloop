@@ -4,6 +4,10 @@ from spacemodels.crud import crud_tracker
 from spacesync.scanner.core import scan_tracker
 
 
+def scan_tracker_task(tracker_id: int, since=None, force_update=False):
+    return poll_tracker(tracker_id, since, force_update)
+
+
 def poll_tracker(tracker_id: int, since=None, force_update=False):
     logger.info(f"Starting scan for tracker {tracker_id}")
     db = next(get_db_session())
@@ -26,7 +30,9 @@ def notify_admins(subject: str, message: str, message_html: str = None):
     send_email(admin_email, subject, message, message_html)
 
 
-def process_webhook_event(tracker_id: int, event_type: str, payload: dict, **kwargs):
+async def process_webhook_event(
+    tracker_id: int, event_type: str, payload: dict, **kwargs
+):
     """
     This task is triggered when a webhook event is received from a tracker.
     It uses the FlowTriggerService to check if any flows should be initiated.
@@ -53,6 +59,6 @@ def process_webhook_event(tracker_id: int, event_type: str, payload: dict, **kwa
         }
 
         trigger_service = FlowTriggerService(db)
-        trigger_service.process_event(event_data)
+        await trigger_service.process_event(event_data)
     finally:
         db.close()

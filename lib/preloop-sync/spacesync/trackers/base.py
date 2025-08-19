@@ -4,12 +4,16 @@ Base tracker interface for SpaceSync.
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import logging
 
-# Import the configurable max length from the Issue model
 from spacemodels.models.issue import DESCRIPTION_MAX_LENGTH
-from spacemodels.models.project import Project
+
+# Import the configurable max length from the Issue model
+if TYPE_CHECKING:
+    from spacemodels.models.project import Project
+    from spacemodels.models.organization import Organization
+    from spacemodels.models.webhook import Webhook
 
 logger = logging.getLogger(__name__)
 

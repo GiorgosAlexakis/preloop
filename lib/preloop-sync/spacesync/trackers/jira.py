@@ -24,7 +24,9 @@ from ..utils import retry
 from .base import BaseTracker
 from spacemodels.models.project import Project
 from spacemodels.models.webhook import Webhook
+from spacemodels.models.organization import Organization
 from spacemodels.crud import crud_project, crud_organization
+
 
 logger = logging.getLogger(__name__)
 

@@ -15,7 +15,7 @@ from spacebridge.config import settings
 logger = logging.getLogger(__name__)
 
 
-class TaskPublisher:
+class EventBus:
     def __init__(self):
         self.nc: Optional[NATSClient] = None
         self.js = None
@@ -41,14 +41,21 @@ class TaskPublisher:
             # Define the desired stream configuration
             config = StreamConfig(
                 name="tasks",
-                subjects=["spacesync.tasks"],
-                retention="limits",
+                subjects=["spacesync.tasks.*"],
+                retention="workqueue",
+                max_age=24 * 60 * 60,  # 24 hours in seconds
             )
 
             # Check if the stream exists and update if its configuration is different
             try:
                 stream = await self.js.stream_info("tasks")
-                # The retention policy cannot be changed, so we only update the subjects.
+                if stream.config.retention != "workqueue":
+                    logger.error(
+                        "Stream 'tasks' exists but has the wrong retention policy. "
+                        "Please delete the stream and restart the service."
+                    )
+                    # Do not proceed with a misconfigured stream
+                    return
                 if set(stream.config.subjects) != set(config.subjects):
                     logger.warning(
                         "Stream 'tasks' exists with different subjects. Updating..."
@@ -105,7 +112,7 @@ class TaskPublisher:
                 logger.error("Failed to reconnect to NATS. Task not published.")
                 return None
 
-        subject = "spacesync.tasks"
+        subject = f"spacesync.tasks.{function_name}"
         task_payload = {"function": function_name, "args": args, "kwargs": kwargs}
         payload_bytes = json.dumps(task_payload).encode("utf-8")
 
@@ -140,30 +147,29 @@ class TaskPublisher:
 
 
 # Global instance for FastAPI dependency injection
-task_publisher_service = TaskPublisher()
+event_bus_service = EventBus()
 
 
-async def get_task_publisher() -> TaskPublisher:
-    if task_publisher_service.nc is None or not task_publisher_service.nc.is_connected:
+async def get_task_publisher() -> EventBus:
+    if event_bus_service.nc is None or not event_bus_service.nc.is_connected:
         logger.warning(
             "Task publisher accessed but not connected. Ensure connect() is called on app startup."
         )
-    return task_publisher_service
+    return event_bus_service
+
+
+async def get_nats_client() -> NATSClient:
+    if event_bus_service.nc is None or not event_bus_service.nc.is_connected:
+        logger.warning(
+            "NATS client accessed but not connected. Ensure connect() is called on app startup."
+        )
+    return event_bus_service.nc
 
 
 # Functions to be called by FastAPI startup/shutdown events
 async def connect_nats():
-    await task_publisher_service.connect()
+    await event_bus_service.connect()
 
 
 async def close_nats():
-    await task_publisher_service.close()
-
-    async def publish_resync_organization(self, organization_id: str):
-        """
-        Publishes a task to resync an organization.
-        """
-        await self.publish_task(
-            "scan_tracker_task",
-            kwargs={"tracker_id": organization_id, "force_update": True},
-        )
+    await event_bus_service.close()

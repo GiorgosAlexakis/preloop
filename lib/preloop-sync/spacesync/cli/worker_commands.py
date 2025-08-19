@@ -13,10 +13,17 @@ from spacesync.services.nats_worker import main
     help="Set the logging level.",
     show_default=True,
 )
+@click.option(
+    "--tasks",
+    type=str,
+    help="Comma-separated list of tasks to run. If not provided, all tasks are run.",
+    default=None,
+)
 @click.command(name="worker")
-def worker_cmd(log_level: str):
+def worker_cmd(log_level: str, tasks: str):
     """
     Start the SpaceSync worker service in the foreground.
     """
     logging.basicConfig(level=log_level)
-    asyncio.run(main())
+    tasks_list = tasks.split(",") if tasks else []
+    asyncio.run(main(tasks_allowlist=tasks_list))

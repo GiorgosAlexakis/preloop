@@ -10,31 +10,37 @@ async def main():
     js = nc.jetstream()
 
     stream_name = "tasks"
-    consumer_name = "worker-group"
 
-    print(
-        f"Monitoring stream '{stream_name}' and consumer '{consumer_name}'. Press Ctrl+C to exit."
-    )
+    print(f"Monitoring stream '{stream_name}'. Press Ctrl+C to exit.")
 
     while True:
         try:
             stream_info = await js.stream_info(stream_name)
-            consumer_info = await js.consumer_info(stream_name, consumer_name)
+            total_in_stream = stream_info.state.messages
 
-            pending = stream_info.state.messages
-            in_progress = consumer_info.num_ack_pending
+            total_pending_for_consumers = 0
+            total_in_progress = 0
+            consumer_details = []
 
+            consumers_info = await js.consumers_info(stream_name)
+            for consumer_info in consumers_info:
+                total_pending_for_consumers += consumer_info.num_pending
+                in_progress = consumer_info.num_ack_pending
+                total_in_progress += in_progress
+                consumer_details.append(
+                    f"{consumer_info.name}: {in_progress} in-progress, {consumer_info.num_pending} pending"
+                )
+
+            details_str = " | ".join(consumer_details)
             print(
-                f"\rQueue Status | Pending: {pending} | In-Progress: {in_progress}  ",
+                f"\rQueue Status | Pending: {total_pending_for_consumers} | In-Progress: {total_in_progress} | Total in Stream: {total_in_stream} ({details_str})  ",
                 end="",
             )
 
             await asyncio.sleep(1)
 
         except nats.errors.Error:
-            print(
-                f"Stream '{stream_name}' or consumer '{consumer_name}' not found. Waiting..."
-            )
+            print(f"Stream '{stream_name}' not found. Waiting...")
             await asyncio.sleep(2)
         except KeyboardInterrupt:
             break

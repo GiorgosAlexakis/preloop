@@ -12,26 +12,30 @@ import inspect
 import nats
 import socket
 import uuid
+from typing import List, Optional, Tuple
 from nats.aio.client import Client as NATSClient
 from nats.aio.errors import ErrNoServers
-from nats.js.api import ConsumerConfig
+from nats.js.api import ConsumerConfig, StreamConfig
+from nats.js.errors import APIError
 
 import spacesync.tasks as tasks
 from spacesync.config import logger
 
 
 class SpaceSyncNatsWorker:
-    def __init__(self, nats_url: str, subscribe_subject: str, queue_name: str):
+    def __init__(
+        self,
+        nats_url: str,
+        queue_name: str,
+        tasks_allowlist: Optional[List[str]] = None,
+    ):
         self.nats_url = nats_url
-        self.subscribe_subject = subscribe_subject
         self.queue_name = queue_name
+        self.tasks_allowlist = tasks_allowlist or []
         self.nc: NATSClient = None
         self.js = None
-        self.sub = None
-        # Generate a unique name for the connection, not the consumer.
+        self.subs: List[Tuple[str, nats.aio.client.Subscription]] = []
         self.connection_name = f"worker-{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
-        # Use the queue name as the durable name for the entire worker group.
-        self.durable_name = self.queue_name
 
     async def connect(self):
         if self.nc and self.nc.is_connected:
@@ -50,6 +54,24 @@ class SpaceSyncNatsWorker:
             logger.info(
                 f"Worker '{self.connection_name}' successfully connected to NATS server: {self.nats_url}"
             )
+
+            # Ensure the 'tasks' stream exists
+            config = StreamConfig(
+                name="tasks",
+                subjects=["spacesync.tasks.*"],
+                retention="workqueue",
+                max_age=24 * 60 * 60,  # 24 hours in seconds
+            )
+            try:
+                await self.js.stream_info("tasks")
+            except APIError as e:
+                if e.err_code == 10059:  # Stream not found
+                    logger.info("Stream 'tasks' not found. Creating it...")
+                    await self.js.add_stream(config)
+                    logger.info("Stream 'tasks' created successfully.")
+                else:
+                    raise e
+
         except ErrNoServers as e:
             logger.error(
                 f"Worker '{self.connection_name}' could not connect to NATS: No servers available at {self.nats_url}. Error: {e}"
@@ -71,31 +93,53 @@ class SpaceSyncNatsWorker:
             logger.error("Cannot start listening, NATS client not connected.")
             return
 
+        subjects_to_subscribe = []
+        if self.tasks_allowlist:
+            for task_name in self.tasks_allowlist:
+                subjects_to_subscribe.append(f"spacesync.tasks.{task_name}")
+        else:
+            subjects_to_subscribe.append("spacesync.tasks.*")
+
         logger.info(
-            f"Worker '{self.connection_name}' subscribing to '{self.subscribe_subject}'"
+            f"Worker '{self.connection_name}' subscribing to subjects: {subjects_to_subscribe}"
         )
 
-        try:
-            # Create a durable consumer shared by all workers in the queue group.
-            # The stream is expected to be created by a publisher.
-            config = ConsumerConfig(
-                durable_name=self.durable_name,
-                ack_wait=180,  # 3 minutes
-            )
+        for subject in subjects_to_subscribe:
+            try:
+                # For a durable, filtered consumer, the durable name must be unique
+                # for each subject filter. We construct it from the queue name
+                # and the task name (the last part of the subject).
+                task_name = subject.split(".")[-1]
+                durable_name = f"{self.queue_name}_{task_name}"
 
-            self.sub = await self.js.subscribe(
-                subject=self.subscribe_subject,
-                queue=self.queue_name,
-                config=config,
-            )
-        except Exception as e:
-            logger.error(
-                f"Failed to subscribe to NATS subject '{self.subscribe_subject}': {e}"
-            )
-            raise
+                # 1. Explicitly create or update the consumer. This is an
+                # idempotent operation that ensures the consumer exists on the
+                # server with the correct configuration.
+                # 1. Explicitly create or update the consumer. This is an
+                # idempotent operation. The `deliver_group` makes this a queue
+                # consumer on the server side, ensuring messages are load-balanced.
+                consumer_config = ConsumerConfig(
+                    durable_name=durable_name,
+                    ack_wait=180,  # 3 minutes
+                    filter_subject=subject,
+                    deliver_group=self.queue_name,
+                )
+                await self.js.add_consumer(stream="tasks", config=consumer_config)
+
+                # 2. Create a pull subscription to the durable queue consumer.
+                # This allows the worker to fetch messages from the shared consumer.
+                sub = await self.js.pull_subscribe(
+                    subject=subject,
+                    durable=durable_name,
+                )
+                self.subs.append((subject, sub))
+            except Exception as e:
+                logger.error(f"Failed to subscribe to NATS subject '{subject}': {e}")
+                raise
+
         logger.info(f"Worker '{self.connection_name}' is now listening for messages.")
 
-        async for msg in self.sub.messages:
+        async def message_handler(msg):
             subject = msg.subject
             data = msg.data.decode()
             logger.info(f"Received message on '{subject}': {data}")
@@ -104,43 +148,91 @@ class SpaceSyncNatsWorker:
 
             try:
                 payload = json.loads(data)
+                task_name = payload.get("function")
 
-                if "function" in payload:
-                    func = getattr(tasks, payload["function"])
-                    if inspect.iscoroutinefunction(func):
-                        stats = await func(
-                            *payload.get("args", []), **payload.get("kwargs", {})
-                        )
-                    else:
-                        stats = func(
-                            *payload.get("args", []), **payload.get("kwargs", {})
-                        )
-                else:
+                if not task_name:
                     logger.error(f"Unknown message format: {data}")
-                    await msg.ack()
-                    continue
+                    if os.getenv("SENTRY_DSN"):
+                        import sentry_sdk
 
+                        sentry_sdk.capture_exception(
+                            Exception(f"Unknown message format: {data}")
+                        )
+                    await msg.ack()
+                    return
+
+                func = getattr(tasks, task_name)
+                if inspect.iscoroutinefunction(func):
+                    stats = await func(
+                        *payload.get("args", []), **payload.get("kwargs", {})
+                    )
+                else:
+                    stats = func(*payload.get("args", []), **payload.get("kwargs", {}))
                 await msg.ack()
+
                 end_time = datetime.datetime.now()
                 logger.info(
-                    f"Task '{payload.get('function')}' completed and acknowledged. Stats: {stats}. Duration: {end_time - start_time}"
+                    f"Task '{task_name}' completed and acknowledged. Stats: {stats}. Duration: {end_time - start_time}"
                 )
 
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to decode JSON payload: {data}. Error: {e}")
+                if os.getenv("SENTRY_DSN"):
+                    import sentry_sdk
+
+                    sentry_sdk.capture_exception(e)
+                await msg.ack()
             except AttributeError as e:
                 logger.error(f"Task function not found: {e}")
+                if os.getenv("SENTRY_DSN"):
+                    import sentry_sdk
+
+                    sentry_sdk.capture_exception(e)
+                await msg.ack()
             except Exception as e:
                 logger.error(f"Error processing task: {e}", exc_info=True)
+                if os.getenv("SENTRY_DSN"):
+                    import sentry_sdk
+
+                    sentry_sdk.capture_exception(e)
+
+        tasks_to_await = []
+        for _, sub in self.subs:
+            tasks_to_await.append(
+                asyncio.create_task(self._process_pull_messages(sub, message_handler))
+            )
+
+        await asyncio.gather(*tasks_to_await)
+
+    async def _process_pull_messages(self, sub, handler):
+        """
+        Continuously fetches and processes messages from a pull subscription.
+        """
+        while True:
+            try:
+                # Fetch a single message, waiting up to 60 seconds.
+                msgs = await sub.fetch(batch=1, timeout=60)
+                for msg in msgs:
+                    await handler(msg)
+            except nats.errors.TimeoutError:
+                # This is expected when no messages are available. Continue polling.
+                continue
+            except Exception as e:
+                logger.error(
+                    f"Error fetching/processing messages from subscription '{sub.subject}': {e}",
+                    exc_info=True,
+                )
+                # Avoid a tight loop on persistent errors.
+                await asyncio.sleep(1)
 
     async def stop(self):
         logger.info("Worker stop signal received.")
-        if self.sub:
+        for subject, sub in self.subs:
             try:
-                await self.sub.unsubscribe()
-                logger.info(f"Unsubscribed from '{self.subscribe_subject}'.")
+                await sub.unsubscribe()
+                logger.info(f"Unsubscribed from '{subject}'.")
             except Exception as e:
-                logger.error(f"Error unsubscribing: {e}")
+                logger.error(f"Error unsubscribing from '{subject}': {e}")
 
         if self.nc and not self.nc.is_closed:
             logger.info("Closing worker NATS client connection...")
@@ -152,7 +244,7 @@ class SpaceSyncNatsWorker:
         self.nc = None
 
 
-async def main():
+async def main(tasks_allowlist: Optional[List[str]] = None):
     # Configuration should ideally come from environment variables or a config file
     # Using spacebridge_settings.nats_url as an example, assuming it's accessible
     # and correctly configured for SpaceSync's environment.
@@ -162,13 +254,12 @@ async def main():
     # Get NATS_URL directly from environment variables
     nats_server_url = os.getenv("NATS_URL", "nats://localhost:4222")
 
-    subject_to_subscribe = "spacesync.tasks"
     queue = "spacesync_worker_queue"
 
     worker = SpaceSyncNatsWorker(
         nats_url=nats_server_url,
-        subscribe_subject=subject_to_subscribe,
         queue_name=queue,
+        tasks_allowlist=tasks_allowlist,
     )
 
     try:
