@@ -15,6 +15,8 @@ from spacemodels.crud import crud_ai_model
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.ai_model import AIModel
+from spacebridge.services.billing import BillingService
+from spacebridge.api.endpoints.billing import get_billing_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -31,8 +33,16 @@ def create_ai_model(
     ai_model_in: AIModelCreate,
     db: Session = Depends(get_db_session),
     current_user: Account = Depends(get_current_active_user),
+    billing_service: BillingService = Depends(get_billing_service),
 ) -> AIModel:
     """Create a new AI Model for the authenticated user's account."""
+    # Feature gate: Only allow users with the correct plan to create custom models
+    if not billing_service.has_feature(current_user.id, "custom_ai_models"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your current plan does not allow creating custom AI models.",
+        )
+
     created_model = crud_ai_model.create_with_account(
         db=db,
         obj_in=ai_model_in.dict(),

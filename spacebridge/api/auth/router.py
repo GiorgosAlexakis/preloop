@@ -3,7 +3,7 @@
 import logging
 import secrets
 import string
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -63,9 +63,17 @@ from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.api_key import ApiKey
 from spacemodels.models.api_usage import ApiUsage
+from pydantic import BaseModel
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class OnboardingRequest(BaseModel):
+    email: str
+    username: str
+    password: str
 
 
 @router.post(
@@ -692,7 +700,7 @@ async def debug_api_keys(
                         else UUID("00000000-0000-0000-0000-000000000000"),
                         name=key.name if key else "Not Found",
                         key=key.key if key else api_key,
-                        created_at=key.created_at if key else datetime.utcnow(),
+                        created_at=key.created_at if key else datetime.now(UTC),
                         expires_at=key.expires_at if key else None,
                         scopes=key.scopes if key else [],
                         created_by=key.created_by if key else "unknown",
@@ -892,6 +900,64 @@ async def authenticate_user(username: str, password: str) -> Optional[Account]:
         session.close()
         try:
             # Clean up the generator
+            next(session_generator, None)
+        except StopIteration:
+            pass
+
+
+@router.post("/complete-onboarding", response_model=Token)
+async def complete_onboarding(request: OnboardingRequest) -> Dict[str, str]:
+    """
+    Completes the onboarding for a new user created via Stripe checkout.
+    Sets the password and updates the username.
+    """
+    session_generator = get_db_session()
+    session = next(session_generator)
+    try:
+        account = session.query(Account).filter(Account.email == request.email).first()
+        if not account:
+            raise HTTPException(status_code=404, detail="User not found.")
+
+        if account.hashed_password != "NEEDS_RESET":
+            raise HTTPException(status_code=400, detail="Onboarding already completed.")
+
+        # Check if the new username is taken by someone else
+        if account.username != request.username:
+            existing_user = (
+                session.query(Account)
+                .filter(Account.username == request.username)
+                .first()
+            )
+            if existing_user:
+                raise HTTPException(
+                    status_code=400, detail="Username is already taken."
+                )
+            account.username = request.username
+
+        account.hashed_password = get_password_hash(request.password)
+        session.commit()
+
+        # Create access and refresh tokens for auto-login
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": account.username, "scopes": []},
+            expires_delta=access_token_expires,
+        )
+        refresh_token_expires = timedelta(days=7)
+        refresh_token = create_access_token(
+            data={"sub": account.username, "scopes": [], "refresh": True},
+            expires_delta=refresh_token_expires,
+        )
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        }
+    finally:
+        session.close()
+        try:
             next(session_generator, None)
         except StopIteration:
             pass

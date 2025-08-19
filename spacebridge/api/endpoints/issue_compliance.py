@@ -9,6 +9,8 @@ import openai
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from spacebridge.services.billing import BillingService
+from spacebridge.api.endpoints.billing import get_billing_service
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.config import get_settings, Settings
 from spacebridge.schemas.issue import IssueResponse, IssueUpdate
@@ -79,6 +81,7 @@ async def get_issue_compliance(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
     settings: Settings = Depends(get_settings),
+    billing_service: BillingService = Depends(get_billing_service),
 ):
     """Get or calculate the compliance result for a given issue."""
 
@@ -140,6 +143,7 @@ async def get_issue_compliance(
             messages=messages,
             response_format={"type": "json_object"},
         )
+        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         llm_response_text = response.choices[0].message.content.strip()
 
         response_obj = json.loads(llm_response_text)
@@ -180,6 +184,7 @@ def get_compliance_improvement_suggestion(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
     settings: Settings = Depends(get_settings),
+    billing_service: BillingService = Depends(get_billing_service),
 ):
     """Generate a compliance improvement suggestion for a given issue."""
     issue = crud_issue.get(db, id=issue_id)
@@ -236,6 +241,7 @@ def get_compliance_improvement_suggestion(
             ],
             response_format={"type": "json_object"},
         )
+        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         suggestion_data = json.loads(llm_response.choices[0].message.content)
         return ComplianceSuggestionResponse(**suggestion_data)
 

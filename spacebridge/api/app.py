@@ -41,7 +41,10 @@ from spacebridge.api.endpoints import (
     webhooks,
     flows,
     ai_models,
+    billing,
+    websockets,
 )
+from spacemodels.sentry import init_sentry
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
 from spacemodels.models.api_usage import ApiUsage
@@ -117,12 +120,12 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
         """
         # Skip tracking for non-api routes
         path = request.url.path
-        # Also skip tracking for the new /docs and existing static/template routes
         if (
             not path.startswith("/api/v1")
             or path.startswith("/api/v1/health")
-            or path.startswith("/docs")
-            or path == "/"
+            or path.startswith("/api/v1/billing/plans")
+            or path.startswith("/api/v1/billing/create-checkout-session")
+            or path.startswith("/api/v1/billing/webhooks")
         ):
             return await call_next(request)
 
@@ -198,21 +201,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up application and database...")
 
     # Initialize Sentry if DSN is configured
-    sentry_dsn = os.getenv("SENTRY_DSN")
-    if sentry_dsn:
-        import sentry_sdk  # noqa: F401
-
-        sentry_sdk.init(
-            dsn=sentry_dsn,
-            # Set traces_sample_rate to 1.0 to capture 100%
-            # of transactions for performance monitoring.
-            traces_sample_rate=1.0,
-            # Set profiles_sample_rate to 1.0 to profile 100%
-            # of sampled transactions.
-            profiles_sample_rate=1.0,
-            enable_tracing=True,
-        )
-        logger.info("Sentry SDK initialized.")
+    init_sentry()
 
     # Initialize database connection and optionally create tables.
     logger.info("Setting up database connection...")
@@ -252,9 +241,23 @@ async def lifespan(app: FastAPI):
         logger.error(f"NATS connection failed: {e}", exc_info=True)
         raise RuntimeError("NATS connection failed") from e
 
+    # Start the NATS consumer for WebSocket broadcasting
+    from spacebridge.services.websocket_manager import manager, nats_consumer
+    import asyncio
+
+    # Start the NATS consumer as a background task
+    loop = asyncio.get_event_loop()
+    app.state.nats_consumer_task = loop.create_task(nats_consumer(manager))
+    logger.info("NATS consumer for WebSockets started.")
+
     yield
 
     # Shutdown logic
+    # Cancel the NATS consumer task
+    if hasattr(app.state, "nats_consumer_task"):
+        app.state.nats_consumer_task.cancel()
+        logger.info("NATS consumer for WebSockets stopped.")
+
     logger.info("Shutting down NATS connection...")
     try:
         await close_nats()
@@ -343,7 +346,8 @@ def create_app() -> FastAPI:
     app.add_middleware(PyinstrumentMiddleware)
 
     # Add API usage tracking
-    app.add_middleware(ApiUsageMiddleware)
+    if os.getenv("TESTING") != "true":
+        app.add_middleware(ApiUsageMiddleware)
     app.add_middleware(UIRoutingMiddleware)
 
     # --- Static Files Setup ---
@@ -439,6 +443,8 @@ def create_app() -> FastAPI:
         # Apply security to all endpoints except auth endpoints, landing page, health checks, and docs
         excluded_prefixes = [
             "/api/v1/auth",
+            "/api/v1/billing/plans",
+            "/api/v1/billing/create-checkout-session",
             "/",
             "/static",
             "/docs",  # Exclude the main docs path and subpaths
@@ -537,7 +543,27 @@ def create_app() -> FastAPI:
         version.router, prefix="/api/v1", tags=["Version"]
     )  # No auth dependency for version check
     app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
-    app.include_router(flows.router, prefix="/api/v1", tags=["Flows"])
+    app.include_router(
+        flows.router,
+        prefix="/api/v1",
+        tags=["Flows"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        ai_models.router,
+        prefix="/api/v1",
+        tags=["AI Models"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        billing.router,
+        prefix="/api/v1",
+        tags=["Billing"],
+        # dependencies=[Depends(get_current_active_user)],
+    )
+
+    # WebSocket router
+    app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
 
     # --- SPA Static Files (Production) ---
     # In production, serve the built Lit frontend from the root

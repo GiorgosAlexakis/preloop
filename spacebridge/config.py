@@ -70,6 +70,7 @@ class Settings(BaseSettings):
         "product@spacecode.ai", description="Product team email address"
     )
     nats_url: str = Field("nats://localhost:4222", description="NATS server URL")
+    spacebridge_url: str = Field("http://localhost:8000", description="SpaceBridge URL")
 
     database: DatabaseSettings
     security: SecuritySettings
@@ -82,6 +83,15 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+    )
+
+    stripe_secret_key: str = Field(
+        "",
+        description="Stripe secret key",
+    )
+    stripe_webhook_secret: str = Field(
+        "",
+        description="Stripe webhook secret",
     )
 
     @classmethod
@@ -140,6 +150,12 @@ class Settings(BaseSettings):
         except yaml.YAMLError as e:
             logger.error(f"Error parsing prompts YAML file: {e}")
 
+        stripe_secret_key = os.getenv(
+            "STRIPE_SECRET_KEY",
+            "sk_test_51RtX2jQPfvWObTQzIaGtQkankjs5cg1aG23Xy3KnU3cnhrBcspt9AonXBFtEBROuHp5ITHptXsxOllNgm7gUJA9u00igI2abav",
+        )
+        stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
         return cls(
             app_name=os.getenv("APP_NAME", "SpaceBridge"),
             environment=os.getenv("ENVIRONMENT", "development"),
@@ -150,6 +166,8 @@ class Settings(BaseSettings):
             security=security,
             server=server,
             prompts=prompts_data,
+            stripe_secret_key=stripe_secret_key,
+            stripe_webhook_secret=stripe_webhook_secret,
         )
 
 

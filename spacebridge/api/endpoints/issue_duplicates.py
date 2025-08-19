@@ -5,8 +5,10 @@ import logging
 import openai
 import os
 import json
-from datetime import datetime
+from datetime import datetime, UTC
 
+from spacebridge.services.billing import BillingService
+from spacebridge.api.endpoints.billing import get_billing_service
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate as IssueDuplicateSchema,
     IssueDuplicateSuggestionRequest,
@@ -118,6 +120,7 @@ def check_or_create_issue_duplicate(
     issue1_id: str,
     issue2_id: str,
     current_user: Account = Depends(get_current_active_user),
+    billing_service: BillingService = Depends(get_billing_service),
 ) -> Any:
     if issue1_id == issue2_id:
         raise HTTPException(status_code=400, detail="Issue IDs cannot be the same.")
@@ -196,6 +199,7 @@ def check_or_create_issue_duplicate(
             model=default_model.model_identifier,
             messages=messages,
         )
+        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         llm_response_text = response.choices[0].message.content.strip()
         logger.info(
             f"AI model response for issues {issue1_id}, {issue2_id}: '{llm_response_text}'"
@@ -503,7 +507,7 @@ async def execute_issue_duplicate_resolution(
     if duplicate_record:
         update_data = IssueDuplicateUpdate(
             resolution=db_resolution_value,
-            resolution_at=datetime.utcnow(),
+            resolution_at=datetime.now(UTC),
             resolution_reason=resolution.resolution_reason,
         )
         crud_issue_duplicate.update(
@@ -900,6 +904,7 @@ def get_resolution_suggestion(
     issue1_id: str = Body(...),
     issue2_id: str = Body(...),
     resolution: str = Body(...),
+    billing_service: BillingService = Depends(get_billing_service),
 ):
     """Generate a suggestion for resolving a duplicate issue pair."""
     issue1 = crud_issue.get(db, id=issue1_id)
@@ -946,6 +951,7 @@ def get_resolution_suggestion(
                 messages=[{"content": prompt, "role": "user"}],
                 response_format={"type": "json_object"},
             )
+            billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
             suggestion_data = json.loads(llm_response.choices[0].message.content)
             return IssueDuplicateSuggestionResponse(**suggestion_data)
 

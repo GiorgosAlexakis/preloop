@@ -6,6 +6,10 @@ variables:
   GITLAB_TOKEN: $GITLAB_TOKEN
   STAGING_DOMAIN: "staging.spacebridge.io"
   SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
+  STRIPE_SECRET_KEY_PROD: $STRIPE_SECRET_KEY_PROD
+  STRIPE_WEBHOOK_SECRET_PROD: $STRIPE_WEBHOOK_SECRET_PROD
+  STRIPE_SECRET_KEY_STAGING: $STRIPE_SECRET_KEY_STAGING
+  STRIPE_WEBHOOK_SECRET_STAGING: $STRIPE_WEBHOOK_SECRET_STAGING
 
 cache:
   paths:
@@ -75,7 +79,7 @@ pytest:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
     # Explicitly list top-level and SpaceModels tests, let pyproject.toml handle spacesync tests discovery
-    - pytest -v tests/ SpaceModels/tests/ --cov=spacebridge --cov=SpaceModels/spacemodels --cov=spacesync/spacesync --cov-report=xml --cov-report=term-missing
+    - pytest -v --cov --cov-report=xml --cov-report=term-missing
 
 staging:
   stage: deploy
@@ -110,6 +114,18 @@ staging:
       --set sentry.enabled=true
       --set sentry.dsn=${SENTRY_DSN}
       --set profiling.enabled=false
+      --set stripe.enabled=true
+      --set stripe.secretKey=${STRIPE_SECRET_KEY_STAGING}
+      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET_STAGING}
+      --set worker.pools[0].name=polling
+      --set worker.pools[0].replicaCount=1
+      --set worker.pools[0].tasks=poll_tracker
+      --set worker.pools[1].name=notify
+      --set worker.pools[1].replicaCount=1
+      --set worker.pools[1].tasks=notify_admins
+      --set worker.pools[2].name=webhook
+      --set worker.pools[2].replicaCount=1
+      --set worker.pools[2].tasks=process_webhook_event
 
     - echo "Helm deployment finished."
   artifacts:
@@ -162,9 +178,62 @@ prod:
       --set config.smtp.from=${SMTP_FROM}
       --set config.smtp.fromName=${SMTP_FROM_NAME}
       --set ingress.enabled=true
+      --set stripe.enabled=true
+      --set stripe.secretKey=${STRIPE_SECRET_KEY_PROD}
+      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET_PROD}
+      --set worker.pools[0].name=polling
+      --set worker.pools[0].replicaCount=1
+      --set worker.pools[0].tasks=poll_tracker
+      --set worker.pools[1].name=notify
+      --set worker.pools[1].replicaCount=1
+      --set worker.pools[1].tasks=notify_admins
+      --set worker.pools[2].name=webhook
+      --set worker.pools[2].replicaCount=1
+      --set worker.pools[2].tasks=process_webhook_event
     - echo "Helm deployment finished."
   artifacts:
     paths:
       - "db_backup_*.sql.xz"
     when: on_success
     expire_in: 7 days
+
+test:
+  when: manual
+  stage: deploy
+  image: dtzar/helm-kubectl:3.13.2
+  environment:
+    name: test/$CI_COMMIT_REF_NAME
+    url: https://$CI_COMMIT_REF_NAME.test.spacebridge.io
+  only:
+    - branches
+  except:
+    - main
+  script:
+    - helm repo add nats https://nats-io.github.io/k8s/helm/charts
+    - helm dependency update ./helm/spacebridge
+    - helm dependency build ./helm/spacebridge
+    - helm upgrade --install $CI_COMMIT_REF_NAME ./helm/spacebridge
+      --namespace spacebridge-test
+      --set image.tag=${CI_COMMIT_SHA}
+      --set branchName=${CI_COMMIT_REF_NAME}
+      -f ./helm/spacebridge/values-test.yaml
+
+test:integration:
+  stage: test
+  needs: [test]
+  image: mcr.microsoft.com/playwright/python:v1.30.0-focal
+  script:
+    - pip install -e ".[dev]"
+    - playwright install
+    - export SPACEBRIDGE_TEST_URL=$CI_ENVIRONMENT_URL
+    - pytest tests/integration
+
+smoke:
+  stage: test
+  image: mcr.microsoft.com/playwright/python:v1.30.0-focal
+  script:
+    - pip install -e ".[dev]"
+    - playwright install
+    - pytest tests/smoke
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"

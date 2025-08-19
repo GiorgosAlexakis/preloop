@@ -24,6 +24,8 @@ from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
+from spacebridge.services.billing import BillingService
+from spacebridge.api.endpoints.billing import get_billing_service
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
@@ -105,6 +107,7 @@ async def search_all(
     ),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
+    billing_service: BillingService = Depends(get_billing_service),
 ):
     """
     Perform a similarity search based on query text.
@@ -213,6 +216,13 @@ async def search_all(
     # --- End of Project and Organization Resolution Logic ---
 
     if search_type == "similarity":
+        # TODO:Check usage limit before proceeding
+        # if not billing_service.check_limit(current_user.id, "ai_calls"):
+        #     raise HTTPException(
+        #         status_code=429,
+        #         detail="You have exceeded the AI model call limit for your current plan.",
+        #     )
+
         # 1. Get Active Embedding Model (since model_id is not in signature)
         active_models = crud_embedding_model.get_active(db)
         if not active_models:
@@ -249,6 +259,10 @@ async def search_all(
             sort=sort,  # Pass sort parameter to the CRUD method
             status=status,
         )
+
+        # Record usage after successful search
+        # Usage is now recorded in specific services where AI models are directly used.
+        # billing_service.record_usage(current_user.id, "ai_calls")
 
         # print(resolved_project_ids_param) # Optional: for debugging
 

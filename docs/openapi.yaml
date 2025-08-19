@@ -444,6 +444,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/complete-onboarding:
+    post:
+      tags:
+      - Auth
+      summary: Complete Onboarding
+      description: 'Completes the onboarding for a new user created via Stripe checkout.
+
+        Sets the password and updates the username.'
+      operationId: complete_onboarding_api_v1_auth_complete_onboarding_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/health:
     get:
       tags:
@@ -2616,13 +2644,13 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/:
+  /api/v1/flows:
     post:
       tags:
       - Flows
       summary: Create Flow
       description: Create new flow.
-      operationId: create_flow_api_v1__post
+      operationId: create_flow_api_v1_flows_post
       security:
       - bearerAuth: []
       requestBody:
@@ -2648,8 +2676,8 @@ paths:
       tags:
       - Flows
       summary: Read Flows
-      description: Retrieve flows for the user's organization.
-      operationId: read_flows_api_v1__get
+      description: Retrieve flows for the account.
+      operationId: read_flows_api_v1_flows_get
       security:
       - bearerAuth: []
       parameters:
@@ -2676,20 +2704,69 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/FlowResponse'
-                title: Response Read Flows Api V1  Get
+                title: Response Read Flows Api V1 Flows Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/{flow_id}:
+  /api/v1/flows/presets:
+    get:
+      tags:
+      - Flows
+      summary: Read Presets
+      description: Retrieve flow presets for the account.
+      operationId: read_presets_api_v1_flows_presets_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/FlowResponse'
+                type: array
+                title: Response Read Presets Api V1 Flows Presets Get
+      security:
+      - bearerAuth: []
+  /api/v1/flows/presets/{flow_id}/clone:
+    post:
+      tags:
+      - Flows
+      summary: Clone Preset
+      description: Clone a flow preset.
+      operationId: clone_preset_api_v1_flows_presets__flow_id__clone_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/{flow_id}:
     get:
       tags:
       - Flows
       summary: Read Flow
       description: Get flow by ID.
-      operationId: read_flow_api_v1__flow_id__get
+      operationId: read_flow_api_v1_flows__flow_id__get
       security:
       - bearerAuth: []
       parameters:
@@ -2718,7 +2795,7 @@ paths:
       - Flows
       summary: Update Flow
       description: Update a flow.
-      operationId: update_flow_api_v1__flow_id__put
+      operationId: update_flow_api_v1_flows__flow_id__put
       security:
       - bearerAuth: []
       parameters:
@@ -2753,7 +2830,7 @@ paths:
       - Flows
       summary: Delete Flow
       description: Delete a flow.
-      operationId: delete_flow_api_v1__flow_id__delete
+      operationId: delete_flow_api_v1_flows__flow_id__delete
       security:
       - bearerAuth: []
       parameters:
@@ -2777,6 +2854,243 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/billing/plans:
+    get:
+      tags:
+      - Billing
+      summary: List Public Plans
+      description: List all available public subscription plans.
+      operationId: list_public_plans_api_v1_billing_plans_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Plan'
+                type: array
+                title: Response List Public Plans Api V1 Billing Plans Get
+    post:
+      tags:
+      - Billing
+      summary: Create Plan
+      description: 'Create a new subscription plan.
+
+        (Requires superuser privileges).'
+      operationId: create_plan_api_v1_billing_plans_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/billing/custom-plans:
+    get:
+      tags:
+      - Billing
+      summary: List Custom Plans
+      description: List custom subscription plans for the current user's account.
+      operationId: list_custom_plans_api_v1_billing_custom_plans_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Plan'
+                type: array
+                title: Response List Custom Plans Api V1 Billing Custom Plans Get
+      security:
+      - bearerAuth: []
+  /api/v1/billing/subscription:
+    get:
+      tags:
+      - Billing
+      summary: Get Subscription
+      description: Get the current user's subscription details.
+      operationId: get_subscription_api_v1_billing_subscription_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+      security:
+      - bearerAuth: []
+  /api/v1/billing/checkout-success:
+    get:
+      tags:
+      - Billing
+      summary: Checkout Success
+      description: 'Handles the synchronous part of a successful checkout.
+
+        Processes the session, creates the user, and redirects to the welcome page.'
+      operationId: checkout_success_api_v1_billing_checkout_success_get
+      parameters:
+      - name: session_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/billing/checkout-session-details:
+    get:
+      tags:
+      - Billing
+      summary: Get Checkout Session Details
+      description: 'Retrieve user details from a completed checkout session.
+
+        This is used by the onboarding/welcome page.'
+      operationId: get_checkout_session_details_api_v1_billing_checkout_session_details_get
+      parameters:
+      - name: session_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionDetailsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/billing/create-checkout-session:
+    post:
+      tags:
+      - Billing
+      summary: Create Checkout Session
+      description: 'Creates a Stripe Checkout session for new subscriptions, or directly
+
+        updates the subscription for existing customers.'
+      operationId: create_checkout_session_api_v1_billing_create_checkout_session_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCheckoutSessionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/billing/create-portal-session:
+    post:
+      tags:
+      - Billing
+      summary: Create Portal Session
+      description: Create a Stripe Customer Portal session.
+      operationId: create_portal_session_api_v1_billing_create_portal_session_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePortalSessionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePortalSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/billing/webhooks:
+    post:
+      tags:
+      - Billing
+      summary: Stripe Webhooks
+      description: Handle incoming Stripe webhooks.
+      operationId: stripe_webhooks_api_v1_billing_webhooks_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearerAuth: []
+  /api/v1/billing/sync-subscription:
+    post:
+      tags:
+      - Billing
+      summary: Sync Subscription
+      description: Synchronizes the user's subscription status from Stripe to the
+        local database.
+      operationId: sync_subscription_api_v1_billing_sync_subscription_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearerAuth: []
 components:
   schemas:
     AIModelCreate:
@@ -3152,6 +3466,19 @@ components:
       - username
       - password
       title: Body_login_form_api_v1_auth_token_post
+    CheckoutSessionDetailsResponse:
+      properties:
+        email:
+          type: string
+          title: Email
+        username:
+          type: string
+          title: Username
+      type: object
+      required:
+      - email
+      - username
+      title: CheckoutSessionDetailsResponse
     CommentCreate:
       properties:
         body:
@@ -3298,6 +3625,37 @@ components:
       - title
       - description
       title: ComplianceSuggestionResponse
+    CreateCheckoutSessionRequest:
+      properties:
+        plan_id:
+          type: string
+          title: Plan Id
+        interval:
+          type: string
+          title: Interval
+      type: object
+      required:
+      - plan_id
+      - interval
+      title: CreateCheckoutSessionRequest
+    CreatePortalSessionRequest:
+      properties:
+        return_url:
+          type: string
+          title: Return Url
+      type: object
+      required:
+      - return_url
+      title: CreatePortalSessionRequest
+    CreatePortalSessionResponse:
+      properties:
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - url
+      title: CreatePortalSessionResponse
     DuplicateIssuePair:
       properties:
         issue1:
@@ -3392,6 +3750,11 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        icon:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon
         trigger_event_source:
           type: string
           title: Trigger Event Source
@@ -3442,16 +3805,11 @@ components:
           - type: 'null'
           title: Is Enabled
           default: true
-        created_by_user_id:
+        account_id:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
-          title: Created By User Id
-        organization_id:
-          type: string
-          format: uuid
-          title: Organization Id
+          title: Account Id
       type: object
       required:
       - name
@@ -3459,7 +3817,6 @@ components:
       - trigger_event_type
       - prompt_template
       - openhands_agent_config
-      - organization_id
       title: FlowCreate
     FlowResponse:
       properties:
@@ -3473,6 +3830,11 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        icon:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon
         trigger_event_source:
           anyOf:
           - type: string
@@ -3533,18 +3895,12 @@ components:
           - type: 'null'
           title: Is Enabled
           default: true
-        created_by_user_id:
+        account_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Created By User Id
-        organization_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Organization Id
+          title: Account Id
         id:
           type: string
           format: uuid
@@ -3575,6 +3931,11 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        icon:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon
         trigger_event_source:
           anyOf:
           - type: string
@@ -3635,18 +3996,11 @@ components:
           - type: 'null'
           title: Is Enabled
           default: true
-        created_by_user_id:
+        account_id:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
-          title: Created By User Id
-        organization_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Organization Id
+          title: Account Id
       type: object
       title: FlowUpdate
     HTTPValidationError:
@@ -4193,6 +4547,23 @@ components:
       - password
       title: LoginRequest
       description: Model for login requests.
+    OnboardingRequest:
+      properties:
+        email:
+          type: string
+          title: Email
+        username:
+          type: string
+          title: Username
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - email
+      - username
+      - password
+      title: OnboardingRequest
     OrganizationCreate:
       properties:
         name:
@@ -4370,6 +4741,118 @@ components:
       - email
       title: PasswordResetRequest
       description: Model for password reset requests.
+    Plan:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: Name of the plan.
+        price_monthly:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Price Monthly
+          description: Monthly price of the plan, if available.
+        price_annually:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Price Annually
+          description: Annual price of the plan, if available.
+        is_active:
+          type: boolean
+          title: Is Active
+          description: Whether the plan is currently active.
+          default: true
+        features:
+          $ref: '#/components/schemas/PlanFeatures'
+          description: Features and limits of the plan.
+        id:
+          type: string
+          title: Id
+          description: Primary key.
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: Timestamp of creation.
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+          description: Timestamp of last update.
+      type: object
+      required:
+      - name
+      - features
+      - id
+      - created_at
+      - updated_at
+      title: Plan
+      description: Schema for a Plan retrieved from the database.
+    PlanCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: Name of the plan.
+        price_monthly:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Price Monthly
+          description: Monthly price of the plan, if available.
+        price_annually:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Price Annually
+          description: Annual price of the plan, if available.
+        is_active:
+          type: boolean
+          title: Is Active
+          description: Whether the plan is currently active.
+          default: true
+        features:
+          $ref: '#/components/schemas/PlanFeatures'
+          description: Features and limits of the plan.
+      type: object
+      required:
+      - name
+      - features
+      title: PlanCreate
+      description: Schema for creating a new Plan.
+    PlanFeatures:
+      properties:
+        api_calls_monthly:
+          type: integer
+          title: Api Calls Monthly
+          description: Monthly API call limit.
+        ai_calls_monthly:
+          type: integer
+          title: Ai Calls Monthly
+          description: Monthly AI model call limit.
+        issues_ingested_monthly:
+          type: integer
+          title: Issues Ingested Monthly
+          description: Monthly issue/comment ingestion limit.
+        custom_ai_models_enabled:
+          type: boolean
+          title: Custom Ai Models Enabled
+          description: Whether custom AI models are enabled.
+        custom_compliance_metrics_enabled:
+          type: boolean
+          title: Custom Compliance Metrics Enabled
+          description: Whether custom compliance metrics are enabled.
+      type: object
+      required:
+      - api_calls_monthly
+      - ai_calls_monthly
+      - issues_ingested_monthly
+      - custom_ai_models_enabled
+      - custom_compliance_metrics_enabled
+      title: PlanFeatures
+      description: Defines the features and limits for a subscription plan.
     ProjectCreate:
       properties:
         name:
@@ -4609,6 +5092,64 @@ components:
       - item
       - similarity
       title: SearchResultItem
+    Subscription:
+      properties:
+        account_id:
+          type: string
+          format: uuid
+          title: Account Id
+          description: Foreign key to Account.
+        plan_id:
+          type: string
+          title: Plan Id
+          description: Foreign key to Plan.
+        status:
+          type: string
+          title: Status
+          description: Subscription status (e.g., active, trialing, canceled).
+          default: active
+        current_period_start:
+          type: string
+          format: date-time
+          title: Current Period Start
+          description: Start of the current billing period.
+        current_period_end:
+          type: string
+          format: date-time
+          title: Current Period End
+          description: End of the current billing period.
+        stripe_subscription_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stripe Subscription Id
+          description: ID of the subscription in Stripe.
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Primary key.
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: Timestamp of creation.
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+          description: Timestamp of last update.
+      type: object
+      required:
+      - account_id
+      - plan_id
+      - current_period_start
+      - current_period_end
+      - id
+      - created_at
+      - updated_at
+      title: Subscription
+      description: Schema for a Subscription retrieved from the database.
     TestConnectionRequest:
       properties:
         organization:
