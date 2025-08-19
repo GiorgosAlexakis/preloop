@@ -36,6 +36,7 @@ COPY spacebridge/ spacebridge/
 COPY scripts/ scripts/
 COPY docs/ docs/
 COPY mkdocs.yml .
+COPY plans.yaml .
 
 # Copy built frontend assets
 COPY --from=space-lit-build /app/dist /app/SpaceLit/dist

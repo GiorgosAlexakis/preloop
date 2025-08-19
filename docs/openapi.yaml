@@ -2644,13 +2644,13 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/:
+  /api/v1/flows:
     post:
       tags:
       - Flows
       summary: Create Flow
       description: Create new flow.
-      operationId: create_flow_api_v1__post
+      operationId: create_flow_api_v1_flows_post
       security:
       - bearerAuth: []
       requestBody:
@@ -2677,7 +2677,7 @@ paths:
       - Flows
       summary: Read Flows
       description: Retrieve flows for the account.
-      operationId: read_flows_api_v1__get
+      operationId: read_flows_api_v1_flows_get
       security:
       - bearerAuth: []
       parameters:
@@ -2704,20 +2704,69 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/FlowResponse'
-                title: Response Read Flows Api V1  Get
+                title: Response Read Flows Api V1 Flows Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/{flow_id}:
+  /api/v1/flows/presets:
+    get:
+      tags:
+      - Flows
+      summary: Read Presets
+      description: Retrieve flow presets for the account.
+      operationId: read_presets_api_v1_flows_presets_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/FlowResponse'
+                type: array
+                title: Response Read Presets Api V1 Flows Presets Get
+      security:
+      - bearerAuth: []
+  /api/v1/flows/presets/{flow_id}/clone:
+    post:
+      tags:
+      - Flows
+      summary: Clone Preset
+      description: Clone a flow preset.
+      operationId: clone_preset_api_v1_flows_presets__flow_id__clone_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/{flow_id}:
     get:
       tags:
       - Flows
       summary: Read Flow
       description: Get flow by ID.
-      operationId: read_flow_api_v1__flow_id__get
+      operationId: read_flow_api_v1_flows__flow_id__get
       security:
       - bearerAuth: []
       parameters:
@@ -2746,7 +2795,7 @@ paths:
       - Flows
       summary: Update Flow
       description: Update a flow.
-      operationId: update_flow_api_v1__flow_id__put
+      operationId: update_flow_api_v1_flows__flow_id__put
       security:
       - bearerAuth: []
       parameters:
@@ -2781,7 +2830,7 @@ paths:
       - Flows
       summary: Delete Flow
       description: Delete a flow.
-      operationId: delete_flow_api_v1__flow_id__delete
+      operationId: delete_flow_api_v1_flows__flow_id__delete
       security:
       - bearerAuth: []
       parameters:
@@ -3701,6 +3750,11 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        icon:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon
         trigger_event_source:
           type: string
           title: Trigger Event Source
@@ -3752,8 +3806,9 @@ components:
           title: Is Enabled
           default: true
         account_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Account Id
       type: object
       required:
@@ -3762,7 +3817,6 @@ components:
       - trigger_event_type
       - prompt_template
       - openhands_agent_config
-      - account_id
       title: FlowCreate
     FlowResponse:
       properties:
@@ -3776,6 +3830,11 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        icon:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon
         trigger_event_source:
           anyOf:
           - type: string
@@ -3837,8 +3896,10 @@ components:
           title: Is Enabled
           default: true
         account_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Account Id
         id:
           type: string
@@ -3854,7 +3915,6 @@ components:
           title: Updated At
       type: object
       required:
-      - account_id
       - id
       - created_at
       - updated_at
@@ -3871,6 +3931,11 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        icon:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon
         trigger_event_source:
           anyOf:
           - type: string
@@ -3932,12 +3997,11 @@ components:
           title: Is Enabled
           default: true
         account_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Account Id
       type: object
-      required:
-      - account_id
       title: FlowUpdate
     HTTPValidationError:
       properties:

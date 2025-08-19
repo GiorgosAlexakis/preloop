@@ -7,6 +7,7 @@ SpaceBridge is an AI-driven platform designed to enhance product development by 
 ## High-Level Architecture
 
 ```mermaid
+%%{init: {"flowchart": { "htmlLabels": false}} }%%
 graph LR
     subgraph "External Systems"
         direction TB
@@ -58,20 +59,20 @@ graph LR
     *   **SpaceSync Worker:** A process that consumes tasks from the NATS queue and processes them.
 *   **SpaceLit (Submodule):** A web application built using Lit, Vite, TypeScript, and Material Web Components.
 *   **PostgreSQL + PGVector:** The database storing metadata and vector embeddings.
-*   **NATS:** A task queue used to decouple the API from the background processing of events and flows.
+*   **NATS:** An event bus used for both a reliable task queue (JetStream) and real-time streaming updates. It decouples the API from the background processing of events and flows.
 *   **SpaceBridge-MCP (Submodule):** An MCP server acting as a bridge for MCP clients, translating MCP requests into calls to the SpaceBridge REST API.
 *   **External Systems:** Issue trackers and MCP clients interacting with the SpaceBridge ecosystem.
 
 ## Frontend Architecture
-A new, modern frontend is being developed in the `SpaceLit` directory, aiming to replace the existing static HTML/JavaScript interface.
+The frontend is in the `SpaceLit` directory.
 
 ```mermaid
 graph TD
     subgraph "Browser"
         direction LR
         WebApp["Lit Web Application"]
-        MWC["Material Web Components"]
-        WebApp -- Uses --> MWC
+        Shoelace["Shoelace Web Components"]
+        WebApp -- Uses --> Shoelace
     end
 
     subgraph "Build & Dev Tools"
@@ -98,7 +99,7 @@ graph TD
 *   **Framework:** [Lit](https://lit.dev/) - A simple library for building fast, lightweight web components. It provides reactive state, scoped styles, and a declarative templating system.
 *   **Build Tool:** [Vite](https://vitejs.dev/) - A modern frontend build tool that provides an extremely fast development experience with features like Hot Module Replacement (HMR) and optimized production builds.
 *   **Language:** [TypeScript](https://www.typescriptlang.org/) - A statically typed superset of JavaScript that enhances code quality and maintainability.
-*   **UI Components:** [Material Web Components (MWC)](https://github.com/material-components/material-web) - A set of high-quality, standards-based web components that implement the Material v3 design system.
+*   **UI Components:** [Shoelace](https://shoelace.style/) - A set of high-quality, standards-based web components.
 *   **Testing:** [Web Test Runner](https://modern-web.dev/docs/test-runner/overview/) - A tool for testing web applications in a real browser, ensuring that components behave as expected in a live environment.
 
 ### Structure
@@ -134,7 +135,7 @@ The `SpaceLit` application is structured around a component-based architecture.
 *   **Functionality:**
     *   The `spacesync` CLI can launch one-off scan operations or start a persistent scheduler.
     *   **Scheduler:** Periodically adds polling tasks for each configured tracker to the NATS queue.
-    *   **Worker:** Consumes tasks from the NATS queue. For each task, it fetches new or updated data from the tracker, generates vector embeddings, and uses `SpaceModels` to store the information in the database.
+    *   **Worker:** Consumes tasks from the NATS queue. Multiple, specialized worker groups can be deployed, each subscribing to a specific subset of tasks (e.g., polling, webhooks). This allows for independent scaling and monitoring of different task types.
 *   **Execution:** Runs as two distinct, long-running processes (scheduler and worker) or as a one-off CLI command.
 
 ### SpaceBridge-MCP (Submodule `./mcp`)
@@ -280,7 +281,7 @@ The "Flows" feature allows users to define automated workflows that are initiate
 *   **Configurable AI Models:** Enable users to select and configure different AI models for different Flows, managing API keys securely.
 *   **Controlled Tool Usage:** Provide a mechanism to specify which MCP servers and tools an AI agent can use during a Flow's execution.
 *   **Extensibility:** Design for easy addition of new event sources, AI models, and agent capabilities.
-*   **User Experience:** Allow users to define Flows from presets, customize existing ones, or create them from scratch.
+*   **User Experience:** Allow users to define Flows from presets, customize existing ones, or create them from scratch. The UI should be intuitive and guide the user through the process of creating and configuring a flow.
 
 ### 2. Key Components & Their Roles
 
@@ -334,9 +335,6 @@ graph TD
     APIExt -- Manages --> SpaceModelsDB
     APIExt -- Serves Logs --> UserClient["User Client (UI/CLI)"]
 
-    style "SpaceBridge Core" fill:#ccf,stroke:#333,stroke-width:1px
-    style "Flows Subsystem" fill:#cfc,stroke:#333,stroke-width:1px
-    style "OpenHands Agent Session (Container)" fill:#eef,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5
 ```
 
 *   **Flow Definition (`Flows`):**
@@ -353,8 +351,8 @@ graph TD
     *   This endpoint validates incoming webhooks and then publishes a `process_webhook_event` task to the **Internal Task Queue (NATS)**.
 *   **Internal Task Queue (NATS):**
     *   NATS is used as a simple, reliable task queue. It decouples the API from the background processing of events and flows.
-    *   The `TaskPublisher` service is used to enqueue tasks.
-    *   Workers consume tasks from the `spacesync.tasks` subject.
+    *   The `EventBus` service is used to enqueue tasks.
+    *   Workers consume tasks from the `spacesync.tasks` subject using a `workqueue` retention policy, which ensures that acknowledged messages are immediately removed from the stream.
 *   **Flow Trigger Service:**
     *   This logic is part of the NATS worker. When a `process_webhook_event` task is received, the worker acts as the trigger service.
     *   It matches the incoming event data against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.
@@ -392,6 +390,7 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `id`: Primary Key (e.g., UUID)
     *   `name`: String (User-defined name for the Flow)
     *   `description`: Text (Optional description)
+    *   `icon`: String (Optional, name of a Shoelace icon or a URL to a custom icon)
     *   `trigger_event_source`: String (e.g., 'github', 'jira', 'gitlab', 'custom_event', 'scheduled')
     *   `trigger_event_type`: String (e.g., 'commit_to_main', 'new_issue_created', 'incident_triggered', 'daily_scan')
     *   `trigger_config`: JSON (Optional, for more complex trigger conditions, e.g., specific branch for commits, specific labels for issues)
@@ -402,7 +401,7 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `allowed_mcp_tools`: JSON Array of objects (e.g., `[{"server_name": "spacebridge-mcp", "tool_name": "search_issues"}, {"server_name": "code_analysis_mcp", "tool_name": "lint_file"}]`)
     *   `is_preset`: Boolean (Indicates if this is a system-defined preset)
     *   `is_enabled`: Boolean (Allows users to enable/disable Flows)
-    *   `organization_id`: Foreign Key to `Organizations.id`
+    *   `account_id`: Foreign Key to `Account.id`
     *   `created_at`: Timestamp
     *   `updated_at`: Timestamp
 
@@ -498,6 +497,65 @@ sequenceDiagram
 
 *   **`SpaceModels`:**
     *   Will house the new SQLAlchemy models and Pydantic schemas for `Flows`, `AIModels`, and `FlowExecutions`.
+
+### 6. Real-Time UI Updates & Interactivity
+
+To provide users with live feedback and enable future interactivity with Flow executions, a structured, message-based real-time architecture will be implemented.
+
+```mermaid
+graph TD
+    subgraph "Flows Subsystem (Worker)"
+        FlowExecOrchestrator["Flow Execution Orchestrator"]
+    end
+
+    subgraph "NATS Messaging"
+        direction LR
+        NatsUpdates["Updates Stream (flow-updates.{exec_id})"]
+        NatsInputs["Inputs Stream (flow-inputs.{exec_id})"]
+    end
+
+    subgraph "API Server"
+        WebSocketServer["WebSocket Server"]
+    end
+
+    subgraph "Browser"
+        FlowExecUI["Flow Executions UI"]
+    end
+
+    %% Data Flow
+    FlowExecOrchestrator -- Publishes structured JSON --> NatsUpdates
+    WebSocketServer -- Subscribes to --> NatsUpdates
+    NatsUpdates -- Streams messages --> WebSocketServer
+    WebSocketServer -- Pushes updates to --> FlowExecUI
+
+    %% Future Interactivity Flow
+    FlowExecUI -- Sends user input --> WebSocketServer
+    WebSocketServer -- Publishes input to --> NatsInputs
+    NatsInputs -- Delivers input to --> FlowExecOrchestrator
+    FlowExecOrchestrator -- Subscribes to --> NatsInputs
+
+```
+
+**Components & Protocol:**
+
+*   **Structured Messaging:** Communication will use a standardized JSON envelope, allowing for different message types. This is critical for future extensibility.
+    ```json
+    {
+      "execution_id": "uuid-of-the-flow-execution",
+      "timestamp": "iso-8601-timestamp",
+      "type": "message_type",
+      "payload": { ... }
+    }
+    ```
+*   **NATS Streams:**
+    *   **`flow-updates.{execution_id}`:** A server-to-client stream for broadcasting updates from the `FlowExecutionOrchestrator`. This will be implemented now.
+    *   **`flow-inputs.{execution_id}`:** A client-to-server stream for sending user input back to the `FlowExecutionOrchestrator`. This is reserved for future interactive features.
+*   **WebSocket Server:** The server will handle routing messages between the browser and the appropriate NATS streams.
+*   **Initial Message Types:** For the first implementation, the following message types will be supported in the `flow-updates` stream:
+    *   `status_update`: For lifecycle changes (e.g., `RUNNING`, `SUCCEEDED`).
+    *   `log`: For streaming text output from the agent.
+    *   `tool_call`: For structured information about tools being used.
+*   **Future Extensibility:** This design allows for the seamless addition of new message types to support interactivity (`user_input_request`, `user_input_response`) or advanced capabilities (`ui_control_command`) without requiring architectural changes.
     *   CRUD operations for these new entities will be added to `SpaceModels`.
     *   Will be queried by the Flow Execution Orchestrator to resolve dynamic prompt content.
 *   **`SpaceSync` / Webhook Infrastructure:**

@@ -9,6 +9,19 @@ image:
   pullPolicy: Always
   tag: "latest"  # Overrides the image tag
 
+worker:
+  # -- Defines a list of worker pools to be deployed.
+  # Each pool can have its own replica count and a list of allowed tasks.
+  pools:
+    # -- The default worker pool, which runs all tasks.
+    - name: default
+      replicaCount: 1
+      tasks: "" # Empty string means all tasks
+    # -- An example of a specialized worker pool for polling tasks.
+    # - name: polling
+    #   replicaCount: 2
+    #   tasks: "poll_tracker"
+
 spacelit:
   repository: registry.spacecode.ai/spacecode/spacelit
   tag: "latest"

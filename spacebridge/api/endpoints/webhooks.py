@@ -19,7 +19,7 @@ from spacemodels.models.organization import Organization  # Added
 from spacemodels.models.tracker import Tracker
 from spacesync.scanner.core import TrackerClient
 
-from spacesync.services.event_bus import TaskPublisher, get_task_publisher
+from spacesync.services.event_bus import EventBus, get_task_publisher
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ async def receive_webhook(
     organization_id: str,
     request: Request,
     db: Session = Depends(get_db_session),
-    task_publisher: TaskPublisher = Depends(get_task_publisher),  # NATS Integration
+    task_publisher: EventBus = Depends(get_task_publisher),  # NATS Integration
 ):
     """
     Receive webhook events from external trackers (GitHub, GitLab, Jira).
@@ -112,12 +112,24 @@ async def receive_webhook(
         logger.warning(
             f"Organization not found for id={organization_id}, tracker_type={tracker_type}"
         )
+        # Notify admins
+        await task_publisher.publish_task(
+            "notify_admins",
+            subject="Organization not found for webhook",
+            message=f"Organization not found for id={organization_id}, tracker_type={tracker_type}",
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
         )
 
     if not organization_data.tracker:
         logger.error(f"Tracker not found for organization ID {organization_data.id}")
+        # Notify admins
+        await task_publisher.publish_task(
+            "notify_admins",
+            subject="Tracker not found for organization ID",
+            message=f"Tracker not found for organization ID {organization_data.id}",
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Tracker configuration error",
@@ -140,6 +152,12 @@ async def receive_webhook(
         logger.error(
             f"Failed to resolve tracker for {tracker_type} with organization_id {organization_id}"
         )
+        # Notify admins
+        await task_publisher.publish_task(
+            "notify_admins",
+            subject="Failed to resolve tracker",
+            message=f"Failed to resolve tracker for {tracker_type} with organization_id {organization_id}",
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error resolving tracker.",
@@ -154,6 +172,12 @@ async def receive_webhook(
 
     if webhook_secret_to_use is None:  # Should also be caught
         logger.error(f"Webhook secret is not set for tracker ID {resolved_tracker.id}")
+        # Notify admins
+        await task_publisher.publish_task(
+            "notify_admins",
+            subject="Webhook secret is not set for tracker",
+            message=f"Webhook secret is not set for tracker ID {resolved_tracker.id}",
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook secret configuration error.",
@@ -186,6 +210,12 @@ async def receive_webhook(
                 logger.warning(
                     f"GitHub webhook signature mismatch for tracker ID {resolved_tracker.id}"
                 )
+                # Notify admins
+                await task_publisher.publish_task(
+                    "notify_admins",
+                    subject="GitHub webhook signature mismatch",
+                    message=f"GitHub webhook signature mismatch for tracker ID {resolved_tracker.id}",
+                )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Invalid GitHub signature",
@@ -197,6 +227,12 @@ async def receive_webhook(
             raise
         except Exception as e:
             logger.error(f"Error during GitHub signature verification: {e}")
+            # Notify admins
+            await task_publisher.publish_task(
+                "notify_admins",
+                subject="Error during GitHub signature verification",
+                message=f"Error during GitHub signature verification for tracker ID {resolved_tracker.id}: {e}",
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="GitHub signature verification failed",
@@ -206,6 +242,12 @@ async def receive_webhook(
         token_header = request.headers.get("X-Gitlab-Token")
         if not token_header:
             logger.warning("Missing X-Gitlab-Token header for GitLab webhook")
+            # Notify admins
+            await task_publisher.publish_task(
+                "notify_admins",
+                subject="Missing X-Gitlab-Token header for GitLab webhook",
+                message=f"Missing X-Gitlab-Token header for GitLab webhook, tracker ID {resolved_tracker.id}",
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Missing GitLab token"
             )
@@ -216,6 +258,12 @@ async def receive_webhook(
         ):  # Use encoded_secret
             logger.warning(
                 f"GitLab webhook token mismatch for tracker ID {resolved_tracker.id}"
+            )
+            # Notify admins
+            await task_publisher.publish_task(
+                "notify_admins",
+                subject="GitLab webhook token mismatch",
+                message=f"GitLab webhook token mismatch for tracker ID {resolved_tracker.id}",
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Invalid GitLab token"
@@ -231,6 +279,12 @@ async def receive_webhook(
         if not signature_header:
             logger.warning(
                 f"Missing X-Hub-Signature header for Jira webhook, tracker ID {resolved_tracker.id}"
+            )
+            # Notify admins
+            await task_publisher.publish_task(
+                "notify_admins",
+                subject="Missing X-Hub-Signature header for Jira webhook",
+                message=f"Missing X-Hub-Signature header for Jira webhook, tracker ID {resolved_tracker.id}",
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Missing Jira signature"
@@ -268,6 +322,12 @@ async def receive_webhook(
                 logger.error(
                     f"Error during Jira signature verification for tracker ID {resolved_tracker.id}: {e}"
                 )
+                # Notify admins
+                await task_publisher.publish_task(
+                    "notify_admins",
+                    subject="Error during Jira signature verification",
+                    message=f"Error during Jira signature verification for tracker ID {resolved_tracker.id}: {e}",
+                )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Jira signature verification failed",
@@ -283,6 +343,12 @@ async def receive_webhook(
         logger.error(
             f"Failed to parse webhook JSON payload for tracker ID {resolved_tracker.id}: {e}"
         )
+        # Notify admins
+        await task_publisher.publish_task(
+            "notify_admins",
+            subject="Failed to parse webhook JSON payload",
+            message=f"Failed to parse webhook JSON payload for tracker ID {resolved_tracker.id}: {e}",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload"
         )
@@ -291,6 +357,12 @@ async def receive_webhook(
         if not event_type_header_key:  # Should be set during tracker resolution
             logger.error(
                 f"Internal error: event_type_header_key not set for {tracker_type}"
+            )
+            # Notify admins
+            await task_publisher.publish_task(
+                "notify_admins",
+                subject="Internal error: event_type_header_key not set for tracker",
+                message=f"Internal error: event_type_header_key not set for tracker {tracker_type}",
             )
             raise HTTPException(
                 status_code=500, detail="Internal configuration error for event type."
@@ -353,6 +425,12 @@ async def receive_webhook(
             logger.error(
                 f"Failed to update timestamp after skipping non-subscribed event for tracker {resolved_tracker.id}: {e_ts}"
             )
+            # Notify admins
+            await task_publisher.publish_task(
+                "notify_admins",
+                subject="Failed to update timestamp after skipping non-subscribed event",
+                message=f"Failed to update timestamp after skipping non-subscribed event for tracker {resolved_tracker.id}: {e_ts}",
+            )
         return {
             "status": "success",
             "message": "Event not subscribed",
@@ -394,6 +472,12 @@ async def receive_webhook(
                 )
 
             if not project_identifier:
+                # Notify admins
+                await task_publisher.publish_task(
+                    "notify_admins",
+                    subject="Could not determine project identifier from payload",
+                    message=f"Could not determine project identifier from payload for tracker {resolved_tracker.id}.",
+                )
                 raise HTTPException(
                     status_code=400,
                     detail="Could not determine project identifier from payload",
@@ -401,10 +485,24 @@ async def receive_webhook(
 
             project = crud_project.get_by_identifier(db, identifier=project_identifier)
             if not project:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Project with identifier {project_identifier} not found",
+                logger.warning(
+                    f"Project with identifier {project_identifier} not found. Triggering a sync for tracker {resolved_tracker.id}."
                 )
+                await task_publisher.publish_task(
+                    "poll_tracker",
+                    tracker_id=resolved_tracker.id,
+                    force_update=True,
+                )
+                # Notify admins
+                await task_publisher.publish_task(
+                    "notify_admins",
+                    subject="Project not found",
+                    message=f"Project with identifier {project_identifier} not found. Triggering a sync for tracker {resolved_tracker.id}.",
+                )
+                return {
+                    "status": "accepted",
+                    "message": "Project not found, sync triggered.",
+                }
 
             issue_data = parsed_payload.get("object_attributes") or parsed_payload.get(
                 "issue"
@@ -542,14 +640,20 @@ async def receive_webhook(
                 db, issue_id=issue.id, comment_id=db_comment.id, force_update=True
             )
 
+        db.commit()
+    except HTTPException as http_exc:
+        db.rollback()
+        logger.error(f"HTTP exception during webhook processing: {http_exc.detail}")
+        raise
     except Exception as e:
+        db.rollback()
         logger.error(
             f"Failed to process webhook payload for tracker {resolved_tracker.id}: {e}",
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Failed to process webhook payload")
 
-    # --- 7. Update Timestamp (after successful processing) ---
+    # --- 7. Update Timestamp and Publish Event ---
     try:
         if organization_context_for_timestamp:  # GH/GL
             organization_context_for_timestamp.last_webhook_update = datetime.now(

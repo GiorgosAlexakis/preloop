@@ -53,29 +53,29 @@
 ### Event-Driven Agentic Flows (Target: June 2025)
 
 #### Epic 1: Enhanced Event Ingestion & Webhook Coverage
-- [ ] **Task 1.1: Implement Configurable Event Subscriptions (GitHub & GitLab)** ([Issue #55](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/55))
+- [x] **Task 1.1: Implement Configurable Event Subscriptions (GitHub & GitLab)** ([Issue #55](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/55))
     *   *Description:* Update `Tracker` model and client logic to allow user-configurable event subscriptions for GitHub and GitLab, enhancing flexibility beyond current hardcoded subscriptions.
-- [ ] **Task 1.2: Implement Jira Webhook Registration & Full Event Handling** ([Issue #56](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/56))
+- [x] **Task 1.2: Implement Jira Webhook Registration & Full Event Handling** ([Issue #56](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/56))
     *   *Description:* Develop comprehensive webhook registration, validation, and event processing for Jira, covering key events like `jira:issue_created`, `jira:issue_updated`, etc.
-- [ ] **Task 1.3: NATS Integration for Internal Event Bus** ([Issue #57](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/57))
+- [x] **Task 1.3: NATS Integration for Internal Event Bus** ([Issue #57](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/57))
     *   *Description:* Set up NATS. Modify webhook ingestion points (GitHub, GitLab, new Jira) to publish standardized events to NATS, decoupling event producers and consumers.
-- [ ] **Task 1.4: Update `SpaceModels` for Event Configuration** ([Issue #58](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/58))
+- [x] **Task 1.4: Update `SpaceModels` for Event Configuration** ([Issue #58](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/58))
     *   *Description:* Enhance `SpaceModels` (e.g., `Tracker` model) to store and manage the new configurable event subscriptions.
 
 #### Epic 2: Core Flow Infrastructure & Database Models
-- [ ] **Task 2.1: Implement `Flows` Database Model in `SpaceModels`** ([Issue #59](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/59))
+- [x] **Task 2.1: Implement `Flows` Database Model in `SpaceModels`** ([Issue #59](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/59))
     *   *Description:* Create the `Flows` SQLAlchemy model, Pydantic schema, and CRUD operations as detailed in `ARCHITECTURE.md`.
-- [ ] **Task 2.2: Implement `AIModel` Database Model in `SpaceModels`** ([Issue #60](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/60))
+- [x] **Task 2.2: Implement `AIModel` Database Model in `SpaceModels`** ([Issue #60](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/60))
     *   *Description:* Create the `AIModel` SQLAlchemy model, Pydantic schema (including initial unencrypted API key storage), and CRUD operations.
-- [ ] **Task 2.3: Implement `FlowExecutions` Database Model in `SpaceModels`** ([Issue #61](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/61))
+- [x] **Task 2.3: Implement `FlowExecutions` Database Model in `SpaceModels`** ([Issue #61](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/61))
     *   *Description:* Create the `FlowExecutions` SQLAlchemy model, Pydantic schema, and CRUD operations for logging Flow runs and outcomes.
 
 #### Epic 3: Flow Definition & Management (API & UI)
-- [ ] **Task 3.1: Develop Flow Definition & Management APIs** ([Issue #62](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/62))
+- [x] **Task 3.1: Develop Flow Definition & Management APIs** ([Issue #62](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/62))
     *   *Description:* Create REST API endpoints in SpaceBridge for CRUD operations on `Flows` and `AIModels`.
-- [ ] **Task 3.2: Build UI Components for Flow & AIModel Management** ([Issue #63](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/63))
+- [x] **Task 3.2: Build UI Components for Flow & AIModel Management** ([Issue #63](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/63))
     *   *Description:* Develop user interface elements for creating, viewing, editing, deleting, enabling/disabling `Flows`, and managing `AIModels`.
-- [ ] **Task 3.3: Implement Flow Presets System** ([Issue #64](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/64))
+- [x] **Task 3.3: Implement Flow Presets System** ([Issue #64](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/64))
     *   *Description:* Design and implement a system for defining, managing, and allowing users to utilize or clone pre-defined Flow templates.
 
 #### Epic 4: Flow Execution Engine Development

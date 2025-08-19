@@ -3,7 +3,7 @@
 import logging
 import secrets
 import string
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -700,7 +700,7 @@ async def debug_api_keys(
                         else UUID("00000000-0000-0000-0000-000000000000"),
                         name=key.name if key else "Not Found",
                         key=key.key if key else api_key,
-                        created_at=key.created_at if key else datetime.utcnow(),
+                        created_at=key.created_at if key else datetime.now(UTC),
                         expires_at=key.expires_at if key else None,
                         scopes=key.scopes if key else [],
                         created_by=key.created_by if key else "unknown",
