@@ -6,9 +6,9 @@ plans:
     price_monthly: 0
     price_annually: 0
     features:
-      api_calls_monthly: 10000
-      ai_calls_monthly: 100
-      issues_ingested_monthly: 1000
+      api_calls_monthly: 1000
+      ai_calls_monthly: 10
+      issues_ingested_monthly: 100
       custom_ai_models_enabled: false
       custom_compliance_metrics_enabled: false
   - id: "pro"
@@ -16,9 +16,9 @@ plans:
     price_monthly: 20
     price_annually: 200 # (16.67/mo)
     features:
-      api_calls_monthly: 100000
-      ai_calls_monthly: 1000
-      issues_ingested_monthly: 10000
+      api_calls_monthly: 10000
+      ai_calls_monthly: 100
+      issues_ingested_monthly: 1000
       custom_ai_models_enabled: false
       custom_compliance_metrics_enabled: false
   - id: "ultra"
@@ -27,8 +27,8 @@ plans:
     price_annually: 2000 # (166.67/mo)
     features:
       api_calls_monthly: -1 # -1 signifies unlimited
-      ai_calls_monthly: 10000
-      issues_ingested_monthly: 100000
+      ai_calls_monthly: 1000
+      issues_ingested_monthly: 10000
       custom_ai_models_enabled: true
       custom_compliance_metrics_enabled: false
   - id: "enterprise"
