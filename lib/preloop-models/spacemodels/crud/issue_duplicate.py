@@ -1,7 +1,7 @@
 """CRUD operations for IssueDuplicate model."""
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -43,7 +43,7 @@ class CRUDIssueDuplicate(CRUDBase[IssueDuplicate]):
     ) -> IssueDuplicate:
         """Update the resolution of an issue duplicate."""
         db_obj.resolution = resolution
-        db_obj.resolution_at = datetime.utcnow()
+        db_obj.resolution_at = datetime.now(UTC)
         db_obj.resolution_reason = resolution_reason
         db_obj.resulting_issue1_id = resulting_issue1_id
         db_obj.resulting_issue2_id = resulting_issue2_id

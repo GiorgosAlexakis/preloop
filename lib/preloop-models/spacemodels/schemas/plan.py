@@ -6,7 +6,7 @@ from datetime import datetime, date
 from typing import Dict, Any, Optional
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class PlanFeatures(BaseModel):
@@ -52,8 +52,7 @@ class Plan(PlanBase):
     created_at: datetime = Field(..., description="Timestamp of creation.")
     updated_at: datetime = Field(..., description="Timestamp of last update.")
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SubscriptionBase(BaseModel):
@@ -88,8 +87,7 @@ class Subscription(SubscriptionBase):
     created_at: datetime = Field(..., description="Timestamp of creation.")
     updated_at: datetime = Field(..., description="Timestamp of last update.")
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MonthlyUsageBase(BaseModel):
@@ -118,5 +116,4 @@ class MonthlyUsage(MonthlyUsageBase):
     created_at: datetime = Field(..., description="Timestamp of creation.")
     updated_at: datetime = Field(..., description="Timestamp of last update.")
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

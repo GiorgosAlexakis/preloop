@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # Base Pydantic model for FlowExecution attributes
@@ -20,7 +20,7 @@ class FlowExecutionBase(BaseModel):
         description="Status of the execution (e.g., PENDING, RUNNING, SUCCEEDED, FAILED)",
     )
     start_time: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=datetime.now(UTC),
         description="Timestamp when the execution started",
     )
     end_time: Optional[datetime] = Field(
@@ -47,9 +47,7 @@ class FlowExecutionBase(BaseModel):
         None, description="Error message if the execution failed"
     )
 
-    class Config:
-        orm_mode = True
-        from_attributes = True  # Pydantic V2 for compatibility with SQLAlchemy models
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Pydantic model for creating a FlowExecution (API input - likely internal)

@@ -40,7 +40,9 @@ def test_create_flow(db_session: Session, create_account) -> None:
         openhands_agent_config={"agent": "TestAgent"},
         account_id=account.id,
     )
-    flow = crud_flow.create(db=db_session, flow_in=flow_in_corrected)
+    flow = crud_flow.create(
+        db=db_session, flow_in=flow_in_corrected, account_id=account.id
+    )
     assert flow is not None
     assert flow.name == flow_name
     assert flow.description == "A test flow description"
@@ -59,8 +61,12 @@ def test_get_flow(db_session: Session, create_account) -> None:
         openhands_agent_config={"agent": "GetAgent"},
         account_id=account.id,
     )
-    created_flow = crud_flow.create(db=db_session, flow_in=flow_in)
-    retrieved_flow = crud_flow.get(db=db_session, id=created_flow.id)
+    created_flow = crud_flow.create(
+        db=db_session, flow_in=flow_in, account_id=account.id
+    )
+    retrieved_flow = crud_flow.get(
+        db=db_session, id=created_flow.id, account_id=account.id
+    )
     assert retrieved_flow is not None
     assert retrieved_flow.id == created_flow.id
     assert retrieved_flow.name == flow_name
@@ -81,7 +87,7 @@ def test_get_flows_by_account(
         openhands_agent_config={"agent": "OrgAgent1"},
         account_id=account.id,
     )
-    crud_flow.create(db=db_session, flow_in=flow_in1)
+    crud_flow.create(db=db_session, flow_in=flow_in1, account_id=account.id)
 
     flow_name2 = f"Org Flow 2 {uuid4()}"
     flow_in2 = FlowCreate(
@@ -92,7 +98,7 @@ def test_get_flows_by_account(
         openhands_agent_config={"agent": "OrgAgent2"},
         account_id=account.id,
     )
-    crud_flow.create(db=db_session, flow_in=flow_in2)
+    crud_flow.create(db=db_session, flow_in=flow_in2, account_id=account.id)
 
     # Create another account and flow to ensure we only get flows for the target account
     # Need another tracker for another account.
@@ -111,7 +117,7 @@ def test_get_flows_by_account(
         openhands_agent_config={"agent": "OtherOrgAgent"},
         account_id=other_account.id,
     )
-    crud_flow.create(db=db_session, flow_in=other_flow_in)
+    crud_flow.create(db=db_session, flow_in=other_flow_in, account_id=other_account.id)
 
     flows = crud_flow.get_by_account(
         db=db_session,
@@ -136,24 +142,29 @@ def test_update_flow(db_session: Session, create_account) -> None:
         openhands_agent_config={"agent": "UpdateAgentInitial"},
         account_id=account.id,
     )
-    created_flow = crud_flow.create(db=db_session, flow_in=flow_in)
+    created_flow = crud_flow.create(
+        db=db_session, flow_in=flow_in, account_id=account.id
+    )
 
     updated_flow_name = f"Updated Flow Name {uuid4()}"
     updated_description = "This is an updated description."
-    # updated_definition = {"v": 2, "new_key": "new_value"} # 'definition' is not part of FlowUpdate
     flow_update_data = FlowUpdate(
         name=updated_flow_name,
         description=updated_description,
         account_id=account.id,
-        # definition=updated_definition, # Removed
     )
 
     # Fetch the object first, as update_flow expects db_obj
-    flow_to_update = crud_flow.get(db=db_session, id=created_flow.id)
+    flow_to_update = crud_flow.get(
+        db=db_session, id=created_flow.id, account_id=account.id
+    )
     assert flow_to_update is not None  # Ensure it exists before update
 
     updated_flow = crud_flow.update(
-        db=db_session, db_obj=flow_to_update, flow_in=flow_update_data
+        db=db_session,
+        db_obj=flow_to_update,
+        flow_in=flow_update_data,
+        account_id=account.id,
     )
     assert updated_flow is not None
     assert updated_flow.id == created_flow.id
@@ -174,16 +185,21 @@ def test_remove_flow(db_session: Session, create_account) -> None:
         openhands_agent_config={"agent": "RemoveAgent"},
         account_id=account.id,
     )
-    created_flow = crud_flow.create(db=db_session, flow_in=flow_in)
+    created_flow = crud_flow.create(
+        db=db_session, flow_in=flow_in, account_id=account.id
+    )
     flow_id_to_remove = created_flow.id
 
-    removed_flow = crud_flow.remove(db=db_session, id=flow_id_to_remove)
+    removed_flow = crud_flow.remove(
+        db=db_session, id=flow_id_to_remove, account_id=account.id
+    )
     assert removed_flow is not None
     assert removed_flow.id == flow_id_to_remove
 
     retrieved_after_remove = crud_flow.get(
         db=db_session,
         id=flow_id_to_remove,
+        account_id=account.id,
     )
     assert retrieved_after_remove is None
 
@@ -192,7 +208,7 @@ def test_get_flow_not_found(db_session: Session) -> None:
     """Test retrieving a non-existent flow."""
     non_existent_flow_id = uuid4()
     retrieved_flow = crud_flow.get(
-        db=db_session, id=str(non_existent_flow_id)
+        db=db_session, id=str(non_existent_flow_id), account_id=str(uuid4())
     )  # Changed to str
     assert retrieved_flow is None
 
@@ -211,6 +227,6 @@ def test_remove_flow_not_found(db_session: Session) -> None:
     """Test removing a non-existent flow."""
     non_existent_flow_id = uuid4()
     removed_flow = crud_flow.remove(
-        db=db_session, id=str(non_existent_flow_id)
+        db=db_session, id=str(non_existent_flow_id), account_id=str(uuid4())
     )  # Changed to str
     assert removed_flow is None

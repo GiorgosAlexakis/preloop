@@ -13,6 +13,7 @@ from sqlalchemy.types import JSON
 from .base import Base
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
     from .api_key import ApiKey
     from .api_usage import ApiUsage
     from .organization import Organization

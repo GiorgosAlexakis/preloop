@@ -76,7 +76,7 @@ class CRUDAIModel(CRUDBase[AIModel]):
 
     def remove(self, db: Session, *, id: uuid.UUID) -> AIModel:
         """Delete an AIModel."""
-        obj = db.query(self.model).get(id)
+        obj = db.get(self.model, id)
         db.delete(obj)
         db.commit()
         return obj

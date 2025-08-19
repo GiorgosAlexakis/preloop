@@ -1,6 +1,6 @@
 """Pydantic schemas for TrackerScopeRule."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from ..models.tracker_scope_rule import ScopeType, RuleType
 
 
@@ -18,5 +18,4 @@ class TrackerScopeRule(TrackerScopeRuleBase):
     id: str
     tracker_id: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

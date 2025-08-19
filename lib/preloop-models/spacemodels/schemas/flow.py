@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 class FlowBase(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    icon: Optional[str] = None
     trigger_event_source: Optional[str] = None
     trigger_event_type: Optional[str] = None
     trigger_config: Optional[Dict[str, Any]] = None
@@ -18,7 +19,7 @@ class FlowBase(BaseModel):
     allowed_mcp_tools: Optional[List[Dict[str, Any]]] = None
     is_preset: Optional[bool] = False
     is_enabled: Optional[bool] = True
-    account_id: UUID
+    account_id: Optional[str] = None
 
 
 class FlowCreate(FlowBase):
@@ -37,6 +38,7 @@ class FlowUpdate(FlowBase):
 
 class FlowResponse(FlowBase):
     id: uuid.UUID
+    account_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 

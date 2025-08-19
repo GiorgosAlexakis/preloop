@@ -1,6 +1,6 @@
 from typing import Optional
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 
 
@@ -29,5 +29,4 @@ class Organization(OrganizationBase):
     updated_at: datetime
     # Add any related fields if necessary, e.g., projects: List["Project"] = []
 
-    class Config:
-        from_attributes = True  # Pydantic V2 orm_mode
+    model_config = ConfigDict(from_attributes=True)
