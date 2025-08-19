@@ -100,6 +100,15 @@ export class PublicPricingView extends LitElement {
     }
   }
 
+  private _formatNumber(num: number): string {
+    if (num === -1) return 'Unlimited';
+    if (num < 1000) return num.toString();
+    return new Intl.NumberFormat('en-US', {
+      notation: 'compact',
+      compactDisplay: 'short',
+    }).format(num);
+  }
+
   static styles = [
     unsafeCSS(pricingStyles),
     unsafeCSS(landingStyles),
@@ -116,6 +125,7 @@ export class PublicPricingView extends LitElement {
       .pricing-table {
         display: none; /* Hidden by default on mobile */
         width: 100%;
+        table-layout: fixed;
         border-collapse: separate;
         border-spacing: 0;
         border-radius: 16px;
@@ -135,6 +145,11 @@ export class PublicPricingView extends LitElement {
 
       .pricing-table tr:last-child td {
         border-bottom: none; /* Remove border for the last row */
+      }
+
+      .pricing-table th:first-child,
+      .pricing-table td:first-child {
+        width: 25%;
       }
 
       .pricing-table th {
@@ -322,7 +337,9 @@ export class PublicPricingView extends LitElement {
                       >
                     </div>
                     ${perMo
-                      ? html`<div class="price-sub">billed annually</div>`
+                      ? html`<div class="price-sub">
+                          ~$${perMo}/mo billed annually
+                        </div>`
                       : ''}
                   `;
                 }
@@ -351,9 +368,8 @@ export class PublicPricingView extends LitElement {
                           ><sl-icon name="check-lg"></sl-icon
                         ></span>`
                       : '—';
-                  } else if (feature) {
-                    value =
-                      feature === -1 ? 'Unlimited' : feature.toLocaleString();
+                  } else if (typeof feature === 'number') {
+                    value = this._formatNumber(feature);
                   } else {
                     value = '—';
                   }
