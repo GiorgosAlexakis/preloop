@@ -1,4 +1,3 @@
-import uuid
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -14,38 +13,65 @@ class CRUDFlow(CRUDBase[models.Flow]):
         """Initialize with the Flow model."""
         super().__init__(model=models.Flow)
 
-    def get(self, db: Session, id: uuid.UUID) -> Optional[models.Flow]:
+    def get(self, db: Session, id: str, account_id: str) -> Optional[models.Flow]:
         """
         Retrieve a flow by its ID.
 
         Args:
             db: The database session.
             id: The ID of the flow to retrieve.
+            account_id: The ID of the account associated with the flow.
 
         Returns:
             The flow object if found, otherwise None.
         """
-        return db.query(self.model).filter(self.model.id == id).first()
+        return (
+            db.query(self.model)
+            .filter(self.model.id == id, self.model.account_id == account_id)
+            .first()
+        )
 
-    def get_by_organization(
+    def get_by_account(
         self,
         db: Session,
-        organization_id: uuid.UUID,
+        account_id: str,
         skip: int = 0,
         limit: int = 100,
-        account_id: Optional[str] = None,
     ) -> List[models.Flow]:
         """
-        Retrieve flows for a specific organization with pagination.
+        Retrieve flows for a specific account with pagination.
         """
-        query = db.query(self.model).filter(
-            self.model.organization_id == organization_id
-        )
-        if account_id:
-            query = query.filter(self.model.created_by_user_id == account_id)
+        query = db.query(self.model).filter(self.model.account_id == account_id)
         return query.offset(skip).limit(limit).all()
 
-    def create(self, db: Session, *, flow_in: schemas.FlowCreate) -> models.Flow:
+    def get_by_trigger(
+        self,
+        db: Session,
+        *,
+        event_source: str,
+        event_type: str,
+        account_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[models.Flow]:
+        """
+        Retrieve flows that match a specific trigger event.
+        """
+        query = db.query(self.model).filter(
+            self.model.trigger_event_source == event_source,
+            self.model.trigger_event_type == event_type,
+        )
+        if account_id:
+            query = query.filter(self.model.account_id == account_id)
+        return query.offset(skip).limit(limit).all()
+
+    def create(
+        self,
+        db: Session,
+        *,
+        flow_in: schemas.FlowCreate,
+        account_id: Optional[str] = None,
+    ) -> models.Flow:
         """
         Create a new flow.
 
@@ -57,13 +83,20 @@ class CRUDFlow(CRUDBase[models.Flow]):
             The created flow object.
         """
         db_flow = self.model(**flow_in.model_dump())
+        if account_id:
+            db_flow.account_id = account_id
         db.add(db_flow)
         db.commit()
         db.refresh(db_flow)
         return db_flow
 
     def update(
-        self, db: Session, *, db_obj: models.Flow, flow_in: schemas.FlowUpdate
+        self,
+        db: Session,
+        *,
+        db_obj: models.Flow,
+        flow_in: schemas.FlowUpdate,
+        account_id: str,
     ) -> models.Flow:
         """
         Update an existing flow.
@@ -77,6 +110,7 @@ class CRUDFlow(CRUDBase[models.Flow]):
             The updated flow object.
         """
         update_data = flow_in.model_dump(exclude_unset=True)
+        update_data["account_id"] = account_id
         for field, value in update_data.items():
             setattr(db_obj, field, value)
         db.add(db_obj)
@@ -84,7 +118,7 @@ class CRUDFlow(CRUDBase[models.Flow]):
         db.refresh(db_obj)
         return db_obj
 
-    def remove(self, db: Session, *, id: uuid.UUID) -> Optional[models.Flow]:
+    def remove(self, db: Session, *, id: str, account_id: str) -> Optional[models.Flow]:
         """
         Remove a flow by its ID.
 
@@ -95,7 +129,11 @@ class CRUDFlow(CRUDBase[models.Flow]):
         Returns:
             The removed flow object if found and deleted, otherwise None.
         """
-        db_flow = db.query(self.model).filter(self.model.id == id).first()
+        db_flow = (
+            db.query(self.model)
+            .filter(self.model.id == id, self.model.account_id == account_id)
+            .first()
+        )
         if db_flow:
             db.delete(db_flow)
             db.commit()

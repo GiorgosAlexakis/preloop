@@ -1,7 +1,7 @@
 """CRUD operations for EmbeddingModel and IssueEmbedding models."""
 
 import json
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, List, Optional, Tuple, Union
 
 from sqlalchemy import func, text
@@ -292,7 +292,7 @@ class CRUDIssueEmbedding(CRUDBase[IssueEmbedding]):
                 if existing:
                     existing.embedding = embedding_vector
                     existing.meta_data = {
-                        "updated_at": datetime.utcnow().isoformat(),
+                        "updated_at": datetime.now(UTC).isoformat(),
                         "source": source_entity_description,
                         "text_processed": text_to_embed[:100] + "..."
                         if len(text_to_embed) > 100

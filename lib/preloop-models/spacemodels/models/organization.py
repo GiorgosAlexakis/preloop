@@ -10,22 +10,21 @@ from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
-from .account import AccountOrganization
 from .base import Base
 from .tracker import Tracker
 
 if TYPE_CHECKING:
-    from .account import Account
     from .project import Project
+    from .account import Account
 
 
 class Organization(Base):
     """Organization model - a top-level entity that can contain multiple projects.
 
-    An organization is owned by a single account through a tracker. The owner has full
-    administrative access to the organization. Additional accounts can be added as
-    members with different roles through the AccountOrganization relationship.
+    An organization is owned by a single account through a tracker.
     """
+
+    __tablename__ = "organization"
 
     # Organization details
     name: Mapped[str] = mapped_column(
@@ -74,12 +73,7 @@ class Organization(Base):
     projects: Mapped[List["Project"]] = relationship(
         "Project", back_populates="organization", cascade="all, delete-orphan"
     )
-    # Members are additional accounts that have access to the organization
-    members: Mapped[List["AccountOrganization"]] = relationship(
-        "AccountOrganization", back_populates="organization"
-    )
 
-    # Property to get the owner account through the tracker
     @property
     def owner(self) -> "Account":
         """Get the owner account of this organization through the tracker."""

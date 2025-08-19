@@ -9,6 +9,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .project import Project
+    from .organization import Organization
 
 
 class Webhook(Base):
@@ -39,3 +40,4 @@ class Webhook(Base):
 
     # Relationships
     project: Mapped["Project"] = relationship("Project")
+    organization: Mapped["Organization"] = relationship("Organization")

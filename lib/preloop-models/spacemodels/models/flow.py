@@ -17,6 +17,7 @@ class Flow(Base, TimestampMixin):
     )  # Changed from UUID
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    icon = Column(String, nullable=True)
     trigger_event_source = Column(String, nullable=False)
     trigger_event_type = Column(String, nullable=False)
     trigger_config = Column(JSON, nullable=True)  # Changed from JSONB
@@ -39,18 +40,15 @@ class Flow(Base, TimestampMixin):
     )  # Assuming JSON Array of objects
     is_preset = Column(Boolean, default=False, nullable=False)
     is_enabled = Column(Boolean, default=True, nullable=False)
-    created_by_user_id = Column(
+    account_id = Column(
         String(36),
-        nullable=True,  # Changed from UUID
-    )  # TODO: Add ForeignKeyConstraint to user.id when User model is finalized and available
-    organization_id = Column(
-        String(36),
-        ForeignKey("organization.id"),
-        nullable=False,  # Changed from UUID
+        ForeignKey("account.id"),
+        nullable=True,
+        index=True,
     )
 
-    organization = relationship("Organization")
     ai_model = relationship("AIModel", back_populates="flows")
+    account = relationship("Account", back_populates="flows", foreign_keys=[account_id])
 
     def __repr__(self) -> str:
         return f"<Flow(id={self.id}, name='{self.name}')>"
