@@ -600,6 +600,22 @@ class GitLabTracker(BaseTracker):
                     logger.warning(
                         f"Project webhook for GitLab project '{project.identifier}' (URL: {webhook_url}) already exists (409 on create)."
                     )
+                    if not crud_webhook.get_by_external_id(
+                        db, external_id=str(hook.id)
+                    ):
+                        logger.info(
+                            f"Project webhook for GitLab project '{project.identifier}' (URL: {webhook_url}) already exists (409 on create). Creating in DB."
+                        )
+                        crud_webhook.create(
+                            db,
+                            obj_in={
+                                "external_id": str(hook.id),
+                                "url": webhook_url,
+                                "secret": secret,
+                                "events": "all",
+                                "project_id": project.id,
+                            },
+                        )
                     return True
                 elif e.response_code == 404:
                     logger.error(
@@ -853,3 +869,155 @@ class GitLabTracker(BaseTracker):
 
         logger.info(f"GitLab stale webhook cleanup summary: {summary}")
         return summary
+
+    def is_webhook_registered(self, webhook: "Webhook") -> bool:
+        """
+        Check if a webhook is registered in the tracker.
+
+        Args:
+            webhook: The webhook to check.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        if not webhook.external_id:
+            return False
+
+        if webhook.project_id:
+            project = self._make_request(
+                self.gl.projects.get, webhook.project.identifier
+            )
+            try:
+                project.hooks.get(webhook.external_id)
+                return True
+            except gitlab.exceptions.GitlabGetError as e:
+                if e.response_code == 404:
+                    return False
+                raise
+        else:
+            group = self._make_request(
+                self.gl.groups.get, webhook.organization.identifier
+            )
+            try:
+                group.hooks.get(webhook.external_id)
+                return True
+            except gitlab.exceptions.GitlabGetError as e:
+                if e.response_code == 404:
+                    return False
+                raise
+
+    def get_webhooks(self, organization_id: str) -> List[Dict[str, Any]]:
+        """Get all webhooks for a specific group and its projects."""
+        all_webhooks = []
+
+        # Get webhooks for the group
+        try:
+            group = self._make_request(self.gl.groups.get, organization_id)
+            hooks = self._make_request(group.hooks.list, all=True)
+            for hook in hooks:
+                all_webhooks.append(hook.attributes)
+        except Exception as e:
+            logger.error(f"Failed to get webhooks for group {organization_id}: {e}")
+
+        # Get projects for the group and their webhooks
+        projects = self.get_projects(organization_id=organization_id)
+        for proj in projects:
+            proj_identifier = proj["id"]
+            try:
+                project = self._make_request(self.gl.projects.get, proj_identifier)
+                hooks = self._make_request(project.hooks.list, all=True)
+                for hook in hooks:
+                    hook_data = hook.attributes
+                    hook_data["project_id"] = proj_identifier
+                    all_webhooks.append(hook_data)
+            except Exception as e:
+                logger.error(
+                    f"Failed to get webhooks for project {proj_identifier}: {e}"
+                )
+        return all_webhooks
+
+    def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
+        """
+        Delete a webhook from the tracker.
+
+        Args:
+            webhook: The webhook to delete.
+
+        Returns:
+            Whether the webhook was deleted successfully.
+        """
+        webhook_id = webhook.get("id")
+        if not webhook_id:
+            return False
+
+        if webhook.get("project_id"):
+            project = self._make_request(self.gl.projects.get, webhook["project_id"])
+            try:
+                project.hooks.delete(webhook_id)
+                return True
+            except gitlab.exceptions.GitlabDeleteError as e:
+                logger.error(f"Failed to delete project webhook {webhook_id}: {e}")
+                return False
+        else:
+            # This is a bit tricky as we don't have the group id in the webhook response
+            # We will have to iterate over all groups
+            organizations = self.get_organizations()
+            for org in organizations:
+                org_identifier = org["id"]
+                try:
+                    group = self._make_request(self.gl.groups.get, org_identifier)
+                    group.hooks.delete(webhook_id)
+                    return True
+                except gitlab.exceptions.GitlabDeleteError:
+                    continue
+                except Exception as e:
+                    logger.error(
+                        f"Failed to delete group webhook {webhook_id} from group {org_identifier}: {e}"
+                    )
+            return False
+
+    def is_webhook_registered_for_project(
+        self, project: "Project", webhook_url: str
+    ) -> bool:
+        """
+        Check if a webhook is registered for a project.
+
+        Args:
+            project: The project to check.
+            webhook_url: The URL of the webhook.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        try:
+            gl_project = self._make_request(self.gl.projects.get, project.identifier)
+            hooks = gl_project.hooks.list(all=True)
+            for hook in hooks:
+                if hook.url == webhook_url:
+                    return True
+            return False
+        except gitlab.exceptions.GitlabError:
+            return False
+
+    def is_webhook_registered_for_organization(
+        self, organization: "Organization", webhook_url: str
+    ) -> bool:
+        """
+        Check if a webhook is registered for an organization.
+
+        Args:
+            organization: The organization to check.
+            webhook_url: The URL of the webhook.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        try:
+            group = self._make_request(self.gl.groups.get, organization.identifier)
+            hooks = group.hooks.list(all=True)
+            for hook in hooks:
+                if hook.url == webhook_url:
+                    return True
+            return False
+        except gitlab.exceptions.GitlabError:
+            return False

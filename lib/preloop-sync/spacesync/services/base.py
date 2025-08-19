@@ -33,7 +33,7 @@ class BaseTrackerUpdateService(abc.ABC):
         self.tracker = tracker
         self.client = TrackerClient(tracker)
         self.running = False
-        self.last_check = datetime.datetime.utcnow()
+        self.last_check = datetime.datetime.now(datetime.timezone.utc)
 
     @abc.abstractmethod
     def setup(self) -> bool:

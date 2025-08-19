@@ -2,21 +2,21 @@ import pytest
 import json
 from unittest.mock import AsyncMock, patch, Mock
 
-from spacesync.services.event_bus import TaskPublisher
+from spacesync.services.event_bus import EventBus
 
 
 @pytest.fixture
-def task_publisher():
-    """Provides a TaskPublisher instance for testing."""
-    publisher = TaskPublisher()
+def event_bus():
+    """Provides an EventBus instance for testing."""
+    bus = EventBus()
     # Mock settings for the test environment
-    publisher.nats_url = "nats://test-server:4222"
-    return publisher
+    bus.nats_url = "nats://test-server:4222"
+    return bus
 
 
 @pytest.mark.asyncio
 @patch("spacesync.services.event_bus.nats.connect")
-async def test_publish_task_success(mock_nats_connect, task_publisher: TaskPublisher):
+async def test_publish_task_success(mock_nats_connect, event_bus: EventBus):
     """
     Tests that a task is successfully published with the correct payload format.
     """
@@ -37,14 +37,14 @@ async def test_publish_task_success(mock_nats_connect, task_publisher: TaskPubli
     mock_js.publish.return_value = mock_ack
 
     # Connect the publisher, which should now use our mocks
-    await task_publisher.connect()
+    await event_bus.connect()
 
     # Act
     task_name = "my_test_function"
     task_args = [1, "hello"]
     task_kwargs = {"test": True}
 
-    result_ack = await task_publisher.publish_task(task_name, *task_args, **task_kwargs)
+    result_ack = await event_bus.publish_task(task_name, *task_args, **task_kwargs)
 
     # Assert
     mock_js.publish.assert_called_once()
@@ -66,14 +66,14 @@ async def test_publish_task_success(mock_nats_connect, task_publisher: TaskPubli
 @pytest.mark.asyncio
 @patch("spacesync.services.event_bus.nats.connect")
 async def test_publish_task_reconnects_if_not_connected(
-    mock_nats_connect, task_publisher: TaskPublisher
+    mock_nats_connect, event_bus: EventBus
 ):
     """
     Tests that the publisher attempts to reconnect if publish is called without a connection.
     """
     # Arrange
     # Publisher is not connected initially
-    assert task_publisher.js is None
+    assert event_bus.js is None
 
     # Set up mocks for a successful connection on the second attempt
     mock_nc = AsyncMock()
@@ -86,7 +86,7 @@ async def test_publish_task_reconnects_if_not_connected(
     mock_js.publish.return_value = mock_ack
 
     # Act
-    result = await task_publisher.publish_task("some_task")
+    result = await event_bus.publish_task("some_task")
 
     # Assert
     mock_nats_connect.assert_called_once()  # Should be called inside publish_task
@@ -99,7 +99,7 @@ async def test_publish_task_reconnects_if_not_connected(
 @pytest.mark.asyncio
 @patch("spacesync.services.event_bus.nats.connect")
 async def test_publish_task_handles_publish_failure(
-    mock_nats_connect, task_publisher: TaskPublisher
+    mock_nats_connect, event_bus: EventBus
 ):
     """
     Tests that a failure during the publish call is handled gracefully.
@@ -113,10 +113,10 @@ async def test_publish_task_handles_publish_failure(
     # Configure publish to raise an exception
     mock_js.publish.side_effect = Exception("NATS publish error")
 
-    await task_publisher.connect()
+    await event_bus.connect()
 
     # Act
-    result = await task_publisher.publish_task("failing_task")
+    result = await event_bus.publish_task("failing_task")
 
     # Assert
     assert result is None

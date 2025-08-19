@@ -731,3 +731,116 @@ class GitHubTracker(BaseTracker):
                     f"An error occurred while deleting webhook {hook_id} from {base_endpoint}: {e}"
                 )
                 results["failed"] += 1
+
+    def is_webhook_registered(self, webhook: "Webhook") -> bool:
+        """
+        Check if a webhook is registered in the tracker.
+
+        Args:
+            webhook: The webhook to check.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        if not webhook.external_id:
+            return False
+
+        if not webhook.project:
+            return False
+        repo_full_name = webhook.project.slug
+        endpoint = f"repos/{repo_full_name}/hooks/{webhook.external_id}"
+        try:
+            self._make_request(endpoint)
+            return True
+        except TrackerResponseError as e:
+            if "Not Found" in str(e):
+                return False
+            raise
+
+    def get_webhooks(self, organization_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all webhooks for a specific organization's repositories.
+        """
+        all_webhooks = []
+        repos = self.get_projects(organization_id)
+        for repo in repos:
+            repo_full_name = repo["meta_data"]["full_name"]
+            try:
+                repo_webhooks = self._make_request(f"repos/{repo_full_name}/hooks")
+                all_webhooks.extend(repo_webhooks)
+            except TrackerResponseError as e:
+                logger.error(f"Failed to get webhooks for repo {repo_full_name}: {e}")
+        return all_webhooks
+
+    def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
+        """
+        Delete a webhook from the tracker.
+
+        Args:
+            webhook: The webhook to delete.
+
+        Returns:
+            Whether the webhook was deleted successfully.
+        """
+        webhook_id = webhook.get("id")
+        if not webhook_id:
+            return False
+
+        # The webhook response doesn't contain the org identifier, so we have to parse it from the url
+        url = webhook.get("url")
+        if not url:
+            return False
+
+        org_identifier = url.split("/")[-2]
+        endpoint = f"orgs/{org_identifier}/hooks/{webhook_id}"
+        try:
+            return self._make_request_delete(endpoint)
+        except TrackerResponseError as e:
+            logger.error(f"Failed to delete webhook {webhook_id}: {e}")
+            return False
+
+    def is_webhook_registered_for_project(
+        self, project: "Project", webhook_url: str
+    ) -> bool:
+        """
+        Check if a webhook is registered for a project.
+
+        Args:
+            project: The project to check.
+            webhook_url: The URL of the webhook.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        endpoint = f"repos/{project.slug}/hooks"
+        try:
+            hooks = self._make_request(endpoint)
+            for hook in hooks:
+                if hook.get("config", {}).get("url") == webhook_url:
+                    return True
+            return False
+        except TrackerResponseError:
+            return False
+
+    def is_webhook_registered_for_organization(
+        self, organization: "Organization", webhook_url: str
+    ) -> bool:
+        """
+        Check if a webhook is registered for an organization.
+
+        Args:
+            organization: The organization to check.
+            webhook_url: The URL of the webhook.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        endpoint = f"orgs/{organization.identifier}/hooks"
+        try:
+            hooks = self._make_request(endpoint)
+            for hook in hooks:
+                if hook.get("config", {}).get("url") == webhook_url:
+                    return True
+            return False
+        except TrackerResponseError:
+            return False
