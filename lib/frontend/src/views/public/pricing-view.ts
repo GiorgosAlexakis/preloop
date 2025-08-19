@@ -317,8 +317,7 @@ export class PublicPricingView extends LitElement {
 
                   priceHtml = html`
                     <div class="price">
-                      $${amount}<span
-                        style="font-size: 1rem; font-weight: 400;"
+                      $${amount}<span style="font-size: 1rem; font-weight: 400;"
                         >${unit}</span
                       >
                     </div>

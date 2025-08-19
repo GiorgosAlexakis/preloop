@@ -261,7 +261,6 @@ export class PricingCard extends LitElement {
         ${this.plan.id === 'enterprise'
           ? html`<div class="badge alt">Enterprise</div>`
           : null}
-
         ${this.plan.id !== 'free'
           ? html`<h3 class="plan-name">${this.plan.name}</h3>`
           : ''}
