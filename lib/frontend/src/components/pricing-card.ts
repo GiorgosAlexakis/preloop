@@ -29,6 +29,10 @@ export class PricingCard extends LitElement {
       return html`<div class="price-main">Custom</div>`;
     }
 
+    if (amount === 0) {
+      return html`<div class="price-main">Free</div>`;
+    }
+
     const perMo =
       !isMonthly && typeof plan.price_annually === 'number'
         ? Math.round((plan.price_annually as number) / 12)
@@ -258,7 +262,9 @@ export class PricingCard extends LitElement {
           ? html`<div class="badge alt">Enterprise</div>`
           : null}
 
-        <h3 class="plan-name">${this.plan.name}</h3>
+        ${this.plan.id !== 'free'
+          ? html`<h3 class="plan-name">${this.plan.name}</h3>`
+          : ''}
         <div class="price-wrap">${this.formatPrice(this.plan)}</div>
 
         <hr class="divider" />

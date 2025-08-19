@@ -114,6 +114,7 @@ export class PublicPricingView extends LitElement {
       }
 
       .pricing-table {
+        display: none; /* Hidden by default on mobile */
         width: 100%;
         border-collapse: separate;
         border-spacing: 0;
@@ -305,21 +306,27 @@ export class PublicPricingView extends LitElement {
                 const amount = isMonthly
                   ? plan.price_monthly
                   : plan.price_annually;
-                const unit = isMonthly ? '/mo' : '/yr';
-                const perMo = !isMonthly
-                  ? Math.round(plan.price_annually / 12)
-                  : null;
 
-                priceHtml = html`
-                  <div class="price">
-                    $${amount}<span style="font-size: 1rem; font-weight: 400;"
-                      >${unit}</span
-                    >
-                  </div>
-                  ${perMo
-                    ? html`<div class="price-sub">billed annually</div>`
-                    : ''}
-                `;
+                if (amount === 0) {
+                  priceHtml = html`<div class="price">Free</div>`;
+                } else {
+                  const unit = isMonthly ? '/mo' : '/yr';
+                  const perMo = !isMonthly
+                    ? Math.round(plan.price_annually / 12)
+                    : null;
+
+                  priceHtml = html`
+                    <div class="price">
+                      $${amount}<span
+                        style="font-size: 1rem; font-weight: 400;"
+                        >${unit}</span
+                      >
+                    </div>
+                    ${perMo
+                      ? html`<div class="price-sub">billed annually</div>`
+                      : ''}
+                  `;
+                }
               } else {
                 priceHtml = html`<div class="price">Free</div>`;
               }
@@ -407,6 +414,7 @@ export class PublicPricingView extends LitElement {
 
           <div class="section-container">
             <billing-toggle
+              .dark=${true}
               .interval=${this._interval}
               @interval-change=${(e: CustomEvent) =>
                 (this._interval = e.detail.value)}
