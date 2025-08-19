@@ -59,7 +59,7 @@ graph LR
     *   **SpaceSync Worker:** A process that consumes tasks from the NATS queue and processes them.
 *   **SpaceLit (Submodule):** A web application built using Lit, Vite, TypeScript, and Material Web Components.
 *   **PostgreSQL + PGVector:** The database storing metadata and vector embeddings.
-*   **NATS:** A task queue used to decouple the API from the background processing of events and flows.
+*   **NATS:** An event bus used for both a reliable task queue (JetStream) and real-time streaming updates. It decouples the API from the background processing of events and flows.
 *   **SpaceBridge-MCP (Submodule):** An MCP server acting as a bridge for MCP clients, translating MCP requests into calls to the SpaceBridge REST API.
 *   **External Systems:** Issue trackers and MCP clients interacting with the SpaceBridge ecosystem.
 
@@ -135,7 +135,7 @@ The `SpaceLit` application is structured around a component-based architecture.
 *   **Functionality:**
     *   The `spacesync` CLI can launch one-off scan operations or start a persistent scheduler.
     *   **Scheduler:** Periodically adds polling tasks for each configured tracker to the NATS queue.
-    *   **Worker:** Consumes tasks from the NATS queue. For each task, it fetches new or updated data from the tracker, generates vector embeddings, and uses `SpaceModels` to store the information in the database.
+    *   **Worker:** Consumes tasks from the NATS queue. Multiple, specialized worker groups can be deployed, each subscribing to a specific subset of tasks (e.g., polling, webhooks). This allows for independent scaling and monitoring of different task types.
 *   **Execution:** Runs as two distinct, long-running processes (scheduler and worker) or as a one-off CLI command.
 
 ### SpaceBridge-MCP (Submodule `./mcp`)
@@ -351,8 +351,8 @@ graph TD
     *   This endpoint validates incoming webhooks and then publishes a `process_webhook_event` task to the **Internal Task Queue (NATS)**.
 *   **Internal Task Queue (NATS):**
     *   NATS is used as a simple, reliable task queue. It decouples the API from the background processing of events and flows.
-    *   The `TaskPublisher` service is used to enqueue tasks.
-    *   Workers consume tasks from the `spacesync.tasks` subject.
+    *   The `EventBus` service is used to enqueue tasks.
+    *   Workers consume tasks from the `spacesync.tasks` subject using a `workqueue` retention policy, which ensures that acknowledged messages are immediately removed from the stream.
 *   **Flow Trigger Service:**
     *   This logic is part of the NATS worker. When a `process_webhook_event` task is received, the worker acts as the trigger service.
     *   It matches the incoming event data against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.

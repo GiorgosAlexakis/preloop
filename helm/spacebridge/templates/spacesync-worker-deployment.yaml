@@ -1,107 +1,108 @@
+{{- range .Values.worker.pools }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-spacesync-worker
+  name: {{ include "spacebridge.fullname" $ }}-spacesync-worker-{{ .name }}
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
-    app.kubernetes.io/component: spacesync-worker
+    {{- include "spacebridge.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: spacesync-worker-{{ .name }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
-  {{- end }}
+  replicas: {{ .replicaCount }}
   selector:
     matchLabels:
-      {{- include "spacebridge.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: spacesync-worker
+      {{- include "spacebridge.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: spacesync-worker-{{ .name }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
+      {{- with $.Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "spacebridge.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: spacesync-worker
+        {{- include "spacebridge.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: spacesync-worker-{{ .name }}
     spec:
-      {{- with .Values.imagePullSecrets }}
+      {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "spacebridge.serviceAccountName" . }}
+      serviceAccountName: {{ include "spacebridge.serviceAccountName" $ }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: spacesync-worker
+        - name: spacesync-worker-{{ .name }}
           command:
             - spacesync
             - worker
+            - "--tasks"
+            - "{{ .tasks }}"
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+            {{- toYaml $.Values.securityContext | nindent 12 }}
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
           env:
             - name: SPACEBRIDGE_URL
-              value: {{ .Values.environment.spacebridgeUrl | quote }}
+              value: {{ $.Values.environment.spacebridgeUrl | quote }}
             - name: HOST
-              value: {{ .Values.environment.host | quote }}
+              value: {{ $.Values.environment.host | quote }}
             - name: PORT
-              value: {{ .Values.environment.port | quote }}
+              value: {{ $.Values.environment.port | quote }}
             - name: DEBUG
-              value: {{ .Values.environment.debug | quote }}
+              value: {{ $.Values.environment.debug | quote }}
             - name: DATABASE_URL
-              value: {{ .Values.environment.databaseUrl | quote }}
+              value: {{ $.Values.environment.databaseUrl | quote }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "spacebridge.fullname" $ }}
                   key: jwt-secret
             - name: JWT_ALGORITHM
-              value: {{ .Values.environment.jwtAlgorithm | quote }}
+              value: {{ $.Values.environment.jwtAlgorithm | quote }}
             - name: JWT_EXPIRE_MINUTES
-              value: {{ .Values.environment.jwtExpireMinutes | quote }}
+              value: {{ $.Values.environment.jwtExpireMinutes | quote }}
             - name: LOG_LEVEL
               value: "INFO"
             - name: LOG_FORMAT
               value: "json"
-            {{- if .Values.config.openai.apiKey }}
+            {{- if $.Values.config.openai.apiKey }}
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "spacebridge.fullname" $ }}
                   key: openai-api-key
             {{- end }}
-            {{- if .Values.config.anthropic.apiKey }}
+            {{- if $.Values.config.anthropic.apiKey }}
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "spacebridge.fullname" $ }}
                   key: anthropic-api-key
             {{- end }}
-            {{- if .Values.config.smtp.host }}
+            {{- if $.Values.config.smtp.host }}
             - name: SMTP_HOST
-              value: {{ .Values.config.smtp.host | quote }}
+              value: {{ $.Values.config.smtp.host | quote }}
             - name: SMTP_PORT
-              value: {{ .Values.config.smtp.port | quote }}
+              value: {{ $.Values.config.smtp.port | quote }}
             - name: SMTP_USERNAME
-              value: {{ .Values.config.smtp.username | quote }}
+              value: {{ $.Values.config.smtp.username | quote }}
             - name: SMTP_PASSWORD
-              value: {{ .Values.config.smtp.password | quote }}
+              value: {{ $.Values.config.smtp.password | quote }}
             - name: SMTP_FROM
-              value: {{ .Values.config.smtp.from | quote }}
+              value: {{ $.Values.config.smtp.from | quote }}
             - name: SMTP_FROM_NAME
-              value: {{ .Values.config.smtp.fromName | quote }}
+              value: {{ $.Values.config.smtp.fromName | quote }}
             {{- end }}
             - name: NATS_URL
-            {{if .Values.nats.url}}
-              value: {{ .Values.nats.url }}
+            {{if $.Values.nats.url}}
+              value: {{ $.Values.nats.url }}
             {{else}}
-              value: nats://{{ include "spacebridge.fullname" . }}-nats:4222
+              value: nats://{{ include "spacebridge.fullname" $ }}-nats:4222
             {{end}}
-            {{- if .Values.sentry.enabled }}
+            {{- if $.Values.sentry.enabled }}
             - name: SENTRY_DSN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "spacebridge.fullname" $ }}
                   key: sentry-dsn
             {{- end }}
           resources:
@@ -111,15 +112,17 @@ spec:
             limits:
               cpu: "1"
               memory: "1Gi"
-      {{- with .Values.nodeSelector }}
+      {{- with $.Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with $.Values.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with $.Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+---
+{{- end }}

@@ -1,0 +1,11 @@
+ingress:
+  enabled: true
+  hosts:
+    - host: "{{ .Values.branchName }}.test.spacebridge.io"
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - hosts:
+        - "{{ .Values.branchName }}.test.spacebridge.io"
+      secretName: spacebridge-test-tls

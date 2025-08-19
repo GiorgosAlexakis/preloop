@@ -19,7 +19,7 @@ from spacemodels.models.organization import Organization  # Added
 from spacemodels.models.tracker import Tracker
 from spacesync.scanner.core import TrackerClient
 
-from spacesync.services.event_bus import TaskPublisher, get_task_publisher
+from spacesync.services.event_bus import EventBus, get_task_publisher
 
 logger = logging.getLogger(__name__)
 
@@ -58,29 +58,13 @@ DEFAULT_JIRA_SUBSCRIBED_EVENTS = [
 ]
 
 
-def _get_organization_identifier_from_payload(
-    tracker_type: str, payload: Dict[str, Any]
-) -> Optional[str]:
-    """Extracts the organization identifier from the webhook payload."""
-    if tracker_type.lower() == "github":
-        return str(payload.get("organization", {}).get("id"))
-    elif tracker_type.lower() == "gitlab":
-        # Group hooks have group_id, project hooks have project.namespace_id
-        return str(
-            payload.get("group_id") or payload.get("project", {}).get("namespace_id")
-        )
-    # Jira does not provide a consistent organization identifier in its webhook payloads.
-    # The validation for Jira will rely on the project key.
-    return None
-
-
 @router.post("/private/webhooks/{tracker_type}/{organization_id}")
 async def receive_webhook(
     tracker_type: str,
     organization_id: str,
     request: Request,
     db: Session = Depends(get_db_session),
-    task_publisher: TaskPublisher = Depends(get_task_publisher),  # NATS Integration
+    task_publisher: EventBus = Depends(get_task_publisher),  # NATS Integration
 ):
     """
     Receive webhook events from external trackers (GitHub, GitLab, Jira).
@@ -457,30 +441,7 @@ async def receive_webhook(
         f"Event '{actual_event_type}' for tracker ID {resolved_tracker.id} ({tracker_type}) IS SUBSCRIBED. Proceeding."
     )
 
-    # --- 6. Validate Organization Identifier from Payload ---
-    payload_org_identifier = _get_organization_identifier_from_payload(
-        tracker_type, parsed_payload
-    )
-    if (
-        payload_org_identifier
-        and payload_org_identifier != organization_data.identifier
-    ):
-        logger.error(
-            f"Webhook organization identifier mismatch. URL org_id: {organization_data.identifier}, "
-            f"Payload org_id: {payload_org_identifier}"
-        )
-        # Notify admins
-        await task_publisher.publish_task(
-            "notify_admins",
-            subject="Webhook organization identifier mismatch",
-            message=f"Webhook organization identifier mismatch. URL org_id: {organization_data.identifier}, Payload org_id: {payload_org_identifier}",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Organization identifier in payload does not match webhook URL.",
-        )
-
-    # --- 7. Process Payload and Update Database ---
+    # --- 6. Process Payload and Update Database ---
     try:
         tracker_client = TrackerClient(resolved_tracker)
         if actual_event_type in [
@@ -692,7 +653,7 @@ async def receive_webhook(
         )
         raise HTTPException(status_code=500, detail="Failed to process webhook payload")
 
-    # --- 8. Update Timestamp and Publish Event ---
+    # --- 7. Update Timestamp and Publish Event ---
     try:
         if organization_context_for_timestamp:  # GH/GL
             organization_context_for_timestamp.last_webhook_update = datetime.now(

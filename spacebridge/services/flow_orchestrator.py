@@ -9,7 +9,6 @@ from nats.aio.client import Client
 
 from spacemodels import crud, schemas
 from spacemodels.models.flow import Flow
-from spacesync.services.event_bus import get_nats_client
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +17,18 @@ class FlowExecutionOrchestrator:
     """Manages the end-to-end lifecycle of a single Flow invocation."""
 
     def __init__(
-        self, db: Session, flow_id: uuid.UUID, trigger_event_data: Dict[str, Any]
+        self,
+        db: Session,
+        flow_id: uuid.UUID,
+        trigger_event_data: Dict[str, Any],
+        nats_client: Client,
     ):
         self.db = db
         self.flow_id = flow_id
         self.trigger_event_data = trigger_event_data
         self.flow: Flow = None
         self.execution_log: schemas.FlowExecution = None
-        self.nats_client: Client = get_nats_client()
+        self.nats_client: Client = nats_client
 
     async def _publish_update(self, message_type: str, payload: Dict[str, Any]):
         """Publishes a structured message to the NATS stream."""
