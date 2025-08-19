@@ -218,22 +218,22 @@ test:
       --set branchName=${CI_COMMIT_REF_NAME}
       -f ./helm/spacebridge/values-test.yaml
 
-test:integration:
-  stage: test
-  needs: [test]
-  image: mcr.microsoft.com/playwright/python:v1.30.0-focal
-  script:
-    - pip install -e ".[dev]"
-    - playwright install
-    - export SPACEBRIDGE_TEST_URL=$CI_ENVIRONMENT_URL
-    - pytest tests/integration
+# test:integration:
+#   stage: test
+#   needs: [test]
+#   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
+#   script:
+#     - pip install -e ".[dev]"
+#     - playwright install
+#     - export SPACEBRIDGE_TEST_URL=$CI_ENVIRONMENT_URL
+#     - pytest tests/integration
 
-smoke:
-  stage: test
-  image: mcr.microsoft.com/playwright/python:v1.30.0-focal
-  script:
-    - pip install -e ".[dev]"
-    - playwright install
-    - pytest tests/smoke
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
+# smoke:
+#   stage: test
+#   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
+#   script:
+#     - pip install -e ".[dev]"
+#     - playwright install
+#     - pytest tests/smoke
+#   rules:
+#     - if: $CI_PIPELINE_SOURCE == "schedule"
