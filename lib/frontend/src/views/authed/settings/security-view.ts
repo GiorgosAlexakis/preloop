@@ -50,11 +50,7 @@ export class SecurityView extends LitElement {
 
   render() {
     return html`
-      <view-header headerText="Security">
-        <div slot="side-column">
-          <theme-switcher></theme-switcher>
-        </div>
-      </view-header>
+      <view-header headerText="Security"> </view-header>
       <div class="column-layout">
         <div class="main-column">
           <div class="card">

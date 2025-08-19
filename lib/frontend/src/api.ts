@@ -84,6 +84,23 @@ export async function fetchWithAuth(
     }
   }
 
+  if (response.status === 429) {
+    window.dispatchEvent(
+      new CustomEvent('show-upgrade-modal', {
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  return response;
+}
+export async function fetchPublic(
+  url: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const response = await fetch(url, options);
+  // You might want to add basic error handling here if needed
   return response;
 }
 
@@ -144,11 +161,11 @@ export async function updateTracker(trackerId: string, trackerData: any) {
 }
 
 export async function validateTrackerToken(
-  id?: string,
   type: string,
   token: string,
   url?: string,
-  username?: string
+  username?: string,
+  id?: string
 ) {
   console.log('Validating tracker token', type, token, url, username);
   const payload: {
@@ -185,12 +202,12 @@ export async function validateTrackerToken(
 }
 
 export async function listProjectsForOrg(
-  trackerId: string,
   trackerType: string,
   token: string,
   orgId: string,
   url?: string,
-  username?: string
+  username?: string,
+  trackerId?: string
 ) {
   const payload: any = {
     tracker_id: trackerId,
@@ -423,6 +440,14 @@ export async function getFlows(): Promise<any[]> {
   return response.json();
 }
 
+export async function getFlow(flowId: string): Promise<any> {
+  const response = await fetchWithAuth(`/api/v1/flows/${flowId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow');
+  }
+  return response.json();
+}
+
 export async function createFlow(flow: any): Promise<any> {
   const response = await fetchWithAuth('/api/v1/flows', {
     method: 'POST',
@@ -454,6 +479,35 @@ export async function deleteFlow(flowId: string) {
   if (!response.ok) {
     throw new Error('Failed to delete flow');
   }
+}
+
+export async function getFlowPresets(): Promise<any[]> {
+  const response = await fetchWithAuth('/api/v1/flows/presets');
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow presets');
+  }
+  return response.json();
+}
+
+export async function getFlowExecutions(): Promise<any[]> {
+  const response = await fetchWithAuth('/api/v1/flows/executions');
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow executions');
+  }
+  return response.json();
+}
+
+export async function cloneFlowPreset(presetId: string): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/presets/${presetId}/clone`,
+    {
+      method: 'POST',
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to clone flow preset');
+  }
+  return response.json();
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -693,6 +747,26 @@ export async function getCompliancePrompts(): Promise<
   const response = await fetchWithAuth('/api/v1/issue_compliance_prompts');
   if (!response.ok) {
     throw new Error('Failed to fetch compliance prompts');
+  }
+  return response.json();
+}
+
+// Billing
+export async function fetchPlans() {
+  const response = await fetchWithAuth('/api/v1/billing/plans');
+  if (!response.ok) {
+    throw new Error('Failed to fetch plans');
+  }
+  return response.json();
+}
+
+export async function getCurrentSubscription() {
+  const response = await fetchWithAuth('/api/v1/billing/subscription');
+  if (!response.ok) {
+    if (response.status === 404) {
+      return null; // No subscription found
+    }
+    throw new Error('Failed to fetch subscription');
   }
   return response.json();
 }

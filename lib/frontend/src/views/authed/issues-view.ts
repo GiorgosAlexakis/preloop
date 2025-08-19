@@ -524,9 +524,6 @@ export class IssuesView extends LitElement {
             Filter
           </sl-button>
         </div>
-        <div slot="side-column">
-          <theme-switcher></theme-switcher>
-        </div>
       </view-header>
       <div class="column-layout">
         <div class="main-column">

@@ -155,7 +155,7 @@ export class RequestDemoView extends LitElement {
             ></sl-input>
 
             <sl-select
-              label="Company Headcount"
+              label="Headcount"
               required
               .value=${this._headcount}
               @sl-change=${(e: any) => (this._headcount = e.target.value)}
