@@ -13,7 +13,7 @@ from apscheduler.jobstores.base import JobLookupError
 
 from spacemodels.crud import crud_tracker
 from spacemodels.db.session import get_db_session
-from spacesync.services.event_bus import task_publisher_service
+from spacesync.services.event_bus import event_bus_service
 from ..config import logger, SERVICE_POLL_INTERVAL
 
 POLLING_THRESHOLD = timedelta(hours=1)
@@ -22,20 +22,20 @@ TRACKER_JOB_PREFIX = "tracker_update_"
 
 async def poll_tracker(tracker_id: str):
     """
-    Scheduled job to publish a 'scan_tracker_task' to the NATS queue.
+    Scheduled job to publish a 'poll_tracker' task to the NATS queue.
     """
-    logger.info(f"Publishing scan task for tracker {tracker_id}")
+    logger.info(f"Publishing poll task for tracker {tracker_id}")
     try:
-        ack = await task_publisher_service.publish_task("scan_tracker_task", tracker_id)
+        ack = await event_bus_service.publish_task("poll_tracker", tracker_id)
         if ack:
             logger.info(
-                f"Successfully published scan task for tracker {tracker_id}. ACK: stream={ack.stream}, seq={ack.seq}"
+                f"Successfully published poll task for tracker {tracker_id}. ACK: stream={ack.stream}, seq={ack.seq}"
             )
         else:
-            logger.error(f"Failed to publish scan task for tracker {tracker_id}.")
+            logger.error(f"Failed to publish poll task for tracker {tracker_id}.")
     except Exception as e:
         logger.error(
-            f"An exception occurred while trying to publish scan task for tracker {tracker_id}: {e}",
+            f"An exception occurred while trying to publish poll task for tracker {tracker_id}: {e}",
             exc_info=True,
         )
 

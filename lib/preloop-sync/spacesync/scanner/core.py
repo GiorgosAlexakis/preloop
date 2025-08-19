@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 import secrets
 from sqlalchemy.orm import Session
 
+from spacebridge.services.billing import BillingService
 from spacemodels.crud import (
     crud_account,
     crud_issue,
@@ -23,7 +24,7 @@ from spacemodels.models import Issue, Organization, Project, Tracker, TrackerSco
 from ..config import logger
 
 POLLING_THRESHOLD = timedelta(seconds=os.getenv("POLLING_THRESHOLD", 3600))
-RECHECK_PROJECT_WEBHOOK_INTERVAL = timedelta(days=1)
+RECHECK_PROJECT_WEBHOOK_INTERVAL = POLLING_THRESHOLD * 10
 
 
 class TrackerClient:
@@ -220,6 +221,7 @@ class TrackerClient:
         logger.info(
             f"Scanning issues for project {project.id} ({project.name}) since {since}"
         )
+        billing_service = BillingService(db)
         issue_data_list = self.client.get_issues(
             organization_id=organization.identifier,
             project_id=project.identifier,
@@ -280,6 +282,9 @@ class TrackerClient:
                     db_comment = crud_comment.create(db, obj_in=xformed_comment_data)
 
                 if comment_changed or force_update:
+                    billing_service.record_usage(
+                        account_id=self.tracker.account_id, metric="comments_ingested"
+                    )
                     crud_issue_embedding.create_embeddings(
                         db=db,
                         issue_id=current_issue_model.id,
@@ -289,6 +294,9 @@ class TrackerClient:
 
             if issue_changed or force_update:
                 embedding_updates += 1
+                billing_service.record_usage(
+                    account_id=self.tracker.account_id, metric="issues_ingested"
+                )
                 crud_issue_embedding.create_embeddings(
                     db, issue_id=current_issue_model.id
                 )
@@ -333,12 +341,15 @@ def _process_organization(
             if client.tracker_type == "jira":
                 for project in projects:
                     try:
-                        client.client.register_webhook(
-                            db=db,
-                            project=project,
-                            webhook_url=webhook_target_url,
-                            secret=current_secret_to_use,
-                        )
+                        if not client.client.is_webhook_registered_for_project(
+                            project, webhook_target_url
+                        ):
+                            client.client.register_webhook(
+                                db=db,
+                                project=project,
+                                webhook_url=webhook_target_url,
+                                secret=current_secret_to_use,
+                            )
                     except Exception as e:
                         logger.error(
                             f"Error registering webhook for Jira project {project.identifier}: {e}",
@@ -347,12 +358,15 @@ def _process_organization(
                         org_stats["organizations"]["errors"] += 1
             elif client.tracker_type == "github":
                 try:
-                    client.client.register_webhook(
-                        db=db,
-                        organization=org,
-                        webhook_url=webhook_target_url,
-                        secret=current_secret_to_use,
-                    )
+                    if not client.client.is_webhook_registered_for_organization(
+                        org, webhook_target_url
+                    ):
+                        client.client.register_webhook(
+                            db=db,
+                            organization=org,
+                            webhook_url=webhook_target_url,
+                            secret=current_secret_to_use,
+                        )
                 except Exception as e:
                     logger.error(
                         f"Error registering webhook for GitHub organization {org.identifier}: {e}",
@@ -361,24 +375,33 @@ def _process_organization(
                     org_stats["organizations"]["errors"] += 1
             elif client.tracker_type == "gitlab":
                 try:
-                    result = client.client.register_group_webhook(
-                        db=db,
-                        organization=org,
-                        webhook_url=webhook_target_url,
-                        secret=current_secret_to_use,
-                    )
+                    if not client.client.is_webhook_registered_for_organization(
+                        org, webhook_target_url
+                    ):
+                        result = client.client.register_group_webhook(
+                            db=db,
+                            organization=org,
+                            webhook_url=webhook_target_url,
+                            secret=current_secret_to_use,
+                        )
+                    else:
+                        result = True
+
                     if result == "group_hooks_not_supported":
                         logger.warning(
                             f"Group hooks are not supported for GitLab organization {org.identifier}."
                         )
                         for project in projects:
                             try:
-                                client.client.register_project_webhook(
-                                    db=db,
-                                    project=project,
-                                    webhook_url=webhook_target_url,
-                                    secret=current_secret_to_use,
-                                )
+                                if not client.client.is_webhook_registered_for_project(
+                                    project, webhook_target_url
+                                ):
+                                    client.client.register_project_webhook(
+                                        db=db,
+                                        project=project,
+                                        webhook_url=webhook_target_url,
+                                        secret=current_secret_to_use,
+                                    )
                             except Exception as e:
                                 logger.error(
                                     f"Error registering webhook for GitLab project {project.identifier}: {e}",
@@ -445,7 +468,9 @@ def scan_tracker(
         "embeddings_updated": 0,
         "errors": 0,
     }
-
+    if tracker.is_deleted:
+        logger.info(f"Tracker {tracker.id} is deleted, skipping scan.")
+        return stats
     try:
         client = TrackerClient(tracker)
         organizations = client.scan_organizations(db)
@@ -456,6 +481,7 @@ def scan_tracker(
             if (
                 org.last_webhook_update
                 and (now - org.last_webhook_update) < POLLING_THRESHOLD
+                and (now - org.last_polling_update) < RECHECK_PROJECT_WEBHOOK_INTERVAL
                 and not force_update
             ):
                 stats["organizations"]["skipped_webhook"] += 1

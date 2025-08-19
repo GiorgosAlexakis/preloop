@@ -7,7 +7,7 @@ from datetime import datetime  # Import datetime
 import asyncio
 from spacemodels.db.session import get_db_session
 from ..services.manager import sync_scheduled_jobs
-from ..services.event_bus import task_publisher_service
+from ..services.event_bus import event_bus_service
 
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -45,7 +45,7 @@ async def run_scheduler_async(
     # Connect to NATS using the shared task publisher service
     # This ensures the stream is created with the correct, robust configuration.
     try:
-        await task_publisher_service.connect()
+        await event_bus_service.connect()
     except Exception as e:
         logger.error(f"Scheduler failed to connect to NATS: {e}", exc_info=True)
         # Depending on strictness, you might want to exit here.
