@@ -774,6 +774,43 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/issue-dependencies/detect:
+    post:
+      tags:
+      - Issues
+      - Issues
+      - AI
+      summary: Detect dependencies between a list of issues using an AI model.
+      description: 'Analyzes a list of issues to find potential dependencies between
+        them.
+
+
+        - **issue_ids**: A list of UUIDs for the issues to be analyzed.
+
+        - **model_id**: Optional ID of a specific AI model to use. If not provided,
+        the user''s default model will be used.'
+      operationId: detect_issue_dependencies_api_v1_issue_dependencies_detect_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependencyRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/organizations:
     post:
       tags:
@@ -3656,6 +3693,62 @@ components:
       required:
       - url
       title: CreatePortalSessionResponse
+    DependencyPair:
+      properties:
+        source_issue_id:
+          type: string
+          title: Source Issue Id
+          description: The ID of the issue that must be completed first.
+        dependent_issue_id:
+          type: string
+          title: Dependent Issue Id
+          description: The ID of the issue that depends on the source issue.
+        reason:
+          type: string
+          title: Reason
+          description: A brief explanation of the dependency.
+        confidence_score:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence Score
+          description: The model's confidence in this dependency.
+      type: object
+      required:
+      - source_issue_id
+      - dependent_issue_id
+      - reason
+      - confidence_score
+      title: DependencyPair
+    DependencyRequest:
+      properties:
+        issue_ids:
+          items:
+            type: string
+          type: array
+          title: Issue Ids
+          description: A list of issue IDs to analyze for dependencies.
+        model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Id
+          description: Optional AI Model ID to use for detection.
+      type: object
+      required:
+      - issue_ids
+      title: DependencyRequest
+    DependencyResponse:
+      properties:
+        dependencies:
+          items:
+            $ref: '#/components/schemas/DependencyPair'
+          type: array
+          title: Dependencies
+      type: object
+      required:
+      - dependencies
+      title: DependencyResponse
     DuplicateIssuePair:
       properties:
         issue1:
