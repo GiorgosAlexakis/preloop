@@ -1,7 +1,7 @@
 """Add parent_id to issues and create issue_relationship table
 
 Revision ID: e681acc2f98f
-Revises: 6b2f38e54904
+Revises: f63a4134961a
 Create Date: 2025-08-13 22:55:39.602280
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "e681acc2f98f"
-down_revision: Union[str, None] = "6b2f38e54904"
+down_revision: Union[str, None] = "f63a4134961a"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
