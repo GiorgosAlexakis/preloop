@@ -3713,6 +3713,18 @@ components:
           minimum: 0.0
           title: Confidence Score
           description: The model's confidence in this dependency.
+        issue_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Issue Key
+          description: The key of the source issue.
+        dependency_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Dependency Key
+          description: The key of the dependent issue.
       type: object
       required:
       - source_issue_id

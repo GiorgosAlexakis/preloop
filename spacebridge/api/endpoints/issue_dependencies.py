@@ -40,6 +40,10 @@ class DependencyPair(BaseModel):
     confidence_score: float = Field(
         ..., ge=0.0, le=1.0, description="The model's confidence in this dependency."
     )
+    issue_key: Optional[str] = Field(None, description="The key of the source issue.")
+    dependency_key: Optional[str] = Field(
+        None, description="The key of the dependent issue."
+    )
 
 
 class DependencyResponse(BaseModel):
@@ -53,7 +57,7 @@ crud_issue = CRUDIssue(Issue)
 # System Prompt for the AI model
 SYSTEM_PROMPT = """
 You are an expert project manager AI. Your task is to analyze a list of software development issues and identify dependencies between them.
-An issue (B) is dependent on another issue (A) if A must be completed before B can be started or completed.
+An issue (B) is dependent on another issue (A) if A must be completed before B can be started or completed. Avoid circular dependencies.
 
 You will be given a list of issues, each with an ID, title, project, and description.
 Analyze the provided issues and identify all dependency pairs.
@@ -64,6 +68,8 @@ The value of \"dependencies\" should be a list of JSON objects, where each objec
 - \"dependent_issue_id\": The ID of the issue that depends on the source issue.
 - \"reason\": A concise, 1-2 sentence explanation for why the dependency exists.
 - \"confidence_score\": A float between 0.0 and 1.0 indicating your confidence in this dependency.
+- \"issue_key\": The key of the source issue.
+- \"dependency_key\": The key of the dependent issue.
 
 If you find no dependencies, return an empty list: {\"dependencies\": []}.
 """
@@ -75,7 +81,7 @@ If you find no dependencies, return an empty list: {\"dependencies\": []}.
     tags=["Issues", "AI"],
     summary="Detect dependencies between a list of issues using an AI model.",
 )
-async def detect_issue_dependencies(
+def detect_issue_dependencies(
     request: DependencyRequest,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
@@ -96,6 +102,7 @@ async def detect_issue_dependencies(
 
     # 1. Fetch issues from the database
     issues = []
+    issue_map = {}
     for issue_id in request.issue_ids:
         issue = crud_issue.get(db, id=issue_id, account_id=current_user.id)
         if not issue:
@@ -103,6 +110,7 @@ async def detect_issue_dependencies(
                 status_code=404, detail=f"Issue with ID '{issue_id}' not found."
             )
         issues.append(issue)
+        issue_map[str(issue.id)] = issue
 
     # 2. Select AI Model
     if request.model_id:
@@ -141,7 +149,7 @@ async def detect_issue_dependencies(
     try:
         client = openai.OpenAI(api_key=ai_model.api_key or openai.api_key)
 
-        response = await client.chat.completions.create(
+        response = client.chat.completions.create(
             model=ai_model.model_identifier,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -156,6 +164,15 @@ async def detect_issue_dependencies(
 
         response_content = response.choices[0].message.content
         parsed_json = json.loads(response_content)
+
+        # Add issue keys to the response
+        for dep in parsed_json.get("dependencies", []):
+            source_issue = issue_map.get(dep.get("source_issue_id"))
+            dependent_issue = issue_map.get(dep.get("dependent_issue_id"))
+            if source_issue:
+                dep["issue_key"] = source_issue.key
+            if dependent_issue:
+                dep["dependency_key"] = dependent_issue.key
 
         return DependencyResponse(**parsed_json)
 

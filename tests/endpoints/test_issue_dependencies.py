@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from pytest_mock import MockerFixture
 
 from spacebridge.api.endpoints.issue_dependencies import (
@@ -39,8 +39,7 @@ def mock_issues(mock_project: MagicMock) -> list[MagicMock]:
     return issues
 
 
-@pytest.mark.asyncio
-async def test_detect_issue_dependencies_success(
+def test_detect_issue_dependencies_success(
     mock_issues: list[MagicMock], mocker: MockerFixture
 ):
     """Tests successful dependency detection between a list of issues."""
@@ -79,12 +78,12 @@ async def test_detect_issue_dependencies_success(
     mock_completion.choices = [
         MagicMock(message=MagicMock(content=json.dumps({"dependencies": []})))
     ]
-    mock_openai_client.return_value.chat.completions.create = AsyncMock(
-        return_value=mock_completion
+    mock_openai_client.return_value.chat.completions.create.return_value = (
+        mock_completion
     )
 
     # Act
-    result = await detect_issue_dependencies(
+    result = detect_issue_dependencies(
         request=request, db=MagicMock(), current_user=mock_user
     )
 
@@ -97,7 +96,7 @@ async def test_detect_issue_dependencies_success(
     mock_crud_ai_model.get_default_active_model.assert_called_once_with(
         mocker.ANY, account_id=mock_user.id
     )
-    mock_openai_client.return_value.chat.completions.create.assert_awaited_once()
+    mock_openai_client.return_value.chat.completions.create.assert_called_once()
     mock_billing_instance.record_usage.assert_called_once_with(
         account_id=mock_user.id, metric="ai_calls", quantity=1
     )
