@@ -33,7 +33,10 @@ export class IssuesDependenciesView extends LitElement {
   private _dependencies: DependencyPair[] = [];
 
   @state()
-  private _dependencyMap: Map<string, { blocks: DependencyPair[], blockedBy: DependencyPair[] }> = new Map();
+  private _dependencyMap: Map<
+    string,
+    { blocks: DependencyPair[]; blockedBy: DependencyPair[] }
+  > = new Map();
 
   @state()
   private _loadingIssues = false;
@@ -134,9 +137,8 @@ export class IssuesDependenciesView extends LitElement {
       this._hasMorePages = issues.length === this._pageSize;
 
       if (issues.length > 0) {
-        this.fetchDependencies(issues.map(i => i.id));
+        this.fetchDependencies(issues.map((i) => i.id));
       }
-
     } catch (error) {
       this._error = 'Failed to load issues.';
       console.error(error);
@@ -183,12 +185,15 @@ export class IssuesDependenciesView extends LitElement {
   }
 
   private _processDependencies() {
-    const newMap = new Map<string, { blocks: DependencyPair[], blockedBy: DependencyPair[] }>();
-    this._issues.forEach(issue => {
+    const newMap = new Map<
+      string,
+      { blocks: DependencyPair[]; blockedBy: DependencyPair[] }
+    >();
+    this._issues.forEach((issue) => {
       newMap.set(issue.id, { blocks: [], blockedBy: [] });
     });
 
-    this._dependencies.forEach(dep => {
+    this._dependencies.forEach((dep) => {
       // Add to the 'blocks' list of the source issue
       if (newMap.has(dep.source_issue_id)) {
         newMap.get(dep.source_issue_id)!.blocks.push(dep);
@@ -214,9 +219,15 @@ export class IssuesDependenciesView extends LitElement {
     if (this._issues.length === 0) {
       return html`
         <div class="empty-state">
-            <sl-icon name="info-circle" style="font-size: 3rem; margin-bottom: 1rem;"></sl-icon>
-            <h2>No Issues Found</h2>
-            <p>No issues were found for the selected project, or the project is empty.</p>
+          <sl-icon
+            name="info-circle"
+            style="font-size: 3rem; margin-bottom: 1rem;"
+          ></sl-icon>
+          <h2>No Issues Found</h2>
+          <p>
+            No issues were found for the selected project, or the project is
+            empty.
+          </p>
         </div>
       `;
     }
@@ -232,33 +243,49 @@ export class IssuesDependenciesView extends LitElement {
             </tr>
           </thead>
           <tbody>
-            ${this._issues.map(issue => {
+            ${this._issues.map((issue) => {
               const deps = this._dependencyMap.get(issue.id);
               return html`
                 <tr>
-                  <td><a href="${issue.url}" target="_blank">${issue.key}</a></td>
+                  <td>
+                    <a href="${issue.url}" target="_blank">${issue.key}</a>
+                  </td>
                   <td>
                     ${issue.title}
                     <div class="dependency-tags">
-                      ${when(this._loadingDependencies, 
-                        () => html`<sl-spinner style="font-size: 1em; vertical-align: middle;"></sl-spinner>`, 
+                      ${when(
+                        this._loadingDependencies,
+                        () =>
+                          html`<sl-spinner
+                            style="font-size: 1em; vertical-align: middle;"
+                          ></sl-spinner>`,
                         () => html`
-                          ${deps?.blocks.map(d => html`
-                            <sl-tooltip content="Reason: ${d.reason}">
-                              <sl-badge variant="danger" pill>Blocks: ${d.dependency_key}</sl-badge>
-                            </sl-tooltip>
-                          `)}
-                          ${deps?.blockedBy.map(d => html`
-                            <sl-tooltip content="Reason: ${d.reason}">
-                              <sl-badge variant="warning" pill>Blocked by: ${d.issue_key}</sl-badge>
-                            </sl-tooltip>
-                          `)}
+                          ${deps?.blocks.map(
+                            (d) => html`
+                              <sl-tooltip content="Reason: ${d.reason}">
+                                <sl-badge variant="danger" pill
+                                  >Blocks: ${d.dependency_key}</sl-badge
+                                >
+                              </sl-tooltip>
+                            `
+                          )}
+                          ${deps?.blockedBy.map(
+                            (d) => html`
+                              <sl-tooltip content="Reason: ${d.reason}">
+                                <sl-badge variant="warning" pill
+                                  >Blocked by: ${d.issue_key}</sl-badge
+                                >
+                              </sl-tooltip>
+                            `
+                          )}
                         `
                       )}
                     </div>
                   </td>
                   <td>
-                    <sl-badge variant=${getStatusVariant(issue.status)}>${issue.status}</sl-badge>
+                    <sl-badge variant=${getStatusVariant(issue.status)}
+                      >${issue.status}</sl-badge
+                    >
                   </td>
                 </tr>
               `;
@@ -280,34 +307,43 @@ export class IssuesDependenciesView extends LitElement {
     return html`
       <view-header headerText="Issue Dependencies">
         <div slot="main-column">
-        <sl-select
+          <sl-select
             placeholder="Select a project..."
             .value=${this._selectedProjectId}
             @sl-change=${this._handleProjectSelect}
             .disabled=${this._allProjects.length === 0}
           >
-            ${this._allProjects.map(proj => html`<sl-option value=${proj.id}>${proj.name}</sl-option>`)}
+            ${this._allProjects.map(
+              (proj) =>
+                html`<sl-option value=${proj.id}>${proj.name}</sl-option>`
+            )}
           </sl-select>
         </div>
       </view-header>
 
       <div class="column-layout">
         <div class="main-column">
-      <div class="container">
-
-        ${when(this._selectedProjectId, 
-          () => this._renderIssueTable(),
-          () => html`
-            <div class="empty-state">
-                <sl-icon name="diagram-3" style="font-size: 3rem; margin-bottom: 1rem;"></sl-icon>
-                <h2>Select a Project</h2>
-                <p>Please select a project from the dropdown above to view its issues and detect dependencies.</p>
-            </div>
-          `
-        )}
+          <div class="container">
+            ${when(
+              this._selectedProjectId,
+              () => this._renderIssueTable(),
+              () => html`
+                <div class="empty-state">
+                  <sl-icon
+                    name="diagram-3"
+                    style="font-size: 3rem; margin-bottom: 1rem;"
+                  ></sl-icon>
+                  <h2>Select a Project</h2>
+                  <p>
+                    Please select a project from the dropdown above to view its
+                    issues and detect dependencies.
+                  </p>
+                </div>
+              `
+            )}
+          </div>
+        </div>
       </div>
-    </div>
-    </div>
     `;
   }
 }
