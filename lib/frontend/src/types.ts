@@ -126,3 +126,16 @@ export interface ComplianceSuggestion {
   title: string;
   description: string;
 }
+
+export interface DependencyPair {
+  source_issue_id: string;
+  dependent_issue_id: string;
+  reason: string;
+  confidence_score: number;
+  issue_key?: string;
+  dependency_key?: string;
+}
+
+export interface DependencyResponse {
+  dependencies: DependencyPair[];
+}
