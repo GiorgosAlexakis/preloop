@@ -2,6 +2,7 @@ import pytest
 import json
 from unittest.mock import AsyncMock, patch, Mock
 
+from nats.js.errors import APIError
 from spacesync.services.event_bus import EventBus
 
 
@@ -33,6 +34,10 @@ async def test_publish_task_success(mock_nats_connect, event_bus: EventBus):
     # Configure jetstream() to be a regular method returning the jetstream mock
     mock_nc.jetstream = Mock(return_value=mock_js)
 
+    # Mock stream interaction
+    mock_js.stream_info.side_effect = APIError(err_code=10059)  # Stream not found
+    mock_js.add_stream = AsyncMock()
+
     # Configure the async method on the jetstream mock
     mock_js.publish.return_value = mock_ack
 
@@ -51,7 +56,7 @@ async def test_publish_task_success(mock_nats_connect, event_bus: EventBus):
     call_args = mock_js.publish.call_args
 
     # Check subject and payload
-    assert call_args.args[0] == "spacesync.tasks"
+    assert call_args.args[0] == f"spacesync.tasks.{task_name}"
     payload = json.loads(call_args.args[1].decode("utf-8"))
 
     assert payload["function"] == task_name
@@ -90,8 +95,10 @@ async def test_publish_task_reconnects_if_not_connected(
 
     # Assert
     mock_nats_connect.assert_called_once()  # Should be called inside publish_task
+    mock_js.stream_info.side_effect = APIError(err_code=10059)
     mock_js.publish.assert_called_once_with(
-        "spacesync.tasks", b'{"function": "some_task", "args": [], "kwargs": {}}'
+        "spacesync.tasks.some_task",
+        b'{"function": "some_task", "args": [], "kwargs": {}}',
     )
     assert result is not None
 
@@ -112,6 +119,7 @@ async def test_publish_task_handles_publish_failure(
 
     # Configure publish to raise an exception
     mock_js.publish.side_effect = Exception("NATS publish error")
+    mock_js.stream_info.side_effect = APIError(err_code=10059)
 
     await event_bus.connect()
 
