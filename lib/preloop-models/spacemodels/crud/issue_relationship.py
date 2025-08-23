@@ -13,7 +13,14 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
     """CRUD operations for IssueRelationship model."""
 
     def create(
-        self, db: Session, *, source_issue_id: str, target_issue_id: str, type: str
+        self,
+        db: Session,
+        *,
+        source_issue_id: str,
+        target_issue_id: str,
+        type: str,
+        reason: Optional[str] = None,
+        confidence_score: Optional[float] = None,
     ) -> IssueRelationship:
         """Create a new issue relationship."""
         if type == "related":
@@ -25,6 +32,8 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
             source_issue_id=source_issue_id,
             target_issue_id=target_issue_id,
             type=type,
+            reason=reason,
+            confidence_score=confidence_score,
         )
         db.add(db_obj)
         db.commit()
@@ -40,6 +49,19 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
                     self.model.source_issue_id == issue_id,
                     self.model.target_issue_id == issue_id,
                 )
+            )
+            .all()
+        )
+
+    def get_relationships_for_issues(
+        self, db: Session, *, issue_ids: List[str]
+    ) -> List[IssueRelationship]:
+        """Get all relationships where both source and target are in the given list of issues."""
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.source_issue_id.in_(issue_ids),
+                self.model.target_issue_id.in_(issue_ids),
             )
             .all()
         )

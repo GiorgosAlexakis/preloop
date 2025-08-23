@@ -1,7 +1,8 @@
 """IssueRelationship model."""
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import Float, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import Optional
 
 from .base import Base
 
@@ -24,6 +25,8 @@ class IssueRelationship(Base):
         primary_key=True,
     )
     type: Mapped[str] = mapped_column(String(50), primary_key=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     source_issue: Mapped["Issue"] = relationship(
         "Issue", foreign_keys=[source_issue_id]
