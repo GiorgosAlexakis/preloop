@@ -94,6 +94,21 @@ export class IssuesDependenciesView extends LitElement {
       .dependency-tags sl-badge::part(base) {
         cursor: pointer;
       }
+      .blocks-badge::part(base) {
+        background-color: #d9d9e9;
+        color: var(--sl-color-neutral-800);
+        border: none;
+      }
+      .blocked-by-badge::part(base) {
+        background-color: #e3e3e0;
+        color: var(--sl-color-neutral-800);
+        border: none;
+      }
+      .dependency-badge-content {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-3x-small);
+      }
     `,
   ];
 
@@ -260,22 +275,58 @@ export class IssuesDependenciesView extends LitElement {
                             style="font-size: 1em; vertical-align: middle;"
                           ></sl-spinner>`,
                         () => html`
-                          ${deps?.blocks.map(
-                            (d) => html`
-                              <sl-tooltip content="Reason: ${d.reason}">
-                                <sl-badge variant="danger" pill
-                                  >Blocks: ${d.dependency_key}</sl-badge
-                                >
-                              </sl-tooltip>
+                          ${when(
+                            deps && deps.blocks.length > 0,
+                            () => html`
+                              <sl-badge pill class="blocks-badge">
+                                <div class="dependency-badge-content">
+                                  <sl-tooltip content="Blocks">
+                                    <sl-icon name="arrow-right-circle"></sl-icon>Blocks:
+                                  </sl-tooltip>
+                                  <span
+                                    >${deps?.blocks.map(
+                                      (d, i) => html`
+                                        <sl-tooltip
+                                          content="Reason: ${d.reason} | Confidence: ${(d.confidence_score * 100).toFixed(0)}%"
+                                        >
+                                          <span
+                                            >#${d.dependency_key.match(/\d+$/)?.[0]}</span
+                                          >
+                                        </sl-tooltip>${i < deps.blocks.length - 1
+                                          ? ', '
+                                          : ''}
+                                      `
+                                    )}</span
+                                  >
+                                </div>
+                              </sl-badge>
                             `
                           )}
-                          ${deps?.blockedBy.map(
-                            (d) => html`
-                              <sl-tooltip content="Reason: ${d.reason}">
-                                <sl-badge variant="warning" pill
-                                  >Blocked by: ${d.issue_key}</sl-badge
-                                >
-                              </sl-tooltip>
+                          ${when(
+                            deps && deps.blockedBy.length > 0,
+                            () => html`
+                              <sl-badge pill class="blocked-by-badge">
+                                <div class="dependency-badge-content">
+                                  <sl-tooltip content="Blocked by">
+                                    <sl-icon name="arrow-left-circle"></sl-icon>Blocked by:
+                                  </sl-tooltip>
+                                  <span
+                                    >${deps?.blockedBy.map(
+                                      (d, i) => html`
+                                        <sl-tooltip
+                                          content="Reason: ${d.reason} | Confidence: ${(d.confidence_score * 100).toFixed(0)}%"
+                                        >
+                                          <span
+                                            >#${d.issue_key.match(/\d+$/)?.[0]}</span
+                                          >
+                                        </sl-tooltip>${i < deps.blockedBy.length - 1
+                                          ? ', '
+                                          : ''}
+                                      `
+                                    )}</span
+                                  >
+                                </div>
+                              </sl-badge>
                             `
                           )}
                         `
