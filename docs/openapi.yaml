@@ -811,6 +811,42 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/issue-dependencies/extend:
+    post:
+      tags:
+      - Issues
+      - Issues
+      - AI
+      summary: Extend dependency scan from a given issue.
+      description: 'Extends the dependency scan for a specific issue to find more
+        related issues.
+
+
+        - **issue_ids**: The IDs of the issues to extend the scan from.
+
+        - **extend_by**: The number of additional issues to fetch and analyze.'
+      operationId: extend_dependency_scan_api_v1_issue_dependencies_extend_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtendScanRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/organizations:
     post:
       tags:
@@ -3845,6 +3881,24 @@ components:
       - data
       title: EmbeddingRawResponse
       description: Response model for the raw embeddings endpoint.
+    ExtendScanRequest:
+      properties:
+        issue_ids:
+          items:
+            type: string
+          type: array
+          title: Issue Ids
+          description: The ID of the issues to start the scan from.
+        extend_by:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Extend By
+          description: The number of new issues to include in the scan.
+      type: object
+      required:
+      - issue_ids
+      - extend_by
+      title: ExtendScanRequest
     FlowCreate:
       properties:
         name:
