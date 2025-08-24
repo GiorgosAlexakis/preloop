@@ -2,12 +2,18 @@
 
 import logging
 from typing import List, Optional
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from spacemodels.models.account import Account
-from spacemodels.crud import CRUDIssue
+from spacemodels.crud import (
+    CRUDIssue,
+    crud_ai_model,
+    crud_issue_set,
+    crud_issue_relationship,
+)
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
 from spacebridge.api.auth import get_current_active_user
@@ -16,7 +22,6 @@ import json
 import openai
 
 from spacebridge.services.billing import BillingService
-from spacemodels.crud import crud_ai_model
 
 
 # Schemas
@@ -130,7 +135,44 @@ def detect_issue_dependencies(
                 detail="No default AI model configured for your account.",
             )
 
-    # 3. Construct the user prompt
+    # 3. Check for a cached IssueSet
+    sorted_issue_ids = sorted(request.issue_ids)
+    existing_sets = crud_issue_set.get_supersets_by_issues(
+        db,
+        issue_ids=sorted_issue_ids,
+        ai_model_id=ai_model.id,
+        account_id=current_user.id,
+    )
+
+    if existing_sets:
+        logger.info(f"Cache hit for issue set with AI model {ai_model.id}.")
+        # If a superset exists, we can return the cached relationships
+        cached_relationships = crud_issue_relationship.get_relationships_for_issues(
+            db, issue_ids=request.issue_ids
+        )
+
+        dependencies = []
+        for rel in cached_relationships:
+            if rel.type == "depends_on":
+                source_issue = issue_map.get(str(rel.source_issue_id))
+                dependent_issue = issue_map.get(str(rel.target_issue_id))
+
+                if source_issue and dependent_issue:
+                    dependencies.append(
+                        DependencyPair(
+                            source_issue_id=str(rel.source_issue_id),
+                            dependent_issue_id=str(rel.target_issue_id),
+                            reason=rel.reason or "No reason provided",
+                            confidence_score=rel.confidence_score or 0.0,
+                            issue_key=source_issue.key,
+                            dependency_key=dependent_issue.key,
+                        )
+                    )
+        return DependencyResponse(dependencies=dependencies)
+
+    logger.info(f"Cache miss for issue set. Calling AI model {ai_model.id}.")
+
+    # 4. Construct the user prompt
     issue_details = []
     for issue in issues:
         detail = (
@@ -141,11 +183,12 @@ def detect_issue_dependencies(
         )
         issue_details.append(detail)
 
-    user_prompt = "Please analyze the following issues for dependencies:\n\n---\n".join(
-        issue_details
+    user_prompt = (
+        "Please analyze the following issues for dependencies:\n\n---\n"
+        + "\n\n---\n".join(issue_details)
     )
 
-    # 4. Call the AI model
+    # 5. Call the AI model
     try:
         client = openai.OpenAI(api_key=ai_model.api_key or openai.api_key)
 
@@ -165,16 +208,47 @@ def detect_issue_dependencies(
         response_content = response.choices[0].message.content
         parsed_json = json.loads(response_content)
 
-        # Add issue keys to the response
-        for dep in parsed_json.get("dependencies", []):
-            source_issue = issue_map.get(dep.get("source_issue_id"))
-            dependent_issue = issue_map.get(dep.get("dependent_issue_id"))
+        dependencies_from_ai = parsed_json.get("dependencies", [])
+
+        # 6. Store new relationships and add issue keys to the response
+        for dep in dependencies_from_ai:
+            source_id = dep.get("source_issue_id")
+            target_id = dep.get("dependent_issue_id")
+
+            # Validate that the AI is not hallucinating dependencies for issues not in the request
+            if source_id not in request.issue_ids or target_id not in request.issue_ids:
+                logger.warning(
+                    f"AI returned dependency for an issue not in the request: {source_id} -> {target_id}"
+                )
+                continue
+
+            crud_issue_relationship.create(
+                db,
+                source_issue_id=source_id,
+                target_issue_id=target_id,
+                type="depends_on",
+                reason=dep.get("reason"),
+                confidence_score=dep.get("confidence_score"),
+            )
+
+            source_issue = issue_map.get(source_id)
+            dependent_issue = issue_map.get(target_id)
             if source_issue:
                 dep["issue_key"] = source_issue.key
             if dependent_issue:
                 dep["dependency_key"] = dependent_issue.key
 
-        return DependencyResponse(**parsed_json)
+        # 7. Create a new IssueSet to mark this analysis as complete
+        set_name = f"Analysis for {len(sorted_issue_ids)} issues at {datetime.utcnow().isoformat()}"
+        crud_issue_set.create_and_remove_subsets(
+            db,
+            name=set_name,
+            issue_ids=sorted_issue_ids,
+            ai_model_id=ai_model.id,
+            account_id=current_user.id,
+        )
+
+        return DependencyResponse(dependencies=dependencies_from_ai)
 
     except openai.APIError as e:
         logger.error(f"OpenAI API call failed: {e}")
