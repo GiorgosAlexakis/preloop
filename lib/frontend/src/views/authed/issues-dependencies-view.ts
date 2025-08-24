@@ -17,7 +17,12 @@ import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
 import '../../components/single-issue-detail-view.ts';
-import { listProjects, searchIssues, detectIssueDependencies, extendIssueDependencyScan } from '../../api';
+import {
+  listProjects,
+  searchIssues,
+  detectIssueDependencies,
+  extendIssueDependencyScan,
+} from '../../api';
 import type { Project, Issue, DependencyPair } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import '../../components/pagination-controls.ts';
