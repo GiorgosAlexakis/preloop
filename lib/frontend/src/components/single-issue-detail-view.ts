@@ -90,6 +90,8 @@ export class SingleIssueDetailView extends LitElement {
         )}
       </div>
 
+      <slot name="additional-info"></slot>
+
       ${when(
         this.complianceResult,
         () => html`
