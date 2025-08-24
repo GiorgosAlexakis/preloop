@@ -1,9 +1,10 @@
 """CRUD operations for the IssueSet model."""
 
-from typing import List
+from typing import List, Dict, Optional
 import uuid
 
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from ..models.issue_set import IssueSet
 from .base import CRUDBase
@@ -39,13 +40,23 @@ class CRUDIssueSet(CRUDBase[IssueSet]):
             .filter(
                 self.model.ai_model_id == ai_model_id,
                 self.model.issue_ids.contains(issue_ids),
-                self.model.ai_model.has(account_id=account_id),
+                or_(
+                    self.model.ai_model.has(account_id=account_id),
+                    self.model.ai_model.has(account_id=None),
+                ),
             )
             .all()
         )
 
     def create_and_remove_subsets(
-        self, db: Session, *, obj_in: IssueSet, account_id: str
+        self,
+        db: Session,
+        *,
+        name: str,
+        issue_ids: List[str],
+        ai_model_id: uuid.UUID,
+        account_id: str,
+        meta_data: Optional[Dict] = None,
     ) -> IssueSet:
         """
         Creates a new IssueSet and removes any existing IssueSets that are subsets
@@ -53,8 +64,11 @@ class CRUDIssueSet(CRUDBase[IssueSet]):
 
         Args:
             db: The database session.
-            obj_in: The IssueSet object to create.
+            name: The name of the IssueSet to create.
+            issue_ids: A list of issue IDs for the new set.
+            ai_model_id: The ID of the AI model associated with the set.
             account_id: The ID of the account owning the AI model.
+            meta_data: Additional metadata for the new set.
 
         Returns:
             The newly created IssueSet object.
@@ -64,8 +78,8 @@ class CRUDIssueSet(CRUDBase[IssueSet]):
             db.query(self.model)
             .join(self.model.ai_model)
             .filter(
-                self.model.ai_model_id == obj_in.ai_model_id,
-                self.model.issue_ids.contained_by(obj_in.issue_ids),
+                self.model.ai_model_id == ai_model_id,
+                self.model.issue_ids.contained_by(issue_ids),
                 self.model.ai_model.has(account_id=account_id),
             )
             .all()
@@ -75,10 +89,16 @@ class CRUDIssueSet(CRUDBase[IssueSet]):
             db.delete(subset)
 
         # Create the new superset
-        db.add(obj_in)
+        new_issue_set = self.model(
+            name=name,
+            issue_ids=issue_ids,
+            ai_model_id=ai_model_id,
+            meta_data=meta_data,
+        )
+        db.add(new_issue_set)
         db.commit()
-        db.refresh(obj_in)
-        return obj_in
+        db.refresh(new_issue_set)
+        return new_issue_set
 
 
 crud_issue_set = CRUDIssueSet(IssueSet)

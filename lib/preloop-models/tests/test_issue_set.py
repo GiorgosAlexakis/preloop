@@ -65,6 +65,18 @@ def test_get_supersets_by_issues(
     assert retrieved_sets[0].id == superset.id
     assert retrieved_sets[0].name == "Superset 1"
 
+    # Act: Query for an exact match
+    retrieved_exact_match = crud_issue_set.get_supersets_by_issues(
+        db_session,
+        issue_ids=superset_issues,
+        ai_model_id=create_test_ai_model.id,
+        account_id=create_test_account.id,
+    )
+
+    # Assert: The exact match should be returned
+    assert len(retrieved_exact_match) == 1
+    assert retrieved_exact_match[0].id == superset.id
+
 
 def test_create_and_remove_subsets(
     db_session: Session, create_test_ai_model: AIModel, create_test_account: Account
@@ -85,13 +97,12 @@ def test_create_and_remove_subsets(
 
     # Act: Create a new superset
     superset_issues = ["ID-10", "ID-11", "ID-12"]
-    new_superset = IssueSet(
+    created_set = crud_issue_set.create_and_remove_subsets(
+        db=db_session,
         name="New Superset",
         issue_ids=superset_issues,
         ai_model_id=create_test_ai_model.id,
-    )
-    created_set = crud_issue_set.create_and_remove_subsets(
-        db_session, obj_in=new_superset, account_id=create_test_account.id
+        account_id=create_test_account.id,
     )
 
     # Assert: The new superset was created
@@ -101,3 +112,31 @@ def test_create_and_remove_subsets(
 
     # Assert: The original subset was deleted
     assert db_session.query(IssueSet).filter_by(id=subset.id).first() is None
+
+
+def test_retrieval_of_exact_set(
+    db_session: Session, create_test_ai_model: AIModel, create_test_account: Account
+):
+    """Test that get_supersets_by_issues retrieves an exact match."""
+    # Arrange: Create an initial IssueSet
+    issue_ids = ["ID-20", "ID-21"]
+    initial_set = crud_issue_set.create_and_remove_subsets(
+        db=db_session,
+        name="Initial Set",
+        issue_ids=issue_ids,
+        ai_model_id=create_test_ai_model.id,
+        account_id=create_test_account.id,
+    )
+    db_session.commit()
+
+    # Act: Call get_supersets_by_issues with the exact same parameters
+    retrieved_sets = crud_issue_set.get_supersets_by_issues(
+        db=db_session,
+        issue_ids=issue_ids,
+        ai_model_id=create_test_ai_model.id,
+        account_id=create_test_account.id,
+    )
+
+    # Assert: The existing set is retrieved
+    assert len(retrieved_sets) == 1
+    assert retrieved_sets[0].id == initial_set.id
