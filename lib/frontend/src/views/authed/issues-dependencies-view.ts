@@ -281,18 +281,23 @@ export class IssuesDependenciesView extends LitElement {
                               <sl-badge pill class="blocks-badge">
                                 <div class="dependency-badge-content">
                                   <sl-tooltip content="Blocks">
-                                    <sl-icon name="arrow-right-circle"></sl-icon>Blocks:
+                                    <sl-icon name="arrow-right-circle"></sl-icon
+                                    >Blocks:
                                   </sl-tooltip>
                                   <span
                                     >${deps?.blocks.map(
                                       (d, i) => html`
                                         <sl-tooltip
-                                          content="Reason: ${d.reason} | Confidence: ${(d.confidence_score * 100).toFixed(0)}%"
+                                          content="Reason: ${d.reason} | Confidence: ${(
+                                            d.confidence_score * 100
+                                          ).toFixed(0)}%"
                                         >
                                           <span
-                                            >#${d.dependency_key.match(/\d+$/)?.[0]}</span
-                                          >
-                                        </sl-tooltip>${i < deps.blocks.length - 1
+                                            >#${d.dependency_key.match(
+                                              /\d+$/
+                                            )?.[0]}</span
+                                          > </sl-tooltip
+                                        >${i < deps.blocks.length - 1
                                           ? ', '
                                           : ''}
                                       `
@@ -308,18 +313,23 @@ export class IssuesDependenciesView extends LitElement {
                               <sl-badge pill class="blocked-by-badge">
                                 <div class="dependency-badge-content">
                                   <sl-tooltip content="Blocked by">
-                                    <sl-icon name="arrow-left-circle"></sl-icon>Blocked by:
+                                    <sl-icon name="arrow-left-circle"></sl-icon
+                                    >Blocked by:
                                   </sl-tooltip>
                                   <span
                                     >${deps?.blockedBy.map(
                                       (d, i) => html`
                                         <sl-tooltip
-                                          content="Reason: ${d.reason} | Confidence: ${(d.confidence_score * 100).toFixed(0)}%"
+                                          content="Reason: ${d.reason} | Confidence: ${(
+                                            d.confidence_score * 100
+                                          ).toFixed(0)}%"
                                         >
                                           <span
-                                            >#${d.issue_key.match(/\d+$/)?.[0]}</span
-                                          >
-                                        </sl-tooltip>${i < deps.blockedBy.length - 1
+                                            >#${d.issue_key.match(
+                                              /\d+$/
+                                            )?.[0]}</span
+                                          > </sl-tooltip
+                                        >${i < deps.blockedBy.length - 1
                                           ? ', '
                                           : ''}
                                       `
