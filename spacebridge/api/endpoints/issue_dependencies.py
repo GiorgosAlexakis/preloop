@@ -5,6 +5,8 @@ from typing import List, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from spacemodels.models.account import Account
@@ -400,22 +402,29 @@ def extend_dependency_scan(
             if source_id not in query_issue_ids and target_id not in query_issue_ids:
                 continue
 
-            crud_issue_relationship.create(
-                db,
-                source_issue_id=source_id,
-                target_issue_id=target_id,
-                type="depends_on",
-                reason=dep.get("reason"),
-                confidence_score=dep.get("confidence_score"),
-            )
+            try:
+                crud_issue_relationship.create(
+                    db,
+                    source_issue_id=source_id,
+                    target_issue_id=target_id,
+                    type="depends_on",
+                    reason=dep.get("reason"),
+                    confidence_score=dep.get("confidence_score"),
+                )
 
-            source_issue = issue_map.get(source_id)
-            dependent_issue = issue_map.get(target_id)
-            if source_issue:
-                dep["issue_key"] = source_issue.key
-            if dependent_issue:
-                dep["dependency_key"] = dependent_issue.key
-            new_dependencies.append(dep)
+                source_issue = issue_map.get(source_id)
+                dependent_issue = issue_map.get(target_id)
+                if source_issue:
+                    dep["issue_key"] = source_issue.key
+                if dependent_issue:
+                    dep["dependency_key"] = dependent_issue.key
+                new_dependencies.append(dep)
+            except IntegrityError:
+                db.rollback()  # Rollback the session to a clean state
+                logger.warning(
+                    f"Duplicate relationship skipped: {source_id}-{target_id}"
+                )
+                continue
 
         # 7b. Store the new combined set in the IssueSet table
         set_name = f"Extended analysis for {len(analysis_issue_ids)} issues at {datetime.utcnow().isoformat()}"
