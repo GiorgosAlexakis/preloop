@@ -332,6 +332,24 @@ export async function detectIssueDependencies(
   return response.json();
 }
 
+export async function extendIssueDependencyScan(
+  issueIds: string[],
+  extendBy: number
+): Promise<DependencyResponse> {
+  const response = await fetchWithAuth('/api/v1/issue-dependencies/extend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ issue_ids: issueIds, extend_by: extendBy }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || 'Failed to extend issue dependency scan'
+    );
+  }
+  return response.json();
+}
+
 // Account
 export async function getAccountDetails() {
   const response = await fetchWithAuth('/api/v1/auth/users/me');

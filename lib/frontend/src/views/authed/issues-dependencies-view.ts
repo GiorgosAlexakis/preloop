@@ -17,7 +17,7 @@ import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
 import '../../components/single-issue-detail-view.ts';
-import { listProjects, searchIssues, detectIssueDependencies } from '../../api';
+import { listProjects, searchIssues, detectIssueDependencies, extendIssueDependencyScan } from '../../api';
 import type { Project, Issue, DependencyPair } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import '../../components/pagination-controls.ts';
@@ -234,19 +234,19 @@ export class IssuesDependenciesView extends LitElement {
     this._loadingDependencies = true;
     this._error = null;
     try {
-      // We only need to fetch dependencies for the new issue
-      const newDependencies = await detectIssueDependencies([issueId]);
+      // Extend the scan starting from the selected issue
+      const result = await extendIssueDependencyScan([issueId], 10); // Extend by 10 issues
 
       // Merge new dependencies with existing ones
       const newDependencyPairs = [...this._dependencies];
       const existingPairs = new Set(
         newDependencyPairs.map(
-          (p) => `${p.source_issue_id}-${p.target_issue_id}`
+          (p) => `${p.source_issue_id}-${p.dependent_issue_id}`
         )
       );
 
-      for (const dep of newDependencies) {
-        const pairKey = `${dep.source_issue_id}-${dep.target_issue_id}`;
+      for (const dep of result.dependencies) {
+        const pairKey = `${dep.source_issue_id}-${dep.dependent_issue_id}`;
         if (!existingPairs.has(pairKey)) {
           newDependencyPairs.push(dep);
           existingPairs.add(pairKey);
@@ -254,7 +254,8 @@ export class IssuesDependenciesView extends LitElement {
       }
 
       this._dependencies = newDependencyPairs;
-      this._processDependencies(); // This will rebuild the map and trigger a re-render
+      // Refetch issues to get any newly referenced issues and re-process all dependencies
+      await this.fetchIssues();
     } catch (error) {
       this._error = 'Failed to expand scan for issue.';
       console.error(error);
