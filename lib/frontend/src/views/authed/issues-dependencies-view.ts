@@ -240,7 +240,9 @@ export class IssuesDependenciesView extends LitElement {
       // Merge new dependencies with existing ones
       const newDependencyPairs = [...this._dependencies];
       const existingPairs = new Set(
-        newDependencyPairs.map((p) => `${p.source_issue_id}-${p.target_issue_id}`)
+        newDependencyPairs.map(
+          (p) => `${p.source_issue_id}-${p.target_issue_id}`
+        )
       );
 
       for (const dep of newDependencies) {
@@ -330,7 +332,10 @@ export class IssuesDependenciesView extends LitElement {
       `;
     }
 
-    const renderList = (items: DependencyPair[], type: 'blocks' | 'blockedBy') => {
+    const renderList = (
+      items: DependencyPair[],
+      type: 'blocks' | 'blockedBy'
+    ) => {
       return html`
         <ul>
           ${items.map((d) => {
@@ -340,12 +345,12 @@ export class IssuesDependenciesView extends LitElement {
 
             return html`
               <li>
-                <strong>${
-                  type === 'blocks' ? d.dependency_key : d.issue_key
-                }</strong
+                <strong
+                  >${type === 'blocks' ? d.dependency_key : d.issue_key}</strong
                 >: ${issue?.title || 'Unknown Issue'}
                 <div class="dependency-reason">
-                  ${d.reason} &bull; Confidence: ${(d.confidence_score * 100).toFixed(0)}%
+                  ${d.reason} &bull; Confidence:
+                  ${(d.confidence_score * 100).toFixed(0)}%
                 </div>
               </li>
             `;
@@ -525,9 +530,7 @@ export class IssuesDependenciesView extends LitElement {
                       <tr class="inline-detail-row">
                         <td colspan="4">
                           <div class="detail-view-card">
-                            <single-issue-detail-view
-                              .issue=${issue}
-                            >
+                            <single-issue-detail-view .issue=${issue}>
                               <div slot="additional-info">
                                 ${this._renderDependencyDetails(deps)}
                               </div>
@@ -602,14 +605,13 @@ export class IssuesDependenciesView extends LitElement {
                   (i) => i.id === this._expandedRowKey
                 );
                 if (issue) {
-                  return html`<single-issue-detail-view
-                    .issue=${issue}
-                  >
+                  return html`<single-issue-detail-view .issue=${issue}>
                     <div slot="additional-info">
                       ${this._renderDependencyDetails(
                         this._dependencyMap.get(issue.id)
                       )}
-                    </div> </single-issue-detail-view>`;
+                    </div>
+                  </single-issue-detail-view>`;
                 } else {
                   return html`<div class="placeholder-content">
                     <sl-icon name="info-circle"></sl-icon>
