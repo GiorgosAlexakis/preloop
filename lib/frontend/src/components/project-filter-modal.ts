@@ -35,7 +35,8 @@ export class ProjectFilterModal extends LitElement {
   @property({ type: Array }) selectedProjectIds: string[] = [];
   @property({ type: Boolean }) showProjects = true;
   @property({ type: Boolean }) showResolution = true;
-  @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
+  @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' =
+    'opened';
   @property({ type: String }) selectedResolution:
     | 'resolved'
     | 'unresolved'

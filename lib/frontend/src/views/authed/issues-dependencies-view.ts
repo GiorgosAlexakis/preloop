@@ -516,10 +516,7 @@ export class IssuesDependenciesView extends LitElement {
   private parseUrlAndUpdateState() {
     const params = new URLSearchParams(window.location.search);
     const projectId = params.get('project');
-    if (
-      projectId &&
-      this._allProjects.some((p) => p.id === projectId)
-    ) {
+    if (projectId && this._allProjects.some((p) => p.id === projectId)) {
       this._selectedProjectId = projectId;
     }
 
