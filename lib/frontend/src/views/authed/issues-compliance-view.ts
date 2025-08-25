@@ -773,6 +773,7 @@ export class IssuesComplianceView extends LitElement {
         .selectedProjectIds=${this._selectedProjectIds}
         .selectedStatus=${this._selectedStatus}
         .organizations=${this._organizations}
+        .showResolution=${false}
         @on-close=${() => (this._isFilterModalOpen = false)}
         @on-apply=${this._applyFilters}
       ></project-filter-modal>

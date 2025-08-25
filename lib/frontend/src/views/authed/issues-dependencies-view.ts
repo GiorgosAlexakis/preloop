@@ -15,7 +15,9 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 
+import '../../components/project-filter-modal.ts';
 import '../../components/single-issue-detail-view.ts';
 import {
   listProjects,
@@ -23,7 +25,7 @@ import {
   detectIssueDependencies,
   extendIssueDependencyScan,
 } from '../../api';
-import type { Project, Issue, DependencyPair } from '../../types';
+import type { Project, Issue, DependencyPair, IssueStatus } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import '../../components/pagination-controls.ts';
 import { getStatusVariant } from '../../utils/verdict';
@@ -58,6 +60,12 @@ export class IssuesDependenciesView extends LitElement {
   private _error: string | null = null;
 
   @state()
+  private _isFilterModalOpen = false;
+
+  @state()
+  private _selectedStatus: IssueStatus | null = 'opened';
+
+  @state()
   private _currentPage = 1;
 
   @state()
@@ -66,110 +74,10 @@ export class IssuesDependenciesView extends LitElement {
   @state()
   private _expandedRowKey: string | null = null;
 
+  @state()
+  private _expandingIssueId: string | null = null;
+
   private _pageSize = 10;
-
-  static styles = [
-    unsafeCSS(consoleStyles),
-    css`
-      .container {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-medium);
-      }
-      .table-card {
-        width: 100%;
-        margin-bottom: var(--sl-spacing-medium);
-      }
-      .table-card {
-        --padding: 0;
-        border-spacing: 0;
-      }
-      .controls {
-        display: flex;
-        gap: var(--sl-spacing-medium);
-        align-items: center;
-      }
-      sl-select {
-        min-width: 250px;
-      }
-      .empty-state {
-        text-align: center;
-        padding: var(--sl-spacing-xx-large);
-        border: 1px dashed var(--sl-color-neutral-300);
-        border-radius: var(--sl-radius-medium);
-      }
-      .dependency-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--sl-spacing-2x-small);
-        padding-top: var(--sl-spacing-3x-small);
-      }
-      .dependency-tags sl-badge::part(base) {
-        cursor: pointer;
-      }
-      .blocks-badge::part(base) {
-        background-color: #d9d9e9;
-        color: var(--sl-color-neutral-800);
-        border: none;
-      }
-      .blocked-by-badge::part(base) {
-        background-color: #e3e3e0;
-        color: var(--sl-color-neutral-800);
-        border: none;
-      }
-      .dependency-badge-content {
-        display: flex;
-        align-items: center;
-        gap: var(--sl-spacing-3x-small);
-      }
-      .clickable-row {
-        cursor: pointer;
-      }
-      .row-expanded {
-        background-color: var(--sl-color-primary-50);
-      }
-      .side-column {
-        display: none;
-      }
-
-      .placeholder-content {
-        text-align: center;
-      }
-
-      .dependency-details {
-        font-size: var(--sl-font-size-small);
-      }
-      .dependency-details h5 {
-        margin-top: var(--sl-spacing-medium);
-        margin-bottom: var(--sl-spacing-x-small);
-      }
-      .dependency-details ul {
-        list-style-type: none;
-        padding-left: var(--sl-spacing-medium);
-        margin: 0;
-      }
-      .dependency-details li {
-        padding: var(--sl-spacing-2x-small) 0;
-        border-bottom: 1px solid var(--sl-color-neutral-200);
-      }
-      .dependency-details li:last-child {
-        border-bottom: none;
-      }
-      .dependency-reason {
-        font-size: var(--sl-font-size-x-small);
-        color: var(--sl-color-neutral-500);
-      }
-
-      @media (min-width: 1720px) {
-        .side-column {
-          display: flex;
-        }
-        .inline-detail-row {
-          display: none;
-        }
-      }
-    `,
-  ];
 
   async connectedCallback() {
     super.connectedCallback();
@@ -177,10 +85,12 @@ export class IssuesDependenciesView extends LitElement {
 
   async firstUpdated() {
     await this._fetchProjects();
-    if (this._allProjects.length > 0) {
+    this.parseUrlAndUpdateState();
+    if (this._allProjects.length > 0 && !this._selectedProjectId) {
       this._selectedProjectId = this._allProjects[0].id;
-      this.fetchIssues();
     }
+    this.fetchIssues();
+    this._updateUrl();
   }
 
   private async _fetchProjects() {
@@ -206,6 +116,7 @@ export class IssuesDependenciesView extends LitElement {
         project_ids: [this._selectedProjectId],
         limit: this._pageSize,
         skip: skip,
+        status: this._selectedStatus || undefined,
       });
       this._issues = issues;
       this._hasMorePages = issues.length === this._pageSize;
@@ -236,6 +147,7 @@ export class IssuesDependenciesView extends LitElement {
   }
 
   private async _expandScanForRow(issueId: string) {
+    this._expandingIssueId = issueId;
     this._loadingDependencies = true;
     this._error = null;
     try {
@@ -266,6 +178,7 @@ export class IssuesDependenciesView extends LitElement {
       console.error(error);
     } finally {
       this._loadingDependencies = false;
+      this._expandingIssueId = null;
     }
   }
 
@@ -276,12 +189,27 @@ export class IssuesDependenciesView extends LitElement {
     this._dependencies = [];
     this._dependencyMap.clear();
     this.fetchIssues();
+    this._updateUrl();
+  }
+
+  private _openFilterModal() {
+    this._isFilterModalOpen = true;
+  }
+
+  private _applyFilters(e: CustomEvent) {
+    const { status } = e.detail;
+    this._selectedStatus = status;
+    this._isFilterModalOpen = false;
+    this._currentPage = 1; // Reset pagination
+    this.fetchIssues();
+    this._updateUrl();
   }
 
   private _goToNextPage() {
     if (this._hasMorePages) {
       this._currentPage++;
       this.fetchIssues();
+      this._updateUrl();
     }
   }
 
@@ -289,6 +217,7 @@ export class IssuesDependenciesView extends LitElement {
     if (this._currentPage > 1) {
       this._currentPage--;
       this.fetchIssues();
+      this._updateUrl();
     }
   }
 
@@ -298,6 +227,7 @@ export class IssuesDependenciesView extends LitElement {
     } else {
       this._expandedRowKey = issueId;
     }
+    this._updateUrl();
   }
 
   private _processDependencies() {
@@ -397,17 +327,12 @@ export class IssuesDependenciesView extends LitElement {
 
     if (this._issues.length === 0) {
       return html`
-        <div class="empty-state">
-          <sl-icon
-            name="info-circle"
-            style="font-size: 3rem; margin-bottom: 1rem;"
-          ></sl-icon>
-          <h2>No Issues Found</h2>
-          <p>
-            No issues were found for the selected project, or the project is
-            empty.
-          </p>
-        </div>
+        <sl-alert variant="warning" open>
+          <sl-icon slot="icon" name="info-circle"></sl-icon>
+          <strong>No Issues Found</strong><br />
+          No issues were found for the selected project, or the project is
+          empty.
+        </sl-alert>
       `;
     }
 
@@ -525,8 +450,16 @@ export class IssuesDependenciesView extends LitElement {
                   <td>
                     <sl-button
                       size="small"
-                      @click=${() => this._expandScanForRow(issue.id)}
-                      .loading=${this._loadingDependencies}
+                      @click=${(e: Event) => {
+                        e.stopPropagation();
+                        this._expandScanForRow(issue.id);
+                      }}
+                      ?disabled=${this._loadingDependencies &&
+                      this._expandingIssueId !== issue.id}
+                      .loading=${this._expandingIssueId === issue.id}
+                      variant=${this._expandingIssueId === issue.id
+                        ? 'primary'
+                        : 'default'}
                       >Expand Scan</sl-button
                     >
                   </td>
@@ -561,10 +494,161 @@ export class IssuesDependenciesView extends LitElement {
     `;
   }
 
+  private _updateUrl() {
+    if (!window.location.pathname.includes('dependencies')) {
+      return;
+    }
+    const params = new URLSearchParams();
+    if (this._selectedProjectId) {
+      params.set('project', this._selectedProjectId);
+    }
+    if (this._selectedStatus) {
+      params.set('status', this._selectedStatus);
+    }
+    if (this._expandedRowKey) {
+      params.set('selectedIssue', this._expandedRowKey);
+    }
+    params.set('page', this._currentPage.toString());
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.pushState({}, '', newUrl);
+  }
+
+  private parseUrlAndUpdateState() {
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('project');
+    if (
+      projectId &&
+      this._allProjects.some((p) => p.id === projectId)
+    ) {
+      this._selectedProjectId = projectId;
+    }
+
+    this._expandedRowKey = params.get('selectedIssue') || null;
+    this._currentPage = Number(params.get('page')) || 1;
+    const status = params.get('status') as IssueStatus | null;
+    if (status && ['opened', 'closed', 'all'].includes(status)) {
+      this._selectedStatus = status;
+    } else {
+      this._selectedStatus = 'opened';
+    }
+  }
+
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      .container {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-medium);
+      }
+      .table-card {
+        width: 100%;
+        margin-bottom: var(--sl-spacing-medium);
+      }
+      .table-card {
+        --padding: 0;
+        border-spacing: 0;
+      }
+      .controls {
+        display: flex;
+        gap: var(--sl-spacing-medium);
+        align-items: center;
+      }
+      sl-select {
+        min-width: 250px;
+      }
+      .empty-state {
+        text-align: center;
+        padding: var(--sl-spacing-xx-large);
+        border: 1px dashed var(--sl-color-neutral-300);
+        border-radius: var(--sl-radius-medium);
+      }
+      .dependency-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--sl-spacing-2x-small);
+        padding-top: var(--sl-spacing-3x-small);
+      }
+      .dependency-tags sl-badge::part(base) {
+        cursor: pointer;
+      }
+      .blocks-badge::part(base) {
+        background-color: var(--sl-color-neutral-200);
+        color: var(--sl-color-neutral-800);
+        border: none;
+      }
+      .blocked-by-badge::part(base) {
+        background-color: var(--sl-color-neutral-300);
+        color: var(--sl-color-neutral-800);
+        border: none;
+      }
+      .dependency-badge-content {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-3x-small);
+      }
+      .clickable-row {
+        cursor: pointer;
+      }
+      .row-expanded {
+        background-color: var(--sl-color-primary-50);
+      }
+      .side-column {
+        display: none;
+      }
+
+      .placeholder-content {
+        text-align: center;
+      }
+
+      .dependency-details {
+        font-size: var(--sl-font-size-small);
+      }
+      .dependency-details h5 {
+        margin-top: var(--sl-spacing-medium);
+        margin-bottom: var(--sl-spacing-x-small);
+      }
+      .dependency-details ul {
+        list-style-type: none;
+        padding-left: var(--sl-spacing-medium);
+        margin: 0;
+      }
+      .dependency-details li {
+        padding: var(--sl-spacing-2x-small) 0;
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+      }
+      .dependency-details li:last-child {
+        border-bottom: none;
+      }
+      .dependency-reason {
+        font-size: var(--sl-font-size-x-small);
+        color: var(--sl-color-neutral-500);
+      }
+
+      @media (min-width: 1720px) {
+        .side-column {
+          display: flex;
+        }
+        .inline-detail-row {
+          display: none;
+        }
+      }
+    `,
+  ];
+
   render() {
     return html`
+      <project-filter-modal
+        .isOpen=${this._isFilterModalOpen}
+        .selectedStatus=${this._selectedStatus}
+        .showProjects=${false}
+        .showResolution=${false}
+        @on-close=${() => (this._isFilterModalOpen = false)}
+        @on-apply=${this._applyFilters}
+      ></project-filter-modal>
+
       <view-header headerText="Issue Dependencies">
-        <div slot="main-column">
+        <div slot="main-column" class="controls">
           <sl-select
             placeholder="Select a project..."
             .value=${this._selectedProjectId}
@@ -576,6 +660,10 @@ export class IssuesDependenciesView extends LitElement {
                 html`<sl-option value=${proj.id}>${proj.name}</sl-option>`
             )}
           </sl-select>
+          <sl-button @click=${this._openFilterModal}>
+            <sl-icon slot="prefix" name="filter"></sl-icon>
+            Filter
+          </sl-button>
         </div>
       </view-header>
 

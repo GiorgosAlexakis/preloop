@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { when } from 'lit/directives/when.js';
 import type { Organization, Project } from '../types';
 import type { SlTree } from '@shoelace-style/shoelace';
 
@@ -32,8 +33,9 @@ export class ProjectFilterModal extends LitElement {
   @property({ type: Array }) organizations: Organization[] = [];
   @property({ type: Array }) projects: Project[] = [];
   @property({ type: Array }) selectedProjectIds: string[] = [];
-  @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' =
-    'opened';
+  @property({ type: Boolean }) showProjects = true;
+  @property({ type: Boolean }) showResolution = true;
+  @property({ type: String }) selectedStatus: 'opened' | 'closed' | 'all' = 'opened';
   @property({ type: String }) selectedResolution:
     | 'resolved'
     | 'unresolved'
@@ -109,51 +111,55 @@ export class ProjectFilterModal extends LitElement {
         .open=${this.isOpen}
         @sl-hide=${this.handleClose}
       >
-        <div
-          class="filter-section"
-          style="margin-top: var(--sl-spacing-medium);"
-        >
-          <label class="filter-label">Projects</label>
-          <sl-tree
-            selection="multiple"
-            @sl-selection-change=${this.handleSelect}
-          >
-            ${this.organizations.map((org) => {
-              const projectsInOrg = projectsByOrg.get(org.id) || [];
-              const selectedProjectsInOrg = projectsInOrg.filter((p) =>
-                this.draftSelectedProjectIds.includes(p.id.toString())
-              );
+        ${when(
+          this.showProjects,
+          () => html`
+            <div
+              class="filter-section"
+              style="margin-top: var(--sl-spacing-medium);"
+            >
+              <label class="filter-label">Projects</label>
+              <sl-tree
+                selection="multiple"
+                @sl-selection-change=${this.handleSelect}
+              >
+                ${this.organizations.map((org) => {
+                  const projectsInOrg = projectsByOrg.get(org.id) || [];
+                  const selectedProjectsInOrg = projectsInOrg.filter((p) =>
+                    this.draftSelectedProjectIds.includes(p.id.toString())
+                  );
 
-              const allSelected =
-                projectsInOrg.length > 0 &&
-                selectedProjectsInOrg.length === projectsInOrg.length;
-              const someSelected =
-                selectedProjectsInOrg.length > 0 &&
-                selectedProjectsInOrg.length < projectsInOrg.length;
+                  const allSelected =
+                    projectsInOrg.length > 0 &&
+                    selectedProjectsInOrg.length === projectsInOrg.length;
+                  const someSelected =
+                    selectedProjectsInOrg.length > 0 &&
+                    selectedProjectsInOrg.length < projectsInOrg.length;
 
-              return html`
-                <sl-tree-item
-                  ?selected=${allSelected}
-                  ?indeterminate=${someSelected}
-                >
-                  ${org.name}
-                  ${projectsInOrg.map(
-                    (proj) =>
-                      html`<sl-tree-item
-                        data-project-id="${proj.id}"
-                        ?selected=${this.draftSelectedProjectIds.includes(
-                          proj.id.toString()
-                        )}
-                        >${proj.name}</sl-tree-item
-                      >`
-                  )}
-                </sl-tree-item>
-              `;
-            })}
-          </sl-tree>
-        </div>
-
-        <sl-divider></sl-divider>
+                  return html`
+                    <sl-tree-item
+                      ?selected=${allSelected}
+                      ?indeterminate=${someSelected}
+                    >
+                      ${org.name}
+                      ${projectsInOrg.map(
+                        (proj) =>
+                          html`<sl-tree-item
+                            data-project-id="${proj.id}"
+                            ?selected=${this.draftSelectedProjectIds.includes(
+                              proj.id.toString()
+                            )}
+                            >${proj.name}</sl-tree-item
+                          >`
+                      )}
+                    </sl-tree-item>
+                  `;
+                })}
+              </sl-tree>
+            </div>
+            <sl-divider></sl-divider>
+          `
+        )}
 
         <div class="filter-section">
           <label class="filter-label">Issue Status</label>
@@ -167,19 +173,23 @@ export class ProjectFilterModal extends LitElement {
           </sl-radio-group>
         </div>
 
-        <sl-divider></sl-divider>
-
-        <div class="filter-section">
-          <label class="filter-label">Resolution Status</label>
-          <sl-radio-group
-            value=${this.draftSelectedResolution}
-            @sl-change=${this.handleResolutionChange}
-          >
-            <sl-radio-button value="all">All</sl-radio-button>
-            <sl-radio-button value="resolved">Resolved</sl-radio-button>
-            <sl-radio-button value="unresolved">Unresolved</sl-radio-button>
-          </sl-radio-group>
-        </div>
+        ${when(
+          this.showResolution,
+          () => html`
+            <sl-divider></sl-divider>
+            <div class="filter-section">
+              <label class="filter-label">Resolution Status</label>
+              <sl-radio-group
+                value=${this.draftSelectedResolution}
+                @sl-change=${this.handleResolutionChange}
+              >
+                <sl-radio-button value="all">All</sl-radio-button>
+                <sl-radio-button value="resolved">Resolved</sl-radio-button>
+                <sl-radio-button value="unresolved">Unresolved</sl-radio-button>
+              </sl-radio-group>
+            </div>
+          `
+        )}
 
         <sl-button slot="footer" @click=${this.handleClose}>Cancel</sl-button>
         <sl-button slot="footer" variant="primary" @click=${this.handleApply}

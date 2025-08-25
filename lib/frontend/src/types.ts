@@ -39,6 +39,8 @@ export interface SearchIssuesResponse {
   results: SearchResultItem[];
 }
 
+export type IssueStatus = 'opened' | 'closed' | 'all';
+
 export interface ApiKey {
   id: string;
   name: string;
