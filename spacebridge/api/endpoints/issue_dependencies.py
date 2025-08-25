@@ -224,15 +224,20 @@ def detect_issue_dependencies(
                 )
                 continue
 
-            crud_issue_relationship.create(
-                db,
-                source_issue_id=source_id,
-                target_issue_id=target_id,
-                type="depends_on",
-                reason=dep.get("reason"),
-                confidence_score=dep.get("confidence_score"),
-            )
-
+            try:
+                crud_issue_relationship.create(
+                    db,
+                    source_issue_id=source_id,
+                    target_issue_id=target_id,
+                    type="depends_on",
+                    reason=dep.get("reason"),
+                    confidence_score=dep.get("confidence_score"),
+                )
+            except IntegrityError:
+                db.rollback()
+                logger.warning(
+                    f"Duplicate dependency relationship: {source_id} -> {target_id}"
+                )
             source_issue = issue_map.get(source_id)
             dependent_issue = issue_map.get(target_id)
             if source_issue:
@@ -412,19 +417,18 @@ def extend_dependency_scan(
                     confidence_score=dep.get("confidence_score"),
                 )
 
-                source_issue = issue_map.get(source_id)
-                dependent_issue = issue_map.get(target_id)
-                if source_issue:
-                    dep["issue_key"] = source_issue.key
-                if dependent_issue:
-                    dep["dependency_key"] = dependent_issue.key
-                new_dependencies.append(dep)
             except IntegrityError:
                 db.rollback()  # Rollback the session to a clean state
                 logger.warning(
                     f"Duplicate relationship skipped: {source_id}-{target_id}"
                 )
-                continue
+            source_issue = issue_map.get(source_id)
+            dependent_issue = issue_map.get(target_id)
+            if source_issue:
+                dep["issue_key"] = source_issue.key
+            if dependent_issue:
+                dep["dependency_key"] = dependent_issue.key
+            new_dependencies.append(dep)
 
         # 7b. Store the new combined set in the IssueSet table
         set_name = f"Extended analysis for {len(analysis_issue_ids)} issues at {datetime.utcnow().isoformat()}"
