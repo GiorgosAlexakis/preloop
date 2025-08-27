@@ -1,5 +1,3 @@
-import uuid
-
 from sqlalchemy import Boolean, Column, ForeignKey, String, Text, JSON  # Added JSON
 
 from sqlalchemy.dialects.postgresql import UUID
@@ -12,9 +10,6 @@ from .mixins import TimestampMixin
 class Flow(Base, TimestampMixin):
     __tablename__ = "flow"
 
-    id = Column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )  # Changed from UUID
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     icon = Column(String, nullable=True)
@@ -49,6 +44,9 @@ class Flow(Base, TimestampMixin):
 
     ai_model = relationship("AIModel", back_populates="flows")
     account = relationship("Account", back_populates="flows", foreign_keys=[account_id])
+    executions = relationship(
+        "FlowExecution", back_populates="flow", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Flow(id={self.id}, name='{self.name}')>"
