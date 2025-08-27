@@ -37,4 +37,4 @@ pytest:
     - PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB_NAME -c "CREATE EXTENSION IF NOT EXISTS vector;"
     - python scripts/drop_tables.py
   script:
-    - pytest -vvv tests/ --cov=spacemodels --cov-report=xml --cov-report=term-missing --timeout=240
+    - pytest -vvv tests/ --cov=spacemodels --cov-report=xml --cov-report=term-missing --timeout=240 --cov-fail-under=80

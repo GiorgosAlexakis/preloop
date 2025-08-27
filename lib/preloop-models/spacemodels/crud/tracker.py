@@ -38,7 +38,7 @@ class CRUDTracker(CRUDBase[Tracker]):
         """Get trackers for an account."""
         return (
             db.query(Tracker)
-            .filter(Tracker.account_id == account_id)
+            .filter(Tracker.account_id == str(account_id))
             .filter(Tracker.is_deleted.is_(False))  # Exclude soft-deleted trackers
             .offset(skip)
             .limit(limit)
