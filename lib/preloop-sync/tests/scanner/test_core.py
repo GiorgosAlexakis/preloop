@@ -4,8 +4,22 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy.orm import Session
 
-from spacemodels.models import Organization, Tracker
-from spacesync.scanner.core import scan_tracker
+from spacemodels.models import (
+    Organization,
+    Project,
+    Tracker,
+    TrackerScopeRule,
+    Issue,
+    Account,
+    Comment,
+)
+from spacesync.scanner.core import (
+    scan_tracker,
+    TrackerClient,
+    _process_organization,
+    scan_account,
+    scan_all_accounts,
+)
 
 
 @pytest.fixture
@@ -29,9 +43,27 @@ def mock_organization():
     """Fixture for a mock organization model instance."""
     org = MagicMock(spec=Organization)
     org.id = 101
+    org.identifier = "test-org"
     org.last_webhook_update = None
     org.last_polling_update = None
     return org
+
+
+@pytest.fixture
+def mock_project():
+    """Fixture for a mock project model instance."""
+    project = MagicMock(spec=Project)
+    project.id = 1001
+    project.identifier = "test-project"
+    return project
+
+
+@pytest.fixture
+def mock_account():
+    """Fixture for a mock account model instance."""
+    account = MagicMock(spec=Account)
+    account.id = 1
+    return account
 
 
 @patch("spacesync.scanner.core._process_organization")
@@ -145,3 +177,641 @@ def test_scan_tracker_force_update_ignores_polling_time(
         mock_process_org.assert_called_once()
         assert stats["organizations"]["processed"] == 1
         assert stats["organizations"]["skipped_polling"] == 0
+
+
+@patch("spacesync.scanner.core.crud_organization")
+def test_tracker_client_scan_organizations(
+    mock_crud_org, mock_db_session, mock_tracker
+):
+    """Test that TrackerClient.scan_organizations correctly processes organizations."""
+    # Arrange
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        mock_client = MagicMock()
+        mock_client.get_organizations.return_value = [
+            {"id": "test-org", "name": "Test Org"}
+        ]
+        mock_client.transform_organization.return_value = {
+            "identifier": "test-org",
+            "name": "Test Org",
+        }
+        client = TrackerClient(mock_tracker)
+        client.client = mock_client
+        mock_db_session.query.return_value.filter.return_value.all.return_value = [
+            TrackerScopeRule(
+                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="test-org"
+            )
+        ]
+        mock_crud_org.get_by_identifier.return_value = None
+
+        # Act
+        client.scan_organizations(mock_db_session)
+
+        # Assert
+        mock_crud_org.get_by_identifier.assert_called_once()
+        mock_crud_org.create.assert_called_once()
+
+
+@patch("spacesync.scanner.core.crud_project")
+def test_tracker_client_scan_projects(
+    mock_crud_project, mock_db_session, mock_tracker, mock_organization
+):
+    """Test that TrackerClient.scan_projects correctly processes projects."""
+    # Arrange
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        mock_client = MagicMock()
+        mock_client.get_projects.return_value = [
+            {"id": "test-project", "name": "Test Project"}
+        ]
+        mock_client.transform_project.return_value = {
+            "identifier": "test-project",
+            "name": "Test Project",
+        }
+        client = TrackerClient(mock_tracker)
+        client.client = mock_client
+        mock_db_session.query.return_value.filter.return_value.all.return_value = [
+            TrackerScopeRule(
+                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="test-org"
+            )
+        ]
+        mock_crud_project.get_by_slug_or_identifier.return_value = None
+
+        # Act
+        client.scan_projects(mock_db_session, mock_organization)
+
+        # Assert
+        mock_crud_project.get_by_slug_or_identifier.assert_called_once()
+        mock_crud_project.create.assert_called_once()
+
+
+@patch("spacesync.scanner.core.crud_issue")
+@patch("spacesync.scanner.core.crud_comment")
+@patch("spacesync.scanner.core.crud_issue_embedding")
+@patch("spacesync.scanner.core.BillingService")
+def test_tracker_client_scan_issues_new_issue(
+    mock_billing_service,
+    mock_crud_embedding,
+    mock_crud_comment,
+    mock_crud_issue,
+    mock_db_session,
+    mock_tracker,
+    mock_organization,
+    mock_project,
+):
+    """Test that TrackerClient.scan_issues correctly processes a new issue."""
+    # Arrange
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        mock_internal_client = MagicMock()
+        mock_internal_client.get_issues.return_value = [
+            {"id": "1", "updated_at": "2025-01-01T00:00:00Z"}
+        ]
+        mock_internal_client.transform_issue.return_value = {
+            "external_id": "1",
+            "updated_at": datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+            "comments": [],
+        }
+        client = TrackerClient(mock_tracker)
+        client.client = mock_internal_client
+        mock_crud_issue.get_by_external_id.return_value = None  # New issue
+        mock_crud_issue.create.return_value = Issue(id=1)
+
+        # Act
+        issues, embeddings = client.scan_issues(
+            mock_db_session, mock_organization, mock_project
+        )
+
+        # Assert
+        mock_crud_issue.create.assert_called_once()
+        mock_crud_embedding.create_embeddings.assert_called_once()
+        assert len(issues) == 1
+        assert embeddings == 1
+
+
+@patch("spacesync.scanner.core.crud_issue")
+@patch("spacesync.scanner.core.crud_comment")
+@patch("spacesync.scanner.core.crud_issue_embedding")
+@patch("spacesync.scanner.core.BillingService")
+def test_tracker_client_scan_issues_updated_issue(
+    mock_billing_service,
+    mock_crud_embedding,
+    mock_crud_comment,
+    mock_crud_issue,
+    mock_db_session,
+    mock_tracker,
+    mock_organization,
+    mock_project,
+):
+    """Test that TrackerClient.scan_issues correctly processes an updated issue."""
+    # Arrange
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        mock_internal_client = MagicMock()
+        mock_internal_client.get_issues.return_value = [
+            {"id": "1", "updated_at": "2025-01-02T00:00:00Z"}
+        ]
+        mock_internal_client.transform_issue.return_value = {
+            "external_id": "1",
+            "updated_at": datetime.datetime(2025, 1, 2, tzinfo=datetime.timezone.utc),
+            "comments": [],
+        }
+        client = TrackerClient(mock_tracker)
+        client.client = mock_internal_client
+        existing_issue = Issue(
+            id=1, updated_at=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
+        )
+        mock_crud_issue.get_by_external_id.return_value = existing_issue
+
+        # Act
+        client.scan_issues(mock_db_session, mock_organization, mock_project)
+
+        # Assert
+        mock_crud_issue.update.assert_called_once()
+        mock_crud_embedding.create_embeddings.assert_called_once()
+
+
+@patch("spacesync.scanner.core.crud_organization")
+@patch("os.getenv")
+def test_process_organization_github(
+    mock_getenv,
+    mock_crud_org,
+    mock_db_session,
+    mock_organization,
+    mock_project,
+):
+    """Test the _process_organization function for GitHub."""
+    # Arrange
+    mock_getenv.return_value = "http://test.com"
+    mock_client = MagicMock(spec=TrackerClient)
+    mock_client.client = MagicMock()
+    mock_client.scan_projects.return_value = [mock_project]
+    mock_client.scan_issues.return_value = ([], 0)
+    mock_client.tracker_type = "github"
+    mock_client.client.is_webhook_registered_for_organization.return_value = False
+
+    # Act
+    stats = _process_organization(
+        db=mock_db_session,
+        client=mock_client,
+        org=mock_organization,
+        since=None,
+        force_update=False,
+    )
+
+    # Assert
+    mock_client.client.register_webhook.assert_called_once()
+    assert stats["projects"] == 1
+
+
+@patch("spacesync.scanner.core.scan_tracker")
+@patch("spacesync.scanner.core.crud_account")
+def test_scan_account(
+    mock_crud_account, mock_scan_tracker, mock_db_session, mock_account
+):
+    """Test scanning all trackers for a single account."""
+    # Arrange
+    mock_crud_account.get.return_value = mock_account
+    mock_account.trackers = [MagicMock(spec=Tracker)]
+
+    # Act
+    scan_account(mock_db_session, account_id=mock_account.id)
+
+    # Assert
+    mock_scan_tracker.assert_called_once()
+
+
+@patch("spacesync.scanner.core.crud_account")
+@patch("spacesync.scanner.core.scan_account")
+def test_scan_all_accounts(mock_scan_account, mock_crud_account, mock_db_session):
+    """Test scanning all active accounts."""
+    # Arrange
+    mock_account = MagicMock(spec=Account)
+    mock_account.is_active = True
+    mock_account.trackers = [MagicMock(spec=Tracker)]
+    mock_crud_account.get_multi.return_value = [mock_account]
+    mock_scan_account.return_value = {
+        "trackers": 1,
+        "organizations": {
+            "total": 0,
+            "processed": 0,
+            "skipped_webhook": 0,
+            "skipped_polling": 0,
+            "errors": 0,
+        },
+        "projects": 0,
+        "issues": 0,
+        "embeddings_updated": 0,
+        "errors": 0,
+    }
+
+    # Act
+    scan_all_accounts(mock_db_session)
+
+    # Assert
+    mock_scan_account.assert_called_once()
+
+
+@pytest.fixture
+def mock_tracker_gitlab():
+    """Fixture for a mock gitlab tracker model instance."""
+    tracker = MagicMock(spec=Tracker)
+    tracker.id = 2
+    tracker.is_deleted = False
+    tracker.tracker_type = "gitlab"
+    tracker.api_key = "gl-key"
+    tracker.connection_details = {}
+    tracker.url = "https://gitlab.com"
+    return tracker
+
+
+@pytest.fixture
+def mock_tracker_jira():
+    """Fixture for a mock jira tracker model instance."""
+    tracker = MagicMock(spec=Tracker)
+    tracker.id = 3
+    tracker.is_deleted = False
+    tracker.tracker_type = "jira"
+    tracker.api_key = "jira-key"
+    tracker.connection_details = {}
+    tracker.url = "https://jira.atlassian.com"
+    return tracker
+
+
+def test_tracker_client_init_gitlab(mock_tracker_gitlab):
+    """Test TrackerClient initialization for GitLab."""
+    with patch("spacesync.trackers.gitlab.GitLabTracker") as mock_gitlab_tracker:
+        client = TrackerClient(mock_tracker_gitlab)
+        mock_gitlab_tracker.assert_called_once_with(
+            mock_tracker_gitlab.id,
+            mock_tracker_gitlab.api_key,
+            {"url": mock_tracker_gitlab.url},
+        )
+        assert client.tracker_type == "gitlab"
+
+
+def test_tracker_client_init_jira(mock_tracker_jira):
+    """Test TrackerClient initialization for Jira."""
+    with patch("spacesync.trackers.jira.JiraTracker") as mock_jira_tracker:
+        client = TrackerClient(mock_tracker_jira)
+        mock_jira_tracker.assert_called_once_with(
+            mock_tracker_jira.id,
+            mock_tracker_jira.api_key,
+            {"url": mock_tracker_jira.url},
+        )
+        assert client.tracker_type == "jira"
+
+
+def test_tracker_client_init_unsupported():
+    """Test TrackerClient initialization with an unsupported tracker type."""
+    tracker = MagicMock(spec=Tracker)
+    tracker.tracker_type = "unsupported"
+    with pytest.raises(ValueError, match="Unsupported tracker type: unsupported"):
+        TrackerClient(tracker)
+
+
+@patch("spacesync.scanner.core.crud_project")
+def test_scan_projects_skips_excluded_project(
+    mock_crud_project, mock_db_session, mock_organization
+):
+    """Test that a project in the exclusion list is skipped."""
+    # Arrange
+    tracker = MagicMock(spec=Tracker)
+    tracker.id = 1
+    tracker.tracker_type = "github"
+
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        client = TrackerClient(tracker)
+        client.client = MagicMock()
+        client.client.get_projects.return_value = [
+            {"id": "proj-1", "name": "Project 1"},
+            {"id": "proj-2", "name": "Project 2"},
+        ]
+        client.client.transform_project.side_effect = lambda p, o: {
+            "identifier": p["id"],
+            "name": p["name"],
+        }
+
+        mock_db_session.query.return_value.filter.return_value.all.return_value = [
+            TrackerScopeRule(
+                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="test-org"
+            ),
+            TrackerScopeRule(
+                scope_type="PROJECT", rule_type="EXCLUDE", identifier="proj-2"
+            ),
+        ]
+
+        mock_crud_project.get_by_slug_or_identifier.return_value = None
+        created_project = MagicMock(spec=Project)
+        created_project.name = "Project 1"
+        mock_crud_project.create.return_value = created_project
+
+        # Act
+        projects = client.scan_projects(mock_db_session, mock_organization)
+
+        # Assert
+        assert len(projects) == 1
+        assert projects[0].name == "Project 1"
+        mock_crud_project.create.assert_called_once()
+
+
+@patch("spacesync.scanner.core.crud_project")
+def test_scan_projects_skips_unincluded_project(
+    mock_crud_project, mock_db_session, mock_organization
+):
+    """Test that a project not in an inclusion list is skipped."""
+    # Arrange
+    tracker = MagicMock(spec=Tracker)
+    tracker.id = 1
+    tracker.tracker_type = "github"
+
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        client = TrackerClient(tracker)
+        client.client = MagicMock()
+        client.client.get_projects.return_value = [
+            {"id": "proj-1", "name": "Project 1"},
+            {"id": "proj-2", "name": "Project 2"},
+        ]
+        client.client.transform_project.side_effect = lambda p, o: {
+            "identifier": p["id"],
+            "name": p["name"],
+        }
+
+        mock_db_session.query.return_value.filter.return_value.all.return_value = [
+            TrackerScopeRule(
+                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="test-org"
+            ),
+            TrackerScopeRule(
+                scope_type="PROJECT", rule_type="INCLUDE", identifier="proj-1"
+            ),
+        ]
+
+        mock_crud_project.get_by_slug_or_identifier.return_value = None
+        created_project = MagicMock(spec=Project)
+        created_project.name = "Project 1"
+        mock_crud_project.create.return_value = created_project
+
+        # Act
+        projects = client.scan_projects(mock_db_session, mock_organization)
+
+        # Assert
+        assert len(projects) == 1
+        assert projects[0].name == "Project 1"
+        mock_crud_project.create.assert_called_once()
+
+
+@patch("spacesync.scanner.core.crud_project")
+def test_scan_projects_handles_exception(
+    mock_crud_project, mock_db_session, mock_organization
+):
+    """Test that scan_projects handles exceptions gracefully."""
+    # Arrange
+    tracker = MagicMock(spec=Tracker)
+    tracker.id = 1
+    tracker.tracker_type = "github"
+
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        client = TrackerClient(tracker)
+        client.client = MagicMock()
+        client.client.get_projects.side_effect = Exception("API Error")
+
+        mock_db_session.query.return_value.filter.return_value.all.return_value = [
+            TrackerScopeRule(
+                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="test-org"
+            )
+        ]
+
+        # Act
+        projects = client.scan_projects(mock_db_session, mock_organization)
+
+        # Assert
+        assert len(projects) == 0
+        mock_crud_project.create.assert_not_called()
+
+
+@patch("spacesync.scanner.core.crud_organization")
+@patch("os.getenv")
+def test_process_organization_gitlab(
+    mock_getenv,
+    mock_crud_org,
+    mock_db_session,
+    mock_organization,
+    mock_project,
+):
+    """Test the _process_organization function for GitLab."""
+    # Arrange
+    mock_getenv.return_value = "http://test.com"
+    mock_client = MagicMock(spec=TrackerClient)
+    mock_client.client = MagicMock()
+    mock_client.scan_projects.return_value = [mock_project]
+    mock_client.scan_issues.return_value = ([], 0)
+    mock_client.tracker_type = "gitlab"
+    mock_client.client.is_webhook_registered_for_organization.return_value = False
+    mock_client.client.register_group_webhook.return_value = True
+
+    # Act
+    stats = _process_organization(
+        db=mock_db_session,
+        client=mock_client,
+        org=mock_organization,
+        since=None,
+        force_update=False,
+    )
+
+    # Assert
+    mock_client.client.register_group_webhook.assert_called_once()
+    assert stats["projects"] == 1
+
+
+@patch("spacesync.scanner.core.crud_organization")
+@patch("os.getenv")
+def test_process_organization_jira(
+    mock_getenv,
+    mock_crud_org,
+    mock_db_session,
+    mock_organization,
+    mock_project,
+):
+    """Test the _process_organization function for Jira."""
+    # Arrange
+    mock_getenv.return_value = "http://test.com"
+    mock_client = MagicMock(spec=TrackerClient)
+    mock_client.client = MagicMock()
+    mock_client.scan_projects.return_value = [mock_project]
+    mock_client.scan_issues.return_value = ([], 0)
+    mock_client.tracker_type = "jira"
+    mock_client.client.is_webhook_registered_for_project.return_value = False
+
+    # Act
+    stats = _process_organization(
+        db=mock_db_session,
+        client=mock_client,
+        org=mock_organization,
+        since=None,
+        force_update=False,
+    )
+
+    # Assert
+    mock_client.client.register_webhook.assert_called_once()
+    assert stats["projects"] == 1
+
+
+@patch("spacesync.scanner.core.scan_tracker")
+@patch("spacesync.scanner.core.crud_account")
+def test_scan_account_no_trackers(
+    mock_crud_account, mock_scan_tracker, mock_db_session
+):
+    """Test that scan_account handles an account with no trackers."""
+    # Arrange
+    account = MagicMock()
+    account.id = 1
+    account.trackers = []
+    mock_crud_account.get.return_value = account
+
+    # Act
+    scan_account(mock_db_session, account_id=1)
+
+    # Assert
+    mock_scan_tracker.assert_not_called()
+
+
+@patch("spacesync.scanner.core.scan_account")
+@patch("spacesync.scanner.core.crud_account")
+def test_scan_all_accounts_no_active_accounts(
+    mock_crud_account, mock_scan_account, mock_db_session
+):
+    """Test that scan_all_accounts handles the case with no active accounts."""
+    # Arrange
+    mock_crud_account.get_multi.return_value = []
+
+    # Act
+    scan_all_accounts(mock_db_session)
+
+    # Assert
+    mock_scan_account.assert_not_called()
+
+
+@patch("spacesync.scanner.core.crud_issue")
+@patch("spacesync.scanner.core.crud_comment")
+@patch("spacesync.scanner.core.crud_issue_embedding")
+@patch("spacesync.scanner.core.BillingService")
+def test_scan_issues_with_new_comment(
+    mock_billing_service,
+    mock_crud_embedding,
+    mock_crud_comment,
+    mock_crud_issue,
+    mock_db_session,
+    mock_tracker,
+    mock_organization,
+    mock_project,
+):
+    """Test scanning an issue that has a new comment."""
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        client = TrackerClient(mock_tracker)
+        client.client = MagicMock()
+        client.client.get_issues.return_value = [
+            {"id": "1", "updated_at": "2025-01-01T00:00:00Z"}
+        ]
+        transformed_issue = {
+            "external_id": "1",
+            "updated_at": datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+            "comments": [{"id": "c1", "updated_at": "2025-01-01T01:00:00Z"}],
+        }
+        client.client.transform_issue.return_value = transformed_issue
+        client.client.transform_comment.return_value = {
+            "external_id": "c1",
+            "updated_at": datetime.datetime(
+                2025, 1, 1, 1, tzinfo=datetime.timezone.utc
+            ),
+        }
+
+        mock_crud_issue.get_by_external_id.return_value = None
+        mock_crud_issue.create.return_value = Issue(id=1)
+        mock_crud_comment.get_by_external_id.return_value = None
+        mock_crud_comment.create.return_value = Comment(id=1)
+
+        client.scan_issues(mock_db_session, mock_organization, mock_project)
+
+        mock_crud_comment.create.assert_called_once()
+        assert mock_crud_embedding.create_embeddings.call_count == 2
+
+
+@patch("os.getenv")
+def test_process_organization_gitlab_group_hooks_not_supported(
+    mock_getenv, mock_db_session, mock_organization, mock_project
+):
+    """Test _process_organization for GitLab when group hooks are not supported."""
+    mock_getenv.return_value = "http://test.com"
+    mock_client = MagicMock(spec=TrackerClient)
+    mock_client.client = MagicMock()
+    mock_client.scan_projects.return_value = [mock_project]
+    mock_client.scan_issues.return_value = ([], 0)
+    mock_client.tracker_type = "gitlab"
+    mock_client.client.is_webhook_registered_for_organization.return_value = False
+    mock_client.client.register_group_webhook.return_value = "group_hooks_not_supported"
+    mock_client.client.is_webhook_registered_for_project.return_value = False
+
+    _process_organization(
+        db=mock_db_session,
+        client=mock_client,
+        org=mock_organization,
+        since=None,
+        force_update=False,
+    )
+
+    mock_client.client.register_project_webhook.assert_called_once()
+
+
+@patch("spacesync.scanner.core._process_organization")
+@patch("spacesync.scanner.core.TrackerClient")
+def test_scan_tracker_skips_recently_updated_by_webhook_org(
+    mock_tracker_client_class,
+    mock_process_org,
+    mock_db_session,
+    mock_tracker,
+    mock_organization,
+):
+    """Test that an organization recently updated by webhook is skipped."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    mock_organization.last_webhook_update = now - datetime.timedelta(minutes=10)
+    mock_organization.last_polling_update = now - datetime.timedelta(hours=1)
+
+    mock_client_instance = MagicMock()
+    mock_client_instance.scan_organizations.return_value = [mock_organization]
+    mock_tracker_client_class.return_value = mock_client_instance
+
+    stats = scan_tracker(db=mock_db_session, tracker=mock_tracker)
+
+    mock_process_org.assert_not_called()
+    assert stats["organizations"]["skipped_webhook"] == 1
+
+
+def test_scan_organizations_skips_unincluded(mock_db_session, mock_tracker):
+    """Test that scan_organizations skips an org not in the inclusion list."""
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        client = TrackerClient(mock_tracker)
+        client.client = MagicMock()
+        client.client.get_organizations.return_value = [
+            {"id": "org-1", "name": "Org 1"}
+        ]
+        mock_db_session.query.return_value.filter.return_value.all.return_value = [
+            TrackerScopeRule(
+                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="org-2"
+            )
+        ]
+
+        orgs = client.scan_organizations(mock_db_session)
+        assert len(orgs) == 0
+
+
+def test_scan_projects_skips_missing_identifier(mock_db_session, mock_organization):
+    """Test that scan_projects skips a project with a missing identifier."""
+    with patch("spacesync.trackers.github.GitHubTracker"):
+        client = TrackerClient(MagicMock(spec=Tracker, tracker_type="github"))
+        client.client = MagicMock()
+        client.client.get_projects.return_value = [{"name": "Project No ID"}]
+        client.client.transform_project.return_value = {"name": "Project No ID"}
+        mock_db_session.query.return_value.filter.return_value.all.return_value = [
+            TrackerScopeRule(
+                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="test-org"
+            )
+        ]
+
+        projects = client.scan_projects(mock_db_session, mock_organization)
+        assert len(projects) == 0

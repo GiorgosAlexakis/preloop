@@ -124,3 +124,59 @@ class TestGitHubTrackerComments(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGitHubTracker(unittest.TestCase):
+    @patch("spacesync.trackers.github.requests.get")
+    def test_get_organizations(self, mock_requests_get):
+        mock_user_response = MagicMock()
+        mock_user_response.status_code = 200
+        mock_user_response.json.return_value = {
+            "login": "octocat",
+            "html_url": "https://github.com/octocat",
+        }
+
+        mock_orgs_response = MagicMock()
+        mock_orgs_response.status_code = 200
+        mock_orgs_response.json.return_value = [
+            {
+                "id": 1,
+                "login": "github",
+                "url": "https://api.github.com/orgs/github",
+            }
+        ]
+
+        mock_requests_get.side_effect = [mock_user_response, mock_orgs_response]
+
+        tracker = GitHubTracker("tracker-1", "api-key", {})
+        orgs = tracker.get_organizations()
+
+        self.assertEqual(len(orgs), 2)
+        self.assertEqual(orgs[0]["name"], "octocat")
+        self.assertEqual(orgs[1]["name"], "github")
+
+    @patch("spacesync.trackers.github.requests.get")
+    def test_get_projects(self, mock_requests_get):
+        mock_repos_response = MagicMock()
+        mock_repos_response.status_code = 200
+        mock_repos_response.json.return_value = [
+            {
+                "id": 1296269,
+                "name": "Hello-World",
+                "full_name": "octocat/Hello-World",
+                "description": "My first repository on GitHub!",
+                "html_url": "https://github.com/octocat/Hello-World",
+                "default_branch": "main",
+                "language": "JavaScript",
+                "created_at": "2011-01-26T19:01:12Z",
+                "pushed_at": "2011-01-26T19:14:43Z",
+                "stargazers_count": 80,
+            }
+        ]
+        mock_requests_get.return_value = mock_repos_response
+
+        tracker = GitHubTracker("tracker-1", "api-key", {})
+        projects = tracker.get_projects("octocat")
+
+        self.assertEqual(len(projects), 1)
+        self.assertEqual(projects[0]["name"], "Hello-World")

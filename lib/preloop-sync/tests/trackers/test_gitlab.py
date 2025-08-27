@@ -164,3 +164,46 @@ class TestGitLabTrackerComments(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGitLabTracker(unittest.TestCase):
+    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    def test_get_organizations(self, mock_gitlab_constructor):
+        mock_gl_instance = MagicMock()
+        mock_gitlab_constructor.return_value = mock_gl_instance
+
+        mock_group = MagicMock()
+        mock_group.id = 1
+        mock_group.name = "Test Group"
+        mock_group.web_url = "http://gitlab.com/groups/test-group"
+        mock_gl_instance.groups.list.return_value = [mock_group]
+
+        tracker = GitLabTracker("tracker-1", "api-key", {})
+        orgs = tracker.get_organizations()
+
+        self.assertEqual(len(orgs), 1)
+        self.assertEqual(orgs[0]["name"], "Test Group")
+
+    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    def test_get_projects(self, mock_gitlab_constructor):
+        mock_gl_instance = MagicMock()
+        mock_gitlab_constructor.return_value = mock_gl_instance
+
+        mock_group = MagicMock()
+        mock_gl_instance.groups.get.return_value = mock_group
+
+        mock_project = MagicMock()
+        mock_project.attributes = {
+            "id": 1,
+            "name": "Test Project",
+            "description": "A test project",
+            "web_url": "http://gitlab.com/test-group/test-project",
+            "path_with_namespace": "test-group/test-project",
+        }
+        mock_group.projects.list.return_value = [mock_project]
+
+        tracker = GitLabTracker("tracker-1", "api-key", {})
+        projects = tracker.get_projects("group-1")
+
+        self.assertEqual(len(projects), 1)
+        self.assertEqual(projects[0]["name"], "Test Project")
