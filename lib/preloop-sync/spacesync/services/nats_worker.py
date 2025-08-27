@@ -109,8 +109,8 @@ class SpaceSyncNatsWorker:
                 # For a durable, filtered consumer, the durable name must be unique
                 # for each subject filter. We construct it from the queue name
                 # and the task name (the last part of the subject).
-                task_name = subject.split(".")[-1]
-                durable_name = f"{self.queue_name}_{task_name}"
+                sanitized_subject = subject.replace(".", "-").replace("*", "all")
+                durable_name = f"{self.queue_name}_{sanitized_subject}"
 
                 # 1. Explicitly create or update the consumer. This is an
                 # idempotent operation that ensures the consumer exists on the
