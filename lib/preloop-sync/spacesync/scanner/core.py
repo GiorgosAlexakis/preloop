@@ -272,13 +272,13 @@ class TrackerClient:
                 if target_issue:
                     crud_issue_relationship.create(
                         db,
-                        obj_in={
-                            "source_issue_id": current_issue_model.id,
-                            "target_issue_id": target_issue.id,
-                            "type": rel_type,
-                            "is_commited": True,
-                        },
+                        source_issue_id=current_issue_model.id,
+                        target_issue_id=target_issue.id,
+                        type=rel_type,
+                        is_commited=False,
+                        comes_from_tracker=True,
                     )
+
                 else:
                     logger.warning(
                         f"Could not find target issue with key '{target_key}' for dependency of issue {current_issue_model.key}."

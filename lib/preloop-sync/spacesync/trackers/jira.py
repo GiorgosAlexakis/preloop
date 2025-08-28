@@ -244,7 +244,7 @@ class JiraTracker(BaseTracker):
             processed_issues.append(
                 {
                     "id": issue_data["id"],
-                    "external_id": issue_data["id"],
+                    "external_id": issue_data.get("id", issue_data.get("external_id")),
                     "key": issue_data["key"],
                     "title": issue_data["fields"]["summary"],
                     "description": description_text,
@@ -268,18 +268,13 @@ class JiraTracker(BaseTracker):
             if "outwardIssue" in link:
                 target_issue = link["outwardIssue"]
                 relationship_type = link_type.get("outward", "relates to")
-            elif "inwardIssue" in link:
-                target_issue = link["inwardIssue"]
-                relationship_type = link_type.get("inward", "relates to")
-            else:
-                continue
 
-            dependencies.append(
-                {
-                    "target_key": target_issue["key"],
-                    "type": relationship_type,
-                }
-            )
+                dependencies.append(
+                    {
+                        "target_key": target_issue["key"],
+                        "type": relationship_type,
+                    }
+                )
         return dependencies
 
     def transform_issue(
