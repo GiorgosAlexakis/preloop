@@ -21,24 +21,53 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
         type: str,
         reason: Optional[str] = None,
         confidence_score: Optional[float] = None,
+        is_commited: Optional[bool] = False,
+        comes_from_tracker: Optional[bool] = False,
     ) -> IssueRelationship:
         """Create a new issue relationship."""
-        if type == "related":
+        if type == "related" or type == "relates_to" or type == "relates to":
             # For undirected relationships, store with the smaller ID first to avoid duplicates
             if source_issue_id > target_issue_id:
                 source_issue_id, target_issue_id = target_issue_id, source_issue_id
+        elif type == "is_blocked_by" or type == "is blocked by":
+            type = "blocks"
+            source_issue_id, target_issue_id = target_issue_id, source_issue_id
 
-        db_obj = IssueRelationship(
+        existing_relationship = self.get_by_source_target_type(
+            db,
             source_issue_id=source_issue_id,
             target_issue_id=target_issue_id,
             type=type,
-            reason=reason,
-            confidence_score=confidence_score,
         )
-        db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
-        return db_obj
+        if existing_relationship:
+            return existing_relationship
+
+        return super().create(
+            db,
+            obj_in={
+                "source_issue_id": source_issue_id,
+                "target_issue_id": target_issue_id,
+                "type": type,
+                "reason": reason,
+                "confidence_score": confidence_score,
+                "is_commited": is_commited,
+                "comes_from_tracker": comes_from_tracker,
+            },
+        )
+
+    def get_by_source_target_type(
+        self, db: Session, *, source_issue_id: str, target_issue_id: str, type: str
+    ) -> Optional[IssueRelationship]:
+        """Get an issue relationship by source, target, and type."""
+        return (
+            db.query(self.model)
+            .filter_by(
+                source_issue_id=source_issue_id,
+                target_issue_id=target_issue_id,
+                type=type,
+            )
+            .first()
+        )
 
     def get_for_issue(self, db: Session, *, issue_id: str) -> List[IssueRelationship]:
         """Get all relationships for a given issue."""

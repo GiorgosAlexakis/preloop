@@ -30,6 +30,15 @@ def upgrade() -> None:
         sa.Column("type", sa.String(length=50), nullable=False),
         sa.Column("reason", sa.Text(), nullable=True),
         sa.Column("confidence_score", sa.Float(), nullable=True),
+        sa.Column(
+            "is_commited", sa.Boolean(), server_default=sa.false(), nullable=False
+        ),
+        sa.Column(
+            "comes_from_tracker",
+            sa.Boolean(),
+            server_default=sa.false(),
+            nullable=False,
+        ),
         sa.Column("id", sa.String(length=36), nullable=False),
         sa.Column(
             "created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False
