@@ -319,6 +319,17 @@ class GitLabTracker(BaseTracker):
                         pass  # Keep datetime.now() if parsing fails
                 issue_updated_at = issue_created_at
 
+            # Fetch issue links for dependencies
+            try:
+                issue_links = self._make_request(issue_obj.links.list)
+            except Exception as e:
+                logger.error(
+                    f"Failed to fetch links for GitLab issue {issue_obj.iid} in project {project_id}: {e}"
+                )
+                issue_links = []
+
+            issue_dependencies = self._parse_dependencies(issue_links)
+
             issue_list_with_comments.append(
                 {
                     "external_id": external_id,
@@ -338,9 +349,38 @@ class GitLabTracker(BaseTracker):
                     else [],
                     "url": issue_obj.web_url,
                     "comments": comments_data,
+                    "dependencies": issue_dependencies,
                 }
             )
         return issue_list_with_comments
+
+    def _parse_dependencies(self, issue_links: List[Any]) -> List[Dict[str, str]]:
+        """Parse issue links from GitLab API response."""
+        dependencies = []
+        for link in issue_links:
+            try:
+                # This is inefficient, as it makes an API call per link.
+                # A future optimization could be to cache project slugs.
+                target_project = self._make_request(
+                    self.gl.projects.get, link.project_id
+                )
+                target_key = f"{target_project.path_with_namespace}#{link.iid}"
+
+                # Normalize link_type: 'relates_to' -> 'relates to'
+                relationship_type = link.link_type.replace("_", " ")
+
+                dependencies.append(
+                    {
+                        "target_key": target_key,
+                        "type": relationship_type,
+                    }
+                )
+            except Exception as e:
+                logger.error(
+                    f"Could not process GitLab issue link for target iid {link.iid}: {e}"
+                )
+                continue
+        return dependencies
 
     def transform_issue(
         self, issue_data: Dict[str, Any], project: Project

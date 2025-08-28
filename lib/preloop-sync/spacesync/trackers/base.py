@@ -98,6 +98,10 @@ class BaseTracker(ABC):
                 - author: Name of the author (if available, from tracker)
                 - created_at: Creation datetime of the comment
                 - updated_at: Last update datetime of the comment
+            - dependencies: List of dependency dictionaries (optional).
+                Each dependency dict should contain at least:
+                - target_key: External key of the target issue (e.g., 'PROJ-123')
+                - type: Type of the relationship (e.g., 'blocks', 'relates to')
         """
         pass
 
@@ -222,6 +226,7 @@ class BaseTracker(ABC):
             },
             "tracker_id": self.tracker_id,
             "comments": issue_data.get("comments", []),
+            "dependencies": issue_data.get("dependencies", []),
         }
 
         return transformed

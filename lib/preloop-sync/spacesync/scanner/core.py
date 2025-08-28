@@ -15,6 +15,7 @@ from spacemodels.crud import (
     crud_account,
     crud_issue,
     crud_issue_embedding,
+    crud_issue_relationship,
     crud_organization,
     crud_project,
     crud_comment,
@@ -23,7 +24,7 @@ from spacemodels.models import Issue, Organization, Project, Tracker, TrackerSco
 
 from ..config import logger
 
-POLLING_THRESHOLD = timedelta(seconds=os.getenv("POLLING_THRESHOLD", 3600))
+POLLING_THRESHOLD = timedelta(seconds=int(os.getenv("POLLING_THRESHOLD", 3600)))
 RECHECK_PROJECT_WEBHOOK_INTERVAL = POLLING_THRESHOLD * 10
 
 
@@ -233,6 +234,7 @@ class TrackerClient:
         for issue_data in issue_data_list:
             xformed_issue_data = self.client.transform_issue(issue_data, project)
             comment_data = xformed_issue_data.pop("comments", [])
+            dependencies = xformed_issue_data.pop("dependencies", [])
 
             current_issue_model = crud_issue.get_by_external_id(
                 db,
@@ -255,6 +257,32 @@ class TrackerClient:
             else:
                 issue_changed = True
                 current_issue_model = crud_issue.create(db, obj_in=xformed_issue_data)
+
+            # Process dependencies
+            for dep in dependencies:
+                target_key = dep.get("target_key")
+                rel_type = dep.get("type")
+                if not target_key or not rel_type:
+                    continue
+
+                target_issue = crud_issue.get_by_key(
+                    db, key=target_key, account_id=self.tracker.account_id
+                )
+
+                if target_issue:
+                    crud_issue_relationship.create(
+                        db,
+                        obj_in={
+                            "source_issue_id": current_issue_model.id,
+                            "target_issue_id": target_issue.id,
+                            "type": rel_type,
+                            "is_commited": True,
+                        },
+                    )
+                else:
+                    logger.warning(
+                        f"Could not find target issue with key '{target_key}' for dependency of issue {current_issue_model.key}."
+                    )
 
             issues_processed.append(current_issue_model)
 
