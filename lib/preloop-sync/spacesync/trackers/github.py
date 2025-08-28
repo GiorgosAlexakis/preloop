@@ -255,13 +255,6 @@ class GitHubTracker(BaseTracker):
             if "pull_request" in issue_data:  # Skip pull requests
                 continue
 
-            # Combine issue body and comments for dependency parsing
-            all_text_content = issue_data.get("body", "") or ""
-            for comment in comments_data_transformed:
-                all_text_content += "\n" + comment.get("body", "")
-
-            dependencies = self._parse_dependencies(all_text_content, repo_name)
-
             issue_number = issue_data["number"]
 
             # Fetch comments for the issue
@@ -314,6 +307,13 @@ class GitHubTracker(BaseTracker):
                     f"Failed to get comments for issue {repo_name}#{issue_number}: {e}"
                 )
             # Continue processing the issue even if comments fail
+
+            # Combine issue body and comments for dependency parsing
+            all_text_content = issue_data.get("body", "") or ""
+            for comment in comments_data_transformed:
+                all_text_content += "\n" + comment.get("body", "")
+
+            dependencies = self._parse_dependencies(all_text_content, repo_name)
 
             try:
                 issue_created_at = datetime.strptime(
@@ -380,9 +380,13 @@ class GitHubTracker(BaseTracker):
             relationship_type = match.group(1).lower()
             target_issue_ref = match.group(2)
 
-            # Normalize relationship type
+            # Normalize relationship type for consistency
             if relationship_type in ["closes", "fixes", "resolves"]:
                 relationship_type = "closes"
+            elif relationship_type == "relates to":
+                relationship_type = "related"
+            elif relationship_type == "blocked by":
+                relationship_type = "is blocked by"
 
             # Construct the full key for the target issue
             if "#" in target_issue_ref and "/" not in target_issue_ref:

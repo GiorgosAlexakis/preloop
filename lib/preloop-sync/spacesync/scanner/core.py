@@ -229,6 +229,10 @@ class TrackerClient:
             since=since,
         )
 
+        # Sort issues by creation date to process them in chronological order
+        # This is crucial for correctly establishing dependencies between issues
+        issue_data_list.sort(key=lambda issue: issue.get("created_at", ""))
+
         issues_processed = []
         embedding_updates = 0
         for issue_data in issue_data_list:
