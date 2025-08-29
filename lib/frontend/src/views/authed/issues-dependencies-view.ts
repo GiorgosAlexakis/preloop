@@ -24,8 +24,14 @@ import {
   searchIssues,
   detectIssueDependencies,
   extendIssueDependencyScan,
+  commitIssueDependencies, // Import the new function
 } from '../../api';
-import type { Project, Issue, DependencyPair, IssueStatus } from '../../types';
+import type {
+  Project,
+  Issue,
+  DependencyPair, // Import the type
+  IssueStatus,
+} from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import '../../components/pagination-controls.ts';
 import { getStatusVariant } from '../../utils/verdict';
@@ -182,6 +188,26 @@ export class IssuesDependenciesView extends LitElement {
     }
   }
 
+  private async _handleCommitDependency(dependency: DependencyPair) {
+    try {
+      const response = await commitIssueDependencies([dependency]);
+      if (response.dependencies.length > 0) {
+        // Update the local state to reflect the change
+        const committedDep = response.dependencies[0];
+        this._dependencies = this._dependencies.map((dep) =>
+          dep.source_issue_id === committedDep.source_issue_id &&
+          dep.dependent_issue_id === committedDep.dependent_issue_id
+            ? { ...dep, is_committed: true }
+            : dep
+        );
+        this.requestUpdate(); // Re-render the component
+      }
+    } catch (error) {
+      console.error('Failed to commit dependency:', error);
+      // Optionally, show an error message to the user
+    }
+  }
+
   private _handleProjectSelect(e: CustomEvent) {
     this._selectedProjectId = e.target.value;
     this._currentPage = 1;
@@ -281,13 +307,27 @@ export class IssuesDependenciesView extends LitElement {
 
             return html`
               <li>
-                <strong
-                  >${type === 'blocks' ? d.dependency_key : d.issue_key}</strong
-                >: ${issue?.title || 'Unknown Issue'}
-                <div class="dependency-reason">
-                  ${d.reason} &bull; Confidence:
-                  ${(d.confidence_score * 100).toFixed(0)}%
+                <div class="dependency-info">
+                  <strong
+                    >${type === 'blocks'
+                      ? d.dependency_key
+                      : d.issue_key}</strong
+                  >: ${issue?.title || 'Unknown Issue'}
+                  <div class="dependency-reason">
+                    ${d.reason} &bull; Confidence:
+                    ${(d.confidence_score * 100).toFixed(0)}%
+                  </div>
                 </div>
+                ${when(
+                  !d.comes_from_tracker,
+                  () =>
+                    html`<sl-button size="small" variant="neutral"
+                      @click="${() => this._handleCommitDependency(d)}"
+                      ?disabled="${d.is_committed}"
+                    >
+                      ${d.is_committed ? 'Committed' : 'Commit'}
+                    </sl-button>`
+                )}
               </li>
             `;
           })}
@@ -624,6 +664,9 @@ export class IssuesDependenciesView extends LitElement {
         margin: 0;
       }
       .dependency-details li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         padding: var(--sl-spacing-2x-small) 0;
         border-bottom: 1px solid var(--sl-color-neutral-200);
       }

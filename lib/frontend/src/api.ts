@@ -350,6 +350,21 @@ export async function extendIssueDependencyScan(
   return response.json();
 }
 
+export async function commitIssueDependencies(
+  dependencies: DependencyPair[]
+): Promise<DependencyResponse> {
+  const response = await fetchWithAuth('/api/v1/issue-dependencies/commit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dependencies }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to commit issue dependencies');
+  }
+  return response.json();
+}
+
 // Account
 export async function getAccountDetails() {
   const response = await fetchWithAuth('/api/v1/auth/users/me');
