@@ -321,7 +321,9 @@ export class IssuesDependenciesView extends LitElement {
                 ${when(
                   !d.comes_from_tracker,
                   () =>
-                    html`<sl-button size="small" variant="neutral"
+                    html`<sl-button
+                      size="small"
+                      variant="neutral"
                       @click="${() => this._handleCommitDependency(d)}"
                       ?disabled="${d.is_committed}"
                     >
