@@ -27,7 +27,7 @@ class IssueRelationship(Base):
     type: Mapped[str] = mapped_column(String(50), primary_key=True)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    is_commited: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    is_committed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     comes_from_tracker: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
     source_issue: Mapped["Issue"] = relationship(

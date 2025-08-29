@@ -21,7 +21,7 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
         type: str,
         reason: Optional[str] = None,
         confidence_score: Optional[float] = None,
-        is_commited: Optional[bool] = False,
+        is_committed: Optional[bool] = False,
         comes_from_tracker: Optional[bool] = False,
     ) -> (IssueRelationship, bool):
         """Create a new issue relationship. Returns a tuple of (relationship, created)."""
@@ -50,7 +50,7 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
                 "type": type,
                 "reason": reason,
                 "confidence_score": confidence_score,
-                "is_commited": is_commited,
+                "is_committed": is_committed,
                 "comes_from_tracker": comes_from_tracker,
             },
         )
@@ -84,9 +84,29 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
         )
 
     def get_relationships_for_issues(
-        self, db: Session, *, issue_ids: List[str]
+        self, db: Session, *, issue_ids: List[str], any_in_list: bool = True
     ) -> List[IssueRelationship]:
-        """Get all relationships where both source and target are in the given list of issues."""
+        """Get all relationships for a given list of issues.
+
+        Args:
+            db: The database session.
+            issue_ids: A list of issue IDs.
+            any_in_list: If True, returns relationships where either the source or target
+                         is in the list. If False, returns relationships where both must be
+                         in the list. Defaults to True.
+        """
+        if any_in_list:
+            return (
+                db.query(self.model)
+                .filter(
+                    or_(
+                        self.model.source_issue_id.in_(issue_ids),
+                        self.model.target_issue_id.in_(issue_ids),
+                    )
+                )
+                .all()
+            )
+
         return (
             db.query(self.model)
             .filter(

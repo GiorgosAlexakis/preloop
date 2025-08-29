@@ -31,7 +31,7 @@ def upgrade() -> None:
         sa.Column("reason", sa.Text(), nullable=True),
         sa.Column("confidence_score", sa.Float(), nullable=True),
         sa.Column(
-            "is_commited", sa.Boolean(), server_default=sa.false(), nullable=False
+            "is_committed", sa.Boolean(), server_default=sa.false(), nullable=False
         ),
         sa.Column(
             "comes_from_tracker",
