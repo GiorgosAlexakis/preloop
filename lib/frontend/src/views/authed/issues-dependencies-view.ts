@@ -379,11 +379,11 @@ export class IssuesDependenciesView extends LitElement {
                             () => html`
                               <sl-badge
                                 pill
-                                class="blocks-badge ${
-                                  deps.blocks.some((d) => d.comes_from_tracker)
-                                    ? 'from-tracker'
-                                    : ''
-                                }"
+                                class="blocks-badge ${deps.blocks.some(
+                                  (d) => d.comes_from_tracker
+                                )
+                                  ? 'from-tracker'
+                                  : ''}"
                               >
                                 <div class="dependency-badge-content">
                                   <sl-tooltip content="Blocks">
@@ -398,7 +398,10 @@ export class IssuesDependenciesView extends LitElement {
                                             d.confidence_score * 100
                                           ).toFixed(0)}%"
                                         >
-                                          <span class="${d.comes_from_tracker ? 'from-tracker' : ''}"
+                                          <span
+                                            class="${d.comes_from_tracker
+                                              ? 'from-tracker'
+                                              : ''}"
                                             >#${d.dependency_key.match(
                                               /\d+$/
                                             )?.[0]}</span
@@ -431,7 +434,9 @@ export class IssuesDependenciesView extends LitElement {
                                           ).toFixed(0)}%"
                                         >
                                           <span
-                                            class="${d.comes_from_tracker ? 'from-tracker' : ''}"
+                                            class="${d.comes_from_tracker
+                                              ? 'from-tracker'
+                                              : ''}"
                                             >#${d.issue_key.match(
                                               /\d+$/
                                             )?.[0]}</span
