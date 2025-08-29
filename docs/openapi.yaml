@@ -811,6 +811,39 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/issue-dependencies/commit:
+    post:
+      tags:
+      - Issues
+      - Issues
+      summary: Commit a list of issue dependencies.
+      description: 'Commits a list of issue dependency pairs. This will create the
+        dependency in the external tracker and mark it as ''committed'' in SpaceBridge.
+
+
+        - **dependencies**: A list of dependency pairs to commit.'
+      operationId: commit_issue_dependencies_api_v1_issue_dependencies_commit_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitDependenciesRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/issue-dependencies/extend:
     post:
       tags:
@@ -3668,6 +3701,17 @@ components:
       - query
       title: CommentSearchResults
       description: Response model for comment search results.
+    CommitDependenciesRequest:
+      properties:
+        dependencies:
+          items:
+            $ref: '#/components/schemas/DependencyPair'
+          type: array
+          title: Dependencies
+      type: object
+      required:
+      - dependencies
+      title: CommitDependenciesRequest
     CompliancePromptMetadata:
       properties:
         id:

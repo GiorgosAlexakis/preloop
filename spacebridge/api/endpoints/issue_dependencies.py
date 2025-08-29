@@ -3,11 +3,12 @@
 import logging
 from typing import List, Optional
 from datetime import datetime
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from spacemodels.models.account import Account
 from spacemodels.crud import (
@@ -18,6 +19,8 @@ from spacemodels.crud import (
 )
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
+from spacemodels.models.project import Project
+from spacemodels.models.organization import Organization
 from spacebridge.api.auth import get_current_active_user
 from pydantic import BaseModel, Field
 import json
@@ -61,6 +64,10 @@ class DependencyPair(BaseModel):
 
 
 class DependencyResponse(BaseModel):
+    dependencies: List[DependencyPair]
+
+
+class CommitDependenciesRequest(BaseModel):
     dependencies: List[DependencyPair]
 
 
@@ -283,6 +290,127 @@ def detect_issue_dependencies(
         raise HTTPException(
             status_code=500, detail=f"Error processing AI model response: {e}"
         )
+
+
+@router.post(
+    "/issue-dependencies/commit",
+    response_model=DependencyResponse,
+    tags=["Issues"],
+    summary="Commit a list of issue dependencies.",
+)
+async def commit_issue_dependencies(
+    request: CommitDependenciesRequest,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+):
+    """
+    Commits a list of issue dependency pairs. This will create the dependency in the external tracker and mark it as 'committed' in SpaceBridge.
+
+    - **dependencies**: A list of dependency pairs to commit.
+    """
+    tasks = []
+    dependencies_to_commit = []
+
+    for dep in request.dependencies:
+        if dep.is_committed or dep.comes_from_tracker:
+            continue
+
+        # Eagerly load the required relationships to get to the tracker
+        source_issue = (
+            db.query(Issue)
+            .options(
+                joinedload(Issue.project)
+                .joinedload(Project.organization)
+                .joinedload(Organization.tracker)
+            )
+            .filter(Issue.id == dep.source_issue_id)
+            .first()
+        )
+
+        if (
+            not source_issue
+            or not source_issue.project
+            or not source_issue.project.organization
+            or not source_issue.project.organization.tracker
+        ):
+            logger.warning(
+                f"Source issue {dep.source_issue_id} or its associations not found, skipping."
+            )
+            continue
+
+        tracker = source_issue.project.organization.tracker
+        if not tracker.is_active:
+            logger.warning(
+                f"Tracker for project {source_issue.project.name} is not active, skipping dependency."
+            )
+            continue
+
+        try:
+            # The tracker's 'config' and 'credentials' fields are used to create the client
+            config = tracker.config or {}
+            # The credentials blob is expected by the factory
+            config["credentials"] = tracker.credentials
+            # Pass project-specific settings if they exist
+            if source_issue.project.tracker_settings:
+                config.update(source_issue.project.tracker_settings)
+
+            client = await TrackerFactory.create_client(
+                tracker_type=tracker.tracker_type.value,
+                config=config,
+            )
+
+            if client:
+                relation_type = "blocks"  # Assuming 'blocks' as a default relation type
+                tasks.append(
+                    client.add_relation(
+                        issue_id=dep.issue_key,
+                        target_issue_id=dep.dependency_key,
+                        relation_type=relation_type,
+                    )
+                )
+                dependencies_to_commit.append(dep)
+            else:
+                logger.error(
+                    f"Failed to create tracker client for tracker {tracker.id}"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create client or relation for dependency {dep.issue_key} -> {dep.dependency_key}: {e}"
+            )
+
+    # Run all API calls concurrently
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                dep = dependencies_to_commit[i]
+                logger.error(
+                    f"Failed to create dependency {dep.issue_key} -> {dep.dependency_key} in external tracker: {result}"
+                )
+
+    # Commit all dependencies that were attempted, regardless of API call success
+    updated_relationships = crud_issue_relationship.commit_relationships(
+        db, relationships=[dep.dict() for dep in request.dependencies]
+    )
+
+    # We need to map the SQLAlchemy models back to the Pydantic model.
+    response_dependencies = []
+    for rel in updated_relationships:
+        response_dependencies.append(
+            DependencyPair(
+                source_issue_id=str(rel.source_issue_id),
+                dependent_issue_id=str(rel.target_issue_id),
+                reason=rel.reason or "",
+                confidence_score=rel.confidence_score or 0.0,
+                issue_key=rel.source_issue.key,  # Assuming source_issue is loaded
+                dependency_key=rel.target_issue.key,  # Assuming target_issue is loaded
+                is_committed=rel.is_committed,
+                comes_from_tracker=rel.comes_from_tracker,
+            )
+        )
+
+    return DependencyResponse(dependencies=response_dependencies)
 
 
 class ExtendScanRequest(BaseModel):
