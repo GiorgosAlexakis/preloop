@@ -1,8 +1,5 @@
 """Tests for issue relationship functionality."""
 
-import pytest
-from sqlalchemy.exc import IntegrityError
-
 from spacemodels.crud import crud_issue, crud_issue_relationship
 
 
@@ -11,13 +8,14 @@ def test_create_relationship_blocks(db_session, create_issue):
     issue1 = create_issue(title="Blocker Issue")
     issue2 = create_issue(title="Blocked Issue")
 
-    relationship = crud_issue_relationship.create(
+    relationship, created = crud_issue_relationship.create(
         db_session,
         source_issue_id=issue1.id,
         target_issue_id=issue2.id,
         type="blocks",
     )
 
+    assert created
     assert relationship.source_issue_id == issue1.id
     assert relationship.target_issue_id == issue2.id
     assert relationship.type == "blocks"
@@ -31,13 +29,14 @@ def test_create_relationship_related(db_session, create_issue):
     # Ensure the smaller ID is always the source for 'related' type
     id1, id2 = sorted([issue1.id, issue2.id])
 
-    relationship = crud_issue_relationship.create(
+    relationship, created = crud_issue_relationship.create(
         db_session,
         source_issue_id=issue2.id,  # Use larger ID as source
         target_issue_id=issue1.id,  # Use smaller ID as target
         type="related",
     )
 
+    assert created
     assert relationship.source_issue_id == id1
     assert relationship.target_issue_id == id2
     assert relationship.type == "related"
@@ -89,23 +88,23 @@ def test_remove_relationship(db_session, create_issue):
 
 
 def test_prevent_duplicate_related_relationship(db_session, create_issue):
-    """Test that creating a duplicate 'related' relationship raises an error."""
+    """Test that creating a duplicate 'related' relationship returns the existing one."""
     issue1 = create_issue()
     issue2 = create_issue()
 
     # Create the first relationship
-    crud_issue_relationship.create(
+    relationship1, created1 = crud_issue_relationship.create(
         db_session, source_issue_id=issue1.id, target_issue_id=issue2.id, type="related"
     )
+    assert created1
 
-    # Attempting to create the reverse should fail due to primary key constraint
-    with pytest.raises(IntegrityError):
-        crud_issue_relationship.create(
-            db_session,
-            source_issue_id=issue2.id,
-            target_issue_id=issue1.id,
-            type="related",
-        )
+    # Attempting to create the reverse should return the original relationship
+    relationship2, created2 = crud_issue_relationship.create(
+        db_session, source_issue_id=issue2.id, target_issue_id=issue1.id, type="related"
+    )
+
+    assert not created2
+    assert relationship1.id == relationship2.id
 
 
 def test_delete_issue_cascades_relationships(db_session, create_issue):

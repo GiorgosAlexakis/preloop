@@ -18,6 +18,16 @@ def create_test_account(db_session: Session) -> Account:
 
 
 @pytest.fixture
+def create_another_account(db_session: Session) -> Account:
+    """Fixture to create another test account."""
+    account = Account(username="another_user", email="another@example.com")
+    db_session.add(account)
+    db_session.commit()
+    db_session.refresh(account)
+    return account
+
+
+@pytest.fixture
 def create_test_ai_model(db_session: Session, create_test_account: Account) -> AIModel:
     """Fixture to create a test AI model."""
     ai_model = AIModel(
@@ -32,50 +42,138 @@ def create_test_ai_model(db_session: Session, create_test_account: Account) -> A
     return ai_model
 
 
+@pytest.fixture
+def create_another_ai_model(
+    db_session: Session, create_test_account: Account
+) -> AIModel:
+    """Fixture to create another test AI model for the same account."""
+    ai_model = AIModel(
+        name="Another AI Model",
+        provider_name="test_provider",
+        model_identifier="another_model_v1",
+        account_id=create_test_account.id,
+    )
+    db_session.add(ai_model)
+    db_session.commit()
+    db_session.refresh(ai_model)
+    return ai_model
+
+
 def test_get_supersets_by_issues(
-    db_session: Session, create_test_ai_model: AIModel, create_test_account: Account
+    db_session: Session,
+    create_test_ai_model: AIModel,
+    create_another_ai_model: AIModel,
+    create_test_account: Account,
+    create_another_account: Account,
 ):
     """Test retrieving issue sets that are supersets of a given issue list."""
-    # Arrange: Create a superset and another unrelated set
+    # Arrange: Create various issue sets
     superset_issues = ["ID-1", "ID-2", "ID-3"]
-    superset = IssueSet(
+
+    # Set 1: Superset with the first AI model
+    superset1 = IssueSet(
         name="Superset 1",
         issue_ids=superset_issues,
         ai_model_id=create_test_ai_model.id,
     )
+
+    # Set 2: Superset with the second AI model
+    superset2 = IssueSet(
+        name="Superset 2",
+        issue_ids=superset_issues,
+        ai_model_id=create_another_ai_model.id,
+    )
+
+    # Set 3: Superset with no AI model (tracker-based)
+    superset_no_model = IssueSet(
+        name="Superset No Model", issue_ids=superset_issues, ai_model_id=None
+    )
+
+    # Set 4: Unrelated set
     other_set = IssueSet(
         name="Other Set",
         issue_ids=["ID-4", "ID-5"],
         ai_model_id=create_test_ai_model.id,
     )
-    db_session.add_all([superset, other_set])
-    db_session.commit()
 
-    # Act: Query for supersets of a subset
-    query_issues = ["ID-1", "ID-2"]
-    retrieved_sets = crud_issue_set.get_supersets_by_issues(
-        db_session,
-        issue_ids=query_issues,
-        ai_model_id=create_test_ai_model.id,
-        account_id=create_test_account.id,
+    # Set 5: Set for another account
+    other_account_model = AIModel(
+        name="Other Account Model",
+        provider_name="p",
+        model_identifier="m",
+        account_id=create_another_account.id,
+    )
+    db_session.add(other_account_model)
+    db_session.commit()
+    superset_other_account = IssueSet(
+        name="Superset Other Account",
+        issue_ids=superset_issues,
+        ai_model_id=other_account_model.id,
     )
 
-    # Assert: Only the superset should be returned
-    assert len(retrieved_sets) == 1
-    assert retrieved_sets[0].id == superset.id
-    assert retrieved_sets[0].name == "Superset 1"
+    db_session.add_all(
+        [superset1, superset2, superset_no_model, other_set, superset_other_account]
+    )
+    db_session.commit()
 
-    # Act: Query for an exact match
+    query_issues = ["ID-1", "ID-2"]
+
+    # --- Test Cases ---
+
+    # 1. Query for a single AI model
+    retrieved_sets_1 = crud_issue_set.get_supersets_by_issues(
+        db_session,
+        issue_ids=query_issues,
+        ai_model_ids=[create_test_ai_model.id],
+        account_id=create_test_account.id,
+    )
+    assert len(retrieved_sets_1) == 1
+    assert retrieved_sets_1[0].id == superset1.id
+
+    # 2. Query for sets with no AI model
+    retrieved_sets_none = crud_issue_set.get_supersets_by_issues(
+        db_session,
+        issue_ids=query_issues,
+        ai_model_ids=[None],
+        account_id=create_test_account.id,
+    )
+    assert len(retrieved_sets_none) == 1
+    assert retrieved_sets_none[0].id == superset_no_model.id
+
+    # 3. Query for multiple AI models
+    retrieved_sets_multi = crud_issue_set.get_supersets_by_issues(
+        db_session,
+        issue_ids=query_issues,
+        ai_model_ids=[create_test_ai_model.id, create_another_ai_model.id],
+        account_id=create_test_account.id,
+    )
+    assert len(retrieved_sets_multi) == 2
+    retrieved_ids = {s.id for s in retrieved_sets_multi}
+    assert {superset1.id, superset2.id} == retrieved_ids
+
+    # 4. Query for a model and None
+    retrieved_sets_with_none = crud_issue_set.get_supersets_by_issues(
+        db_session,
+        issue_ids=query_issues,
+        ai_model_ids=[create_test_ai_model.id, None],
+        account_id=create_test_account.id,
+    )
+    assert len(retrieved_sets_with_none) == 2
+    retrieved_ids_with_none = {s.id for s in retrieved_sets_with_none}
+    assert {superset1.id, superset_no_model.id} == retrieved_ids_with_none
+
+    # 5. Query for an exact match of all models
     retrieved_exact_match = crud_issue_set.get_supersets_by_issues(
         db_session,
         issue_ids=superset_issues,
-        ai_model_id=create_test_ai_model.id,
+        ai_model_ids=[
+            create_test_ai_model.id,
+            create_another_ai_model.id,
+            None,
+        ],
         account_id=create_test_account.id,
     )
-
-    # Assert: The exact match should be returned
-    assert len(retrieved_exact_match) == 1
-    assert retrieved_exact_match[0].id == superset.id
+    assert len(retrieved_exact_match) == 3
 
 
 def test_create_and_remove_subsets(
@@ -133,10 +231,10 @@ def test_retrieval_of_exact_set(
     retrieved_sets = crud_issue_set.get_supersets_by_issues(
         db=db_session,
         issue_ids=issue_ids,
-        ai_model_id=create_test_ai_model.id,
+        ai_model_ids=[create_test_ai_model.id],
         account_id=create_test_account.id,
     )
 
-    # Assert: The existing set is retrieved
+    # Assert: The exact match should be retrieved
     assert len(retrieved_sets) == 1
     assert retrieved_sets[0].id == initial_set.id

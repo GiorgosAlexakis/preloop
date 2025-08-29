@@ -23,8 +23,8 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
         confidence_score: Optional[float] = None,
         is_commited: Optional[bool] = False,
         comes_from_tracker: Optional[bool] = False,
-    ) -> IssueRelationship:
-        """Create a new issue relationship."""
+    ) -> (IssueRelationship, bool):
+        """Create a new issue relationship. Returns a tuple of (relationship, created)."""
         if type == "related" or type == "relates_to" or type == "relates to":
             # For undirected relationships, store with the smaller ID first to avoid duplicates
             if source_issue_id > target_issue_id:
@@ -40,9 +40,9 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
             type=type,
         )
         if existing_relationship:
-            return existing_relationship
+            return existing_relationship, False
 
-        return super().create(
+        new_relationship = super().create(
             db,
             obj_in={
                 "source_issue_id": source_issue_id,
@@ -54,6 +54,7 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
                 "comes_from_tracker": comes_from_tracker,
             },
         )
+        return new_relationship, True
 
     def get_by_source_target_type(
         self, db: Session, *, source_issue_id: str, target_issue_id: str, type: str
