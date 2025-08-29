@@ -16,6 +16,7 @@ from spacemodels.crud import (
     crud_issue,
     crud_issue_embedding,
     crud_issue_relationship,
+    crud_issue_set,
     crud_organization,
     crud_project,
     crud_comment,
@@ -229,10 +230,6 @@ class TrackerClient:
             since=since,
         )
 
-        # Sort issues by creation date to process them in chronological order
-        # This is crucial for correctly establishing dependencies between issues
-        issue_data_list.sort(key=lambda issue: issue.get("created_at", ""))
-
         issues_processed = []
         embedding_updates = 0
         for issue_data in issue_data_list:
@@ -274,14 +271,31 @@ class TrackerClient:
                 )
 
                 if target_issue:
-                    crud_issue_relationship.create(
+                    _, created = crud_issue_relationship.create(
                         db,
                         source_issue_id=current_issue_model.id,
                         target_issue_id=target_issue.id,
                         type=rel_type,
+                        reason="Relationship detected in tracker.",
+                        confidence_score=1.0,
                         is_commited=False,
                         comes_from_tracker=True,
                     )
+
+                    if created:
+                        # Create an IssueSet for the pair to cache the relationship
+                        issue_ids = sorted(
+                            [str(current_issue_model.id), str(target_issue.id)]
+                        )
+                        crud_issue_set.create(
+                            db,
+                            obj_in={
+                                "name": f"Tracked dependency: {current_issue_model.key} -> {target_issue.key}",
+                                "issue_ids": issue_ids,
+                                "ai_model_id": None,  # No AI model for tracked dependencies
+                                "meta_data": {"source": "tracker"},
+                            },
+                        )
 
                 else:
                     logger.warning(
