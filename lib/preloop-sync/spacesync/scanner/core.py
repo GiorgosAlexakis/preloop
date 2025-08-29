@@ -278,7 +278,7 @@ class TrackerClient:
                         type=rel_type,
                         reason="Relationship detected in tracker.",
                         confidence_score=1.0,
-                        is_commited=False,
+                        is_committed=False,
                         comes_from_tracker=True,
                     )
 
