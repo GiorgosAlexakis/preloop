@@ -142,7 +142,7 @@ def detect_issue_dependencies(
     existing_sets = crud_issue_set.get_supersets_by_issues(
         db,
         issue_ids=sorted_issue_ids,
-        ai_model_id=ai_model.id,
+        ai_model_ids=[ai_model.id, None],
         account_id=current_user.id,
     )
 
@@ -155,21 +155,26 @@ def detect_issue_dependencies(
 
         dependencies = []
         for rel in cached_relationships:
+            source_issue = None
+            dependent_issue = None
             if rel.type == "depends_on":
                 source_issue = issue_map.get(str(rel.source_issue_id))
                 dependent_issue = issue_map.get(str(rel.target_issue_id))
+            elif rel.type == "blocks":
+                source_issue = issue_map.get(str(rel.source_issue_id))
+                dependent_issue = issue_map.get(str(rel.target_issue_id))
 
-                if source_issue and dependent_issue:
-                    dependencies.append(
-                        DependencyPair(
-                            source_issue_id=str(rel.source_issue_id),
-                            dependent_issue_id=str(rel.target_issue_id),
-                            reason=rel.reason or "No reason provided",
-                            confidence_score=rel.confidence_score or 0.0,
-                            issue_key=source_issue.key,
-                            dependency_key=dependent_issue.key,
-                        )
+            if source_issue and dependent_issue:
+                dependencies.append(
+                    DependencyPair(
+                        source_issue_id=str(source_issue.id),
+                        dependent_issue_id=str(dependent_issue.id),
+                        reason=rel.reason or "No reason provided",
+                        confidence_score=rel.confidence_score or 0.0,
+                        issue_key=source_issue.key,
+                        dependency_key=dependent_issue.key,
                     )
+                )
         return DependencyResponse(dependencies=dependencies)
 
     logger.info(f"Cache miss for issue set. Calling AI model {ai_model.id}.")
@@ -329,7 +334,7 @@ def extend_dependency_scan(
     existing_sets = crud_issue_set.get_supersets_by_issues(
         db,
         issue_ids=request.issue_ids,
-        ai_model_id=ai_model.id,
+        ai_model_ids=[ai_model.id, None],
         account_id=current_user.id,
     )
 
