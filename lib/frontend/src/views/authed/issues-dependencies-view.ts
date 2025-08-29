@@ -377,7 +377,14 @@ export class IssuesDependenciesView extends LitElement {
                           ${when(
                             deps && deps.blocks.length > 0,
                             () => html`
-                              <sl-badge pill class="blocks-badge">
+                              <sl-badge
+                                pill
+                                class="blocks-badge ${
+                                  deps.blocks.some((d) => d.comes_from_tracker)
+                                    ? 'from-tracker'
+                                    : ''
+                                }"
+                              >
                                 <div class="dependency-badge-content">
                                   <sl-tooltip content="Blocks">
                                     <sl-icon name="arrow-right-circle"></sl-icon
@@ -391,7 +398,7 @@ export class IssuesDependenciesView extends LitElement {
                                             d.confidence_score * 100
                                           ).toFixed(0)}%"
                                         >
-                                          <span
+                                          <span class="${d.comes_from_tracker ? 'from-tracker' : ''}"
                                             >#${d.dependency_key.match(
                                               /\d+$/
                                             )?.[0]}</span
@@ -424,6 +431,7 @@ export class IssuesDependenciesView extends LitElement {
                                           ).toFixed(0)}%"
                                         >
                                           <span
+                                            class="${d.comes_from_tracker ? 'from-tracker' : ''}"
                                             >#${d.issue_key.match(
                                               /\d+$/
                                             )?.[0]}</span
@@ -620,6 +628,9 @@ export class IssuesDependenciesView extends LitElement {
       .dependency-reason {
         font-size: var(--sl-font-size-x-small);
         color: var(--sl-color-neutral-500);
+      }
+      .from-tracker {
+        color: var(--sl-color-primary-600);
       }
 
       @media (min-width: 1720px) {

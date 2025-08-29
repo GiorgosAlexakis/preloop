@@ -136,6 +136,8 @@ export interface DependencyPair {
   confidence_score: number;
   issue_key?: string;
   dependency_key?: string;
+  is_committed: boolean;
+  comes_from_tracker: boolean;
 }
 
 export interface DependencyResponse {
