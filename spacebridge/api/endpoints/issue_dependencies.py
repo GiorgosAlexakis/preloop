@@ -51,6 +51,13 @@ class DependencyPair(BaseModel):
     dependency_key: Optional[str] = Field(
         None, description="The key of the dependent issue."
     )
+    is_committed: bool = Field(
+        False, description="Indicates if the relationship is committed by the user."
+    )
+    comes_from_tracker: bool = Field(
+        False,
+        description="Indicates if the relationship comes from an external tracker.",
+    )
 
 
 class DependencyResponse(BaseModel):
@@ -150,7 +157,7 @@ def detect_issue_dependencies(
         logger.info(f"Cache hit for issue set with AI model {ai_model.id}.")
         # If a superset exists, we can return the cached relationships
         cached_relationships = crud_issue_relationship.get_relationships_for_issues(
-            db, issue_ids=request.issue_ids
+            db, issue_ids=request.issue_ids, any_in_list=True
         )
 
         dependencies = []
@@ -173,6 +180,8 @@ def detect_issue_dependencies(
                         confidence_score=rel.confidence_score or 0.0,
                         issue_key=source_issue.key,
                         dependency_key=dependent_issue.key,
+                        is_committed=rel.is_committed,
+                        comes_from_tracker=rel.comes_from_tracker,
                     )
                 )
         return DependencyResponse(dependencies=dependencies)
@@ -249,6 +258,8 @@ def detect_issue_dependencies(
                 dep["issue_key"] = source_issue.key
             if dependent_issue:
                 dep["dependency_key"] = dependent_issue.key
+            dep["is_committed"] = False
+            dep["comes_from_tracker"] = False
 
         # 7. Create a new IssueSet to mark this analysis as complete
         set_name = f"Analysis for {len(sorted_issue_ids)} issues at {datetime.utcnow().isoformat()}"
@@ -433,6 +444,8 @@ def extend_dependency_scan(
                 dep["issue_key"] = source_issue.key
             if dependent_issue:
                 dep["dependency_key"] = dependent_issue.key
+            dep["is_committed"] = False
+            dep["comes_from_tracker"] = False
             new_dependencies.append(dep)
 
         # 7b. Store the new combined set in the IssueSet table

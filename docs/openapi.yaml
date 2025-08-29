@@ -3761,6 +3761,16 @@ components:
           - type: 'null'
           title: Dependency Key
           description: The key of the dependent issue.
+        is_committed:
+          type: boolean
+          title: Is Committed
+          description: Indicates if the relationship is committed by the user.
+          default: false
+        comes_from_tracker:
+          type: boolean
+          title: Comes From Tracker
+          description: Indicates if the relationship comes from an external tracker.
+          default: false
       type: object
       required:
       - source_issue_id
