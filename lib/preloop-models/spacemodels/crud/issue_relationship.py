@@ -116,6 +116,35 @@ class CRUDIssueRelationship(CRUDBase[IssueRelationship]):
             .all()
         )
 
+    def commit_relationships(
+        self, db: Session, *, relationships: List[dict]
+    ) -> List[IssueRelationship]:
+        """Commit a list of issue relationships by setting is_committed to True."""
+        updated_relationships = []
+        for rel_data in relationships:
+            source_id = rel_data.get("source_issue_id")
+            target_id = rel_data.get("dependent_issue_id")
+
+            relationship_obj = (
+                db.query(IssueRelationship)
+                .filter(
+                    IssueRelationship.source_issue_id == source_id,
+                    IssueRelationship.target_issue_id == target_id,
+                )
+                .first()
+            )
+
+            if relationship_obj:
+                relationship_obj.is_committed = True
+                db.add(relationship_obj)
+                updated_relationships.append(relationship_obj)
+
+        db.commit()
+        for rel in updated_relationships:
+            db.refresh(rel)
+
+        return updated_relationships
+
     def remove(
         self, db: Session, *, source_issue_id: str, target_issue_id: str, type: str
     ) -> Optional[IssueRelationship]:
