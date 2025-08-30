@@ -27,6 +27,7 @@ import json
 import openai
 
 from spacebridge.services.billing import BillingService
+from spacebridge.api.common import get_tracker_client
 
 
 # Schemas
@@ -346,17 +347,11 @@ async def commit_issue_dependencies(
             continue
 
         try:
-            # The tracker's 'config' and 'credentials' fields are used to create the client
-            config = tracker.config or {}
-            # The credentials blob is expected by the factory
-            config["credentials"] = tracker.credentials
-            # Pass project-specific settings if they exist
-            if source_issue.project.tracker_settings:
-                config.update(source_issue.project.tracker_settings)
-
-            client = await TrackerFactory.create_client(
-                tracker_type=tracker.tracker_type.value,
-                config=config,
+            client = await get_tracker_client(
+                organization_id=str(source_issue.project.organization.id),
+                project_id=str(source_issue.project.id),
+                db=db,
+                current_user=current_user,
             )
 
             if client:

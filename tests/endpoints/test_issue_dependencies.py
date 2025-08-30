@@ -63,6 +63,12 @@ def test_detect_issue_dependencies_success(
     mock_ai_model.api_key = "fake-key"
     mock_crud_ai_model.get_default_active_model.return_value = mock_ai_model
 
+    # Mock IssueSet to simulate a cache miss
+    mock_crud_issue_set = mocker.patch(
+        "spacebridge.api.endpoints.issue_dependencies.crud_issue_set"
+    )
+    mock_crud_issue_set.get_supersets_by_issues.return_value = []
+
     # Mock Billing Service
     mock_billing_service_class = mocker.patch(
         "spacebridge.api.endpoints.issue_dependencies.BillingService"
@@ -100,3 +106,4 @@ def test_detect_issue_dependencies_success(
     mock_billing_instance.record_usage.assert_called_once_with(
         account_id=mock_user.id, metric="ai_calls", quantity=1
     )
+    mock_crud_issue_set.create_and_remove_subsets.assert_called_once()
