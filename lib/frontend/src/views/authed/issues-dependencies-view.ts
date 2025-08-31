@@ -312,7 +312,8 @@ export class IssuesDependenciesView extends LitElement {
         <ul>
           ${items.map((d) => {
             const dependencyKey = `${d.source_issue_id}:${d.dependent_issue_id}`;
-            const isCommitting = this._committingDependencies.has(dependencyKey);
+            const isCommitting =
+              this._committingDependencies.has(dependencyKey);
             const issueId =
               type === 'blocks' ? d.dependent_issue_id : d.source_issue_id;
             const issue = this._issues.find((i) => i.id === issueId);
@@ -457,8 +458,8 @@ export class IssuesDependenciesView extends LitElement {
                                             class="${d.is_committed
                                               ? 'is-committed'
                                               : d.comes_from_tracker
-                                              ? 'from-tracker'
-                                              : ''}"
+                                                ? 'from-tracker'
+                                                : ''}"
                                             >#${d.dependency_key.match(
                                               /\d+$/
                                             )?.[0]}</span
@@ -494,9 +495,11 @@ export class IssuesDependenciesView extends LitElement {
                                             class="${d.is_committed
                                               ? 'is-committed'
                                               : d.comes_from_tracker
-                                              ? 'from-tracker'
-                                              : ''}"
-                                            >#${d.issue_key.match(/\d+$/)?.[0]}</span
+                                                ? 'from-tracker'
+                                                : ''}"
+                                            >#${d.issue_key.match(
+                                              /\d+$/
+                                            )?.[0]}</span
                                           > </sl-tooltip
                                         >${i < deps.blockedBy.length - 1
                                           ? ', '
