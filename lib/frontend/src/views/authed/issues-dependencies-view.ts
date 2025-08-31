@@ -83,6 +83,9 @@ export class IssuesDependenciesView extends LitElement {
   @state()
   private _expandingIssueId: string | null = null;
 
+  @state()
+  private _committingDependencies: Set<string> = new Set();
+
   private _pageSize = 10;
 
   async connectedCallback() {
@@ -189,6 +192,10 @@ export class IssuesDependenciesView extends LitElement {
   }
 
   private async _handleCommitDependency(dependency: DependencyPair) {
+    const dependencyKey = `${dependency.source_issue_id}:${dependency.dependent_issue_id}`;
+    this._committingDependencies.add(dependencyKey);
+    this.requestUpdate();
+
     try {
       const response = await commitIssueDependencies([dependency]);
       if (response.dependencies.length > 0) {
@@ -200,11 +207,14 @@ export class IssuesDependenciesView extends LitElement {
             ? { ...dep, is_committed: true }
             : dep
         );
-        this.requestUpdate(); // Re-render the component
+        this._processDependencies();
       }
     } catch (error) {
       console.error('Failed to commit dependency:', error);
       // Optionally, show an error message to the user
+    } finally {
+      this._committingDependencies.delete(dependencyKey);
+      this.requestUpdate(); // Re-render the component
     }
   }
 
@@ -301,6 +311,8 @@ export class IssuesDependenciesView extends LitElement {
       return html`
         <ul>
           ${items.map((d) => {
+            const dependencyKey = `${d.source_issue_id}:${d.dependent_issue_id}`;
+            const isCommitting = this._committingDependencies.has(dependencyKey);
             const issueId =
               type === 'blocks' ? d.dependent_issue_id : d.source_issue_id;
             const issue = this._issues.find((i) => i.id === issueId);
@@ -325,7 +337,8 @@ export class IssuesDependenciesView extends LitElement {
                       size="small"
                       variant="neutral"
                       @click="${() => this._handleCommitDependency(d)}"
-                      ?disabled="${d.is_committed}"
+                      ?disabled="${d.is_committed || isCommitting}"
+                      .loading="${isCommitting}"
                     >
                       ${d.is_committed ? 'Committed' : 'Commit'}
                     </sl-button>`
@@ -441,7 +454,9 @@ export class IssuesDependenciesView extends LitElement {
                                           ).toFixed(0)}%"
                                         >
                                           <span
-                                            class="${d.comes_from_tracker
+                                            class="${d.is_committed
+                                              ? 'is-committed'
+                                              : d.comes_from_tracker
                                               ? 'from-tracker'
                                               : ''}"
                                             >#${d.dependency_key.match(
@@ -476,12 +491,12 @@ export class IssuesDependenciesView extends LitElement {
                                           ).toFixed(0)}%"
                                         >
                                           <span
-                                            class="${d.comes_from_tracker
+                                            class="${d.is_committed
+                                              ? 'is-committed'
+                                              : d.comes_from_tracker
                                               ? 'from-tracker'
                                               : ''}"
-                                            >#${d.issue_key.match(
-                                              /\d+$/
-                                            )?.[0]}</span
+                                            >#${d.issue_key.match(/\d+$/)?.[0]}</span
                                           > </sl-tooltip
                                         >${i < deps.blockedBy.length - 1
                                           ? ', '
@@ -681,6 +696,10 @@ export class IssuesDependenciesView extends LitElement {
       }
       .from-tracker {
         color: var(--sl-color-primary-600);
+      }
+      .is-committed {
+        color: var(--sl-color-success-600);
+        font-weight: var(--sl-font-weight-semibold);
       }
 
       @media (min-width: 1720px) {
