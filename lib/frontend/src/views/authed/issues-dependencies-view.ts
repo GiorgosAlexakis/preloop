@@ -86,6 +86,9 @@ export class IssuesDependenciesView extends LitElement {
   @state()
   private _committingDependencies: Set<string> = new Set();
 
+  @state()
+  private _committingAllForIssue: string | null = null;
+
   private _pageSize = 10;
 
   async connectedCallback() {
@@ -218,6 +221,40 @@ export class IssuesDependenciesView extends LitElement {
     }
   }
 
+  private async _handleCommitAllDependencies(
+    dependencies: DependencyPair[],
+    issueId: string
+  ) {
+    if (dependencies.length === 0) return;
+
+    this._committingAllForIssue = issueId;
+
+    try {
+      const response = await commitIssueDependencies(dependencies);
+      if (response.dependencies.length > 0) {
+        const committedKeys = new Set(
+          response.dependencies.map(
+            (d) => `${d.source_issue_id}:${d.dependent_issue_id}`
+          )
+        );
+
+        this._dependencies = this._dependencies.map((dep) => {
+          const key = `${dep.source_issue_id}:${dep.dependent_issue_id}`;
+          if (committedKeys.has(key)) {
+            return { ...dep, is_committed: true };
+          }
+          return dep;
+        });
+
+        this._processDependencies();
+      }
+    } catch (error) {
+      console.error('Failed to commit all dependencies:', error);
+    } finally {
+      this._committingAllForIssue = null;
+    }
+  }
+
   private _handleProjectSelect(e: CustomEvent) {
     this._selectedProjectId = e.target.value;
     this._currentPage = 1;
@@ -290,7 +327,8 @@ export class IssuesDependenciesView extends LitElement {
   }
 
   private _renderDependencyDetails(
-    deps: { blocks: DependencyPair[]; blockedBy: DependencyPair[] } | undefined
+    deps: { blocks: DependencyPair[]; blockedBy: DependencyPair[] } | undefined,
+    issueId: string
   ) {
     if (!deps || (deps.blocks.length === 0 && deps.blockedBy.length === 0)) {
       return html`
@@ -304,6 +342,11 @@ export class IssuesDependenciesView extends LitElement {
       `;
     }
 
+    const allDependencies = [...deps.blocks, ...deps.blockedBy];
+    const uncommittedDependencies = allDependencies.filter(
+      (d) => !d.is_committed && !d.comes_from_tracker
+    );
+
     const renderList = (
       items: DependencyPair[],
       type: 'blocks' | 'blockedBy'
@@ -312,8 +355,7 @@ export class IssuesDependenciesView extends LitElement {
         <ul>
           ${items.map((d) => {
             const dependencyKey = `${d.source_issue_id}:${d.dependent_issue_id}`;
-            const isCommitting =
-              this._committingDependencies.has(dependencyKey);
+            const isCommitting = this._committingDependencies.has(dependencyKey);
             const issueId =
               type === 'blocks' ? d.dependent_issue_id : d.source_issue_id;
             const issue = this._issues.find((i) => i.id === issueId);
@@ -353,7 +395,21 @@ export class IssuesDependenciesView extends LitElement {
 
     return html`
       <div class="detail-section dependency-details">
-        <h4>Dependencies</h4>
+        <div class="dependencies-header">
+          <h4>Dependencies</h4>
+          <sl-button
+            size="small"
+            variant="primary"
+            outline
+            ?disabled=${uncommittedDependencies.length === 0 ||
+            this._committingAllForIssue === issueId}
+            .loading=${this._committingAllForIssue === issueId}
+            @click="${() =>
+              this._handleCommitAllDependencies(uncommittedDependencies, issueId)}"
+          >
+            Commit All
+          </sl-button>
+        </div>
         ${when(
           deps.blocks.length > 0,
           () => html`
@@ -458,8 +514,8 @@ export class IssuesDependenciesView extends LitElement {
                                             class="${d.is_committed
                                               ? 'is-committed'
                                               : d.comes_from_tracker
-                                                ? 'from-tracker'
-                                                : ''}"
+                                              ? 'from-tracker'
+                                              : ''}"
                                             >#${d.dependency_key.match(
                                               /\d+$/
                                             )?.[0]}</span
@@ -495,11 +551,9 @@ export class IssuesDependenciesView extends LitElement {
                                             class="${d.is_committed
                                               ? 'is-committed'
                                               : d.comes_from_tracker
-                                                ? 'from-tracker'
-                                                : ''}"
-                                            >#${d.issue_key.match(
-                                              /\d+$/
-                                            )?.[0]}</span
+                                              ? 'from-tracker'
+                                              : ''}"
+                                            >#${d.issue_key.match(/\d+$/)?.[0]}</span
                                           > </sl-tooltip
                                         >${i < deps.blockedBy.length - 1
                                           ? ', '
@@ -544,7 +598,7 @@ export class IssuesDependenciesView extends LitElement {
                           <div class="detail-view-card">
                             <single-issue-detail-view .issue=${issue}>
                               <div slot="additional-info">
-                                ${this._renderDependencyDetails(deps)}
+                                ${this._renderDependencyDetails(deps, issue.id)}
                               </div>
                             </single-issue-detail-view>
                           </div>
@@ -705,6 +759,17 @@ export class IssuesDependenciesView extends LitElement {
         font-weight: var(--sl-font-weight-semibold);
       }
 
+      .dependencies-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--sl-spacing-small);
+      }
+
+      .dependencies-header h4 {
+        margin: 0;
+      }
+
       @media (min-width: 1720px) {
         .side-column {
           display: flex;
@@ -782,7 +847,8 @@ export class IssuesDependenciesView extends LitElement {
                   return html`<single-issue-detail-view .issue=${issue}>
                     <div slot="additional-info">
                       ${this._renderDependencyDetails(
-                        this._dependencyMap.get(issue.id)
+                        this._dependencyMap.get(issue.id),
+                        issue.id
                       )}
                     </div>
                   </single-issue-detail-view>`;
