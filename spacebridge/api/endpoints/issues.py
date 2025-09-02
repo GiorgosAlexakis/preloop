@@ -10,9 +10,9 @@ from sqlalchemy import or_
 from datetime import datetime
 from spacebridge.api.common import get_tracker_client
 from spacebridge.schemas.issue import (
-    IssueCreate as ApiIssueCreate,
+    IssueCreate,
     IssueResponse,
-    IssueUpdate as ApiIssueUpdate,
+    IssueUpdate,
 )
 from spacemodels.models.account import Account
 
@@ -560,7 +560,7 @@ async def search_issues(
 
 @router.post("/issues", response_model=IssueResponse, status_code=201)
 async def create_issue(
-    issue: ApiIssueCreate,  # Use the renamed API schema
+    issue: IssueCreate,  # Use the renamed API schema
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ) -> IssueResponse:
@@ -1024,7 +1024,7 @@ def get_issue_count(
 @router.put("/issues/{issue_id:path}", response_model=IssueResponse)
 async def update_issue(
     issue_id: str,  # Issue key, Issue ID or external ID
-    issue_update: ApiIssueUpdate,
+    issue_update: IssueUpdate,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
@@ -1266,7 +1266,7 @@ async def update_issue(
                 )
 
         # --- Update Local DB ---
-        # Prepare data for local DB update using the ApiIssueUpdate model
+        # Prepare data for local DB update using the IssueUpdate model
         update_data_for_db = issue_update.model_dump(exclude_unset=True)
 
         if not update_data_for_db:
