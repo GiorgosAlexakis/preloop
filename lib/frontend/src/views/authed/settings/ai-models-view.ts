@@ -82,10 +82,6 @@ export class AIModelsView extends LitElement {
       .styled-table tr:last-child td {
         border-bottom: none;
       }
-      .styled-table th:last-child,
-      .styled-table td:last-child {
-        text-align: right;
-      }
       .actions {
         display: flex;
         gap: var(--sl-spacing-x-small);

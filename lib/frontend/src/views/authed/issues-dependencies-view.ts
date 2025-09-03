@@ -723,38 +723,27 @@ export class IssuesDependenciesView extends LitElement {
       .row-expanded {
         background-color: var(--sl-color-primary-50);
       }
-      .side-column {
-        display: none;
-      }
 
       .placeholder-content {
         text-align: center;
       }
 
-      .dependency-details {
-        font-size: var(--sl-font-size-small);
-      }
-      .dependency-details h5 {
-        margin-top: var(--sl-spacing-medium);
-        margin-bottom: var(--sl-spacing-x-small);
-      }
+
       .dependency-details ul {
         list-style-type: none;
         padding-left: var(--sl-spacing-medium);
-        margin: 0;
       }
       .dependency-details li {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: var(--sl-spacing-2x-small) 0;
-        border-bottom: 1px solid var(--sl-color-neutral-200);
+        padding: var(--sl-spacing-x-small) 0;
       }
       .dependency-details li:last-child {
         border-bottom: none;
       }
       .dependency-reason {
-        font-size: var(--sl-font-size-x-small);
+        font-size: var(--sl-font-size-small);
         color: var(--sl-color-neutral-500);
       }
       .from-tracker {
@@ -774,15 +763,6 @@ export class IssuesDependenciesView extends LitElement {
 
       .dependencies-header h4 {
         margin: 0;
-      }
-
-      @media (min-width: 1720px) {
-        .side-column {
-          display: flex;
-        }
-        .inline-detail-row {
-          display: none;
-        }
       }
     `,
   ];

@@ -99,7 +99,7 @@ sl-card::part(header) {
     border-bottom: none;
 }
 
-.styled-table th:last-child, .styled-table td:last-child {
+.styled-table th:last-child:not(:only-child), .styled-table td:last-child:not(:only-child) {
     text-align: right;
 }
 
@@ -134,3 +134,16 @@ sl-dialog.large::part(panel) {
   align-items: center;
   padding: var(--sl-spacing-2x-large);
 }
+
+.side-column {
+    display: none;
+  }
+
+@media (min-width: 1720px) {
+    .side-column {
+      display: flex;
+    }
+    .inline-detail-row {
+      display: none;
+    }
+  }

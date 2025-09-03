@@ -173,11 +173,6 @@ export class IssuesView extends LitElement {
         text-align: center;
       }
 
-      @media (min-width: 1720px) {
-        .inline-detail-row {
-          display: none;
-        }
-      }
     `,
   ];
 

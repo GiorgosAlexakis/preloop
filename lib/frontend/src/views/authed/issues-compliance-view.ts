@@ -169,10 +169,6 @@ export class IssuesComplianceView extends LitElement {
         font-size: 1rem;
       }
 
-      .side-column {
-        display: none;
-      }
-
       .placeholder-content {
         text-align: center;
       }
@@ -186,15 +182,6 @@ export class IssuesComplianceView extends LitElement {
 
       .search-bar sl-input {
         flex-grow: 1;
-      }
-
-      @media (min-width: 1720px) {
-        .side-column {
-          display: flex;
-        }
-        .inline-detail-row {
-          display: none;
-        }
       }
     `,
   ];
