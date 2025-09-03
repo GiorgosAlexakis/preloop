@@ -1,7 +1,6 @@
 """Endpoints for detecting dependencies between issues."""
 
 import logging
-from typing import List, Optional
 from datetime import datetime
 import asyncio
 
@@ -22,55 +21,18 @@ from spacemodels.models.issue import Issue
 from spacemodels.models.project import Project
 from spacemodels.models.organization import Organization
 from spacebridge.api.auth import get_current_active_user
-from pydantic import BaseModel, Field
 import json
 import openai
 
 from spacebridge.services.billing import BillingService
 from spacebridge.api.common import get_tracker_client
-
-
-# Schemas
-class DependencyRequest(BaseModel):
-    issue_ids: List[str] = Field(
-        ..., description="A list of issue IDs to analyze for dependencies."
-    )
-    model_id: Optional[str] = Field(
-        None, description="Optional AI Model ID to use for detection."
-    )
-
-
-class DependencyPair(BaseModel):
-    source_issue_id: str = Field(
-        ..., description="The ID of the issue that must be completed first."
-    )
-    dependent_issue_id: str = Field(
-        ..., description="The ID of the issue that depends on the source issue."
-    )
-    reason: str = Field(..., description="A brief explanation of the dependency.")
-    confidence_score: float = Field(
-        ..., ge=0.0, le=1.0, description="The model's confidence in this dependency."
-    )
-    issue_key: Optional[str] = Field(None, description="The key of the source issue.")
-    dependency_key: Optional[str] = Field(
-        None, description="The key of the dependent issue."
-    )
-    is_committed: bool = Field(
-        False, description="Indicates if the relationship is committed by the user."
-    )
-    comes_from_tracker: bool = Field(
-        False,
-        description="Indicates if the relationship comes from an external tracker.",
-    )
-
-
-class DependencyResponse(BaseModel):
-    dependencies: List[DependencyPair]
-
-
-class CommitDependenciesRequest(BaseModel):
-    dependencies: List[DependencyPair]
-
+from spacebridge.schemas.issue_dependency import (
+    CommitDependenciesRequest,
+    DependencyRequest,
+    DependencyResponse,
+    ExtendScanRequest,
+    DependencyPair,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -406,15 +368,6 @@ async def commit_issue_dependencies(
         )
 
     return DependencyResponse(dependencies=response_dependencies)
-
-
-class ExtendScanRequest(BaseModel):
-    issue_ids: List[str] = Field(
-        ..., description="The ID of the issues to start the scan from."
-    )
-    extend_by: int = Field(
-        ..., gt=0, description="The number of new issues to include in the scan."
-    )
 
 
 @router.post(
