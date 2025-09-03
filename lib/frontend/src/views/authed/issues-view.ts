@@ -172,7 +172,6 @@ export class IssuesView extends LitElement {
       .placeholder-content {
         text-align: center;
       }
-
     `,
   ];
 

@@ -728,7 +728,6 @@ export class IssuesDependenciesView extends LitElement {
         text-align: center;
       }
 
-
       .dependency-details ul {
         list-style-type: none;
         padding-left: var(--sl-spacing-medium);
