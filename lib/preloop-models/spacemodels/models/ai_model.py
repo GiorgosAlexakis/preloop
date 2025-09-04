@@ -13,6 +13,7 @@ from .mixins import TimestampMixin
 if TYPE_CHECKING:
     from .account import Account
     from .flow import Flow
+    from .issue_set import IssueSet
 
 
 class AIModel(Base, TimestampMixin):
@@ -55,6 +56,7 @@ class AIModel(Base, TimestampMixin):
     # Relationships
     account: Mapped[Optional["Account"]] = relationship(back_populates="ai_models")
     flows: Mapped[List["Flow"]] = relationship(back_populates="ai_model")
+    issue_sets: Mapped[List["IssueSet"]] = relationship(back_populates="ai_model")
 
     def __repr__(self):
         return f"<AIModel(id={self.id}, name='{self.name}')>"

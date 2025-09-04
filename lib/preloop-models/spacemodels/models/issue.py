@@ -58,10 +58,22 @@ class Issue(Base):
         nullable=False,
         index=True,
     )
+    parent_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("issue.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="issues")
     tracker: Mapped["Tracker"] = relationship("Tracker", back_populates="issues")
+    parent: Mapped[Optional["Issue"]] = relationship(
+        "Issue", remote_side="Issue.id", back_populates="children"
+    )
+    children: Mapped[List["Issue"]] = relationship(
+        "Issue", back_populates="parent", cascade="all, delete-orphan"
+    )
     embeddings: Mapped[List["IssueEmbedding"]] = relationship(
         "IssueEmbedding", back_populates="issue", cascade="all, delete-orphan"
     )

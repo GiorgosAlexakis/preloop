@@ -195,6 +195,36 @@ class CRUDIssue(CRUDBase[Issue]):
             db.refresh(issue)
         return issue
 
+    def assign_parent(
+        self, db: Session, *, issue_id: str, parent_id: str
+    ) -> Optional[Issue]:
+        """Assign a parent to an issue."""
+        if issue_id == parent_id:
+            return None  # An issue cannot be its own parent
+
+        issue = self.get(db, id=issue_id)
+        parent_issue = self.get(db, id=parent_id)
+
+        if issue and parent_issue:
+            issue.parent_id = parent_id
+            db.add(issue)
+            db.commit()
+            db.refresh(issue)
+            return issue
+        return None
+
+    def get_children(
+        self, db: Session, *, issue_id: str, skip: int = 0, limit: int = 100
+    ) -> List[Issue]:
+        """Get child issues for a given issue."""
+        return (
+            db.query(self.model)
+            .filter(self.model.parent_id == issue_id)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
     def update_last_synced(self, db: Session, *, id: str) -> Optional[Issue]:
         """Update last_synced timestamp."""
         issue = self.get(db, id=id)

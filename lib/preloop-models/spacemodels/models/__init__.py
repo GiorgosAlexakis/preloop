@@ -17,6 +17,8 @@ from .webhook import Webhook
 from .tracker_scope_rule import TrackerScopeRule
 from .issue_compliance_result import IssueComplianceResult
 from .plan import Plan, Subscription, MonthlyUsage
+from .issue_relationship import IssueRelationship
+from .issue_set import IssueSet
 
 __all__ = [
     "Base",
@@ -41,4 +43,6 @@ __all__ = [
     "Plan",
     "Subscription",
     "MonthlyUsage",
+    "IssueRelationship",
+    "IssueSet",
 ]
