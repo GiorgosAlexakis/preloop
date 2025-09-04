@@ -192,6 +192,9 @@ export class ConsoleShell extends LitElement {
                 <a href="/console/issues/compliance">
                   <sl-menu-item>Compliance</sl-menu-item>
                 </a>
+                <a href="/console/issues/dependencies">
+                  <sl-menu-item>Dependencies</sl-menu-item>
+                </a>
               </sl-menu>
             </sl-details>
 

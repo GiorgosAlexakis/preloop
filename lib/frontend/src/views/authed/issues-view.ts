@@ -172,12 +172,6 @@ export class IssuesView extends LitElement {
       .placeholder-content {
         text-align: center;
       }
-
-      @media (min-width: 1720px) {
-        .inline-detail-row {
-          display: none;
-        }
-      }
     `,
   ];
 

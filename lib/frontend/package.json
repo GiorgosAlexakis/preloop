@@ -47,6 +47,7 @@
     "deck.gl": "^9.1.12",
     "events": "^3.3.0",
     "lit": "^3.1.0",
+    "mermaid": "^10.9.0",
     "tsne-js": "^1.0.3"
   },
   "devDependencies": {

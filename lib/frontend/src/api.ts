@@ -14,6 +14,7 @@ import type {
   IssueComplianceResult,
   CompliancePromptMetadata,
   ComplianceSuggestion,
+  DependencyResponse,
 } from './types';
 
 async function refreshToken(): Promise<string | null> {
@@ -312,6 +313,54 @@ export async function post(url: string, body: any) {
   });
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function detectIssueDependencies(
+  issueIds: string[]
+): Promise<DependencyResponse> {
+  const response = await fetchWithAuth('/api/v1/issue-dependencies/detect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ issue_ids: issueIds }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to detect issue dependencies');
+  }
+  return response.json();
+}
+
+export async function extendIssueDependencyScan(
+  issueIds: string[],
+  extendBy: number
+): Promise<DependencyResponse> {
+  const response = await fetchWithAuth('/api/v1/issue-dependencies/extend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ issue_ids: issueIds, extend_by: extendBy }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || 'Failed to extend issue dependency scan'
+    );
+  }
+  return response.json();
+}
+
+export async function commitIssueDependencies(
+  dependencies: DependencyPair[]
+): Promise<DependencyResponse> {
+  const response = await fetchWithAuth('/api/v1/issue-dependencies/commit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dependencies }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to commit issue dependencies');
   }
   return response.json();
 }

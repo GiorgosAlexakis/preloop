@@ -39,6 +39,8 @@ export interface SearchIssuesResponse {
   results: SearchResultItem[];
 }
 
+export type IssueStatus = 'opened' | 'closed' | 'all';
+
 export interface ApiKey {
   id: string;
   name: string;
@@ -125,4 +127,19 @@ export interface IssueEmbedding {
 export interface ComplianceSuggestion {
   title: string;
   description: string;
+}
+
+export interface DependencyPair {
+  source_issue_id: string;
+  dependent_issue_id: string;
+  reason: string;
+  confidence_score: number;
+  issue_key?: string;
+  dependency_key?: string;
+  is_committed: boolean;
+  comes_from_tracker: boolean;
+}
+
+export interface DependencyResponse {
+  dependencies: DependencyPair[];
 }

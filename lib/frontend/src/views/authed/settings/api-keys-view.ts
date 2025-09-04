@@ -163,7 +163,7 @@ export class ApiKeysView extends LitElement {
 
       return html`
         <sl-card class="table-card">
-          <table>
+          <table class="styled-table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -349,10 +349,6 @@ export class ApiKeysView extends LitElement {
       }
       tr:last-child td {
         border-bottom: none;
-      }
-      th:last-child,
-      td:last-child {
-        text-align: right;
       }
       .code-container {
         position: relative;
