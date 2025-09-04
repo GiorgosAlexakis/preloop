@@ -60,7 +60,7 @@ class AIModelInDBBase(AIModelBase, TimestampMixin):
     account_id: Optional[str] = Field(None, description="Account this model belongs to")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class AIModelRead(AIModelInDBBase):

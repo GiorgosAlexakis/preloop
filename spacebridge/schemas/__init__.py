@@ -63,6 +63,13 @@ from spacebridge.schemas.issue_compliance import (
     IssueComplianceResultCreate,
     IssueComplianceResultResponse,
 )
+from spacebridge.schemas.issue_dependency import (
+    CommitDependenciesRequest,
+    DependencyRequest,
+    DependencyResponse,
+    ExtendScanRequest,
+    DependencyPair,
+)
 
 __all__ = [
     # Auth schemas
@@ -120,4 +127,10 @@ __all__ = [
     "FlowCreate",
     "FlowResponse",
     "FlowUpdate",
+    # IssueDependency schemas
+    "CommitDependenciesRequest",
+    "DependencyRequest",
+    "DependencyResponse",
+    "ExtendScanRequest",
+    "DependencyPair",
 ]

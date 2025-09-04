@@ -50,7 +50,6 @@ class FlowExecutionBase(BaseModel):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
         from_attributes = True  # Pydantic V2
 
 
@@ -64,7 +63,6 @@ class FlowExecutionListResponse(BaseModel):
     created_at: datetime
 
     class Config:
-        orm_mode = True
         from_attributes = True
 
 

@@ -1,17 +1,18 @@
 """Endpoints for managing issues across trackers."""
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from datetime import datetime
+from spacebridge.api.common import get_tracker_client
 from spacebridge.schemas.issue import (
-    IssueCreate as ApiIssueCreate,
+    IssueCreate,
     IssueResponse,
-    IssueUpdate as ApiIssueUpdate,
+    IssueUpdate,
 )
 from spacemodels.models.account import Account
 
@@ -22,19 +23,12 @@ from spacemodels.crud import (
     CRUDTracker,
     crud_embedding_model,
     crud_issue_embedding,
-    crud_tracker_scope_rule,
 )
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
-from spacebridge.trackers.factory import TrackerFactory
-from spacebridge.trackers.base import (
-    IssueCreate,
-    IssueUpdate,
-)
-
 from spacebridge.api.auth import get_current_active_user
 
 
@@ -57,223 +51,6 @@ class IssueFilter:
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# Helper Functions
-
-
-async def get_tracker_client(
-    organization_id: str, project_id: str, db: Session, current_user: Account
-):
-    """Get the appropriate tracker client for the given organization and project,
-    ensuring the current user has access.
-
-    Args:
-        organization_id: The organization ID or identifier.
-        project_id: The project ID or identifier.
-        db: Database session.
-        current_user: The authenticated user account.
-
-    Returns:
-        A tracker client instance.
-
-    Raises:
-        HTTPException: If the organization or project is not found, if the user
-            does not have access, or if a tracker client cannot be created.
-    """
-    # Check if organization_id is a UUID or an identifier
-    if len(organization_id) == 36:  # Simple UUID check
-        organization = crud_organization.get(
-            db, id=organization_id, account_id=current_user.id
-        )
-    else:
-        organization = crud_organization.get_by_identifier(
-            db, identifier=organization_id, account_id=current_user.id
-        )
-
-    if not organization:
-        raise HTTPException(status_code=404, detail="Organization not found")
-
-    # Resolve project
-    project: Optional[Project] = None
-    if len(project_id) == 36:  # Check if project_id looks like a UUID (our internal ID)
-        project = crud_project.get(db, id=project_id, account_id=current_user.id)
-        # Verify it belongs to the correct organization
-        if project and project.organization_id != organization.id:
-            logger.warning(
-                f"Project ID {project_id} found but belongs to wrong org ({project.organization_id} != {organization.id})"
-            )
-            project = None  # Treat as not found in this context
-    else:
-        # Assume project_id is a slug or identifier if not a UUID
-        project_list = crud_project.get_by_slug_or_identifier(
-            db,
-            organization_id=organization.id,
-            slug_or_identifier=project_id,
-            account_id=current_user.id,
-        )
-        if len(project_list) == 1:
-            project = project_list[0]
-        elif len(project_list) > 1:
-            # This shouldn't happen if org is specified, but handle defensively
-            logger.error(
-                f"Ambiguous project identifier '{project_id}' within organization '{organization.identifier}'."
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=f"Ambiguous project identifier '{project_id}' within organization.",
-            )
-
-    if not project:
-        # If project is still None after trying ID and slug/identifier
-        raise HTTPException(
-            status_code=404,
-            detail=f"Project '{project_id}' not found within organization '{organization.identifier}'.",
-        )
-
-    # Get tracker details from the organization
-    tracker = organization.tracker
-    if not tracker:
-        raise HTTPException(
-            status_code=500, detail="Organization has no associated tracker."
-        )
-
-    # --- Authorization Check ---
-    if tracker.account_id != current_user.id:
-        logger.warning(
-            f"Access denied: User {current_user.username} (Account ID: {current_user.id}) "
-            f"attempted to access tracker {tracker.id} (Account ID: {tracker.account_id})."
-        )
-        raise HTTPException(
-            status_code=403, detail="Forbidden: Access denied to this resource."
-        )
-    # --- End Authorization Check ---
-
-    # --- New Scoping Logic ---
-    scope_rules = crud_tracker_scope_rule.get_by_tracker(
-        db, tracker_id=tracker.id, account_id=current_user.id
-    )
-
-    org_identifier = organization.identifier
-    project_identifier = project.identifier
-
-    org_rules = [rule for rule in scope_rules if rule.scope_type == "ORGANIZATION"]
-    project_rules = [rule for rule in scope_rules if rule.scope_type == "PROJECT"]
-
-    # Rule 1: Organization must be included
-    org_included = any(
-        rule.rule_type == "INCLUDE" and rule.identifier == org_identifier
-        for rule in org_rules
-    )
-    org_excluded = any(
-        rule.rule_type == "EXCLUDE" and rule.identifier == org_identifier
-        for rule in org_rules
-    )
-
-    if org_excluded:
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied: Organization is explicitly excluded.",
-        )
-    if not org_included:
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied: Organization is not included in tracker scope.",
-        )
-
-    # Rule 2: Project must not be excluded
-    project_excluded = any(
-        rule.rule_type == "EXCLUDE" and rule.identifier == project_identifier
-        for rule in project_rules
-    )
-    if project_excluded:
-        raise HTTPException(
-            status_code=403, detail="Access denied: Project is explicitly excluded."
-        )
-
-    # Rule 3: If project-level includes exist, project must be in the list
-    project_level_includes = [
-        rule for rule in project_rules if rule.rule_type == "INCLUDE"
-    ]
-    if project_level_includes:
-        project_included = any(
-            rule.identifier == project_identifier for rule in project_level_includes
-        )
-        if not project_included:
-            raise HTTPException(
-                status_code=403,
-                detail="Access denied: Project is not in the tracker's include list.",
-            )
-    # --- End New Scoping Logic ---
-
-    tracker_type = tracker.tracker_type
-
-    # --- Assemble the full configuration ---
-    # Start with project-specific tracker settings
-    full_config: Dict[str, Any] = project.tracker_settings or {}
-    # Add credentials from the Tracker model, structured as the factory expects
-    full_config["credentials"] = {
-        "token": tracker.api_key,
-        "url": tracker.url,
-        # Add username if available in connection_details (needed for Jira)
-        "username": (tracker.connection_details or {}).get("username"),
-    }
-    # Merge any other connection details from the tracker model
-    if tracker.connection_details:
-        # Prioritize credentials already set, don't overwrite with connection_details
-        for key, value in tracker.connection_details.items():
-            if key not in full_config:
-                full_config[key] = value
-            elif key == "credentials" and isinstance(value, dict):
-                # Merge credentials dict carefully
-                for cred_key, cred_value in value.items():
-                    if cred_key not in full_config["credentials"]:
-                        full_config["credentials"][cred_key] = cred_value
-
-    # Ensure project-specific identifiers are included, checking settings/metadata/identifier
-    if tracker_type == "gitlab":
-        if "project_id" not in full_config:
-            # Check tracker_settings, then meta_data, then use project.identifier
-            full_config["project_id"] = (
-                (project.tracker_settings or {}).get("project_id")
-                or (project.meta_data or {}).get("project_id")
-                or project.identifier
-            )
-    elif tracker_type == "github":
-        full_config["owner"] = organization.name
-        full_config["repo"] = project.name
-    elif tracker_type == "jira":
-        # Jira might need project_key in config for some operations, add if available
-        if "project_key" not in full_config:
-            full_config["project_key"] = (
-                (project.tracker_settings or {}).get("project_key")
-                or (project.meta_data or {}).get("project_key")
-                or project.identifier
-            )
-
-    logger.debug(
-        f"Creating tracker client of type '{tracker_type}' with config: {full_config}"
-    )
-
-    try:
-        # Create the tracker client using the combined config
-        tracker_client = await TrackerFactory.create_client(tracker_type, full_config)
-        if not tracker_client:
-            # Raise specific error if factory returns None (e.g., unsupported type or config error)
-            raise ValueError(
-                f"Failed to create tracker client for type '{tracker_type}'. Check configuration: {full_config}"
-            )
-
-        return tracker_client
-    except ValueError as ve:  # Catch config errors from factory
-        logger.error(f"Configuration error creating tracker client: {ve}")
-        raise HTTPException(
-            status_code=500, detail=f"Configuration error for tracker: {str(ve)}"
-        )
-    except Exception as e:
-        logger.error(f"Error creating tracker client: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Error creating tracker client: {str(e)}"
-        )
 
 
 # API Endpoints
@@ -783,7 +560,7 @@ async def search_issues(
 
 @router.post("/issues", response_model=IssueResponse, status_code=201)
 async def create_issue(
-    issue: ApiIssueCreate,  # Use the renamed API schema
+    issue: IssueCreate,  # Use the renamed API schema
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ) -> IssueResponse:
@@ -1247,7 +1024,7 @@ def get_issue_count(
 @router.put("/issues/{issue_id:path}", response_model=IssueResponse)
 async def update_issue(
     issue_id: str,  # Issue key, Issue ID or external ID
-    issue_update: ApiIssueUpdate,
+    issue_update: IssueUpdate,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
@@ -1489,7 +1266,7 @@ async def update_issue(
                 )
 
         # --- Update Local DB ---
-        # Prepare data for local DB update using the ApiIssueUpdate model
+        # Prepare data for local DB update using the IssueUpdate model
         update_data_for_db = issue_update.model_dump(exclude_unset=True)
 
         if not update_data_for_db:

@@ -31,6 +31,7 @@ from spacebridge.api.endpoints import (
     health,
     issues,
     issue_compliance,
+    issue_dependencies,
     organizations,
     projects,
     search,
@@ -483,6 +484,12 @@ def create_app() -> FastAPI:
         trackers.router,
         prefix="/api/v1",
         tags=["Trackers"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        issue_dependencies.router,
+        prefix="/api/v1",
+        tags=["Issues"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
