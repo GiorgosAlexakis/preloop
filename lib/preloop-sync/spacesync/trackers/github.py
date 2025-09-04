@@ -4,6 +4,7 @@ GitHub tracker implementation for SpaceSync.
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import re
 
 import requests
 from sqlalchemy.orm import Session
@@ -307,6 +308,13 @@ class GitHubTracker(BaseTracker):
                 )
             # Continue processing the issue even if comments fail
 
+            # Combine issue body and comments for dependency parsing
+            all_text_content = issue_data.get("body", "") or ""
+            for comment in comments_data_transformed:
+                all_text_content += "\n" + comment.get("body", "")
+
+            dependencies = self._parse_dependencies(all_text_content, repo_name)
+
             try:
                 issue_created_at = datetime.strptime(
                     issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ"
@@ -350,9 +358,47 @@ class GitHubTracker(BaseTracker):
                     ],
                     "url": issue_data.get("html_url", ""),
                     "comments": comments_data_transformed,
+                    "dependencies": dependencies,
                 }
             )
         return processed_issues
+
+    def _parse_dependencies(
+        self, content: str, current_repo: str
+    ) -> List[Dict[str, str]]:
+        """Parse dependencies from text content (issue body, comments)."""
+        dependencies = []
+        # Regex to find keywords like 'closes', 'fixes', 'relates to', etc.,
+        # followed by an issue reference.
+        # It supports cross-repo references like 'owner/repo#123'.
+        pattern = re.compile(
+            r"(closes|fixes|resolves|relates to|blocked by|blocks)\s+((?:[a-zA-Z0-9-]+\/[a-zA-Z0-9_.-]+)?#\d+)",
+            re.IGNORECASE,
+        )
+
+        for match in pattern.finditer(content):
+            relationship_type = match.group(1).lower()
+            target_issue_ref = match.group(2)
+
+            # Normalize relationship type for consistency
+            if relationship_type in ["closes", "fixes", "resolves"]:
+                relationship_type = "closes"
+            elif relationship_type == "relates to":
+                relationship_type = "related"
+            elif relationship_type == "blocked by":
+                relationship_type = "is blocked by"
+
+            # Construct the full key for the target issue
+            if "#" in target_issue_ref and "/" not in target_issue_ref:
+                # It's a short reference like '#123', so it's in the same repo.
+                target_key = f"{current_repo}{target_issue_ref}"
+            else:
+                # It's a full reference like 'owner/repo#123'.
+                target_key = target_issue_ref
+
+            dependencies.append({"target_key": target_key, "type": relationship_type})
+
+        return dependencies
 
     def transform_issue(
         self, issue_data: Dict[str, Any], project: Project

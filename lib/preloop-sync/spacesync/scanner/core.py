@@ -15,6 +15,8 @@ from spacemodels.crud import (
     crud_account,
     crud_issue,
     crud_issue_embedding,
+    crud_issue_relationship,
+    crud_issue_set,
     crud_organization,
     crud_project,
     crud_comment,
@@ -23,7 +25,7 @@ from spacemodels.models import Issue, Organization, Project, Tracker, TrackerSco
 
 from ..config import logger
 
-POLLING_THRESHOLD = timedelta(seconds=os.getenv("POLLING_THRESHOLD", 3600))
+POLLING_THRESHOLD = timedelta(seconds=int(os.getenv("POLLING_THRESHOLD", 3600)))
 RECHECK_PROJECT_WEBHOOK_INTERVAL = POLLING_THRESHOLD * 10
 
 
@@ -233,6 +235,7 @@ class TrackerClient:
         for issue_data in issue_data_list:
             xformed_issue_data = self.client.transform_issue(issue_data, project)
             comment_data = xformed_issue_data.pop("comments", [])
+            dependencies = xformed_issue_data.pop("dependencies", [])
 
             current_issue_model = crud_issue.get_by_external_id(
                 db,
@@ -255,6 +258,49 @@ class TrackerClient:
             else:
                 issue_changed = True
                 current_issue_model = crud_issue.create(db, obj_in=xformed_issue_data)
+
+            # Process dependencies
+            for dep in dependencies:
+                target_key = dep.get("target_key")
+                rel_type = dep.get("type")
+                if not target_key or not rel_type:
+                    continue
+
+                target_issue = crud_issue.get_by_key(
+                    db, key=target_key, account_id=self.tracker.account_id
+                )
+
+                if target_issue:
+                    _, created = crud_issue_relationship.create(
+                        db,
+                        source_issue_id=current_issue_model.id,
+                        target_issue_id=target_issue.id,
+                        type=rel_type,
+                        reason="Relationship detected in tracker.",
+                        confidence_score=1.0,
+                        is_committed=False,
+                        comes_from_tracker=True,
+                    )
+
+                    if created:
+                        # Create an IssueSet for the pair to cache the relationship
+                        issue_ids = sorted(
+                            [str(current_issue_model.id), str(target_issue.id)]
+                        )
+                        crud_issue_set.create(
+                            db,
+                            obj_in={
+                                "name": f"Tracked dependency: {current_issue_model.key} -> {target_issue.key}",
+                                "issue_ids": issue_ids,
+                                "ai_model_id": None,  # No AI model for tracked dependencies
+                                "meta_data": {"source": "tracker"},
+                            },
+                        )
+
+                else:
+                    logger.warning(
+                        f"Could not find target issue with key '{target_key}' for dependency of issue {current_issue_model.key}."
+                    )
 
             issues_processed.append(current_issue_model)
 

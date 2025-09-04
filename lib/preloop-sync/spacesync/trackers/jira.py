@@ -169,7 +169,7 @@ class JiraTracker(BaseTracker):
     def get_issues(
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
-        """Get issues for a project from Jira, including their comments."""
+        """Get issues for a project from Jira, including their comments and dependencies."""
         jql = f"project = {project_id}"
         if since:
             jql += f" AND updated >= '{since.strftime('%Y-%m-%d %H:%M')}'"
@@ -177,7 +177,7 @@ class JiraTracker(BaseTracker):
         params = {
             "jql": jql,
             "maxResults": 100,
-            "fields": "id,key,summary,description,status,created,updated,labels,assignee,issuetype,comment",
+            "fields": "id,key,summary,description,status,created,updated,labels,assignee,issuetype,comment,issuelinks",
         }
 
         try:
@@ -239,11 +239,12 @@ class JiraTracker(BaseTracker):
                     )
 
             description_text = issue_data["fields"].get("description") or ""
+            dependencies = self._parse_dependencies(issue_data)
 
             processed_issues.append(
                 {
                     "id": issue_data["id"],
-                    "external_id": issue_data["id"],
+                    "external_id": issue_data.get("id", issue_data.get("external_id")),
                     "key": issue_data["key"],
                     "title": issue_data["fields"]["summary"],
                     "description": description_text,
@@ -254,9 +255,27 @@ class JiraTracker(BaseTracker):
                     "assignees": assignee_list,
                     "url": f"{self.jira_url}/browse/{issue_data['key']}",
                     "comments": comments_transformed,
+                    "dependencies": dependencies,
                 }
             )
         return processed_issues
+
+    def _parse_dependencies(self, issue_data: Dict[str, Any]) -> List[Dict[str, str]]:
+        """Parse issue links from Jira issue data."""
+        dependencies = []
+        for link in issue_data.get("fields", {}).get("issuelinks", []):
+            link_type = link.get("type", {})
+            if "outwardIssue" in link:
+                target_issue = link["outwardIssue"]
+                relationship_type = link_type.get("outward", "relates to")
+
+                dependencies.append(
+                    {
+                        "target_key": target_issue["key"],
+                        "type": relationship_type,
+                    }
+                )
+        return dependencies
 
     def transform_issue(
         self, issue_data: Dict[str, Any], project: Project
@@ -316,6 +335,7 @@ class JiraTracker(BaseTracker):
             },
             "tracker_id": self.tracker_id,
             "comments": issue_data.get("comments", []),
+            "dependencies": issue_data.get("dependencies", []),
         }
 
         return transformed_data
@@ -391,6 +411,7 @@ class JiraTracker(BaseTracker):
             },
             "tracker_id": self.tracker_id,
             "comments": issue_data.get("comments", []),
+            "dependencies": issue_data.get("dependencies", []),
         }
 
         if "external_id" not in transformed_data:
