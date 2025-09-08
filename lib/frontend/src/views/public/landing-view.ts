@@ -22,7 +22,6 @@ interface FeatureSlide {
 export class LandingView extends LitElement {
   @query('.feature-carousel') private _carousel!: SlCarousel;
   @state() private _activeIdeTab: IdeTab = 'claude-code';
-  @state() private _openFaq: number | null = null;
   @state() private _showVideo: boolean[] = [false, false, false];
   @state() private _activeSlideIndex = 0;
   @state() private _featureSlides: FeatureSlide[] = [
@@ -56,6 +55,10 @@ export class LandingView extends LitElement {
       a: 'Spacebridge offers native integrations with Jira, GitHub, and GitLab. We are continuously expanding our support for other platforms based on customer needs.',
     },
     {
+      q: 'Do I need to migrate my issues to Spacebridge?',
+      a: 'No, you don\'t. Spacebridge seamlessly connects with your existing issue tracker, like Jira, GitHub, or GitLab. It syncs and indexes your issues, merge requests, and comments without requiring you to change your current workflow.',
+    },
+    {
       q: 'How does AI-Assisted Product Management help my team?',
       a: "AI-Assisted Product Management helps your team by automating the tedious parts of backlog curation. Spacebridge cleans your backlog by identifying true duplicate issues and thematic overlap, improves compliance with 'Definition of Ready' scores for every ticket, and prevents unexpected blockers by discovering unmapped dependencies. This allows your team to spend less time on administrative tasks and more time on strategic, high-impact work.",
     },
@@ -81,10 +84,6 @@ export class LandingView extends LitElement {
 
   private _handleIdeTabClick(tabId: IdeTab) {
     this._activeIdeTab = tabId;
-  }
-
-  private _toggleFaq(index: number) {
-    this._openFaq = this._openFaq === index ? null : index;
   }
 
   private _copyCode(e: Event) {
@@ -117,6 +116,33 @@ export class LandingView extends LitElement {
     this._activeSlideIndex = e.detail.index;
   }
 
+  private _handleFaqClick(e: Event) {
+    e.preventDefault();
+    const summary = e.currentTarget as HTMLElement;
+    const details = summary.parentElement as HTMLDetailsElement;
+    const answer = summary.nextElementSibling as HTMLElement | null;
+
+    if (!answer) return;
+
+    if (details.open) {
+      answer.style.height = `${answer.scrollHeight}px`;
+      requestAnimationFrame(() => {
+        answer.style.height = '0px';
+      });
+      answer.addEventListener('transitionend', () => {
+        details.removeAttribute('open');
+      }, { once: true });
+    } else {
+      details.setAttribute('open', '');
+      answer.style.height = `${answer.scrollHeight}px`;
+      answer.addEventListener('transitionend', () => {
+        if (details.open) {
+          answer.style.height = 'auto';
+        }
+      }, { once: true });
+    }
+  }
+
   render() {
     return html`
       <app-header></app-header>
@@ -129,8 +155,7 @@ export class LandingView extends LitElement {
                 <span class="gradient-ai">AI</span>
               </h1>
               <p class="lead">
-                Eliminate duplicates, ensure compliance, and map dependencies—so
-                you can ship faster.
+                Eliminate duplicates, map dependencies, ensure compliance, ship faster.
               </p>
               <div class="hero-buttons">
                 <sl-button variant="primary" size="large" href="/register"
@@ -544,26 +569,20 @@ export class LandingView extends LitElement {
             <div class="faq-list">
               ${this._faqs.map(
                 (faq, index) => html`
-                  <div class="faq-item">
-                    <div
+                  <details class="faq-item">
+                    <summary
                       class="faq-question"
-                      @click=${() => this._toggleFaq(index)}
+                      @click=${this._handleFaqClick}
                     >
                       <span>${faq.q}</span>
-                      <sl-icon
-                        name=${this._openFaq === index
-                          ? 'chevron-up'
-                          : 'chevron-down'}
-                      ></sl-icon>
+                      <sl-icon name="chevron-down"></sl-icon>
+                    </summary>
+                    <div class="faq-answer">
+                      <div class="faq-answer-content">
+                        ${unsafeHTML(faq.a)}
+                      </div>
                     </div>
-                    <div
-                      class="faq-answer ${this._openFaq === index
-                        ? 'open'
-                        : ''}"
-                    >
-                      <p>${unsafeHTML(faq.a)}</p>
-                    </div>
-                  </div>
+                  </details>
                 `
               )}
             </div>
@@ -585,19 +604,6 @@ export class LandingView extends LitElement {
         </section>
       </main>
       <app-footer></app-footer>
-    `;
-  }
-
-  private renderFaqItem(index: number, question: string, answer: string) {
-    const isOpen = this._openFaq === index;
-    return html`
-      <div class="faq-item">
-        <button class="faq-question" @click=${() => this._toggleFaq(index)}>
-          <span>${question}</span>
-          <span class="faq-icon">${isOpen ? '−' : '+'}</span>
-        </button>
-        ${isOpen ? html`<div class="faq-answer">${answer}</div>` : ''}
-      </div>
     `;
   }
 }
