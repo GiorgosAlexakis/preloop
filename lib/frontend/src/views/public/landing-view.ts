@@ -351,11 +351,7 @@ export class LandingView extends LitElement {
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
-                          <li>
-                            SpaceBridge API key (<a href="/register"
-                              >get yours here</a
-                            >)
-                          </li>
+                          <li>SpaceBridge API key (register above)</li>
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>
@@ -413,11 +409,7 @@ export class LandingView extends LitElement {
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
-                          <li>
-                            SpaceBridge API key (<a href="/register"
-                              >get yours here</a
-                            >)
-                          </li>
+                          <li>SpaceBridge API key (register above)</li>
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>
@@ -483,11 +475,7 @@ export class LandingView extends LitElement {
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
-                          <li>
-                            SpaceBridge API key (<a href="/register"
-                              >get yours here</a
-                            >)
-                          </li>
+                          <li>SpaceBridge API key (register above)</li>
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>

@@ -12,6 +12,7 @@ import '../views/public/request-demo-view.ts';
 import '../views/public/whatis-mcp-view.ts';
 import '../views/public/pricing-view.ts';
 import '../views/public/welcome-view.ts';
+import '../views/public/static-view.ts';
 import '../views/authed/console-shell.ts';
 import '../views/authed/dashboard-view.ts';
 import '../views/authed/trackers-view.ts';
@@ -62,6 +63,30 @@ export class LitApp extends LitElement {
       { path: '/verify-email', component: 'verify-email-view' },
       { path: '/request-demo', component: 'request-demo-view' },
       { path: '/whatis-mcp', component: 'whatis-mcp-view' },
+      {
+        path: '/docs',
+        action: (context, commands) => {
+          const view = commands.component('static-view') as any;
+          view.src = '/content/docs.md';
+          return view;
+        },
+      },
+      {
+        path: '/terms',
+        action: (context, commands) => {
+          const view = commands.component('static-view') as any;
+          view.src = '/content/terms.md';
+          return view;
+        },
+      },
+      {
+        path: '/privacy',
+        action: (context, commands) => {
+          const view = commands.component('static-view') as any;
+          view.src = '/content/privacy.md';
+          return view;
+        },
+      },
       { path: '/pricing', component: 'public-pricing-view' },
       { path: '/welcome', component: 'welcome-view' },
       {

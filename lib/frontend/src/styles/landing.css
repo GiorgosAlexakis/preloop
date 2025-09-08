@@ -368,6 +368,23 @@ p.lead {
   border-radius: 2px;
 }
 
+.section-container h1 {
+  font-size: 2.4rem;
+  font-weight: 300;
+  color: var(--sl-color-primary-500);
+}
+
+.section-container h2 {
+  font-size: 1.8rem;
+  font-weight: 300;
+  color: var(--sl-color-primary-500);
+}
+
+.section-container h3 {
+  font-size: 1.6rem;
+  font-weight: 300;
+}
+
 .main-section h3 {
   font-size: 1.8rem;
   font-weight: 300;
