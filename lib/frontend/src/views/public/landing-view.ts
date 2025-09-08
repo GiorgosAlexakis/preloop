@@ -40,7 +40,7 @@ export class LandingView extends LitElement {
     },
     {
       title: 'Discover Unmapped Dependencies',
-      text: 'Spacebridge scans your issue tracker for hidden dependencies that haven\'t been mapped, helping you avoid unexpected blockers and ensure smooth sprint flow. Review AI-detected relationships and update your tracker in one tap through our intuitive interface.',
+      text: "Spacebridge scans your issue tracker for hidden dependencies that haven't been mapped, helping you avoid unexpected blockers and ensure smooth sprint flow. Review AI-detected relationships and update your tracker in one tap through our intuitive interface.",
       videoUrl: 'https://www.youtube.com/embed/Fw6JZDK1z7M',
       placeholderImg: '/images/ui_03.png',
     },
@@ -57,11 +57,11 @@ export class LandingView extends LitElement {
     },
     {
       q: 'How does AI-Assisted Product Management help my team?',
-      a: 'AI-Assisted Product Management helps your team by automating the tedious parts of backlog curation. Spacebridge cleans your backlog by identifying true duplicate issues and thematic overlap, improves compliance with \'Definition of Ready\' scores for every ticket, and prevents unexpected blockers by discovering unmapped dependencies. This allows your team to spend less time on administrative tasks and more time on strategic, high-impact work.',
+      a: "AI-Assisted Product Management helps your team by automating the tedious parts of backlog curation. Spacebridge cleans your backlog by identifying true duplicate issues and thematic overlap, improves compliance with 'Definition of Ready' scores for every ticket, and prevents unexpected blockers by discovering unmapped dependencies. This allows your team to spend less time on administrative tasks and more time on strategic, high-impact work.",
     },
     {
-      q: 'How does Spacebridge ensure issues are \'development-ready\'?',
-      a: 'Spacebridge provides a \'Definition of Ready\' score for each issue, analyzing goal clarity and acceptance criteria. It also offers risk analysis to identify potential roadblocks and AI-driven estimates for implementation complexity. These insights, combined with AI-powered suggestions for improving titles and descriptions, help ensure every ticket is compliant and ready for development.',
+      q: "How does Spacebridge ensure issues are 'development-ready'?",
+      a: "Spacebridge provides a 'Definition of Ready' score for each issue, analyzing goal clarity and acceptance criteria. It also offers risk analysis to identify potential roadblocks and AI-driven estimates for implementation complexity. These insights, combined with AI-powered suggestions for improving titles and descriptions, help ensure every ticket is compliant and ready for development.",
     },
     {
       q: 'How does Spacebridge handle dependencies between issues?',
@@ -111,7 +111,9 @@ export class LandingView extends LitElement {
     this._showVideo = newShowVideo;
   }
 
-  private _handleSlideChange(e: CustomEvent<{ index: number; slide: SlCarouselItem }>) {
+  private _handleSlideChange(
+    e: CustomEvent<{ index: number; slide: SlCarouselItem }>
+  ) {
     this._activeSlideIndex = e.detail.index;
   }
 
@@ -127,7 +129,8 @@ export class LandingView extends LitElement {
                 <span class="gradient-ai">AI</span>
               </h1>
               <p class="lead">
-                Eliminate duplicates, ensure compliance, and map dependencies—so you can ship faster.
+                Eliminate duplicates, ensure compliance, and map dependencies—so
+                you can ship faster.
               </p>
               <div class="hero-buttons">
                 <sl-button variant="primary" size="large" href="/register"
@@ -176,26 +179,27 @@ export class LandingView extends LitElement {
                             `
                           : ''}
                         <div class="carousel-navigation">
-                      <sl-button
-                        variant="text"
-                        class="carousel-nav carousel-nav--prev"
-                        @click=${() => this._carousel.previous()}
-                      >
-                        <sl-icon name="chevron-left"></sl-icon>
-                      </sl-button>
-                      <span class="slide-indicator">
-                        ${this._activeSlideIndex + 1} / ${this._featureSlides.length}
-                      </span>
-                      <sl-button
-                        variant="text"
-                        class="carousel-nav carousel-nav--next"
-                        @click=${() => this._carousel.next()}
-                      >
-                        <sl-icon name="chevron-right"></sl-icon>
-                      </sl-button>
-                    </div>
+                          <sl-button
+                            variant="text"
+                            class="carousel-nav carousel-nav--prev"
+                            @click=${() => this._carousel.previous()}
+                          >
+                            <sl-icon name="chevron-left"></sl-icon>
+                          </sl-button>
+                          <span class="slide-indicator">
+                            ${this._activeSlideIndex + 1} /
+                            ${this._featureSlides.length}
+                          </span>
+                          <sl-button
+                            variant="text"
+                            class="carousel-nav carousel-nav--next"
+                            @click=${() => this._carousel.next()}
+                          >
+                            <sl-icon name="chevron-right"></sl-icon>
+                          </sl-button>
+                        </div>
                       </div>
-                      
+
                       <div class="feature-video-content">
                         ${this._showVideo[index]
                           ? html`
@@ -225,7 +229,6 @@ export class LandingView extends LitElement {
                             `}
                       </div>
                     </div>
-                    
                   </sl-carousel-item>
                 `
               )}
@@ -511,13 +514,25 @@ export class LandingView extends LitElement {
             <h2 class="text-center">Works with the tools you use</h2>
             <div class="tool-logos">
               <sl-tooltip content="GitHub">
-                <img src="images/logos/github-mark-white.svg" alt="GitHub Logo" class="github-logo tool-logo"/>
+                <img
+                  src="images/logos/github-mark-white.svg"
+                  alt="GitHub Logo"
+                  class="github-logo tool-logo"
+                />
               </sl-tooltip>
               <sl-tooltip content="GitLab">
-                <img src="images/logos/gitlab-logo-700-rgb.svg" alt="GitLab Logo" class="gitlab-logo tool-logo"/>
+                <img
+                  src="images/logos/gitlab-logo-700-rgb.svg"
+                  alt="GitLab Logo"
+                  class="gitlab-logo tool-logo"
+                />
               </sl-tooltip>
               <sl-tooltip content="Jira">
-                <img src="images/logos/jira.webp" alt="Jira Logo" class="jira-logo tool-logo"/>
+                <img
+                  src="images/logos/jira.webp"
+                  alt="Jira Logo"
+                  class="jira-logo tool-logo"
+                />
               </sl-tooltip>
             </div>
           </div>
