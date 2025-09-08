@@ -503,7 +503,7 @@ p.lead {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 8rem;
+  gap: 14rem;
   margin-top: 3rem;
   filter: grayscale(100%) opacity(0.6);
   transition: filter 0.3s ease;
@@ -643,6 +643,10 @@ summary.faq-question sl-icon {
   .final-cta .section-container {
     flex-direction: column;
     text-align: center;
+  }
+
+  .tool-logos {
+    gap: 8rem;
   }
 
   .final-cta h2 {

@@ -180,9 +180,6 @@ export class LandingView extends LitElement {
 
         <section class="feature-section main-section" id="features">
           <div class="section-container text-center">
-            <div class="title-container">
-              <h2>Automate Software Project Management</h2>
-            </div>
             <sl-carousel
               class="feature-carousel"
               loop
@@ -195,7 +192,7 @@ export class LandingView extends LitElement {
                   <sl-carousel-item>
                     <div class="feature-grid-2-col">
                       <div class="feature-text-content">
-                        <h3>${slide.title}</h3>
+                        <h2>${slide.title}</h2>
                         <p>${slide.text}</p>
                         ${!this._showVideo[index]
                           ? html`
@@ -354,7 +351,11 @@ export class LandingView extends LitElement {
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
-                          <li>SpaceBridge API key (register above)</li>
+                          <li>
+                            SpaceBridge API key (<a href="/register"
+                              >get yours here</a
+                            >)
+                          </li>
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>
@@ -412,7 +413,11 @@ export class LandingView extends LitElement {
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
-                          <li>SpaceBridge API key (register above)</li>
+                          <li>
+                            SpaceBridge API key (<a href="/register"
+                              >get yours here</a
+                            >)
+                          </li>
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>
@@ -478,7 +483,11 @@ export class LandingView extends LitElement {
                         <h5>Prerequisites</h5>
                         <ul>
                           <li>Python 3.9+ installed</li>
-                          <li>SpaceBridge API key (register above)</li>
+                          <li>
+                            SpaceBridge API key (<a href="/register"
+                              >get yours here</a
+                            >)
+                          </li>
                           <li>OpenAI API key for similarity search</li>
                         </ul>
                         <h5>Installation</h5>
