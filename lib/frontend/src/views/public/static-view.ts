@@ -72,9 +72,7 @@ export class StaticView extends LitElement {
     return html`
       <app-header></app-header>
       <main>
-      <div class="section-container">
-      ${content}
-      </div>
+        <div class="section-container">${content}</div>
       </main>
       <app-footer></app-footer>
     `;
