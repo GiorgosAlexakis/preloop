@@ -29,19 +29,19 @@ export class LandingView extends LitElement {
     {
       title: 'Eliminate Duplicates & Overlap',
       text: 'Our AI analyzes your issues and detects true duplicates beyond simple keyword matching, reveals where issues and epics intersect, and provides actionable recommendations to merge, deconflict, or link related items - cleaning your backlog with a single click.',
-      videoUrl: 'https://www.youtube.com/embed/Fw6JZDK1z7M',
+      videoUrl: 'https://youtu.be/nJXBknwZGDM',
       placeholderImg: '/images/ui_01.png',
     },
     {
       title: 'Achieve Compliance for Every Issue',
       text: 'Get Definition of Ready scores for goal clarity and acceptance criteria, risk analysis for potential roadblocks, and AI-driven implementation complexity estimates. Our AI-powered suggestions help improve titles and descriptions, ensuring every ticket is crystal clear and development-ready.',
-      videoUrl: 'https://www.youtube.com/embed/Fw6JZDK1z7M',
+      videoUrl: 'https://youtu.be/8bxf_ChYrLo',
       placeholderImg: '/images/ui_02.png',
     },
     {
       title: 'Discover Unmapped Dependencies',
       text: "Spacebridge scans your issue tracker for hidden dependencies that haven't been mapped, helping you avoid unexpected blockers and ensure smooth sprint flow. Review AI-detected relationships and update your tracker in one tap through our intuitive interface.",
-      videoUrl: 'https://www.youtube.com/embed/Fw6JZDK1z7M',
+      videoUrl: 'https://youtu.be/Fw6JZDK1z7M',
       placeholderImg: '/images/ui_03.png',
     },
   ];
