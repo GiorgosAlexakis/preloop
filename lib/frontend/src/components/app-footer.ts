@@ -82,6 +82,11 @@ export class AppFooter extends LitElement {
       .copyright-text a:hover {
         text-decoration: underline;
       }
+
+      .social-links {
+        display: flex;
+        gap: 16px;
+      }
     `,
   ];
 
@@ -135,12 +140,20 @@ export class AppFooter extends LitElement {
             >&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All
             rights reserved.</span
           >
-          <sl-icon-button
-            name="linkedin"
-            label="LinkedIn"
-            href="https://www.linkedin.com/company/spacecode-ai/"
-            target="_blank"
-          ></sl-icon-button>
+          <div class="social-links">
+            <sl-icon-button
+              name="linkedin"
+              label="LinkedIn"
+              href="https://www.linkedin.com/company/spacecode-ai/"
+              target="_blank"
+            ></sl-icon-button>
+            <sl-icon-button
+              name="instagram"
+              label="Instagram"
+              href="https://www.instagram.com/spacebridge.io"
+              target="_blank"
+            ></sl-icon-button>
+          </div>
         </div>
       </div>
     `;

@@ -1,57 +1,80 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, PropertyValues, unsafeCSS } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, property, state } from 'lit/decorators.js';
-import { unsafeStatic } from 'lit/static-html.js';
 import { marked } from 'marked';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import landingStyles from '../../styles/landing.css?inline';
 
 @customElement('static-view')
 export class StaticView extends LitElement {
   @property({ type: String }) src = '';
   @state() private content: string | null = null;
+  @state() private error: string | null = null;
 
-  static styles = css`
-    :host {
-      display: block;
-      padding: 2rem;
-      max-width: 800px;
-      margin: 0 auto;
-    }
-    h1,
-    h2,
-    h3 {
-      color: var(--sl-color-primary-500);
-    }
-  `;
-
-  async firstUpdated() {
-    if (this.src) {
-      try {
-        const response = await fetch(this.src);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const markdown = await response.text();
-        this.content = marked(markdown) as string;
-      } catch (error) {
-        console.error('Error fetching static content:', error);
-        this.content = `
-          <sl-alert variant="danger" open>
-            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-            <strong>Error loading content.</strong><br />
-            There was an issue fetching the content from the specified source.
-          </sl-alert>
-        `;
+  static styles = [
+    unsafeCSS(landingStyles),
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
       }
+      main {
+        flex: 1;
+        padding: 2rem;
+        max-width: 800px;
+        margin: 0 auto;
+        width: 100%;
+      }
+    `,
+  ];
+
+  updated(changedProperties: PropertyValues) {
+    if (changedProperties.has('src') && this.src) {
+      this.fetchContent();
+    }
+  }
+
+  async fetchContent() {
+    this.content = null;
+    this.error = null;
+    try {
+      const response = await fetch(this.src);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const markdown = await response.text();
+      this.content = marked(markdown) as string;
+    } catch (error: any) {
+      console.error('Error fetching static content:', error);
+      this.error = 'There was an issue fetching the content.';
     }
   }
 
   render() {
-    if (this.content === null) {
-      return html`<sl-spinner></sl-spinner>`;
+    let content;
+    if (this.error) {
+      content = html`
+        <sl-alert variant="danger" open>
+          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+          <strong>Error loading content.</strong><br />
+          ${this.error}
+        </sl-alert>
+      `;
+    } else if (this.content === null) {
+      content = html`<sl-spinner></sl-spinner>`;
+    } else {
+      content = html`${unsafeHTML(this.content)}`;
     }
-    return html`${unsafeHTML(this.content)}`;
+
+    return html`
+      <app-header></app-header>
+      <main>
+        <div class="text-section">${content}</div>
+      </main>
+      <app-footer></app-footer>
+    `;
   }
 }

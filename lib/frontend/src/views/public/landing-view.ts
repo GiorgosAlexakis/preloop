@@ -1,35 +1,74 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, state, query } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
+import type SlCarousel from '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
+import '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
+import '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
+import type SlCarouselItem from '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
+import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
 type IdeTab = 'claude-code' | 'cursor' | 'windsurf';
 
+interface FeatureSlide {
+  title: string;
+  text: string;
+  videoUrl: string;
+  placeholderImg: string;
+}
+
 @customElement('landing-view')
 export class LandingView extends LitElement {
+  @query('.feature-carousel') private _carousel!: SlCarousel;
   @state() private _activeIdeTab: IdeTab = 'claude-code';
-  @state() private _openFaq: number | null = null;
+  @state() private _showVideo: boolean[] = [false, false, false];
+  @state() private _activeSlideIndex = 0;
+  @state() private _featureSlides: FeatureSlide[] = [
+    {
+      title: 'Eliminate Duplicates & Overlap',
+      text: 'Our AI analyzes your issues and detects true duplicates beyond simple keyword matching, reveals where issues and epics intersect, and provides actionable recommendations to merge, deconflict, or link related items - cleaning your backlog with a single click.',
+      videoUrl: 'https://youtu.be/nJXBknwZGDM',
+      placeholderImg: '/images/ui_01.png',
+    },
+    {
+      title: 'Achieve Compliance for Every Issue',
+      text: 'Get Definition of Ready scores for goal clarity and acceptance criteria, risk analysis for potential roadblocks, and AI-driven implementation complexity estimates. Our AI-powered suggestions help improve titles and descriptions, ensuring every ticket is crystal clear and development-ready.',
+      videoUrl: 'https://youtu.be/8bxf_ChYrLo',
+      placeholderImg: '/images/ui_02.png',
+    },
+    {
+      title: 'Discover Unmapped Dependencies',
+      text: "Spacebridge scans your issue tracker for hidden dependencies that haven't been mapped, helping you avoid unexpected blockers and ensure smooth sprint flow. Review AI-detected relationships and update your tracker in one tap through our intuitive interface.",
+      videoUrl: 'https://youtu.be/Fw6JZDK1z7M',
+      placeholderImg: '/images/ui_03.png',
+    },
+  ];
+
   @state() private _faqs = [
     {
       q: 'What is Spacebridge?',
-      a: 'Spacebridge is an AI platform that connects to your existing project management tools like Jira, GitHub, and GitLab. It acts as a trust and governance layer, enabling you to automate product management tasks, gain deep insights into your backlog, and safely delegate work to AI agents.',
+      a: 'Spacebridge is an AI platform that connects to your existing project management tools like Jira, GitHub, and GitLab. It acts as an intelligent governance layer for your backlog, helping you eliminate duplicate issues, ensure tickets are development-ready, and discover hidden dependencies. By automating backlog curation, you can focus on building better products, faster.',
     },
     {
       q: 'Which issue tracking and project management platforms does Spacebridge support?',
       a: 'Spacebridge offers native integrations with Jira, GitHub, and GitLab. We are continuously expanding our support for other platforms based on customer needs.',
     },
     {
+      q: 'Do I need to migrate my issues to Spacebridge?',
+      a: "No, you don't. Spacebridge seamlessly connects with your existing issue tracker, like Jira, GitHub, or GitLab. It syncs and indexes your issues, merge requests, and comments without requiring you to change your current workflow.",
+    },
+    {
       q: 'How does AI-Assisted Product Management help my team?',
-      a: 'It helps you manage your backlog more effectively. By identifying duplicate issues, detecting thematic overlap, and providing data-driven insights on issue readiness, Spacebridge allows your team to focus on high-impact work and strategic planning.',
+      a: "AI-Assisted Product Management helps your team by automating the tedious parts of backlog curation. Spacebridge cleans your backlog by identifying true duplicate issues and thematic overlap, improves compliance with 'Definition of Ready' scores for every ticket, and prevents unexpected blockers by discovering unmapped dependencies. This allows your team to spend less time on administrative tasks and more time on strategic, high-impact work.",
     },
     {
-      q: 'How can I automate routine work with confidence?',
-      a: 'Spacebridge allows you to build automated workflows for low-risk, high-value tasks. For any sensitive action, our Preloop approval layer ensures a human is always in the loop, giving you the perfect balance of speed and safety.',
+      q: "How does Spacebridge ensure issues are 'development-ready'?",
+      a: "Spacebridge provides a 'Definition of Ready' score for each issue, analyzing goal clarity and acceptance criteria. It also offers risk analysis to identify potential roadblocks and AI-driven estimates for implementation complexity. These insights, combined with AI-powered suggestions for improving titles and descriptions, help ensure every ticket is compliant and ready for development.",
     },
     {
-      q: 'What is the Preloop Human Approval Layer?',
-      a: 'Preloop is a human-in-the-loop security feature that intercepts potentially high-risk actions initiated by AI agents. Before any critical command is executed—like a server rollback or a major code merge—it requires explicit approval from a designated human operator, ensuring complete oversight and control.',
+      q: 'How does Spacebridge handle dependencies between issues?',
+      a: 'Spacebridge automatically scans your issue tracker to discover hidden or unmapped dependencies that could cause unexpected blockers. It presents these AI-detected relationships in an intuitive interface, allowing you to review and update your tracker with a single click, ensuring a smoother sprint flow.',
     },
     {
       q: 'Is it secure to connect my development tools to Spacebridge?',
@@ -45,10 +84,6 @@ export class LandingView extends LitElement {
 
   private _handleIdeTabClick(tabId: IdeTab) {
     this._activeIdeTab = tabId;
-  }
-
-  private _toggleFaq(index: number) {
-    this._openFaq = this._openFaq === index ? null : index;
   }
 
   private _copyCode(e: Event) {
@@ -69,6 +104,53 @@ export class LandingView extends LitElement {
     }
   }
 
+  private _playVideo(index: number) {
+    const newShowVideo = [...this._showVideo];
+    newShowVideo[index] = true;
+    this._showVideo = newShowVideo;
+  }
+
+  private _handleSlideChange(
+    e: CustomEvent<{ index: number; slide: SlCarouselItem }>
+  ) {
+    this._activeSlideIndex = e.detail.index;
+  }
+
+  private _handleFaqClick(e: Event) {
+    e.preventDefault();
+    const summary = e.currentTarget as HTMLElement;
+    const details = summary.parentElement as HTMLDetailsElement;
+    const answer = summary.nextElementSibling as HTMLElement | null;
+
+    if (!answer) return;
+
+    if (details.open) {
+      answer.style.height = `${answer.scrollHeight}px`;
+      requestAnimationFrame(() => {
+        answer.style.height = '0px';
+      });
+      answer.addEventListener(
+        'transitionend',
+        () => {
+          details.removeAttribute('open');
+        },
+        { once: true }
+      );
+    } else {
+      details.setAttribute('open', '');
+      answer.style.height = `${answer.scrollHeight}px`;
+      answer.addEventListener(
+        'transitionend',
+        () => {
+          if (details.open) {
+            answer.style.height = 'auto';
+          }
+        },
+        { once: true }
+      );
+    }
+  }
+
   render() {
     return html`
       <app-header></app-header>
@@ -81,8 +163,8 @@ export class LandingView extends LitElement {
                 <span class="gradient-ai">AI</span>
               </h1>
               <p class="lead">
-                Spacebridge curates your backlog, automates high value, low-risk
-                work, and safeguards critical actions.
+                Eliminate duplicates, map dependencies, ensure compliance, ship
+                faster.
               </p>
               <div class="hero-buttons">
                 <sl-button variant="primary" size="large" href="/register"
@@ -96,147 +178,99 @@ export class LandingView extends LitElement {
           </div>
         </section>
 
-        <section class="feature-section main-section">
+        <section class="feature-section main-section" id="features">
           <div class="section-container text-center">
-            <h2>AI Assisted Product Management</h2>
-            <div class="feature-grid">
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="plug-fill"></sl-icon>
-                </div>
-                <h3>A Single Source of Truth</h3>
-                <p>
-                  Our hub syncs with Jira, GitHub, and GitLab and indexes your
-                  issues, comments and pull requests, to create a single source
-                  of truth for your AI agents.
-                </p>
-              </div>
+            <sl-carousel
+              class="feature-carousel"
+              loop
+              effect="slide"
+              mouse-dragging
+              @sl-slide-change=${this._handleSlideChange}
+            >
+              ${this._featureSlides.map(
+                (slide, index) => html`
+                  <sl-carousel-item>
+                    <div class="feature-grid-2-col">
+                      <div class="feature-text-content">
+                        <h2>${slide.title}</h2>
+                        <p>${slide.text}</p>
+                        ${!this._showVideo[index]
+                          ? html`
+                              <sl-button
+                                variant="primary"
+                                class="watch-video-btn"
+                                @click=${() => this._playVideo(index)}
+                              >
+                                <sl-icon
+                                  name="play-circle"
+                                  slot="prefix"
+                                ></sl-icon>
+                                Watch Video
+                              </sl-button>
+                            `
+                          : ''}
+                        <div class="carousel-navigation">
+                          <sl-button
+                            variant="text"
+                            class="carousel-nav carousel-nav--prev"
+                            @click=${() => this._carousel.previous()}
+                          >
+                            <sl-icon name="chevron-left"></sl-icon>
+                          </sl-button>
+                          <span class="slide-indicator">
+                            ${this._activeSlideIndex + 1} /
+                            ${this._featureSlides.length}
+                          </span>
+                          <sl-button
+                            variant="text"
+                            class="carousel-nav carousel-nav--next"
+                            @click=${() => this._carousel.next()}
+                          >
+                            <sl-icon name="chevron-right"></sl-icon>
+                          </sl-button>
+                        </div>
+                      </div>
 
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="people"></sl-icon>
-                </div>
-                <h3>Efficient Backlog Management</h3>
-                <p>
-                  By de-duplicating, detecting issue overlap and streamlining
-                  resolution, Spacebridge helps you optimize your backlog and
-                  roadmap.
-                </p>
-              </div>
-
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="clipboard-data"></sl-icon>
-                </div>
-                <h3>Actionable Product Intelligence</h3>
-                <p>
-                  Go beyond basic reports. Get actionable metrics on issue
-                  readiness, estimated effort, and backlog health to make
-                  data-driven product decisions.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div class="section-container">
-            <img
-              src="/images/ui_2.png"
-              alt="SpaceBridge UI showing intelligent issue management"
-              width="1200"
-              height="264"
-              class="ui-shot"
-            />
-          </div>
-        </section>
-
-        <section class="feature-section main-section">
-          <div class="section-container text-center">
-            <h2>Automate Routine Work with Confidence</h2>
-            <div class="feature-grid">
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="intersect"></sl-icon>
-                </div>
-                <h3>High-Value, Low-Risk Tasks</h3>
-                <p>
-                  With grounded context, our agentic flows can safely handle
-                  routine work, like drafting documentation.
-                </p>
-              </div>
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="clock-history"></sl-icon>
-                </div>
-                <h3>Initial Diagnostics</h3>
-                <p>
-                  Automatically run initial diagnostics on a service outage or
-                  suggest test coverage for a new feature.
-                </p>
-              </div>
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="flag"></sl-icon>
-                </div>
-                <h3>Free Up Your Best People</h3>
-                <p>
-                  Deliver immediate productivity wins and free up your senior
-                  developers from tedious toil, building trust in the system.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div class="section-container">
-            <img
-              src="/images/ui_1.png"
-              alt="SpaceBridge UI showing intelligent issue management"
-              width="1200"
-              height="210"
-              class="ui-shot"
-            />
-          </div>
-        </section>
-
-        <section class="feature-section main-section">
-          <div class="section-container text-center">
-            <h2>Safeguard Every Critical Action</h2>
-            <div class="feature-grid">
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="sliders"></sl-icon>
-                </div>
-                <h3>The Ultimate Safety Switch</h3>
-                <p>
-                  Our Preloop Human Approval Layer makes it possible to use AI
-                  for high-stakes tasks, intercepting commands before they
-                  execute.
-                </p>
-              </div>
-              <div class="feature-box">
-                <div class="feature-icon">
-                  <sl-icon name="eye"></sl-icon>
-                </div>
-                <h3>Intelligent Notifications</h3>
-                <p>
-                  The right people are instantly notified on Slack, SMS, or our
-                  app, to provide a simple Approve/Deny.
-                </p>
-              </div>
-              <div class="feature-box">
-                <img
-                  src="/images/ui_4.png"
-                  alt="SpaceBridge UI showing intelligent issue management"
-                  width="300"
-                  height="320"
-                  class="ui-shot"
-                />
-              </div>
-            </div>
+                      <div class="feature-video-content">
+                        ${this._showVideo[index]
+                          ? html`
+                              <div class="video-wrapper">
+                                <iframe
+                                  width="560"
+                                  height="315"
+                                  src=${`${slide.videoUrl}?autoplay=1`}
+                                  title="YouTube video player"
+                                  frameborder="0"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                  allowfullscreen
+                                ></iframe>
+                              </div>
+                            `
+                          : html`
+                              <div
+                                class="video-placeholder"
+                                @click=${() => this._playVideo(index)}
+                              >
+                                <img
+                                  src=${slide.placeholderImg}
+                                  alt="Video Preview"
+                                />
+                                <div class="play-button"></div>
+                              </div>
+                            `}
+                      </div>
+                    </div>
+                  </sl-carousel-item>
+                `
+              )}
+            </sl-carousel>
           </div>
         </section>
 
         <section class="feature-section main-section" id="get-started">
           <div class="section-container">
             <div class="title-container">
-              <h2>SpaceBridge MCP Server</h2>
+              <h2>Turbocharge your AI Workflow with MCP</h2>
               <a class="main-link" href="/whatis-mcp">What is MCP?</a>
             </div>
 
@@ -272,7 +306,7 @@ export class LandingView extends LitElement {
                 </p>
               </div>
             </div>
-            <h3>Get Started with MCP</h3>
+            <h3>Get Started with Spacebridge MCP</h3>
             <div class="get-started-container">
               <div class="ide-tabs">
                 <div
@@ -506,20 +540,31 @@ export class LandingView extends LitElement {
           </div>
         </section>
 
-        <section class="video-section main-section">
+        <section class="tools-section main-section">
           <div class="section-container">
-            <h2>Demo</h2>
-            <div class="video-wrapper">
-              <iframe
-                width="560"
-                height="315"
-                src="https://www.youtube.com/embed/videoseries?si=qPHwJWgW3yW63Rzr&amp;list=PLr2Jp0c-Qn2itxlxK4vz8fDr7xCAUiDZw"
-                title="YouTube video player"
-                frameborder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                referrerpolicy="strict-origin-when-cross-origin"
-                allowfullscreen=""
-              ></iframe>
+            <h2 class="text-center">Works with the tools you use</h2>
+            <div class="tool-logos">
+              <sl-tooltip content="GitHub">
+                <img
+                  src="images/logos/github-mark-white.svg"
+                  alt="GitHub Logo"
+                  class="github-logo tool-logo"
+                />
+              </sl-tooltip>
+              <sl-tooltip content="GitLab">
+                <img
+                  src="images/logos/gitlab-logo-700-rgb.svg"
+                  alt="GitLab Logo"
+                  class="gitlab-logo tool-logo"
+                />
+              </sl-tooltip>
+              <sl-tooltip content="Jira">
+                <img
+                  src="images/logos/jira.webp"
+                  alt="Jira Logo"
+                  class="jira-logo tool-logo"
+                />
+              </sl-tooltip>
             </div>
           </div>
         </section>
@@ -530,26 +575,18 @@ export class LandingView extends LitElement {
             <div class="faq-list">
               ${this._faqs.map(
                 (faq, index) => html`
-                  <div class="faq-item">
-                    <div
+                  <details class="faq-item">
+                    <summary
                       class="faq-question"
-                      @click=${() => this._toggleFaq(index)}
+                      @click=${this._handleFaqClick}
                     >
                       <span>${faq.q}</span>
-                      <sl-icon
-                        name=${this._openFaq === index
-                          ? 'chevron-up'
-                          : 'chevron-down'}
-                      ></sl-icon>
+                      <sl-icon name="chevron-down"></sl-icon>
+                    </summary>
+                    <div class="faq-answer">
+                      <div class="faq-answer-content">${unsafeHTML(faq.a)}</div>
                     </div>
-                    <div
-                      class="faq-answer ${this._openFaq === index
-                        ? 'open'
-                        : ''}"
-                    >
-                      <p>${unsafeHTML(faq.a)}</p>
-                    </div>
-                  </div>
+                  </details>
                 `
               )}
             </div>
@@ -571,19 +608,6 @@ export class LandingView extends LitElement {
         </section>
       </main>
       <app-footer></app-footer>
-    `;
-  }
-
-  private renderFaqItem(index: number, question: string, answer: string) {
-    const isOpen = this._openFaq === index;
-    return html`
-      <div class="faq-item">
-        <button class="faq-question" @click=${() => this._toggleFaq(index)}>
-          <span>${question}</span>
-          <span class="faq-icon">${isOpen ? '−' : '+'}</span>
-        </button>
-        ${isOpen ? html`<div class="faq-answer">${answer}</div>` : ''}
-      </div>
     `;
   }
 }
