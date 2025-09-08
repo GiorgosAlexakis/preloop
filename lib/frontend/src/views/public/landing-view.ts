@@ -56,7 +56,7 @@ export class LandingView extends LitElement {
     },
     {
       q: 'Do I need to migrate my issues to Spacebridge?',
-      a: 'No, you don\'t. Spacebridge seamlessly connects with your existing issue tracker, like Jira, GitHub, or GitLab. It syncs and indexes your issues, merge requests, and comments without requiring you to change your current workflow.',
+      a: "No, you don't. Spacebridge seamlessly connects with your existing issue tracker, like Jira, GitHub, or GitLab. It syncs and indexes your issues, merge requests, and comments without requiring you to change your current workflow.",
     },
     {
       q: 'How does AI-Assisted Product Management help my team?',
@@ -129,17 +129,25 @@ export class LandingView extends LitElement {
       requestAnimationFrame(() => {
         answer.style.height = '0px';
       });
-      answer.addEventListener('transitionend', () => {
-        details.removeAttribute('open');
-      }, { once: true });
+      answer.addEventListener(
+        'transitionend',
+        () => {
+          details.removeAttribute('open');
+        },
+        { once: true }
+      );
     } else {
       details.setAttribute('open', '');
       answer.style.height = `${answer.scrollHeight}px`;
-      answer.addEventListener('transitionend', () => {
-        if (details.open) {
-          answer.style.height = 'auto';
-        }
-      }, { once: true });
+      answer.addEventListener(
+        'transitionend',
+        () => {
+          if (details.open) {
+            answer.style.height = 'auto';
+          }
+        },
+        { once: true }
+      );
     }
   }
 
@@ -155,7 +163,8 @@ export class LandingView extends LitElement {
                 <span class="gradient-ai">AI</span>
               </h1>
               <p class="lead">
-                Eliminate duplicates, map dependencies, ensure compliance, ship faster.
+                Eliminate duplicates, map dependencies, ensure compliance, ship
+                faster.
               </p>
               <div class="hero-buttons">
                 <sl-button variant="primary" size="large" href="/register"
@@ -578,9 +587,7 @@ export class LandingView extends LitElement {
                       <sl-icon name="chevron-down"></sl-icon>
                     </summary>
                     <div class="faq-answer">
-                      <div class="faq-answer-content">
-                        ${unsafeHTML(faq.a)}
-                      </div>
+                      <div class="faq-answer-content">${unsafeHTML(faq.a)}</div>
                     </div>
                   </details>
                 `
