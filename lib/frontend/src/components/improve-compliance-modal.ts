@@ -53,6 +53,7 @@ export class ImproveComplianceModal extends LitElement {
 
   @state() private _suggestedTitle = '';
   @state() private _suggestedDescription = '';
+  @state() private _suggestedChanges = '';
 
   updated(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('open') && this.open) {
@@ -65,6 +66,7 @@ export class ImproveComplianceModal extends LitElement {
     this._suggestionError = null;
     this._suggestedTitle = '';
     this._suggestedDescription = '';
+    this._suggestedChanges = '';
     this.fetchSuggestion();
   }
 
@@ -86,6 +88,7 @@ export class ImproveComplianceModal extends LitElement {
       );
       this._suggestedTitle = suggestion.title;
       this._suggestedDescription = suggestion.description;
+      this._suggestedChanges = suggestion.changes;
     } catch (error) {
       this._suggestionError =
         error instanceof Error ? error.message : 'Failed to load suggestion.';
@@ -186,6 +189,12 @@ export class ImproveComplianceModal extends LitElement {
                                 e.target as HTMLInputElement
                               ).value)}
                             rows="10"
+                          ></sl-textarea>
+                          <br />
+                          <sl-textarea
+                            label="Changes"
+                            .value=${this._suggestedChanges}
+                            readonly
                           ></sl-textarea>
                         `}
                 </div>

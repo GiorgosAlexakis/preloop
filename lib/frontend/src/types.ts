@@ -104,6 +104,8 @@ export interface IssueComplianceResult {
   short_name: string;
   compliance_factor: number;
   reason: string;
+  suggestion: string;
+  annotated_description?: string;
   issue_id: string;
   created_at: string;
   updated_at: string;
@@ -127,6 +129,7 @@ export interface IssueEmbedding {
 export interface ComplianceSuggestion {
   title: string;
   description: string;
+  changes: string;
 }
 
 export interface DependencyPair {

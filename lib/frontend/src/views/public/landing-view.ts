@@ -2,8 +2,8 @@ import { LitElement, html, css, unsafeCSS } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, state, query } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
+import './../../components/news-capsule';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
-import type SlCarousel from '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
 import '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
 import '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
 import type SlCarouselItem from '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
@@ -156,6 +156,7 @@ export class LandingView extends LitElement {
       <app-header></app-header>
       <main>
         <section class="hero main-section">
+         <news-capsule></news-capsule>
           <div class="section-container hero-inner">
             <div class="hero-content">
               <h1 class="fw-bold">
@@ -176,6 +177,7 @@ export class LandingView extends LitElement {
               </div>
             </div>
           </div>
+         
         </section>
 
         <section class="feature-section main-section" id="features">
@@ -183,8 +185,7 @@ export class LandingView extends LitElement {
             <sl-carousel
               class="feature-carousel"
               loop
-              effect="slide"
-              mouse-dragging
+              effect="fade"
               @sl-slide-change=${this._handleSlideChange}
             >
               ${this._featureSlides.map(
