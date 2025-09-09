@@ -156,7 +156,7 @@ export class LandingView extends LitElement {
       <app-header></app-header>
       <main>
         <section class="hero main-section">
-         <news-capsule></news-capsule>
+          <news-capsule></news-capsule>
           <div class="section-container hero-inner">
             <div class="hero-content">
               <h1 class="fw-bold">
@@ -177,7 +177,6 @@ export class LandingView extends LitElement {
               </div>
             </div>
           </div>
-         
         </section>
 
         <section class="feature-section main-section" id="features">

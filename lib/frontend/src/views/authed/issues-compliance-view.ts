@@ -941,8 +941,8 @@ export class IssuesComplianceView extends LitElement {
           () => html`
             <sl-alert variant="warning" open>
               <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
-              This issue could not be evaluated and requires manual review. It may be
-              missing key information or be too vague.
+              This issue could not be evaluated and requires manual review. It
+              may be missing key information or be too vague.
             </sl-alert>
           `,
           () => html`
