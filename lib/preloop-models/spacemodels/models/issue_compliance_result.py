@@ -1,5 +1,7 @@
 """IssueComplianceResult model."""
 
+from typing import Optional
+
 from sqlalchemy import Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +16,8 @@ class IssueComplianceResult(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     compliance_factor: Mapped[float] = mapped_column(Float, nullable=False)
     reason: Mapped[str] = mapped_column(String, nullable=False)
+    suggestion: Mapped[str] = mapped_column(String, nullable=False)
+    annotated_description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     issue_id: Mapped[str] = mapped_column(
         String(36),
