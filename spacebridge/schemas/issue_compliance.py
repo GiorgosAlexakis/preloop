@@ -9,6 +9,7 @@ class IssueComplianceResultBase(BaseModel):
     name: str
     compliance_factor: float
     reason: str
+    suggestion: str
     issue_id: str
 
 
@@ -29,9 +30,23 @@ class IssueComplianceResultResponse(IssueComplianceResultBase):
 class ComplianceSuggestionResponse(BaseModel):
     title: str
     description: str
+    changes: str
 
 
 class CompliancePromptMetadata(BaseModel):
     id: str
     name: str
     short_name: str
+
+
+class Prompt(BaseModel):
+    name: str
+    system: str
+    user: str
+
+
+class NestedPrompt(BaseModel):
+    name: str
+    short_name: str
+    evaluate: Prompt
+    propose_improvement: Prompt

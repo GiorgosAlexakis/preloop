@@ -17,6 +17,7 @@ from spacebridge.schemas.issue import IssueResponse, IssueUpdate
 from spacebridge.schemas.issue_compliance import (
     ComplianceSuggestionResponse,
     CompliancePromptMetadata,
+    NestedPrompt,
 )
 from spacebridge.schemas.issue_compliance import (
     IssueComplianceResultCreate,
@@ -38,6 +39,10 @@ from spacemodels.models.issue_compliance_result import IssueComplianceResult
 from spacemodels.models.ai_model import AIModel
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
+from spacebridge.api.common import (
+    get_compliance_prompts_from_config,
+    load_compliance_prompts_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +64,7 @@ async def get_compliance_prompts(
     settings: Settings = Depends(get_settings),
 ) -> List[CompliancePromptMetadata]:
     """Get a list of available compliance prompts."""
-    prompts_metadata = [
-        CompliancePromptMetadata(
-            id=prompt_id,
-            name=prompt_data.name,
-            short_name=prompt_data.short_name,
-        )
-        for prompt_id, prompt_data in settings.prompts.items()
-    ]
-    return prompts_metadata
+    return get_compliance_prompts_from_config(settings.PROMPTS_FILE)
 
 
 @router.get(
@@ -75,7 +72,7 @@ async def get_compliance_prompts(
     response_model=IssueComplianceResultResponse,
     tags=["Issues"],
 )
-async def get_issue_compliance(
+def get_issue_compliance(
     issue_id: str,
     prompt_name: str,
     db: Session = Depends(get_db),
@@ -85,11 +82,21 @@ async def get_issue_compliance(
 ):
     """Get or calculate the compliance result for a given issue."""
 
+    prompts_config = load_compliance_prompts_config(settings.PROMPTS_FILE)
+    prompt_data = prompts_config.get(prompt_name)
+
+    if not prompt_data:
+        raise HTTPException(
+            status_code=404, detail=f"Prompt '{prompt_name}' not found."
+        )
+
+    prompt_template = NestedPrompt(**prompt_data)
+
     existing_result = crud_issue_compliance_result.get_by_issue_id_and_prompt_id(
         db, issue_id=issue_id, prompt_id=prompt_name, account_id=current_user.id
     )
     if existing_result:
-        existing_result.short_name = settings.prompts.get(prompt_name).short_name
+        existing_result.short_name = prompt_template.short_name
         return existing_result
 
     issue = crud_issue.get(db, id=issue_id, account_id=current_user.id)
@@ -104,13 +111,6 @@ async def get_issue_compliance(
     if not default_model:
         raise HTTPException(
             status_code=500, detail="No default active AI model configured."
-        )
-
-    prompt_template = settings.prompts.get(prompt_name)
-    if not prompt_template:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Prompt '{prompt_name}' not found in configuration.",
         )
 
     evaluate_prompt = prompt_template.evaluate
@@ -150,6 +150,7 @@ async def get_issue_compliance(
 
         compliance_factor = response_obj.get("compliance_factor")
         reason = response_obj.get("reason")
+        suggestion = response_obj.get("suggestion")
 
     except openai.APIError as e:
         raise HTTPException(status_code=500, detail=f"AI model API error: {e}")
@@ -164,6 +165,7 @@ async def get_issue_compliance(
         name=prompt_template.name,
         compliance_factor=compliance_factor,
         reason=reason,
+        suggestion=suggestion,
     )
 
     new_result = crud_issue_compliance_result.create(
@@ -187,6 +189,15 @@ def get_compliance_improvement_suggestion(
     billing_service: BillingService = Depends(get_billing_service),
 ):
     """Generate a compliance improvement suggestion for a given issue."""
+    compliance_result = get_issue_compliance(
+        issue_id=issue_id,
+        prompt_name=prompt_name,
+        db=db,
+        current_user=current_user,
+        settings=settings,
+        billing_service=billing_service,
+    )
+
     issue = crud_issue.get(db, id=issue_id)
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
@@ -210,11 +221,19 @@ def get_compliance_improvement_suggestion(
             status_code=500, detail="No default active AI model configured."
         )
 
-    prompt_template = settings.prompts.get(prompt_name)
-    if not prompt_template:
+    prompts_config = load_compliance_prompts_config(settings.PROMPTS_FILE)
+    prompt_data = prompts_config.get(prompt_name)
+    if not prompt_data:
         raise HTTPException(
-            status_code=500,
-            detail=f"Prompt '{prompt_name}' not found in configuration.",
+            status_code=404, detail=f"Prompt '{prompt_name}' not found."
+        )
+
+    try:
+        prompt_template = NestedPrompt(**prompt_data)
+    except Exception as e:
+        logger.error(f"Error parsing prompt template '{prompt_name}': {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Invalid prompt configuration for '{prompt_name}'."
         )
 
     improvement_prompt = prompt_template.propose_improvement
@@ -229,6 +248,9 @@ def get_compliance_improvement_suggestion(
         issue_title=issue.title,
         issue_description=issue.description or "",
         project_name=project.name,
+        compliance_score=compliance_result.compliance_factor,
+        compliance_reason=compliance_result.reason,
+        compliance_suggestion=compliance_result.suggestion,
     )
 
     client = openai.OpenAI()
@@ -282,19 +304,3 @@ async def update_issue_content(
         db=db,
         current_user=current_user,
     )
-
-
-def get_prompts_from_config(config_path: str) -> List[CompliancePromptMetadata]:
-    if not os.path.exists(config_path):
-        return []
-    with open(config_path, "r") as f:
-        config_data = json.load(f)
-    prompts_metadata = [
-        CompliancePromptMetadata(
-            id=prompt_id,
-            name=prompt_data["name"],
-            short_name=prompt_data["short_name"],
-        )
-        for prompt_id, prompt_data in config_data.items()
-    ]
-    return prompts_metadata

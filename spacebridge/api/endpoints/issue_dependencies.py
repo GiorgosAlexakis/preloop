@@ -24,8 +24,12 @@ from spacebridge.api.auth import get_current_active_user
 import json
 import openai
 
+from spacebridge.config import get_settings, Settings
 from spacebridge.services.billing import BillingService
-from spacebridge.api.common import get_tracker_client
+from spacebridge.api.common import (
+    get_tracker_client,
+    load_dependencies_prompts_config,
+)
 from spacebridge.schemas.issue_dependency import (
     CommitDependenciesRequest,
     DependencyRequest,
@@ -38,26 +42,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 crud_issue = CRUDIssue(Issue)
 
-# System Prompt for the AI model
-SYSTEM_PROMPT = """
-You are an expert project manager AI. Your task is to analyze a list of software development issues and identify dependencies between them.
-An issue (B) is dependent on another issue (A) if A must be completed before B can be started or completed. Avoid circular dependencies.
-
-You will be given a list of issues, each with an ID, title, project, and description.
-Analyze the provided issues and identify all dependency pairs.
-
-Respond with a JSON object containing a single key \"dependencies\".
-The value of \"dependencies\" should be a list of JSON objects, where each object represents a dependency pair and has the following structure:
-- \"source_issue_id\": The ID of the issue that must be completed first.
-- \"dependent_issue_id\": The ID of the issue that depends on the source issue.
-- \"reason\": A concise, 1-2 sentence explanation for why the dependency exists.
-- \"confidence_score\": A float between 0.0 and 1.0 indicating your confidence in this dependency.
-- \"issue_key\": The key of the source issue.
-- \"dependency_key\": The key of the dependent issue.
-
-If you find no dependencies, return an empty list: {\"dependencies\": []}.
-"""
-
 
 @router.post(
     "/issue-dependencies/detect",
@@ -69,6 +53,7 @@ def detect_issue_dependencies(
     request: DependencyRequest,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
+    settings: Settings = Depends(get_settings),
 ):
     """
     Analyzes a list of issues to find potential dependencies between them.
@@ -174,6 +159,14 @@ def detect_issue_dependencies(
         + "\n\n---\n".join(issue_details)
     )
 
+    prompts_config = load_dependencies_prompts_config(settings.PROMPTS_FILE)
+    prompt_data = prompts_config.get("dependency_detection_v1")
+    if not prompt_data or "system" not in prompt_data:
+        raise HTTPException(
+            status_code=500, detail="Dependency detection prompt not configured."
+        )
+    system_prompt = prompt_data["system"]
+
     # 5. Call the AI model
     try:
         client = openai.OpenAI(api_key=ai_model.api_key or openai.api_key)
@@ -181,7 +174,7 @@ def detect_issue_dependencies(
         response = client.chat.completions.create(
             model=ai_model.model_identifier,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
@@ -374,12 +367,13 @@ async def commit_issue_dependencies(
     "/issue-dependencies/extend",
     response_model=DependencyResponse,  # Assuming it returns a similar response
     tags=["Issues", "AI"],
-    summary="Extend dependency scan from a given issue.",
+    summary="Extend the dependency scan for a specific issue.",
 )
 def extend_dependency_scan(
     request: ExtendScanRequest,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
+    settings: Settings = Depends(get_settings),
 ):
     """
     Extends the dependency scan for a specific issue to find more related issues.
@@ -467,12 +461,20 @@ def extend_dependency_scan(
         + "\n\n---".join(issue_details)
     )
 
+    prompts_config = load_dependencies_prompts_config(settings.PROMPTS_FILE)
+    prompt_data = prompts_config.get("dependency_detection_v1")
+    if not prompt_data or "system" not in prompt_data:
+        raise HTTPException(
+            status_code=500, detail="Dependency detection prompt not configured."
+        )
+    system_prompt = prompt_data["system"]
+
     try:
         client = openai.OpenAI(api_key=ai_model.api_key or openai.api_key)
         response = client.chat.completions.create(
             model=ai_model.model_identifier,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},

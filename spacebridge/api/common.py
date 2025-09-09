@@ -1,11 +1,12 @@
 """Common utility functions for the SpaceBridge API."""
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from spacebridge.schemas.issue_compliance import CompliancePromptMetadata
 from spacebridge.trackers.factory import TrackerFactory
 from spacemodels.crud import (
     CRUDOrganization,
@@ -15,6 +16,8 @@ from spacemodels.crud import (
 from spacemodels.models.account import Account
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
+import yaml
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -236,3 +239,83 @@ async def get_tracker_client(
         raise HTTPException(
             status_code=500, detail=f"Error creating tracker client: {str(e)}"
         )
+
+
+def get_compliance_prompts_from_config(
+    config_path: str,
+) -> List[CompliancePromptMetadata]:
+    """Load and parse compliance prompts from a YAML file."""
+    if not os.path.exists(config_path):
+        logger.error(f"Compliance config file not found at: {config_path}")
+        return []
+
+    try:
+        with open(config_path, "r") as f:
+            config_data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing YAML file {config_path}: {e}")
+        return []
+
+    compliance_section = config_data.get("compliance", {})
+    if not compliance_section:
+        logger.warning(f"'compliance' section not found or empty in {config_path}")
+        return []
+
+    prompts_metadata = [
+        CompliancePromptMetadata(
+            id=prompt_id,
+            name=prompt_data.get("name", "Unnamed Prompt"),
+            short_name=prompt_data.get("short_name", "N/A"),
+        )
+        for prompt_id, prompt_data in compliance_section.items()
+    ]
+
+    return prompts_metadata
+
+
+def load_compliance_prompts_config(config_path: str) -> Dict[str, Any]:
+    """Load the full compliance prompts configuration from a YAML file."""
+    if not os.path.exists(config_path):
+        logger.error(f"Compliance config file not found at: {config_path}")
+        return {}
+
+    try:
+        with open(config_path, "r") as f:
+            config_data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing YAML file {config_path}: {e}")
+        return {}
+
+    return config_data.get("compliance", {})
+
+
+def load_dependencies_prompts_config(config_path: str) -> Dict[str, Any]:
+    """Load the full dependency detection prompts configuration from a YAML file."""
+    if not os.path.exists(config_path):
+        logger.error(f"Prompts config file not found at: {config_path}")
+        return {}
+
+    try:
+        with open(config_path, "r") as f:
+            config_data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing YAML file {config_path}: {e}")
+        return {}
+
+    return config_data.get("dependencies", {})
+
+
+def load_duplicates_prompts_config(config_path: str) -> Dict[str, Any]:
+    """Load the full duplicates prompts configuration from a YAML file."""
+    if not os.path.exists(config_path):
+        logger.error(f"Prompts config file not found at: {config_path}")
+        return {}
+
+    try:
+        with open(config_path, "r") as f:
+            config_data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing YAML file {config_path}: {e}")
+        return {}
+
+    return config_data.get("duplicates", {})

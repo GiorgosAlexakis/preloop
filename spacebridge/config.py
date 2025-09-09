@@ -2,11 +2,9 @@
 
 import logging
 import os
-import yaml
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +69,13 @@ class Settings(BaseSettings):
     )
     nats_url: str = Field("nats://localhost:4222", description="NATS server URL")
     spacebridge_url: str = Field("http://localhost:8000", description="SpaceBridge URL")
+    PROMPTS_FILE: str = Field(
+        "spacebridge/prompts.yaml", description="Path to the prompts YAML file"
+    )
 
     database: DatabaseSettings
     security: SecuritySettings
     server: ServerSettings
-    prompts: Dict[str, NestedPrompt] = Field(
-        {}, description="Loaded prompts from YAML file"
-    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -138,17 +136,7 @@ class Settings(BaseSettings):
             allowed_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
         )
 
-        # Load prompts from YAML file
-        prompts_path = os.getenv("PROMPTS_PATH", "spacebridge/prompts.yaml")
-        prompts_data = {}
-        try:
-            with open(prompts_path, "r") as f:
-                loaded_yaml = yaml.safe_load(f)
-                prompts_data = loaded_yaml.get("prompts", {})
-        except FileNotFoundError:
-            logger.warning(f"Prompts file not found at {prompts_path}")
-        except yaml.YAMLError as e:
-            logger.error(f"Error parsing prompts YAML file: {e}")
+        prompts_file = os.getenv("PROMPTS_PATH", "spacebridge/prompts.yaml")
 
         stripe_secret_key = os.getenv(
             "STRIPE_SECRET_KEY",
@@ -162,10 +150,10 @@ class Settings(BaseSettings):
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             product_team_email=os.getenv("PRODUCT_TEAM_EMAIL", "product@spacecode.ai"),
             nats_url=os.getenv("NATS_URL", "nats://localhost:4222"),
+            PROMPTS_FILE=prompts_file,
             database=database,
             security=security,
             server=server,
-            prompts=prompts_data,
             stripe_secret_key=stripe_secret_key,
             stripe_webhook_secret=stripe_webhook_secret,
         )
