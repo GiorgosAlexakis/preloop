@@ -170,7 +170,8 @@ export class IssueDetailView extends LitElement {
                 <div>
                   <b class="compliance-title">Reason</b>
                   <div class="issue-description">
-                    ${this.aiVerdict?.reason?.trim() || 'No reasoning provided.'}
+                    ${this.aiVerdict?.reason?.trim() ||
+                    'No reasoning provided.'}
                   </div>
                 </div>
 
@@ -178,9 +179,7 @@ export class IssueDetailView extends LitElement {
                   this.aiVerdict?.suggestion,
                   () => html`
                     <div>
-                      <b class="compliance-title"
-                        >Suggestion for Improvement</b
-                      >
+                      <b class="compliance-title">Suggestion for Improvement</b>
                       <div class="issue-description">
                         ${this.aiVerdict?.suggestion?.trim()}
                       </div>
