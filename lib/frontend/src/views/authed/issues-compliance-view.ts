@@ -965,7 +965,9 @@ export class IssuesComplianceView extends LitElement {
             </div>
             <div>
               <b class="compliance-title">Suggestion for Improvement</b>
-              <div class="issue-description">${complianceResult.suggestion}</div>
+              <div class="issue-description">
+                ${complianceResult.suggestion}
+              </div>
             </div>
             <div class="improve-button-container">
               <sl-button

@@ -213,7 +213,9 @@ export class ImproveComplianceModal extends LitElement {
                           <br />
                           <div>
                             <b class="compliance-title">Changes</b>
-                            <div class="issue-description">${this._suggestedChanges}</div>
+                            <div class="issue-description">
+                              ${this._suggestedChanges}
+                            </div>
                           </div>
                         `}
                 </div>
