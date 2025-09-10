@@ -4384,6 +4384,11 @@ components:
           - type: string
           - type: 'null'
           title: Reason
+        suggestion:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Suggestion
         resolution:
           anyOf:
           - type: string

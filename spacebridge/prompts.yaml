@@ -273,18 +273,18 @@ duplicates:
   duplicate_classification_v1:
     name: Duplicate Classification
     system: >
-      You are an expert issue tracker assistant. Your task is to classify the relationship between two issues based on their content.
+      You are an expert issue tracker assistant. Your task is to classify the relationship between two issues based on their content, and provide feedback for improvement.
     user: >
       Use your expert judgement to classify the relationship between the following two issues based on their content.
 
       - `DUPLICATE`: The issues describe the same core problem, request, or task, even if the wording differs slightly.
-      - `OVERLAPPING`: There is significant content overlap, but the issues are not full duplicates and should be tracked separately.
+      - `OVERLAPPING`: There is significant overlap pertaining to the work involved in each issue. The issues however are not full duplicates and should be tracked separately.
       - `UNRELATED`: The issues are distinct. They are considered unrelated if they refer to different components, even if their descriptions seem similar.
 
       Note:
       - Two issues are considered duplicates if they describe the same core problem, request, or task, even if the wording differs slightly or one contains minor additional details.
       - Two issues are unrelated even if they look almost identical, if they refer to different components.
-      - Two issues are overlapping if they refer to the same component, describe related problems, but are not full duplicates.
+      - Two issues are overlapping if they share the same work, refer to the same component, describe related problems, but are not full duplicates.
 
       Issue 1:
       Title: {issue1_title}
@@ -300,10 +300,9 @@ duplicates:
       {issue2_description}
       ---
 
-      Based on the information above, what is the relationship between these two issues? Your answer must be only two lines.
-      On the first line, write a single word: `DUPLICATE`, `OVERLAPPING`, or `UNRELATED`.
-      On the second line, provide a single-sentence reasoning for your decision.
+      Based on the information above, what is the relationship between these two issues?
 
+      Your response MUST be a JSON object with three keys: "classification" (a string: "DUPLICATE", "OVERLAPPING", or "UNRELATED"), "reason" (a string for your decision), and "suggestion" (a 1-2 sentence suggestion for what to do next, e.g., how to merge or deconflict). Do not add any other text before or after the JSON object.
   merge_issues_v1:
     name: Merge Issues
     system: >

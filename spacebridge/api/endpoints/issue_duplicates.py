@@ -101,7 +101,7 @@ def check_or_create_issue_duplicate(
         logger.info(
             f"Found existing duplicate entry for issues {issue1_id} and {issue2_id}."
         )
-        return existing_duplicate
+        return IssueDuplicate.model_validate(existing_duplicate)
 
     logger.info(
         f"No existing duplicate entry for issues {issue1_id} and {issue2_id}. Proceeding with AI model analysis."
@@ -177,6 +177,7 @@ def check_or_create_issue_duplicate(
         response = client.chat.completions.create(
             model=default_model.model_identifier,
             messages=messages,
+            response_format={"type": "json_object"},
         )
         billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         llm_response_text = response.choices[0].message.content.strip()
@@ -184,16 +185,11 @@ def check_or_create_issue_duplicate(
             f"AI model response for issues {issue1_id}, {issue2_id}: '{llm_response_text}'"
         )
 
-        response_lines = llm_response_text.split("\n")
+        response_obj = json.loads(llm_response_text)
 
-        if len(response_lines) < 2:
-            raise HTTPException(
-                status_code=500,
-                detail="AI model response is not in the expected format.",
-            )
-
-        decision_word = response_lines[0].strip().upper()
-        reason = response_lines[1].strip()
+        decision_word = response_obj.get("classification", "").upper()
+        reason = response_obj.get("reason")
+        suggestion = response_obj.get("suggestion")
 
         if decision_word == "DUPLICATE":
             parsed_status = "duplicate"
@@ -215,6 +211,7 @@ def check_or_create_issue_duplicate(
             ai_model_id=default_model.id,
             ai_model_name=default_model.model_identifier,
             reason=reason,
+            suggestion=suggestion,
         )
 
         new_duplicate_entry = crud_issue_duplicate.create(
