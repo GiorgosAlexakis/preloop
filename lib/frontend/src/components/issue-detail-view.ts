@@ -67,9 +67,17 @@ export class IssueDetailView extends LitElement {
       font-size: var(--sl-font-size-x-small);
       text-transform: uppercase;
     }
-    .verdict-reasoning {
-      font-style: italic;
-      color: var(--sl-color-neutral-600);
+    .review-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--sl-spacing-medium);
+    }
+    .compliance-title {
+      display: block;
+      margin-top: var(--sl-spacing-medium);
+      margin-bottom: var(--sl-spacing-x-small);
+      font-weight: var(--sl-font-weight-semibold);
     }
     .actions-container {
       display: flex;
@@ -84,7 +92,7 @@ export class IssueDetailView extends LitElement {
   }
 
   async fetchVerdict() {
-    if (!this.pair) return;
+    if (!this.pair || this.loadingVerdict) return;
     this.loadingVerdict = true;
     this.aiVerdict = null;
     try {
@@ -144,7 +152,14 @@ export class IssueDetailView extends LitElement {
       </div>
 
       <div class="detail-section">
-        <h3>AI Review</h3>
+        <div class="review-header">
+          <h3>AI Review</h3>
+          ${when(
+            this.aiVerdict,
+            () => html` <div>${renderVerdict(this.aiVerdict)}</div> `
+          )}
+        </div>
+
         ${when(
           this.loadingVerdict,
           () => html`<sl-spinner></sl-spinner>`,
@@ -152,10 +167,26 @@ export class IssueDetailView extends LitElement {
             when(
               this.aiVerdict,
               () => html`
-                <div>${renderVerdict(this.aiVerdict)}</div>
-                <p class="verdict-reasoning">
-                  ${this.aiVerdict?.reason || 'No reasoning provided.'}
-                </p>
+                <div>
+                  <b class="compliance-title">Reason</b>
+                  <div class="issue-description">
+                    ${this.aiVerdict?.reason?.trim() || 'No reasoning provided.'}
+                  </div>
+                </div>
+
+                ${when(
+                  this.aiVerdict?.suggestion,
+                  () => html`
+                    <div>
+                      <b class="compliance-title"
+                        >Suggestion for Improvement</b
+                      >
+                      <div class="issue-description">
+                        ${this.aiVerdict?.suggestion?.trim()}
+                      </div>
+                    </div>
+                  `
+                )}
               `,
               () => html`<p>Could not load verdict.</p>`
             )
