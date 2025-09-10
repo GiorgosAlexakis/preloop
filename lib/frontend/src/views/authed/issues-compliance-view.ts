@@ -718,14 +718,16 @@ export class IssuesComplianceView extends LitElement {
                             this._openImproveComplianceModal(issue);
                           }}
                           ?disabled=${!complianceResult ||
-                          complianceResult.compliance_factor === 0}
+                          complianceResult.compliance_factor === 0 ||
+                          complianceResult.compliance_factor === 1}
                         >
                           Improve
                         </sl-button>
                         <sl-dropdown
                           @click=${(e: Event) => e.stopPropagation()}
                           ?disabled=${!complianceResult ||
-                          complianceResult.compliance_factor === 0}
+                          complianceResult.compliance_factor === 0 ||
+                          complianceResult.compliance_factor === 1}
                         >
                           <sl-button
                             slot="trigger"
@@ -963,14 +965,15 @@ export class IssuesComplianceView extends LitElement {
             </div>
             <div>
               <b class="compliance-title">Suggestion for Improvement</b>
-              <div class="issue-description">
-                ${complianceResult.suggestion}
-              </div>
+              <div class="issue-description">${complianceResult.suggestion}</div>
             </div>
             <div class="improve-button-container">
               <sl-button
                 size="small"
                 @click=${() => this._openImproveComplianceModal(issue)}
+                ?disabled=${!complianceResult ||
+                complianceResult.compliance_factor === 0 ||
+                complianceResult.compliance_factor === 1}
               >
                 Improve
               </sl-button>

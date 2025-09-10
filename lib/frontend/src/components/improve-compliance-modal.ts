@@ -40,6 +40,26 @@ export class ImproveComplianceModal extends LitElement {
         height: 100%;
         gap: var(--sl-spacing-small);
       }
+
+      .issue-description {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-700);
+        background-color: var(--sl-color-neutral-100);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-medium);
+        white-space: pre-line;
+        overflow-wrap: break-word;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .compliance-title {
+        display: block;
+        margin-top: var(--sl-spacing-medium);
+        margin-bottom: var(--sl-spacing-x-small);
+        font-weight: var(--sl-font-weight-semibold);
+      }
     `,
   ];
 
@@ -191,11 +211,10 @@ export class ImproveComplianceModal extends LitElement {
                             rows="10"
                           ></sl-textarea>
                           <br />
-                          <sl-textarea
-                            label="Changes"
-                            .value=${this._suggestedChanges}
-                            readonly
-                          ></sl-textarea>
+                          <div>
+                            <b class="compliance-title">Changes</b>
+                            <div class="issue-description">${this._suggestedChanges}</div>
+                          </div>
                         `}
                 </div>
               </div>
