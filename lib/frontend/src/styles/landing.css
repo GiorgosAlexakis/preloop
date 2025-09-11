@@ -616,7 +616,19 @@ summary.faq-question sl-icon {
   justify-content: flex-end;
 }
 
+
+
 /* Responsive Styles */
+@media (max-width: 1024px) {
+  .tool-logos {
+    gap: 8rem;
+  }
+
+  .tool-logo {
+    height: 56px;
+  }
+}
+
 @media (max-width: 768px) {
   .hero-inner {
     flex-direction: column;
@@ -663,7 +675,11 @@ summary.faq-question sl-icon {
   }
 
   .tool-logos {
-    gap: 8rem;
+    gap: 5rem;
+  }
+
+  .tool-logo {
+    height: 48px;
   }
 
   .final-cta h2 {

@@ -565,6 +565,13 @@ export class LandingView extends LitElement {
                   class="jira-logo tool-logo"
                 />
               </sl-tooltip>
+              <sl-tooltip content="Linear (coming soon)">
+                <img
+                  src="images/logos/linear-logo-light.png"
+                  alt="Linear Logo"
+                  class="linear-logo tool-logo"
+                />
+              </sl-tooltip>
             </div>
           </div>
         </section>
