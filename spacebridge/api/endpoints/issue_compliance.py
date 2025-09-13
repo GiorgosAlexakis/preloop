@@ -17,7 +17,7 @@ from spacebridge.schemas.issue import IssueResponse, IssueUpdate
 from spacebridge.schemas.issue_compliance import (
     ComplianceSuggestionResponse,
     CompliancePromptMetadata,
-    NestedPrompt,
+    ComplianceWorkflow,
 )
 from spacebridge.schemas.issue_compliance import (
     IssueComplianceResultCreate,
@@ -90,7 +90,7 @@ def get_issue_compliance(
             status_code=404, detail=f"Prompt '{prompt_name}' not found."
         )
 
-    prompt_template = NestedPrompt(**prompt_data)
+    prompt_template = ComplianceWorkflow(**prompt_data)
 
     existing_result = crud_issue_compliance_result.get_by_issue_id_and_prompt_id(
         db, issue_id=issue_id, prompt_id=prompt_name, account_id=current_user.id
@@ -229,7 +229,7 @@ def get_compliance_improvement_suggestion(
         )
 
     try:
-        prompt_template = NestedPrompt(**prompt_data)
+        prompt_template = ComplianceWorkflow(**prompt_data)
     except Exception as e:
         logger.error(f"Error parsing prompt template '{prompt_name}': {e}")
         raise HTTPException(

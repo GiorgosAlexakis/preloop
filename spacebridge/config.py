@@ -34,19 +34,6 @@ class SecuritySettings(BaseModel):
     algorithm: str = Field("HS256", description="JWT algorithm")
 
 
-class Prompt(BaseModel):
-    name: str
-    system: str
-    user: str
-
-
-class NestedPrompt(BaseModel):
-    name: str
-    short_name: str
-    evaluate: Prompt
-    propose_improvement: Prompt
-
-
 class ServerSettings(BaseModel):
     """Server configuration."""
 

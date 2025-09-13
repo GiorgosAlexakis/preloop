@@ -45,7 +45,7 @@ class Prompt(BaseModel):
     user: str
 
 
-class NestedPrompt(BaseModel):
+class ComplianceWorkflow(BaseModel):
     name: str
     short_name: str
     evaluate: Prompt
