@@ -1,7 +1,16 @@
 """Schemas for IssueComplianceResult model."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from datetime import datetime
+from typing import Optional, List, Any
+import json
+
+
+class Annotation(BaseModel):
+    text: str
+    label: str
+    status: str
+    comment: str
 
 
 class IssueComplianceResultBase(BaseModel):
@@ -10,6 +19,7 @@ class IssueComplianceResultBase(BaseModel):
     compliance_factor: float
     reason: str
     suggestion: str
+    annotated_description: Optional[List[Annotation]] = None
     issue_id: str
 
 
@@ -22,6 +32,16 @@ class IssueComplianceResultResponse(IssueComplianceResultBase):
     short_name: str
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("annotated_description", mode="before")
+    @classmethod
+    def parse_annotated_description(cls, v: Any) -> Optional[List[dict]]:
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return None  # Or handle error appropriately
+        return v
 
     class Config:
         from_attributes = True

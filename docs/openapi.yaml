@@ -3379,6 +3379,27 @@ components:
       type: object
       title: AIModelUpdate
       description: Schema for updating an existing AIModel entry. All fields are optional.
+    Annotation:
+      properties:
+        text:
+          type: string
+          title: Text
+        label:
+          type: string
+          title: Label
+        status:
+          type: string
+          title: Status
+        comment:
+          type: string
+          title: Comment
+      type: object
+      required:
+      - text
+      - label
+      - status
+      - comment
+      title: Annotation
     ApiKeyCreate:
       properties:
         name:
@@ -4246,6 +4267,13 @@ components:
         suggestion:
           type: string
           title: Suggestion
+        annotated_description:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/Annotation'
+            type: array
+          - type: 'null'
+          title: Annotated Description
         issue_id:
           type: string
           title: Issue Id

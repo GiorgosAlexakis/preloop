@@ -151,6 +151,7 @@ def get_issue_compliance(
         compliance_factor = response_obj.get("compliance_factor")
         reason = response_obj.get("reason")
         suggestion = response_obj.get("suggestion")
+        annotated_description = response_obj.get("annotated_description")
 
     except openai.APIError as e:
         raise HTTPException(status_code=500, detail=f"AI model API error: {e}")
@@ -166,6 +167,7 @@ def get_issue_compliance(
         compliance_factor=compliance_factor,
         reason=reason,
         suggestion=suggestion,
+        annotated_description=annotated_description,
     )
 
     new_result = crud_issue_compliance_result.create(

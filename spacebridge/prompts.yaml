@@ -31,14 +31,16 @@ compliance:
         single-sentence reason focusing on the most critical DoR gap or strength.
         Include a brief, 1-2 sentence suggestion for improvement.
 
+        Additionally, provide an `annotated_description` which is a JSON array of annotation objects. Each object should highlight a section of the original description and contain four keys: `text` (the exact text fragment), `label` (a category like 'Acceptance Criteria' or 'Scope'), `status` (either 'compliant' or 'non-compliant'), and `comment` (your feedback on that fragment). If no specific sections can be annotated, return an empty array.
+
         If the issue is fully compliant, the compliance factor should be 1.0 and the reason
         should be "Fully compliant with Definition of Ready standards." The suggestion should
         be "No improvement needed.". If the issue is vague or unclear, the compliance factor
         should be 0.0 and the reason and suggestion should be blank.
 
 
-        Your response MUST be a JSON object with three keys: "compliance_factor" (a float),
-        "reason" (a string), and "suggestion" (a string).
+        Your response MUST be a JSON object with four keys: "compliance_factor" (a float),
+        "reason" (a string), "suggestion" (a string), and "annotated_description" (a JSON array of annotation objects).
         Do not add any other text before or after the JSON object.
     propose_improvement:
       name: Propose DoR Improvement
@@ -86,8 +88,8 @@ compliance:
         provide a score from 0.0 to 1.0. The final "compliance_factor" should be the
         average of these six scores.
 
-        Your response MUST be a JSON object with three keys: "compliance_factor" (a float),
-        "reason" (a string), and "suggestion" (a string).
+        Your response MUST be a JSON object with four keys: "compliance_factor" (a float),
+        "reason" (a string), "suggestion" (a string), and "annotated_description" (a JSON array of annotation objects).
         Do not add any other text before or after the JSON object.
 
         Example for "reason":
@@ -119,12 +121,14 @@ compliance:
         where 1.0 means the issue is fully compliant. Include a brief, single-sentence
         reason for each INVEST principle. Include a brief, 1-2 sentence suggestion for improvement.
 
+        Additionally, provide an `annotated_description` which is a JSON array of annotation objects. Each object should highlight a section of the original description and contain four keys: `text` (the exact text fragment), `label` (a category like 'Valuable' or 'Testable'), `status` (either 'compliant' or 'non-compliant'), and `comment` (your feedback on that fragment). If no specific sections can be annotated, return an empty array.
+
         If the issue is fully compliant, the compliance factor should be 1.0 and the suggestion
         should be "No improvement needed.". If the issue is vague or unclear, the compliance factor
         should be 0.0 and the reason and suggestion should be blank.
 
-        Your response MUST be a JSON object with three keys: "compliance_factor" (a float),
-        "reason" (a string), and "suggestion" (a string).
+        Your response MUST be a JSON object with four keys: "compliance_factor" (a float),
+        "reason" (a string), "suggestion" (a string), and "annotated_description" (a JSON array of annotation objects).
         Do not add any other text before or after the JSON object.
     propose_improvement:
       name: Improve INVEST Compliance
@@ -175,8 +179,8 @@ compliance:
         User Impact, and Security Vulnerabilities. For each factor, provide a score
         from 0.0 to 1.0. The final "risk_score" should be the average of these three scores.
 
-        Your response MUST be a JSON object with three keys: "compliance_factor" (a float),
-        "reason" (a string), and "suggestion" (a string).
+        Your response MUST be a JSON object with four keys: "compliance_factor" (a float),
+        "reason" (a string), "suggestion" (a string), and "annotated_description" (a JSON array of annotation objects).
         Do not add any other text before or after the JSON object.
 
         Example for "reason":
@@ -202,12 +206,14 @@ compliance:
         where 1.0 means low risk. Include a brief, single-sentence reason for each risk factor.
         Include a brief, 1-2 sentence suggestion for mitigation.
 
+        Additionally, provide an `annotated_description` which is a JSON array of annotation objects. Each object should highlight a section of the original description and contain four keys: `text` (the exact text fragment), `label` (a category like 'Security' or 'User Impact'), `status` (either 'compliant' or 'non-compliant'), and `comment` (your feedback on that fragment). If no specific sections can be annotated, return an empty array.
+
         If the issue has no risks, the compliance factor should be 1.0 and the suggestion
         should be "No mitigation needed.". If the issue is vague or unclear, the compliance factor
         should be 0.0 and the reason and suggestion should be blank.
 
-        Your response MUST be a JSON object with three keys: "compliance_factor" (a float),
-        "reason" (a string), and "suggestion" (a string).
+        Your response MUST be a JSON object with four keys: "compliance_factor" (a float),
+        "reason" (a string), "suggestion" (a string), and "annotated_description" (a JSON array of annotation objects).
         Do not add any other text before or after the JSON object.
     propose_improvement:
       name: Propose Risk Mitigation
