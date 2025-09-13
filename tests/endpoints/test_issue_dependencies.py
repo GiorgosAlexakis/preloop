@@ -88,9 +88,16 @@ def test_detect_issue_dependencies_success(
         mock_completion
     )
 
+    mock_settings = MagicMock()
+    mock_settings.PROMPTS_FILE = "/path/to/prompts.yml"
+    mocker.patch(
+        "spacebridge.api.endpoints.issue_dependencies.load_dependencies_prompts_config",
+        return_value={"dependency_detection_v1": {"system": "Test prompt"}},
+    )
+
     # Act
     result = detect_issue_dependencies(
-        request=request, db=MagicMock(), current_user=mock_user
+        request=request, db=MagicMock(), current_user=mock_user, settings=mock_settings
     )
 
     # Assert

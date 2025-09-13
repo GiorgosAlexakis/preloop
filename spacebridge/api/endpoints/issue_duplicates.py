@@ -259,7 +259,12 @@ def propose_issue_duplicate_resolution(
     # Check if the user has access to the project containing the issues
     # Raises an exception if not
     project_id = existing_duplicate.issue1.project_id
-    _get_accessible_projects(db, current_user, [project_id])
+    accessible_projects = _get_accessible_projects(db, current_user, [project_id])
+    if not accessible_projects:
+        raise HTTPException(
+            status_code=403,
+            detail="User does not have access to the project containing the issues.",
+        )
 
     if resolution.resolution == "merge":
         if not all(
@@ -690,8 +695,8 @@ def _get_accessible_projects(
     db: Session,
     current_user: Account,
     project_ids: Optional[List[str]],
-) -> List[str]:
-    """Get the list of accessible project IDs for the given user and project IDs."""
+) -> List[Project]:
+    """Get the list of accessible projects for the given user and project IDs."""
     project_query = (
         db.query(Project)
         .options(joinedload(Project.organization).joinedload(Organization.tracker))
@@ -855,7 +860,12 @@ def get_resolution_suggestion(
 
     # Authorization check
     project_id = issue1.project_id
-    _get_accessible_projects(db, current_user, [project_id])
+    accessible_projects = _get_accessible_projects(db, current_user, [project_id])
+    if not accessible_projects:
+        raise HTTPException(
+            status_code=403,
+            detail="User does not have access to the project containing the issues.",
+        )
 
     default_model = crud_ai_model.get_default_active_model(
         db, account_id=current_user.id
