@@ -258,6 +258,7 @@ async def search_all(
             embedding_type=embedding_type,
             sort=sort,  # Pass sort parameter to the CRUD method
             status=status,
+            account_id=current_user.id,
         )
 
         # Record usage after successful search
