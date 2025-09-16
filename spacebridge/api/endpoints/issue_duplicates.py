@@ -916,7 +916,15 @@ def get_resolution_suggestion(
         )
         billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         suggestion_data = json.loads(llm_response.choices[0].message.content)
-        return IssueDuplicateSuggestionResponse(**suggestion_data)
+
+        # Ensure 'explanation' is present, providing a default if it's missing.
+        explanation = suggestion_data.pop("explanation", "")
+        if not explanation:
+            logger.warning("AI suggestion response missing 'explanation' field.")
+
+        return IssueDuplicateSuggestionResponse(
+            explanation=explanation, **suggestion_data
+        )
     except openai.APIError as e:
         logger.error(f"OpenAI API call failed: {e}")
         raise HTTPException(
