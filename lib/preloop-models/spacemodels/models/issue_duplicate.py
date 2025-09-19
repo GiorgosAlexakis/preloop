@@ -21,6 +21,7 @@ class IssueDuplicate(Base):
     ai_model_id = Column(UUID, ForeignKey("ai_model.id"), nullable=False)
     ai_model_name = Column(String, nullable=True)
     reason = Column(Text, nullable=True)
+    suggestion = Column(Text, nullable=True)
     resolution = Column(String, nullable=True)
     resolution_at = Column(DateTime, nullable=True)
     resolution_reason = Column(Text, nullable=True)
