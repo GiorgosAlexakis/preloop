@@ -2,6 +2,7 @@ import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import { nothing } from 'lit';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -182,6 +183,59 @@ export class IssuesComplianceView extends LitElement {
 
       .search-bar sl-input {
         flex-grow: 1;
+      }
+
+      .review-section {
+        margin-top: 3rem;
+      }
+
+      .issue-description {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-700);
+        background-color: var(--sl-color-neutral-100);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-medium);
+        white-space: pre-line;
+        overflow-wrap: break-word;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .compliance-reason,
+      .compliance-suggestion {
+        margin-top: var(--sl-spacing-small);
+      }
+
+      .compliance-title {
+        display: block;
+        margin-top: var(--sl-spacing-medium);
+        margin-bottom: var(--sl-spacing-x-small);
+        font-weight: var(--sl-font-weight-semibold);
+      }
+
+      .review-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--sl-spacing-medium);
+      }
+
+      .score-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: var(--sl-spacing-medium);
+      }
+
+      .score-container .compliance-title {
+        margin: 0;
+      }
+
+      .improve-button-container {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: var(--sl-spacing-medium);
       }
     `,
   ];
@@ -663,11 +717,17 @@ export class IssuesComplianceView extends LitElement {
                             e.stopPropagation();
                             this._openImproveComplianceModal(issue);
                           }}
+                          ?disabled=${!complianceResult ||
+                          complianceResult.compliance_factor === 0 ||
+                          complianceResult.compliance_factor === 1}
                         >
                           Improve
                         </sl-button>
                         <sl-dropdown
                           @click=${(e: Event) => e.stopPropagation()}
+                          ?disabled=${!complianceResult ||
+                          complianceResult.compliance_factor === 0 ||
+                          complianceResult.compliance_factor === 1}
                         >
                           <sl-button
                             slot="trigger"
@@ -697,10 +757,14 @@ export class IssuesComplianceView extends LitElement {
                         <tr class="inline-detail-row">
                           <td colspan="6">
                             <div class="detail-view-card">
-                              <single-issue-detail-view
-                                .issue=${issue}
-                                .complianceResult=${complianceResult}
-                              ></single-issue-detail-view>
+                              <single-issue-detail-view .issue=${issue}>
+                                <div slot="additional-info">
+                                  ${this._renderComplianceDetails(
+                                    issue,
+                                    complianceResult
+                                  )}
+                                </div>
+                              </single-issue-detail-view>
                             </div>
                           </td>
                         </tr>
@@ -827,10 +891,11 @@ export class IssuesComplianceView extends LitElement {
                 );
                 if (issue) {
                   const complianceResult = this._complianceResults[issue.id];
-                  return html`<single-issue-detail-view
-                    .issue=${issue}
-                    .complianceResult=${complianceResult}
-                  ></single-issue-detail-view>`;
+                  return html`<single-issue-detail-view .issue=${issue}>
+                    <div slot="additional-info">
+                      ${this._renderComplianceDetails(issue, complianceResult)}
+                    </div>
+                  </single-issue-detail-view>`;
                 } else {
                   return html`<div class="placeholder-content">
                     <sl-icon name="info-circle"></sl-icon>
@@ -856,6 +921,68 @@ export class IssuesComplianceView extends LitElement {
         @on-submit=${this._handleComplianceUpdate}
       >
       </improve-compliance-modal>
+    `;
+  }
+
+  private _renderComplianceDetails(
+    issue: Issue,
+    complianceResult: IssueComplianceResult | null
+  ) {
+    if (!complianceResult) {
+      return nothing;
+    }
+
+    return html`
+      <div class="review-section">
+        <div class="review-header">
+          <h3>${complianceResult.name} Review</h3>
+        </div>
+
+        ${when(
+          complianceResult.compliance_factor === 0,
+          () => html`
+            <sl-alert variant="warning" open>
+              <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
+              This issue could not be evaluated and requires manual review. It
+              may be missing key information or be too vague.
+            </sl-alert>
+          `,
+          () => html`
+            <div class="score-container">
+              <b class="compliance-title">Compliance Score</b>
+              <sl-badge
+                variant=${getComplianceVariant(
+                  complianceResult.compliance_factor
+                )}
+                pill
+              >
+                ${(complianceResult.compliance_factor * 100).toFixed(0)}%
+              </sl-badge>
+            </div>
+            <div>
+              <b class="compliance-title">Reason</b>
+              <div class="issue-description">${complianceResult.reason}</div>
+            </div>
+            <div>
+              <b class="compliance-title">Suggestion for Improvement</b>
+              <div class="issue-description">
+                ${complianceResult.suggestion}
+              </div>
+            </div>
+            <div class="improve-button-container">
+              <sl-button
+                size="small"
+                @click=${() => this._openImproveComplianceModal(issue)}
+                ?disabled=${!complianceResult ||
+                complianceResult.compliance_factor === 0 ||
+                complianceResult.compliance_factor === 1}
+              >
+                Improve
+              </sl-button>
+            </div>
+          `
+        )}
+      </div>
     `;
   }
 

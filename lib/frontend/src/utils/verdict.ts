@@ -11,6 +11,7 @@ export interface AIModelVerdict {
     | 'checking'
     | 'unrelated';
   reason?: string;
+  suggestion?: string;
   resolution?: string;
 }
 

@@ -40,6 +40,26 @@ export class ImproveComplianceModal extends LitElement {
         height: 100%;
         gap: var(--sl-spacing-small);
       }
+
+      .issue-description {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-700);
+        background-color: var(--sl-color-neutral-100);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-medium);
+        white-space: pre-line;
+        overflow-wrap: break-word;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .compliance-title {
+        display: block;
+        margin-top: var(--sl-spacing-medium);
+        margin-bottom: var(--sl-spacing-x-small);
+        font-weight: var(--sl-font-weight-semibold);
+      }
     `,
   ];
 
@@ -53,6 +73,7 @@ export class ImproveComplianceModal extends LitElement {
 
   @state() private _suggestedTitle = '';
   @state() private _suggestedDescription = '';
+  @state() private _suggestedChanges = '';
 
   updated(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('open') && this.open) {
@@ -65,6 +86,7 @@ export class ImproveComplianceModal extends LitElement {
     this._suggestionError = null;
     this._suggestedTitle = '';
     this._suggestedDescription = '';
+    this._suggestedChanges = '';
     this.fetchSuggestion();
   }
 
@@ -86,6 +108,7 @@ export class ImproveComplianceModal extends LitElement {
       );
       this._suggestedTitle = suggestion.title;
       this._suggestedDescription = suggestion.description;
+      this._suggestedChanges = suggestion.changes;
     } catch (error) {
       this._suggestionError =
         error instanceof Error ? error.message : 'Failed to load suggestion.';
@@ -187,6 +210,13 @@ export class ImproveComplianceModal extends LitElement {
                               ).value)}
                             rows="10"
                           ></sl-textarea>
+                          <br />
+                          <div>
+                            <b class="compliance-title">Changes</b>
+                            <div class="issue-description">
+                              ${this._suggestedChanges}
+                            </div>
+                          </div>
                         `}
                 </div>
               </div>

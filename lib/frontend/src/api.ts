@@ -771,14 +771,15 @@ export async function proposeResolution(resolutionData: any) {
 export async function updateIssueContent(
   issueId: string,
   title: string,
-  description: string
+  description: string,
+  changes: string
 ): Promise<Issue> {
   const response = await fetchWithAuth(
     `/api/v1/issue_compliance_update/${issueId}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description }),
+      body: JSON.stringify({ title, description, changes }),
     }
   );
 
