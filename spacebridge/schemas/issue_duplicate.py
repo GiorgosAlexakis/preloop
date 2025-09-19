@@ -18,6 +18,7 @@ class IssueDuplicate(BaseModel):
     decision: str
     decision_at: Optional[datetime] = None
     reason: Optional[str] = None
+    suggestion: Optional[str] = None
 
     # User's resolution
     resolution: Optional[str] = None
@@ -27,6 +28,9 @@ class IssueDuplicate(BaseModel):
     resulting_issue2_id: Optional[str] = None
     ai_model_id: Optional[UUID] = None
     ai_model_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 
 class IssueDuplicateUpdate(BaseModel):

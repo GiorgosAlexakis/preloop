@@ -27,8 +27,6 @@ from spacemodels.crud import (
     crud_embedding_model,
     crud_issue,
     crud_ai_model,
-    crud_project,
-    crud_organization,
 )
 from spacemodels.db.session import get_db_session as get_db
 
@@ -51,42 +49,12 @@ from spacemodels.models.tracker import Tracker
 from .issues import update_issue
 
 from spacebridge.api.auth import get_current_active_user  # Import user dependency
+from spacebridge.config import get_settings, Settings
+from spacebridge.api.common import load_duplicates_prompts_config
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-AI_MODEL_DUPLICATE_SYSTEM_PROMPT = "You are an expert issue tracker assistant. Your task is to classify the relationship between two issues based on their content."
-AI_MODEL_DUPLICATE_USER_PROMPT_TEMPLATE = """
-Use your expert judgement to classify the relationship between the following two issues based on their content.
-
-- `DUPLICATE`: The issues describe the same core problem, request, or task, even if the wording differs slightly.
-- `OVERLAPPING`: There is significant content overlap, but the issues are not full duplicates and should be tracked separately.
-- `UNRELATED`: The issues are distinct. They are considered unrelated if they refer to different components, even if their descriptions seem similar.
-
-Note:
-- Two issues are considered duplicates if they describe the same core problem, request, or task, even if the wording differs slightly or one contains minor additional details.
-- Two issues are unrelated even if they look almost identical, if they refer to different components.
-- Two issues are overlapping if they refer to the same component, describe related problems, but are not full duplicates.
-
-Issue 1:
-Title: {issue1_title}
-Description:
----
-{issue1_description}
----
-
-Issue 2:
-Title: {issue2_title}
-Description:
----
-{issue2_description}
----
-
-Based on the information above, what is the relationship between these two issues? Your answer must be only two lines.
-On the first line, write a single word: `DUPLICATE`, `OVERLAPPING`, or `UNRELATED`.
-On the second line, provide a single-sentence reasoning for your decision.
-"""
 
 
 @router.get(
@@ -121,6 +89,7 @@ def check_or_create_issue_duplicate(
     issue2_id: str,
     current_user: Account = Depends(get_current_active_user),
     billing_service: BillingService = Depends(get_billing_service),
+    settings: Settings = Depends(get_settings),
 ) -> Any:
     if issue1_id == issue2_id:
         raise HTTPException(status_code=400, detail="Issue IDs cannot be the same.")
@@ -132,7 +101,7 @@ def check_or_create_issue_duplicate(
         logger.info(
             f"Found existing duplicate entry for issues {issue1_id} and {issue2_id}."
         )
-        return existing_duplicate
+        return IssueDuplicate.model_validate(existing_duplicate)
 
     logger.info(
         f"No existing duplicate entry for issues {issue1_id} and {issue2_id}. Proceeding with AI model analysis."
@@ -162,7 +131,17 @@ def check_or_create_issue_duplicate(
 
     logger.info(f"Using AI model '{default_model.model_identifier}'.")
 
-    prompt_text = AI_MODEL_DUPLICATE_USER_PROMPT_TEMPLATE.format(
+    prompts_config = load_duplicates_prompts_config(settings.PROMPTS_FILE)
+    prompt_data = prompts_config.get("duplicate_classification_v1")
+    if not prompt_data or "system" not in prompt_data or "user" not in prompt_data:
+        raise HTTPException(
+            status_code=500, detail="Duplicate classification prompt not configured."
+        )
+
+    system_prompt = prompt_data["system"]
+    user_prompt_template = prompt_data["user"]
+
+    prompt_text = user_prompt_template.format(
         issue1_id=issue1.id,
         issue1_title=issue1.title or "N/A",
         issue1_description=issue1.description or "No description provided.",
@@ -172,7 +151,7 @@ def check_or_create_issue_duplicate(
     )
 
     messages: List[Dict[str, str]] = [
-        {"role": "system", "content": AI_MODEL_DUPLICATE_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt_text},
     ]
 
@@ -198,6 +177,7 @@ def check_or_create_issue_duplicate(
         response = client.chat.completions.create(
             model=default_model.model_identifier,
             messages=messages,
+            response_format={"type": "json_object"},
         )
         billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         llm_response_text = response.choices[0].message.content.strip()
@@ -205,16 +185,11 @@ def check_or_create_issue_duplicate(
             f"AI model response for issues {issue1_id}, {issue2_id}: '{llm_response_text}'"
         )
 
-        response_lines = llm_response_text.split("\n")
+        response_obj = json.loads(llm_response_text)
 
-        if len(response_lines) < 2:
-            raise HTTPException(
-                status_code=500,
-                detail="AI model response is not in the expected format.",
-            )
-
-        decision_word = response_lines[0].strip().upper()
-        reason = response_lines[1].strip()
+        decision_word = response_obj.get("classification", "").upper()
+        reason = response_obj.get("reason")
+        suggestion = response_obj.get("suggestion")
 
         if decision_word == "DUPLICATE":
             parsed_status = "duplicate"
@@ -236,6 +211,7 @@ def check_or_create_issue_duplicate(
             ai_model_id=default_model.id,
             ai_model_name=default_model.model_identifier,
             reason=reason,
+            suggestion=suggestion,
         )
 
         new_duplicate_entry = crud_issue_duplicate.create(
@@ -283,7 +259,12 @@ def propose_issue_duplicate_resolution(
     # Check if the user has access to the project containing the issues
     # Raises an exception if not
     project_id = existing_duplicate.issue1.project_id
-    _get_accessible_projects(db, current_user, [project_id])
+    accessible_projects = _get_accessible_projects(db, current_user, [project_id])
+    if not accessible_projects:
+        raise HTTPException(
+            status_code=403,
+            detail="User does not have access to the project containing the issues.",
+        )
 
     if resolution.resolution == "merge":
         if not all(
@@ -714,8 +695,8 @@ def _get_accessible_projects(
     db: Session,
     current_user: Account,
     project_ids: Optional[List[str]],
-) -> List[str]:
-    """Get the list of accessible project IDs for the given user and project IDs."""
+) -> List[Project]:
+    """Get the list of accessible projects for the given user and project IDs."""
     project_query = (
         db.query(Project)
         .options(joinedload(Project.organization).joinedload(Organization.tracker))
@@ -860,43 +841,6 @@ def get_projects_duplicate_stats(
     return IssueDuplicateStats(projects=stats)
 
 
-MERGED_PROMPT = """
-You are an expert software engineering assistant. Your task is to merge two issue reports into a single, comprehensive issue. Analyze the title and description of both issues provided below.
-
-Issue 1 Title: {title1}
-Issue 1 Description: {description1}
-
-Issue 2 Title: {title2}
-Issue 2 Description: {description2}
-
-Generate a new, merged issue that includes:
-1. `merged_title`: A clear and concise title that combines the key information from both issues.
-2. `merged_description`: A detailed description that synthesizes the information from both issues, preserving important context, steps to reproduce, and expected outcomes. Structure it logically.
-3. `explanation`: A brief explanation of how you combined the issues and why.
-
-Format your response as a single JSON object with the keys "merged_title", "merged_description", and "explanation".
-"""
-
-DECONFLICTED_PROMPT = """
-You are an expert software engineering assistant. In the following two issues there is significant overlap in content. They might be distinct bugs, or one might be a subset of the other. Analyze the title and description of both issues provided below.
-
-Issue 1 Title: {title1}
-Issue 1 Description: {description1}
-
-Issue 2 Title: {title2}
-Issue 2 Description: {description2}
-
-Generate new, distinct titles and descriptions for both issues to deconflict them, and make them clearer and easier to track independently. Provide:
-1. `deconflicted_title1`: A new, more specific title for Issue 1.
-2. `deconflicted_description1`: A revised description for Issue 1, clarifying its unique scope.
-3. `deconflicted_title2`: A new, more specific title for Issue 2.
-4. `deconflicted_description2`: A revised description for Issue 2, clarifying its unique scope.
-5. `explanation`: A brief explanation of the changes you made and the reasoning for the deconfliction.
-
-Format your response as a single JSON object with the keys "deconflicted_title1", "deconflicted_description1", "deconflicted_title2", "deconflicted_description2", and "explanation".
-"""
-
-
 @router.post("/ai-suggestion", response_model=IssueDuplicateSuggestionResponse)
 def get_resolution_suggestion(
     db: Session = Depends(get_db),
@@ -905,6 +849,7 @@ def get_resolution_suggestion(
     issue2_id: str = Body(...),
     resolution: str = Body(...),
     billing_service: BillingService = Depends(get_billing_service),
+    settings: Settings = Depends(get_settings),
 ):
     """Generate a suggestion for resolving a duplicate issue pair."""
     issue1 = crud_issue.get(db, id=issue1_id)
@@ -913,76 +858,75 @@ def get_resolution_suggestion(
     if not issue1 or not issue2:
         raise HTTPException(status_code=404, detail="One or both issues not found")
 
-    project = crud_project.get(db, id=issue1.project_id)
-
     # Authorization check
-    organization = crud_organization.get(db, id=project.organization_id)
-    if (
-        not organization
-        or not organization.tracker
-        or organization.tracker.account_id != current_user.id
-    ):
-        raise HTTPException(status_code=403, detail="Access denied")
+    project_id = issue1.project_id
+    accessible_projects = _get_accessible_projects(db, current_user, [project_id])
+    if not accessible_projects:
+        raise HTTPException(
+            status_code=403,
+            detail="User does not have access to the project containing the issues.",
+        )
 
     default_model = crud_ai_model.get_default_active_model(
         db, account_id=current_user.id
     )
     if not default_model:
-        logger.error("No default active AI model configured.")
         raise HTTPException(
             status_code=500, detail="No default active AI model configured."
         )
 
     logger.info(f"Using AI model '{default_model.model_identifier}'.")
 
+    prompts_config = load_duplicates_prompts_config(settings.PROMPTS_FILE)
+    if resolution == "merged":
+        prompt_data = prompts_config.get("merge_issues_v1")
+    elif resolution == "deconflicted":
+        prompt_data = prompts_config.get("deconflict_issues_v1")
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Suggestions are only available for 'merged' or 'deconflicted' resolutions.",
+        )
+
+    if not prompt_data or "system" not in prompt_data or "user" not in prompt_data:
+        raise HTTPException(
+            status_code=500, detail="Duplicate resolution prompt not configured."
+        )
+
+    system_prompt = prompt_data["system"]
+    user_prompt_template = prompt_data["user"]
+
+    prompt_text = user_prompt_template.format(
+        title1=issue1.title,
+        description1=issue1.description,
+        title2=issue2.title,
+        description2=issue2.description,
+    )
+
     client = openai.OpenAI()
 
     try:
-        if resolution == "merged":
-            prompt = MERGED_PROMPT.format(
-                title1=issue1.title,
-                description1=issue1.description,
-                title2=issue2.title,
-                description2=issue2.description,
-                explanation="",
-            )
-            llm_response = client.chat.completions.create(
-                model=default_model.model_identifier,
-                messages=[{"content": prompt, "role": "user"}],
-                response_format={"type": "json_object"},
-            )
-            billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
-            suggestion_data = json.loads(llm_response.choices[0].message.content)
-            return IssueDuplicateSuggestionResponse(**suggestion_data)
+        llm_response = client.chat.completions.create(
+            model=default_model.model_identifier,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt_text},
+            ],
+            response_format={"type": "json_object"},
+        )
+        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
+        suggestion_data = json.loads(llm_response.choices[0].message.content)
 
-        elif resolution == "deconflicted":
-            prompt = DECONFLICTED_PROMPT.format(
-                title1=issue1.title,
-                description1=issue1.description,
-                title2=issue2.title,
-                description2=issue2.description,
-                explanation="",
-            )
-            llm_response = client.chat.completions.create(
-                model=default_model.model_identifier,
-                messages=[{"content": prompt, "role": "user"}],
-                response_format={"type": "json_object"},
-            )
-            suggestion_data = json.loads(llm_response.choices[0].message.content)
-            return IssueDuplicateSuggestionResponse(**suggestion_data)
+        # Ensure 'explanation' is present, providing a default if it's missing.
+        explanation = suggestion_data.pop("explanation", "")
+        if not explanation:
+            logger.warning("AI suggestion response missing 'explanation' field.")
 
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Suggestions are only available for 'merged' or 'deconflicted' resolutions.",
-            )
+        return IssueDuplicateSuggestionResponse(
+            explanation=explanation, **suggestion_data
+        )
     except openai.APIError as e:
         logger.error(f"OpenAI API call failed: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to generate suggestion from AI model."
-        )
-    except Exception as e:
-        logger.error(f"AI model suggestion failed: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to generate suggestion from AI model."
+            status_code=500, detail="Failed to get suggestion from AI model."
         )

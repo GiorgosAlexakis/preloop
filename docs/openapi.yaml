@@ -850,7 +850,7 @@ paths:
       - Issues
       - Issues
       - AI
-      summary: Extend dependency scan from a given issue.
+      summary: Extend the dependency scan for a specific issue.
       description: 'Extends the dependency scan for a specific issue to find more
         related issues.
 
@@ -3379,6 +3379,27 @@ components:
       type: object
       title: AIModelUpdate
       description: Schema for updating an existing AIModel entry. All fields are optional.
+    Annotation:
+      properties:
+        text:
+          type: string
+          title: Text
+        label:
+          type: string
+          title: Label
+        status:
+          type: string
+          title: Status
+        comment:
+          type: string
+          title: Comment
+      type: object
+      required:
+      - text
+      - label
+      - status
+      - comment
+      title: Annotation
     ApiKeyCreate:
       properties:
         name:
@@ -3737,10 +3758,14 @@ components:
         description:
           type: string
           title: Description
+        changes:
+          type: string
+          title: Changes
       type: object
       required:
       - title
       - description
+      - changes
       title: ComplianceSuggestionResponse
     CreateCheckoutSessionRequest:
       properties:
@@ -4239,6 +4264,16 @@ components:
         reason:
           type: string
           title: Reason
+        suggestion:
+          type: string
+          title: Suggestion
+        annotated_description:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/Annotation'
+            type: array
+          - type: 'null'
+          title: Annotated Description
         issue_id:
           type: string
           title: Issue Id
@@ -4262,6 +4297,7 @@ components:
       - name
       - compliance_factor
       - reason
+      - suggestion
       - issue_id
       - id
       - short_name
@@ -4376,6 +4412,11 @@ components:
           - type: string
           - type: 'null'
           title: Reason
+        suggestion:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Suggestion
         resolution:
           anyOf:
           - type: string
