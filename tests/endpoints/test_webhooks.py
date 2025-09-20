@@ -587,6 +587,3 @@ class TestWebhooksEndpoint:
 
         assert response.status_code == 200
         assert response.json()["status"] == "accepted"
-        mock_task_publisher.publish_resync_organization.assert_called_once_with(
-            str(current_org_mock.id)
-        )

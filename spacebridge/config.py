@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     """Application settings."""
 
     app_name: str = Field("SpaceBridge", description="Application name")
+    version: str = Field(SERVER_VERSION, description="Application version")
     environment: str = Field(
         "development", description="Environment (development, production)"
     )
