@@ -84,7 +84,8 @@ class GitLabTracker(BaseTracker):
             TrackerResponseError: If response is invalid.
         """
         try:
-            return method(*args, **kwargs)
+            result = method(*args, **kwargs)
+            return result
         except gitlab.exceptions.GitlabAuthenticationError:
             raise TrackerAuthenticationError("GitLab authentication failed")
         except gitlab.exceptions.GitlabHttpError as e:
@@ -537,19 +538,20 @@ class GitLabTracker(BaseTracker):
                     f"GitLab group '{organization.identifier}' not found when attempting to register group webhook."
                 )
                 return False  # Group itself not found
-            logger.error(
-                f"Error getting GitLab group '{organization.identifier}' for group webhook: {e.response_code} - {e.error_message}",
-                exc_info=True,
-            )
-            return False
+            else:
+                logger.error(
+                    f"Error getting GitLab group '{organization.identifier}' for group webhook: {e.response_code} - {e.error_message}",
+                    exc_info=True,
+                )
+                return False
         except (
             gitlab.exceptions.GitlabAuthenticationError
-        ) as e:  # Should be caught by _make_request mostly
+        ) as e:  # Should be caught by _make_request
             logger.error(
                 f"GitLab authentication error during group webhook setup for '{organization.identifier}': {e}",
                 exc_info=True,
             )
-            raise  # Re-raise as this is a fundamental issue
+            raise  # Re-raise
         except Exception as e:  # Catch-all for unexpected issues
             logger.error(
                 f"Unexpected error registering group webhook for GitLab group '{organization.identifier}': {e}",
@@ -573,7 +575,7 @@ class GitLabTracker(BaseTracker):
             True if registration was successful or webhook already exists, False otherwise.
         """
         logger.info(
-            f"Attempting to register project webhook for GitLab project '{project.identifier}' pointing to {webhook_url}"
+            f"Attempting to register project webhook for GitLab project ID '{project.identifier}' pointing to {webhook_url}"
         )
 
         hook_attrs = {
@@ -582,24 +584,22 @@ class GitLabTracker(BaseTracker):
             "issues_events": True,
             "push_events": True,
             "merge_requests_events": True,
+            "note_events": True,
+            "pipeline_events": True,
+            "job_events": True,
             "repository_update_events": True,
             "enable_ssl_verification": True,
-            # Consider adding more project-specific events if needed:
-            "note_events": True,
-            "job_events": True,
-            "pipeline_events": True,
-            "wiki_page_events": True,
         }
 
         try:
             logger.info(
-                f"GitLabTracker: Attempting self.gl.projects.get() for project webhook. project_id_or_path='{project.identifier}'"
+                f"GitLabTracker: Attempting self.gl.projects.get() for project webhook. proj_identifier='{project.identifier}', client API URL='{self.gl.url}'"
             )
             gitlab_project = self._make_request(
                 self.gl.projects.get, project.identifier
             )
 
-            # Try to list existing hooks for the project.
+            # Check for existing hooks
             try:
                 existing_hooks = gitlab_project.hooks.list(all=True)
                 for h in existing_hooks:
@@ -615,12 +615,15 @@ class GitLabTracker(BaseTracker):
                 )
                 return False
 
-            # If list succeeded and hook doesn't exist, try to create it.
+            # If hook doesn't exist, create it
             logger.info(
                 f"Attempting to create project hook for GitLab project '{project.identifier}' (URL: {webhook_url})."
             )
             try:
                 hook = gitlab_project.hooks.create(hook_attrs)
+                logger.info(
+                    f"Successfully created project webhook (ID: {hook.id}) for GitLab project '{project.identifier}'."
+                )
                 crud_webhook.create(
                     db,
                     obj_in={
@@ -631,37 +634,13 @@ class GitLabTracker(BaseTracker):
                         "project_id": project.id,
                     },
                 )
-                logger.info(
-                    f"Successfully registered webhook {hook.id} for project {project.identifier}."
-                )
                 return True
             except gitlab.exceptions.GitlabCreateError as e:
                 if e.response_code == 409:  # Conflict
                     logger.warning(
                         f"Project webhook for GitLab project '{project.identifier}' (URL: {webhook_url}) already exists (409 on create)."
                     )
-                    if not crud_webhook.get_by_external_id(
-                        db, external_id=str(hook.id)
-                    ):
-                        logger.info(
-                            f"Project webhook for GitLab project '{project.identifier}' (URL: {webhook_url}) already exists (409 on create). Creating in DB."
-                        )
-                        crud_webhook.create(
-                            db,
-                            obj_in={
-                                "external_id": str(hook.id),
-                                "url": webhook_url,
-                                "secret": secret,
-                                "events": "all",
-                                "project_id": project.id,
-                            },
-                        )
                     return True
-                elif e.response_code == 404:
-                    logger.error(
-                        f"Creating project hook for GitLab project '{project.identifier}' failed with 404. Project or hooks endpoint not found or no permission."
-                    )
-                    return False
                 elif e.response_code == 401:
                     logger.error(
                         f"GitLab authentication failed (401) creating project hook for '{project.identifier}'."
@@ -719,16 +698,16 @@ class GitLabTracker(BaseTracker):
         target_entity = None
         entity_type = ""
         entity_id_for_log = ""
-        webhook_id = int(webhook.external_id)
+        webhook_id = webhook.external_id
 
         try:
-            if webhook.organization_id:
+            if webhook.organization:
                 entity_type = "group"
                 entity_id_for_log = str(webhook.organization.identifier)
                 target_entity = self._make_request(
                     self.gl.groups.get, entity_id_for_log
                 )
-            elif webhook.project_id:
+            elif webhook.project:
                 entity_type = "project"
                 entity_id_for_log = str(webhook.project.identifier)
                 target_entity = self._make_request(
@@ -789,126 +768,103 @@ class GitLabTracker(BaseTracker):
 
     def unregister_all_webhooks(self, db: Session) -> Dict[str, int]:
         """
-        Unregister all webhooks for this tracker based on database records.
-
-        Args:
-            db: The database session.
-
-        Returns:
-            A dictionary summarizing the actions taken.
+        Unregister all webhooks for all organizations and projects managed by this tracker instance.
         """
-        results = {"unregistered": 0, "failed": 0, "not_found": 0}
-        logger.info(f"Unregistering all webhooks for GitLab tracker {self.tracker_id}.")
-        orgs = crud_organization.get_for_tracker(db, tracker_id=self.tracker_id)
-        for org in orgs:
-            results = self.unregister_all_webhooks_for_organization(db, org)
-        if results["unregistered"] > 0:
-            logger.info(
-                f"Unregistered {results['unregistered']} webhooks for GitLab tracker {self.tracker_id}."
-            )
-        else:
-            projects = crud_project.get_for_tracker(db, tracker_id=self.tracker_id)
-            for project in projects:
-                results = self.unregister_all_webhooks_for_project(db, project)
-            if results["unregistered"] > 0:
-                logger.info(
-                    f"Unregistered {results['unregistered']} webhooks for GitLab tracker {self.tracker_id}."
-                )
-            else:
-                logger.info(f"No webhooks found for GitLab tracker {self.tracker_id}.")
-
-        logger.info(f"GitLab unregister_all_webhooks summary: {results}")
+        results = {"unregistered": 0, "failed": 0}
+        organizations = crud_organization.get_multi(db, tracker_id=self.tracker_id)
+        for org in organizations:
+            self.unregister_all_webhooks_for_organization(db, org, results)
+            projects = crud_project.get_multi(db, organization_id=org.id)
+            for proj in projects:
+                self.unregister_all_webhooks_for_project(db, proj, results)
         return results
 
     def unregister_all_webhooks_for_organization(
-        self, db: Session, organization: Organization
-    ) -> Dict[str, int]:
-        results = {"unregistered": 0, "failed": 0, "not_found": 0}
-        webhooks = crud_webhook.get_all_by_organization(
-            db, organization_id=organization.id
-        )
+        self, db: Session, organization: Organization, results: Dict[str, int]
+    ):
+        webhooks = crud_webhook.get_multi(db, organization_id=organization.id)
         for webhook in webhooks:
-            if self.unregister_webhook(db, webhook=webhook):
+            if self.unregister_webhook(db, webhook):
                 results["unregistered"] += 1
             else:
                 results["failed"] += 1
-
-        logger.info(
-            f"GitLab unregister_all_webhooks_for_organization summary: {results}"
-        )
-        return results
 
     def unregister_all_webhooks_for_project(
-        self, db: Session, project: Project
-    ) -> Dict[str, int]:
-        results = {"unregistered": 0, "failed": 0, "not_found": 0}
-        webhooks = crud_webhook.get_all_by_project(db, project_id=project.id)
+        self, db: Session, project: Project, results: Dict[str, int]
+    ):
+        webhooks = crud_webhook.get_multi(db, project_id=project.id)
         for webhook in webhooks:
-            if self.unregister_webhook(db, webhook=webhook):
+            if self.unregister_webhook(db, webhook):
                 results["unregistered"] += 1
             else:
                 results["failed"] += 1
-
-        logger.info(f"GitLab unregister_all_webhooks_for_project summary: {results}")
-        return results
 
     def cleanup_stale_webhooks(self, spacebridge_url: str) -> dict:
         """
-        Deletes all webhooks from all accessible projects that point to a specific SpaceBridge URL.
-
-        This is useful for cleaning up stale webhooks if the SpaceBridge instance URL changes.
+        Cleans up stale webhooks from GitLab, for both groups and projects.
 
         Args:
-            spacebridge_url: The base URL of the SpaceBridge instance to remove.
+            spacebridge_url: The base URL of the SpaceBridge instance.
 
         Returns:
             A dictionary summarizing the actions taken, e.g., `{"unregistered": count, "failed": count}`.
         """
-        summary = {"unregistered": 0, "failed": 0}
-        logger.info(
-            f"Starting cleanup of stale GitLab webhooks for URL: {spacebridge_url}"
-        )
+        results = {"unregistered": 0, "failed": 0}
+        try:
+            groups = self._make_request(self.gl.groups.list, all=True)
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(f"Failed to retrieve groups for stale webhook cleanup: {e}")
+            return results
+
+        for group in groups:
+            try:
+                hooks = self._make_request(group.hooks.list, all=True)
+                for hook in hooks:
+                    if not hook.url.startswith(spacebridge_url):
+                        try:
+                            self._make_request(hook.delete)
+                            results["unregistered"] += 1
+                        except (
+                            TrackerConnectionError,
+                            TrackerResponseError,
+                        ) as delete_error:
+                            logger.error(
+                                f"Failed to delete stale group webhook {hook.id} for group {group.id}: {delete_error}"
+                            )
+                            results["failed"] += 1
+            except (TrackerConnectionError, TrackerResponseError) as list_error:
+                logger.error(f"Failed to list hooks for group {group.id}: {list_error}")
+                results["failed"] += 1
 
         try:
-            projects = self._make_request(self.gl.projects.list, all=True, owned=True)
-        except Exception as e:
-            logger.error(f"Failed to list GitLab projects for webhook cleanup: {e}")
-            return summary
+            projects = self._make_request(self.gl.projects.list, all=True)
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(f"Failed to retrieve projects for stale webhook cleanup: {e}")
+            return results
 
         for project in projects:
             try:
                 hooks = self._make_request(project.hooks.list, all=True)
                 for hook in hooks:
-                    if hook.url.startswith(spacebridge_url):
-                        logger.info(
-                            f"Found stale webhook {hook.id} in project {project.path_with_namespace} (URL: {hook.url}). Deleting."
-                        )
+                    if not hook.url.startswith(spacebridge_url):
                         try:
-                            self._make_request(project.hooks.delete, hook.id)
-                            summary["unregistered"] += 1
-                        except Exception as e:
+                            self._make_request(hook.delete)
+                            results["unregistered"] += 1
+                        except (
+                            TrackerConnectionError,
+                            TrackerResponseError,
+                        ) as delete_error:
                             logger.error(
-                                f"Failed to delete webhook {hook.id} from project {project.path_with_namespace}: {e}"
+                                f"Failed to delete stale project webhook {hook.id} for project {project.id}: {delete_error}"
                             )
-                            summary["failed"] += 1
-            except gitlab.exceptions.GitlabListError as e:
-                if e.response_code == 403:
-                    logger.warning(
-                        f"Permission denied to list hooks for project {project.path_with_namespace}. Skipping."
-                    )
-                else:
-                    logger.error(
-                        f"Failed to list webhooks for project {project.path_with_namespace}: {e}"
-                    )
-                    summary["failed"] += 1
-            except Exception as e:
+                            results["failed"] += 1
+            except (TrackerConnectionError, TrackerResponseError) as list_error:
                 logger.error(
-                    f"An unexpected error occurred while processing project {project.path_with_namespace}: {e}"
+                    f"Failed to list hooks for project {project.id}: {list_error}"
                 )
-                summary["failed"] += 1
+                results["failed"] += 1
 
-        logger.info(f"GitLab stale webhook cleanup summary: {summary}")
-        return summary
+        return results
 
     def is_webhook_registered(self, webhook: "Webhook") -> bool:
         """
@@ -923,141 +879,223 @@ class GitLabTracker(BaseTracker):
         if not webhook.external_id:
             return False
 
-        if webhook.project_id:
-            project = self._make_request(
-                self.gl.projects.get, webhook.project.identifier
-            )
+        if webhook.project:
             try:
-                project.hooks.get(webhook.external_id)
+                project = self._make_request(
+                    self.gl.projects.get, webhook.project.identifier
+                )
+                self._make_request(project.hooks.get, webhook.external_id)
                 return True
-            except gitlab.exceptions.GitlabGetError as e:
-                if e.response_code == 404:
+            except (TrackerResponseError, gitlab.exceptions.GitlabGetError) as e:
+                if hasattr(e, "response_code") and e.response_code == 404:
                     return False
                 raise
-        else:
-            group = self._make_request(
-                self.gl.groups.get, webhook.organization.identifier
-            )
+        elif webhook.organization:
             try:
-                group.hooks.get(webhook.external_id)
+                group = self._make_request(
+                    self.gl.groups.get, webhook.organization.identifier
+                )
+                self._make_request(group.hooks.get, webhook.external_id)
                 return True
-            except gitlab.exceptions.GitlabGetError as e:
-                if e.response_code == 404:
+            except (TrackerResponseError, gitlab.exceptions.GitlabGetError) as e:
+                if hasattr(e, "response_code") and e.response_code == 404:
                     return False
                 raise
+        return False
 
     def get_webhooks(self, organization_id: str) -> List[Dict[str, Any]]:
         """Get all webhooks for a specific group and its projects."""
         all_webhooks = []
-
-        # Get webhooks for the group
         try:
             group = self._make_request(self.gl.groups.get, organization_id)
-            hooks = self._make_request(group.hooks.list, all=True)
-            for hook in hooks:
-                all_webhooks.append(hook.attributes)
-        except Exception as e:
-            logger.error(f"Failed to get webhooks for group {organization_id}: {e}")
+            group_hooks = self._make_request(group.hooks.list, all=True)
+            all_webhooks.extend([h.attributes for h in group_hooks])
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(
+                f"Failed to retrieve group hooks for group {organization_id}: {e}"
+            )
 
-        # Get projects for the group and their webhooks
-        projects = self.get_projects(organization_id=organization_id)
+        projects = self.get_projects(organization_id)
         for proj in projects:
             proj_identifier = proj["id"]
             try:
                 project = self._make_request(self.gl.projects.get, proj_identifier)
-                hooks = self._make_request(project.hooks.list, all=True)
-                for hook in hooks:
-                    hook_data = hook.attributes
-                    hook_data["project_id"] = proj_identifier
-                    all_webhooks.append(hook_data)
-            except Exception as e:
+                project_hooks = self._make_request(project.hooks.list, all=True)
+                all_webhooks.extend([h.attributes for h in project_hooks])
+            except (TrackerConnectionError, TrackerResponseError) as e:
                 logger.error(
-                    f"Failed to get webhooks for project {proj_identifier}: {e}"
+                    f"Failed to retrieve project hooks for project {proj_identifier}: {e}"
                 )
         return all_webhooks
 
     def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
         """
-        Delete a webhook from the tracker.
-
-        Args:
-            webhook: The webhook to delete.
-
-        Returns:
-            Whether the webhook was deleted successfully.
+        Delete a webhook by its ID.
         """
         webhook_id = webhook.get("id")
         if not webhook_id:
             return False
 
-        if webhook.get("project_id"):
-            project = self._make_request(self.gl.projects.get, webhook["project_id"])
+        # Determine if it's a group or project hook
+        if "project_id" in webhook:
             try:
-                project.hooks.delete(webhook_id)
+                project = self._make_request(
+                    self.gl.projects.get, webhook["project_id"]
+                )
+                self._make_request(project.hooks.delete, webhook_id)
                 return True
-            except gitlab.exceptions.GitlabDeleteError as e:
+            except (TrackerConnectionError, TrackerResponseError) as e:
                 logger.error(f"Failed to delete project webhook {webhook_id}: {e}")
                 return False
-        else:
-            # This is a bit tricky as we don't have the group id in the webhook response
-            # We will have to iterate over all groups
-            organizations = self.get_organizations()
-            for org in organizations:
+        elif "group_id" in webhook:
+            try:
+                org = self._make_request(self.gl.groups.get, webhook["group_id"])
                 org_identifier = org["id"]
-                try:
-                    group = self._make_request(self.gl.groups.get, org_identifier)
-                    group.hooks.delete(webhook_id)
-                    return True
-                except gitlab.exceptions.GitlabDeleteError:
-                    continue
-                except Exception as e:
-                    logger.error(
-                        f"Failed to delete group webhook {webhook_id} from group {org_identifier}: {e}"
-                    )
-            return False
+                group = self._make_request(self.gl.groups.get, org_identifier)
+                self._make_request(group.hooks.delete, webhook_id)
+                return True
+            except (TrackerConnectionError, TrackerResponseError) as e:
+                logger.error(f"Failed to delete group webhook {webhook_id}: {e}")
+                return False
+        return False
 
     def is_webhook_registered_for_project(
         self, project: "Project", webhook_url: str
     ) -> bool:
         """
-        Check if a webhook is registered for a project.
-
-        Args:
-            project: The project to check.
-            webhook_url: The URL of the webhook.
-
-        Returns:
-            Whether the webhook is registered.
+        Check if a webhook is registered for a specific project.
         """
         try:
-            gl_project = self._make_request(self.gl.projects.get, project.identifier)
-            hooks = gl_project.hooks.list(all=True)
-            for hook in hooks:
-                if hook.url == webhook_url:
-                    return True
-            return False
-        except gitlab.exceptions.GitlabError:
+            gitlab_project = self._make_request(
+                self.gl.projects.get, project.identifier
+            )
+            hooks = self._make_request(gitlab_project.hooks.list, all=True)
+            return any(h.url == webhook_url for h in hooks)
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(
+                f"Failed to check webhooks for project {project.identifier}: {e}"
+            )
             return False
 
     def is_webhook_registered_for_organization(
         self, organization: "Organization", webhook_url: str
     ) -> bool:
         """
-        Check if a webhook is registered for an organization.
-
-        Args:
-            organization: The organization to check.
-            webhook_url: The URL of the webhook.
-
-        Returns:
-            Whether the webhook is registered.
+        Check if a webhook is registered for a specific organization (group).
         """
         try:
             group = self._make_request(self.gl.groups.get, organization.identifier)
-            hooks = group.hooks.list(all=True)
-            for hook in hooks:
-                if hook.url == webhook_url:
-                    return True
+            hooks = self._make_request(group.hooks.list, all=True)
+            return any(h.url == webhook_url for h in hooks)
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(
+                f"Failed to check webhooks for organization {organization.identifier}: {e}"
+            )
             return False
-        except gitlab.exceptions.GitlabError:
-            return False
+
+    def get_issue(
+        self, organization_id: str, project_id: str, issue_id: str
+    ) -> Dict[str, Any]:
+        """
+        Get a single issue from GitLab.
+
+        Args:
+            organization_id: GitLab group ID.
+            project_id: GitLab project ID.
+            issue_id: GitLab issue IID.
+
+        Returns:
+            A dictionary containing the issue data.
+        """
+        try:
+            project = self._make_request(self.gl.projects.get, project_id)
+            issue = self._make_request(project.issues.get, issue_id)
+        except gitlab.exceptions.GitlabGetError as e:
+            if e.response_code == 404:
+                raise TrackerResponseError(
+                    f"Issue {issue_id} not found in project {project_id}"
+                )
+            raise
+
+        project_slug = project.path_with_namespace
+        key = f"{project_slug}#{issue.iid}"
+
+        comments_data = []
+        try:
+            notes = self._make_request(
+                issue.notes.list, all=True, sort="asc", order_by="created_at"
+            )
+            for note in notes:
+                if note.system:
+                    continue
+
+                author = None
+                if hasattr(note, "author") and isinstance(note.author, dict):
+                    author = note.author.get("username")
+
+                try:
+                    created_at_dt = datetime.strptime(
+                        note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                    updated_at_dt = datetime.strptime(
+                        note.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                except (ValueError, TypeError):
+                    created_at_dt = datetime.now()
+                    if isinstance(note.created_at, str):
+                        try:
+                            created_at_dt = datetime.strptime(
+                                note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                            )
+                        except ValueError:
+                            pass
+                    updated_at_dt = created_at_dt
+
+                comments_data.append(
+                    {
+                        "id": str(note.id),
+                        "body": note.body or "",
+                        "author": author,
+                        "created_at": created_at_dt,
+                        "updated_at": updated_at_dt,
+                        "url": f"{issue.web_url}#note_{note.id}",
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Failed to fetch notes for issue {issue.iid}: {e}")
+
+        try:
+            issue_created_at = datetime.strptime(
+                issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+            )
+            issue_updated_at = datetime.strptime(
+                issue.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+            )
+        except (ValueError, TypeError):
+            issue_created_at = datetime.now()
+            if isinstance(issue.created_at, str):
+                try:
+                    issue_created_at = datetime.strptime(
+                        issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                except ValueError:
+                    pass
+            issue_updated_at = issue_created_at
+
+        return {
+            "external_id": str(issue.id),
+            "key": key,
+            "title": issue.title,
+            "description": issue.description or "",
+            "state": issue.state,
+            "created_at": issue_created_at,
+            "updated_at": issue_updated_at,
+            "labels": issue.labels,
+            "assignees": [
+                assignee["username"]
+                for assignee in issue.assignees
+                if isinstance(assignee, dict) and "username" in assignee
+            ],
+            "url": issue.web_url,
+            "comments": comments_data,
+        }

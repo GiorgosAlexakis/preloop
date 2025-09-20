@@ -52,7 +52,7 @@ class GitHubTracker(BaseTracker):
         self, endpoint: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
         """
-        Make a request to the GitHub API.
+        Make a request to the GitHub API, handling pagination.
 
         Args:
             endpoint: API endpoint to request.
@@ -66,20 +66,37 @@ class GitHubTracker(BaseTracker):
             TrackerConnectionError: If connection fails.
             TrackerResponseError: If response is invalid.
         """
-        try:
-            url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-            response = requests.get(url, headers=self.headers, params=params)
+        if params is None:
+            params = {}
+        # Set per_page to the max unless the user specified otherwise
+        params.setdefault("per_page", 100)
+        results = []
+        url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
+        while url:
+            try:
+                response = requests.get(url, headers=self.headers, params=params)
+                params = None  # Params are only for the first request
 
-            if response.status_code == 401:
-                raise TrackerAuthenticationError("GitHub authentication failed")
-            elif response.status_code >= 400:
-                raise TrackerResponseError(
-                    f"GitHub API error: {response.status_code} - {response.text}"
-                )
+                if response.status_code == 401:
+                    raise TrackerAuthenticationError("GitHub authentication failed")
+                elif response.status_code >= 400:
+                    raise TrackerResponseError(
+                        f"GitHub API error: {response.status_code} - {response.text}"
+                    )
 
-            return response.json()
-        except requests.RequestException as e:
-            raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
+                data = response.json()
+                if isinstance(data, list):
+                    results.extend(data)
+                else:
+                    return data  # Not a list, return as is
+
+                if "next" in response.links:
+                    url = response.links["next"]["url"]
+                else:
+                    url = None
+            except requests.RequestException as e:
+                raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
+        return results
 
     @retry(max_attempts=1, exceptions=(TrackerConnectionError, TrackerResponseError))
     def _make_request_delete(self, endpoint: str) -> bool:
@@ -204,7 +221,10 @@ class GitHubTracker(BaseTracker):
         return projects
 
     def get_issues(
-        self, organization_id: str, project_id: str, since: Optional[datetime] = None
+        self,
+        organization_id: str,
+        project_id: str,
+        since: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get issues for a repository from GitHub, including their comments,
@@ -266,6 +286,8 @@ class GitHubTracker(BaseTracker):
                 raw_comments_data = self._make_request(
                     comments_endpoint, params={"per_page": 100}
                 )
+                if isinstance(raw_comments_data, dict):
+                    raw_comments_data = [raw_comments_data]
                 for comment_item in raw_comments_data:
                     try:
                         created_at_dt = datetime.strptime(
@@ -571,7 +593,11 @@ class GitHubTracker(BaseTracker):
             logger.info(f"Skipping webhook unregistration for org '{org_identifier}'.")
             return True
 
-        endpoint = f"orgs/{org_identifier}/hooks/{webhook_id}"
+        if webhook.project:
+            repo_full_name = webhook.project.slug
+            endpoint = f"repos/{repo_full_name}/hooks/{webhook_id}"
+        else:
+            endpoint = f"orgs/{org_identifier}/hooks/{webhook_id}"
         try:
             url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
             response = requests.delete(url, headers=self.headers)
@@ -617,16 +643,18 @@ class GitHubTracker(BaseTracker):
             f"Starting to unregister all webhooks for tracker {self.tracker_id}."
         )
         try:
+            organizations = crud_organization.get_multi(db, tracker_id=self.tracker_id)
+            organization_ids = [org.id for org in organizations]
+
+            projects = crud_project.get_multi(db, organization_id__in=organization_ids)
+            project_ids = [proj.id for proj in projects]
+
             webhooks_to_delete = (
                 db.query(Webhook)
-                .join(Organization)
-                .filter(Organization.tracker_id == self.tracker_id)
-                .all()
-            ) + (
-                db.query(Webhook)
-                .join(Project)
-                .join(Organization)
-                .filter(Organization.tracker_id == self.tracker_id)
+                .filter(
+                    (Webhook.organization_id.in_(organization_ids))
+                    | (Webhook.project_id.in_(project_ids))
+                )
                 .all()
             )
 
@@ -635,16 +663,6 @@ class GitHubTracker(BaseTracker):
                 return results
 
             for webhook in webhooks_to_delete:
-                if webhook.organization_id:
-                    organization = crud_organization.get(db, id=webhook.organization_id)
-                    logger.info(
-                        f"Attempting to unregister webhook {webhook.external_id} for org '{organization.identifier}'..."
-                    )
-                else:
-                    project = crud_project.get(db, id=webhook.project_id)
-                    logger.info(
-                        f"Attempting to unregister webhook {webhook.external_id} for project '{project.name}'..."
-                    )
                 if self.unregister_webhook(db=db, webhook=webhook):
                     results["unregistered"] += 1
                 else:
@@ -722,28 +740,41 @@ class GitHubTracker(BaseTracker):
     def _cleanup_project_webhooks(self, spacebridge_url: str, results: dict) -> None:
         """Helper to clean up repository-level webhooks."""
         try:
-            repos = self._make_request("user/repos", {"per_page": 100})
+            organizations = self.get_organizations()
         except (TrackerConnectionError, TrackerResponseError) as e:
-            logger.error(f"Failed to retrieve repositories: {e}")
+            logger.error(f"Failed to retrieve organizations: {e}")
             return
 
-        for repo in repos:
-            repo_full_name = repo.get("full_name")
-            if not repo_full_name:
+        for org in organizations:
+            org_id = org.get("id")
+            if not org_id:
                 continue
 
-            logger.info(f"Checking webhooks for repository: {repo_full_name}")
             try:
-                hooks = self._make_request(f"repos/{repo_full_name}/hooks")
+                projects = self.get_projects(org_id)
             except (TrackerConnectionError, TrackerResponseError) as e:
-                logger.error(f"Failed to list webhooks for {repo_full_name}: {e}")
-                results["failed"] += 1
+                logger.error(
+                    f"Failed to retrieve projects for org {org.get('name')}: {e}"
+                )
                 continue
 
-            for hook in hooks:
-                self._process_hook(
-                    hook, spacebridge_url, results, f"repos/{repo_full_name}/hooks"
-                )
+            for repo in projects:
+                repo_full_name = repo.get("meta_data", {}).get("full_name")
+                if not repo_full_name:
+                    continue
+
+                logger.info(f"Checking webhooks for repository: {repo_full_name}")
+                try:
+                    hooks = self._make_request(f"repos/{repo_full_name}/hooks")
+                except (TrackerConnectionError, TrackerResponseError) as e:
+                    logger.error(f"Failed to list webhooks for {repo_full_name}: {e}")
+                    results["failed"] += 1
+                    continue
+
+                for hook in hooks:
+                    self._process_hook(
+                        hook, spacebridge_url, results, f"repos/{repo_full_name}/hooks"
+                    )
 
     def _process_hook(
         self, hook: dict, spacebridge_url: str, results: dict, base_endpoint: str
@@ -756,7 +787,7 @@ class GitHubTracker(BaseTracker):
         if not all([hook_id, hook_url]):
             return
 
-        if hook_url.startswith(spacebridge_url):
+        if not hook_url.startswith(spacebridge_url):
             logger.info(
                 f"Found stale webhook {hook_id} in {base_endpoint} pointing to {hook_url}. Deleting..."
             )
@@ -812,7 +843,9 @@ class GitHubTracker(BaseTracker):
         for repo in repos:
             repo_full_name = repo["meta_data"]["full_name"]
             try:
-                repo_webhooks = self._make_request(f"repos/{repo_full_name}/hooks")
+                repo_webhooks = self._make_request(
+                    f"repos/{repo_full_name}/hooks", params={"per_page": 100}
+                )
                 all_webhooks.extend(repo_webhooks)
             except TrackerResponseError as e:
                 logger.error(f"Failed to get webhooks for repo {repo_full_name}: {e}")
