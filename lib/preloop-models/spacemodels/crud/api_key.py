@@ -21,10 +21,11 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         obj_in: Dict[str, Any],
         owner_username: str,
         expires_days: Optional[int] = 365,
+        key_value: Optional[str] = None,
     ) -> ApiKey:
         """Create a new API key with owner."""
         obj_in_data = dict(obj_in)
-        key_value = secrets.token_urlsafe(32)
+        key_value = key_value or secrets.token_urlsafe(32)
 
         expires_at = None
         if expires_days is not None:
@@ -131,7 +132,7 @@ class CRUDApiKey(CRUDBase[ApiKey]):
             return None
 
         # Key is expired
-        if key_obj.is_expired():
+        if key_obj.is_expired:
             return None
 
         # Check scopes if required
