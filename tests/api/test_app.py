@@ -14,9 +14,17 @@ from spacebridge.api.app import create_app
 @pytest.fixture
 def client():
     """Fixture to create a test client for the FastAPI app."""
-    app = create_app()
-    with TestClient(app) as test_client:
-        yield test_client
+    with (
+        patch("spacebridge.api.app.connect_nats", new_callable=AsyncMock),
+        patch("spacebridge.api.app.close_nats", new_callable=AsyncMock),
+        patch(
+            "spacebridge.services.websocket_manager.nats_consumer",
+            new_callable=AsyncMock,
+        ),
+    ):
+        app = create_app()
+        with TestClient(app) as test_client:
+            yield test_client
 
 
 def test_pyinstrument_middleware_disabled_by_default(client):

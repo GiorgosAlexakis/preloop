@@ -5,11 +5,11 @@ variables:
   GIT_SUBMODULE_STRATEGY: "recursive"
   GITLAB_TOKEN: $GITLAB_TOKEN
   STAGING_DOMAIN: "staging.spacebridge.io"
-  SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
   STRIPE_SECRET_KEY_PROD: $STRIPE_SECRET_KEY_PROD
   STRIPE_WEBHOOK_SECRET_PROD: $STRIPE_WEBHOOK_SECRET_PROD
   STRIPE_SECRET_KEY_STAGING: $STRIPE_SECRET_KEY_STAGING
   STRIPE_WEBHOOK_SECRET_STAGING: $STRIPE_WEBHOOK_SECRET_STAGING
+  FF_TIMESTAMPS: "true"
 
 cache:
   paths:
@@ -59,7 +59,7 @@ pre-commit:
     - pre-commit run --all-files --show-diff
     - ruff check
 
-pytest:
+test:unit:
   stage: test
   needs: [build]
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
@@ -77,6 +77,8 @@ pytest:
     - pip install pytest pytest-cov loguru
     - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
     - pip install -e ".[dev]"
+    - mkdir -p ./SpaceLit/dist/assets
+    - touch ./SpaceLit/dist/index.html
     - python ./spacesync/scripts/init_db.py --force
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
@@ -90,6 +92,8 @@ staging:
   when: manual
   environment:
     name: staging
+  variables:
+    SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
   script:
     - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
@@ -148,6 +152,8 @@ prod:
   #   - /^v\d+\.\d+\.\d+$/
   environment:
     name: production
+  variables:
+    SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
   script:
     - set -e
     - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
@@ -253,11 +259,19 @@ test:
       --set worker.pools[2].name=webhook
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event
+      --set seed.enabled=true
+      --set seed.email=$SPACEBRIDGE_TEST_EMAIL
+      --set seed.username=$SPACEBRIDGE_TEST_USERNAME
+      --set seed.password=$SPACEBRIDGE_TEST_PASSWORD
+      --set seed.apiKey=$SPACEBRIDGE_TEST_API_KEY
 
 test:integration:api:
   stage: test
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
+  variables:
+    SPACEBRIDGE_TEST_URL: $CI_ENVIRONMENT_URL
+    SPACEBRIDGE_TEST_API_KEY: $SPACEBRIDGE_TEST_API_KEY
   script:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy
     - playwright install
@@ -268,6 +282,10 @@ test:integration:ui:
   stage: test
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
+  variables:
+    SPACEBRIDGE_TEST_URL: $CI_ENVIRONMENT_URL
+    SPACEBRIDGE_TEST_USERNAME: $SPACEBRIDGE_TEST_USERNAME
+    SPACEBRIDGE_TEST_PASSWORD: $SPACEBRIDGE_TEST_PASSWORD
   script:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy
     - playwright install

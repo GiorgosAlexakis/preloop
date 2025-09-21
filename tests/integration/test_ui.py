@@ -3,8 +3,8 @@ import pytest
 from playwright.sync_api import Page, expect
 
 BASE_URL = os.environ.get("SPACEBRIDGE_TEST_URL")
-USERNAME = os.environ.get("SPACEBRIDGE_USERNAME")
-PASSWORD = os.environ.get("SPACEBRIDGE_PASSWORD")
+USERNAME = os.environ.get("SPACEBRIDGE_TEST_USERNAME")
+PASSWORD = os.environ.get("SPACEBRIDGE_TEST_PASSWORD")
 
 
 @pytest.mark.skipif(

@@ -197,3 +197,11 @@ nats:
 stripe:
   secretKey: ""
   webhookSecret: ""
+
+# Test user seeding configuration
+seed:
+  enabled: false
+  username: "test"
+  email: "test@example.com"
+  password: ""
+  apiKey: ""
