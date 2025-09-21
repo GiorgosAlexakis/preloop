@@ -1,12 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-migration-job
+  name: {{ include "spacebridge.fullname" . }}-init-db-job
   labels:
     {{- include "spacebridge.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-upgrade
-    "helm.sh/hook-weight": "0"
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": hook-succeeded
 spec:
   template:
@@ -16,12 +16,15 @@ spec:
     spec:
       restartPolicy: Never
       containers:
-        - name: migration-runner
+        - name: init-db-runner
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
           command: ["/bin/sh", "-c"]
-          args: ["cd /app/SpaceModels && alembic upgrade head"]
+          args:
+            - |
+              python /app/spacesync/scripts/init_db.py --force && \
+              cd /app/SpaceModels && \
+              alembic stamp head
           env:
             - name: DATABASE_URL
               value: {{ .Values.environment.databaseUrl | quote }}
-            # Add other necessary environment variables from secrets/configmaps if needed

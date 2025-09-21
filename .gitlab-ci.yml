@@ -26,6 +26,8 @@ build:
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
+  variables:
+    SENTRY_DSN:
   script:
     - mkdir -p /kaniko/.docker
     - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64)\"}}}" > /kaniko/.docker/config.json
@@ -69,13 +71,13 @@ pytest:
     POSTGRES_USER: test_user
     POSTGRES_PASSWORD: test_password
     DATABASE_URL: postgresql://test_user:test_password@postgres:5432/test_db
+    SENTRY_DSN:
   before_script:
     - pip install -U pip
     - pip install pytest pytest-cov loguru
     - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
     - pip install -e ".[dev]"
     - python ./spacesync/scripts/init_db.py --force
-
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
@@ -257,26 +259,26 @@ test:integration:api:
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   script:
-    - pip install -e ".[dev]"
+    - pip install pytest httpx playwright fastapi dotenv sqlalchemy
     - playwright install
     - export SPACEBRIDGE_TEST_URL=$CI_ENVIRONMENT_URL
-    - pytest tests/integration/test_api.py
+    - pytest --confcutdir=tests/integration tests/integration/test_api.py
 
 test:integration:ui:
   stage: test
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   script:
-    - pip install -e ".[dev]"
+    - pip install pytest httpx playwright fastapi dotenv sqlalchemy
     - playwright install
     - export SPACEBRIDGE_TEST_URL=$CI_ENVIRONMENT_URL
-    - pytest tests/integration/test_ui.py
+    - pytest --confcutdir=tests/integration tests/integration/test_ui.py
 
 stop_test:
   stage: cleanup
   needs: ["test:integration:api", "test:integration:ui"]
   image: dtzar/helm-kubectl:3.13.2
-  when: always
+  when: on_success
   environment:
     name: test/$CI_COMMIT_REF_NAME
     action: stop
@@ -286,6 +288,7 @@ stop_test:
     - main
   script:
     - helm delete $CI_COMMIT_REF_NAME --namespace spacebridge-test
+    - kubectl delete job --namespace spacebridge-test $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job
 
 smoke:
   stage: test
