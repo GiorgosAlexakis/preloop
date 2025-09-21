@@ -27,7 +27,9 @@ def notify_admins(subject: str, message: str, message_html: str = None):
 
     logger.info(f"Notifying admins: {subject} - {message}")
     admin_email = settings.product_team_email
-    send_email(admin_email, subject, message, message_html)
+    send_email(
+        admin_email, f"[{settings.spacebridge_url}] {subject}", message, message_html
+    )
 
 
 async def process_webhook_event(
