@@ -23,5 +23,4 @@ spec:
           args: ["cd /app/SpaceModels && alembic upgrade head"]
           env:
             - name: DATABASE_URL
-              value: {{ .Values.environment.databaseUrl | quote }}
-            # Add other necessary environment variables from secrets/configmaps if needed
+              value: {{ include "spacebridge.databaseUrl" . }}

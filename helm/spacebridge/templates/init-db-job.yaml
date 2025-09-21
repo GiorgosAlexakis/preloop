@@ -27,4 +27,4 @@ spec:
               alembic stamp head
           env:
             - name: DATABASE_URL
-              value: {{ .Values.environment.databaseUrl | quote }}
+              value: {{ include "spacebridge.databaseUrl" . }}

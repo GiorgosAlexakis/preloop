@@ -1,8 +1,13 @@
 from datetime import datetime, timezone
 import uuid
+from unittest.mock import patch, AsyncMock
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from spacebridge.api.app import create_app
+from spacemodels.db.session import get_db_session
 from spacemodels.models import (
     Account,
     Issue,
@@ -11,22 +16,54 @@ from spacemodels.models import (
     Tracker,
     TrackerScopeRule,
 )
+from spacebridge.api.auth import get_current_active_user
 
 
+@pytest.fixture(scope="module")
+def test_app():
+    """Create a FastAPI app instance for the module, with NATS mocked out."""
+    with (
+        patch("spacebridge.api.app.connect_nats", new_callable=AsyncMock),
+        patch("spacebridge.api.app.close_nats", new_callable=AsyncMock),
+    ):
+        app = create_app()
+        yield app
+
+
+@pytest.fixture
+def client(test_app: "FastAPI", db_session: Session, test_user: Account):
+    """Create a test client with authenticated user and DB session overrides."""
+
+    def override_get_db():
+        yield db_session
+
+    def override_get_current_user():
+        return test_user
+
+    test_app.dependency_overrides[get_db_session] = override_get_db
+    test_app.dependency_overrides[get_current_active_user] = override_get_current_user
+
+    with TestClient(test_app) as c:
+        yield c
+
+    test_app.dependency_overrides.clear()
+
+
+@patch("spacebridge.api.endpoints.issues.get_tracker_client", new_callable=AsyncMock)
 def test_search_issues_simple(
+    mock_get_tracker_client: AsyncMock,
     client: TestClient,
     db_session: Session,
     test_user: Account,
 ):
     """Test basic issue search."""
-    # Create and commit test data
     tracker = Tracker(
         id=str(uuid.uuid4()),
         name="Test Tracker",
         tracker_type="github",
         url="http://test.com",
         api_key="test_key",
-        account_id=test_user.id,  # Use the authenticated user's ID
+        account_id=test_user.id,
     )
     org = Organization(
         id=str(uuid.uuid4()),
@@ -60,30 +97,29 @@ def test_search_issues_simple(
     db_session.add_all([tracker, org, project, issue, scope_rule])
     db_session.commit()
 
-    # Make the API call
     response = client.get("/api/v1/issues/search?query=Test")
 
-    # Assert the response
     assert response.status_code == 200
     response_data = response.json()
     assert len(response_data) == 1
     assert response_data[0]["title"] == "Test Issue"
 
 
+@patch("spacebridge.api.endpoints.issues.get_tracker_client", new_callable=AsyncMock)
 def test_search_issues_with_project_filter(
+    mock_get_tracker_client: AsyncMock,
     client: TestClient,
     db_session: Session,
     test_user: Account,
 ):
     """Test issue search with a project filter."""
-    # Create and commit test data
     tracker = Tracker(
         id=str(uuid.uuid4()),
         name="Test Tracker 2",
         tracker_type="github",
         url="http://test2.com",
         api_key="test_key_2",
-        account_id=test_user.id,  # Use the authenticated user's ID
+        account_id=test_user.id,
     )
     org = Organization(
         id=str(uuid.uuid4()),
@@ -117,12 +153,10 @@ def test_search_issues_with_project_filter(
     db_session.add_all([tracker, org, project, issue, scope_rule])
     db_session.commit()
 
-    # Make the API call
     response = client.get(
         f"/api/v1/issues/search?query=Project&organization={org.name}&project={project.name}"
     )
 
-    # Assert the response
     assert response.status_code == 200
     response_data = response.json()
     assert len(response_data) == 1

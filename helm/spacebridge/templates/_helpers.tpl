@@ -69,7 +69,7 @@ Create the database connection URL
 {{- if .Values.database.external -}}
 postgresql://{{ .Values.database.externalDatabase.user }}:{{ .Values.database.externalDatabase.password }}@{{ .Values.database.externalDatabase.host }}:{{ .Values.database.externalDatabase.port }}/{{ .Values.database.externalDatabase.database }}
 {{- else -}}
-postgresql://{{ .Values.database.postgresql.auth.username }}:{{ .Values.database.postgresql.auth.password }}@{{ .Release.Name }}-postgresql:{{ .Values.database.postgresql.service.port }}/{{ .Values.database.postgresql.auth.database }}
+postgresql://{{ .Values.database.cnpg.auth.username | default "postgres" }}:{{ .Values.database.cnpg.auth.password | default "" }}@{{ .Release.Name }}-{{ .Chart.Name }}-db-rw:5432/{{ .Values.database.cnpg.auth.database }}
 {{- end -}}
 {{- else -}}
 {{ .Values.environment.databaseUrl }}

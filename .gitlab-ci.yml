@@ -9,6 +9,10 @@ variables:
   STRIPE_WEBHOOK_SECRET_PROD: $STRIPE_WEBHOOK_SECRET_PROD
   STRIPE_SECRET_KEY_STAGING: $STRIPE_SECRET_KEY_STAGING
   STRIPE_WEBHOOK_SECRET_STAGING: $STRIPE_WEBHOOK_SECRET_STAGING
+  SPACEBRIDGE_TEST_PASSWORD: $SPACEBRIDGE_TEST_PASSWORD
+  SPACEBRIDGE_TEST_USERNAME: $SPACEBRIDGE_TEST_USERNAME
+  SPACEBRIDGE_TEST_EMAIL: $SPACEBRIDGE_TEST_EMAIL
+  SPACEBRIDGE_TEST_API_KEY: $SPACEBRIDGE_TEST_API_KEY
   FF_TIMESTAMPS: "true"
 
 cache:
@@ -59,7 +63,7 @@ pre-commit:
     - pre-commit run --all-files --show-diff
     - ruff check
 
-test:unit:
+.test:unit:template:
   stage: test
   needs: [build]
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
@@ -83,8 +87,189 @@ test:unit:
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
-    # Explicitly list top-level and SpaceModels tests, let pyproject.toml handle spacesync tests discovery
-    - pytest -v --cov --cov-report=xml --cov-report=term-missing --cov-fail-under=50
+    - export COVERAGE_FILE=".coverage.${CI_JOB_NAME}"
+    - pytest -v --cov --cov-report= --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
+  artifacts:
+    paths:
+      - ".coverage.*"
+      - "report-*.xml"
+    expire_in: 1 day
+
+test:unit:spacemodels:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "SpaceModels/tests"
+
+test:unit:spacesync:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "spacesync/tests"
+
+test:unit:spacebridge-other:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/api tests/tools tests/trackers"
+
+test:unit:spacebridge-endpoints-ai-models:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_ai_models.py"
+
+# test:unit:spacebridge-endpoints-billing:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_billing.py"
+
+# test:unit:spacebridge-endpoints-comments:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_comments.py"
+
+# test:unit:spacebridge-endpoints-embedding:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_embedding.py"
+
+test:unit:spacebridge-endpoints-flows:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_flows.py"
+
+# test:unit:spacebridge-endpoints-health:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_health.py"
+
+# test:unit:spacebridge-endpoints-issue-compliance:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_issue_compliance.py"
+
+test:unit:spacebridge-endpoints-issue-dependencies:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_issue_dependencies.py"
+
+test:unit:spacebridge-endpoints-issue-duplicates:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_issue_duplicates.py"
+
+test:unit:spacebridge-endpoints-issues:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_issues.py"
+
+# test:unit:spacebridge-endpoints-organizations:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_organizations.py"
+
+# test:unit:spacebridge-endpoints-projects:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_projects.py"
+
+# test:unit:spacebridge-endpoints-search:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_search.py"
+
+test:unit:spacebridge-endpoints-trackers:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_trackers.py"
+
+# test:unit:spacebridge-endpoints-version:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_version.py"
+
+test:unit:spacebridge-endpoints-webhooks:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_webhooks.py"
+
+# test:unit:spacebridge-endpoints-websockets:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_websockets.py"
+
+test:coverage:
+  stage: test
+  needs:
+    - test:unit:spacemodels
+    - test:unit:spacesync
+    - test:unit:spacebridge-other
+    - test:unit:spacebridge-endpoints-ai-models
+    # - test:unit:spacebridge-endpoints-billing
+    # - test:unit:spacebridge-endpoints-comments
+    # - test:unit:spacebridge-endpoints-embedding
+    - test:unit:spacebridge-endpoints-flows
+    # - test:unit:spacebridge-endpoints-health
+    # - test:unit:spacebridge-endpoints-issue-compliance
+    - test:unit:spacebridge-endpoints-issue-dependencies
+    - test:unit:spacebridge-endpoints-issue-duplicates
+    - test:unit:spacebridge-endpoints-issues
+    # - test:unit:spacebridge-endpoints-organizations
+    # - test:unit:spacebridge-endpoints-projects
+    # - test:unit:spacebridge-endpoints-search
+    - test:unit:spacebridge-endpoints-trackers
+    # - test:unit:spacebridge-endpoints-version
+    - test:unit:spacebridge-endpoints-webhooks
+    # - test:unit:spacebridge-endpoints-websockets
+  image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+  before_script:
+    - pip install coverage junitparser
+  script:
+    - ls -la
+    - |
+      python -c "
+      import glob
+      from junitparser import JUnitXml, TestSuite
+
+      merged_suite = TestSuite('merged-results')
+      total_tests = 0
+      total_failures = 0
+      total_errors = 0
+      total_skipped = 0
+
+      xml_files = glob.glob('report-*.xml')
+      if not xml_files:
+          print('No JUnit XML reports found to merge.')
+      else:
+          for file_path in xml_files:
+              try:
+                  xml = JUnitXml.fromfile(file_path)
+                  for suite in xml:
+                      merged_suite.add_testsuite(suite)
+              except Exception as e:
+                  print(f'Error processing file {file_path}: {e}')
+
+          merged_suite.update_statistics()
+          total_tests = merged_suite.tests
+          total_failures = merged_suite.failures
+          total_errors = merged_suite.errors
+          total_skipped = merged_suite.skipped
+
+          merged_suite.write('merged-report.xml')
+
+      print('================ Test Summary ================')
+      print(f'Total tests: {total_tests}')
+      print(f'Failures: {total_failures}')
+      print(f'Errors: {total_errors}')
+      print(f'Skipped: {total_skipped}')
+      print('==============================================')
+      "
+    - coverage combine
+    - coverage report --fail-under=50
+    - coverage xml -o coverage.xml
+
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
 
 staging:
   stage: deploy
@@ -133,6 +318,7 @@ staging:
       --set worker.pools[2].name=webhook
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event
+      --set database.cnpg.name=spacebridge-db
 
     - echo "Helm deployment finished."
   artifacts:
@@ -199,6 +385,7 @@ prod:
       --set worker.pools[2].name=webhook
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event
+      --set database.cnpg.name=spacebridge-db
     - echo "Helm deployment finished."
   artifacts:
     paths:
@@ -270,12 +457,10 @@ test:integration:api:
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   variables:
-    SPACEBRIDGE_TEST_URL: $CI_ENVIRONMENT_URL
-    SPACEBRIDGE_TEST_API_KEY: $SPACEBRIDGE_TEST_API_KEY
+    SPACEBRIDGE_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.spacebridge.io"
   script:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy
     - playwright install
-    - export SPACEBRIDGE_TEST_URL=$CI_ENVIRONMENT_URL
     - pytest --confcutdir=tests/integration tests/integration/test_api.py
 
 test:integration:ui:
@@ -283,13 +468,10 @@ test:integration:ui:
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   variables:
-    SPACEBRIDGE_TEST_URL: $CI_ENVIRONMENT_URL
-    SPACEBRIDGE_TEST_USERNAME: $SPACEBRIDGE_TEST_USERNAME
-    SPACEBRIDGE_TEST_PASSWORD: $SPACEBRIDGE_TEST_PASSWORD
+    SPACEBRIDGE_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.spacebridge.io"
   script:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy
     - playwright install
-    - export SPACEBRIDGE_TEST_URL=$CI_ENVIRONMENT_URL
     - pytest --confcutdir=tests/integration tests/integration/test_ui.py
 
 stop_test:

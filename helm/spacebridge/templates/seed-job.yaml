@@ -23,7 +23,7 @@ spec:
           command: ["python", "/app/scripts/seed_test_user.py"]
           env:
             - name: DATABASE_URL
-              value: {{ .Values.environment.databaseUrl | quote }}
+              value: {{ include "spacebridge.databaseUrl" . }}
             - name: TEST_USER_EMAIL
               value: {{ .Values.seed.email | quote }}
             - name: TEST_USER_PASSWORD
