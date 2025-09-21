@@ -48,7 +48,7 @@ def seed_test_user(email: str, password: str, api_key: str):
         user_in = {
             "email": email,
             "hashed_password": get_password_hash(password),
-            "username": email.split("@")[0],
+            "username": os.getenv("TEST_USER_USERNAME", "test_user"),
             "full_name": "Test User",
             "is_active": True,
             "email_verified": True,
@@ -64,9 +64,12 @@ def seed_test_user(email: str, password: str, api_key: str):
         click.echo("API key already exists for the test user.")
     else:
         click.echo("Creating API key for the test user...")
-        api_key_in = ApiKeyCreate(name="Test API Key", key=api_key, owner_id=user.id)
+        api_key_in = ApiKeyCreate(name="Test API Key")
         crud_api_key.create_with_owner(
-            db_session, obj_in=api_key_in, owner_username=user.username
+            db_session,
+            obj_in=api_key_in,
+            owner_username=user.username,
+            key_value=api_key,
         )
         click.echo("API key created successfully.")
 

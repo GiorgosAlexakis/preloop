@@ -158,7 +158,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                     )
 
                     # Check if the API key has expired
-                    if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
+                    if api_key.is_expired:
                         logger.warning(f"API key expired: {api_key.expires_at}")
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
