@@ -5,6 +5,10 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from typing import Optional
 
 import pytest
+
+from fastapi import HTTPException
+from spacebridge.api.endpoints import webhooks
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -617,3 +621,47 @@ class TestWebhooksEndpoint:
 
         assert response.status_code == 200
         assert response.json()["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+@patch("spacemodels.db.session.get_db_session")
+@patch("spacesync.services.event_bus.get_task_publisher")
+async def test_receive_webhook_unsupported_tracker(
+    mock_get_task_publisher, mock_get_db_session
+):
+    """
+    Tests the receive_webhook function with an unsupported tracker type.
+    """
+    request = AsyncMock()
+    request.body = AsyncMock(return_value=b"{}")
+    with pytest.raises(HTTPException):
+        await webhooks.receive_webhook("invalid", "123", request)
+
+
+@pytest.mark.asyncio
+@patch("spacemodels.db.session.get_db_session")
+@patch("spacesync.services.event_bus.get_task_publisher")
+async def test_receive_webhook_github_success(
+    mock_get_task_publisher, mock_get_db_session
+):
+    """
+    Tests the receive_webhook function for a successful GitHub webhook.
+    """
+    request = AsyncMock()
+    request.body = AsyncMock(return_value=b'{"test": "payload"}')
+    request.headers = {"X-GitHub-Event": "push", "X-Hub-Signature-256": "sha256=test"}
+
+    db_session = MagicMock()
+    organization = MagicMock()
+    organization.webhook_secret = "secret"
+    db_session.query.return_value.options.return_value.filter.return_value.first.return_value = organization
+    mock_get_db_session.return_value = db_session
+
+    task_publisher = AsyncMock()
+    mock_get_task_publisher.return_value = task_publisher
+
+    with patch("hmac.compare_digest", return_value=True):
+        result = await webhooks.receive_webhook(
+            "github", "123", request, db_session, task_publisher
+        )
+        assert result["status"] == "success"

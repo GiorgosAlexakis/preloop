@@ -100,6 +100,11 @@ test:unit:spacemodels:
   variables:
     TEST_PATHS: "SpaceModels/tests"
 
+# test:unit:mcp:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "mcp/tests"
+
 test:unit:spacesync:
   extends: .test:unit:template
   variables:
@@ -108,7 +113,7 @@ test:unit:spacesync:
 test:unit:spacebridge-other:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/api tests/tools tests/trackers"
+    TEST_PATHS: "tests/test_*.py tests/tools tests/trackers"
 
 test:unit:spacebridge-endpoints-ai-models:
   extends: .test:unit:template
@@ -120,10 +125,10 @@ test:unit:spacebridge-endpoints-ai-models:
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_billing.py"
 
-# test:unit:spacebridge-endpoints-comments:
-#   extends: .test:unit:template
-#   variables:
-#     TEST_PATHS: "tests/endpoints/test_comments.py"
+test:unit:spacebridge-endpoints-comments:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_comments.py"
 
 # test:unit:spacebridge-endpoints-embedding:
 #   extends: .test:unit:template
@@ -199,11 +204,12 @@ test:coverage:
   stage: test
   needs:
     - test:unit:spacemodels
+    # - test:unit:mcp
     - test:unit:spacesync
     - test:unit:spacebridge-other
     - test:unit:spacebridge-endpoints-ai-models
     # - test:unit:spacebridge-endpoints-billing
-    # - test:unit:spacebridge-endpoints-comments
+    - test:unit:spacebridge-endpoints-comments
     # - test:unit:spacebridge-endpoints-embedding
     - test:unit:spacebridge-endpoints-flows
     # - test:unit:spacebridge-endpoints-health
@@ -459,7 +465,7 @@ test:integration:api:
   variables:
     SPACEBRIDGE_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.spacebridge.io"
   script:
-    - pip install pytest httpx playwright fastapi dotenv sqlalchemy
+    - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
     - playwright install
     - pytest --confcutdir=tests/integration tests/integration/test_api.py
 
@@ -470,7 +476,7 @@ test:integration:ui:
   variables:
     SPACEBRIDGE_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.spacebridge.io"
   script:
-    - pip install pytest httpx playwright fastapi dotenv sqlalchemy
+    - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
     - playwright install
     - pytest --confcutdir=tests/integration tests/integration/test_ui.py
 

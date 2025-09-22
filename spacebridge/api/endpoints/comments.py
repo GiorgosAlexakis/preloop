@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.api.endpoints.issues import get_tracker_client
 from spacebridge.schemas.comment import CommentCreate, CommentList, CommentResponse
-from spacebridge.trackers.base import IssueComment as TrackerComment
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.account import Account
 from spacebridge.schemas.comment import CommentSearchResults
@@ -125,11 +124,7 @@ async def add_issue_comment(
             raise HTTPException(status_code=404, detail="Issue not found")
 
         # Create the comment
-        tracker_comment = TrackerComment(
-            body=comment.body,
-            meta_data=comment.meta_data or {},
-        )
-        created_comment = await tracker_client.add_comment(issue_id, tracker_comment)
+        created_comment = await tracker_client.add_comment(issue_id, comment.body)
 
         # Convert tracker comment to API response model
         return CommentResponse(
@@ -273,20 +268,19 @@ async def search_comments(
                 )
 
         elif search_type == "full_text":
+            # TODO: implement full-text search
             # For full-text, crud_comment.search_full_text expects single ID strings or None
-            raw_results, count = crud_comment.search_full_text(
-                db,
-                query_str=query or "",
-                limit=limit,
-                skip=0,
-                issue_id=issue_id,
-                project_id=project_id,  # Pass single string or None
-                organization_id=organization_id,  # Pass single string or None
-                author=author,
-                account_id=current_user.id,
-                # TODO: Consider if accessible_tracker_ids needs to be passed to search_full_text for pre-filtering
-            )
-            total_comments = count
+            if author:
+                raw_results = crud_comment.get_multi_by_author(
+                    db, author=author, limit=limit, account_id=current_user.id
+                )
+            elif issue_id:
+                raw_results = crud_comment.get_multi_by_issue(
+                    db, issue_id=issue_id, limit=limit, account_id=current_user.id
+                )
+            else:
+                raw_results = []
+            total_comments = len(raw_results)
 
             for comment_obj in raw_results:
                 parent_issue = db.get(Issue, comment_obj.issue_id)

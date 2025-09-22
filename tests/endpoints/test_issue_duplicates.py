@@ -3,6 +3,9 @@ from unittest.mock import AsyncMock, MagicMock
 from typing import Tuple
 from fastapi import HTTPException
 from pytest_mock import MockerFixture
+from unittest.mock import patch
+
+from spacebridge.api.endpoints import issue_duplicates
 
 from spacebridge.api.endpoints.issue_duplicates import (
     execute_issue_duplicate_resolution,
@@ -242,3 +245,54 @@ async def test_execute_resolution_invalid_type(mock_issues, mocker: MockerFixtur
         )
     assert excinfo.value.status_code == 400
     assert "Invalid resolution type" in excinfo.value.detail
+
+
+@patch("spacebridge.api.endpoints.issue_duplicates.crud_issue_duplicate.get_multi")
+def test_get_duplicate_issues_success(mock_get_multi):
+    """
+    Tests the get_duplicate_issues function for a successful request.
+    """
+    mock_get_multi.return_value = []
+    db_session = MagicMock()
+    current_user = MagicMock()
+
+    result = issue_duplicates.get_duplicate_issues(
+        db=db_session, current_user=current_user
+    )
+    assert result == []
+
+
+@patch(
+    "spacebridge.api.endpoints.issue_duplicates.crud_issue_duplicate.get_by_issue_ids"
+)
+def test_check_or_create_issue_duplicate_existing(mock_get_by_issue_ids):
+    """
+    Tests the check_or_create_issue_duplicate function when a duplicate already exists.
+    """
+    mock_get_by_issue_ids.return_value = MagicMock(
+        issue1_id="1",
+        issue2_id="2",
+        decision="duplicate",
+        reason="test",
+        suggestion="test",
+        resolution="test",
+        resolution_reason="test",
+        resulting_issue1_id="1",
+        resulting_issue2_id="2",
+        ai_model_id="a" * 32,
+        ai_model_name="test",
+    )
+    db_session = MagicMock()
+    current_user = MagicMock()
+    billing_service = MagicMock()
+    settings = MagicMock()
+
+    result = issue_duplicates.check_or_create_issue_duplicate(
+        db=db_session,
+        issue1_id="1",
+        issue2_id="2",
+        current_user=current_user,
+        billing_service=billing_service,
+        settings=settings,
+    )
+    assert result is not None
