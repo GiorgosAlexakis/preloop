@@ -26,6 +26,8 @@ spec:
               value: {{ include "spacebridge.databaseUrl" . }}
             - name: TEST_USER_EMAIL
               value: {{ .Values.seed.email | quote }}
+            - name: TEST_USER_USERNAME
+              value: {{ .Values.seed.username | quote }}
             - name: TEST_USER_PASSWORD
               value: {{ .Values.seed.password | quote }}
             - name: TEST_USER_API_KEY

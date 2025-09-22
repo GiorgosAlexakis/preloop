@@ -22,7 +22,7 @@ cache:
 stages:
   - build
   - deploy
-  - test
+  - qa
   - cleanup
 
 build:
@@ -48,7 +48,7 @@ build:
       --build-arg GITLAB_TOKEN=$GITLAB_TOKEN
 
 pre-commit:
-  stage: test
+  stage: qa
   needs: [build]
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
@@ -64,7 +64,7 @@ pre-commit:
     - ruff check
 
 .test:unit:template:
-  stage: test
+  stage: qa
   needs: [build]
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   services:
@@ -201,7 +201,7 @@ test:unit:spacebridge-endpoints-webhooks:
 #     TEST_PATHS: "tests/endpoints/test_websockets.py"
 
 test:coverage:
-  stage: test
+  stage: qa
   needs:
     - test:unit:spacemodels
     # - test:unit:mcp
@@ -406,7 +406,7 @@ test:
   environment:
     name: test/$CI_COMMIT_REF_NAME
     url: https://$CI_COMMIT_REF_NAME.test.spacebridge.io
-    on_stop: stop_test
+    on_stop: stop-test-env
     auto_stop_in: 4 hours
   only:
     - branches
@@ -459,7 +459,7 @@ test:
       --set seed.apiKey=$SPACEBRIDGE_TEST_API_KEY
 
 test:integration:api:
-  stage: test
+  stage: qa
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   variables:
@@ -470,7 +470,7 @@ test:integration:api:
     - pytest --confcutdir=tests/integration tests/integration/test_api.py
 
 test:integration:ui:
-  stage: test
+  stage: qa
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   variables:
@@ -480,11 +480,12 @@ test:integration:ui:
     - playwright install
     - pytest --confcutdir=tests/integration tests/integration/test_ui.py
 
-stop_test:
+stop-test-env:
   stage: cleanup
   needs: ["test:integration:api", "test:integration:ui"]
   image: dtzar/helm-kubectl:3.13.2
   when: on_success
+  allow_failure: true
   environment:
     name: test/$CI_COMMIT_REF_NAME
     action: stop
@@ -494,10 +495,10 @@ stop_test:
     - main
   script:
     - helm delete $CI_COMMIT_REF_NAME --namespace spacebridge-test
-    - kubectl delete job --namespace spacebridge-test $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job
+    - kubectl delete job --namespace spacebridge-test $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job || true
 
 smoke:
-  stage: test
+  stage: qa
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   script:
     - pip install -e ".[dev]"
