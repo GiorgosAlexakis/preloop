@@ -770,34 +770,54 @@ class GitLabTracker(BaseTracker):
         """
         Unregister all webhooks for all organizations and projects managed by this tracker instance.
         """
-        results = {"unregistered": 0, "failed": 0}
-        organizations = crud_organization.get_multi(db, tracker_id=self.tracker_id)
-        for org in organizations:
+        results = {"unregistered": 0, "failed": 0, "not_found": 0}
+        logger.info(f"Unregistering all webhooks for GitLab tracker {self.tracker_id}.")
+        orgs = crud_organization.get_for_tracker(db, tracker_id=self.tracker_id)
+        for org in orgs:
             self.unregister_all_webhooks_for_organization(db, org, results)
-            projects = crud_project.get_multi(db, organization_id=org.id)
-            for proj in projects:
-                self.unregister_all_webhooks_for_project(db, proj, results)
+        if results["unregistered"] > 0:
+            logger.info(
+                f"Unregistered {results['unregistered']} webhooks for GitLab tracker {self.tracker_id}."
+            )
+        else:
+            projects = crud_project.get_for_tracker(db, tracker_id=self.tracker_id)
+            for project in projects:
+                self.unregister_all_webhooks_for_project(db, project, results)
+            if results["unregistered"] > 0:
+                logger.info(
+                    f"Unregistered {results['unregistered']} webhooks for GitLab tracker {self.tracker_id}."
+                )
+            else:
+                logger.info(f"No webhooks found for GitLab tracker {self.tracker_id}.")
+
+        logger.info(f"GitLab unregister_all_webhooks summary: {results}")
         return results
 
     def unregister_all_webhooks_for_organization(
         self, db: Session, organization: Organization, results: Dict[str, int]
     ):
-        webhooks = crud_webhook.get_multi(db, organization_id=organization.id)
+        results = {"unregistered": 0, "failed": 0, "not_found": 0}
+        webhooks = crud_webhook.get_all_by_organization(
+            db, organization_id=organization.id
+        )
         for webhook in webhooks:
             if self.unregister_webhook(db, webhook):
                 results["unregistered"] += 1
             else:
                 results["failed"] += 1
+        return results
 
     def unregister_all_webhooks_for_project(
         self, db: Session, project: Project, results: Dict[str, int]
     ):
-        webhooks = crud_webhook.get_multi(db, project_id=project.id)
+        results = {"unregistered": 0, "failed": 0, "not_found": 0}
+        webhooks = crud_webhook.get_all_by_project(db, project_id=project.id)
         for webhook in webhooks:
             if self.unregister_webhook(db, webhook):
                 results["unregistered"] += 1
             else:
                 results["failed"] += 1
+        return results
 
     def cleanup_stale_webhooks(self, spacebridge_url: str) -> dict:
         """

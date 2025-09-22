@@ -141,7 +141,7 @@ def unregister_webhooks_command(
 
     if tracker_id:
         click.echo(f"Filtering by specific tracker ID: {tracker_id}")
-        tracker = crud_tracker.get(db, id=tracker_id)
+        tracker = crud_tracker.get(db, id=str(tracker_id))
         if tracker and tracker.is_active:
             trackers_to_process.append(tracker)
         elif tracker:

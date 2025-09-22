@@ -586,7 +586,11 @@ class GitHubTracker(BaseTracker):
         Returns:
             True if unregistration was successful, False otherwise.
         """
-        org_identifier = webhook.organization.identifier
+        org_identifier = None
+        if webhook.organization:
+            org_identifier = webhook.organization.identifier
+        elif webhook.project:
+            org_identifier = webhook.project.organization.identifier
         webhook_id = webhook.external_id
 
         if not org_identifier or org_identifier == "personal":
@@ -645,9 +649,10 @@ class GitHubTracker(BaseTracker):
         try:
             organizations = crud_organization.get_multi(db, tracker_id=self.tracker_id)
             organization_ids = [org.id for org in organizations]
-
-            projects = crud_project.get_multi(db, organization_id__in=organization_ids)
-            project_ids = [proj.id for proj in projects]
+            project_ids = []
+            for org_id in organization_ids:
+                projects = crud_project.get_for_organization(db, organization_id=org_id)
+                project_ids.extend([proj.id for proj in projects])
 
             webhooks_to_delete = (
                 db.query(Webhook)
