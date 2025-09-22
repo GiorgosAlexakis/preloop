@@ -20,7 +20,7 @@ class FlowExecutionBase(BaseModel):
         description="Status of the execution (e.g., PENDING, RUNNING, SUCCEEDED, FAILED)",
     )
     start_time: datetime = Field(
-        default_factory=datetime.now(UTC),
+        default_factory=lambda: datetime.now(UTC),
         description="Timestamp when the execution started",
     )
     end_time: Optional[datetime] = Field(

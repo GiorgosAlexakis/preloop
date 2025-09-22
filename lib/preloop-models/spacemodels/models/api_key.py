@@ -70,15 +70,17 @@ class ApiKey(Base):
         """
         return f"<ApiKey {self.name} created by {self.created_by}>"
 
+    @property
     def is_expired(self) -> bool:
         """Check if the key is expired.
 
         Returns:
             True if the key has an expiration date and it's in the past.
         """
-        if self.expires_at is None:
+        if not self.expires_at:
             return False
-        # Make expires_at timezone-aware (assuming UTC) before comparing
+
+        # Assuming expires_at is a naive datetime stored in UTC, make it aware for comparison.
         return self.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
 
     def is_valid(self) -> bool:
@@ -87,7 +89,7 @@ class ApiKey(Base):
         Returns:
             True if the key is active and not expired.
         """
-        return self.is_active and not self.is_expired()
+        return self.is_active and not self.is_expired
 
     def update_last_used(self) -> None:
         """Update the last_used_at timestamp to now."""

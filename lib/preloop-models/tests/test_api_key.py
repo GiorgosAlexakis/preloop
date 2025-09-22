@@ -94,7 +94,7 @@ def test_key_expiration(db_session, create_account):
     db_session.commit()
 
     # Check if key is expired
-    assert key.is_expired() is True
+    assert key.is_expired is True
     assert key.is_valid() is False
 
     # Create a valid key
@@ -106,7 +106,7 @@ def test_key_expiration(db_session, create_account):
     )
 
     # Check if key is valid
-    assert valid_key.is_expired() is False
+    assert valid_key.is_expired is False
     assert valid_key.is_valid() is True
 
 

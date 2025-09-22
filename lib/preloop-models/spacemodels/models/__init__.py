@@ -13,6 +13,7 @@ from .tracker import Tracker, TrackerType
 from .client_version_log import ClientVersionLog
 from .ai_model import AIModel
 from .flow import Flow
+from .flow_execution import FlowExecution
 from .webhook import Webhook
 from .tracker_scope_rule import TrackerScopeRule
 from .issue_compliance_result import IssueComplianceResult
@@ -37,6 +38,7 @@ __all__ = [
     "Comment",
     "AIModel",
     "Flow",
+    "FlowExecution",
     "Webhook",
     "TrackerScopeRule",
     "IssueComplianceResult",
