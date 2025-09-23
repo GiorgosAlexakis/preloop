@@ -19,6 +19,7 @@ graph LR
         subgraph "Main Repository"
             direction LR
             API["SpaceBridge REST API"]
+            API["SpaceBridge REST API"]
             subgraph "Submodules"
                 direction LR
                 SpaceModels["SpaceModels (Data Layer)"]
@@ -27,7 +28,6 @@ graph LR
                     Worker["SpaceSync Worker"]
                 end
                 SpaceLit["SpaceLit (Frontend)"]
-                mcp["SpaceBridge-MCP"]
             end
         end
         subgraph "Services"
@@ -45,8 +45,7 @@ graph LR
     Worker --> Issue_Trackers
     API --> Issue_Trackers
 
-    MCP_Clients --> mcp
-    mcp --> API
+    MCP_Clients -- HTTP --> API
     SpaceLit --> API
 ```
 
@@ -60,7 +59,6 @@ graph LR
 *   **SpaceLit (Submodule):** A web application built using Lit, Vite, TypeScript, and Material Web Components.
 *   **PostgreSQL + PGVector:** The database storing metadata and vector embeddings.
 *   **NATS:** An event bus used for both a reliable task queue (JetStream) and real-time streaming updates. It decouples the API from the background processing of events and flows.
-*   **SpaceBridge-MCP (Submodule):** An MCP server acting as a bridge for MCP clients, translating MCP requests into calls to the SpaceBridge REST API.
 *   **External Systems:** Issue trackers and MCP clients interacting with the SpaceBridge ecosystem.
 
 ## Frontend Architecture
@@ -117,6 +115,7 @@ The `SpaceLit` application is structured around a component-based architecture.
 ### SpaceBridge API Server (Main Repository)
 *   **Framework:** FastAPI-based RESTful API server.
 *   **Authentication:** JWT authentication and authorization.
+*   **MCP Server:** Includes integrated MCP tool endpoints under `/api/v1/mcp/` for direct communication with MCP clients over HTTP.
 *   **Validation:** Request validation using Pydantic models (defined in `SpaceModels`).
 *   **Documentation:** Automatic API documentation with Swagger/ReDoc.
 *   **Features:** Rate limiting, error handling, monitoring integration.
@@ -138,14 +137,6 @@ The `SpaceLit` application is structured around a component-based architecture.
     *   **Worker:** Consumes tasks from the NATS queue. Multiple, specialized worker groups can be deployed, each subscribing to a specific subset of tasks (e.g., polling, webhooks). This allows for independent scaling and monitoring of different task types.
 *   **Execution:** Runs as two distinct, long-running processes (scheduler and worker) or as a one-off CLI command.
 
-### SpaceBridge-MCP (Submodule `./mcp`)
-*   **Purpose:** Provides an MCP interface for clients like Claude Code.
-*   **Transport:** Uses stdio transport for communication.
-*   **Functionality:**
-    *   Registers MCP tools (e.g., `search_issues`, `create_issue`).
-    *   Receives MCP requests and translates them into HTTP calls to the SpaceBridge REST API.
-    *   Handles parameter validation and transformation between MCP and REST API formats.
-    *   Returns results from the API back to the MCP client.
 
 ### Issue Tracker Clients (within SpaceBridge & SpaceSync)
 *   **Location:** Implementations reside within both the main SpaceBridge API (for direct actions) and SpaceSync (for polling). Shared logic might be abstracted.
@@ -185,18 +176,15 @@ The `SpaceLit` application is structured around a component-based architecture.
         *   Calls functions in `SpaceModels` to insert or update issue data and embeddings in the database.
 3.  **SpaceModels:** Interacts with the PostgreSQL database to persist changes.
 
-### MCP Flow (via SpaceBridge-MCP)
-1.  **MCP Client Request:** Claude Code sends a `search_issues` tool request via stdio.
-2.  **SpaceBridge-MCP Server:**
-    *   Parses the MCP request.
-    *   Validates parameters.
-    *   Constructs an equivalent HTTP request (e.g., `GET /api/v1/issues/search`).
-    *   Sends the HTTP request to the SpaceBridge API server.
-3.  **SpaceBridge API Server:** Processes the request as described in the "REST API Flow".
-4.  **SpaceBridge-MCP Server:**
-    *   Receives the HTTP response.
-    *   Formats the result into an MCP response.
-    *   Sends the MCP response back to Claude Code via stdio.
+### MCP Flow (Integrated HTTP)
+1.  **MCP Client Request:** An MCP client (e.g., Claude Code) sends a tool request as an HTTP POST to the relevant endpoint (e.g., `/api/v1/mcp/search`). The request includes the standard MCP JSON payload and an `Authorization: Bearer <token>` header.
+2.  **SpaceBridge API Server:**
+    *   Authenticates the request using the JWT token.
+    *   Routes the request to the appropriate MCP tool endpoint.
+    *   Validates the incoming MCP parameters against the Pydantic schema for that tool.
+    *   Executes the tool logic, interacting with other SpaceBridge services and `SpaceModels` as needed.
+    *   Formats the result into the standard MCP JSON response format.
+3.  **MCP Client:** Receives the HTTP response containing the tool's output.
 
 ## Database Schema (Managed by SpaceModels)
 
@@ -229,12 +217,12 @@ SpaceBridge implements a RESTful HTTP API using FastAPI, which provides:
 - Dependency injection system
 - Middleware for authentication, logging, etc.
 
-### SpaceBridge-MCP Implementation
-The companion SpaceBridge-MCP project will implement an MCP server using:
-- Official MCP SDK for stdio transport
-- HTTP client for communicating with SpaceBridge REST API
-- Function-based tool registration with decorators
-- Type annotation-based parameter validation
+### MCP Implementation
+The MCP server is implemented directly within the FastAPI application. This provides several advantages:
+- **HTTP Transport:** Natively supports HTTP-based MCP clients, enabling secure remote access.
+- **Unified Authentication:** Leverages the same JWT authentication as the rest of the API.
+- **Code Reusability:** Directly calls internal services and CRUD operations, reducing code duplication.
+- **Scalability:** Benefits from the same deployment and scaling infrastructure as the main API.
 
 ### Language and Framework
 Python is chosen as the primary language due to its strong ecosystem for machine learning and data processing, which is essential for similarity search and embedding generation. FastAPI is used for the REST API due to its performance, type safety, and automatic OpenAPI documentation generation.
