@@ -410,8 +410,6 @@ test:
     auto_stop_in: 4 hours
   only:
     - branches
-  except:
-    - main
   script:
     - set -e
     - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
@@ -491,8 +489,6 @@ stop-test-env:
     action: stop
   only:
     - branches
-  except:
-    - main
   script:
     - helm delete $CI_COMMIT_REF_NAME --namespace spacebridge-test
     - kubectl delete job --namespace spacebridge-test $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job || true
