@@ -129,3 +129,88 @@ async def test_publish_task_handles_publish_failure(
     # Assert
     assert result is None
     mock_js.publish.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("spacesync.services.event_bus.nats.connect")
+async def test_connect_when_already_connected(mock_nats_connect, event_bus: EventBus):
+    """
+    Tests that connect() does not try to reconnect if already connected.
+    """
+    # Arrange
+    mock_nc = AsyncMock()
+    mock_nc.is_connected = True
+    event_bus.nc = mock_nc
+
+    # Act
+    await event_bus.connect()
+
+    # Assert
+    mock_nats_connect.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("spacesync.services.event_bus.nats.connect")
+async def test_connect_handles_connection_failure(
+    mock_nats_connect, event_bus: EventBus
+):
+    """
+    Tests that a failure during connection is handled gracefully.
+    """
+    # Arrange
+    mock_nats_connect.side_effect = Exception("NATS connection error")
+
+    # Act
+    await event_bus.connect()
+
+    # Assert
+    assert event_bus.nc is None
+    assert event_bus.js is None
+
+
+@pytest.mark.asyncio
+@patch("spacesync.services.event_bus.nats.connect")
+async def test_connect_updates_stream_with_different_subjects(
+    mock_nats_connect, event_bus: EventBus
+):
+    """
+    Tests that connect() updates the stream if it exists with different subjects.
+    """
+    # Arrange
+    mock_nc = AsyncMock()
+    mock_js = AsyncMock()
+    mock_nats_connect.return_value = mock_nc
+    mock_nc.jetstream = Mock(return_value=mock_js)
+
+    # Mock stream_info to return a stream with different subjects
+    mock_stream_info = Mock()
+    mock_stream_info.config.retention = "workqueue"
+    mock_stream_info.config.subjects = ["old.subject"]
+    mock_js.stream_info.return_value = mock_stream_info
+
+    mock_js.update_stream = AsyncMock()
+
+    # Act
+    await event_bus.connect()
+
+    # Assert
+    mock_js.update_stream.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_close_connection(event_bus: EventBus):
+    """
+    Tests that the close() method drains the NATS connection.
+    """
+    # Arrange
+    mock_nc = AsyncMock()
+    mock_nc.is_closed = False
+    event_bus.nc = mock_nc
+
+    # Act
+    await event_bus.close()
+
+    # Assert
+    mock_nc.drain.assert_called_once()
+    assert event_bus.nc is None
+    assert event_bus.js is None

@@ -169,3 +169,42 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestJiraTracker(unittest.TestCase):
+    @patch("spacesync.trackers.jira.JIRA")
+    def test_get_organizations(self, mock_jira_class):
+        tracker = JiraTracker(
+            "tracker-1",
+            "api-key",
+            {"url": "https://test.jira.com", "username": "testuser"},
+        )
+        orgs = tracker.get_organizations()
+
+        self.assertEqual(len(orgs), 1)
+        self.assertEqual(orgs[0]["name"], "test.jira.com")
+
+    @patch("spacesync.trackers.jira.JIRA")
+    def test_get_projects(self, mock_jira_class):
+        tracker = JiraTracker(
+            "tracker-1",
+            "api-key",
+            {"url": "https://test.jira.com", "username": "testuser"},
+        )
+        with patch.object(
+            tracker,
+            "_make_request",
+            return_value=[
+                {
+                    "id": "10000",
+                    "key": "PROJ",
+                    "name": "Test Project",
+                    "description": "A test project",
+                }
+            ],
+        ) as mock_make_request:
+            projects = tracker.get_projects("org-1")
+
+            self.assertEqual(len(projects), 1)
+            self.assertEqual(projects[0]["name"], "Test Project")
+            mock_make_request.assert_called_once_with("GET", "project")
