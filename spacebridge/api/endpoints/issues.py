@@ -95,13 +95,12 @@ async def search_issues(
     """
     try:
         # Resolve organization and project using either ID, name, or identifier
-        from spacemodels.crud import crud_organization, crud_project, crud_tracker
 
         user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
         tracker_ids = [t.id for t in user_trackers]
 
         if not tracker_ids:
-            return {"items": [], "total": 0, "limit": limit, "offset": 0}
+            return []
 
         # Get Issues linked to the user's trackers
         issues = db.query(Issue).filter(Issue.tracker_id.in_(tracker_ids))

@@ -50,7 +50,7 @@ spec:
             - name: DEBUG
               value: {{ $.Values.environment.debug | quote }}
             - name: DATABASE_URL
-              value: {{ $.Values.environment.databaseUrl | quote }}
+              value: {{ include "spacebridge.databaseUrl" $ }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -93,11 +93,7 @@ spec:
               value: {{ $.Values.config.smtp.fromName | quote }}
             {{- end }}
             - name: NATS_URL
-            {{if $.Values.nats.url}}
-              value: {{ $.Values.nats.url }}
-            {{else}}
-              value: nats://{{ include "spacebridge.fullname" $ }}-nats:4222
-            {{end}}
+              value: {{ $.Values.nats.url | default (printf "nats://%s-nats:4222" $.Release.Name) }}
             {{- if $.Values.sentry.enabled }}
             - name: SENTRY_DSN
               valueFrom:

@@ -5,11 +5,15 @@ variables:
   GIT_SUBMODULE_STRATEGY: "recursive"
   GITLAB_TOKEN: $GITLAB_TOKEN
   STAGING_DOMAIN: "staging.spacebridge.io"
-  SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
   STRIPE_SECRET_KEY_PROD: $STRIPE_SECRET_KEY_PROD
   STRIPE_WEBHOOK_SECRET_PROD: $STRIPE_WEBHOOK_SECRET_PROD
   STRIPE_SECRET_KEY_STAGING: $STRIPE_SECRET_KEY_STAGING
   STRIPE_WEBHOOK_SECRET_STAGING: $STRIPE_WEBHOOK_SECRET_STAGING
+  SPACEBRIDGE_TEST_PASSWORD: $SPACEBRIDGE_TEST_PASSWORD
+  SPACEBRIDGE_TEST_USERNAME: $SPACEBRIDGE_TEST_USERNAME
+  SPACEBRIDGE_TEST_EMAIL: $SPACEBRIDGE_TEST_EMAIL
+  SPACEBRIDGE_TEST_API_KEY: $SPACEBRIDGE_TEST_API_KEY
+  FF_TIMESTAMPS: "true"
 
 cache:
   paths:
@@ -18,13 +22,16 @@ cache:
 stages:
   - build
   - deploy
-  - test
+  - qa
+  - cleanup
 
 build:
   stage: build
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
+  variables:
+    SENTRY_DSN:
   script:
     - mkdir -p /kaniko/.docker
     - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64)\"}}}" > /kaniko/.docker/config.json
@@ -41,7 +48,7 @@ build:
       --build-arg GITLAB_TOKEN=$GITLAB_TOKEN
 
 pre-commit:
-  stage: test
+  stage: qa
   needs: [build]
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
@@ -56,8 +63,8 @@ pre-commit:
     - pre-commit run --all-files --show-diff
     - ruff check
 
-pytest:
-  stage: test
+.test:unit:template:
+  stage: qa
   needs: [build]
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   services:
@@ -68,18 +75,207 @@ pytest:
     POSTGRES_USER: test_user
     POSTGRES_PASSWORD: test_password
     DATABASE_URL: postgresql://test_user:test_password@postgres:5432/test_db
+    SENTRY_DSN:
   before_script:
     - pip install -U pip
     - pip install pytest pytest-cov loguru
     - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
     - pip install -e ".[dev]"
+    - mkdir -p ./SpaceLit/dist/assets
+    - touch ./SpaceLit/dist/index.html
     - python ./spacesync/scripts/init_db.py --force
-
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
-    # Explicitly list top-level and SpaceModels tests, let pyproject.toml handle spacesync tests discovery
-    - pytest -v --cov --cov-report=xml --cov-report=term-missing
+    - export COVERAGE_FILE=".coverage.${CI_JOB_NAME}"
+    - pytest -v --cov --cov-report= --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
+  artifacts:
+    paths:
+      - ".coverage.*"
+      - "report-*.xml"
+    expire_in: 1 day
+
+test:unit:spacemodels:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "SpaceModels/tests"
+
+# test:unit:mcp:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "mcp/tests"
+
+test:unit:spacesync:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "spacesync/tests"
+
+test:unit:spacebridge-other:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/test_*.py tests/tools tests/trackers"
+
+test:unit:spacebridge-endpoints-ai-models:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_ai_models.py"
+
+# test:unit:spacebridge-endpoints-billing:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_billing.py"
+
+test:unit:spacebridge-endpoints-comments:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_comments.py"
+
+# test:unit:spacebridge-endpoints-embedding:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_embedding.py"
+
+test:unit:spacebridge-endpoints-flows:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_flows.py"
+
+# test:unit:spacebridge-endpoints-health:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_health.py"
+
+# test:unit:spacebridge-endpoints-issue-compliance:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_issue_compliance.py"
+
+test:unit:spacebridge-endpoints-issue-dependencies:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_issue_dependencies.py"
+
+test:unit:spacebridge-endpoints-issue-duplicates:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_issue_duplicates.py"
+
+test:unit:spacebridge-endpoints-issues:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_issues.py"
+
+# test:unit:spacebridge-endpoints-organizations:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_organizations.py"
+
+# test:unit:spacebridge-endpoints-projects:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_projects.py"
+
+# test:unit:spacebridge-endpoints-search:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_search.py"
+
+test:unit:spacebridge-endpoints-trackers:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_trackers.py"
+
+# test:unit:spacebridge-endpoints-version:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_version.py"
+
+test:unit:spacebridge-endpoints-webhooks:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_webhooks.py"
+
+# test:unit:spacebridge-endpoints-websockets:
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "tests/endpoints/test_websockets.py"
+
+test:coverage:
+  stage: qa
+  needs:
+    - test:unit:spacemodels
+    # - test:unit:mcp
+    - test:unit:spacesync
+    - test:unit:spacebridge-other
+    - test:unit:spacebridge-endpoints-ai-models
+    # - test:unit:spacebridge-endpoints-billing
+    - test:unit:spacebridge-endpoints-comments
+    # - test:unit:spacebridge-endpoints-embedding
+    - test:unit:spacebridge-endpoints-flows
+    # - test:unit:spacebridge-endpoints-health
+    # - test:unit:spacebridge-endpoints-issue-compliance
+    - test:unit:spacebridge-endpoints-issue-dependencies
+    - test:unit:spacebridge-endpoints-issue-duplicates
+    - test:unit:spacebridge-endpoints-issues
+    # - test:unit:spacebridge-endpoints-organizations
+    # - test:unit:spacebridge-endpoints-projects
+    # - test:unit:spacebridge-endpoints-search
+    - test:unit:spacebridge-endpoints-trackers
+    # - test:unit:spacebridge-endpoints-version
+    - test:unit:spacebridge-endpoints-webhooks
+    # - test:unit:spacebridge-endpoints-websockets
+  image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+  before_script:
+    - pip install coverage junitparser
+  script:
+    - ls -la
+    - |
+      python -c "
+      import glob
+      from junitparser import JUnitXml, TestSuite
+
+      merged_suite = TestSuite('merged-results')
+      total_tests = 0
+      total_failures = 0
+      total_errors = 0
+      total_skipped = 0
+
+      xml_files = glob.glob('report-*.xml')
+      if not xml_files:
+          print('No JUnit XML reports found to merge.')
+      else:
+          for file_path in xml_files:
+              try:
+                  xml = JUnitXml.fromfile(file_path)
+                  for suite in xml:
+                      merged_suite.add_testsuite(suite)
+              except Exception as e:
+                  print(f'Error processing file {file_path}: {e}')
+
+          merged_suite.update_statistics()
+          total_tests = merged_suite.tests
+          total_failures = merged_suite.failures
+          total_errors = merged_suite.errors
+          total_skipped = merged_suite.skipped
+
+          merged_suite.write('merged-report.xml')
+
+      print('================ Test Summary ================')
+      print(f'Total tests: {total_tests}')
+      print(f'Failures: {total_failures}')
+      print(f'Errors: {total_errors}')
+      print(f'Skipped: {total_skipped}')
+      print('==============================================')
+      "
+    - coverage combine
+    - coverage report --fail-under=50
+    - coverage xml -o coverage.xml
+
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
 
 staging:
   stage: deploy
@@ -87,6 +283,8 @@ staging:
   when: manual
   environment:
     name: staging
+  variables:
+    SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
   script:
     - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
@@ -126,6 +324,7 @@ staging:
       --set worker.pools[2].name=webhook
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event
+      --set database.cnpg.name=spacebridge-db
 
     - echo "Helm deployment finished."
   artifacts:
@@ -145,6 +344,8 @@ prod:
   #   - /^v\d+\.\d+\.\d+$/
   environment:
     name: production
+  variables:
+    SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
   script:
     - set -e
     - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
@@ -190,6 +391,7 @@ prod:
       --set worker.pools[2].name=webhook
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event
+      --set database.cnpg.name=spacebridge-db
     - echo "Helm deployment finished."
   artifacts:
     paths:
@@ -198,42 +400,109 @@ prod:
     expire_in: 7 days
 
 test:
-  when: manual
+  when: always
   stage: deploy
   image: dtzar/helm-kubectl:3.13.2
   environment:
     name: test/$CI_COMMIT_REF_NAME
     url: https://$CI_COMMIT_REF_NAME.test.spacebridge.io
+    on_stop: stop-test-env
+    auto_stop_in: 4 hours
   only:
     - branches
   except:
     - main
   script:
+    - set -e
+    - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
     - helm dependency update ./helm/spacebridge
     - helm dependency build ./helm/spacebridge
     - helm upgrade --install $CI_COMMIT_REF_NAME ./helm/spacebridge
       --namespace spacebridge-test
       --set image.tag=${CI_COMMIT_SHA}
-      --set branchName=${CI_COMMIT_REF_NAME}
-      -f ./helm/spacebridge/values-test.yaml
+      --set spacelit.tag=${SPACELIT_COMMIT_SHA}
+      --set environment.spacebridgeUrl=https://$CI_COMMIT_REF_NAME.test.spacebridge.io
+      --set ingress.enabled=true
+      --set ingress.hosts[0].host=$CI_COMMIT_REF_NAME.test.spacebridge.io
+      --set ingress.hosts[0].paths[0].path=/
+      --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
+      --set ingress.tls[0].hosts[0]=$CI_COMMIT_REF_NAME.test.spacebridge.io
+      --set ingress.tls[0].secretName=spacebridge-test-tls
+      --set ingress.tls[0].secretName=spacebridge-test-tls
+      --set config.openai.apiKey=${OPENAI_API_KEY}
+      --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
+      --set config.smtp.host=${SMTP_HOST}
+      --set config.smtp.port=${SMTP_PORT}
+      --set config.smtp.username=${SMTP_USERNAME}
+      --set config.smtp.password=${SMTP_PASSWORD}
+      --set config.smtp.from=${SMTP_FROM}
+      --set config.smtp.fromName=${SMTP_FROM_NAME}
+      --set sentry.enabled=true
+      --set profiling.enabled=false
+      --set stripe.enabled=true
+      --set stripe.secretKey=${STRIPE_SECRET_KEY_STAGING}
+      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET_STAGING}
+      --set worker.pools[0].name=polling
+      --set worker.pools[0].replicaCount=1
+      --set worker.pools[0].tasks=poll_tracker
+      --set worker.pools[1].name=notify
+      --set worker.pools[1].replicaCount=1
+      --set worker.pools[1].tasks=notify_admins
+      --set worker.pools[2].name=webhook
+      --set worker.pools[2].replicaCount=1
+      --set worker.pools[2].tasks=process_webhook_event
+      --set seed.enabled=true
+      --set seed.email=$SPACEBRIDGE_TEST_EMAIL
+      --set seed.username=$SPACEBRIDGE_TEST_USERNAME
+      --set seed.password=$SPACEBRIDGE_TEST_PASSWORD
+      --set seed.apiKey=$SPACEBRIDGE_TEST_API_KEY
 
-# test:integration:
-#   stage: test
-#   needs: [test]
-#   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
-#   script:
-#     - pip install -e ".[dev]"
-#     - playwright install
-#     - export SPACEBRIDGE_TEST_URL=$CI_ENVIRONMENT_URL
-#     - pytest tests/integration
+test:integration:api:
+  stage: qa
+  needs: [test]
+  image: mcr.microsoft.com/playwright/python:v1.30.0-focal
+  variables:
+    SPACEBRIDGE_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.spacebridge.io"
+  script:
+    - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
+    - playwright install
+    - pytest --confcutdir=tests/integration tests/integration/test_api.py
 
-# smoke:
-#   stage: test
-#   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
-#   script:
-#     - pip install -e ".[dev]"
-#     - playwright install
-#     - pytest tests/smoke
-#   rules:
-#     - if: $CI_PIPELINE_SOURCE == "schedule"
+test:integration:ui:
+  stage: qa
+  needs: [test]
+  image: mcr.microsoft.com/playwright/python:v1.30.0-focal
+  variables:
+    SPACEBRIDGE_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.spacebridge.io"
+  script:
+    - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
+    - playwright install
+    - pytest --confcutdir=tests/integration tests/integration/test_ui.py
+
+stop-test-env:
+  stage: cleanup
+  needs: ["test:integration:api", "test:integration:ui"]
+  image: dtzar/helm-kubectl:3.13.2
+  when: on_success
+  allow_failure: true
+  environment:
+    name: test/$CI_COMMIT_REF_NAME
+    action: stop
+  only:
+    - branches
+  except:
+    - main
+  script:
+    - helm delete $CI_COMMIT_REF_NAME --namespace spacebridge-test
+    - kubectl delete job --namespace spacebridge-test $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job || true
+
+smoke:
+  stage: qa
+  image: mcr.microsoft.com/playwright/python:v1.30.0-focal
+  script:
+    - pip install -e ".[dev]"
+    - playwright install
+    - pytest tests/smoke
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"

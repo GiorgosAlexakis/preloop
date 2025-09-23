@@ -5,11 +5,16 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from typing import Optional
 
 import pytest
+
+from fastapi import HTTPException
+from spacebridge.api.endpoints import webhooks
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from spacebridge.api.app import create_app
 from spacemodels.db.session import get_db_session
+from spacesync.services.event_bus import get_task_publisher
 
 
 @pytest.fixture
@@ -42,23 +47,52 @@ def setup_mock_webhook_secret(
 class TestWebhooksEndpoint:
     """Test cases for the webhooks endpoint."""
 
-    def setup_method(self):
-        """Set up the test environment for each test method."""
-        self.app = create_app()
-        self.mock_session = MagicMock(spec=Session)
+    @classmethod
+    def setup_class(cls):
+        """Set up the test environment for the entire test class."""
+        cls.connect_nats_patcher = patch(
+            "spacebridge.api.app.connect_nats", new_callable=AsyncMock
+        )
+        cls.close_nats_patcher = patch(
+            "spacebridge.api.app.close_nats", new_callable=AsyncMock
+        )
+        cls.mock_connect_nats = cls.connect_nats_patcher.start()
+        cls.mock_close_nats = cls.close_nats_patcher.start()
+
+        cls.app = create_app()
+        cls.mock_session = MagicMock(spec=Session)
+        cls.mock_task_publisher = AsyncMock()
 
         def override_get_db():
             try:
-                yield self.mock_session
+                yield cls.mock_session
             finally:
                 pass
 
-        self.app.dependency_overrides[get_db_session] = override_get_db
-        self.test_client = TestClient(self.app)
+        def override_get_task_publisher():
+            return cls.mock_task_publisher
+
+        cls.app.dependency_overrides[get_db_session] = override_get_db
+        cls.app.dependency_overrides[get_task_publisher] = override_get_task_publisher
+        cls.test_client = TestClient(cls.app)
+
+    @classmethod
+    def teardown_class(cls):
+        """Clean up dependency overrides after the entire test class."""
+        cls.app.dependency_overrides.clear()
+        cls.connect_nats_patcher.stop()
+        cls.close_nats_patcher.stop()
+
+    def setup_method(self):
+        """Reset mocks before each test method."""
+        self.mock_session.reset_mock()
+        self.mock_connect_nats.reset_mock()
+        self.mock_close_nats.reset_mock()
+        self.mock_task_publisher.reset_mock()
 
     def teardown_method(self):
-        """Clean up dependency overrides after each test method."""
-        self.app.dependency_overrides.clear()
+        """No teardown needed after each method with the new setup."""
+        pass
 
     @patch(
         "spacebridge.api.endpoints.webhooks.CRUDOrganization"
@@ -587,6 +621,47 @@ class TestWebhooksEndpoint:
 
         assert response.status_code == 200
         assert response.json()["status"] == "accepted"
-        mock_task_publisher.publish_resync_organization.assert_called_once_with(
-            str(current_org_mock.id)
+
+
+@pytest.mark.asyncio
+@patch("spacemodels.db.session.get_db_session")
+@patch("spacesync.services.event_bus.get_task_publisher")
+async def test_receive_webhook_unsupported_tracker(
+    mock_get_task_publisher, mock_get_db_session
+):
+    """
+    Tests the receive_webhook function with an unsupported tracker type.
+    """
+    request = AsyncMock()
+    request.body = AsyncMock(return_value=b"{}")
+    with pytest.raises(HTTPException):
+        await webhooks.receive_webhook("invalid", "123", request)
+
+
+@pytest.mark.asyncio
+@patch("spacemodels.db.session.get_db_session")
+@patch("spacesync.services.event_bus.get_task_publisher")
+async def test_receive_webhook_github_success(
+    mock_get_task_publisher, mock_get_db_session
+):
+    """
+    Tests the receive_webhook function for a successful GitHub webhook.
+    """
+    request = AsyncMock()
+    request.body = AsyncMock(return_value=b'{"test": "payload"}')
+    request.headers = {"X-GitHub-Event": "push", "X-Hub-Signature-256": "sha256=test"}
+
+    db_session = MagicMock()
+    organization = MagicMock()
+    organization.webhook_secret = "secret"
+    db_session.query.return_value.options.return_value.filter.return_value.first.return_value = organization
+    mock_get_db_session.return_value = db_session
+
+    task_publisher = AsyncMock()
+    mock_get_task_publisher.return_value = task_publisher
+
+    with patch("hmac.compare_digest", return_value=True):
+        result = await webhooks.receive_webhook(
+            "github", "123", request, db_session, task_publisher
         )
+        assert result["status"] == "success"

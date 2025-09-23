@@ -47,7 +47,7 @@ class ErrorResponse(BaseModel):
     message: str
 
 
-async def test_connection(
+async def verify_connection(
     organization: str, project: str, tracker: Optional[str] = None, ctx: Context = None
 ) -> Dict[str, Any]:
     """Test connectivity to configured issue trackers.

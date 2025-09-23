@@ -93,7 +93,7 @@ services:
       INIT_TEST_DATA: 'true'
     volumes:
       - .:/app
-    command: python -m spacesync.worker
+    command: spacesync worker
 
 volumes:
   postgres-data:
