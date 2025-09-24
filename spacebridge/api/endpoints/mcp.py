@@ -85,12 +85,12 @@ class ProcessingResult:
     """Container for processing results."""
 
     def __init__(
-        self, success: bool, data=None, error: str = None, issue_slug: str = None
+        self, success: bool, data=None, error: str = None, issue_identifier: str = None
     ):
         self.success = success
         self.data = data
         self.error = error
-        self.issue_slug = issue_slug
+        self.issue_identifier = issue_identifier
 
 
 async def _get_authenticated_user(request_headers):
@@ -600,38 +600,143 @@ async def estimate_compliance(
     compliance_metric: str = "DoR",
 ) -> EstimateComplianceResponse:
     """
-    Handles the 'estimate_compliance' tool call.
+    Handles the 'estimate_compliance' tool call with enhanced parallel processing and error reporting.
+
+    Args:
+        issues: List of issue slugs/IDs/URLs to process
+        compliance_metric: Name of the compliance metric to use (default: "DoR")
+
+    Returns:
+        Enhanced response with compliance results and processing metadata
     """
+    # Validate input
+    validated_issues = _validate_issues_input(issues)
+
+    # Authenticate user
     db, current_user = await _get_authenticated_user(get_http_request().headers)
     settings = get_settings()
     billing_service = get_billing_service(db)
-    results = []
-    for issue_identifier in _validate_issues_input(issues):
-        try:
-            issue_obj = _find_issue_by_identifier(db, issue_identifier, current_user.id)
-            compliance_result = _calculate_issue_compliance(
-                issue_id=issue_obj.id,
-                prompt_name="dor_compliance_v1"
-                if compliance_metric == "DoR"
-                else compliance_metric,
-                db=db,
-                current_user=current_user,
+
+    # Process issues with controlled parallelism (max 10 concurrent)
+    semaphore = asyncio.Semaphore(10)
+
+    async def process_with_semaphore(issue_identifier: str) -> ProcessingResult:
+        async with semaphore:
+            return await _process_single_issue_estimate(
+                issue_identifier,
+                db,
+                current_user,
+                compliance_metric,
                 settings=settings,
                 billing_service=billing_service,
             )
-            results.append(compliance_result)
-        except (IssueNotFoundError, HTTPException) as e:
-            detail = e.detail if hasattr(e, "detail") else str(e)
-            logger.warning(
-                f"Could not get compliance for issue '{issue_identifier}': {detail}"
-            )
-        except Exception as e:
+
+    # Execute all tasks in parallel
+    logger.info(f"Processing {len(validated_issues)} issues for compliance estimation")
+    results = await asyncio.gather(
+        *[
+            process_with_semaphore(issue_identifier)
+            for issue_identifier in validated_issues
+        ],
+        return_exceptions=True,
+    )
+
+    # Separate successful and failed results
+    compliance_results = []
+    failed_issues = []
+    errors = []
+
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            # Handle unexpected exceptions from gather
+            issue_identifier = validated_issues[i]
+            error_msg = f"Processing exception: {str(result)}"
+            failed_issues.append(issue_identifier)
+            errors.append(f"{issue_identifier}: {error_msg}")
             logger.error(
-                f"An unexpected error occurred for issue '{issue_identifier}': {e}",
+                f"Exception processing issue '{issue_identifier}': {result}",
                 exc_info=True,
             )
+        elif result.success:
+            compliance_results.append(result.data)
+        else:
+            failed_issues.append(result.issue_identifier)
+            errors.append(f"{result.issue_identifier}: {result.error}")
 
-    return EstimateComplianceResponse(results=results)
+    # Create processing metadata
+    metadata = ProcessingMetadata(
+        total_requested=len(validated_issues),
+        successfully_processed=len(compliance_results),
+        failed_count=len(failed_issues),
+        failed_issues=failed_issues,
+        errors=errors,
+    )
+
+    logger.info(
+        f"Compliance estimation processing completed: "
+        f"{metadata.successfully_processed}/{metadata.total_requested} successful, "
+        f"{metadata.failed_count} failed"
+    )
+
+    return EstimateComplianceResponse(results=compliance_results, metadata=metadata)
+
+
+async def _process_single_issue_estimate(
+    issue_identifier: str,
+    db,
+    current_user,
+    compliance_metric: str,
+    settings=None,
+    billing_service: BillingService = None,
+) -> ProcessingResult:
+    """Process compliance estimation for a single issue."""
+    try:
+        # Find the issue using our enhanced lookup
+        issue_obj = _find_issue_by_identifier(db, issue_identifier, current_user.id)
+
+        # Get compliance estimate
+        prompt_name = (
+            "dor_compliance_v1" if compliance_metric == "DoR" else compliance_metric
+        )
+        compliance_result = _calculate_issue_compliance(
+            issue_id=issue_obj.id,
+            prompt_name=prompt_name,
+            db=db,
+            current_user=current_user,
+            settings=settings,
+            billing_service=billing_service,
+        )
+
+        return ProcessingResult(
+            success=True, data=compliance_result, issue_identifier=issue_identifier
+        )
+
+    except IssueNotFoundError as e:
+        logger.warning(f"Issue not found: '{issue_identifier}': {str(e)}")
+        return ProcessingResult(
+            success=False,
+            error=f"Issue not found: {str(e)}",
+            issue_identifier=issue_identifier,
+        )
+    except HTTPException as e:
+        logger.warning(
+            f"Could not get compliance estimate for issue '{issue_identifier}': {e.detail}"
+        )
+        return ProcessingResult(
+            success=False,
+            error=f"API error: {e.detail}",
+            issue_identifier=issue_identifier,
+        )
+    except Exception as e:
+        logger.error(
+            f"Unexpected error processing issue '{issue_identifier}': {e}",
+            exc_info=True,
+        )
+        return ProcessingResult(
+            success=False,
+            error=f"Unexpected error: {str(e)}",
+            issue_identifier=issue_identifier,
+        )
 
 
 async def _process_single_issue_compliance(
@@ -639,6 +744,7 @@ async def _process_single_issue_compliance(
     db,
     current_user,
     prompt_name: str = "default",
+    settings=None,
     billing_service: BillingService = None,
 ) -> ProcessingResult:
     """Process compliance improvement for a single issue."""
@@ -652,6 +758,7 @@ async def _process_single_issue_compliance(
             prompt_name=prompt_name,
             db=db,
             current_user=current_user,
+            settings=settings,
             billing_service=billing_service,
         )
 
@@ -714,11 +821,14 @@ async def improve_compliance(
 
     # Authenticate user
     db, current_user = await _get_authenticated_user(get_http_request().headers)
-    settings = get_settings()
     billing_service = get_billing_service(db)
+    settings = get_settings()
 
     # Process issues with controlled parallelism (max 10 concurrent)
     semaphore = asyncio.Semaphore(10)
+    prompt_name = (
+        "dor_compliance_v1" if compliance_metric == "DoR" else compliance_metric
+    )
 
     async def process_with_semaphore(issue_identifier: str) -> ProcessingResult:
         async with semaphore:
@@ -726,7 +836,8 @@ async def improve_compliance(
                 issue_identifier,
                 db,
                 current_user,
-                compliance_metric,
+                prompt_name,
+                settings=settings,
                 billing_service=billing_service,
             )
 

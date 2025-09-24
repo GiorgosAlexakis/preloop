@@ -83,10 +83,21 @@ class EstimateComplianceRequest(BaseModel):
     issues: List[str]
 
 
+class ProcessingMetadata(BaseModel):
+    """Metadata about processing results."""
+
+    total_requested: int
+    successfully_processed: int
+    failed_count: int
+    failed_issues: List[str] = []
+    errors: List[str] = []
+
+
 class EstimateComplianceResponse(BaseModel):
     """Response for the estimate_compliance tool."""
 
     results: List[IssueComplianceResultResponse]
+    metadata: Optional[ProcessingMetadata] = None
 
 
 class SuggestedUpdate(BaseModel):
@@ -100,16 +111,6 @@ class ImproveComplianceRequest(BaseModel):
     """Request body for the improve_compliance tool."""
 
     issues: List[str]
-
-
-class ProcessingMetadata(BaseModel):
-    """Metadata about processing results."""
-
-    total_requested: int
-    successfully_processed: int
-    failed_count: int
-    failed_issues: List[str] = []
-    errors: List[str] = []
 
 
 class ImproveComplianceResponse(BaseModel):

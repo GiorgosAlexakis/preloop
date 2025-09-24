@@ -350,7 +350,7 @@ def create_app() -> FastAPI:
         return await mcp_router.estimate_compliance(issues, compliance_metric)
 
     @mcp.tool(
-        description="Improve compliance for a list of issues provided as URLs or issue keys (slug or identifier).",
+        description="Get suggestions to improve compliance for a list of issues provided as URLs or issue keys (slug or identifier). Use update_issue tool to apply each suggestion.",
     )
     async def improve_compliance(issues: List[str], compliance_metric: str = "DoR"):
         return await mcp_router.improve_compliance(issues, compliance_metric)
