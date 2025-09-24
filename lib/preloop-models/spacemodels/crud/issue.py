@@ -75,6 +75,22 @@ class CRUDIssue(CRUDBase[Issue]):
             query = query.join(Tracker).filter(Tracker.account_id == account_id)
         return query.first()
 
+    def get_by_key_postfix(
+        self,
+        db: Session,
+        *,
+        key_postfix: str,
+        project_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+    ) -> Optional[Issue]:
+        """Get issue by its unique key postfix."""
+        query = db.query(Issue).filter(Issue.key.endswith(key_postfix))
+        if project_id:
+            query = query.filter(Issue.project_id == project_id)
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+        return query.first()
+
     def get_by_external_id(
         self,
         db: Session,
@@ -87,6 +103,19 @@ class CRUDIssue(CRUDBase[Issue]):
         query = db.query(Issue).filter(
             Issue.project_id == project_id, Issue.external_id == str(external_id)
         )
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+        return query.first()
+
+    def get_by_external_url(
+        self,
+        db: Session,
+        *,
+        external_url: str,
+        account_id: Optional[str] = None,
+    ) -> Optional[Issue]:
+        """Get issue by its external URL."""
+        query = db.query(Issue).filter(Issue.external_url == str(external_url))
         if account_id:
             query = query.join(Tracker).filter(Tracker.account_id == account_id)
         return query.first()
