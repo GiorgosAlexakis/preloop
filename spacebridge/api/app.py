@@ -11,13 +11,14 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
-
+from typing import Optional, List
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastmcp import FastMCP
 from pyinstrument import Profiler
 from pyinstrument.renderers import SpeedscopeRenderer
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -34,7 +35,7 @@ from spacebridge.api.endpoints import (
     issue_dependencies,
     organizations,
     projects,
-    search,
+    search as search_router,
     trackers,
     version,
     embedding as embedding_router,
@@ -44,12 +45,14 @@ from spacebridge.api.endpoints import (
     ai_models,
     billing,
     websockets,
+    mcp as mcp_router,
 )
 from spacemodels.sentry import init_sentry
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
 from spacemodels.models.api_usage import ApiUsage
 from spacesync.services.event_bus import connect_nats, close_nats  # NATS integration
+
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +290,82 @@ def create_app() -> FastAPI:
 
     # Define base directory relative to this file's location
     base_dir = Path(__file__).resolve().parent.parent.parent
+    mcp = FastMCP(name="Spacebridge MCP")
+
+    @mcp.tool
+    async def get_issue(issue: str):
+        return await mcp_router.get_issue(issue)
+
+    @mcp.tool
+    async def create_issue(
+        project: str,
+        title: str,
+        description: str,
+        labels: Optional[List[str]] = None,
+        assignee: Optional[str] = None,
+        priority: Optional[str] = None,
+        status: Optional[str] = None,
+        similarity_search: bool = True,
+    ):
+        return await mcp_router.create_issue(
+            project=project,
+            title=title,
+            description=description,
+            labels=labels,
+            assignee=assignee,
+            priority=priority,
+            status=status,
+            similarity_search=similarity_search,
+        )
+
+    @mcp.tool
+    async def update_issue(
+        issue: str,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+        assignee: Optional[str] = None,
+        labels: Optional[List[str]] = None,
+    ):
+        return await mcp_router.update_issue(
+            issue, title, description, status, priority, assignee, labels
+        )
+
+    @mcp.tool
+    async def search(
+        query: str,
+        project: Optional[str] = None,
+        limit: int = 10,
+    ):
+        return await mcp_router.search(
+            query=query,
+            project=project,
+            limit=limit,
+            search_type="similarity",
+        )
+
+    @mcp.tool
+    async def estimate_compliance(
+        issues: List[str],
+    ):
+        return await mcp_router.estimate_compliance(issues)
+
+    @mcp.tool
+    async def improve_compliance(
+        issues: List[str],
+    ):
+        return await mcp_router.improve_compliance(issues)
+
+    mcp_app = mcp.streamable_http_app(path="/v1")
+
+    # Combine both lifespans
+    @asynccontextmanager
+    async def combined_lifespan(app: FastAPI):
+        # Run both lifespans
+        async with lifespan(app):
+            async with mcp_app.lifespan(app):
+                yield
 
     # Initialize FastAPI app
     app = FastAPI(
@@ -296,7 +375,13 @@ def create_app() -> FastAPI:
         openapi_url="/api/v1/openapi.json",  # Keep OpenAPI schema URL
         docs_url=None,  # Disable the automatic docs at /docs
         redoc_url=None,  # Disable the automatic redoc at /redoc
-        lifespan=lifespan,  # Use the new lifespan context manager
+        lifespan=combined_lifespan,
+    )
+
+    app.mount(
+        "/mcp",
+        mcp_app,
+        name="mcp",
     )
 
     # Override the default JSON encoder to handle datetime objects
@@ -523,7 +608,7 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        search.router,
+        search_router.router,
         prefix="/api/v1",
         tags=["Search"],
         dependencies=[Depends(get_current_active_user)],
@@ -589,4 +674,5 @@ def create_app() -> FastAPI:
     else:
         logger.info("DEV_MODE is true, SPA is served by the frontend dev server.")
 
+    app.mount("/mcp", mcp_app)
     return app

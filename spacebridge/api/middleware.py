@@ -15,6 +15,7 @@ class UIRoutingMiddleware(BaseHTTPMiddleware):
         # Allow API calls, static assets, and docs to pass through
         if (
             request.url.path.startswith("/api")
+            or request.url.path.startswith("/mcp")
             or request.url.path.startswith("/assets")
             or request.url.path.startswith("/docs")
             or request.url.path.startswith("/openapi.json")

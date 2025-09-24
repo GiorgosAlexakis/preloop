@@ -3,8 +3,7 @@ Tests for the MCP API endpoints.
 """
 
 import uuid
-from unittest.mock import patch
-from unittest.mock import AsyncMock
+from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -59,8 +58,11 @@ def test_mcp_get_issue_success(
 
     # 2. Make the API call
     response = client.post(
-        "/api/v1/mcp/get_issue",
-        json={"issue": f"test-org/test-proj#{issue.key}"},
+        "/api/v1/mcp/",
+        json={
+            "tool": "get_issue",
+            "arguments": {"issue": f"test-org/test-proj#{issue.key}"},
+        },
     )
 
     # 3. Assert the response
@@ -111,7 +113,6 @@ def test_mcp_create_issue_success(
         "spacebridge.api.endpoints.mcp.api_create_issue",
         new_callable=AsyncMock,
     ) as mock_create:
-        # The actual API returns an IssueResponse, so we mock that
         mock_create.return_value = IssueResponse(
             id=str(uuid.uuid4()),
             external_id="999",
@@ -126,11 +127,14 @@ def test_mcp_create_issue_success(
             updated_at="2025-01-01T00:00:00",
         )
         response = client.post(
-            "/api/v1/mcp/create_issue",
+            "/api/v1/mcp/",
             json={
-                "project": "test-proj",
-                "title": "New Issue",
-                "description": "A new test issue.",
+                "tool": "create_issue",
+                "arguments": {
+                    "project": "test-proj",
+                    "title": "New Issue",
+                    "description": "A new test issue.",
+                },
             },
         )
 
@@ -202,8 +206,11 @@ def test_mcp_update_issue_success(
             updated_at="2025-01-01T00:00:00",
         )
         response = client.post(
-            "/api/v1/mcp/update_issue",
-            json={"issue": str(issue.id), "title": "Updated Title"},
+            "/api/v1/mcp/",
+            json={
+                "tool": "update_issue",
+                "arguments": {"issue": str(issue.id), "title": "Updated Title"},
+            },
         )
 
     # 3. Assert the response
@@ -219,11 +226,15 @@ def test_mcp_search_success(client: TestClient):
     """
     with patch(
         "spacebridge.api.endpoints.mcp.api_search_all",
+        new_callable=AsyncMock,
         return_value=SearchResponse(results=[]),
     ) as mock_search:
         response = client.post(
-            "/api/v1/mcp/search",
-            json={"query": "test query", "project": "test-proj"},
+            "/api/v1/mcp/",
+            json={
+                "tool": "search",
+                "arguments": {"query": "test query", "project": "test-proj"},
+            },
         )
         assert response.status_code == 200
         mock_search.assert_called_once()
@@ -284,8 +295,11 @@ def test_mcp_estimate_compliance_success(
             "updated_at": "2025-01-01T00:00:00",
         }
         response = client.post(
-            "/api/v1/mcp/estimate_compliance",
-            json={"issues": [str(issue.id)]},
+            "/api/v1/mcp/",
+            json={
+                "tool": "estimate_compliance",
+                "arguments": {"issues": [str(issue.id)]},
+            },
         )
         assert response.status_code == 200
         data = response.json()
@@ -334,15 +348,17 @@ def test_mcp_improve_compliance_success(
     with patch(
         "spacebridge.api.endpoints.mcp.api_get_compliance_suggestion"
     ) as mock_get_suggestion:
-        # Mock should return the Pydantic model, not a dict
         mock_get_suggestion.return_value = ComplianceSuggestionResponse(
             title="Improved Title",
             description="Improved description.",
             changes="- Fixed the title\n- Expanded the description",
         )
         response = client.post(
-            "/api/v1/mcp/improve_compliance",
-            json={"issues": [str(issue.id)]},
+            "/api/v1/mcp/",
+            json={
+                "tool": "improve_compliance",
+                "arguments": {"issues": [str(issue.id)]},
+            },
         )
         assert response.status_code == 200
         data = response.json()

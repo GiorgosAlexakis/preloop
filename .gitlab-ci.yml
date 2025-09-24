@@ -501,7 +501,7 @@ test:integration:mcp:
 
 .stop-env:template:
   stage: cleanup
-  needs: ["test:integration:api", "test:integration:ui"]
+  needs: ["test:integration:api", "test:integration:ui", "test:integration:mcp"]
   image: dtzar/helm-kubectl:3.13.2
   when: manual
   allow_failure: true
