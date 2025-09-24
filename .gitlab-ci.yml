@@ -200,6 +200,11 @@ test:unit:spacebridge-endpoints-webhooks:
   variables:
     TEST_PATHS: "tests/endpoints/test_webhooks.py"
 
+test:unit:spacebridge-endpoints-mcp:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_mcp.py"
+
 # test:unit:spacebridge-endpoints-websockets:
 #   extends: .test:unit:template
 #   variables:
@@ -228,6 +233,7 @@ test:coverage:
     - test:unit:spacebridge-endpoints-trackers
     # - test:unit:spacebridge-endpoints-version
     - test:unit:spacebridge-endpoints-webhooks
+    - test:unit:spacebridge-endpoints-mcp
     # - test:unit:spacebridge-endpoints-websockets
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:

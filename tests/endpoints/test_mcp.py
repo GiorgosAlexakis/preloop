@@ -3,23 +3,35 @@ Tests for the MCP API endpoints.
 """
 
 import uuid
-from unittest.mock import patch, AsyncMock
-from fastapi.testclient import TestClient
+from datetime import datetime, timezone
+from unittest.mock import patch, AsyncMock, MagicMock
+
+import pytest
 from sqlalchemy.orm import Session
 
-from spacebridge.api.endpoints.search import SearchResponse
+from spacebridge.api.endpoints import mcp
+from spacebridge.api.endpoints.search import SearchResponse as ApiSearchResponse
 from spacebridge.schemas.issue import IssueResponse
-from spacebridge.schemas.issue_compliance import ComplianceSuggestionResponse
-from spacemodels.models import Account, Organization, Project, Issue, Tracker
+from spacebridge.schemas.mcp import (
+    SuggestedUpdate,
+    UpdateIssueRequest,
+    GetIssueResponse,
+)
+from spacemodels.models import (
+    Account,
+    Organization,
+    Project,
+    Issue,
+    Tracker,
+    EmbeddingModel,
+)
 
 
-def test_mcp_get_issue_success(
-    client: TestClient, db_session: Session, test_user: Account
-):
+@pytest.mark.asyncio
+async def test_mcp_get_issue_success(db_session: Session, test_user: Account):
     """
     Tests successful retrieval of an issue via the MCP get_issue tool.
     """
-    # 1. Create test data
     tracker = Tracker(
         name="test-tracker",
         account_id=test_user.id,
@@ -56,33 +68,32 @@ def test_mcp_get_issue_success(
     db_session.add(issue)
     db_session.commit()
 
-    # 2. Make the API call
-    response = client.post(
-        "/api/v1/mcp/",
-        json={
-            "tool": "get_issue",
-            "arguments": {"issue": f"test-org/test-proj#{issue.key}"},
-        },
-    )
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_user_from_token_if_valid",
+            new_callable=AsyncMock,
+        ) as mock_get_user,
+        patch("spacebridge.api.endpoints.mcp.get_db") as mock_get_db,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_user.return_value = test_user
+        mock_get_db.return_value = iter([db_session])
 
-    # 3. Assert the response
-    assert response.status_code == 200
-    data = response.json()
-    assert data["id"] == str(issue.id)
-    assert data["key"] == "TP-1"
-    assert data["title"] == "Test Issue"
-    assert data["project"] == "test-proj"
-    assert data["organization"] == "test-org"
-    assert "compliance_results" in data
+        response = await mcp.get_issue(issue=str(issue.id))
+
+    assert response.id == str(issue.id)
+    assert response.key == "TP-1"
+    assert response.title == "Test Issue"
+    assert response.project == "test-proj"
+    assert response.organization == "test-org"
 
 
-def test_mcp_create_issue_success(
-    client: TestClient, db_session: Session, test_user: Account
-):
+@pytest.mark.asyncio
+async def test_mcp_create_issue_success(db_session: Session, test_user: Account):
     """
     Tests successful creation of an issue via the MCP create_issue tool.
     """
-    # 1. Create test data
     tracker = Tracker(
         name="test-tracker",
         account_id=test_user.id,
@@ -108,50 +119,50 @@ def test_mcp_create_issue_success(
     db_session.add(project)
     db_session.commit()
 
-    # 2. Make the API call
-    with patch(
-        "spacebridge.api.endpoints.mcp.api_create_issue",
-        new_callable=AsyncMock,
-    ) as mock_create:
-        mock_create.return_value = IssueResponse(
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_user_from_token_if_valid",
+            new_callable=AsyncMock,
+        ) as mock_get_user,
+        patch(
+            "spacebridge.api.endpoints.mcp.api_create_issue", new_callable=AsyncMock
+        ) as mock_api_create,
+        patch("spacebridge.api.endpoints.mcp.get_db") as mock_get_db,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_user.return_value = test_user
+        mock_get_db.return_value = iter([db_session])
+        mock_api_create.return_value = IssueResponse(
             id=str(uuid.uuid4()),
-            external_id="999",
-            key="TP-99",
+            external_id="ext-123",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            url="http://example.com/issue/1",
+            key="TP-1",
             title="New Issue",
-            description="A new test issue.",
-            organization="test-org",
             project="test-proj",
             project_id=str(project.id),
-            url="http://example.com/issue/1",
-            created_at="2025-01-01T00:00:00",
-            updated_at="2025-01-01T00:00:00",
-        )
-        response = client.post(
-            "/api/v1/mcp/",
-            json={
-                "tool": "create_issue",
-                "arguments": {
-                    "project": "test-proj",
-                    "title": "New Issue",
-                    "description": "A new test issue.",
-                },
-            },
+            organization="test-org",
         )
 
-    # 3. Assert the response
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "created"
-    assert data["message"] == "Successfully created new issue."
+        response = await mcp.create_issue(
+            project="test-proj",
+            title="New Issue",
+            description="A new test issue.",
+            prevent_duplicates=False,
+        )
+
+    assert response.status == "created"
+    assert response.message == "Successfully created new issue."
+    mock_api_create.assert_called_once()
 
 
-def test_mcp_update_issue_success(
-    client: TestClient, db_session: Session, test_user: Account
-):
+@pytest.mark.asyncio
+async def test_mcp_update_issue_success(db_session: Session, test_user: Account):
     """
     Tests successful update of an issue via the MCP update_issue tool.
     """
-    # 1. Create test data
     tracker = Tracker(
         name="test-tracker",
         account_id=test_user.id,
@@ -184,69 +195,77 @@ def test_mcp_update_issue_success(
         tracker_id=tracker.id,
         external_id="456",
         key="TP-2",
+        status="open",
     )
     db_session.add(issue)
     db_session.commit()
 
-    # 2. Make the API call
-    with patch(
-        "spacebridge.api.endpoints.mcp.api_update_issue", new_callable=AsyncMock
-    ) as mock_update:
-        mock_update.return_value = IssueResponse(
-            id=str(issue.id),
-            external_id=issue.external_id,
-            key=issue.key,
-            title="Updated Title",
-            description=issue.description,
-            organization="test-org",
-            project="test-proj",
-            project_id=str(project.id),
-            url="http://example.com/issue/2",
-            created_at="2025-01-01T00:00:00",
-            updated_at="2025-01-01T00:00:00",
-        )
-        response = client.post(
-            "/api/v1/mcp/",
-            json={
-                "tool": "update_issue",
-                "arguments": {"issue": str(issue.id), "title": "Updated Title"},
-            },
-        )
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_user_from_token_if_valid",
+            new_callable=AsyncMock,
+        ) as mock_get_user,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_tracker_client", new_callable=AsyncMock
+        ) as mock_get_tracker,
+        patch("spacebridge.api.endpoints.mcp.get_db") as mock_get_db,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_user.return_value = test_user
+        mock_get_db.return_value = iter([db_session])
+        mock_tracker_client = AsyncMock()
+        mock_get_tracker.return_value = mock_tracker_client
 
-    # 3. Assert the response
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "updated"
-    assert data["issue_id"] == str(issue.id)
+        response = await mcp.update_issue(issue=str(issue.id), title="Updated Title")
+
+    assert isinstance(response, GetIssueResponse)
+    assert response.title == "Updated Title"
+    mock_tracker_client.update_issue.assert_called_once()
+    db_session.refresh(issue)
+    assert issue.title == "Updated Title"
 
 
-def test_mcp_search_success(client: TestClient):
+@pytest.mark.asyncio
+async def test_mcp_search_success(db_session: Session, test_user: Account):
     """
     Tests the MCP search tool.
     """
-    with patch(
-        "spacebridge.api.endpoints.mcp.api_search_all",
-        new_callable=AsyncMock,
-        return_value=SearchResponse(results=[]),
-    ) as mock_search:
-        response = client.post(
-            "/api/v1/mcp/",
-            json={
-                "tool": "search",
-                "arguments": {"query": "test query", "project": "test-proj"},
-            },
-        )
-        assert response.status_code == 200
-        mock_search.assert_called_once()
+    embedding_model = EmbeddingModel(
+        name="test-embedding-model",
+        provider="openai",
+        version="text-embedding-ada-002",
+        dimensions=1536,
+        is_active=True,
+    )
+    db_session.add(embedding_model)
+    db_session.commit()
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_user_from_token_if_valid",
+            new_callable=AsyncMock,
+        ) as mock_get_user,
+        patch(
+            "spacebridge.api.endpoints.search.perform_search", new_callable=AsyncMock
+        ) as mock_perform_search,
+        patch("spacebridge.api.endpoints.mcp.get_db") as mock_get_db,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_user.return_value = test_user
+        mock_perform_search.return_value = ApiSearchResponse(results=[])
+        mock_get_db.return_value = iter([db_session])
+
+        response = await mcp.search(query="test query", project="test-proj")
+
+    assert isinstance(response, ApiSearchResponse)
 
 
-def test_mcp_estimate_compliance_success(
-    client: TestClient, db_session: Session, test_user: Account
-):
+@pytest.mark.asyncio
+async def test_mcp_estimate_compliance_success(db_session: Session, test_user: Account):
     """
     Tests the MCP estimate_compliance tool.
     """
-    # This test is simplified and assumes the underlying compliance logic is tested elsewhere.
     tracker = Tracker(
         name="test-tracker",
         account_id=test_user.id,
@@ -256,11 +275,13 @@ def test_mcp_estimate_compliance_success(
     )
     db_session.add(tracker)
     db_session.commit()
+
     organization = Organization(
         name="test-org", identifier="test-org", tracker_id=tracker.id
     )
     db_session.add(organization)
     db_session.commit()
+
     project = Project(
         name="test-proj",
         identifier="test-proj",
@@ -269,6 +290,7 @@ def test_mcp_estimate_compliance_success(
     )
     db_session.add(project)
     db_session.commit()
+
     issue = Issue(
         title="Test Issue",
         project_id=project.id,
@@ -279,37 +301,42 @@ def test_mcp_estimate_compliance_success(
     db_session.add(issue)
     db_session.commit()
 
-    with patch(
-        "spacebridge.api.endpoints.mcp.api_get_issue_compliance"
-    ) as mock_get_compliance:
-        mock_get_compliance.return_value = {
-            "id": str(uuid.uuid4()),
-            "prompt_id": "default",
-            "name": "Default Compliance",
-            "short_name": "Default",
-            "compliance_factor": 0.8,
-            "reason": "Looks good.",
-            "suggestion": "No suggestion.",
-            "issue_id": str(issue.id),
-            "created_at": "2025-01-01T00:00:00",
-            "updated_at": "2025-01-01T00:00:00",
-        }
-        response = client.post(
-            "/api/v1/mcp/",
-            json={
-                "tool": "estimate_compliance",
-                "arguments": {"issues": [str(issue.id)]},
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request"),
+        patch(
+            "spacebridge.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "spacebridge.api.endpoints.mcp._process_single_issue_estimate",
+            new_callable=AsyncMock,
+        ) as mock_process,
+    ):
+        mock_auth.return_value = (db_session, test_user)
+        mock_process.return_value = MagicMock(
+            success=True,
+            data={
+                "id": str(uuid.uuid4()),
+                "compliance_factor": 0.8,
+                "reason": "Looks good.",
+                "issue_id": str(issue.id),
+                "prompt_id": "test",
+                "name": "Test Compliance",
+                "suggestion": "No suggestion",
+                "short_name": "test",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
             },
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data["results"]) == 1
-        assert data["results"][0]["compliance_factor"] == 0.8
+
+        response = await mcp.estimate_compliance(issues=[str(issue.id)])
+
+    assert len(response.results) == 1
+    assert response.results[0].compliance_factor == 0.8
 
 
-def test_mcp_improve_compliance_success(
-    client: TestClient, db_session: Session, test_user: Account
-):
+@pytest.mark.asyncio
+async def test_mcp_improve_compliance_success(db_session: Session, test_user: Account):
     """
     Tests the MCP improve_compliance tool.
     """
@@ -322,11 +349,13 @@ def test_mcp_improve_compliance_success(
     )
     db_session.add(tracker)
     db_session.commit()
+
     organization = Organization(
         name="test-org", identifier="test-org", tracker_id=tracker.id
     )
     db_session.add(organization)
     db_session.commit()
+
     project = Project(
         name="test-proj",
         identifier="test-proj",
@@ -335,6 +364,7 @@ def test_mcp_improve_compliance_success(
     )
     db_session.add(project)
     db_session.commit()
+
     issue = Issue(
         title="Test Issue",
         project_id=project.id,
@@ -345,22 +375,29 @@ def test_mcp_improve_compliance_success(
     db_session.add(issue)
     db_session.commit()
 
-    with patch(
-        "spacebridge.api.endpoints.mcp.api_get_compliance_suggestion"
-    ) as mock_get_suggestion:
-        mock_get_suggestion.return_value = ComplianceSuggestionResponse(
-            title="Improved Title",
-            description="Improved description.",
-            changes="- Fixed the title\n- Expanded the description",
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request"),
+        patch(
+            "spacebridge.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "spacebridge.api.endpoints.mcp._process_single_issue_compliance",
+            new_callable=AsyncMock,
+        ) as mock_process,
+    ):
+        mock_auth.return_value = (db_session, test_user)
+        mock_process.return_value = MagicMock(
+            success=True,
+            data=SuggestedUpdate(
+                issue_identifier=str(issue.id),
+                arguments=UpdateIssueRequest(
+                    issue=str(issue.id), title="Improved Title"
+                ),
+            ),
         )
-        response = client.post(
-            "/api/v1/mcp/",
-            json={
-                "tool": "improve_compliance",
-                "arguments": {"issues": [str(issue.id)]},
-            },
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data["suggested_updates"]) == 1
-        assert data["suggested_updates"][0]["arguments"]["title"] == "Improved Title"
+
+        response = await mcp.improve_compliance(issues=[str(issue.id)])
+
+    assert len(response.suggested_updates) == 1
+    assert response.suggested_updates[0].arguments.title == "Improved Title"
