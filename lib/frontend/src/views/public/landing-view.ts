@@ -355,7 +355,7 @@ export class LandingView extends LitElement {
                         <h5>Setup</h5>
                         <p>Run the following command in your terminal:</p>
                         <div class="code-container">
-                          <pre><code>claude mcp add --transport http localbridge http://localhost:8000/mcp/v1 \ 
+                          <pre><code>claude mcp add --transport http localbridge http://localhost:8000/mcp/v1  
   --header "Authorization: Bearer YOUR_SPACEBRIDGE_API_KEY"</code></pre>
                           <button class="copy-btn" @click=${this._copyCode}>
                             <svg
