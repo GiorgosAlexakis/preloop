@@ -10,6 +10,7 @@ from ..models.issue import Issue
 from ..models.project import Project
 from ..models.tracker import Tracker
 from .base import CRUDBase
+from .issue_compliance_result import issue_compliance_result
 
 
 class CRUDIssue(CRUDBase[Issue]):
@@ -206,6 +207,12 @@ class CRUDIssue(CRUDBase[Issue]):
         # Placeholder for logic to fetch issue details from external tracker
         # and update or create local issue
         return None
+
+    def update(self, db: Session, *, db_obj: Issue, obj_in: Dict) -> Optional[Issue]:
+        """Update issue and optionally sync to tracker."""
+        retval = super().update(db, db_obj=db_obj, obj_in=obj_in)
+        issue_compliance_result.delete_by_issue_id(db, issue_id=db_obj.id)
+        return retval
 
     def update_status(
         self, db: Session, *, id: str, status: str, sync_to_tracker: bool = True
