@@ -350,38 +350,13 @@ export class LandingView extends LitElement {
                       <div>
                         <h5>Prerequisites</h5>
                         <ul>
-                          <li>Python 3.9+ installed</li>
                           <li>SpaceBridge API key (register above)</li>
-                          <li>OpenAI API key for similarity search</li>
                         </ul>
-                        <h5>Installation</h5>
-                        <p>First, install the SpaceBridge package:</p>
+                        <h5>Setup</h5>
+                        <p>Run the following command in your terminal:</p>
                         <div class="code-container">
-                          <pre><code>pip install spacebridge-mcp</code></pre>
-                          <button class="copy-btn" @click=${this._copyCode}>
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="16"
-                              height="16"
-                              fill="currentColor"
-                              class="bi bi-clipboard"
-                              viewBox="0 0 16 16"
-                            >
-                              <path
-                                d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                              />
-                              <path
-                                d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                        <p>Then add to Claude Code:</p>
-                        <div class="code-container">
-                          <pre><code>claude mcp add spacebridge $(which spacebridge-mcp-server) \\
-  --scope user \\
-  --env SPACEBRIDGE_API_KEY="YOUR_KEY" \\
-  --env OPENAI_API_KEY="YOUR_OPENAI_KEY"</code></pre>
+                          <pre><code>claude mcp add --transport http localbridge http://localhost:8000/mcp/v1 \ 
+  --header "Authorization: Bearer YOUR_SPACEBRIDGE_API_KEY"</code></pre>
                           <button class="copy-btn" @click=${this._copyCode}>
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
@@ -408,42 +383,19 @@ export class LandingView extends LitElement {
                       <div>
                         <h5>Prerequisites</h5>
                         <ul>
-                          <li>Python 3.9+ installed</li>
                           <li>SpaceBridge API key (register above)</li>
-                          <li>OpenAI API key for similarity search</li>
                         </ul>
-                        <h5>Installation</h5>
-                        <p>First, install the SpaceBridge package:</p>
-                        <div class="code-container">
-                          <pre><code>pip install spacebridge-mcp</code></pre>
-                          <button class="copy-btn" @click=${this._copyCode}>
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="16"
-                              height="16"
-                              fill="currentColor"
-                              class="bi bi-clipboard"
-                              viewBox="0 0 16 16"
-                            >
-                              <path
-                                d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                              />
-                              <path
-                                d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                        <p>Then configure via JSON file:</p>
+                        <h5>Setup</h5>
+                        <p>Create or edit <code>~/.cursor/mcp.json</code>:</p>
                         <div class="code-container">
                           <pre><code># Create or edit ~/.cursor/mcp.json
 {
   "mcpServers": {
     "spacebridge": {
-      "command": "$(which spacebridge-mcp-server)",
-      "env": {
-        "SPACEBRIDGE_API_KEY": "YOUR_KEY",
-        "OPENAI_API_KEY": "YOUR_OPENAI_KEY"
+      "transport": "http",
+      "url": "http://localhost:8000/mcp/v1",
+      "headers": {
+        "Authorization": "Bearer YOUR_SPACEBRIDGE_API_KEY"
       }
     }
   }
@@ -474,43 +426,19 @@ export class LandingView extends LitElement {
                       <div>
                         <h5>Prerequisites</h5>
                         <ul>
-                          <li>Python 3.9+ installed</li>
                           <li>SpaceBridge API key (register above)</li>
-                          <li>OpenAI API key for similarity search</li>
                         </ul>
-                        <h5>Installation</h5>
-                        <p>First, install the SpaceBridge package:</p>
-                        <div class="code-container">
-                          <pre><code>pip install spacebridge-mcp</code></pre>
-                          <button class="copy-btn" @click=${this._copyCode}>
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="16"
-                              height="16"
-                              fill="currentColor"
-                              class="bi bi-clipboard"
-                              viewBox="0 0 16 16"
-                            >
-                              <path
-                                d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                              />
-                              <path
-                                d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                        <p>Then configure via JSON configuration file:</p>
+                        <h5>Setup</h5>
+                        <p>Create or edit your MCP configuration file:</p>
                         <div class="code-container">
                           <pre><code>{
   "mcpServers": {
     "spacebridge": {
-      "command": "/full/path/to/spacebridge-mcp-server",
-      "args": [],
-      "env": {
-        "SPACEBRIDGE_API_KEY": "YOUR_KEY",
-        "OPENAI_API_KEY": "YOUR_OPENAI_KEY"
-      }
+        "transport": "http",
+        "url": "http://localhost:8000/mcp/v1",
+        "headers": {
+            "Authorization": "Bearer YOUR_SPACEBRIDGE_API_KEY"
+        }
     }
   }
 }</code></pre>
