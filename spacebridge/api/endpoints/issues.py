@@ -67,9 +67,9 @@ async def search_issues(
         10, ge=1, le=100, description="Maximum number of issues to return"
     ),
     search_type: str = Query(
-        "full_text",
-        enum=["full_text", "similarity"],
-        description="Type of search to perform ('full_text' or 'similarity')",
+        "fulltext",
+        enum=["fulltext", "similarity"],
+        description="Type of search to perform ('fulltext' or 'similarity')",
     ),
     status: Optional[str] = Query(None, description="Filter by issue status"),
     labels: Optional[str] = Query(
@@ -398,7 +398,7 @@ async def search_issues(
                     detail="An error occurred during similarity search.",
                 )
 
-        elif search_type == "full_text":
+        elif search_type == "fulltext":
             # Perform traditional full-text search
             try:
                 from sqlalchemy import or_
@@ -540,7 +540,7 @@ async def search_issues(
             logger.warning(f"Invalid search type specified: {search_type}")
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid search type: {search_type}. Must be 'full_text' or 'similarity'.",
+                detail=f"Invalid search type: {search_type}. Must be 'fulltext' or 'similarity'.",
             )
         else:  # No query provided, return empty list or handle as needed
             pass  # Currently returns empty list by default
@@ -776,6 +776,8 @@ async def create_issue(
 
         # Prepare the issue create model using the correct base class
         tracker_issue = IssueCreate(  # Use IssueCreate from base.py
+            project=proj.slug or proj.identifier,
+            organization_id=proj.organization_id,
             title=issue.title,
             description=issue.description,
             priority=issue.priority,

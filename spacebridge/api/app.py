@@ -305,7 +305,6 @@ def create_app() -> FastAPI:
         assignee: Optional[str] = None,
         priority: Optional[str] = None,
         status: Optional[str] = None,
-        similarity_search: bool = True,
     ):
         return await mcp_router.create_issue(
             project=project,
@@ -315,7 +314,6 @@ def create_app() -> FastAPI:
             assignee=assignee,
             priority=priority,
             status=status,
-            similarity_search=similarity_search,
         )
 
     @mcp.tool
@@ -345,17 +343,17 @@ def create_app() -> FastAPI:
             search_type="similarity",
         )
 
-    @mcp.tool
-    async def estimate_compliance(
-        issues: List[str],
-    ):
-        return await mcp_router.estimate_compliance(issues)
+    @mcp.tool(
+        description="Estimate compliance for a list of issues provided as URLs or issue keys (slug or identifier).",
+    )
+    async def estimate_compliance(issues: List[str], compliance_metric: str = "DoR"):
+        return await mcp_router.estimate_compliance(issues, compliance_metric)
 
-    @mcp.tool
-    async def improve_compliance(
-        issues: List[str],
-    ):
-        return await mcp_router.improve_compliance(issues)
+    @mcp.tool(
+        description="Improve compliance for a list of issues provided as URLs or issue keys (slug or identifier).",
+    )
+    async def improve_compliance(issues: List[str], compliance_metric: str = "DoR"):
+        return await mcp_router.improve_compliance(issues, compliance_metric)
 
     mcp_app = mcp.streamable_http_app(path="/v1")
 

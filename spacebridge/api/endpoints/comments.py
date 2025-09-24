@@ -150,9 +150,9 @@ async def search_comments(
         None, description="Search query text for comment body or vector search"
     ),
     search_type: str = Query(
-        "full_text",
-        enum=["full_text", "similarity"],
-        description="Type of search to perform ('full_text' or 'similarity')",
+        "fulltext",
+        enum=["fulltext", "similarity"],
+        description="Type of search to perform ('fulltext' or 'similarity')",
     ),
     limit: int = Query(
         10, ge=1, le=100, description="Maximum number of comments to return"
@@ -267,7 +267,7 @@ async def search_comments(
                     )
                 )
 
-        elif search_type == "full_text":
+        elif search_type == "fulltext":
             # TODO: implement full-text search
             # For full-text, crud_comment.search_full_text expects single ID strings or None
             if author:
@@ -321,7 +321,7 @@ async def search_comments(
         else:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid search_type specified. Must be 'full_text' or 'similarity'.",
+                detail="Invalid search_type specified. Must be 'fulltext' or 'similarity'.",
             )
 
         return CommentSearchResults(

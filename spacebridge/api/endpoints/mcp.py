@@ -5,39 +5,46 @@ This module provides a secure, scalable, and integrated way for MCP clients
 to interact with the SpaceBridge platform using FastMCP.
 """
 
+import asyncio
 import logging
 import re
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Literal
 from sqlalchemy.exc import SQLAlchemyError
 
 from fastapi import HTTPException
 
-from spacebridge.api.common import get_tracker_client
+from spacebridge.api.common import (
+    get_tracker_client,
+    load_compliance_prompts_config,
+)
 
 from spacebridge.api.endpoints.issues import (
     create_issue as api_create_issue,
-    search_issues as api_search_issues,
 )
 from spacebridge.api.endpoints.search import (
-    search_all as api_search_all,
+    perform_search,
     SearchResponse as ApiSearchResponse,
 )
 from spacebridge.api.endpoints.issue_compliance import (
-    get_issue_compliance as api_get_issue_compliance,
+    _calculate_issue_compliance,
     get_compliance_improvement_suggestion as api_get_compliance_suggestion,
 )
 from spacebridge.schemas.issue import IssueCreate, IssueUpdate
+from spacebridge.services.billing import BillingService
 from spacebridge.schemas.mcp import (
     GetIssueResponse,
     CreateIssueResponse,
     UpdateIssueResponse,
     EstimateComplianceResponse,
     ImproveComplianceResponse,
+    ProcessingMetadata,
     SuggestedUpdate,
     UpdateIssueRequest,
 )
 
 from spacebridge.services.duplicate_detection import DuplicateDetector
+from spacebridge.config import get_settings
+from spacebridge.api.endpoints.billing import get_billing_service
 from spacemodels.crud import (
     CRUDIssue,
     CRUDProject,
@@ -62,6 +69,104 @@ crud_organization = CRUDOrganization(Organization)
 crud_issue_compliance_result = CRUDIssueComplianceResult(IssueComplianceResult)
 
 
+class IssueProcessingError(Exception):
+    """Exception for issue processing errors."""
+
+    pass
+
+
+class IssueNotFoundError(IssueProcessingError):
+    """Exception for when an issue cannot be found."""
+
+    pass
+
+
+class ProcessingResult:
+    """Container for processing results."""
+
+    def __init__(
+        self, success: bool, data=None, error: str = None, issue_slug: str = None
+    ):
+        self.success = success
+        self.data = data
+        self.error = error
+        self.issue_slug = issue_slug
+
+
+async def _get_authenticated_user(request_headers):
+    """Extract and authenticate user from request headers."""
+    db = next(get_db())
+    authorization = request_headers.get("authorization")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    token = authorization.split("Bearer ")[1]
+    current_user = await get_user_from_token_if_valid(token, db)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    return db, current_user
+
+
+def _find_issue_by_identifier(db, identifier: str, account_id: str) -> Issue:
+    """Find an issue by identifier (URL, key, or ID) with comprehensive lookup logic."""
+    if not identifier or not identifier.strip():
+        raise IssueNotFoundError(f"Empty or invalid issue identifier: '{identifier}'")
+
+    identifier = identifier.strip()
+
+    # Check if issue is a URL
+    if identifier.startswith("http"):
+        issue_obj = crud_issue.get_by_external_url(
+            db, external_url=identifier, account_id=account_id
+        )
+        if not issue_obj:
+            raise IssueNotFoundError(f"Issue not found by URL: {identifier}")
+        return issue_obj
+
+    # Try exact key match first
+    issue_obj = crud_issue.get_by_key(db, key=identifier, account_id=account_id)
+    if issue_obj:
+        return issue_obj
+
+    # Try key postfix match
+    issue_obj = crud_issue.get_by_key_postfix(
+        db, key_postfix=identifier, account_id=account_id
+    )
+    if issue_obj:
+        return issue_obj
+
+    # Try direct ID lookup if identifier looks like a UUID
+    try:
+        issue_obj = crud_issue.get(db, id=identifier, account_id=account_id)
+        if issue_obj:
+            return issue_obj
+    except Exception:  # Catch potential UUID conversion errors
+        pass
+
+    raise IssueNotFoundError(f"Issue not found: {identifier}")
+
+
+def _validate_issues_input(issues: List[str]) -> List[str]:
+    """Validate and sanitize issues input."""
+    if not issues:
+        raise HTTPException(status_code=400, detail="No issues provided")
+
+    if len(issues) > 100:  # Reasonable batch limit
+        raise HTTPException(status_code=400, detail="Too many issues (max 100)")
+
+    # Filter out empty strings and strip whitespace
+    validated_issues = []
+    for issue in issues:
+        if isinstance(issue, str) and issue.strip():
+            validated_issues.append(issue.strip())
+
+    if not validated_issues:
+        raise HTTPException(status_code=400, detail="No valid issues provided")
+
+    return validated_issues
+
+
 def _parse_issue_slug(slug: str) -> Dict[str, Optional[str]]:
     """
     Parses a full issue slug into its components.
@@ -75,6 +180,20 @@ def _parse_issue_slug(slug: str) -> Dict[str, Optional[str]]:
         proj, key = match.groups()
         return {"organization": None, "project": proj, "key": key}
     return {"organization": None, "project": None, "key": slug}
+
+
+def _enrich_compliance_results(db_results):
+    """Enrich compliance results with short_name from config."""
+    settings = get_settings()
+    prompts_config = load_compliance_prompts_config(settings.PROMPTS_FILE)
+    enriched_results = []
+    for result in db_results:
+        prompt_data = prompts_config.get(result.prompt_id)
+        if prompt_data:
+            result_dict = result.to_dict()
+            result_dict["short_name"] = prompt_data.get("short_name")
+            enriched_results.append(result_dict)
+    return enriched_results
 
 
 async def get_issue(
@@ -91,21 +210,10 @@ async def get_issue(
         current_user = await get_user_from_token_if_valid(token, db)
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    # Check if issue is a URL
-    if issue.startswith("http"):
-        issue_obj = crud_issue.get_by_external_url(
-            db, external_url=issue, account_id=current_user.id
-        )
-        if not issue_obj:
-            raise HTTPException(status_code=404, detail="Issue not found")
-    else:
-        issue_obj = crud_issue.get_by_key(db, key=issue, account_id=current_user.id)
-        if not issue_obj:
-            issue_obj = crud_issue.get_by_key_postfix(
-                db, key_postfix=issue, account_id=current_user.id
-            )
-            if not issue_obj:
-                raise HTTPException(status_code=404, detail="Issue not found")
+    try:
+        issue_obj = _find_issue_by_identifier(db, issue, current_user.id)
+    except IssueNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
     project_name = issue_obj.project.name
     organization_name = issue_obj.project.organization.name
@@ -140,7 +248,7 @@ async def get_issue(
         meta_data=issue_obj.meta_data,
         labels=issue_obj.meta_data.get("labels", []),
         assignee=issue_obj.meta_data.get("assignee", None),
-        compliance_results=[c.to_dict() for c in compliance_results],
+        compliance_results=_enrich_compliance_results(compliance_results),
     )
 
 
@@ -152,7 +260,7 @@ async def create_issue(
     assignee: Optional[str] = None,
     priority: Optional[str] = None,
     status: Optional[str] = None,
-    similarity_search: bool = True,
+    prevent_duplicates: bool = True,
 ) -> CreateIssueResponse:
     """
     Handles the 'create_issue' tool call.
@@ -171,17 +279,19 @@ async def create_issue(
     if not project_obj:
         raise HTTPException(status_code=404, detail=f"Project '{project}' not found.")
 
-    if similarity_search:
+    if prevent_duplicates:
         combined_text = f"{title}\n\n{description}"
         try:
-            search_results = await api_search_issues(
+            search_response = await perform_search(
                 query=combined_text,
-                project=project_obj.name,
+                embedding_type="issue",
+                project=project_obj.slug or project_obj.identifier,
                 search_type="similarity",
                 limit=5,
                 db=db,
                 current_user=current_user,
             )
+            search_results = search_response.results
         except Exception as e:
             logger.error(f"Similarity search failed during duplicate check: {e}")
             search_results = []
@@ -205,6 +315,7 @@ async def create_issue(
                 )
 
     issue_create_schema = IssueCreate(
+        project=project_obj.slug or project_obj.identifier,
         title=title,
         description=description,
         project_id=project_obj.id,
@@ -251,21 +362,10 @@ async def update_issue(
         current_user = await get_user_from_token_if_valid(token, db)
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    # Check if issue is a URL
-    if issue.startswith("http"):
-        issue_obj = crud_issue.get_by_external_url(
-            db, external_url=issue, account_id=current_user.id
-        )
-        if not issue_obj:
-            raise HTTPException(status_code=404, detail="Issue not found")
-    else:
-        issue_obj = crud_issue.get_by_key(db, key=issue, account_id=current_user.id)
-        if not issue_obj:
-            issue_obj = crud_issue.get_by_key_postfix(
-                db, key_postfix=issue, account_id=current_user.id
-            )
-            if not issue_obj:
-                raise HTTPException(status_code=404, detail="Issue not found")
+    try:
+        issue_obj = _find_issue_by_identifier(db, issue, current_user.id)
+    except IssueNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
     # --- Prepare Update Payload for Tracker ---
     # Use the base IssueUpdate schema expected by the tracker client
@@ -447,13 +547,15 @@ async def update_issue(
         meta_data=issue_obj.meta_data,
         labels=issue_obj.meta_data.get("labels", []),
         assignee=issue_obj.meta_data.get("assignee", None),
-        compliance_results=[c.to_dict() for c in compliance_results],
+        compliance_results=_enrich_compliance_results(compliance_results),
     )
 
 
 async def search(
     query: str,
     project: Optional[str] = None,
+    target_type: Literal["issue", "comment", "all"] = "all",
+    search_type: Literal["similarity", "fulltext"] = "similarity",
     limit: int = 10,
 ) -> ApiSearchResponse:
     """
@@ -467,13 +569,22 @@ async def search(
         current_user = await get_user_from_token_if_valid(token, db)
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-
+    project_obj = crud_project.get_by_slug_or_identifier(
+        db, slug_or_identifier=project, account_id=current_user.id
+    )
+    if project_obj:
+        project = project_obj.slug or project_obj.identifier
+    else:
+        project = None
+    if target_type == "all":
+        target_type = None
     try:
-        return await api_search_all(
+        return await perform_search(
             query=query,
             project=project,
+            embedding_type=target_type,
             limit=limit,
-            search_type="similarity",
+            search_type=search_type,
             db=db,
             current_user=current_user,
         )
@@ -486,92 +597,188 @@ async def search(
 
 async def estimate_compliance(
     issues: List[str],
+    compliance_metric: str = "DoR",
 ) -> EstimateComplianceResponse:
     """
     Handles the 'estimate_compliance' tool call.
     """
-    db = next(get_db())
-    current_user = None
-    authorization = get_http_request().headers.get("authorization")
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split("Bearer ")[1]
-        current_user = await get_user_from_token_if_valid(token, db)
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    db, current_user = await _get_authenticated_user(get_http_request().headers)
+    settings = get_settings()
+    billing_service = get_billing_service(db)
     results = []
-    for issue_slug in issues:
-        slug_parts = _parse_issue_slug(issue_slug)
-        key = slug_parts["key"]
-        if not key:
-            continue
-
-        issue = crud_issue.get(db, id=key, account_id=current_user.id)
-        if not issue:
-            continue
-
+    for issue_identifier in _validate_issues_input(issues):
         try:
-            compliance_result = api_get_issue_compliance(
-                issue_id=issue.id,
-                prompt_name="default",
+            issue_obj = _find_issue_by_identifier(db, issue_identifier, current_user.id)
+            compliance_result = _calculate_issue_compliance(
+                issue_id=issue_obj.id,
+                prompt_name="dor_compliance_v1"
+                if compliance_metric == "DoR"
+                else compliance_metric,
                 db=db,
                 current_user=current_user,
+                settings=settings,
+                billing_service=billing_service,
             )
             results.append(compliance_result)
-        except HTTPException as e:
+        except (IssueNotFoundError, HTTPException) as e:
+            detail = e.detail if hasattr(e, "detail") else str(e)
             logger.warning(
-                f"Could not get compliance for issue '{issue_slug}': {e.detail}"
+                f"Could not get compliance for issue '{issue_identifier}': {detail}"
             )
         except Exception as e:
-            logger.error(f"An unexpected error occurred for issue '{issue_slug}': {e}")
+            logger.error(
+                f"An unexpected error occurred for issue '{issue_identifier}': {e}",
+                exc_info=True,
+            )
 
     return EstimateComplianceResponse(results=results)
 
 
+async def _process_single_issue_compliance(
+    issue_identifier: str,
+    db,
+    current_user,
+    prompt_name: str = "default",
+    billing_service: BillingService = None,
+) -> ProcessingResult:
+    """Process compliance improvement for a single issue."""
+    try:
+        # Find the issue using our enhanced lookup
+        issue = _find_issue_by_identifier(db, issue_identifier, current_user.id)
+
+        # Get compliance suggestion
+        suggestion = api_get_compliance_suggestion(
+            issue_id=issue.id,
+            prompt_name=prompt_name,
+            db=db,
+            current_user=current_user,
+            billing_service=billing_service,
+        )
+
+        # Create suggested update
+        update_args = UpdateIssueRequest(
+            issue=issue_identifier,
+            title=suggestion.title,
+            description=suggestion.description,
+        )
+        suggested_update = SuggestedUpdate(arguments=update_args)
+
+        return ProcessingResult(
+            success=True, data=suggested_update, issue_identifier=issue_identifier
+        )
+
+    except IssueNotFoundError as e:
+        logger.warning(f"Issue not found: '{issue_identifier}': {str(e)}")
+        return ProcessingResult(
+            success=False,
+            error=f"Issue not found: {str(e)}",
+            issue_identifier=issue_identifier,
+        )
+    except HTTPException as e:
+        logger.warning(
+            f"Could not get compliance suggestion for issue '{issue_identifier}': {e.detail}"
+        )
+        return ProcessingResult(
+            success=False,
+            error=f"API error: {e.detail}",
+            issue_identifier=issue_identifier,
+        )
+    except Exception as e:
+        logger.error(
+            f"Unexpected error processing issue '{issue_identifier}': {e}",
+            exc_info=True,
+        )
+        return ProcessingResult(
+            success=False,
+            error=f"Unexpected error: {str(e)}",
+            issue_identifier=issue_identifier,
+        )
+
+
 async def improve_compliance(
     issues: List[str],
+    compliance_metric: str = "DoR",
 ) -> ImproveComplianceResponse:
     """
-    Handles the 'improve_compliance' tool call.
+    Handles the 'improve_compliance' tool call with enhanced error handling and parallel processing.
+
+    Args:
+        issues: List of issue slugs/IDs/URLs to process
+        compliance_metric: Name of the compliance metric to use (default: "DoR")
+
+    Returns:
+        Enhanced response with suggested updates and processing metadata
     """
-    db = next(get_db())
-    current_user = None
-    authorization = get_http_request().headers.get("authorization")
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split("Bearer ")[1]
-        current_user = await get_user_from_token_if_valid(token, db)
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    # Validate input
+    validated_issues = _validate_issues_input(issues)
+
+    # Authenticate user
+    db, current_user = await _get_authenticated_user(get_http_request().headers)
+    settings = get_settings()
+    billing_service = get_billing_service(db)
+
+    # Process issues with controlled parallelism (max 10 concurrent)
+    semaphore = asyncio.Semaphore(10)
+
+    async def process_with_semaphore(issue_identifier: str) -> ProcessingResult:
+        async with semaphore:
+            return await _process_single_issue_compliance(
+                issue_identifier,
+                db,
+                current_user,
+                compliance_metric,
+                billing_service=billing_service,
+            )
+
+    # Execute all tasks in parallel
+    logger.info(
+        f"Processing {len(validated_issues)} issues for compliance improvements"
+    )
+    results = await asyncio.gather(
+        *[
+            process_with_semaphore(issue_identifier)
+            for issue_identifier in validated_issues
+        ],
+        return_exceptions=True,
+    )
+
+    # Separate successful and failed results
     suggested_updates = []
-    for issue_slug in issues:
-        slug_parts = _parse_issue_slug(issue_slug)
-        key = slug_parts["key"]
-        if not key:
-            continue
+    failed_issues = []
+    errors = []
 
-        issue = crud_issue.get(db, id=key, account_id=current_user.id)
-        if not issue:
-            continue
-
-        try:
-            suggestion = api_get_compliance_suggestion(
-                issue_id=issue.id,
-                prompt_name="default",
-                db=db,
-                current_user=current_user,
-            )
-            update_args = UpdateIssueRequest(
-                issue=issue_slug,
-                title=suggestion.title,
-                description=suggestion.description,
-            )
-            suggested_updates.append(SuggestedUpdate(arguments=update_args))
-        except HTTPException as e:
-            logger.warning(
-                f"Could not get compliance suggestion for issue '{issue_slug}': {e.detail}"
-            )
-        except Exception as e:
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            # Handle unexpected exceptions from gather
+            issue_identifier = validated_issues[i]
+            error_msg = f"Processing exception: {str(result)}"
+            failed_issues.append(issue_identifier)
+            errors.append(f"{issue_identifier}: {error_msg}")
             logger.error(
-                f"An unexpected error occurred getting suggestion for '{issue_slug}': {e}"
+                f"Exception processing issue '{issue_identifier}': {result}",
+                exc_info=True,
             )
+        elif result.success:
+            suggested_updates.append(result.data)
+        else:
+            failed_issues.append(result.issue_identifier)
+            errors.append(f"{result.issue_identifier}: {result.error}")
 
-    return ImproveComplianceResponse(suggested_updates=suggested_updates)
+    # Create processing metadata
+    metadata = ProcessingMetadata(
+        total_requested=len(validated_issues),
+        successfully_processed=len(suggested_updates),
+        failed_count=len(failed_issues),
+        failed_issues=failed_issues,
+        errors=errors,
+    )
+
+    logger.info(
+        f"Compliance improvement processing completed: "
+        f"{metadata.successfully_processed}/{metadata.total_requested} successful, "
+        f"{metadata.failed_count} failed"
+    )
+
+    return ImproveComplianceResponse(
+        suggested_updates=suggested_updates, metadata=metadata
+    )

@@ -77,7 +77,7 @@ async def test_search_comments_by_issue_id(mock_get_multi_by_issue):
             db=db_session,
             current_user=current_user,
             issue_id="123",
-            search_type="full_text",
+            search_type="fulltext",
             query="",
             author=None,
         )
@@ -103,7 +103,7 @@ async def test_search_comments_by_author(mock_get_multi_by_author):
             db=db_session,
             current_user=current_user,
             author="test",
-            search_type="full_text",
+            search_type="fulltext",
             query="",
             issue_id=None,
         )

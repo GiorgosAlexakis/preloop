@@ -1419,13 +1419,13 @@ paths:
         required: false
         schema:
           type: string
-          description: Type of search to perform ('full_text' or 'similarity')
+          description: Type of search to perform ('fulltext' or 'similarity')
           enum:
-          - full_text
+          - fulltext
           - similarity
-          default: full_text
+          default: fulltext
           title: Search Type
-        description: Type of search to perform ('full_text' or 'similarity')
+        description: Type of search to perform ('fulltext' or 'similarity')
       - name: status
         in: query
         required: false
@@ -1911,13 +1911,13 @@ paths:
         required: false
         schema:
           type: string
-          description: Type of search to perform ('full_text' or 'similarity')
+          description: Type of search to perform ('fulltext' or 'similarity')
           enum:
-          - full_text
+          - fulltext
           - similarity
-          default: full_text
+          default: fulltext
           title: Search Type
-        description: Type of search to perform ('full_text' or 'similarity')
+        description: Type of search to perform ('fulltext' or 'similarity')
       - name: limit
         in: query
         required: false
@@ -2021,13 +2021,13 @@ paths:
         required: false
         schema:
           type: string
-          description: Type of search to perform ('full_text' or 'similarity')
+          description: Type of search to perform ('fulltext' or 'similarity')
           enum:
-          - full_text
+          - fulltext
           - similarity
-          default: full_text
+          default: fulltext
           title: Search Type
-        description: Type of search to perform ('full_text' or 'similarity')
+        description: Type of search to perform ('fulltext' or 'similarity')
       - name: limit
         in: query
         required: false

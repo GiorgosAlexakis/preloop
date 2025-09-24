@@ -102,10 +102,21 @@ class ImproveComplianceRequest(BaseModel):
     issues: List[str]
 
 
+class ProcessingMetadata(BaseModel):
+    """Metadata about processing results."""
+
+    total_requested: int
+    successfully_processed: int
+    failed_count: int
+    failed_issues: List[str] = []
+    errors: List[str] = []
+
+
 class ImproveComplianceResponse(BaseModel):
     """Response for the improve_compliance tool."""
 
     suggested_updates: List[SuggestedUpdate]
+    metadata: ProcessingMetadata
 
 
 # Schemas for other tools will be added here.

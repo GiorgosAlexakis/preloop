@@ -1,4 +1,5 @@
 from typing import List, Optional, Union
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -24,14 +25,14 @@ from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
-from spacebridge.services.billing import BillingService
-from spacebridge.api.endpoints.billing import get_billing_service
 
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
 crud_tracker = CRUDTracker(Tracker)
+
+logger = logging.getLogger(__name__)
 
 # Pydantic Schemas for Search
 
@@ -54,74 +55,34 @@ class SearchResponse(BaseModel):
     results: List[SearchResultItem]
 
 
-router = APIRouter()
-
-
-@router.get(
-    "/search",
-    response_model=SearchResponse,
-    summary="Perform Similarity Search",
-    description="Performs a similarity search across issues and/or comments based on a query text and an embedding model.",
-)
-async def search_all(
-    query: str = Query(..., description="The text query to search for."),
-    embedding_type: Optional[str] = Query(
-        None,
-        examples=["issue", "comment"],
-        description="Type of items to search: 'issue', 'comment', or null for both.",
-    ),
-    search_type: str = Query(
-        "full_text",
-        enum=["full_text", "similarity"],
-        description="Type of search to perform ('full_text' or 'similarity')",
-    ),
-    limit: int = Query(
-        10, ge=1, le=100, description="Maximum number of comments to return"
-    ),
-    skip: int = Query(0, ge=0, description="Number of results to skip for pagination"),
-    sort: Optional[str] = Query(
-        None,
-        enum=["newest"],
-        description="Sort order. 'newest' sorts by creation date descending.",
-    ),
-    issue_id: Optional[str] = Query(
-        None, description="Filter comments by a specific issue ID (UUID)"
-    ),
-    project_id: Optional[str] = Query(
-        None, description="Filter search results by project ID (UUID)."
-    ),
-    project: Optional[str] = Query(
-        None, description="Filter search results by project name."
-    ),
-    organization_id: Optional[str] = Query(
-        None, description="Filter search results by organization ID (UUID)."
-    ),
-    organization: Optional[str] = Query(
-        None, description="Filter search results by organization name."
-    ),
-    author: Optional[str] = Query(
-        None, description="Filter comments by author (username)"
-    ),
-    status: Optional[str] = Query(
-        None, description="Filter issues by status ('opened', 'closed', 'all')."
-    ),
-    db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
-    billing_service: BillingService = Depends(get_billing_service),
-):
+async def perform_search(
+    query: str,
+    db: Session,
+    current_user: Account,
+    embedding_type: Optional[str] = None,
+    search_type: str = "fulltext",
+    limit: int = 10,
+    skip: int = 0,
+    sort: Optional[str] = None,
+    issue_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    project: Optional[str] = None,
+    organization_id: Optional[str] = None,
+    organization: Optional[str] = None,
+    author: Optional[str] = None,
+    status: Optional[str] = None,
+) -> SearchResponse:
     """
     Perform a similarity search based on query text.
     - **query**: The natural language query.
     - **embedding_type**: 'issue', 'comment', or null (for both).
-    - **search_type**: 'similarity' or 'full_text'.
+    - **search_type**: 'similarity' or 'fulltext'.
     - Filters: project_id, limit, etc. Note: issue_id, organization_id, author are not used for similarity search.
     """
     # --- Project and Organization Resolution Logic ---
     resolved_project_ids_param: Optional[List[str]] = None
-
     user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
     tracker_ids = [t.id for t in user_trackers]
-
     if project_id or project or organization_id or organization:
         if not tracker_ids:
             # User has no trackers, so any project/org filter yields no results
@@ -129,7 +90,6 @@ async def search_all(
         else:
             actual_organization_id: Optional[str] = None
             org_filter_is_valid = True
-
             if organization_id:
                 org_obj = crud_organization.get(
                     db, id=organization_id, account_id=current_user.id
@@ -267,7 +227,7 @@ async def search_all(
 
         # print(resolved_project_ids_param) # Optional: for debugging
 
-    elif search_type == "full_text":
+    elif search_type == "fulltext":
         raise HTTPException(
             status_code=501,  # Not Implemented
             detail="Full-text search is not implemented on this generic endpoint. Please use specific issue or comment search endpoints.",
@@ -276,7 +236,7 @@ async def search_all(
         # This case should ideally be caught by FastAPI's enum validation
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid search_type: '{search_type}'. Must be 'similarity' or 'full_text'.",
+            detail=f"Invalid search_type: '{search_type}'. Must be 'similarity' or 'fulltext'.",
         )
 
     # 4. Transform Results to Pydantic Schemas
@@ -346,3 +306,76 @@ async def search_all(
         )
 
     return SearchResponse(results=response_items)
+
+
+router = APIRouter()
+
+
+@router.get(
+    "/search",
+    response_model=SearchResponse,
+    summary="Perform Similarity Search",
+    description="Performs a similarity search across issues and/or comments based on a query text and an embedding model.",
+)
+async def search_all(
+    query: str = Query(..., description="The text query to search for."),
+    embedding_type: Optional[str] = Query(
+        None,
+        examples=["issue", "comment"],
+        description="Type of items to search: 'issue', 'comment', or null for both.",
+    ),
+    search_type: str = Query(
+        "fulltext",
+        enum=["fulltext", "similarity"],
+        description="Type of search to perform ('fulltext' or 'similarity')",
+    ),
+    limit: int = Query(
+        10, ge=1, le=100, description="Maximum number of comments to return"
+    ),
+    skip: int = Query(0, ge=0, description="Number of results to skip for pagination"),
+    sort: Optional[str] = Query(
+        None,
+        enum=["newest"],
+        description="Sort order. 'newest' sorts by creation date descending.",
+    ),
+    issue_id: Optional[str | None] = Query(
+        None, description="Filter comments by a specific issue ID (UUID)"
+    ),
+    project_id: Optional[str | None] = Query(
+        None, description="Filter search results by project ID (UUID)."
+    ),
+    project: Optional[str | None] = Query(
+        None, description="Filter search results by project name."
+    ),
+    organization_id: Optional[str | None] = Query(
+        None, description="Filter search results by organization ID (UUID)."
+    ),
+    organization: Optional[str | None] = Query(
+        None, description="Filter search results by organization name."
+    ),
+    author: Optional[str | None] = Query(
+        None, description="Filter comments by author (username)"
+    ),
+    status: Optional[str | None] = Query(
+        None, description="Filter issues by status ('opened', 'closed', 'all')."
+    ),
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+):
+    return await perform_search(
+        query=query,
+        db=db,
+        current_user=current_user,
+        embedding_type=embedding_type,
+        search_type=search_type,
+        limit=limit,
+        skip=skip,
+        sort=sort,
+        issue_id=issue_id,
+        project_id=project_id,
+        project=project,
+        organization_id=organization_id,
+        organization=organization,
+        author=author,
+        status=status,
+    )
