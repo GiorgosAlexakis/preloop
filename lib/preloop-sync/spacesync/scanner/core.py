@@ -62,9 +62,9 @@ class TrackerClient:
         else:
             raise ValueError(f"Unsupported tracker type: {self.tracker_type}")
 
-    def scan_organizations(self, db: Session) -> List[Organization]:
+    async def scan_organizations(self, db: Session) -> List[Organization]:
         """Scan and update organizations for this tracker."""
-        org_data_list = self.client.get_organizations()
+        org_data_list = await self.client.get_organizations()
         logger.info(
             f"Found {len(org_data_list)} organizations in tracker {self.tracker.id}"
         )
@@ -102,13 +102,15 @@ class TrackerClient:
             orgs.append(org)
         return orgs
 
-    def scan_projects(self, db: Session, organization: Organization) -> List[Project]:
+    async def scan_projects(
+        self, db: Session, organization: Organization
+    ) -> List[Project]:
         """Scan and update projects for an organization."""
         logger.info(
             f"Scanning projects for organization {organization.id} ({organization.name})"
         )
         try:
-            proj_data_list = self.client.get_projects(organization.identifier)
+            proj_data_list = await self.client.get_projects(organization.identifier)
         except Exception as e:
             logger.error(
                 f"Failed to get projects from tracker for org {organization.name}: {e}"
@@ -211,7 +213,7 @@ class TrackerClient:
 
         return processed_projects
 
-    def scan_issues(
+    async def scan_issues(
         self,
         db: Session,
         organization: Organization,
@@ -224,7 +226,7 @@ class TrackerClient:
             f"Scanning issues for project {project.id} ({project.name}) since {since}"
         )
         billing_service = BillingService(db)
-        issue_data_list = self.client.get_issues(
+        issue_data_list = await self.client.get_issues(
             organization_id=organization.identifier,
             project_id=project.identifier,
             since=since,
@@ -245,12 +247,27 @@ class TrackerClient:
             )
 
             issue_changed = False
+            # Ensure incoming datetime is a datetime object
             if not isinstance(xformed_issue_data["updated_at"], datetime.datetime):
                 xformed_issue_data["updated_at"] = datetime.datetime.fromisoformat(
                     xformed_issue_data["updated_at"]
                 )
+
+            # Ensure incoming datetime is timezone-aware
+            if xformed_issue_data["updated_at"].tzinfo is None:
+                xformed_issue_data["updated_at"] = xformed_issue_data[
+                    "updated_at"
+                ].replace(tzinfo=datetime.timezone.utc)
+
             if current_issue_model:
-                if current_issue_model.updated_at < xformed_issue_data["updated_at"]:
+                # Ensure database datetime is timezone-aware for comparison
+                current_updated_at = current_issue_model.updated_at
+                if not current_updated_at.tzinfo:
+                    current_updated_at = current_updated_at.replace(
+                        tzinfo=datetime.timezone.utc
+                    )
+
+                if current_updated_at < xformed_issue_data["updated_at"]:
                     issue_changed = True
                     current_issue_model = crud_issue.update(
                         db, db_obj=current_issue_model, obj_in=xformed_issue_data
@@ -298,6 +315,7 @@ class TrackerClient:
                         )
 
                 else:
+                    # FIXME: On the first run, the dependencies are not always found because they may refer to issues that are not yet ingested.
                     logger.warning(
                         f"Could not find target issue with key '{target_key}' for dependency of issue {current_issue_model.key}."
                     )
@@ -350,7 +368,7 @@ class TrackerClient:
         return issues_processed, embedding_updates
 
 
-def _process_organization(
+async def _process_organization(
     db: Session,
     client: TrackerClient,
     org: Organization,
@@ -371,7 +389,7 @@ def _process_organization(
         "errors": 0,
     }
     now = datetime.datetime.now(datetime.timezone.utc)
-    projects = client.scan_projects(db, org)
+    projects = await client.scan_projects(db, org)
     org_stats["projects"] = len(projects)
     spacebridge_url_str = os.getenv("SPACEBRIDGE_URL")
     if spacebridge_url_str:
@@ -421,10 +439,10 @@ def _process_organization(
                     org_stats["organizations"]["errors"] += 1
             elif client.tracker_type == "gitlab":
                 try:
-                    if not client.client.is_webhook_registered_for_organization(
+                    if not await client.client.is_webhook_registered_for_organization(
                         org, webhook_target_url
                     ):
-                        result = client.client.register_group_webhook(
+                        result = await client.client.register_group_webhook(
                             db=db,
                             organization=org,
                             webhook_url=webhook_target_url,
@@ -439,10 +457,10 @@ def _process_organization(
                         )
                         for project in projects:
                             try:
-                                if not client.client.is_webhook_registered_for_project(
+                                if not await client.client.is_webhook_registered_for_project(
                                     project, webhook_target_url
                                 ):
-                                    client.client.register_project_webhook(
+                                    await client.client.register_project_webhook(
                                         db=db,
                                         project=project,
                                         webhook_url=webhook_target_url,
@@ -482,7 +500,7 @@ def _process_organization(
 
     # Polling logic
     for project in projects:
-        issues, embeddings_updated = client.scan_issues(
+        issues, embeddings_updated = await client.scan_issues(
             db, org, project, since, force_update
         )
         org_stats["issues"] += len(issues)
@@ -492,7 +510,7 @@ def _process_organization(
     return org_stats
 
 
-def scan_tracker(
+async def scan_tracker(
     db: Session,
     tracker: Tracker,
     force_update: bool = False,
@@ -519,7 +537,7 @@ def scan_tracker(
         return stats
     try:
         client = TrackerClient(tracker)
-        organizations = client.scan_organizations(db)
+        organizations = await client.scan_organizations(db)
         stats["organizations"]["total"] = len(organizations)
 
         for org in organizations:
@@ -539,7 +557,9 @@ def scan_tracker(
             ):
                 stats["organizations"]["skipped_polling"] += 1
                 continue
-            org_stats = _process_organization(db, client, org, since, force_update)
+            org_stats = await _process_organization(
+                db, client, org, since, force_update
+            )
             stats["organizations"]["processed"] += 1
             for key in stats:
                 if not isinstance(stats[key], dict):
@@ -553,7 +573,7 @@ def scan_tracker(
     return stats
 
 
-def scan_account(
+async def scan_account(
     db: Session,
     account_id: str,
     force_update: bool = False,
@@ -584,7 +604,9 @@ def scan_account(
     for tracker in account.trackers:
         if tracker.is_active:
             total_stats["trackers"] += 1
-            tracker_stats = scan_tracker(db, tracker, force_update, since, verbose)
+            tracker_stats = await scan_tracker(
+                db, tracker, force_update, since, verbose
+            )
             for key in total_stats:
                 if isinstance(total_stats[key], dict):
                     for subkey in total_stats[key]:
@@ -598,7 +620,7 @@ def scan_account(
     return total_stats
 
 
-def scan_all_accounts(
+async def scan_all_accounts(
     db: Session, force_update: bool = False, verbose: bool = False
 ) -> Dict[str, Any]:
     """Scan all active accounts and their trackers."""
@@ -624,7 +646,9 @@ def scan_all_accounts(
     for account in accounts:
         if account.is_active:
             overall_stats["accounts_scanned"] += 1
-            account_stats = scan_account(db, account.id, force_update, verbose=verbose)
+            account_stats = await scan_account(
+                db, account.id, force_update, verbose=verbose
+            )
             if account_stats.get("errors", 0) > 0:
                 overall_stats["accounts_with_errors"] += 1
             overall_stats["trackers_scanned"] += account_stats.get("trackers", 0)

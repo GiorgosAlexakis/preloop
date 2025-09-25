@@ -4,15 +4,22 @@ Base tracker interface for SpaceSync.
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import logging
 
 from spacemodels.models.issue import DESCRIPTION_MAX_LENGTH
-
-# Import the configurable max length from the Issue model
 from spacemodels.models.project import Project
 from spacemodels.models.organization import Organization
 from spacemodels.models.webhook import Webhook
+from spacebridge.schemas.tracker_models import (
+    Issue,
+    IssueComment,
+    IssueCreate,
+    IssueFilter,
+    IssueUpdate,
+    ProjectMetadata,
+    TrackerConnection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,84 +43,73 @@ class BaseTracker(ABC):
         self.connection_details = connection_details
 
     @abstractmethod
-    def get_organizations(self) -> List[Dict[str, Any]]:
-        """
-        Get organizations from the tracker.
-
-        Returns:
-            List of organization data dictionaries.
-            Each dictionary should contain at least:
-            - id: External ID of the organization
-            - name: Name of the organization
-            - url: URL to the organization (optional)
-        """
+    async def test_connection(self) -> TrackerConnection:
+        """Test the connection to the tracker."""
         pass
 
     @abstractmethod
-    def get_projects(self, organization_id: str) -> List[Dict[str, Any]]:
-        """
-        Get projects for an organization from the tracker.
-
-        Args:
-            organization_id: External ID of the organization.
-
-        Returns:
-            List of project data dictionaries.
-            Each dictionary should contain at least:
-            - id: External ID of the project
-            - name: Name of the project
-            - description: Description of the project (optional)
-            - url: URL to the project (optional)
-        """
+    async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
+        """Get metadata about a project."""
         pass
 
     @abstractmethod
-    def get_issues(
+    async def search_issues(
+        self,
+        project_key: str,
+        filter_params: IssueFilter,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> Tuple[List[Issue], int]:
+        """Search for issues in a project."""
+        pass
+
+    @abstractmethod
+    async def get_issue(self, issue_id: str) -> Issue:
+        """Get a specific issue by ID."""
+        pass
+
+    @abstractmethod
+    async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
+        """Create a new issue."""
+        pass
+
+    @abstractmethod
+    async def update_issue(self, issue_id: str, issue_data: IssueUpdate) -> Issue:
+        """Update an existing issue."""
+        pass
+
+    @abstractmethod
+    async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
+        """Add a comment to an issue."""
+        pass
+
+    @abstractmethod
+    async def add_relation(
+        self, issue_id: str, related_issue_id: str, relation_type: str
+    ) -> bool:
+        """Add a relation between issues."""
+        pass
+
+    @abstractmethod
+    async def get_organizations(self) -> List[Dict[str, Any]]:
+        """Get organizations from the tracker."""
+        pass
+
+    @abstractmethod
+    async def get_projects(self, organization_id: str) -> List[Dict[str, Any]]:
+        """Get projects for an organization from the tracker."""
+        pass
+
+    @abstractmethod
+    async def get_issues(
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
-        """
-        Get issues for a project from the tracker.
-
-        Args:
-            organization_id: External ID of the organization.
-            project_id: External ID of the project.
-            since: Only return issues updated since this datetime.
-
-        Returns:
-            List of issue data dictionaries.
-            Each dictionary should contain at least:
-            - id: External ID of the issue
-            - title: Title of the issue
-            - description: Description/body of the issue
-            - state: State of the issue (open, closed, etc.)
-            - created_at: Creation datetime
-            - updated_at: Last update datetime
-            - labels: List of label strings (optional)
-            - assignees: List of assignee names (optional)
-            - url: URL to the issue (optional)
-            - comments: List of comment data dictionaries.
-                Each comment dict should contain at least:
-                - id: External ID of the comment
-                - body: Text content of the comment
-                - author: Name of the author (if available, from tracker)
-                - created_at: Creation datetime of the comment
-                - updated_at: Last update datetime of the comment
-            - dependencies: List of dependency dictionaries (optional).
-                Each dependency dict should contain at least:
-                - target_key: External key of the target issue (e.g., 'PROJ-123')
-                - type: Type of the relationship (e.g., 'blocks', 'relates to')
-        """
+        """Get issues for a project from the tracker."""
         pass
 
     def transform_organization(self, org_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Transform organization data to a format that can be stored in the database.
-
-        Args:
-            org_data: Organization data from the tracker.
-
-        Returns:
-            Transformed organization data ready for database storage.
         """
         return {
             "identifier": str(org_data["id"]),
@@ -126,13 +122,6 @@ class BaseTracker(ABC):
     ) -> Dict[str, Any]:
         """
         Transform project data to a format that can be stored in the database.
-
-        Args:
-            proj_data: Project data from the tracker.
-            organization_id: Database ID of the organization (UUID string).
-
-        Returns:
-            Transformed project data ready for database storage.
         """
         return {
             "organization_id": organization_id,
@@ -151,33 +140,19 @@ class BaseTracker(ABC):
     ) -> Dict[str, Any]:
         """
         Transform issue data to a format that can be stored in the database.
-        It should also include transformed comment data under the 'comments' key.
-
-        Args:
-            issue_data: Issue data from the tracker.
-            project: The Project object from the database.
-
-        Returns:
-            Transformed issue data ready for database storage, including comments.
         """
-        # Get issue status from data or default to "open"
         status = issue_data.get("state", "open")
-        # Map common status values to standardized ones
         if status.lower() in ["closed", "done", "completed", "fixed"]:
             status = "closed"
         elif status.lower() in ["open", "new", "todo", "to do"]:
             status = "open"
-        # Add more mappings as needed
 
-        # Get issue type or default to "task"
         issue_type = issue_data.get("type") or "task"
-        # Map common types to standardized ones
         if issue_type.lower() in ["bug", "defect", "error"]:
             issue_type = "bug"
         elif issue_type.lower() in ["feature", "enhancement", "improvement"]:
             issue_type = "feature"
 
-        # Convert datetime objects to ISO format strings for JSON serialization
         last_updated = issue_data.get("updated_at")
         if isinstance(last_updated, datetime):
             last_updated = last_updated.isoformat()
@@ -186,12 +161,10 @@ class BaseTracker(ABC):
         if isinstance(created_at, datetime):
             created_at = created_at.isoformat()
 
-        # Get description and truncate if necessary to avoid DB errors
         description = issue_data.get("description", "")
         original_length = len(description) if description else 0
 
         if description and len(description) > DESCRIPTION_MAX_LENGTH:
-            # Truncate to the max length, with an indicator
             description = (
                 description[: DESCRIPTION_MAX_LENGTH - 25] + "... [content truncated]"
             )
@@ -239,14 +212,6 @@ class BaseTracker(ABC):
     ) -> Dict[str, Any]:
         """
         Transform comment data to a format that can be stored in the database.
-
-        Args:
-            comment_data: Comment data from the tracker.
-            issue_db_id: Database ID of the parent issue.
-            author_db_id: Database ID of the comment author (if known/created).
-
-        Returns:
-            Transformed comment data ready for database storage.
         """
         external_id = str(comment_data.get("id"))
         return {
@@ -268,126 +233,47 @@ class BaseTracker(ABC):
         }
 
     @abstractmethod
-    def register_webhook(self, **kwargs: Any) -> bool:
-        """
-        Register a webhook for the tracker.
-        Specific arguments will depend on the tracker type.
-
-        Args:
-            **kwargs: Arbitrary keyword arguments specific to the tracker implementation.
-                      For example, for GitHub/GitLab, it might be `org_identifier`, `webhook_url`, `secret`.
-                      For Jira, it might be `project_key`, `webhook_url`, `secret`, `events`.
-
-        Returns:
-            True if registration was successful or webhook already exists, False otherwise.
-        """
+    async def register_webhook(self, **kwargs: Any) -> bool:
+        """Register a webhook for the tracker."""
         pass
 
     @abstractmethod
-    def unregister_webhook(self, **kwargs: Any) -> bool:
-        """
-        Unregister a webhook for the tracker.
-        Specific arguments will depend on the tracker type.
-
-        Args:
-            **kwargs: Arbitrary keyword arguments specific to the tracker implementation.
-                      For example, for Jira, it might be `project_key`, and either `webhook_url` or `webhook_id`.
-
-        Returns:
-            True if unregistration was successful, False otherwise.
-        """
+    async def unregister_webhook(self, **kwargs: Any) -> bool:
+        """Unregister a webhook for the tracker."""
         pass
 
     @abstractmethod
-    def is_webhook_registered(self, webhook: "Webhook") -> bool:
-        """
-        Check if a webhook is registered in the tracker.
-
-        Args:
-            webhook: The webhook to check.
-
-        Returns:
-            Whether the webhook is registered.
-        """
+    async def is_webhook_registered(self, webhook: "Webhook") -> bool:
+        """Check if a webhook is registered in the tracker."""
         pass
 
     @abstractmethod
-    def get_webhooks(self) -> List[Dict[str, Any]]:
-        """
-        Get all webhooks for the tracker.
-
-        Returns:
-            A list of webhooks.
-        """
+    async def get_webhooks(self) -> List[Dict[str, Any]]:
+        """Get all webhooks for the tracker."""
         pass
 
     @abstractmethod
-    def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
-        """
-        Delete a webhook from the tracker.
-
-        Args:
-            webhook: The webhook to delete.
-
-        Returns:
-            Whether the webhook was deleted successfully.
-        """
-        pass
-
-        @abstractmethod
-        def unregister_all_webhooks(
-            self, webhook_url_pattern: Optional[str] = None
-        ) -> Dict[str, int]:
-            """
-            Unregister all webhooks, optionally matching a URL pattern.
-
-            This method should iterate through all relevant scopes (e.g., organizations,
-            projects, groups) for the tracker and attempt to unregister webhooks.
-
-            Args:
-                webhook_url_pattern: If provided, only unregister webhooks whose URL
-                                     matches this pattern. Otherwise, the tracker might
-                                     try to identify and remove all webhooks it
-                                     previously registered (e.g., by a known description
-                                     or a URL pattern based on SPACEBRIDGE_URL).
-
-            Returns:
-                A dictionary summarizing the actions taken, e.g.,
-                {"unregistered": count, "failed": count, "not_found": count}.
-            """
-            pass
-
-    if __name__ == "__main__":
+    async def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
+        """Delete a webhook from the tracker."""
         pass
 
     @abstractmethod
-    def is_webhook_registered_for_project(
+    async def unregister_all_webhooks(
+        self, webhook_url_pattern: Optional[str] = None
+    ) -> Dict[str, int]:
+        """Unregister all webhooks, optionally matching a URL pattern."""
+        pass
+
+    @abstractmethod
+    async def is_webhook_registered_for_project(
         self, project: "Project", webhook_url: str
     ) -> bool:
-        """
-        Check if a webhook is registered for a project.
-
-        Args:
-            project: The project to check.
-            webhook_url: The URL of the webhook.
-
-        Returns:
-            Whether the webhook is registered.
-        """
+        """Check if a webhook is registered for a project."""
         pass
 
     @abstractmethod
-    def is_webhook_registered_for_organization(
+    async def is_webhook_registered_for_organization(
         self, organization: "Organization", webhook_url: str
     ) -> bool:
-        """
-        Check if a webhook is registered for an organization.
-
-        Args:
-            organization: The organization to check.
-            webhook_url: The URL of the webhook.
-
-        Returns:
-            Whether the webhook is registered.
-        """
+        """Check if a webhook is registered for an organization."""
         pass

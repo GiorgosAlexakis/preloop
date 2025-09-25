@@ -3,26 +3,33 @@ GitHub tracker implementation for SpaceSync.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-import re
+from typing import Any, Dict, List, Optional, Tuple
 
-import requests
+import httpx
 from sqlalchemy.orm import Session
 
-from spacemodels.crud import crud_webhook
 from spacemodels.models.organization import Organization
 from spacemodels.models.webhook import Webhook
+from spacebridge.schemas.tracker_models import (
+    Issue,
+    IssueComment,
+    IssueCreate,
+    IssueFilter,
+    IssueUpdate,
+    ProjectMetadata,
+    TrackerConnection,
+    IssueUser,
+)
 
 from ..exceptions import (
     TrackerAuthenticationError,
     TrackerConnectionError,
     TrackerResponseError,
 )
-from ..utils import retry
 from .base import BaseTracker
 from ..config import logger
 from spacemodels.models.project import Project
-from spacemodels.crud import crud_organization, crud_project
+from spacemodels.crud import crud_organization, crud_project, crud_webhook
 
 
 class GitHubTracker(BaseTracker):
@@ -35,11 +42,6 @@ class GitHubTracker(BaseTracker):
     ):
         """
         Initialize the GitHub tracker.
-
-        Args:
-            tracker_id: ID of the tracker in the database (UUID string).
-            api_key: GitHub API token.
-            connection_details: Connection details including repository information.
         """
         super().__init__(tracker_id, api_key, connection_details)
         self.headers = {
@@ -47,209 +49,197 @@ class GitHubTracker(BaseTracker):
             "Accept": "application/vnd.github.v3+json",
         }
 
-    @retry(max_attempts=2, exceptions=(TrackerConnectionError, TrackerResponseError))
-    def _make_request(
+    async def _make_request(
         self, endpoint: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
         """
         Make a request to the GitHub API, handling pagination.
-
-        Args:
-            endpoint: API endpoint to request.
-            params: Query parameters.
-
-        Returns:
-            JSON response data.
-
-        Raises:
-            TrackerAuthenticationError: If authentication fails.
-            TrackerConnectionError: If connection fails.
-            TrackerResponseError: If response is invalid.
         """
         if params is None:
             params = {}
-        # Set per_page to the max unless the user specified otherwise
         params.setdefault("per_page", 100)
         results = []
         url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-        while url:
+        async with httpx.AsyncClient() as client:
+            while url:
+                try:
+                    response = await client.get(
+                        url, headers=self.headers, params=params
+                    )
+                    params = None
+
+                    if response.status_code == 401:
+                        raise TrackerAuthenticationError("GitHub authentication failed")
+                    elif response.status_code >= 400:
+                        raise TrackerResponseError(
+                            f"GitHub API error: {response.status_code} - {response.text}"
+                        )
+
+                    data = response.json()
+                    if isinstance(data, list):
+                        results.extend(data)
+                    else:
+                        return data
+
+                    if "next" in response.links:
+                        url = response.links["next"]["url"]
+                    else:
+                        url = None
+                except httpx.RequestError as e:
+                    raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
+        return results
+
+    async def _make_request_delete(self, endpoint: str) -> bool:
+        """
+        Make a DELETE request to the GitHub API.
+        """
+        async with httpx.AsyncClient() as client:
             try:
-                response = requests.get(url, headers=self.headers, params=params)
-                params = None  # Params are only for the first request
+                url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
+                response = await client.delete(url, headers=self.headers)
 
                 if response.status_code == 401:
                     raise TrackerAuthenticationError("GitHub authentication failed")
+                elif response.status_code == 404:
+                    logger.warning(
+                        f"Resource not found during DELETE request to {endpoint}"
+                    )
+                    return True
                 elif response.status_code >= 400:
                     raise TrackerResponseError(
                         f"GitHub API error: {response.status_code} - {response.text}"
                     )
 
-                data = response.json()
-                if isinstance(data, list):
-                    results.extend(data)
-                else:
-                    return data  # Not a list, return as is
-
-                if "next" in response.links:
-                    url = response.links["next"]["url"]
-                else:
-                    url = None
-            except requests.RequestException as e:
+                return response.status_code == 204
+            except httpx.RequestError as e:
                 raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
-        return results
 
-    @retry(max_attempts=1, exceptions=(TrackerConnectionError, TrackerResponseError))
-    def _make_request_delete(self, endpoint: str) -> bool:
-        """
-        Make a DELETE request to the GitHub API.
-
-        Args:
-            endpoint: API endpoint to request.
-
-        Returns:
-            True if successful, False otherwise.
-
-        Raises:
-            TrackerAuthenticationError: If authentication fails.
-            TrackerConnectionError: If connection fails.
-            TrackerResponseError: If response is invalid.
-        """
+    async def test_connection(self) -> TrackerConnection:
+        """Test the connection to the tracker."""
         try:
-            url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-            response = requests.delete(url, headers=self.headers)
+            await self._make_request("user")
+            return TrackerConnection(connected=True, message="Connection successful")
+        except (
+            TrackerAuthenticationError,
+            TrackerConnectionError,
+            TrackerResponseError,
+        ) as e:
+            return TrackerConnection(connected=False, message=str(e))
 
-            if response.status_code == 401:
-                raise TrackerAuthenticationError("GitHub authentication failed")
-            elif response.status_code == 404:
-                logger.warning(
-                    f"Resource not found during DELETE request to {endpoint}"
-                )
-                return True  # Treat not found as a success for cleanup
-            elif response.status_code >= 400:
-                raise TrackerResponseError(
-                    f"GitHub API error: {response.status_code} - {response.text}"
-                )
+    async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
+        """Get metadata about a project."""
+        raise NotImplementedError
 
-            return response.status_code == 204
-        except requests.RequestException as e:
-            raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
+    async def search_issues(
+        self,
+        project_key: str,
+        filter_params: IssueFilter,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> Tuple[List[Issue], int]:
+        """Search for issues in a project."""
+        raise NotImplementedError
 
-    def get_organizations(self) -> List[Dict[str, Any]]:
+    async def get_issue(self, issue_id: str) -> Issue:
+        """Get a specific issue by ID."""
+        raise NotImplementedError
+
+    async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
+        """Create a new issue."""
+        raise NotImplementedError
+
+    async def update_issue(self, issue_id: str, issue_data: IssueUpdate) -> Issue:
+        """Update an existing issue."""
+        raise NotImplementedError
+
+    async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
+        """Add a comment to an issue."""
+        raise NotImplementedError
+
+    async def add_relation(
+        self, issue_id: str, related_issue_id: str, relation_type: str
+    ) -> bool:
+        """Add a relation between issues."""
+        raise NotImplementedError
+
+    async def get_organizations(self) -> List[Dict[str, Any]]:
         """
         Get organizations from GitHub.
-
-        Returns:
-            List of organization data dictionaries.
         """
         organizations = []
-
-        # Get user data and organization data in parallel
-        # This single request gets the authenticated user info
-        user_data = self._make_request("user")
-
-        # Create a virtual "Personal" organization for consistency with GitLab
+        user_data = await self._make_request("user")
         organizations.append(
             {
-                "id": "personal",  # Use "personal" as a special ID for personal repositories
+                "id": "personal",
                 "name": f"{user_data['login']}",
                 "url": user_data["html_url"],
             }
         )
-
-        # Get all organizations at once - this gives us enough info without individual calls
-        # GitHub API already returns detailed organization info with this call
-        orgs_data = self._make_request("user/orgs", {"per_page": 100})
-
-        # Process each organization without making additional API calls
+        orgs_data = await self._make_request("user/orgs", {"per_page": 100})
         for org in orgs_data:
             organizations.append(
                 {
-                    "id": org["id"],
-                    "name": org["login"],  # Use login name as display name
+                    "id": str(org["id"]),
+                    "name": org["login"],
                     "url": org["url"]
                     .replace("api.github.com", "github.com")
                     .replace("/orgs/", "/"),
                 }
             )
-
         return organizations
 
-    def get_projects(self, organization_id: str) -> List[Dict[str, Any]]:
+    async def get_projects(self, organization_id: str) -> List[Dict[str, Any]]:
         """
         Get repositories (projects) for an organization from GitHub.
-
-        Args:
-            organization_id: GitHub organization login name or "personal" for user repos.
-
-        Returns:
-            List of project data dictionaries.
         """
-        # Set up parameters for the API request with proper pagination and sorting
         params = {"per_page": 100, "sort": "updated", "direction": "desc"}
-
-        # For GitHub, projects are repositories
         if organization_id == "personal":
-            # Get user's repositories
-            repos_data = self._make_request("user/repos", params)
+            repos_data = await self._make_request("user/repos", params)
         else:
-            # Get organization's repositories
-            repos_data = self._make_request(f"orgs/{organization_id}/repos", params)
-
-        # Process repository data
+            repos_data = await self._make_request(
+                f"orgs/{organization_id}/repos", params
+            )
         projects = []
         for repo in repos_data:
             projects.append(
                 {
                     "id": str(repo["id"]),
+                    "identifier": str(repo["id"]),
                     "name": repo["name"],
                     "description": repo["description"] or "",
                     "url": repo["html_url"],
-                    # Add additional metadata that might be useful for filtering and display
                     "meta_data": {
                         "full_name": repo["full_name"],
                         "default_branch": repo["default_branch"],
                         "language": repo.get("language"),
                         "created_at": repo["created_at"],
-                        "updated_at": repo[
-                            "pushed_at"
-                        ],  # Use pushed_at for last activity
+                        "updated_at": repo["pushed_at"],
                         "stars": repo["stargazers_count"],
                     },
                 }
             )
-
         return projects
 
-    def get_issues(
+    async def get_issues(
         self,
         organization_id: str,
         project_id: str,
         since: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Get issues for a repository from GitHub, including their comments,
-        optionally filtering by update time.
-
-        Args:
-            organization_id: GitHub organization login name or "personal" for user repos.
-            project_id: GitHub repository ID or full name (e.g., 'owner/repo').
-            since: Only return issues updated since this datetime.
-
-        Returns:
-            List of issue data dictionaries, each including a 'comments' list.
+        Get issues for a repository from GitHub.
         """
-
         if "/" in project_id:
             repo_name = project_id
         else:
             try:
-                repo_details = self._make_request(f"repositories/{project_id}")
+                repo_details = await self._make_request(f"repositories/{project_id}")
                 repo_name = repo_details["full_name"]
             except TrackerResponseError as e:
                 logger.error(
                     f"Failed to get repository details for project_id {project_id}: {e}"
                 )
-                return []  # Cannot proceed without repo_name
+                return []
 
         params = {
             "state": "all",
@@ -259,233 +249,77 @@ class GitHubTracker(BaseTracker):
         }
         if since:
             params["since"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
-            logger.debug(
-                f"GitHub get_issues: Filtering issues updated since {params['since']}"
-            )
 
         issues_endpoint = f"repos/{repo_name}/issues"
         try:
-            raw_issues_data = self._make_request(issues_endpoint, params)
+            raw_issues_data = await self._make_request(issues_endpoint, params)
         except TrackerResponseError as e:
             logger.error(f"Failed to get issues for repo {repo_name}: {e}")
             return []
 
         processed_issues = []
         for issue_data in raw_issues_data:
-            if "pull_request" in issue_data:  # Skip pull requests
+            if "pull_request" in issue_data:
                 continue
 
             issue_number = issue_data["number"]
-
-            # Fetch comments for the issue
             comments_data_transformed = []
             comments_endpoint = f"repos/{repo_name}/issues/{issue_number}/comments"
             try:
-                # GitHub API for comments might not support 'since' for individual issue comments list
-                # It's usually for the main issues list. We fetch all comments for an issue.
-                raw_comments_data = self._make_request(
+                raw_comments_data = await self._make_request(
                     comments_endpoint, params={"per_page": 100}
                 )
                 if isinstance(raw_comments_data, dict):
                     raw_comments_data = [raw_comments_data]
                 for comment_item in raw_comments_data:
-                    try:
-                        created_at_dt = datetime.strptime(
-                            comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ"
-                        )
-                        updated_at_dt = datetime.strptime(
-                            comment_item["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
-                        )
-                    except (ValueError, TypeError) as ve:
-                        logger.warning(
-                            f"Could not parse datetime for comment {comment_item.get('id')} on issue {issue_number}: {ve}. Using fallback."
-                        )
-                        created_at_dt = datetime.now()
-                        if isinstance(comment_item.get("created_at"), str):
-                            try:
-                                created_at_dt = datetime.strptime(
-                                    comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ"
-                                )
-                            except ValueError:
-                                pass
-                        updated_at_dt = created_at_dt
+                    comment_created_at = datetime.strptime(
+                        comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+                    )
+                    comment_updated_at = datetime.strptime(
+                        comment_item["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
+                    )
 
                     comments_data_transformed.append(
-                        {
-                            "id": str(comment_item["id"]),
-                            "body": comment_item.get("body", "")
-                            or "",  # Ensure body is not None
-                            "author": str(comment_item["user"]["login"])
-                            if comment_item.get("user")
-                            and comment_item["user"].get("login")
-                            else None,
-                            "created_at": created_at_dt,
-                            "updated_at": updated_at_dt,
-                            "url": comment_item.get("html_url", ""),
-                        }
+                        IssueComment(
+                            id=str(comment_item["id"]),
+                            body=comment_item.get("body", "") or "",
+                            author=IssueUser(
+                                id=str(comment_item["user"]["id"]),
+                                name=comment_item["user"]["login"],
+                                avatar_url=comment_item["user"]["avatar_url"],
+                            ),
+                            created_at=comment_created_at,
+                            updated_at=comment_updated_at,
+                        )
                     )
             except TrackerResponseError as e:
                 logger.error(
                     f"Failed to get comments for issue {repo_name}#{issue_number}: {e}"
                 )
-            # Continue processing the issue even if comments fail
 
-            # Combine issue body and comments for dependency parsing
-            all_text_content = issue_data.get("body", "") or ""
-            for comment in comments_data_transformed:
-                all_text_content += "\n" + comment.get("body", "")
-
-            dependencies = self._parse_dependencies(all_text_content, repo_name)
-
-            try:
-                issue_created_at = datetime.strptime(
-                    issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ"
-                )
-                issue_updated_at = datetime.strptime(
-                    issue_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
-                )
-            except (ValueError, TypeError) as ve:
-                logger.warning(
-                    f"Could not parse datetime for issue {issue_number}: {ve}. Using fallback."
-                )
-                issue_created_at = datetime.now()
-                if isinstance(issue_data.get("created_at"), str):
-                    try:
-                        issue_created_at = datetime.strptime(
-                            issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ"
-                        )
-                    except ValueError:
-                        pass
-                issue_updated_at = issue_created_at
-
-            processed_issues.append(
-                {
-                    "external_id": str(issue_data["id"]),
-                    "key": f"{repo_name}#{issue_number}",
-                    "title": issue_data["title"],
-                    "description": issue_data.get("body", "")
-                    or "",  # Ensure body is not None
-                    "state": issue_data["state"],
-                    "created_at": issue_created_at,
-                    "updated_at": issue_updated_at,
-                    "labels": [
-                        label["name"]
-                        for label in issue_data.get("labels", [])
-                        if isinstance(label, dict) and "name" in label
-                    ],
-                    "assignees": [
-                        assignee["login"]
-                        for assignee in issue_data.get("assignees", [])
-                        if isinstance(assignee, dict) and "login" in assignee
-                    ],
-                    "url": issue_data.get("html_url", ""),
-                    "comments": comments_data_transformed,
-                    "dependencies": dependencies,
-                }
-            )
+            issue_data["comments"] = comments_data_transformed
+            processed_issues.append(issue_data)
         return processed_issues
 
-    def _parse_dependencies(
-        self, content: str, current_repo: str
-    ) -> List[Dict[str, str]]:
-        """Parse dependencies from text content (issue body, comments)."""
-        dependencies = []
-        # Regex to find keywords like 'closes', 'fixes', 'relates to', etc.,
-        # followed by an issue reference.
-        # It supports cross-repo references like 'owner/repo#123'.
-        pattern = re.compile(
-            r"(closes|fixes|resolves|relates to|blocked by|blocks)\s+((?:[a-zA-Z0-9-]+\/[a-zA-Z0-9_.-]+)?#\d+)",
-            re.IGNORECASE,
-        )
-
-        for match in pattern.finditer(content):
-            relationship_type = match.group(1).lower()
-            target_issue_ref = match.group(2)
-
-            # Normalize relationship type for consistency
-            if relationship_type in ["closes", "fixes", "resolves"]:
-                relationship_type = "closes"
-            elif relationship_type == "relates to":
-                relationship_type = "related"
-            elif relationship_type == "blocked by":
-                relationship_type = "is blocked by"
-
-            # Construct the full key for the target issue
-            if "#" in target_issue_ref and "/" not in target_issue_ref:
-                # It's a short reference like '#123', so it's in the same repo.
-                target_key = f"{current_repo}{target_issue_ref}"
-            else:
-                # It's a full reference like 'owner/repo#123'.
-                target_key = target_issue_ref
-
-            dependencies.append({"target_key": target_key, "type": relationship_type})
-
-        return dependencies
-
-    def transform_issue(
-        self, issue_data: Dict[str, Any], project: Project
-    ) -> Dict[str, Any]:
-        """
-        Transforms GitHub issue data into a standardized format.
-        """
-        if "key" not in issue_data:
-            issue_data["key"] = f"{project.slug}#{issue_data['number']}"
-
-        transformed_data = super().transform_issue(issue_data, project)
-
-        # GitHub-specific transformations can be added here if needed
-
-        return transformed_data
-
-    def transform_comment(
-        self,
-        comment_data: Dict[str, Any],
-        issue_db_id: str,
-        author_db_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Transforms GitHub comment data into a standardized format.
-        """
-        transformed_data = super().transform_comment(
-            comment_data, issue_db_id, author_db_id
-        )
-
-        # GitHub-specific transformations can be added here if needed
-
-        return transformed_data
-
-    def register_webhook(
+    async def register_webhook(
         self, db: Session, organization: Organization, webhook_url: str, secret: str
     ) -> bool:
         """
         Register a webhook for the given GitHub organization.
-
-        Args:
-            db: The database session.
-            organization: The organization to register the webhook for.
-            webhook_url: The target URL for the webhook.
-            secret: The secret to use for the webhook.
-
-        Returns:
-            True if registration was successful or webhook already exists, False otherwise.
         """
         org_identifier = organization.identifier
-        # GitHub doesn't support organization-level webhooks for personal accounts via this API
         if org_identifier == "personal":
             logger.info(
-                f"Skipping webhook registration for personal account '{self.connection_details.get('login', 'N/A')}'. GitHub personal webhooks are managed per-repository."
+                f"Skipping webhook registration for personal account '{self.connection_details.get('login', 'N/A')}'."
             )
-            # Consider this 'successful' in the sense that there's nothing to do here.
-            # Alternatively, could return False if strict registration is required.
             return True
 
         endpoint = f"orgs/{org_identifier}/hooks"
         events = [
-            "issues",  # Issue opened, edited, closed, reopened, assigned, etc.
-            "project",  # Project created, updated, deleted
-            "repository",  # Repository created, deleted, archived, unarchived
-            "push",  # Git push to a repository
-            # Add more events as needed, e.g., 'pull_request', 'release', 'member'
+            "issues",
+            "project",
+            "repository",
+            "push",
         ]
         payload = {
             "name": "web",
@@ -495,13 +329,14 @@ class GitHubTracker(BaseTracker):
                 "url": webhook_url,
                 "content_type": "json",
                 "secret": secret,
-                "insecure_ssl": "0",  # Recommended to verify SSL
+                "insecure_ssl": "0",
             },
         }
 
         try:
-            url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-            response = requests.post(url, headers=self.headers, json=payload)
+            async with httpx.AsyncClient() as client:
+                url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
+                response = await client.post(url, headers=self.headers, json=payload)
 
             if response.status_code in [200, 201]:
                 response_data = response.json()
@@ -562,7 +397,7 @@ class GitHubTracker(BaseTracker):
                 )
                 return False
 
-        except requests.RequestException as e:
+        except httpx.RequestError as e:
             logger.error(
                 f"GitHub connection error while registering webhook for org '{org_identifier}': {e}",
                 exc_info=True,
@@ -575,7 +410,7 @@ class GitHubTracker(BaseTracker):
             )
             return False
 
-    def unregister_webhook(self, db: Session, webhook: Webhook) -> bool:
+    async def unregister_webhook(self, db: Session, webhook: Webhook) -> bool:
         """
         Unregister a webhook for the given GitHub organization.
 
@@ -603,8 +438,9 @@ class GitHubTracker(BaseTracker):
         else:
             endpoint = f"orgs/{org_identifier}/hooks/{webhook_id}"
         try:
-            url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-            response = requests.delete(url, headers=self.headers)
+            async with httpx.AsyncClient() as client:
+                url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
+                response = await client.delete(url, headers=self.headers)
 
             if response.status_code == 204:
                 logger.info(
@@ -623,7 +459,7 @@ class GitHubTracker(BaseTracker):
                     f"Failed to unregister webhook {webhook_id} for GitHub org '{org_identifier}': {response.status_code} - {response.text}"
                 )
                 return False
-        except requests.RequestException as e:
+        except httpx.RequestError as e:
             logger.error(
                 f"GitHub connection error while unregistering webhook for org '{org_identifier}': {e}",
                 exc_info=True,
@@ -636,7 +472,7 @@ class GitHubTracker(BaseTracker):
             )
             return False
 
-    def unregister_all_webhooks(self, db: Session):
+    async def unregister_all_webhooks(self, db: Session):
         """
         Unregister all webhooks for all organizations managed by this tracker instance.
         Args:
@@ -668,7 +504,7 @@ class GitHubTracker(BaseTracker):
                 return results
 
             for webhook in webhooks_to_delete:
-                if self.unregister_webhook(db=db, webhook=webhook):
+                if await self.unregister_webhook(db=db, webhook=webhook):
                     results["unregistered"] += 1
                 else:
                     results["failed"] += 1
@@ -685,7 +521,7 @@ class GitHubTracker(BaseTracker):
         logger.info(f"GitHub unregister_all_webhooks summary: {results}")
         return results
 
-    def cleanup_stale_webhooks(
+    async def cleanup_stale_webhooks(
         self, spacebridge_url: str, cleanup_projects: bool = False
     ) -> dict:
         """
@@ -707,19 +543,19 @@ class GitHubTracker(BaseTracker):
         )
 
         if cleanup_projects:
-            self._cleanup_project_webhooks(spacebridge_url, results)
+            await self._cleanup_project_webhooks(spacebridge_url, results)
         else:
-            self._cleanup_organization_webhooks(spacebridge_url, results)
+            await self._cleanup_organization_webhooks(spacebridge_url, results)
 
         logger.info(f"Webhook cleanup summary: {results}")
         return results
 
-    def _cleanup_organization_webhooks(
+    async def _cleanup_organization_webhooks(
         self, spacebridge_url: str, results: dict
     ) -> None:
         """Helper to clean up organization-level webhooks."""
         try:
-            organizations = self.get_organizations()
+            organizations = await self.get_organizations()
         except (TrackerConnectionError, TrackerResponseError) as e:
             logger.error(f"Failed to retrieve organizations: {e}")
             return
@@ -731,21 +567,23 @@ class GitHubTracker(BaseTracker):
 
             logger.info(f"Checking webhooks for organization: {org_login}")
             try:
-                hooks = self._make_request(f"orgs/{org_login}/hooks")
+                hooks = await self._make_request(f"orgs/{org_login}/hooks")
             except (TrackerConnectionError, TrackerResponseError) as e:
                 logger.error(f"Failed to list webhooks for {org_login}: {e}")
                 results["failed"] += 1
                 continue
 
             for hook in hooks:
-                self._process_hook(
+                await self._process_hook(
                     hook, spacebridge_url, results, f"orgs/{org_login}/hooks"
                 )
 
-    def _cleanup_project_webhooks(self, spacebridge_url: str, results: dict) -> None:
+    async def _cleanup_project_webhooks(
+        self, spacebridge_url: str, results: dict
+    ) -> None:
         """Helper to clean up repository-level webhooks."""
         try:
-            organizations = self.get_organizations()
+            organizations = await self.get_organizations()
         except (TrackerConnectionError, TrackerResponseError) as e:
             logger.error(f"Failed to retrieve organizations: {e}")
             return
@@ -756,7 +594,7 @@ class GitHubTracker(BaseTracker):
                 continue
 
             try:
-                projects = self.get_projects(org_id)
+                projects = await self.get_projects(org_id)
             except (TrackerConnectionError, TrackerResponseError) as e:
                 logger.error(
                     f"Failed to retrieve projects for org {org.get('name')}: {e}"
@@ -770,18 +608,18 @@ class GitHubTracker(BaseTracker):
 
                 logger.info(f"Checking webhooks for repository: {repo_full_name}")
                 try:
-                    hooks = self._make_request(f"repos/{repo_full_name}/hooks")
+                    hooks = await self._make_request(f"repos/{repo_full_name}/hooks")
                 except (TrackerConnectionError, TrackerResponseError) as e:
                     logger.error(f"Failed to list webhooks for {repo_full_name}: {e}")
                     results["failed"] += 1
                     continue
 
                 for hook in hooks:
-                    self._process_hook(
+                    await self._process_hook(
                         hook, spacebridge_url, results, f"repos/{repo_full_name}/hooks"
                     )
 
-    def _process_hook(
+    async def _process_hook(
         self, hook: dict, spacebridge_url: str, results: dict, base_endpoint: str
     ) -> None:
         """Processes a single webhook for cleanup."""
@@ -798,7 +636,7 @@ class GitHubTracker(BaseTracker):
             )
             try:
                 delete_endpoint = f"{base_endpoint}/{hook_id}"
-                if self._make_request_delete(delete_endpoint):
+                if await self._make_request_delete(delete_endpoint):
                     logger.info(
                         f"Successfully deleted webhook {hook_id} from {base_endpoint}."
                     )
@@ -814,7 +652,7 @@ class GitHubTracker(BaseTracker):
                 )
                 results["failed"] += 1
 
-    def is_webhook_registered(self, webhook: "Webhook") -> bool:
+    async def is_webhook_registered(self, webhook: "Webhook") -> bool:
         """
         Check if a webhook is registered in the tracker.
 
@@ -832,23 +670,23 @@ class GitHubTracker(BaseTracker):
         repo_full_name = webhook.project.slug
         endpoint = f"repos/{repo_full_name}/hooks/{webhook.external_id}"
         try:
-            self._make_request(endpoint)
+            await self._make_request(endpoint)
             return True
         except TrackerResponseError as e:
             if "Not Found" in str(e):
                 return False
             raise
 
-    def get_webhooks(self, organization_id: str) -> List[Dict[str, Any]]:
+    async def get_webhooks(self, organization_id: str) -> List[Dict[str, Any]]:
         """
         Get all webhooks for a specific organization's repositories.
         """
         all_webhooks = []
-        repos = self.get_projects(organization_id)
+        repos = await self.get_projects(organization_id)
         for repo in repos:
             repo_full_name = repo["meta_data"]["full_name"]
             try:
-                repo_webhooks = self._make_request(
+                repo_webhooks = await self._make_request(
                     f"repos/{repo_full_name}/hooks", params={"per_page": 100}
                 )
                 all_webhooks.extend(repo_webhooks)
@@ -856,7 +694,7 @@ class GitHubTracker(BaseTracker):
                 logger.error(f"Failed to get webhooks for repo {repo_full_name}: {e}")
         return all_webhooks
 
-    def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
+    async def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
         """
         Delete a webhook from the tracker.
 
@@ -878,12 +716,12 @@ class GitHubTracker(BaseTracker):
         org_identifier = url.split("/")[-2]
         endpoint = f"orgs/{org_identifier}/hooks/{webhook_id}"
         try:
-            return self._make_request_delete(endpoint)
+            return await self._make_request_delete(endpoint)
         except TrackerResponseError as e:
             logger.error(f"Failed to delete webhook {webhook_id}: {e}")
             return False
 
-    def is_webhook_registered_for_project(
+    async def is_webhook_registered_for_project(
         self, project: "Project", webhook_url: str
     ) -> bool:
         """
@@ -898,7 +736,7 @@ class GitHubTracker(BaseTracker):
         """
         endpoint = f"repos/{project.slug}/hooks"
         try:
-            hooks = self._make_request(endpoint)
+            hooks = await self._make_request(endpoint)
             for hook in hooks:
                 if hook.get("config", {}).get("url") == webhook_url:
                     return True
@@ -906,7 +744,65 @@ class GitHubTracker(BaseTracker):
         except TrackerResponseError:
             return False
 
-    def is_webhook_registered_for_organization(
+    def transform_organization(self, org_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transforms a GitHub organization into the common format."""
+        return {
+            "identifier": str(org_data["id"]),
+            "name": org_data["name"],
+            "url": org_data.get("url"),
+            "meta_data": {"source": "github"},
+        }
+
+    def transform_project(
+        self, proj_data: Dict[str, Any], organization_id: str
+    ) -> Dict[str, Any]:
+        """Transforms a GitHub repository into the common format."""
+        return {
+            "identifier": str(proj_data["id"]),
+            "name": proj_data["name"],
+            "description": proj_data.get("description"),
+            "url": proj_data.get("url"),
+            "organization_id": organization_id,
+            "meta_data": proj_data.get("meta_data"),
+        }
+
+    def transform_issue(
+        self, issue_data: Dict[str, Any], project: "Project"
+    ) -> Dict[str, Any]:
+        """Transforms a GitHub issue into the common format."""
+        return {
+            "external_id": str(issue_data["id"]),
+            "key": f"{project.slug}#{issue_data['number']}",
+            "title": issue_data["title"],
+            "description": issue_data.get("body"),
+            "status": issue_data["state"],
+            "created_at": datetime.strptime(
+                issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "updated_at": datetime.strptime(
+                issue_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "project_id": project.id,
+            "comments": issue_data.get("comments", []),
+        }
+
+    def transform_comment(
+        self, comment_data: Dict[str, Any], issue_id: str
+    ) -> Dict[str, Any]:
+        """Transforms a GitHub comment into the common format."""
+        return {
+            "external_id": str(comment_data["id"]),
+            "body": comment_data.get("body"),
+            "created_at": datetime.strptime(
+                comment_data["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "updated_at": datetime.strptime(
+                comment_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "issue_id": issue_id,
+        }
+
+    async def is_webhook_registered_for_organization(
         self, organization: "Organization", webhook_url: str
     ) -> bool:
         """
@@ -921,7 +817,7 @@ class GitHubTracker(BaseTracker):
         """
         endpoint = f"orgs/{organization.identifier}/hooks"
         try:
-            hooks = self._make_request(endpoint)
+            hooks = await self._make_request(endpoint)
             for hook in hooks:
                 if hook.get("config", {}).get("url") == webhook_url:
                     return True

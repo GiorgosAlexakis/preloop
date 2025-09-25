@@ -6,38 +6,62 @@ from spacesync.trackers.base import BaseTracker
 
 
 class ConcreteTracker(BaseTracker):
-    def get_organizations(self):
+    async def get_organizations(self):
         return []
 
-    def get_projects(self, organization_id):
+    async def get_projects(self, organization_id):
         return []
 
-    def get_issues(self, organization_id, project_id, since=None):
+    async def get_issues(self, organization_id, project_id, since=None):
         return []
 
-    def register_webhook(self, **kwargs):
+    async def register_webhook(self, **kwargs):
         return True
 
-    def unregister_webhook(self, **kwargs):
+    async def unregister_webhook(self, **kwargs):
         return True
 
-    def is_webhook_registered(self, webhook):
+    async def is_webhook_registered(self, webhook):
         return True
 
-    def get_webhooks(self):
+    async def get_webhooks(self):
         return []
 
-    def delete_webhook(self, webhook):
+    async def delete_webhook(self, webhook):
         return True
 
-    def unregister_all_webhooks(self, webhook_url_pattern=None):
+    async def unregister_all_webhooks(self, webhook_url_pattern=None):
         return {"unregistered": 0, "failed": 0, "not_found": 0}
 
-    def is_webhook_registered_for_project(self, project, webhook_url):
+    async def is_webhook_registered_for_project(self, project, webhook_url):
         return True
 
-    def is_webhook_registered_for_organization(self, organization, webhook_url):
+    async def is_webhook_registered_for_organization(self, organization, webhook_url):
         return True
+
+    async def test_connection(self):
+        pass
+
+    async def get_project_metadata(self, project_key):
+        pass
+
+    async def search_issues(self, project_key, filter_params, limit=10, offset=0):
+        pass
+
+    async def get_issue(self, issue_id):
+        pass
+
+    async def create_issue(self, project_key, issue_data):
+        pass
+
+    async def update_issue(self, issue_id, issue_data):
+        pass
+
+    async def add_comment(self, issue_id, comment):
+        pass
+
+    async def add_relation(self, issue_id, related_issue_id, relation_type):
+        pass
 
 
 @pytest.fixture

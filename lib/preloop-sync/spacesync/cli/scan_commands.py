@@ -4,6 +4,7 @@ Scan commands for SpaceSync CLI.
 
 import click
 import datetime
+import asyncio
 
 from spacemodels.crud import crud_account, crud_tracker
 from spacemodels.db.session import get_db_session
@@ -44,7 +45,9 @@ def scan_all_cmd(verbose: bool, force_update: bool):
 
     # Scan all accounts (pass force_update)
     start = datetime.datetime.now()
-    stats = scan_all_accounts(db=db, verbose=verbose, force_update=force_update)
+    stats = asyncio.run(
+        scan_all_accounts(db=db, verbose=verbose, force_update=force_update)
+    )
     end = datetime.datetime.now()
 
     # Print summary
@@ -90,8 +93,10 @@ def scan_account_cmd(account_id: str, verbose: bool, force_update: bool):
 
     # Scan the account (pass force_update)
     start = datetime.datetime.now()
-    stats = scan_account(
-        db=db, account_id=account_id, verbose=verbose, force_update=force_update
+    stats = asyncio.run(
+        scan_account(
+            db=db, account_id=account_id, verbose=verbose, force_update=force_update
+        )
     )
     end = datetime.datetime.now()
 
@@ -135,8 +140,10 @@ def scan_tracker_cmd(tracker_id: str, force_update: bool, verbose: bool):
 
     # Scan the tracker (pass force_update)
     start = datetime.datetime.now()
-    stats = scan_tracker_func(
-        db=db, tracker=tracker, force_update=force_update, verbose=verbose
+    stats = asyncio.run(
+        scan_tracker_func(
+            db=db, tracker=tracker, force_update=force_update, verbose=verbose
+        )
     )
     end = datetime.datetime.now()
 
