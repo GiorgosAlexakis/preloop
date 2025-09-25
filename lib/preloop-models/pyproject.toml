@@ -59,3 +59,9 @@ disallow_incomplete_defs = true
 [tool.black]
 line-length = 88
 target-version = ['py39']
+
+[tool.coverage.run]
+omit = [
+    "tests/*",
+    "*/migrations/*"
+]
