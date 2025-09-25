@@ -1,7 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from spacebridge.tools.issue.search_issues import search_issues, IssueInfo
+from datetime import datetime
+from spacebridge.schemas import tracker_models
+from spacebridge.tools.issue.search_issues import search_issues
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 
@@ -50,6 +52,7 @@ def mock_project():
     proj.name = "Test Project"
     proj.identifier = "test-proj"
     proj.tracker_settings = {"github": {"api_key": "test-key"}}
+    proj.tracker_id = "github"
     return proj
 
 
@@ -57,9 +60,9 @@ def mock_project():
 @patch("spacebridge.tools.issue.search_issues.get_db")
 @patch("spacebridge.tools.issue.search_issues.CRUDOrganization")
 @patch("spacebridge.tools.issue.search_issues.CRUDProject")
-@patch("spacebridge.tools.issue.search_issues.TrackerFactory")
+@patch("spacebridge.tools.issue.search_issues.create_tracker_client")
 async def test_search_issues_happy_path(
-    mock_tracker_factory_class,
+    mock_create_tracker_client,
     mock_crud_project_class,
     mock_crud_organization_class,
     mock_get_db,
@@ -82,18 +85,25 @@ async def test_search_issues_happy_path(
     mock_tracker_client = AsyncMock()
     mock_tracker_client.search_issues.return_value = (
         [
-            IssueInfo(
+            tracker_models.Issue(
                 id="123",
+                key="TP-123",
                 title="Test Issue",
                 description="Test Description",
-                source="github",
+                status=tracker_models.IssueStatus(
+                    id="1", name="To Do", category="todo"
+                ),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                url="http://example.com/issue/123",
+                api_url="http://example.com/api/issue/123",
+                tracker_type="github",
+                project_key="test-proj",
             )
         ],
         1,
     )
-    mock_tracker_factory_class.create_client = AsyncMock(
-        return_value=mock_tracker_client
-    )
+    mock_create_tracker_client.return_value = mock_tracker_client
 
     # Act
     result = await search_issues(

@@ -1,81 +1,33 @@
 import pytest
+from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
-from spacebridge.api.app import create_app
-from spacebridge.schemas.auth import UserResponse
-from spacebridge.api.auth.jwt import get_current_active_user
-
-app = create_app()
-client = TestClient(app)
+from spacemodels.models.tracker import Tracker
 
 
-@pytest.fixture
-def db_session():
-    """Fixture for a database session."""
-    from spacemodels.db.session import get_engine
-    from spacemodels.models.base import Base
-    from sqlalchemy.orm import sessionmaker
-    import os
-
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        raise Exception("DATABASE_URL not in env")
-    engine = get_engine(db_url)
-    Base.metadata.create_all(engine)
-    sessionmaker_ = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    session = sessionmaker_()
-    try:
-        yield session
-    finally:
-        session.close()
-        Base.metadata.drop_all(engine)
+@pytest.fixture(autouse=True)
+def mock_event_bus_connect():
+    """Auto-mock the event bus connect method to avoid NATS connection attempts."""
+    with patch(
+        "spacesync.services.event_bus.EventBus.connect", new_callable=AsyncMock
+    ) as mock_connect:
+        yield mock_connect
 
 
-@pytest.fixture
-def mock_current_user():
-    """Fixture for a mock current user."""
-    return UserResponse(
-        username="testuser", email="test@example.com", email_verified=True
-    )
-
-
-@pytest.fixture
-def mock_get_current_active_user(mock_current_user):
-    """Fixture to mock the get_current_active_user dependency."""
-    app.dependency_overrides[get_current_active_user] = lambda: mock_current_user
-    yield
-    app.dependency_overrides = {}
-
-
-def test_list_trackers_empty(db_session, mock_get_current_active_user):
+def test_list_trackers_empty(client: TestClient, db_session):
     """Test listing trackers when none exist."""
-    from spacemodels.models.account import Account
-
-    user = Account(
-        username="testuser", email="test@example.com", hashed_password="password"
-    )
-    db_session.add(user)
-    db_session.commit()
     response = client.get("/api/v1/trackers")
     assert response.status_code == 200
     assert response.json() == []
 
 
-def test_list_trackers_with_data(db_session, mock_get_current_active_user):
+def test_list_trackers_with_data(client: TestClient, db_session, test_user):
     """Test listing trackers with existing data."""
-    from spacemodels.models.tracker import Tracker
-    from spacemodels.models.account import Account
-
-    user = Account(
-        username="testuser", email="test@example.com", hashed_password="password"
-    )
-    db_session.add(user)
-    db_session.commit()
     tracker = Tracker(
         name="Test Tracker",
         tracker_type="jira",
         url="https://test.jira.com",
-        account_id=user.id,
+        account_id=test_user.id,
         api_key="dummy_key",
     )
     db_session.add(tracker)
@@ -88,35 +40,21 @@ def test_list_trackers_with_data(db_session, mock_get_current_active_user):
     assert response_json[0]["name"] == "Test Tracker"
 
 
-def test_get_tracker_not_found(db_session, mock_get_current_active_user):
+def test_get_tracker_not_found(client: TestClient, db_session, test_user):
     """Test getting a tracker that does not exist."""
-    from spacemodels.models.account import Account
     import uuid
 
-    user = Account(
-        username="testuser", email="test@example.com", hashed_password="password"
-    )
-    db_session.add(user)
-    db_session.commit()
     response = client.get(f"/api/v1/trackers/{uuid.uuid4()}")
     assert response.status_code == 404
 
 
-def test_get_tracker_success(db_session, mock_get_current_active_user):
+def test_get_tracker_success(client: TestClient, db_session, test_user):
     """Test getting a tracker successfully."""
-    from spacemodels.models.tracker import Tracker
-    from spacemodels.models.account import Account
-
-    user = Account(
-        username="testuser", email="test@example.com", hashed_password="password"
-    )
-    db_session.add(user)
-    db_session.commit()
     tracker = Tracker(
         name="Test Tracker",
         tracker_type="jira",
         url="https://test.jira.com",
-        account_id=user.id,
+        account_id=test_user.id,
         api_key="dummy_key",
     )
     db_session.add(tracker)
@@ -127,21 +65,13 @@ def test_get_tracker_success(db_session, mock_get_current_active_user):
     assert response.json()["name"] == "Test Tracker"
 
 
-def test_delete_tracker(db_session, mock_get_current_active_user):
+def test_delete_tracker(client: TestClient, db_session, test_user):
     """Test deleting a tracker."""
-    from spacemodels.models.tracker import Tracker
-    from spacemodels.models.account import Account
-
-    user = Account(
-        username="testuser", email="test@example.com", hashed_password="password"
-    )
-    db_session.add(user)
-    db_session.commit()
     tracker = Tracker(
         name="Test Tracker",
         tracker_type="jira",
         url="https://test.jira.com",
-        account_id=user.id,
+        account_id=test_user.id,
         api_key="dummy_key",
     )
     db_session.add(tracker)
@@ -155,3 +85,124 @@ def test_delete_tracker(db_session, mock_get_current_active_user):
     db_session.refresh(tracker)
     deleted_tracker = db_session.query(Tracker).filter(Tracker.id == tracker.id).first()
     assert deleted_tracker.is_deleted is True
+
+
+@pytest.mark.asyncio
+@patch("spacebridge.api.endpoints.trackers.create_tracker_client")
+async def test_test_connection_and_list_orgs_uses_correct_args(
+    mock_create_tracker_client, client: TestClient, db_session, test_user
+):
+    """Test that test_connection_and_list_orgs calls create_tracker_client with the correct arguments."""
+    mock_tracker_client = AsyncMock()
+    mock_tracker_client.test_connection.return_value.connected = True
+    mock_tracker_client.get_organizations.return_value = []
+    mock_create_tracker_client.return_value = mock_tracker_client
+
+    test_data = {
+        "tracker_type": "gitlab",
+        "url": "https://gitlab.com",
+        "api_key": "test-key",
+        "connection_details": {"project_id": "123"},
+    }
+
+    response = client.post("/api/v1/trackers/test-and-list-orgs", json=test_data)
+    assert response.status_code == 200
+
+    mock_create_tracker_client.assert_called_once_with(
+        tracker_type="gitlab",
+        tracker_id="test-connection",
+        api_key="test-key",
+        connection_details={"url": "https://gitlab.com", "project_id": "123"},
+    )
+
+
+@pytest.mark.asyncio
+@patch("spacebridge.api.endpoints.trackers.create_tracker_client")
+async def test_list_projects_for_org_uses_correct_args(
+    mock_create_tracker_client, client: TestClient, db_session, test_user
+):
+    """Test that list_projects_for_org calls create_tracker_client with the correct arguments."""
+    mock_tracker_client = AsyncMock()
+    mock_tracker_client.get_projects.return_value = []
+    mock_create_tracker_client.return_value = mock_tracker_client
+
+    test_data = {
+        "tracker_type": "gitlab",
+        "url": "https://gitlab.com",
+        "api_key": "test-key",
+        "connection_details": {"project_id": "123"},
+        "organization_identifier": "test-org",
+    }
+
+    response = client.post("/api/v1/trackers/list-projects-for-org", json=test_data)
+    assert response.status_code == 200
+
+    mock_create_tracker_client.assert_called_once_with(
+        tracker_type="gitlab",
+        tracker_id="list-projects",
+        api_key="test-key",
+        connection_details={
+            "url": "https://gitlab.com/",
+            "project_id": "123",
+        },
+    )
+
+
+@pytest.mark.asyncio
+@patch("spacebridge.api.endpoints.trackers.create_tracker_client")
+@patch("spacebridge.api.endpoints.trackers.event_bus_service.publish_task")
+@patch("spacebridge.api.endpoints.trackers.send_tracker_registered_email")
+async def test_register_tracker_success(
+    mock_send_email,
+    mock_publish_task,
+    mock_create_tracker_client,
+    client: TestClient,
+    db_session,
+    test_user,
+):
+    """Test successful tracker registration."""
+    mock_tracker_client = AsyncMock()
+    mock_tracker_client.test_connection.return_value.connected = True
+    mock_create_tracker_client.return_value = mock_tracker_client
+
+    tracker_data = {
+        "name": "New Test Tracker",
+        "type": "jira",
+        "url": "https://test.jira.com",
+        "api_key": "new_dummy_key",
+        "config": {"username": "testuser"},
+    }
+
+    response = client.post("/api/v1/trackers", json=tracker_data)
+    assert response.status_code == 201
+    response_json = response.json()
+    assert "id" in response_json
+
+    mock_publish_task.assert_called_once()
+    mock_send_email.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("spacebridge.api.endpoints.trackers.event_bus_service.publish_task")
+async def test_update_tracker_success(
+    mock_publish_task, client: TestClient, db_session, test_user
+):
+    """Test successful tracker update."""
+    tracker = Tracker(
+        name="Tracker to Update",
+        tracker_type="jira",
+        url="https://update.jira.com",
+        account_id=test_user.id,
+        api_key="update_key",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    update_data = {"name": "Updated Tracker Name"}
+
+    response = client.put(f"/api/v1/trackers/{tracker.id}", json=update_data)
+    assert response.status_code == 200
+    response_json = response.json()
+    assert response_json["name"] == "Updated Tracker Name"
+
+    mock_publish_task.assert_called_once_with("poll_tracker", tracker.id)

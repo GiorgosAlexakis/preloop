@@ -51,33 +51,22 @@ def db_engine():
         raise ValueError("DATABASE_URL environment variable not set")
 
     engine = create_engine(database_url)
-    return engine
-
-
-@pytest.fixture(scope="session")
-def db_session_factory(db_engine):
-    """Create a database session factory for testing."""
-    # Drop and recreate all tables to ensure a clean slate
-    Base.metadata.drop_all(db_engine)
-    Base.metadata.create_all(db_engine)
-
-    return sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
+    Base.metadata.create_all(engine)
+    yield engine
 
 
 @pytest.fixture(scope="function")
-def db_session(db_engine, db_session_factory) -> Generator[Session, None, None]:
+def db_session(db_engine) -> Generator[Session, None, None]:
     """Create a database session for each test function, and clean up afterwards."""
-    session = db_session_factory()
-    try:
-        yield session
-    finally:
-        session.close()
-        # Truncate all tables to ensure test isolation
-        with db_engine.connect() as connection:
-            transaction = connection.begin()
-            for table in reversed(Base.metadata.sorted_tables):
-                connection.execute(table.delete())
-            transaction.commit()
+    connection = db_engine.connect()
+    transaction = connection.begin()
+    session = sessionmaker(autocommit=False, autoflush=False, bind=connection)()
+
+    yield session
+
+    session.close()
+    transaction.rollback()
+    connection.close()
 
 
 @pytest.fixture(scope="function")
@@ -91,9 +80,10 @@ def test_user(db_session: Session) -> Account:
         is_active=True,
         email_verified=True,
         is_superuser=False,
+        hashed_password="testpassword",
     )
     db_session.add(user)
-    db_session.commit()
+    db_session.flush()
     db_session.refresh(user)
     return user
 

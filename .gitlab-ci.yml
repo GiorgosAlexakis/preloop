@@ -93,7 +93,7 @@ pre-commit:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
     - export COVERAGE_FILE=".coverage.${CI_JOB_NAME}"
-    - pytest -v --cov --cov-report= --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
+    - pytest -v --cov spacebridge --cov SpaceModels --cov=spacesync --cov-report= --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
   artifacts:
     paths:
       - ".coverage.*"
@@ -118,12 +118,17 @@ test:unit:spacesync:
 test:unit:spacebridge-other:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/test_*.py tests/tools tests/trackers"
+    TEST_PATHS: "tests/test_*.py tests/tools tests/services"
 
 test:unit:spacebridge-endpoints-ai-models:
   extends: .test:unit:template
   variables:
     TEST_PATHS: "tests/endpoints/test_ai_models.py"
+
+test:unit:spacebridge-endpoints-auth:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_auth.py"
 
 # test:unit:spacebridge-endpoints-billing:
 #   extends: .test:unit:template
@@ -218,6 +223,7 @@ test:coverage:
     - test:unit:spacesync
     - test:unit:spacebridge-other
     - test:unit:spacebridge-endpoints-ai-models
+    - test:unit:spacebridge-endpoints-auth
     # - test:unit:spacebridge-endpoints-billing
     - test:unit:spacebridge-endpoints-comments
     # - test:unit:spacebridge-endpoints-embedding
@@ -279,7 +285,7 @@ test:coverage:
       print('==============================================')
       "
     - coverage combine
-    - coverage report --fail-under=52
+    - coverage report --fail-under=59
     - coverage xml -o coverage.xml
 
   artifacts:

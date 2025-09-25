@@ -1,9 +1,8 @@
 """Base classes for issue tracker integrations."""
 
 import logging
-from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -198,116 +197,3 @@ class TrackerConnection(BaseModel):
     server_info: Optional[Dict[str, Any]] = Field(
         None, description="Server information if available"
     )
-
-
-class TrackerInterface(ABC):
-    """Base interface for issue tracker integrations."""
-
-    @abstractmethod
-    async def test_connection(self) -> TrackerConnection:
-        """Test the connection to the tracker.
-
-        Returns:
-            Connection status.
-        """
-        pass
-
-    @abstractmethod
-    async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
-        """Get metadata about a project.
-
-        Args:
-            project_key: Project key in the tracker.
-
-        Returns:
-            Project metadata.
-        """
-        pass
-
-    @abstractmethod
-    async def search_issues(
-        self,
-        project_key: str,
-        filter_params: IssueFilter,
-        limit: int = 10,
-        offset: int = 0,
-    ) -> Tuple[List[Issue], int]:
-        """Search for issues in a project.
-
-        Args:
-            project_key: Project key in the tracker.
-            filter_params: Filter parameters.
-            limit: Maximum number of issues to return.
-            offset: Pagination offset.
-
-        Returns:
-            Tuple of (list of issues, total count).
-        """
-        pass
-
-    @abstractmethod
-    async def get_issue(self, issue_id: str) -> Issue:
-        """Get a specific issue by ID.
-
-        Args:
-            issue_id: Issue ID in the tracker.
-
-        Returns:
-            Issue details.
-        """
-        pass
-
-    @abstractmethod
-    async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
-        """Create a new issue.
-
-        Args:
-            project_key: Project key in the tracker.
-            issue_data: Issue data.
-
-        Returns:
-            Created issue.
-        """
-        pass
-
-    @abstractmethod
-    async def update_issue(self, issue_id: str, issue_data: IssueUpdate) -> Issue:
-        """Update an existing issue.
-
-        Args:
-            issue_id: Issue ID in the tracker.
-            issue_data: Updated issue data.
-
-        Returns:
-            Updated issue.
-        """
-        pass
-
-    @abstractmethod
-    async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
-        """Add a comment to an issue.
-
-        Args:
-            issue_id: Issue ID in the tracker.
-            comment: Comment text.
-
-        Returns:
-            Created comment.
-        """
-        pass
-
-    @abstractmethod
-    async def add_relation(
-        self, issue_id: str, related_issue_id: str, relation_type: str
-    ) -> bool:
-        """Add a relation between issues.
-
-        Args:
-            issue_id: Source issue ID.
-            related_issue_id: Target issue ID.
-            relation_type: Relation type.
-
-        Returns:
-            Whether the operation was successful.
-        """
-        pass

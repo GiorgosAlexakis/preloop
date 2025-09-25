@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from spacebridge.schemas.issue_compliance import CompliancePromptMetadata
-from spacebridge.trackers.factory import TrackerFactory
+from spacesync.spacesync.trackers import create_tracker_client
 from spacemodels.crud import (
     CRUDOrganization,
     CRUDProject,
@@ -173,26 +173,21 @@ async def get_tracker_client(
     tracker_type = tracker.tracker_type
 
     # --- Assemble the full configuration ---
-    # Start with project-specific tracker settings
+    # This will be passed as connection_details to the tracker client
+    # Start with project-specific tracker settings from the database
     full_config: Dict[str, Any] = project.tracker_settings or {}
-    # Add credentials from the Tracker model, structured as the factory expects
-    full_config["credentials"] = {
-        "token": tracker.api_key,
-        "url": tracker.url,
-        # Add username if available in connection_details (needed for Jira)
-        "username": (tracker.connection_details or {}).get("username"),
-    }
-    # Merge any other connection details from the tracker model
+
+    # Add URL and other connection details from the main tracker object
+    # The token/api_key is passed separately to the factory
+    if tracker.url:
+        full_config["url"] = tracker.url
+
+    # Merge any other connection details from the tracker model's JSON field
     if tracker.connection_details:
-        # Prioritize credentials already set, don't overwrite with connection_details
         for key, value in tracker.connection_details.items():
+            # Avoid overwriting settings that might have been set at the project level
             if key not in full_config:
                 full_config[key] = value
-            elif key == "credentials" and isinstance(value, dict):
-                # Merge credentials dict carefully
-                for cred_key, cred_value in value.items():
-                    if cred_key not in full_config["credentials"]:
-                        full_config["credentials"][cred_key] = cred_value
 
     # Ensure project-specific identifiers are included, checking settings/metadata/identifier
     if tracker_type == "gitlab":
@@ -221,7 +216,12 @@ async def get_tracker_client(
 
     try:
         # Create the tracker client using the combined config
-        tracker_client = await TrackerFactory.create_client(tracker_type, full_config)
+        tracker_client = await create_tracker_client(
+            tracker_type=tracker_type,
+            tracker_id=str(tracker.id),
+            api_key=tracker.api_key,
+            connection_details=full_config,
+        )
         if not tracker_client:
             # Raise specific error if factory returns None (e.g., unsupported type or config error)
             raise ValueError(

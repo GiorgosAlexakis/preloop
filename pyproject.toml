@@ -109,5 +109,9 @@ source = [
     "spacebridge",
     "SpaceModels/spacemodels",
     "spacesync/spacesync",
-    "mcp/src/spacebridge_mcp",
+]
+
+omit = [
+    "tests/*",
+    "*/tests/*",
 ]

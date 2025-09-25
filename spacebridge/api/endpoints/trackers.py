@@ -19,7 +19,7 @@ from spacebridge.schemas.tracker import (
 from spacebridge.schemas.tracker import (
     ProjectIdentifier,
 )  # Corrected import location
-from spacebridge.trackers.factory import create_tracker_client
+from spacesync.spacesync.trackers import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
 from spacesync.services.event_bus import event_bus_service
 from spacemodels.db.session import get_db_session
@@ -121,9 +121,12 @@ async def register_tracker(
         # Create the client
         client = await create_tracker_client(
             tracker_type=tracker_type.value,
-            base_url=str(url_str) if url_str else None,
-            token=api_key,
-            config=config or {},
+            tracker_id="test-connection",
+            api_key=api_key,
+            connection_details={
+                "url": str(url_str) if url_str else None,
+                **(config or {}),
+            },
         )
 
         # Test the connection
@@ -475,9 +478,12 @@ async def test_connection_and_list_orgs(
     try:
         client = await create_tracker_client(
             tracker_type=test_data.tracker_type.value,
-            base_url=str(test_data.url) if test_data.url else None,
-            token=test_data.api_key,
-            config=test_data.connection_details or {},
+            tracker_id="test-connection",
+            api_key=test_data.api_key,
+            connection_details={
+                "url": str(test_data.url) if test_data.url else None,
+                **(test_data.connection_details or {}),
+            },
         )
         if not client:
             raise ValueError(
@@ -550,15 +556,18 @@ async def list_projects_for_org(
             project_data.url = project_data.url + "/"
         client = await create_tracker_client(
             tracker_type=project_data.tracker_type.value,
-            base_url=str(project_data.url) if project_data.url else None,
-            token=project_data.api_key,
-            config=project_data.connection_details or {},
+            tracker_id="list-projects",
+            api_key=project_data.api_key,
+            connection_details={
+                "url": str(project_data.url) if project_data.url else None,
+                **(project_data.connection_details or {}),
+            },
         )
         if not client:
             raise HTTPException(
                 status_code=400, detail="Could not create tracker client"
             )
-        return await client.list_projects(project_data.organization_identifier)
+        return await client.get_projects(project_data.organization_identifier)
 
     except Exception as e:
         logger.exception(

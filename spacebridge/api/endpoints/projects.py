@@ -16,7 +16,7 @@ from spacebridge.schemas.project import (
     TestConnectionRequest,
     TestConnectionResponse,
 )
-from spacebridge.trackers.factory import TrackerFactory
+from spacesync.spacesync.trackers import create_tracker_client
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
 from spacemodels.crud.tracker import CRUDTracker
@@ -350,15 +350,35 @@ async def test_project_connection(
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
+        # Get tracker from organization
+        tracker = organization.tracker
+        if not tracker:
+            return TestConnectionResponse(
+                success=False,
+                message="Organization has no associated tracker.",
+                details={},
+            )
+
         # Determine the tracker type and config
-        tracker_type = "github"  # This should come from the organization or project
-        tracker_config = project.tracker_settings or {}
+        tracker_type = tracker.tracker_type
+        connection_details = project.tracker_settings or {}
+        if tracker.url:
+            connection_details["url"] = tracker.url
+        if tracker.connection_details:
+            for key, value in tracker.connection_details.items():
+                if key not in connection_details:
+                    connection_details[key] = value
 
         # Create the tracker client
         try:
-            tracker_client = await TrackerFactory.create_client(
-                tracker_type, tracker_config
+            tracker_client = await create_tracker_client(
+                tracker_type=tracker_type,
+                tracker_id=str(tracker.id),
+                api_key=tracker.api_key,
+                connection_details=connection_details,
             )
+            if not tracker_client:
+                raise ValueError("Unsupported tracker type or configuration error")
         except Exception as e:
             logger.error(f"Error creating tracker client: {e}")
             return TestConnectionResponse(

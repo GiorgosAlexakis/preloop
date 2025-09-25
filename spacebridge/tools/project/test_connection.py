@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from pydantic import BaseModel
 
 from spacebridge.tools.base import Context
-from spacebridge.trackers.factory import TrackerFactory
+from spacesync.spacesync.trackers.factory import create_tracker_client
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
 from spacemodels.db.session import get_db_session as get_db
@@ -29,6 +29,8 @@ class ConnectionResult(BaseModel):
 
     connected: bool
     message: str
+    rate_limit: Optional[Dict[str, Any]] = None
+    server_info: Optional[Dict[str, Any]] = None
     rate_limit: Optional[Dict[str, Any]] = None
     server_info: Optional[Dict[str, Any]] = None
 
@@ -125,8 +127,11 @@ async def verify_connection(
 
                 # Create a tracker client based on tracker type
                 # Handles all supported trackers: github, gitlab, jira
-                tracker_client = await TrackerFactory.create_client(
-                    tracker_name, tracker_config
+                tracker_client = await create_tracker_client(
+                    tracker_type=tracker_name,
+                    tracker_id=proj.tracker_id,
+                    api_key=tracker_config["api_key"],
+                    connection_details=tracker_config,
                 )
 
                 if not tracker_client:
