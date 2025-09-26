@@ -32,6 +32,7 @@ dependencies = [
     "pyinstrument>=4.6.2",
     "nats-py>=2.6.0", # Added for NATS integration
     "stripe>=12.4.0",
+    "fastmcp>=0.1.0",
     # Using SpaceModels for database models and operations
     # "spacemodels @ file://${PROJECT_ROOT}/SpaceModels",
     # "spacesync @ file://${PROJECT_ROOT}/spacesync",

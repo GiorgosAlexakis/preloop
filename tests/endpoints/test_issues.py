@@ -19,7 +19,7 @@ from spacemodels.models import (
 from spacebridge.api.auth import get_current_active_user
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def test_app():
     """Create a FastAPI app instance for the module, with NATS mocked out."""
     with (

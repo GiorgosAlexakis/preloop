@@ -4,11 +4,16 @@ variables:
   CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/spacebridge
   GIT_SUBMODULE_STRATEGY: "recursive"
   GITLAB_TOKEN: $GITLAB_TOKEN
+  PROD_DOMAIN: "spacebridge.io"
   STAGING_DOMAIN: "staging.spacebridge.io"
   STRIPE_SECRET_KEY_PROD: $STRIPE_SECRET_KEY_PROD
   STRIPE_WEBHOOK_SECRET_PROD: $STRIPE_WEBHOOK_SECRET_PROD
   STRIPE_SECRET_KEY_STAGING: $STRIPE_SECRET_KEY_STAGING
   STRIPE_WEBHOOK_SECRET_STAGING: $STRIPE_WEBHOOK_SECRET_STAGING
+  STRIPE_SECRET_KEY_TEST: $STRIPE_SECRET_KEY_TEST
+  STRIPE_WEBHOOK_SECRET_TEST: $STRIPE_WEBHOOK_SECRET_TEST
+  STRIPE_SECRET_KEY_REVIEW: $STRIPE_SECRET_KEY_REVIEW
+  STRIPE_WEBHOOK_SECRET_REVIEW: $STRIPE_WEBHOOK_SECRET_REVIEW
   SPACEBRIDGE_TEST_PASSWORD: $SPACEBRIDGE_TEST_PASSWORD
   SPACEBRIDGE_TEST_USERNAME: $SPACEBRIDGE_TEST_USERNAME
   SPACEBRIDGE_TEST_EMAIL: $SPACEBRIDGE_TEST_EMAIL
@@ -195,6 +200,11 @@ test:unit:spacebridge-endpoints-webhooks:
   variables:
     TEST_PATHS: "tests/endpoints/test_webhooks.py"
 
+test:unit:spacebridge-endpoints-mcp:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_mcp.py"
+
 # test:unit:spacebridge-endpoints-websockets:
 #   extends: .test:unit:template
 #   variables:
@@ -223,6 +233,7 @@ test:coverage:
     - test:unit:spacebridge-endpoints-trackers
     # - test:unit:spacebridge-endpoints-version
     - test:unit:spacebridge-endpoints-webhooks
+    - test:unit:spacebridge-endpoints-mcp
     # - test:unit:spacebridge-endpoints-websockets
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
@@ -268,7 +279,7 @@ test:coverage:
       print('==============================================')
       "
     - coverage combine
-    - coverage report --fail-under=50
+    - coverage report --fail-under=52
     - coverage xml -o coverage.xml
 
   artifacts:
@@ -277,21 +288,25 @@ test:coverage:
         coverage_format: cobertura
         path: coverage.xml
 
-staging:
+.deploy:template:
   stage: deploy
   image: dtzar/helm-kubectl:3.13.2
   when: manual
   environment:
-    name: staging
+    action: start
+  only:
+    - branches
   variables:
-    SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
+    DATABASE_NAME: ""
+    SEED_ENABLED: "false"
+    ENV_NAME: ""
   script:
     - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
     - helm dependency update ./helm/spacebridge
     - helm dependency build ./helm/spacebridge
-    - helm upgrade --install spacebridge ./helm/spacebridge
-      --namespace spacebridge-staging
+    - helm upgrade --install ${ENV_NAME} ./helm/spacebridge
+      --namespace ${NAMESPACE}
       --set image.tag=${CI_COMMIT_SHA}
       --set spacelit.tag=${SPACELIT_COMMIT_SHA}
       --set config.openai.apiKey=${OPENAI_API_KEY}
@@ -302,19 +317,12 @@ staging:
       --set config.smtp.password=${SMTP_PASSWORD}
       --set config.smtp.from=${SMTP_FROM}
       --set config.smtp.fromName=${SMTP_FROM_NAME}
-      --set ingress.enabled=true
-      --set ingress.hosts[0].host=${STAGING_DOMAIN}
-      --set ingress.hosts[0].paths[0].path=/
-      --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
-      --set ingress.tls[0].hosts[0]=${STAGING_DOMAIN}
-      --set ingress.tls[0].secretName=spacebridge-staging-tls
-      --set environment.spacebridgeUrl=https://${STAGING_DOMAIN}
       --set sentry.enabled=true
       --set sentry.dsn=${SENTRY_DSN}
       --set profiling.enabled=false
       --set stripe.enabled=true
-      --set stripe.secretKey=${STRIPE_SECRET_KEY_STAGING}
-      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET_STAGING}
+      --set stripe.secretKey=${STRIPE_SECRET_KEY}
+      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET}
       --set worker.pools[0].name=polling
       --set worker.pools[0].replicaCount=1
       --set worker.pools[0].tasks=poll_tracker
@@ -324,31 +332,95 @@ staging:
       --set worker.pools[2].name=webhook
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event
-      --set database.cnpg.name=spacebridge-db
-
+      --set seed.enabled=${SEED_ENABLED}
+      --set seed.email=${SPACEBRIDGE_TEST_EMAIL}
+      --set seed.username=${SPACEBRIDGE_TEST_USERNAME}
+      --set seed.password=${SPACEBRIDGE_TEST_PASSWORD}
+      --set seed.apiKey=${SPACEBRIDGE_TEST_API_KEY}
+      --set database.name=${DATABASE_NAME}
+      --set ingress.enabled=true
+      --set ingress.hosts[0].host=${TARGET_DOMAIN}
+      --set ingress.hosts[0].paths[0].path=/
+      --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
+      --set ingress.tls[0].hosts[0]=${TARGET_DOMAIN}
+      --set ingress.tls[0].secretName=spacebridge-staging-tls
+      --set environment.spacebridgeUrl=https://${TARGET_DOMAIN}
+      --set database.cnpg.name=${DATABASE_NAME}
     - echo "Helm deployment finished."
-  artifacts:
-    paths:
-      - "db_backup_*.sql.xz"
-    when: on_success
-    expire_in: 7 days
+    - echo "Checking deployed environment..."
+    - for i in $(seq 1 12); do
+        curl -f https://${TARGET_DOMAIN}/api/v1/health && break;
+        sleep 5;
+      done
+    - if [ $? -eq 0 ]; then echo "Deployed environment is ready."; else echo "Deployed environment is not ready."; fi
 
+test:
+  extends: .deploy:template
+  when: always
+  stage: deploy
+  variables:
+    NAMESPACE: spacebridge-test
+    SEED_ENABLED: "true"
+    ENV_NAME: "$CI_COMMIT_REF_NAME"
+    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.test.spacebridge.io"
+    STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_TEST
+    STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_TEST
+  environment:
+    name: test/$CI_COMMIT_REF_NAME
+    url: https://$CI_COMMIT_REF_NAME.test.spacebridge.io
+    on_stop: stop-test-env
+    auto_stop_in: 4 hours
+
+review:
+  extends: .deploy:template
+  environment:
+    name: review/$CI_COMMIT_REF_NAME
+    url: https://$CI_COMMIT_REF_NAME.review.spacebridge.io
+    on_stop: stop-review-env
+  variables:
+    NAMESPACE: spacebridge-review
+    ENV_NAME: "$CI_COMMIT_REF_NAME"
+    SEED_ENABLED: "true"
+    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.review.spacebridge.io"
+    STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_REVIEW
+    STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_REVIEW
+  only:
+    - branches
+
+
+staging:
+  environment:
+    name: staging
+    url: https://staging.spacebridge.io
+  extends:
+    - .deploy:template
+  variables:
+    ENV_NAME: "spacebridge"
+    SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
+    NAMESPACE: spacebridge-staging
+    STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_STAGING
+    STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_STAGING
+    DATABASE_NAME: spacebridge-db
+    SEED_ENABLED: false
+    TARGET_DOMAIN: $STAGING_DOMAIN
 
 prod:
-  stage: deploy
-  image: dtzar/helm-kubectl:3.13.2
-  when: manual
-  # only:
-  #   - main
-  #   # only for references that match a version string (v1.2.3)
-  #   - /^v\d+\.\d+\.\d+$/
+  extends: .deploy:template
   environment:
     name: production
+    url: https://spacebridge.io
+  when: manual
   variables:
+    ENV_NAME: "spacebridge"
     SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
-  script:
+    NAMESPACE: spacebridge
+    STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_PROD
+    STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_PROD
+    DATABASE_NAME: spacebridge-db
+    SEED_ENABLED: false
+    TARGET_DOMAIN: $PROD_DOMAIN
+  before_script:
     - set -e
-    - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - export POD_BACKUP_PATH="/run/tmp/db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
     - export LOCAL_BACKUP_FILENAME="db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
     - echo "Starting database backup inside pod $DB_POD_NAME to $POD_BACKUP_PATH..."
@@ -361,7 +433,17 @@ prod:
     - export LOCAL_COMPRESSED_FILENAME="$LOCAL_BACKUP_FILENAME.xz" # Define compressed filename variable
     - echo "Cleaning up backup file inside pod..."
     - kubectl exec -n spacebridge spacebridge-db-1 -- rm "$POD_BACKUP_PATH"
-    - if [ -n "$S3_BUCKET" ] && [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_DEFAULT_REGION" ]; then apk add --no-cache aws-cli; echo "Uploading backup to S3 bucket $S3_BUCKET..."; aws s3 cp "$LOCAL_COMPRESSED_FILENAME" "s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME"; echo "Backup successfully uploaded to s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME"; else echo "S3 credentials not fully configured (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION). Skipping S3 upload."; fi
+    - if [ -n "$S3_BUCKET" ] && [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_DEFAULT_REGION" ]; then
+        apk add --no-cache aws-cli;
+        echo "Uploading backup to S3 bucket $S3_BUCKET...";
+        aws s3 cp "$LOCAL_COMPRESSED_FILENAME" "s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME";
+        echo "Backup successfully uploaded to s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME";
+      else
+        echo "S3 credentials not fully configured (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION). Skipping S3 upload.";
+      fi
+  script:
+    - set -e
+    - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - echo "Starting Helm deployment..."
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
     - helm dependency update ./helm/spacebridge
@@ -397,101 +479,68 @@ prod:
     paths:
       - "db_backup_*.sql.xz"
     when: on_success
-    expire_in: 7 days
+    expire_in: 70 days
 
-test:
-  when: always
-  stage: deploy
-  image: dtzar/helm-kubectl:3.13.2
-  environment:
-    name: test/$CI_COMMIT_REF_NAME
-    url: https://$CI_COMMIT_REF_NAME.test.spacebridge.io
-    on_stop: stop-test-env
-    auto_stop_in: 4 hours
-  only:
-    - branches
-  script:
-    - set -e
-    - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
-    - helm repo add nats https://nats-io.github.io/k8s/helm/charts
-    - helm dependency update ./helm/spacebridge
-    - helm dependency build ./helm/spacebridge
-    - helm upgrade --install $CI_COMMIT_REF_NAME ./helm/spacebridge
-      --namespace spacebridge-test
-      --set image.tag=${CI_COMMIT_SHA}
-      --set spacelit.tag=${SPACELIT_COMMIT_SHA}
-      --set environment.spacebridgeUrl=https://$CI_COMMIT_REF_NAME.test.spacebridge.io
-      --set ingress.enabled=true
-      --set ingress.hosts[0].host=$CI_COMMIT_REF_NAME.test.spacebridge.io
-      --set ingress.hosts[0].paths[0].path=/
-      --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
-      --set ingress.tls[0].hosts[0]=$CI_COMMIT_REF_NAME.test.spacebridge.io
-      --set ingress.tls[0].secretName=spacebridge-test-tls
-      --set ingress.tls[0].secretName=spacebridge-test-tls
-      --set config.openai.apiKey=${OPENAI_API_KEY}
-      --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
-      --set config.smtp.host=${SMTP_HOST}
-      --set config.smtp.port=${SMTP_PORT}
-      --set config.smtp.username=${SMTP_USERNAME}
-      --set config.smtp.password=${SMTP_PASSWORD}
-      --set config.smtp.from=${SMTP_FROM}
-      --set config.smtp.fromName=${SMTP_FROM_NAME}
-      --set sentry.enabled=true
-      --set profiling.enabled=false
-      --set stripe.enabled=true
-      --set stripe.secretKey=${STRIPE_SECRET_KEY_STAGING}
-      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET_STAGING}
-      --set worker.pools[0].name=polling
-      --set worker.pools[0].replicaCount=1
-      --set worker.pools[0].tasks=poll_tracker
-      --set worker.pools[1].name=notify
-      --set worker.pools[1].replicaCount=1
-      --set worker.pools[1].tasks=notify_admins
-      --set worker.pools[2].name=webhook
-      --set worker.pools[2].replicaCount=1
-      --set worker.pools[2].tasks=process_webhook_event
-      --set seed.enabled=true
-      --set seed.email=$SPACEBRIDGE_TEST_EMAIL
-      --set seed.username=$SPACEBRIDGE_TEST_USERNAME
-      --set seed.password=$SPACEBRIDGE_TEST_PASSWORD
-      --set seed.apiKey=$SPACEBRIDGE_TEST_API_KEY
-
-test:integration:api:
+.test:integration:template:
   stage: qa
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   variables:
     SPACEBRIDGE_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.spacebridge.io"
-  script:
+  before_script:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
     - playwright install
+
+test:integration:api:
+  extends: .test:integration:template
+  script:
     - pytest --confcutdir=tests/integration tests/integration/test_api.py
 
 test:integration:ui:
-  stage: qa
-  needs: [test]
-  image: mcr.microsoft.com/playwright/python:v1.30.0-focal
-  variables:
-    SPACEBRIDGE_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.spacebridge.io"
+  extends: .test:integration:template
   script:
-    - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
-    - playwright install
     - pytest --confcutdir=tests/integration tests/integration/test_ui.py
 
-stop-test-env:
+test:integration:mcp:
+  extends: .test:integration:template
+  script:
+    - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
+    - source ~/.bashrc
+    - export NVM_DIR="$HOME/.nvm"
+    - source "$NVM_DIR/nvm.sh"
+    - nvm install node
+    - npm install -g @anthropic-ai/claude-code
+    - pytest --confcutdir=tests/integration tests/integration/test_mcp_api.py
+
+.stop-env:template:
   stage: cleanup
-  needs: ["test:integration:api", "test:integration:ui"]
+  needs: ["test:integration:api", "test:integration:ui", "test:integration:mcp"]
   image: dtzar/helm-kubectl:3.13.2
-  when: on_success
+  when: manual
   allow_failure: true
   environment:
-    name: test/$CI_COMMIT_REF_NAME
     action: stop
   only:
     - branches
   script:
-    - helm delete $CI_COMMIT_REF_NAME --namespace spacebridge-test
-    - kubectl delete job --namespace spacebridge-test $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job || true
+    - helm delete $CI_COMMIT_REF_NAME --namespace $NAMESPACE
+    - kubectl delete job --namespace $NAMESPACE $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job || true
+
+stop-test-env:
+  extends: .stop-env:template
+  when: on_success
+  variables:
+    NAMESPACE: "spacebridge-test"
+  environment:
+    name: test/$CI_COMMIT_REF_NAME
+
+stop-review-env:
+  extends: .stop-env:template
+  when: manual
+  variables:
+    NAMESPACE: "spacebridge-review"
+  environment:
+    name: review/$CI_COMMIT_REF_NAME
 
 smoke:
   stage: qa

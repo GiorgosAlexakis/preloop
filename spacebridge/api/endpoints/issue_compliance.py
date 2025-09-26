@@ -67,19 +67,14 @@ async def get_compliance_prompts(
     return get_compliance_prompts_from_config(settings.PROMPTS_FILE)
 
 
-@router.get(
-    "/issue_compliance/{issue_id}",
-    response_model=IssueComplianceResultResponse,
-    tags=["Issues"],
-)
-def get_issue_compliance(
+def _calculate_issue_compliance(
     issue_id: str,
     prompt_name: str,
-    db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
-    settings: Settings = Depends(get_settings),
-    billing_service: BillingService = Depends(get_billing_service),
-):
+    db: Session,
+    current_user: Account,
+    settings: Settings,
+    billing_service: BillingService,
+) -> IssueComplianceResultResponse:
     """Get or calculate the compliance result for a given issue."""
 
     prompts_config = load_compliance_prompts_config(settings.PROMPTS_FILE)
@@ -179,6 +174,30 @@ def get_issue_compliance(
 
 
 @router.get(
+    "/issue_compliance/{issue_id}",
+    response_model=IssueComplianceResultResponse,
+    tags=["Issues"],
+)
+def get_issue_compliance(
+    issue_id: str,
+    prompt_name: str,
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_active_user),
+    settings: Settings = Depends(get_settings),
+    billing_service: BillingService = Depends(get_billing_service),
+):
+    """Get or calculate the compliance result for a given issue."""
+    return _calculate_issue_compliance(
+        issue_id=issue_id,
+        prompt_name=prompt_name,
+        db=db,
+        current_user=current_user,
+        settings=settings,
+        billing_service=billing_service,
+    )
+
+
+@router.get(
     "/issue_compliance_suggestion/{issue_id}",
     response_model=ComplianceSuggestionResponse,
 )
@@ -191,7 +210,7 @@ def get_compliance_improvement_suggestion(
     billing_service: BillingService = Depends(get_billing_service),
 ):
     """Generate a compliance improvement suggestion for a given issue."""
-    compliance_result = get_issue_compliance(
+    compliance_result = _calculate_issue_compliance(
         issue_id=issue_id,
         prompt_name=prompt_name,
         db=db,

@@ -31,12 +31,10 @@ SpaceBridge is designed with a modular architecture:
 2.  **SpaceModels** (submodule `./SpaceModels`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
 3.  **SpaceSync** (submodule `./spacesync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
 4.  **SpaceLit** (submodule `./SpaceLit`): A web application built using Lit, Vite, TypeScript, and Shoelace Web Components.
-5.  **SpaceBridge-MCP** (submodule `./mcp`): A Model Context Protocol (MCP) server that uses stdio transport and serves as a bridge between MCP clients (like Claude Code) and the SpaceBridge API.
 
 This structure allows:
-- Clear separation of concerns between the API layer, data models, synchronization logic, and MCP integration.
+- Clear separation of concerns between the API layer, data models, and synchronization logic.
 - Independent development and versioning of the core components.
-- Direct HTTP API access for applications that don't need MCP.
 
 ## Frontend
 
@@ -228,6 +226,48 @@ SpaceBridge provides a RESTful API with the following key endpoints:
 - `PUT /api/v1/issues/{issue_id}` - Update issue
 - `DELETE /api/v1/issues/{issue_id}` - Delete issue
 - `POST /api/v1/issues/{issue_id}/comments` - Add comment to issue
+
+### Using MCP Tools via API
+
+The SpaceBridge API now includes integrated MCP tool endpoints, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
+
+**Authentication:** All MCP endpoints use the same Bearer Token authentication as the rest of the API.
+
+**Connecting with Claude Code:**
+
+You can connect Claude Code directly to your SpaceBridge instance using the `claude mcp add` command.
+
+1.  **Get your SpaceBridge API Key:** You can find or create an API key in your SpaceBridge user settings.
+2.  **Add the MCP Server:** Run the following command, replacing `YOUR_SPACEBRIDGE_URL` and `YOUR_API_KEY` with your details.
+
+    ```bash
+    claude mcp add \
+      --transport http \
+      --header "Authorization: Bearer YOUR_API_KEY" \
+      spacebridge \
+      https://YOUR_SPACEBRIDGE_URL/api/v1/mcp
+    ```
+
+    - `--transport http`: Specifies that the server uses the HTTP transport.
+    - `--header "Authorization: Bearer YOUR_API_KEY"`: Provides the necessary authentication header for all requests.
+    - `spacebridge`: This is the name you will use to refer to the server (e.g., `@spacebridge get_issue ...`).
+    - `https://YOUR_SPACEBRIDGE_URL/api/v1/mcp`: This is the base URL for the SpaceBridge MCP endpoints.
+
+**Example Workflow (using `curl`):**
+
+If you are not using an MCP client and want to interact with the tool endpoints directly, you can use any HTTP client like `curl`.
+
+1.  **Create an Issue:**
+    ```bash
+    curl -X POST "https://YOUR_SPACEBRIDGE_URL/api/v1/mcp/create_issue" \
+    -H "Authorization: Bearer YOUR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "project": "your-org/your-project",
+      "title": "New Feature Request",
+      "description": "Add a dark mode to the dashboard."
+    }'
+    ```
 
 ## Testing
 
