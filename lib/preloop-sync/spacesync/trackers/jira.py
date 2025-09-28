@@ -418,7 +418,9 @@ class JiraTracker(BaseTracker):
                     "external_id": issue_data["id"],
                     "key": issue_data["key"],
                     "title": issue_data["fields"]["summary"],
-                    "description": issue_data["fields"].get("description") or "",
+                    "description": self._convert_description_to_string(
+                        issue_data["fields"].get("description", "")
+                    ),
                     "state": issue_data["fields"]["status"]["name"],
                     "created_at": datetime.strptime(
                         issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
@@ -821,7 +823,7 @@ class JiraTracker(BaseTracker):
             return False
 
         try:
-            hooks = self.get_webhooks()
+            hooks = await self.get_webhooks()
             for hook in hooks:
                 if hook.get("url") == webhook_url:
                     # Check if the hook is for the correct project

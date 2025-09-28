@@ -935,7 +935,6 @@ class GitHubTracker(BaseTracker):
             "identifier": str(proj_data["id"]),
             "name": proj_data["name"],
             "description": proj_data.get("description"),
-            "url": proj_data.get("url"),
             "organization_id": organization_id,
             "meta_data": proj_data.get("meta_data"),
         }
