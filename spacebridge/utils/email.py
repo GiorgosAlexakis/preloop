@@ -54,7 +54,7 @@ def send_email(
 
     # Create message container
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
+    msg["Subject"] = f"[{settings.spacebridge_url}] {subject}"
     msg["From"] = from_email
     msg["To"] = to_email
 
