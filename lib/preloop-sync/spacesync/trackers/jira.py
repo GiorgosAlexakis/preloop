@@ -239,12 +239,18 @@ class JiraTracker(BaseTracker):
                 updated_at = datetime.now()
 
             author_data = comment_data.get("author", {})
-            author = None
             if author_data:
                 author = IssueUser(
                     id=author_data.get("accountId", ""),
                     name=author_data.get("displayName", ""),
                     avatar_url=author_data.get("avatarUrls", {}).get("48x48", ""),
+                )
+            else:
+                # Create a default IssueUser for anonymous comments
+                author = IssueUser(
+                    id="",
+                    name="Anonymous",
+                    avatar_url=None,
                 )
 
             comments.append(

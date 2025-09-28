@@ -1,6 +1,7 @@
 import pytest
 import unittest
 from unittest.mock import patch, MagicMock
+from unittest import IsolatedAsyncioTestCase
 from datetime import datetime
 import httpx
 from spacesync.exceptions import (
@@ -796,3 +797,178 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results["unregistered"], 0)
         self.assertEqual(results["failed"], 0)
         mock_make_request_delete.assert_not_called()
+
+
+class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
+    """Test GitHub tracker issue-related operations."""
+
+    async def test_get_issue_success(self):
+        """Test successful issue retrieval."""
+        # Arrange
+        issue_data = {
+            "id": 12345,
+            "number": 1,
+            "title": "Test Issue",
+            "body": "Issue description",
+            "state": "open",
+            "created_at": "2023-01-01T10:00:00Z",
+            "updated_at": "2023-01-02T11:00:00Z",
+            "html_url": "https://github.com/owner/repo/issues/1",
+            "labels": [{"name": "bug"}, {"name": "critical"}],
+            "assignees": [{"login": "user1"}, {"login": "user2"}],
+        }
+
+        connection_details = {"owner": "testowner", "repo": "testrepo"}
+        tracker = GitHubTracker("tracker-1", "api-key", connection_details)
+
+        # Mock the _make_request method directly
+        from unittest.mock import AsyncMock
+
+        tracker._make_request = AsyncMock(return_value=issue_data)
+
+        # Act
+        result = await tracker.get_issue("1")
+
+        # Assert
+        self.assertEqual(result["external_id"], "12345")
+        self.assertEqual(result["key"], "testowner/testrepo#1")
+        self.assertEqual(result["title"], "Test Issue")
+        self.assertEqual(result["description"], "Issue description")
+        self.assertEqual(result["state"], "open")
+        self.assertEqual(result["labels"], ["bug", "critical"])
+        self.assertEqual(result["assignees"], ["user1", "user2"])
+        self.assertEqual(result["url"], "https://github.com/owner/repo/issues/1")
+
+        tracker._make_request.assert_called_once_with(
+            "repos/testowner/testrepo/issues/1"
+        )
+
+    async def test_get_issue_pull_request_error(self):
+        """Test error when trying to get a pull request as an issue."""
+        # Arrange
+        issue_data = {
+            "id": 12345,
+            "number": 1,
+            "title": "Test PR",
+            "pull_request": {"url": "https://api.github.com/repos/owner/repo/pulls/1"},
+        }
+
+        connection_details = {"owner": "testowner", "repo": "testrepo"}
+        tracker = GitHubTracker("tracker-1", "api-key", connection_details)
+
+        # Mock the _make_request method directly
+        from unittest.mock import AsyncMock
+
+        tracker._make_request = AsyncMock(return_value=issue_data)
+
+        # Act & Assert
+        with self.assertRaises(TrackerResponseError) as context:
+            await tracker.get_issue("1")
+
+        self.assertIn("is a pull request, not an issue", str(context.exception))
+
+    async def test_get_issue_missing_connection_details(self):
+        """Test error when connection details are missing."""
+        # Arrange
+        tracker = GitHubTracker("tracker-1", "api-key", {})
+
+        # Act & Assert
+        with self.assertRaises(TrackerResponseError) as context:
+            await tracker.get_issue("1")
+
+        self.assertIn(
+            "Owner/repo not found in connection details", str(context.exception)
+        )
+
+    async def test_get_comments_success(self):
+        """Test successful comments retrieval."""
+        # Arrange
+        comments_data = [
+            {
+                "id": 1001,
+                "body": "First comment",
+                "user": {
+                    "id": 101,
+                    "login": "commenter1",
+                    "avatar_url": "https://avatars.github.com/u/101",
+                },
+                "created_at": "2023-01-01T12:00:00Z",
+                "updated_at": "2023-01-01T12:00:00Z",
+                "html_url": "https://github.com/owner/repo/issues/1#issuecomment-1001",
+            },
+            {
+                "id": 1002,
+                "body": "Second comment",
+                "user": {
+                    "id": 102,
+                    "login": "commenter2",
+                    "avatar_url": "https://avatars.github.com/u/102",
+                },
+                "created_at": "2023-01-01T13:00:00Z",
+                "updated_at": "2023-01-01T13:00:00Z",
+                "html_url": "https://github.com/owner/repo/issues/1#issuecomment-1002",
+            },
+        ]
+
+        connection_details = {"owner": "testowner", "repo": "testrepo"}
+        tracker = GitHubTracker("tracker-1", "api-key", connection_details)
+
+        # Mock the _make_request method directly
+        from unittest.mock import AsyncMock
+
+        tracker._make_request = AsyncMock(return_value=comments_data)
+
+        # Act
+        result = await tracker.get_comments("1")
+
+        # Assert
+        self.assertEqual(len(result), 2)
+
+        self.assertEqual(result[0].id, "1001")
+        self.assertEqual(result[0].body, "First comment")
+        self.assertEqual(result[0].author.id, "101")
+        self.assertEqual(result[0].author.name, "commenter1")
+        self.assertEqual(
+            result[0].url, "https://github.com/owner/repo/issues/1#issuecomment-1001"
+        )
+
+        self.assertEqual(result[1].id, "1002")
+        self.assertEqual(result[1].body, "Second comment")
+        self.assertEqual(result[1].author.id, "102")
+        self.assertEqual(result[1].author.name, "commenter2")
+
+        tracker._make_request.assert_called_once_with(
+            "repos/testowner/testrepo/issues/1/comments", params={"per_page": 100}
+        )
+
+    async def test_get_comments_missing_connection_details(self):
+        """Test error when connection details are missing."""
+        # Arrange
+        tracker = GitHubTracker("tracker-1", "api-key", {})
+
+        # Act & Assert
+        with self.assertRaises(TrackerResponseError) as context:
+            await tracker.get_comments("1")
+
+        self.assertIn(
+            "Owner/repo not found in connection details", str(context.exception)
+        )
+
+    async def test_get_comments_api_error(self):
+        """Test handling of API errors when fetching comments."""
+        # Arrange
+        connection_details = {"owner": "testowner", "repo": "testrepo"}
+        tracker = GitHubTracker("tracker-1", "api-key", connection_details)
+
+        # Mock the _make_request method to raise an exception
+        from unittest.mock import AsyncMock
+
+        tracker._make_request = AsyncMock(
+            side_effect=TrackerResponseError("404 Not Found")
+        )
+
+        # Act
+        result = await tracker.get_comments("1")
+
+        # Assert - should return empty list on error
+        self.assertEqual(result, [])
