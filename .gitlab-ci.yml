@@ -349,7 +349,7 @@ test:coverage:
       --set ingress.hosts[0].paths[0].path=/
       --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
       --set ingress.tls[0].hosts[0]=${TARGET_DOMAIN}
-      --set ingress.tls[0].secretName=spacebridge-staging-tls
+      --set ingress.tls[0].secretName=spacebridge-${ENV_NAME}-tls
       --set environment.spacebridgeUrl=https://${TARGET_DOMAIN}
       --set database.cnpg.name=${DATABASE_NAME}
     - echo "Helm deployment finished."
@@ -447,40 +447,6 @@ prod:
       else
         echo "S3 credentials not fully configured (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION). Skipping S3 upload.";
       fi
-  script:
-    - set -e
-    - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
-    - echo "Starting Helm deployment..."
-    - helm repo add nats https://nats-io.github.io/k8s/helm/charts
-    - helm dependency update ./helm/spacebridge
-    - helm dependency build ./helm/spacebridge
-    - helm upgrade --install spacebridge ./helm/spacebridge
-      --namespace spacebridge
-      --set image.tag=${CI_COMMIT_SHA}
-      --set spacelit.tag=${SPACELIT_COMMIT_SHA}
-      --set config.openai.apiKey=${OPENAI_API_KEY}
-      --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
-      --set config.smtp.host=${SMTP_HOST}
-      --set config.smtp.port=${SMTP_PORT}
-      --set config.smtp.username=${SMTP_USERNAME}
-      --set config.smtp.password=${SMTP_PASSWORD}
-      --set config.smtp.from=${SMTP_FROM}
-      --set config.smtp.fromName=${SMTP_FROM_NAME}
-      --set ingress.enabled=true
-      --set stripe.enabled=true
-      --set stripe.secretKey=${STRIPE_SECRET_KEY_PROD}
-      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET_PROD}
-      --set worker.pools[0].name=polling
-      --set worker.pools[0].replicaCount=1
-      --set worker.pools[0].tasks=poll_tracker
-      --set worker.pools[1].name=notify
-      --set worker.pools[1].replicaCount=1
-      --set worker.pools[1].tasks=notify_admins
-      --set worker.pools[2].name=webhook
-      --set worker.pools[2].replicaCount=1
-      --set worker.pools[2].tasks=process_webhook_event
-      --set database.cnpg.name=spacebridge-db
-    - echo "Helm deployment finished."
   artifacts:
     paths:
       - "db_backup_*.sql.xz"
