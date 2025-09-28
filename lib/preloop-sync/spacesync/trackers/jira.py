@@ -22,8 +22,6 @@ from spacebridge.schemas.tracker_models import (
     IssueUpdate,
     ProjectMetadata,
     TrackerConnection,
-    IssueStatus,
-    IssueUser,
 )
 
 from ..exceptions import (
@@ -32,6 +30,14 @@ from ..exceptions import (
     TrackerResponseError,
 )
 from .base import BaseTracker
+from .utils import (
+    HTTP_STATUS_NO_CONTENT,
+    HTTP_STATUS_UNAUTHORIZED,
+    HTTP_STATUS_NOT_FOUND,
+    HTTP_SUCCESS_MIN,
+    HTTP_SUCCESS_MAX,
+    JIRA_DEFAULT_PAGE_SIZE,
+)
 from spacemodels.models.project import Project
 from spacemodels.models.webhook import Webhook
 from spacemodels.models.organization import Organization
@@ -84,7 +90,7 @@ class JiraTracker(BaseTracker):
                     max_retries=3,
                 )
             except JIRAError as e:
-                if e.status_code == 401:
+                if e.status_code == HTTP_STATUS_UNAUTHORIZED:
                     raise TrackerAuthenticationError(
                         f"Jira client authentication failed: {e.text}"
                     )
@@ -103,11 +109,12 @@ class JiraTracker(BaseTracker):
         endpoint: str,
         params: Optional[Dict[str, Any]] = None,
         json_data: Optional[Dict[str, Any]] = None,
+        api_version: str = "2",
     ) -> Any:
         """Make a request to the Jira API using httpx."""
         async with httpx.AsyncClient() as client:
             try:
-                url = f"{self.jira_url}/rest/api/2/{endpoint.lstrip('/')}"
+                url = f"{self.jira_url}/rest/api/{api_version}/{endpoint.lstrip('/')}"
                 response = await client.request(
                     method.upper(),
                     url,
@@ -116,11 +123,11 @@ class JiraTracker(BaseTracker):
                     json=json_data,
                 )
 
-                if response.status_code == 401:
+                if response.status_code == HTTP_STATUS_UNAUTHORIZED:
                     raise TrackerAuthenticationError("Jira authentication failed")
 
-                if 200 <= response.status_code < 300:
-                    if response.status_code == 204:
+                if HTTP_SUCCESS_MIN <= response.status_code <= HTTP_SUCCESS_MAX:
+                    if response.status_code == HTTP_STATUS_NO_CONTENT:
                         return None
                     if response.content:
                         try:
@@ -209,85 +216,151 @@ class JiraTracker(BaseTracker):
 
     async def get_issues(
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
-    ) -> List[Issue]:
-        """Get issues for a project from Jira."""
+    ) -> List[Dict[str, Any]]:
+        """
+        Get issues for a project from Jira using the new JQL API.
+
+        Uses the new /search/jql endpoint as per Jira API migration requirements.
+        """
         jql = f"project = {project_id}"
         if since:
             jql += f" AND updated >= '{since.strftime('%Y-%m-%d %H:%M')}'"
 
-        params = {
+        # Use the new search/jql endpoint with proper JSON payload
+        payload = {
             "jql": jql,
-            "maxResults": 100,
-            "fields": "id,key,summary,description,status,created,updated,labels,assignee,issuetype,comment,issuelinks",
+            "maxResults": JIRA_DEFAULT_PAGE_SIZE,
+            "fields": [
+                "id",
+                "key",
+                "summary",
+                "description",
+                "status",
+                "created",
+                "updated",
+                "labels",
+                "assignee",
+                "issuetype",
+                "comment",
+                "issuelinks",
+            ],
         }
 
-        try:
-            issues_response = await self._make_request("GET", "search", params=params)
-        except TrackerResponseError as e:
-            logger.error(f"Failed to get Jira issues for project {project_id}: {e}")
-            return []
+        all_issues = []
+        next_page_token = None
 
-        processed_issues = []
-        for issue_data in issues_response.get("issues", []):
-            comments_transformed = []
-            if issue_data["fields"].get("comment", {}).get("comments"):
-                for comment_item in issue_data["fields"]["comment"]["comments"]:
-                    comments_transformed.append(
-                        IssueComment(
-                            id=str(comment_item["id"]),
-                            body=comment_item.get("body", ""),
-                            author=IssueUser(
-                                id=comment_item["author"]["key"],
-                                name=comment_item["author"]["displayName"],
-                                avatar_url=comment_item["author"]["avatarUrls"][
-                                    "48x48"
-                                ],
-                            ),
-                            created_at=datetime.strptime(
-                                comment_item["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
-                            ).replace(tzinfo=None),
-                            updated_at=datetime.strptime(
-                                comment_item["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
-                            ).replace(tzinfo=None),
-                        )
-                    )
+        while True:
+            if next_page_token:
+                payload["nextPageToken"] = next_page_token
 
-            processed_issues.append(
-                Issue(
-                    id=issue_data["id"],
-                    key=issue_data["key"],
-                    title=issue_data["fields"]["summary"],
-                    description=issue_data["fields"].get("description") or "",
-                    status=IssueStatus(
-                        id=issue_data["fields"]["status"]["id"],
-                        name=issue_data["fields"]["status"]["name"],
-                        category=issue_data["fields"]["status"]["statusCategory"][
-                            "key"
-                        ],
-                    ),
-                    created_at=datetime.strptime(
-                        issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
-                    ).replace(tzinfo=None),
-                    updated_at=datetime.strptime(
-                        issue_data["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
-                    ).replace(tzinfo=None),
-                    labels=issue_data["fields"].get("labels", []),
-                    assignee=IssueUser(
-                        id=issue_data["fields"]["assignee"]["key"],
-                        name=issue_data["fields"]["assignee"]["displayName"],
-                        avatar_url=issue_data["fields"]["assignee"]["avatarUrls"][
-                            "48x48"
-                        ],
-                    )
-                    if issue_data["fields"].get("assignee")
-                    else None,
-                    url=f"{self.jira_url}/browse/{issue_data['key']}",
-                    comments=comments_transformed,
-                    tracker_type="jira",
-                    project_key=project_id,
+            try:
+                # Use the new API v3 search/jql endpoint
+                issues_response = await self._make_request(
+                    "POST", "search/jql", json_data=payload, api_version="3"
                 )
-            )
-        return processed_issues
+            except TrackerResponseError as e:
+                logger.error(f"Failed to get Jira issues for project {project_id}: {e}")
+                break
+
+            issues_data = issues_response.get("issues", [])
+            if not issues_data:
+                break
+
+            # Process issues with basic transformation
+            for issue_data in issues_data:
+                comments_data = []
+                # Get only first 20 comments as mentioned in migration guide
+                if issue_data["fields"].get("comment", {}).get("comments"):
+                    comments_list = issue_data["fields"]["comment"]["comments"][:20]
+                    for comment_item in comments_list:
+                        comment_url = f"{self.jira_url}/browse/{issue_data['key']}?focusedCommentId={comment_item['id']}"
+                        comments_data.append(
+                            {
+                                "id": str(comment_item["id"]),
+                                "body": comment_item.get("body", ""),
+                                "author": comment_item["author"]["displayName"]
+                                if comment_item.get("author")
+                                else None,
+                                "created_at": datetime.strptime(
+                                    comment_item["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                                )
+                                if comment_item.get("created")
+                                else None,
+                                "updated_at": datetime.strptime(
+                                    comment_item["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                                )
+                                if comment_item.get("updated")
+                                else None,
+                                "url": comment_url,
+                            }
+                        )
+
+                # Transform to the expected format
+                transformed_issue = {
+                    "external_id": issue_data["id"],
+                    "key": issue_data["key"],
+                    "title": issue_data["fields"]["summary"],
+                    "description": issue_data["fields"].get("description") or "",
+                    "state": issue_data["fields"]["status"]["name"],
+                    "created_at": datetime.strptime(
+                        issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                    ),
+                    "updated_at": datetime.strptime(
+                        issue_data["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                    ),
+                    "labels": issue_data["fields"].get("labels", []),
+                    "assignees": [issue_data["fields"]["assignee"]["displayName"]]
+                    if issue_data["fields"].get("assignee")
+                    else [],
+                    "url": f"{self.jira_url}/browse/{issue_data['key']}",
+                    "comments": comments_data,
+                    "dependencies": [],  # Will be populated if issuelinks are present
+                }
+
+                # Parse dependencies from issue links
+                if issue_data["fields"].get("issuelinks"):
+                    transformed_issue[
+                        "dependencies"
+                    ] = await self._parse_jira_dependencies(
+                        issue_data["fields"]["issuelinks"]
+                    )
+
+                all_issues.append(transformed_issue)
+
+            # Check for next page
+            next_page_token = issues_response.get("nextPageToken")
+            if not next_page_token:
+                break
+
+        return all_issues
+
+    async def _parse_jira_dependencies(
+        self, issuelinks: List[Dict[str, Any]]
+    ) -> List[Dict[str, str]]:
+        """Parse Jira issue links into dependencies."""
+        dependencies = []
+        for link in issuelinks:
+            try:
+                # Handle both inward and outward links
+                if "outwardIssue" in link:
+                    target_key = link["outwardIssue"]["key"]
+                    relationship_type = link["type"]["outward"]
+                elif "inwardIssue" in link:
+                    target_key = link["inwardIssue"]["key"]
+                    relationship_type = link["type"]["inward"]
+                else:
+                    continue
+
+                dependencies.append(
+                    {
+                        "target_key": target_key,
+                        "type": relationship_type,
+                    }
+                )
+            except (KeyError, TypeError) as e:
+                logger.warning(f"Could not parse Jira issue link: {e}")
+                continue
+        return dependencies
 
     async def register_webhook(
         self,
@@ -390,7 +463,7 @@ class JiraTracker(BaseTracker):
                 f"Successfully unregistered webhook {webhook.external_id} from Jira."
             )
         except JIRAError as e:
-            if e.status_code == 404:
+            if e.status_code == HTTP_STATUS_NOT_FOUND:
                 logger.warning(
                     f"Webhook {webhook.external_id} not found in Jira. Assuming already deleted."
                 )
@@ -405,9 +478,10 @@ class JiraTracker(BaseTracker):
             f"Removed webhook record for project_id {webhook.project_id} from database."
         )
         return True
-        return True
 
-    async def unregister_all_webhooks(self, db: Session) -> None:
+    async def unregister_all_webhooks(
+        self, db: Session, webhook_url_pattern: Optional[str] = None
+    ) -> Dict[str, int]:
         """Unregister all webhooks for all projects in an organization."""
         results = {"unregistered": 0, "failed": 0, "not_found": 0}
         logger.info(f"Unregistering all webhooks for Jira tracker {self.tracker_id}.")
@@ -604,7 +678,7 @@ class JiraTracker(BaseTracker):
             self._make_request("DELETE", f"/rest/webhooks/1.0/webhook/{webhook_id}")
             return True
         except TrackerResponseError as e:
-            if "404" in str(e):
+            if str(HTTP_STATUS_NOT_FOUND) in str(e):
                 logger.warning(
                     f"Webhook {webhook_id} not found in Jira, considering it deleted."
                 )

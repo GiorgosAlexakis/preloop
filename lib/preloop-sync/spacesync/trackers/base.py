@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import logging
 
+from sqlalchemy.orm import Session
 from spacemodels.models.issue import DESCRIPTION_MAX_LENGTH
 from spacemodels.models.project import Project
 from spacemodels.models.organization import Organization
@@ -259,7 +260,7 @@ class BaseTracker(ABC):
 
     @abstractmethod
     async def unregister_all_webhooks(
-        self, webhook_url_pattern: Optional[str] = None
+        self, db: Session, webhook_url_pattern: Optional[str] = None
     ) -> Dict[str, int]:
         """Unregister all webhooks, optionally matching a URL pattern."""
         pass

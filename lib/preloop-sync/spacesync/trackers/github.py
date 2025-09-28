@@ -27,6 +27,16 @@ from ..exceptions import (
     TrackerResponseError,
 )
 from .base import BaseTracker
+from .utils import (
+    async_retry,
+    GITHUB_DEFAULT_PAGE_SIZE,
+    HTTP_STATUS_OK,
+    HTTP_STATUS_CREATED,
+    HTTP_STATUS_NO_CONTENT,
+    HTTP_STATUS_UNAUTHORIZED,
+    HTTP_STATUS_NOT_FOUND,
+    HTTP_STATUS_UNPROCESSABLE_ENTITY,
+)
 from ..config import logger
 from spacemodels.models.project import Project
 from spacemodels.crud import crud_organization, crud_project, crud_webhook
@@ -49,6 +59,7 @@ class GitHubTracker(BaseTracker):
             "Accept": "application/vnd.github.v3+json",
         }
 
+    @async_retry()
     async def _make_request(
         self, endpoint: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
@@ -57,7 +68,7 @@ class GitHubTracker(BaseTracker):
         """
         if params is None:
             params = {}
-        params.setdefault("per_page", 100)
+        params.setdefault("per_page", GITHUB_DEFAULT_PAGE_SIZE)
         results = []
         url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
         async with httpx.AsyncClient() as client:
@@ -68,7 +79,7 @@ class GitHubTracker(BaseTracker):
                     )
                     params = None
 
-                    if response.status_code == 401:
+                    if response.status_code == HTTP_STATUS_UNAUTHORIZED:
                         raise TrackerAuthenticationError("GitHub authentication failed")
                     elif response.status_code >= 400:
                         raise TrackerResponseError(
@@ -89,6 +100,7 @@ class GitHubTracker(BaseTracker):
                     raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
         return results
 
+    @async_retry()
     async def _make_request_delete(self, endpoint: str) -> bool:
         """
         Make a DELETE request to the GitHub API.
@@ -98,9 +110,9 @@ class GitHubTracker(BaseTracker):
                 url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
                 response = await client.delete(url, headers=self.headers)
 
-                if response.status_code == 401:
+                if response.status_code == HTTP_STATUS_UNAUTHORIZED:
                     raise TrackerAuthenticationError("GitHub authentication failed")
-                elif response.status_code == 404:
+                elif response.status_code == HTTP_STATUS_NOT_FOUND:
                     logger.warning(
                         f"Resource not found during DELETE request to {endpoint}"
                     )
@@ -110,9 +122,53 @@ class GitHubTracker(BaseTracker):
                         f"GitHub API error: {response.status_code} - {response.text}"
                     )
 
-                return response.status_code == 204
+                return response.status_code == HTTP_STATUS_NO_CONTENT
             except httpx.RequestError as e:
                 raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
+
+    async def _parse_dependencies(
+        self, content: str, current_repo: str
+    ) -> List[Dict[str, str]]:
+        """Parse dependencies from text content (issue body, comments)."""
+        dependencies = []
+        import re
+
+        # Regex to find keywords like 'closes', 'fixes', 'relates to', etc.,
+        # followed by an issue reference.
+        # It supports cross-repo references like 'owner/repo#123'.
+        pattern = re.compile(
+            r"(closes|fixes|resolves|relates to|blocked by|blocks)\s+((?:[a-zA-Z0-9-]+\/[a-zA-Z0-9_.-]+)?#\d+)",
+            re.IGNORECASE,
+        )
+
+        for match in pattern.finditer(content):
+            relationship_type = match.group(1).lower()
+            target_issue_ref = match.group(2)
+
+            # Normalize relationship type for consistency
+            if relationship_type in ["closes", "fixes", "resolves"]:
+                relationship_type = "closes"
+            elif relationship_type == "relates to":
+                relationship_type = "related"
+            elif relationship_type == "blocked by":
+                relationship_type = "is blocked by"
+
+            # Construct the full key for the target issue
+            if "#" in target_issue_ref and "/" not in target_issue_ref:
+                # It's a short reference like '#123', so it's in the same repo.
+                target_key = f"{current_repo}{target_issue_ref}"
+            else:
+                # It's a full reference like 'owner/repo#123'.
+                target_key = target_issue_ref
+
+            dependencies.append(
+                {
+                    "target_key": target_key,
+                    "type": relationship_type,
+                }
+            )
+
+        return dependencies
 
     async def test_connection(self) -> TrackerConnection:
         """Test the connection to the tracker."""
@@ -175,7 +231,9 @@ class GitHubTracker(BaseTracker):
                 "url": user_data["html_url"],
             }
         )
-        orgs_data = await self._make_request("user/orgs", {"per_page": 100})
+        orgs_data = await self._make_request(
+            "user/orgs", {"per_page": GITHUB_DEFAULT_PAGE_SIZE}
+        )
         for org in orgs_data:
             organizations.append(
                 {
@@ -192,7 +250,11 @@ class GitHubTracker(BaseTracker):
         """
         Get repositories (projects) for an organization from GitHub.
         """
-        params = {"per_page": 100, "sort": "updated", "direction": "desc"}
+        params = {
+            "per_page": GITHUB_DEFAULT_PAGE_SIZE,
+            "sort": "updated",
+            "direction": "desc",
+        }
         if organization_id == "personal":
             repos_data = await self._make_request("user/repos", params)
         else:
@@ -243,7 +305,7 @@ class GitHubTracker(BaseTracker):
 
         params = {
             "state": "all",
-            "per_page": 100,
+            "per_page": GITHUB_DEFAULT_PAGE_SIZE,
             "sort": "updated",
             "direction": "desc",
         }
@@ -267,7 +329,7 @@ class GitHubTracker(BaseTracker):
             comments_endpoint = f"repos/{repo_name}/issues/{issue_number}/comments"
             try:
                 raw_comments_data = await self._make_request(
-                    comments_endpoint, params={"per_page": 100}
+                    comments_endpoint, params={"per_page": GITHUB_DEFAULT_PAGE_SIZE}
                 )
                 if isinstance(raw_comments_data, dict):
                     raw_comments_data = [raw_comments_data]
@@ -290,6 +352,7 @@ class GitHubTracker(BaseTracker):
                             ),
                             created_at=comment_created_at,
                             updated_at=comment_updated_at,
+                            url=comment_item.get("html_url"),
                         )
                     )
             except TrackerResponseError as e:
@@ -338,7 +401,7 @@ class GitHubTracker(BaseTracker):
                 url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
                 response = await client.post(url, headers=self.headers, json=payload)
 
-            if response.status_code in [200, 201]:
+            if response.status_code in [HTTP_STATUS_OK, HTTP_STATUS_CREATED]:
                 response_data = response.json()
                 webhook_id = response_data.get("id")
                 if not webhook_id:
@@ -361,7 +424,7 @@ class GitHubTracker(BaseTracker):
                     f"Successfully registered and stored webhook {webhook_id} for GitHub org '{org_identifier}'"
                 )
                 return True
-            elif response.status_code == 401:
+            elif response.status_code == HTTP_STATUS_UNAUTHORIZED:
                 logger.error(
                     f"GitHub authentication failed while trying to register webhook for org '{org_identifier}'."
                 )
@@ -371,12 +434,12 @@ class GitHubTracker(BaseTracker):
                     f"Permission denied: Unable to register webhook for GitHub org '{org_identifier}'. Check token permissions (needs admin:org_hook)."
                 )
                 return False
-            elif response.status_code == 404:
+            elif response.status_code == HTTP_STATUS_NOT_FOUND:
                 logger.error(
                     f"GitHub organization '{org_identifier}' not found while trying to register webhook."
                 )
                 return False
-            elif response.status_code == 422:
+            elif response.status_code == HTTP_STATUS_UNPROCESSABLE_ENTITY:
                 response_data = response.json()
                 if "errors" in response_data and any(
                     "Hook already exists" in e.get("message", "")
@@ -442,13 +505,13 @@ class GitHubTracker(BaseTracker):
                 url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
                 response = await client.delete(url, headers=self.headers)
 
-            if response.status_code == 204:
+            if response.status_code == HTTP_STATUS_NO_CONTENT:
                 logger.info(
                     f"Successfully unregistered webhook {webhook_id} for GitHub org '{org_identifier}'."
                 )
                 crud_webhook.remove(db, id=webhook.id)
                 return True
-            elif response.status_code == 404:
+            elif response.status_code == HTTP_STATUS_NOT_FOUND:
                 logger.warning(
                     f"Webhook {webhook_id} for GitHub org '{org_identifier}' not found during delete attempt. Assuming already unregistered."
                 )
@@ -472,7 +535,9 @@ class GitHubTracker(BaseTracker):
             )
             return False
 
-    async def unregister_all_webhooks(self, db: Session):
+    async def unregister_all_webhooks(
+        self, db: Session, webhook_url_pattern: Optional[str] = None
+    ) -> Dict[str, int]:
         """
         Unregister all webhooks for all organizations managed by this tracker instance.
         Args:
@@ -687,7 +752,8 @@ class GitHubTracker(BaseTracker):
             repo_full_name = repo["meta_data"]["full_name"]
             try:
                 repo_webhooks = await self._make_request(
-                    f"repos/{repo_full_name}/hooks", params={"per_page": 100}
+                    f"repos/{repo_full_name}/hooks",
+                    params={"per_page": GITHUB_DEFAULT_PAGE_SIZE},
                 )
                 all_webhooks.extend(repo_webhooks)
             except TrackerResponseError as e:
