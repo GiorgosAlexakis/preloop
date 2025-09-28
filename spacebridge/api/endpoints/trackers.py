@@ -503,9 +503,11 @@ async def test_connection_and_list_orgs(
 
         orgs = await client.get_organizations()
         if len(orgs) == 1:
-            projects = await client.get_projects(orgs[0].id)
-            orgs[0].children = [
-                ProjectIdentifier(id=p.id, name=p.name, identifier=p.id, type="project")
+            projects = await client.get_projects(orgs[0]["id"])
+            orgs[0]["children"] = [
+                ProjectIdentifier(
+                    id=p["id"], name=p["name"], identifier=p["id"], type="project"
+                )
                 for p in projects
             ]
         return TrackerTestResponse(
