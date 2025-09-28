@@ -90,6 +90,8 @@ class TrackerClient:
                 )
                 continue
             org_create_data = self.client.transform_organization(org_data)
+            # Add the tracker_id which is required for Organization model
+            org_create_data["tracker_id"] = self.tracker.id
             org = crud_organization.get_by_identifier(
                 db,
                 identifier=org_create_data["identifier"],
@@ -405,10 +407,10 @@ async def _process_organization(
             if client.tracker_type == "jira":
                 for project in projects:
                     try:
-                        if not client.client.is_webhook_registered_for_project(
+                        if not await client.client.is_webhook_registered_for_project(
                             project, webhook_target_url
                         ):
-                            client.client.register_webhook(
+                            await client.client.register_webhook(
                                 db=db,
                                 project=project,
                                 webhook_url=webhook_target_url,
@@ -422,10 +424,10 @@ async def _process_organization(
                         org_stats["organizations"]["errors"] += 1
             elif client.tracker_type == "github":
                 try:
-                    if not client.client.is_webhook_registered_for_organization(
+                    if not await client.client.is_webhook_registered_for_organization(
                         org, webhook_target_url
                     ):
-                        client.client.register_webhook(
+                        await client.client.register_webhook(
                             db=db,
                             organization=org,
                             webhook_url=webhook_target_url,

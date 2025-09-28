@@ -200,7 +200,9 @@ class JiraTracker(BaseTracker):
             "external_id": issue_data["id"],
             "key": issue_data["key"],
             "title": fields.get("summary", ""),
-            "description": fields.get("description", ""),
+            "description": self._convert_description_to_string(
+                fields.get("description", "")
+            ),
             "state": fields.get("status", {}).get("name", "Unknown"),
             "created_at": created_at,
             "updated_at": updated_at,
@@ -265,6 +267,28 @@ class JiraTracker(BaseTracker):
             )
 
         return comments
+
+    def _convert_description_to_string(self, description) -> str:
+        """Convert Jira description to string format.
+
+        Jira can return descriptions in different formats:
+        - String (legacy)
+        - Dict (Atlassian Document Format - ADF)
+        """
+        if isinstance(description, dict):
+            # Handle Atlassian Document Format (ADF)
+            try:
+                import json
+
+                return json.dumps(description)
+            except Exception:
+                return str(description)
+        elif isinstance(description, str):
+            return description
+        elif description is None:
+            return ""
+        else:
+            return str(description)
 
     async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
         """Create a new issue."""

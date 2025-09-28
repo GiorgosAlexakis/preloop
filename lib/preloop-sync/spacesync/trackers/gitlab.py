@@ -92,6 +92,31 @@ class GitLabTracker(BaseTracker):
             )
             raise TrackerResponseError(f"GitLab API error: {e}")
 
+    async def _make_request_no_retry(self, method, *args, **kwargs):
+        """
+        Execute a GitLab API request without retry logic.
+        Used for operations where we want to immediately handle specific errors like 404.
+        """
+        try:
+            # Run the synchronous method in a thread pool
+            result = await asyncio.to_thread(method, *args, **kwargs)
+            return result
+        except gitlab.exceptions.GitlabAuthenticationError as e:
+            raise TrackerAuthenticationError(f"GitLab authentication failed: {e}")
+        except gitlab.exceptions.GitlabHttpError as e:
+            if e.response_code == HTTP_STATUS_UNAUTHORIZED:
+                raise TrackerAuthenticationError(f"GitLab authentication failed: {e}")
+            else:
+                raise TrackerResponseError(f"GitLab API error: {e.response_code} - {e}")
+        except gitlab.exceptions.GitlabConnectionError as e:
+            raise TrackerConnectionError(f"GitLab connection error: {e}")
+        except Exception as e:
+            # Catching potential exceptions from to_thread if the callable fails
+            logger.error(
+                f"An unexpected error occurred in GitLab request: {e}", exc_info=True
+            )
+            raise TrackerResponseError(f"GitLab API error: {e}")
+
     async def _parse_dependencies(self, issue_links: List[Any]) -> List[Dict[str, str]]:
         """Parse issue links from GitLab API response."""
         dependencies = []
@@ -266,7 +291,17 @@ class GitLabTracker(BaseTracker):
             # Parse dependencies from issue links if available
             dependencies = []
             if hasattr(issue_obj, "links") and issue_obj.links:
-                dependencies = await self._parse_dependencies(issue_obj.links)
+                # issue_obj.links is a ProjectIssueLinkManager, need to call list() to get actual links
+                try:
+                    links_list = await self._make_request(
+                        issue_obj.links.list, all=True
+                    )
+                    dependencies = await self._parse_dependencies(links_list)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to parse dependencies for issue {issue_obj.iid}: {e}"
+                    )
+                    dependencies = []
             issue_data["dependencies"] = dependencies
 
             issue_list_with_comments.append(issue_data)
@@ -310,7 +345,15 @@ class GitLabTracker(BaseTracker):
                     "url": webhook_url,
                     "secret": secret,
                     "project_id": project.id,
-                    "tracker_id": self.tracker_id,
+                    "events": [
+                        "issues",
+                        "push",
+                        "merge_requests",
+                        "notes",
+                        "pipeline",
+                        "job",
+                        "repository_update",
+                    ],
                 },
             )
             return True
@@ -376,7 +419,9 @@ class GitLabTracker(BaseTracker):
 
             # Try to list existing hooks. A 404 here indicates group hooks are not supported.
             try:
-                existing_hooks = await self._make_request(group.hooks.list, all=True)
+                existing_hooks = await self._make_request_no_retry(
+                    group.hooks.list, all=True
+                )
                 for h in existing_hooks:
                     if h.url == webhook_url:
                         logger.warning(
@@ -401,7 +446,7 @@ class GitLabTracker(BaseTracker):
                 f"Attempting to create group hook for GitLab group '{organization.identifier}' (URL: {webhook_url})."
             )
             try:
-                hook = await self._make_request(group.hooks.create, hook_attrs)
+                hook = await self._make_request_no_retry(group.hooks.create, hook_attrs)
                 logger.info(
                     f"Successfully created group webhook (ID: {hook.id}) for GitLab group '{organization.identifier}'."
                 )
@@ -412,7 +457,15 @@ class GitLabTracker(BaseTracker):
                         "url": webhook_url,
                         "secret": secret,
                         "organization_id": organization.id,
-                        "tracker_id": self.tracker_id,
+                        "events": [
+                            "issues",
+                            "push",
+                            "merge_requests",
+                            "notes",
+                            "pipeline",
+                            "job",
+                            "repository_update",
+                        ],
                     },
                 )
                 return True

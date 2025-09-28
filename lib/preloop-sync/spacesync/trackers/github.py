@@ -924,8 +924,7 @@ class GitHubTracker(BaseTracker):
         return {
             "identifier": str(org_data["id"]),
             "name": org_data["name"],
-            "url": org_data.get("url"),
-            "meta_data": {"source": "github"},
+            "meta_data": {"source": "github", "url": org_data.get("url")},
         }
 
     def transform_project(
