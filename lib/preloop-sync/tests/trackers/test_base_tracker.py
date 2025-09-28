@@ -51,6 +51,9 @@ class ConcreteTracker(BaseTracker):
     async def get_issue(self, issue_id):
         pass
 
+    async def get_comments(self, issue_id):
+        return []
+
     async def create_issue(self, project_key, issue_data):
         pass
 

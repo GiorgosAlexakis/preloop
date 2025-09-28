@@ -196,9 +196,104 @@ class GitHubTracker(BaseTracker):
         """Search for issues in a project."""
         raise NotImplementedError
 
-    async def get_issue(self, issue_id: str) -> Issue:
+    async def get_issue(self, issue_id: str) -> Dict[str, Any]:
         """Get a specific issue by ID."""
-        raise NotImplementedError
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        repo_full_name = f"{owner}/{repo}"
+        issue_data = await self._make_request(
+            f"repos/{repo_full_name}/issues/{issue_id}"
+        )
+
+        if "pull_request" in issue_data:
+            raise TrackerResponseError(
+                f"Issue {issue_id} is a pull request, not an issue"
+            )
+
+        try:
+            issue_created_at = datetime.strptime(
+                issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+            )
+            issue_updated_at = datetime.strptime(
+                issue_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
+            )
+        except (ValueError, TypeError):
+            issue_created_at = datetime.now()
+            issue_updated_at = datetime.now()
+
+        return {
+            "external_id": str(issue_data["id"]),
+            "key": f"{repo_full_name}#{issue_data['number']}",
+            "title": issue_data["title"],
+            "description": issue_data.get("body", ""),
+            "state": issue_data["state"],
+            "created_at": issue_created_at,
+            "updated_at": issue_updated_at,
+            "labels": [label.get("name", "") for label in issue_data.get("labels", [])],
+            "assignees": [
+                assignee["login"]
+                for assignee in issue_data.get("assignees", [])
+                if assignee and "login" in assignee
+            ],
+            "url": issue_data["html_url"],
+        }
+
+    async def get_comments(self, issue_id: str) -> List[IssueComment]:
+        """Get comments for an issue."""
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        repo_full_name = f"{owner}/{repo}"
+        comments_endpoint = f"repos/{repo_full_name}/issues/{issue_id}/comments"
+
+        try:
+            raw_comments_data = await self._make_request(
+                comments_endpoint, params={"per_page": GITHUB_DEFAULT_PAGE_SIZE}
+            )
+            if isinstance(raw_comments_data, dict):
+                raw_comments_data = [raw_comments_data]
+
+            comments_data_transformed = []
+            for comment_item in raw_comments_data:
+                try:
+                    comment_created_at = datetime.strptime(
+                        comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+                    )
+                    comment_updated_at = datetime.strptime(
+                        comment_item["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
+                    )
+                except (ValueError, TypeError):
+                    comment_created_at = datetime.now()
+                    comment_updated_at = datetime.now()
+
+                comments_data_transformed.append(
+                    IssueComment(
+                        id=str(comment_item["id"]),
+                        body=comment_item.get("body", "") or "",
+                        author=IssueUser(
+                            id=str(comment_item["user"]["id"]),
+                            name=comment_item["user"]["login"],
+                            avatar_url=comment_item["user"]["avatar_url"],
+                        ),
+                        created_at=comment_created_at,
+                        updated_at=comment_updated_at,
+                        url=comment_item.get("html_url"),
+                    )
+                )
+
+            return comments_data_transformed
+        except TrackerResponseError as e:
+            logger.error(
+                f"Failed to get comments for issue {repo_full_name}#{issue_id}: {e}"
+            )
+            return []
 
     async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
         """Create a new issue."""

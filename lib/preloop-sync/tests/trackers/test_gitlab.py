@@ -241,8 +241,8 @@ class TestGitLabTracker(unittest.IsolatedAsyncioTestCase):
         mock_issue.assignees = [{"username": "user1"}]
         mock_project.issues.get.return_value = mock_issue
 
-        tracker = GitLabTracker("tracker-1", "api-key", {})
-        issue = await tracker.get_issue("group-1", "proj-1", "1")
+        tracker = GitLabTracker("tracker-1", "api-key", {"project_id": "proj-1"})
+        issue = await tracker.get_issue("1")
 
         # Verify API calls
         mock_gl_instance.projects.get.assert_called_once_with("proj-1")
@@ -611,8 +611,8 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_issue.assignees = [{"username": "user1"}]
         mock_project.issues.get.return_value = mock_issue
 
-        tracker = GitLabTracker("tracker-1", "api-key", {})
-        issue = await tracker.get_issue("group-1", "proj-1", "1")
+        tracker = GitLabTracker("tracker-1", "api-key", {"project_id": "proj-1"})
+        issue = await tracker.get_issue("1")
 
         # Verify API calls
         mock_gl_instance.projects.get.assert_called_once_with("proj-1")

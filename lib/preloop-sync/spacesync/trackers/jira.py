@@ -20,6 +20,7 @@ from spacebridge.schemas.tracker_models import (
     IssueCreate,
     IssueFilter,
     IssueUpdate,
+    IssueUser,
     ProjectMetadata,
     TrackerConnection,
 )
@@ -168,9 +169,96 @@ class JiraTracker(BaseTracker):
         """Search for issues in a project."""
         raise NotImplementedError
 
-    async def get_issue(self, issue_id: str) -> Issue:
+    async def get_issue(self, issue_id: str) -> Dict[str, Any]:
         """Get a specific issue by ID."""
-        raise NotImplementedError
+        try:
+            issue_data = await self._make_request(
+                "GET", f"issue/{issue_id}", api_version="3"
+            )
+        except TrackerResponseError as e:
+            if "404" in str(e):
+                raise TrackerResponseError(f"Issue {issue_id} not found")
+            raise
+
+        fields = issue_data.get("fields", {})
+
+        try:
+            created_at = datetime.strptime(
+                fields.get("created", ""), "%Y-%m-%dT%H:%M:%S.%f%z"
+            ).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            created_at = datetime.now()
+
+        try:
+            updated_at = datetime.strptime(
+                fields.get("updated", ""), "%Y-%m-%dT%H:%M:%S.%f%z"
+            ).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            updated_at = datetime.now()
+
+        return {
+            "external_id": issue_data["id"],
+            "key": issue_data["key"],
+            "title": fields.get("summary", ""),
+            "description": fields.get("description", ""),
+            "state": fields.get("status", {}).get("name", "Unknown"),
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "labels": [label for label in fields.get("labels", [])],
+            "assignees": [fields.get("assignee", {}).get("name", "")]
+            if fields.get("assignee")
+            else [],
+            "url": f"{self.base_url}/browse/{issue_data['key']}",
+        }
+
+    async def get_comments(self, issue_id: str) -> List[IssueComment]:
+        """Get comments for an issue."""
+        try:
+            comments_data = await self._make_request(
+                "GET", f"issue/{issue_id}/comment", api_version="3"
+            )
+        except TrackerResponseError as e:
+            if "404" in str(e):
+                raise TrackerResponseError(f"Issue {issue_id} not found")
+            raise
+
+        comments = []
+        for comment_data in comments_data.get("comments", []):
+            try:
+                created_at = datetime.strptime(
+                    comment_data.get("created", ""), "%Y-%m-%dT%H:%M:%S.%f%z"
+                ).replace(tzinfo=None)
+            except (ValueError, TypeError):
+                created_at = datetime.now()
+
+            try:
+                updated_at = datetime.strptime(
+                    comment_data.get("updated", ""), "%Y-%m-%dT%H:%M:%S.%f%z"
+                ).replace(tzinfo=None)
+            except (ValueError, TypeError):
+                updated_at = datetime.now()
+
+            author_data = comment_data.get("author", {})
+            author = None
+            if author_data:
+                author = IssueUser(
+                    id=author_data.get("accountId", ""),
+                    name=author_data.get("displayName", ""),
+                    avatar_url=author_data.get("avatarUrls", {}).get("48x48", ""),
+                )
+
+            comments.append(
+                IssueComment(
+                    id=comment_data["id"],
+                    body=comment_data.get("body", ""),
+                    author=author,
+                    created_at=created_at,
+                    updated_at=updated_at,
+                    url=f"{self.base_url}/browse/{issue_id}?focusedCommentId={comment_data['id']}",
+                )
+            )
+
+        return comments
 
     async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
         """Create a new issue."""

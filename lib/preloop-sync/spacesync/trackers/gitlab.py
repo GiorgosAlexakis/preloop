@@ -36,6 +36,7 @@ from spacebridge.schemas.tracker_models import (
     IssueCreate,
     IssueFilter,
     IssueUpdate,
+    IssueUser,
     ProjectMetadata,
     TrackerConnection,
 )
@@ -629,20 +630,20 @@ class GitLabTracker(BaseTracker):
             )
             return False
 
-    async def get_issue(
-        self, organization_id: str, project_id: str, issue_id: str
-    ) -> Dict[str, Any]:
+    async def get_issue(self, issue_id: str) -> Dict[str, Any]:
         """
         Get a single issue from GitLab.
 
         Args:
-            organization_id: GitLab group ID.
-            project_id: GitLab project ID.
             issue_id: GitLab issue IID.
 
         Returns:
             A dictionary containing the issue data.
         """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
         try:
             project = await self._make_request(self.gl.projects.get, project_id)
             issue = await self._make_request(project.issues.get, issue_id)
@@ -656,50 +657,6 @@ class GitLabTracker(BaseTracker):
         project_slug = project.path_with_namespace
         key = f"{project_slug}#{issue.iid}"
 
-        comments_data = []
-        try:
-            notes = await self._make_request(
-                issue.notes.list, all=True, sort="asc", order_by="created_at"
-            )
-            for note in notes:
-                if note.system:
-                    continue
-
-                author = None
-                if hasattr(note, "author") and isinstance(note.author, dict):
-                    author = note.author.get("username")
-
-                try:
-                    created_at_dt = datetime.strptime(
-                        note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                    updated_at_dt = datetime.strptime(
-                        note.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                except (ValueError, TypeError):
-                    created_at_dt = datetime.now()
-                    if isinstance(note.created_at, str):
-                        try:
-                            created_at_dt = datetime.strptime(
-                                note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                            )
-                        except ValueError:
-                            pass
-                    updated_at_dt = created_at_dt
-
-                comments_data.append(
-                    {
-                        "id": str(note.id),
-                        "body": note.body or "",
-                        "author": author,
-                        "created_at": created_at_dt,
-                        "updated_at": updated_at_dt,
-                        "url": f"{issue.web_url}#note_{note.id}",
-                    }
-                )
-        except Exception as e:
-            logger.error(f"Failed to fetch notes for issue {issue.iid}: {e}")
-
         try:
             issue_created_at = datetime.strptime(
                 issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -707,7 +664,6 @@ class GitLabTracker(BaseTracker):
             issue_updated_at = datetime.strptime(
                 issue.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
             )
-
         except (ValueError, TypeError):
             issue_created_at = datetime.now()
             if isinstance(issue.created_at, str):
@@ -734,5 +690,70 @@ class GitLabTracker(BaseTracker):
                 if isinstance(assignee, dict) and "username" in assignee
             ],
             "url": issue.web_url,
-            "comments": comments_data,
         }
+
+    async def get_comments(self, issue_id: str) -> List[IssueComment]:
+        """Get comments for an issue."""
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            issue = await self._make_request(project.issues.get, issue_id)
+        except gitlab.exceptions.GitlabGetError as e:
+            if e.response_code == HTTP_STATUS_NOT_FOUND:
+                raise TrackerResponseError(
+                    f"Issue {issue_id} not found in project {project_id}"
+                )
+            raise
+
+        comments_data = []
+        try:
+            notes = await self._make_request(
+                issue.notes.list, all=True, sort="asc", order_by="created_at"
+            )
+            for note in notes:
+                if note.system:
+                    continue
+
+                author_data = None
+                if hasattr(note, "author") and isinstance(note.author, dict):
+                    author_data = IssueUser(
+                        id=str(note.author.get("id")),
+                        name=note.author.get("username"),
+                        avatar_url=note.author.get("avatar_url"),
+                    )
+
+                try:
+                    created_at_dt = datetime.strptime(
+                        note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                    updated_at_dt = datetime.strptime(
+                        note.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                except (ValueError, TypeError):
+                    created_at_dt = datetime.now()
+                    if isinstance(note.created_at, str):
+                        try:
+                            created_at_dt = datetime.strptime(
+                                note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                            )
+                        except ValueError:
+                            pass
+                    updated_at_dt = created_at_dt
+
+                comments_data.append(
+                    IssueComment(
+                        id=str(note.id),
+                        body=note.body or "",
+                        author=author_data,
+                        created_at=created_at_dt,
+                        updated_at=updated_at_dt,
+                        url=f"{issue.web_url}#note_{note.id}",
+                    )
+                )
+        except Exception as e:
+            logger.error(f"Failed to fetch notes for issue {issue_id}: {e}")
+
+        return comments_data

@@ -80,6 +80,11 @@ class BaseTracker(ABC):
         pass
 
     @abstractmethod
+    async def get_comments(self, issue_id: str) -> List[IssueComment]:
+        """Get comments for an issue."""
+        pass
+
+    @abstractmethod
     async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
         """Add a comment to an issue."""
         pass
