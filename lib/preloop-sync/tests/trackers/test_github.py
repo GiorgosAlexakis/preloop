@@ -13,6 +13,103 @@ from spacesync.trackers.github import GitHubTracker
 
 
 @pytest.mark.asyncio
+class TestGitHubTrackerDependencies(unittest.IsolatedAsyncioTestCase):
+    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    async def test_get_issues_parses_dependencies_from_body_and_comments(
+        self, mock_requests_get
+    ):
+        """Test that dependency parsing is integrated into issue fetching."""
+        # Mock API responses
+        mock_issues_response = {
+            "json": MagicMock(
+                return_value=[
+                    {
+                        "id": 1,
+                        "number": 1,
+                        "title": "Test issue",
+                        "body": "This closes #123 and fixes owner/other-repo#456",
+                        "state": "open",
+                        "created_at": "2023-01-01T00:00:00Z",
+                        "updated_at": "2023-01-01T00:00:00Z",
+                        "user": {
+                            "id": 1,
+                            "login": "testuser",
+                            "avatar_url": "https://avatar.url",
+                        },
+                    }
+                ]
+            ),
+            "status_code": 200,
+            "links": {},
+        }
+
+        mock_comments_response = {
+            "json": MagicMock(
+                return_value=[
+                    {
+                        "id": 1,
+                        "body": "This relates to #789",
+                        "created_at": "2023-01-01T01:00:00Z",
+                        "updated_at": "2023-01-01T01:00:00Z",
+                        "html_url": "https://github.com/owner/repo/issues/1#issuecomment-1",
+                        "user": {
+                            "id": 1,
+                            "login": "testuser",
+                            "avatar_url": "https://avatar.url",
+                        },
+                    }
+                ]
+            ),
+            "status_code": 200,
+            "links": {},
+        }
+
+        # Set up mock responses
+        mock_requests_get.side_effect = [
+            MagicMock(**mock_issues_response),  # Issues response
+            MagicMock(**mock_comments_response),  # Comments response
+        ]
+
+        # Create tracker instance
+        tracker = GitHubTracker("test-tracker", "test-token", {})
+
+        # Call get_issues
+        issues = await tracker.get_issues("test-org", "owner/repo")
+
+        # Verify the issue was processed and dependencies were parsed
+        assert len(issues) == 1
+        issue = issues[0]
+
+        # Check that dependencies were parsed and added
+        assert "dependencies" in issue
+        dependencies = issue["dependencies"]
+
+        # Should have 3 dependencies: 2 from body + 1 from comment
+        assert len(dependencies) == 3
+
+        # Check dependencies from body
+        body_deps = [
+            d
+            for d in dependencies
+            if d["target_key"] in ["owner/repo#123", "owner/other-repo#456"]
+        ]
+        assert len(body_deps) == 2
+        assert any(
+            d["type"] == "closes" and d["target_key"] == "owner/repo#123"
+            for d in body_deps
+        )
+        assert any(
+            d["type"] == "closes" and d["target_key"] == "owner/other-repo#456"
+            for d in body_deps
+        )
+
+        # Check dependency from comment
+        comment_deps = [d for d in dependencies if d["target_key"] == "owner/repo#789"]
+        assert len(comment_deps) == 1
+        assert comment_deps[0]["type"] == "related"
+
+
+@pytest.mark.asyncio
 class TestGitHubTrackerComments(unittest.IsolatedAsyncioTestCase):
     @patch("spacesync.trackers.github.httpx.AsyncClient.get")
     async def test_get_issues_fetches_and_transforms_comments(self, mock_requests_get):

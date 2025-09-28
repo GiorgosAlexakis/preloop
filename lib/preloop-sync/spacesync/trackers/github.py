@@ -361,6 +361,20 @@ class GitHubTracker(BaseTracker):
                 )
 
             issue_data["comments"] = comments_data_transformed
+
+            # Parse dependencies from issue body and comments
+            dependencies = []
+            if issue_data.get("body"):
+                dependencies.extend(
+                    await self._parse_dependencies(issue_data["body"], repo_name)
+                )
+            for comment in comments_data_transformed:
+                if comment.body:
+                    dependencies.extend(
+                        await self._parse_dependencies(comment.body, repo_name)
+                    )
+            issue_data["dependencies"] = dependencies
+
             processed_issues.append(issue_data)
         return processed_issues
 

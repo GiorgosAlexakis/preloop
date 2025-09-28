@@ -261,6 +261,13 @@ class GitLabTracker(BaseTracker):
 
             issue_data = issue_obj.attributes
             issue_data["comments"] = comments_data
+
+            # Parse dependencies from issue links if available
+            dependencies = []
+            if hasattr(issue_obj, "links") and issue_obj.links:
+                dependencies = await self._parse_dependencies(issue_obj.links)
+            issue_data["dependencies"] = dependencies
+
             issue_list_with_comments.append(issue_data)
         return issue_list_with_comments
 
@@ -453,9 +460,48 @@ class GitLabTracker(BaseTracker):
         """Get webhooks for an organization."""
         raise NotImplementedError
 
-    async def is_webhook_registered(self, project_id: str, webhook_url: str) -> bool:
-        """Check if a webhook is registered."""
-        raise NotImplementedError
+    async def is_webhook_registered(self, webhook: "Webhook") -> bool:
+        """
+        Check if a webhook is registered in the tracker.
+
+        Args:
+            webhook: The webhook to check.
+
+        Returns:
+            Whether the webhook is registered.
+        """
+        if not webhook.external_id:
+            return False
+
+        if webhook.project:
+            try:
+                project = await self._make_request(
+                    self.gl.projects.get, webhook.project.identifier
+                )
+                await self._make_request(project.hooks.get, webhook.external_id)
+                return True
+            except (TrackerResponseError, gitlab.exceptions.GitlabGetError) as e:
+                if "404" in str(e):
+                    return False
+                logger.error(
+                    f"Failed to check project webhook {webhook.external_id}: {e}"
+                )
+                return False
+        elif webhook.organization:
+            try:
+                group = await self._make_request(
+                    self.gl.groups.get, webhook.organization.identifier
+                )
+                await self._make_request(group.hooks.get, webhook.external_id)
+                return True
+            except (TrackerResponseError, gitlab.exceptions.GitlabGetError) as e:
+                if "404" in str(e):
+                    return False
+                logger.error(
+                    f"Failed to check group webhook {webhook.external_id}: {e}"
+                )
+                return False
+        return False
 
     async def unregister_all_webhooks(
         self, db: Session, webhook_url_pattern: Optional[str] = None
