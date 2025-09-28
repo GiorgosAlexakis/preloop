@@ -46,6 +46,7 @@ class IssueComment(BaseModel):
     created_at: datetime = Field(..., description="Comment creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Comment update timestamp")
     author: IssueUser = Field(..., description="Comment author")
+    url: Optional[str] = Field(None, description="URL to the comment")
 
 
 class IssueRelation(BaseModel):
