@@ -338,7 +338,20 @@ class TrackerClient:
 
                 comment_changed = False
                 if db_comment:
-                    if db_comment.updated_at < xformed_comment_data["updated_at"]:
+                    # Ensure both datetimes are timezone-aware for comparison
+                    db_updated_at = db_comment.updated_at
+                    if not db_updated_at.tzinfo:
+                        db_updated_at = db_updated_at.replace(
+                            tzinfo=datetime.timezone.utc
+                        )
+
+                    comment_updated_at = xformed_comment_data["updated_at"]
+                    if not comment_updated_at.tzinfo:
+                        comment_updated_at = comment_updated_at.replace(
+                            tzinfo=datetime.timezone.utc
+                        )
+
+                    if db_updated_at < comment_updated_at:
                         comment_changed = True
                         crud_comment.update(
                             db, db_obj=db_comment, obj_in=xformed_comment_data

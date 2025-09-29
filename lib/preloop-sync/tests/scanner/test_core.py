@@ -633,6 +633,8 @@ async def test_process_organization_gitlab(
     mock_client.scan_projects.return_value = [mock_project]
     mock_client.scan_issues.return_value = ([], 0)
     mock_client.tracker_type = "gitlab"
+    mock_client.tracker = MagicMock()
+    mock_client.tracker.meta_data = {}  # Empty meta_data means not GitLab CE
     mock_client.client.is_webhook_registered_for_organization.return_value = False
 
     # Act
@@ -782,9 +784,10 @@ async def test_scan_issues_with_new_comment(
 
 
 @pytest.mark.asyncio
+@patch("spacemodels.crud.crud_tracker")
 @patch("os.getenv")
 async def test_process_organization_gitlab_group_hooks_not_supported(
-    mock_getenv, mock_db_session, mock_organization, mock_project
+    mock_getenv, mock_crud_tracker, mock_db_session, mock_organization, mock_project
 ):
     """Test _process_organization for GitLab when group hooks are not supported."""
     mock_getenv.return_value = "http://test.com"
@@ -793,6 +796,9 @@ async def test_process_organization_gitlab_group_hooks_not_supported(
     mock_client.scan_projects.return_value = [mock_project]
     mock_client.scan_issues.return_value = ([], 0)
     mock_client.tracker_type = "gitlab"
+    mock_client.tracker = MagicMock()
+    mock_client.tracker.id = "test-tracker-id"
+    mock_client.tracker.meta_data = {}  # Empty meta_data means not GitLab CE initially
     mock_client.client.is_webhook_registered_for_organization.return_value = False
     mock_client.client.register_group_webhook.return_value = "group_hooks_not_supported"
     mock_client.client.is_webhook_registered_for_project.return_value = False
@@ -806,6 +812,7 @@ async def test_process_organization_gitlab_group_hooks_not_supported(
     )
 
     mock_client.client.register_project_webhook.assert_called_once()
+    mock_crud_tracker.update.assert_called_once()  # Verify tracker was marked as GitLab CE
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@
 CLI commands for SpaceSync.
 """
 
+import asyncio
 import click
 import os
 import uuid
@@ -234,17 +235,27 @@ def unregister_webhooks_command(
                 logger.info(f"Running cleanup for tracker {tracker_orm_instance.id}...")
                 if hasattr(tracker_client_instance.client, "cleanup_stale_webhooks"):
                     if tracker_orm_instance.tracker_type == "github":
-                        tracker_client_instance.client.cleanup_stale_webhooks(
-                            spacebridge_url=spacebridge_url,
-                            cleanup_projects=cleanup_project_webhooks,
+                        cleanup_result = asyncio.run(
+                            tracker_client_instance.client.cleanup_stale_webhooks(
+                                spacebridge_url=spacebridge_url,
+                                cleanup_projects=cleanup_project_webhooks,
+                            )
                         )
                     else:
-                        tracker_client_instance.client.cleanup_stale_webhooks(
-                            spacebridge_url=spacebridge_url
+                        cleanup_result = asyncio.run(
+                            tracker_client_instance.client.cleanup_stale_webhooks(
+                                spacebridge_url=spacebridge_url
+                            )
                         )
                     click.echo(
                         f"  Cleanup of stale webhooks for tracker {tracker_orm_instance.id} completed."
                     )
+                    click.echo(
+                        f"  Unregistered: {cleanup_result.get('unregistered', 0)}"
+                    )
+                    click.echo(f"  Failed: {cleanup_result.get('failed', 0)}")
+                    total_unregistered += cleanup_result.get("unregistered", 0)
+                    total_failed += cleanup_result.get("failed", 0)
                 else:
                     click.echo(
                         f"  Tracker type {tracker_orm_instance.tracker_type} does not support --cleanup-all."
@@ -257,7 +268,9 @@ def unregister_webhooks_command(
                 )
                 continue
 
-            summary = tracker_client_instance.client.unregister_all_webhooks(db=db)
+            summary = asyncio.run(
+                tracker_client_instance.client.unregister_all_webhooks(db=db)
+            )
 
             click.echo(f"  Unregistered: {summary.get('unregistered', 0)}")
             click.echo(f"  Failed: {summary.get('failed', 0)}")
