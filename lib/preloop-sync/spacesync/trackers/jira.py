@@ -258,7 +258,9 @@ class JiraTracker(BaseTracker):
             comments.append(
                 IssueComment(
                     id=comment_data["id"],
-                    body=comment_data.get("body", ""),
+                    body=self._convert_description_to_string(
+                        comment_data.get("body", "")
+                    ),
                     author=author,
                     created_at=created_at,
                     updated_at=updated_at,
@@ -395,7 +397,9 @@ class JiraTracker(BaseTracker):
                         comments_data.append(
                             {
                                 "id": str(comment_item["id"]),
-                                "body": comment_item.get("body", ""),
+                                "body": self._convert_description_to_string(
+                                    comment_item.get("body", "")
+                                ),
                                 "author": comment_item["author"]["displayName"]
                                 if comment_item.get("author")
                                 else None,

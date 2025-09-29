@@ -228,6 +228,24 @@ class GitLabTracker(BaseTracker):
             )
         return project_list
 
+    def transform_project(
+        self, proj_data: Dict[str, Any], organization_id: str
+    ) -> Dict[str, Any]:
+        """Transforms a GitLab project into the common format."""
+        return {
+            "organization_id": organization_id,
+            "identifier": str(proj_data["id"]),
+            "name": proj_data["name"],
+            "description": proj_data.get("description", ""),
+            "slug": proj_data.get("path_with_namespace", ""),
+            "meta_data": {
+                "url": proj_data.get("url", ""),
+                "external_id": proj_data.get("id", ""),
+                "source": "spacesync",
+                "path_with_namespace": proj_data.get("path_with_namespace"),
+            },
+        }
+
     async def get_issues(
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:

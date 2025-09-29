@@ -936,6 +936,7 @@ class GitHubTracker(BaseTracker):
             "name": proj_data["name"],
             "description": proj_data.get("description"),
             "organization_id": organization_id,
+            "slug": proj_data.get("meta_data", {}).get("full_name", ""),
             "meta_data": proj_data.get("meta_data"),
         }
 
@@ -956,6 +957,7 @@ class GitHubTracker(BaseTracker):
                 issue_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
             ),
             "project_id": project.id,
+            "tracker_id": self.tracker_id,
             "comments": issue_data.get("comments", []),
         }
 
@@ -973,6 +975,7 @@ class GitHubTracker(BaseTracker):
                 comment_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
             ),
             "issue_id": issue_id,
+            "tracker_id": self.tracker_id,
         }
 
     async def is_webhook_registered_for_organization(

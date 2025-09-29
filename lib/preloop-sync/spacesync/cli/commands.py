@@ -77,7 +77,7 @@ def status(verbose: bool) -> None:
             if account_trackers:
                 for tracker in account_trackers:
                     click.echo(
-                        f"    - {tracker.tracker_type}: {tracker.connection_details}"
+                        f"    - {tracker.name} (ID: {tracker.id}) {tracker.tracker_type}"
                     )
             else:
                 click.echo("    No trackers configured")

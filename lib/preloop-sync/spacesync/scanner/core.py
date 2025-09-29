@@ -441,19 +441,46 @@ async def _process_organization(
                     org_stats["organizations"]["errors"] += 1
             elif client.tracker_type == "gitlab":
                 try:
-                    if not await client.client.is_webhook_registered_for_organization(
-                        org, webhook_target_url
-                    ):
-                        result = await client.client.register_group_webhook(
-                            db=db,
-                            organization=org,
-                            webhook_url=webhook_target_url,
-                            secret=current_secret_to_use,
+                    # Check if tracker is already marked as GitLab CE
+                    tracker_meta = client.tracker.meta_data or {}
+                    is_gitlab_ce = tracker_meta.get("gitlab_ce", False)
+
+                    if is_gitlab_ce:
+                        # Skip group webhook attempts for GitLab CE
+                        logger.info(
+                            f"Skipping group webhooks for GitLab CE tracker {client.tracker.id}"
                         )
+                        result = "group_hooks_not_supported"
                     else:
-                        result = True
+                        # Try group webhooks for GitLab EE
+                        if not await client.client.is_webhook_registered_for_organization(
+                            org, webhook_target_url
+                        ):
+                            result = await client.client.register_group_webhook(
+                                db=db,
+                                organization=org,
+                                webhook_url=webhook_target_url,
+                                secret=current_secret_to_use,
+                            )
+                        else:
+                            result = True
 
                     if result == "group_hooks_not_supported":
+                        # Mark tracker as GitLab CE if not already marked
+                        if not is_gitlab_ce:
+                            from spacemodels.crud import crud_tracker
+
+                            logger.info(
+                                f"Marking tracker {client.tracker.id} as GitLab CE"
+                            )
+                            updated_meta = dict(tracker_meta)
+                            updated_meta["gitlab_ce"] = True
+                            crud_tracker.update(
+                                db,
+                                db_obj=client.tracker,
+                                obj_in={"meta_data": updated_meta},
+                            )
+
                         logger.warning(
                             f"Group hooks are not supported for GitLab organization {org.identifier}."
                         )
