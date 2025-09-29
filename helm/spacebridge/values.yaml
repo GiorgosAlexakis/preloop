@@ -157,10 +157,13 @@ database:
         memory: 2Gi
       requests:
         cpu: 100m
-        memory: 128Mi
+        memory: 1Gi
     # PGVector extension for vector search
     pgvector:
       enabled: true
+    parameters:
+      max_connections: "200"
+      shared_buffers: 512MB
 
 # Sentry configuration for error tracking
 sentry:
