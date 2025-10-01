@@ -186,6 +186,26 @@ class TestGitLabTrackerNewMethods(IsolatedAsyncioTestCase):
         mock_issue.web_url = "http://gitlab.com/testgroup/testproject/issues/1"
         mock_issue.labels = ["bug", "critical"]
         mock_issue.assignees = [{"username": "user1"}]
+        # Add attributes dict for the parser
+        mock_issue.attributes = {
+            "id": 12345,
+            "iid": 1,
+            "title": "Test Issue",
+            "description": "Description for issue",
+            "state": "opened",
+            "created_at": "2023-01-01T10:00:00.000Z",
+            "updated_at": "2023-01-02T11:00:00.000Z",
+            "web_url": "http://gitlab.com/testgroup/testproject/issues/1",
+            "labels": ["bug", "critical"],
+            "assignee": None,
+            "assignees": [],
+            "author": {
+                "id": 123,
+                "name": "Author",
+                "avatar_url": "https://example.com/avatar.png",
+            },
+            "_links": {"self": "http://gitlab.com/api/v4/projects/proj-1/issues/1"},
+        }
         mock_project.issues.get.return_value = mock_issue
 
         connection_details = {"project_id": "proj-1"}
@@ -196,17 +216,14 @@ class TestGitLabTrackerNewMethods(IsolatedAsyncioTestCase):
         # Act
         result = await tracker.get_issue("1")
 
-        # Assert
-        self.assertEqual(result["external_id"], "12345")
-        self.assertEqual(result["key"], "testgroup/testproject#1")
-        self.assertEqual(result["title"], "Test Issue")
-        self.assertEqual(result["description"], "Description for issue")
-        self.assertEqual(result["state"], "opened")
-        self.assertEqual(result["labels"], ["bug", "critical"])
-        self.assertEqual(result["assignees"], ["user1"])
-        self.assertEqual(
-            result["url"], "http://gitlab.com/testgroup/testproject/issues/1"
-        )
+        # Assert - Now result is an Issue object
+        self.assertEqual(result.id, "12345")
+        self.assertEqual(result.key, "testgroup/testproject#1")
+        self.assertEqual(result.title, "Test Issue")
+        self.assertEqual(result.description, "Description for issue")
+        self.assertEqual(result.status.id, "opened")
+        self.assertEqual(result.labels, ["bug", "critical"])
+        self.assertEqual(result.url, "http://gitlab.com/testgroup/testproject/issues/1")
 
         # Verify the project_id from connection_details was used
         tracker._make_request.assert_any_call(mock_gl_instance.projects.get, "proj-1")

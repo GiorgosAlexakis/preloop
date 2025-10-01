@@ -34,8 +34,25 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
             "created_at": "2023-01-01T10:00:00Z",
             "updated_at": "2023-01-02T11:00:00Z",
             "html_url": "https://github.com/testowner/testrepo/issues/1",
+            "url": "https://api.github.com/repos/testowner/testrepo/issues/1",
             "labels": [{"name": "bug"}],
-            "assignees": [{"login": "user1"}],
+            "assignees": [
+                {
+                    "login": "user1",
+                    "id": 123,
+                    "avatar_url": "https://example.com/avatar.png",
+                }
+            ],
+            "assignee": {
+                "login": "user1",
+                "id": 123,
+                "avatar_url": "https://example.com/avatar.png",
+            },
+            "user": {
+                "login": "reporter",
+                "id": 456,
+                "avatar_url": "https://example.com/reporter.png",
+            },
         }
 
         tracker._make_request = AsyncMock(return_value=issue_data)
@@ -43,10 +60,10 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
         # Act
         result = await tracker.get_issue("1")
 
-        # Assert
-        self.assertEqual(result["external_id"], "12345")
-        self.assertEqual(result["key"], "testowner/testrepo#1")
-        self.assertEqual(result["title"], "Test Issue")
+        # Assert - Now result is an Issue object, not a dict
+        self.assertEqual(result.id, "12345")
+        self.assertEqual(result.key, "testowner/testrepo#1")
+        self.assertEqual(result.title, "Test Issue")
 
         # Verify the correct API endpoint was called
         expected_endpoint = "repos/testowner/testrepo/issues/1"
@@ -122,6 +139,26 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
         mock_issue.web_url = "https://gitlab.com/testgroup/testproject/-/issues/1"
         mock_issue.labels = ["bug"]
         mock_issue.assignees = [{"username": "user1"}]
+        # Add attributes dict for the parser
+        mock_issue.attributes = {
+            "id": 12345,
+            "iid": 1,
+            "title": "Test Issue",
+            "description": "Issue description",
+            "state": "opened",
+            "created_at": "2023-01-01T10:00:00.000Z",
+            "updated_at": "2023-01-02T11:00:00.000Z",
+            "web_url": "https://gitlab.com/testgroup/testproject/-/issues/1",
+            "labels": ["bug"],
+            "assignee": None,
+            "assignees": [],
+            "author": {
+                "id": 123,
+                "name": "Author",
+                "avatar_url": "https://example.com/avatar.png",
+            },
+            "_links": {"self": "https://gitlab.com/api/v4/projects/123/issues/1"},
+        }
 
         tracker = GitLabTracker("tracker-1", "api-key", connection_details)
         tracker._make_request = AsyncMock()
@@ -130,10 +167,10 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
         # Act
         result = await tracker.get_issue("1")
 
-        # Assert
-        self.assertEqual(result["external_id"], "12345")
-        self.assertEqual(result["key"], "testgroup/testproject#1")
-        self.assertEqual(result["title"], "Test Issue")
+        # Assert - Now result is an Issue object, not a dict
+        self.assertEqual(result.id, "12345")
+        self.assertEqual(result.key, "testgroup/testproject#1")
+        self.assertEqual(result.title, "Test Issue")
 
         # Verify the project_id from connection_details was used
         tracker._make_request.assert_any_call(mock_gl_instance.projects.get, "123")
@@ -204,11 +241,16 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
             "fields": {
                 "summary": "Test Issue",
                 "description": "Issue description",
-                "status": {"name": "Open"},
+                "status": {"id": "1", "name": "Open", "statusCategory": {"key": "new"}},
                 "created": "2023-01-01T10:00:00.000+0000",
                 "updated": "2023-01-02T11:00:00.000+0000",
                 "labels": ["bug"],
-                "assignee": {"name": "testuser"},
+                "assignee": {
+                    "accountId": "123",
+                    "displayName": "testuser",
+                    "avatarUrls": {"48x48": "https://example.com/avatar.png"},
+                },
+                "project": {"key": "TEST"},
             },
         }
 
@@ -217,11 +259,11 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
         # Act
         result = await tracker.get_issue("TEST-123")
 
-        # Assert
-        self.assertEqual(result["external_id"], "12345")
-        self.assertEqual(result["key"], "TEST-123")
-        self.assertEqual(result["title"], "Test Issue")
-        self.assertEqual(result["url"], "https://test.atlassian.net/browse/TEST-123")
+        # Assert - Now result is an Issue object, not a dict
+        self.assertEqual(result.id, "12345")
+        self.assertEqual(result.key, "TEST-123")
+        self.assertEqual(result.title, "Test Issue")
+        self.assertEqual(result.url, "https://test.atlassian.net/browse/TEST-123")
 
         # Verify the correct API endpoint was called
         tracker._make_request.assert_called_once_with(

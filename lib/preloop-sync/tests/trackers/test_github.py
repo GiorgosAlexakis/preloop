@@ -814,8 +814,19 @@ class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
             "created_at": "2023-01-01T10:00:00Z",
             "updated_at": "2023-01-02T11:00:00Z",
             "html_url": "https://github.com/owner/repo/issues/1",
+            "url": "https://api.github.com/repos/owner/repo/issues/1",
             "labels": [{"name": "bug"}, {"name": "critical"}],
             "assignees": [{"login": "user1"}, {"login": "user2"}],
+            "assignee": {
+                "id": 123,
+                "login": "user1",
+                "avatar_url": "https://example.com/avatar.png",
+            },
+            "user": {
+                "id": 456,
+                "login": "reporter",
+                "avatar_url": "https://example.com/reporter.png",
+            },
         }
 
         connection_details = {"owner": "testowner", "repo": "testrepo"}
@@ -829,15 +840,19 @@ class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
         # Act
         result = await tracker.get_issue("1")
 
-        # Assert
-        self.assertEqual(result["external_id"], "12345")
-        self.assertEqual(result["key"], "testowner/testrepo#1")
-        self.assertEqual(result["title"], "Test Issue")
-        self.assertEqual(result["description"], "Issue description")
-        self.assertEqual(result["state"], "open")
-        self.assertEqual(result["labels"], ["bug", "critical"])
-        self.assertEqual(result["assignees"], ["user1", "user2"])
-        self.assertEqual(result["url"], "https://github.com/owner/repo/issues/1")
+        # Assert - Now result is an Issue object, not a dict
+        self.assertEqual(result.id, "12345")
+        self.assertEqual(result.key, "testowner/testrepo#1")
+        self.assertEqual(result.title, "Test Issue")
+        self.assertEqual(result.description, "Issue description")
+        self.assertEqual(result.status.id, "open")
+        self.assertEqual(result.status.name, "Open")
+        self.assertEqual(result.labels, ["bug", "critical"])
+        self.assertEqual(result.url, "https://github.com/owner/repo/issues/1")
+        self.assertIsNotNone(result.assignee)
+        self.assertEqual(result.assignee.name, "user1")
+        self.assertIsNotNone(result.reporter)
+        self.assertEqual(result.reporter.name, "reporter")
 
         tracker._make_request.assert_called_once_with(
             "repos/testowner/testrepo/issues/1"

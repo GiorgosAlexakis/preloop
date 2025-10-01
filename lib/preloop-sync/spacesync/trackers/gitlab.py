@@ -35,6 +35,8 @@ from spacebridge.schemas.tracker_models import (
     IssueComment,
     IssueCreate,
     IssueFilter,
+    IssuePriority,
+    IssueStatus,
     IssueUpdate,
     IssueUser,
     ProjectMetadata,
@@ -145,6 +147,129 @@ class GitLabTracker(BaseTracker):
                 continue
         return dependencies
 
+    def _parse_gitlab_issue(self, issue_data: Dict[str, Any], project=None) -> Issue:
+        """Parse a GitLab issue into our standard format.
+
+        Args:
+            issue_data: Raw GitLab issue data (as dict or GitLab API object).
+            project: Optional GitLab project object (used to get path_with_namespace).
+
+        Returns:
+            Standardized Issue object.
+        """
+        # Handle both dict and GitLab API object
+        if not isinstance(issue_data, dict):
+            # Convert GitLab API object to dict
+            issue_dict = issue_data.attributes
+        else:
+            issue_dict = issue_data
+
+        # Parse assignee
+        assignee = None
+        assignee_data = issue_dict.get("assignee") or (
+            issue_dict.get("assignees", []) and issue_dict.get("assignees")[0]
+        )
+        if assignee_data:
+            if isinstance(assignee_data, dict):
+                assignee = IssueUser(
+                    id=str(assignee_data["id"]),
+                    name=assignee_data.get("name", ""),
+                    email=None,
+                    avatar_url=assignee_data.get("avatar_url"),
+                )
+
+        # Parse author (reporter)
+        reporter = None
+        author_data = issue_dict.get("author")
+        if author_data:
+            if isinstance(author_data, dict):
+                reporter = IssueUser(
+                    id=str(author_data["id"]),
+                    name=author_data.get("name", ""),
+                    email=None,
+                    avatar_url=author_data.get("avatar_url"),
+                )
+
+        # Parse status
+        state = issue_dict.get("state", "opened")
+        status_id = state
+        status_name = "Closed" if state == "closed" else "Open"
+        status_category = "done" if state == "closed" else "todo"
+
+        status = IssueStatus(
+            id=status_id,
+            name=status_name,
+            category=status_category,
+        )
+
+        # Parse labels
+        labels = issue_dict.get("labels", [])
+
+        # Parse priority from labels
+        priority = None
+        priority_map = {
+            "priority::critical": IssuePriority(
+                id="critical", name="Critical", level=4
+            ),
+            "priority::high": IssuePriority(id="high", name="High", level=3),
+            "priority::medium": IssuePriority(id="medium", name="Medium", level=2),
+            "priority::low": IssuePriority(id="low", name="Low", level=1),
+        }
+
+        for label in labels:
+            if label.lower() in priority_map:
+                priority = priority_map[label.lower()]
+                break
+
+        # Parse dates
+        created_at = datetime.fromisoformat(
+            issue_dict["created_at"].replace("Z", "+00:00")
+        )
+        updated_at = datetime.fromisoformat(
+            issue_dict["updated_at"].replace("Z", "+00:00")
+        )
+
+        # Handle closed_at
+        resolved_at = None
+        if issue_dict.get("closed_at"):
+            resolved_at = datetime.fromisoformat(
+                issue_dict["closed_at"].replace("Z", "+00:00")
+            )
+
+        # Get project_id - prefer path_with_namespace from project object if available
+        if project and hasattr(project, "path_with_namespace"):
+            project_id = project.path_with_namespace
+        else:
+            project_id = self.connection_details.get("project_id", "")
+
+        # Create issue key
+        iid = issue_dict.get("iid", issue_dict.get("id"))
+        issue_key = f"{project_id}#{iid}"
+
+        return Issue(
+            id=str(issue_dict["id"]),
+            key=issue_key,
+            title=issue_dict["title"],
+            description=issue_dict.get("description") or "",
+            status=status,
+            priority=priority,
+            created_at=created_at,
+            updated_at=updated_at,
+            resolved_at=resolved_at,
+            reporter=reporter,
+            assignee=assignee,
+            labels=labels,
+            components=[],
+            parent=None,
+            relations=[],
+            comments=[],
+            url=issue_dict.get("web_url", ""),
+            api_url=issue_dict.get("_links", {}).get("self", ""),
+            tracker_type="gitlab",
+            project_key=project_id,
+            custom_fields={},
+        )
+
     async def test_connection(self) -> TrackerConnection:
         """Test the connection to the tracker."""
         try:
@@ -158,8 +283,39 @@ class GitLabTracker(BaseTracker):
             return TrackerConnection(connected=False, message=str(e))
 
     async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
-        """Get metadata about a project."""
-        raise NotImplementedError
+        """Get metadata about a GitLab project.
+
+        Args:
+            project_key: Project ID or path.
+
+        Returns:
+            Project metadata.
+        """
+        project_id = self.connection_details.get("project_id", project_key)
+        project = await self._make_request(self.gl.projects.get, project_id)
+
+        # GitLab has simple status model: opened/closed
+        statuses = [
+            IssueStatus(id="opened", name="Open", category="todo"),
+            IssueStatus(id="closed", name="Closed", category="done"),
+        ]
+
+        # GitLab doesn't have built-in priorities, but commonly uses labels
+        priorities = [
+            IssuePriority(id="critical", name="priority::critical", level=4),
+            IssuePriority(id="high", name="priority::high", level=3),
+            IssuePriority(id="medium", name="priority::medium", level=2),
+            IssuePriority(id="low", name="priority::low", level=1),
+        ]
+
+        return ProjectMetadata(
+            key=project.path_with_namespace,
+            name=project.name,
+            description=project.description,
+            statuses=statuses,
+            priorities=priorities,
+            url=project.web_url,
+        )
 
     async def search_issues(
         self,
@@ -168,26 +324,261 @@ class GitLabTracker(BaseTracker):
         limit: int = 10,
         offset: int = 0,
     ) -> Tuple[List[Issue], int]:
-        """Search for issues in a project."""
-        raise NotImplementedError
+        """Search for issues in a GitLab project.
+
+        Args:
+            project_key: Project ID or path.
+            filter_params: Filter parameters.
+            limit: Maximum number of issues to return.
+            offset: Pagination offset.
+
+        Returns:
+            Tuple of (list of issues, total count).
+        """
+        project_id = self.connection_details.get("project_id", project_key)
+        project = await self._make_request(self.gl.projects.get, project_id)
+
+        # Build query parameters
+        kwargs = {
+            "per_page": limit,
+            "page": (offset // limit) + 1,
+        }
+
+        # Add search term if provided
+        if filter_params.query:
+            kwargs["search"] = filter_params.query
+
+        # Add state filter if provided
+        if filter_params.status:
+            if any(s.lower() == "closed" for s in filter_params.status):
+                kwargs["state"] = "closed"
+            elif any(s.lower() in ["opened", "open"] for s in filter_params.status):
+                kwargs["state"] = "opened"
+
+        # Add label filter if provided
+        if filter_params.labels:
+            kwargs["labels"] = filter_params.labels
+
+        # Add assignee filter if provided
+        if filter_params.assigned_to:
+            kwargs["assignee_username"] = filter_params.assigned_to
+
+        # Add date filters if provided
+        if filter_params.created_after:
+            kwargs["created_after"] = filter_params.created_after.isoformat()
+
+        if filter_params.created_before:
+            kwargs["created_before"] = filter_params.created_before.isoformat()
+
+        if filter_params.updated_after:
+            kwargs["updated_after"] = filter_params.updated_after.isoformat()
+
+        if filter_params.updated_before:
+            kwargs["updated_before"] = filter_params.updated_before.isoformat()
+
+        # Add sort parameters if provided
+        if filter_params.sort_by:
+            sort_map = {
+                "created": "created_at",
+                "updated": "updated_at",
+                "priority": "priority",
+            }
+            kwargs["order_by"] = sort_map.get(filter_params.sort_by, "created_at")
+
+        if filter_params.sort_direction:
+            kwargs["sort"] = filter_params.sort_direction.lower()
+
+        # Get issues
+        issues_data = await self._make_request(project.issues.list, **kwargs)
+
+        # Parse issues
+        issues = []
+        for issue_obj in issues_data:
+            issues.append(self._parse_gitlab_issue(issue_obj))
+
+        # Get total count (GitLab python library doesn't provide this easily, so we estimate)
+        # For accurate count, we'd need to make a separate API call
+        total_count = len(issues)
+
+        return issues, total_count
 
     async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
-        """Create a new issue."""
-        raise NotImplementedError
+        """Create a new GitLab issue.
+
+        Args:
+            project_key: Project ID or path.
+            issue_data: Issue data.
+
+        Returns:
+            Created issue.
+        """
+        project_id = self.connection_details.get("project_id", project_key)
+        project = await self._make_request(self.gl.projects.get, project_id)
+
+        # Build issue data
+        issue_dict = {
+            "title": issue_data.title,
+            "description": issue_data.description or "",
+        }
+
+        # Add labels if provided
+        if issue_data.labels:
+            issue_dict["labels"] = ",".join(issue_data.labels)
+
+        # Add assignee if provided (would need to look up user ID)
+        if issue_data.assignee:
+            issue_dict["assignee_ids"] = [issue_data.assignee]
+
+        # Create the issue
+        created_issue = await self._make_request(project.issues.create, issue_dict)
+
+        # Parse and return the issue
+        return self._parse_gitlab_issue(created_issue)
 
     async def update_issue(self, issue_id: str, issue_data: IssueUpdate) -> Issue:
-        """Update an existing issue."""
-        raise NotImplementedError
+        """Update an existing GitLab issue.
+
+        Args:
+            issue_id: Issue IID or ID.
+            issue_data: Updated issue data.
+
+        Returns:
+            Updated issue.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        # Extract issue IID from various formats
+        issue_iid = issue_id
+        if "#" in issue_id:
+            issue_iid = issue_id.split("#")[-1]
+        if "/" in issue_iid:
+            issue_iid = issue_iid.split("/")[-1]
+
+        project = await self._make_request(self.gl.projects.get, project_id)
+        issue = await self._make_request(project.issues.get, issue_iid)
+
+        # Build update data
+        update_dict = {}
+
+        if issue_data.title is not None:
+            update_dict["title"] = issue_data.title
+
+        if issue_data.description is not None:
+            update_dict["description"] = issue_data.description
+
+        if issue_data.status is not None:
+            # Map status to GitLab state_event
+            if issue_data.status.lower() == "closed":
+                update_dict["state_event"] = "close"
+            elif issue_data.status.lower() in ["opened", "open"]:
+                update_dict["state_event"] = "reopen"
+
+        if issue_data.labels is not None:
+            update_dict["labels"] = ",".join(issue_data.labels)
+
+        if issue_data.assignee is not None:
+            update_dict["assignee_ids"] = [issue_data.assignee]
+
+        # Update the issue
+        for key, value in update_dict.items():
+            setattr(issue, key, value)
+
+        await self._make_request(issue.save)
+
+        # Parse and return the issue
+        return self._parse_gitlab_issue(issue)
 
     async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
-        """Add a comment to an issue."""
-        raise NotImplementedError
+        """Add a comment to a GitLab issue.
+
+        Args:
+            issue_id: Issue IID or ID.
+            comment: Comment text.
+
+        Returns:
+            Created comment.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        # Extract issue IID from various formats
+        issue_iid = issue_id
+        if "#" in issue_id:
+            issue_iid = issue_id.split("#")[-1]
+        if "/" in issue_iid:
+            issue_iid = issue_iid.split("/")[-1]
+
+        project = await self._make_request(self.gl.projects.get, project_id)
+        issue = await self._make_request(project.issues.get, issue_iid)
+
+        # Create the comment (note)
+        note_dict = {"body": comment}
+        note = await self._make_request(issue.notes.create, note_dict)
+
+        # Parse and return the comment
+        return IssueComment(
+            id=str(note.id),
+            body=note.body,
+            created_at=datetime.fromisoformat(note.created_at.replace("Z", "+00:00")),
+            updated_at=datetime.fromisoformat(note.updated_at.replace("Z", "+00:00")),
+            author=IssueUser(
+                id=str(note.author["id"]),
+                name=note.author.get("name", ""),
+                email=None,
+                avatar_url=note.author.get("avatar_url"),
+            ),
+            url=f"{project.web_url}/-/issues/{issue_iid}#note_{note.id}",
+        )
 
     async def add_relation(
         self, issue_id: str, related_issue_id: str, relation_type: str
     ) -> bool:
-        """Add a relation between issues."""
-        raise NotImplementedError
+        """Add a relation between GitLab issues.
+
+        Args:
+            issue_id: Source issue IID.
+            related_issue_id: Target issue IID.
+            relation_type: Relation type (ignored by GitLab).
+
+        Returns:
+            Whether the operation was successful.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        # Extract issue IIDs from various formats
+        issue_iid = issue_id
+        if "#" in issue_id:
+            issue_iid = issue_id.split("#")[-1]
+        if "/" in issue_iid:
+            issue_iid = issue_iid.split("/")[-1]
+
+        related_issue_iid = related_issue_id
+        if "#" in related_issue_id:
+            related_issue_iid = related_issue_id.split("#")[-1]
+        if "/" in related_issue_iid:
+            related_issue_iid = related_issue_iid.split("/")[-1]
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            issue = await self._make_request(project.issues.get, issue_iid)
+
+            # Create link data
+            link_dict = {
+                "target_project_id": project_id,
+                "target_issue_iid": related_issue_iid,
+            }
+
+            # Create the link
+            await self._make_request(issue.links.create, link_dict)
+            return True
+        except Exception as e:
+            logger.exception(f"Failed to add relation: {e}")
+            return False
 
     async def get_organizations(self) -> List[Dict[str, Any]]:
         """
@@ -701,15 +1092,14 @@ class GitLabTracker(BaseTracker):
             )
             return False
 
-    async def get_issue(self, issue_id: str) -> Dict[str, Any]:
-        """
-        Get a single issue from GitLab.
+    async def get_issue(self, issue_id: str) -> Issue:
+        """Get a single issue from GitLab.
 
         Args:
             issue_id: GitLab issue IID.
 
         Returns:
-            A dictionary containing the issue data.
+            Issue object.
         """
         project_id = self.connection_details.get("project_id")
         if not project_id:
@@ -725,43 +1115,8 @@ class GitLabTracker(BaseTracker):
                 )
             raise
 
-        project_slug = project.path_with_namespace
-        key = f"{project_slug}#{issue.iid}"
-
-        try:
-            issue_created_at = datetime.strptime(
-                issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-            )
-            issue_updated_at = datetime.strptime(
-                issue.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-            )
-        except (ValueError, TypeError):
-            issue_created_at = datetime.now()
-            if isinstance(issue.created_at, str):
-                try:
-                    issue_created_at = datetime.strptime(
-                        issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                except ValueError:
-                    pass
-            issue_updated_at = issue_created_at
-
-        return {
-            "external_id": str(issue.id),
-            "key": key,
-            "title": issue.title,
-            "description": issue.description or "",
-            "state": issue.state,
-            "created_at": issue_created_at,
-            "updated_at": issue_updated_at,
-            "labels": issue.labels,
-            "assignees": [
-                assignee["username"]
-                for assignee in issue.assignees
-                if isinstance(assignee, dict) and "username" in assignee
-            ],
-            "url": issue.web_url,
-        }
+        # Use the mapper to convert to Issue object, passing project for path_with_namespace
+        return self._parse_gitlab_issue(issue, project=project)
 
     async def get_comments(self, issue_id: str) -> List[IssueComment]:
         """Get comments for an issue."""

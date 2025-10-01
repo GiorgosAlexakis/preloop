@@ -2,6 +2,7 @@
 Tests for new Jira tracker methods (get_issue and get_comments).
 """
 
+import unittest
 from unittest.mock import AsyncMock
 from unittest import IsolatedAsyncioTestCase
 from datetime import datetime
@@ -33,11 +34,20 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
             "fields": {
                 "summary": "Test Issue",
                 "description": "Issue description",
-                "status": {"name": "Open"},
+                "status": {"id": "1", "name": "Open", "statusCategory": {"key": "new"}},
                 "created": "2023-01-01T10:00:00.000+0000",
                 "updated": "2023-01-02T11:00:00.000+0000",
                 "labels": ["bug", "critical"],
-                "assignee": {"name": "testuser"},
+                "assignee": {
+                    "accountId": "123",
+                    "displayName": "testuser",
+                    "avatarUrls": {"48x48": "https://example.com/avatar.png"},
+                },
+                "reporter": {
+                    "accountId": "456",
+                    "displayName": "reporter",
+                    "avatarUrls": {"48x48": "https://example.com/reporter.png"},
+                },
             },
         }
 
@@ -46,15 +56,15 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
         # Act
         result = await self.tracker.get_issue("TEST-123")
 
-        # Assert
-        self.assertEqual(result["external_id"], "12345")
-        self.assertEqual(result["key"], "TEST-123")
-        self.assertEqual(result["title"], "Test Issue")
-        self.assertEqual(result["description"], "Issue description")
-        self.assertEqual(result["state"], "Open")
-        self.assertEqual(result["labels"], ["bug", "critical"])
-        self.assertEqual(result["assignees"], ["testuser"])
-        self.assertEqual(result["url"], "https://test.atlassian.net/browse/TEST-123")
+        # Assert - Now result is an Issue object, not a dict
+        self.assertEqual(result.id, "12345")
+        self.assertEqual(result.key, "TEST-123")
+        self.assertEqual(result.title, "Test Issue")
+        self.assertEqual(result.description, "Issue description")
+        self.assertEqual(result.status.name, "Open")
+        self.assertEqual(result.labels, ["bug", "critical"])
+        self.assertIsNotNone(result.assignee)
+        self.assertEqual(result.assignee.name, "testuser")
 
         # Verify API call
         self.tracker._make_request.assert_called_once_with(
@@ -83,7 +93,7 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
             "fields": {
                 "summary": "Test Issue",
                 "description": "Issue description",
-                "status": {"name": "Open"},
+                "status": {"id": "1", "name": "Open", "statusCategory": {"key": "new"}},
                 "created": "2023-01-01T10:00:00.000+0000",
                 "updated": "2023-01-02T11:00:00.000+0000",
                 "labels": [],
@@ -96,8 +106,8 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
         # Act
         result = await self.tracker.get_issue("TEST-123")
 
-        # Assert
-        self.assertEqual(result["assignees"], [])
+        # Assert - Now result is an Issue object
+        self.assertIsNone(result.assignee)
 
     async def test_get_comments_success(self):
         """Test successful comments retrieval."""
@@ -221,7 +231,7 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
             "fields": {
                 "summary": "Test Issue",
                 "description": "Issue description",
-                "status": {"name": "Open"},
+                "status": {"id": "1", "name": "Open", "statusCategory": {"key": "new"}},
                 "created": "invalid-date",  # Invalid date format
                 "updated": "also-invalid",  # Invalid date format
                 "labels": [],
@@ -231,9 +241,242 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
 
         self.tracker._make_request = AsyncMock(return_value=issue_data)
 
-        # Act
+        # Act - This should raise an error as our parser expects valid ISO format
+        # The _parse_jira_datetime method will return None for invalid dates,
+        # but _map_jira_issue expects valid dates and uses datetime.now() as fallback
         result = await self.tracker.get_issue("TEST-123")
 
         # Assert - should not raise error and use current datetime as fallback
-        self.assertIsInstance(result["created_at"], datetime)
-        self.assertIsInstance(result["updated_at"], datetime)
+        self.assertIsInstance(result.created_at, datetime)
+        self.assertIsInstance(result.updated_at, datetime)
+
+    async def test_create_issue_success(self):
+        """Test successful issue creation."""
+        # Arrange
+        from spacebridge.schemas.tracker_models import IssueCreate
+
+        issue_create = IssueCreate(
+            title="New Issue",
+            description="Issue description",
+            priority="High",
+            labels=["bug"],
+        )
+
+        creation_response = {"id": "12345", "key": "TEST-123"}
+        issue_data = {
+            "id": "12345",
+            "key": "TEST-123",
+            "fields": {
+                "summary": "New Issue",
+                "description": "Issue description",
+                "status": {"id": "1", "name": "Open", "statusCategory": {"key": "new"}},
+                "created": "2023-01-01T10:00:00.000+0000",
+                "updated": "2023-01-01T10:00:00.000+0000",
+                "labels": ["bug"],
+                "priority": {"id": "2", "name": "High"},
+                "project": {"key": "TEST"},
+            },
+        }
+
+        self.tracker._make_request = AsyncMock()
+        self.tracker._make_request.side_effect = [creation_response, issue_data]
+
+        # Act
+        result = await self.tracker.create_issue("TEST", issue_create)
+
+        # Assert
+        self.assertEqual(result.id, "12345")
+        self.assertEqual(result.key, "TEST-123")
+        self.assertEqual(result.title, "New Issue")
+
+        # Verify create request was made
+        self.tracker._make_request.assert_any_call(
+            "POST", "issue", json_data={"fields": unittest.mock.ANY}
+        )
+
+    async def test_update_issue_success(self):
+        """Test successful issue update."""
+        # Arrange
+        from spacebridge.schemas.tracker_models import IssueUpdate
+
+        issue_update = IssueUpdate(
+            title="Updated Issue",
+            description="Updated description",
+            status="In Progress",
+        )
+
+        updated_issue_data = {
+            "id": "12345",
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Updated Issue",
+                "description": "Updated description",
+                "status": {
+                    "id": "2",
+                    "name": "In Progress",
+                    "statusCategory": {"key": "indeterminate"},
+                },
+                "created": "2023-01-01T10:00:00.000+0000",
+                "updated": "2023-01-02T10:00:00.000+0000",
+                "project": {"key": "TEST"},
+            },
+        }
+
+        transitions_response = {
+            "transitions": [
+                {"id": "21", "to": {"name": "In Progress"}},
+                {"id": "31", "to": {"name": "Done"}},
+            ]
+        }
+
+        self.tracker._make_request = AsyncMock()
+        self.tracker._make_request.side_effect = [
+            None,  # PUT request
+            transitions_response,  # GET transitions
+            None,  # POST transition
+            updated_issue_data,  # GET updated issue
+        ]
+
+        # Act
+        result = await self.tracker.update_issue("TEST-123", issue_update)
+
+        # Assert
+        self.assertEqual(result.title, "Updated Issue")
+        self.assertEqual(result.status.name, "In Progress")
+
+    async def test_add_comment_success(self):
+        """Test successful comment addition."""
+        # Arrange
+        comment_data = {
+            "id": "1001",
+            "body": {"type": "doc", "content": [{"type": "paragraph"}]},
+            "created": "2023-01-01T12:00:00.000+0000",
+            "updated": "2023-01-01T12:00:00.000+0000",
+            "author": {
+                "accountId": "123",
+                "displayName": "Test User",
+                "avatarUrls": {"48x48": "https://avatar.png"},
+            },
+        }
+
+        self.tracker._make_request = AsyncMock(return_value=comment_data)
+
+        # Act
+        result = await self.tracker.add_comment("TEST-123", "Test comment")
+
+        # Assert
+        self.assertEqual(result.id, "1001")
+        self.assertEqual(result.author.name, "Test User")
+
+        # Verify API call
+        self.tracker._make_request.assert_called_once_with(
+            "POST", "issue/TEST-123/comment", json_data=unittest.mock.ANY
+        )
+
+    async def test_add_relation_success(self):
+        """Test successful issue relation creation."""
+        # Arrange
+        self.tracker._make_request = AsyncMock(return_value=None)
+
+        # Act
+        result = await self.tracker.add_relation("TEST-123", "TEST-124", "blocks")
+
+        # Assert
+        self.assertTrue(result)
+
+        # Verify API call
+        self.tracker._make_request.assert_called_once_with(
+            "POST", "issueLink", json_data=unittest.mock.ANY
+        )
+
+    async def test_search_issues_success(self):
+        """Test successful issue search."""
+        # Arrange
+        from spacebridge.schemas.tracker_models import IssueFilter
+
+        filter_params = IssueFilter(query="bug", status=["Open"], labels=["critical"])
+
+        search_response = {
+            "total": 1,
+            "issues": [
+                {
+                    "id": "12345",
+                    "key": "TEST-123",
+                    "fields": {
+                        "summary": "Bug Issue",
+                        "description": "Bug description",
+                        "status": {
+                            "id": "1",
+                            "name": "Open",
+                            "statusCategory": {"key": "new"},
+                        },
+                        "created": "2023-01-01T10:00:00.000+0000",
+                        "updated": "2023-01-02T11:00:00.000+0000",
+                        "labels": ["critical"],
+                        "project": {"key": "TEST"},
+                    },
+                }
+            ],
+        }
+
+        self.tracker._make_request = AsyncMock(return_value=search_response)
+
+        # Act
+        issues, total = await self.tracker.search_issues(
+            "TEST", filter_params, limit=10
+        )
+
+        # Assert
+        self.assertEqual(total, 1)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].key, "TEST-123")
+
+        # Verify JQL query was built correctly
+        call_args = self.tracker._make_request.call_args
+        jql_data = call_args[1]["json_data"]
+        self.assertIn("project = 'TEST'", jql_data["jql"])
+        self.assertIn("bug", jql_data["jql"])
+
+    async def test_get_project_metadata_success(self):
+        """Test successful project metadata retrieval."""
+        # Arrange
+        project_data = {
+            "id": "10000",
+            "key": "TEST",
+            "name": "Test Project",
+            "description": "Test project description",
+        }
+
+        statuses_data = [
+            {
+                "statuses": [
+                    {"id": "1", "name": "Open", "statusCategory": {"key": "new"}},
+                    {
+                        "id": "2",
+                        "name": "In Progress",
+                        "statusCategory": {"key": "indeterminate"},
+                    },
+                ]
+            }
+        ]
+
+        priorities_data = [
+            {"id": "1", "name": "Highest"},
+            {"id": "2", "name": "High"},
+        ]
+
+        self.tracker._make_request = AsyncMock()
+        self.tracker._make_request.side_effect = [
+            project_data,
+            statuses_data,
+            priorities_data,
+        ]
+
+        # Act
+        result = await self.tracker.get_project_metadata("TEST")
+
+        # Assert
+        self.assertEqual(result.key, "TEST")
+        self.assertEqual(result.name, "Test Project")
+        self.assertGreater(len(result.statuses), 0)
+        self.assertGreater(len(result.priorities), 0)

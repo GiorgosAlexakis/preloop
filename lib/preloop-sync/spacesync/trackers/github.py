@@ -15,6 +15,8 @@ from spacebridge.schemas.tracker_models import (
     IssueComment,
     IssueCreate,
     IssueFilter,
+    IssuePriority,
+    IssueStatus,
     IssueUpdate,
     ProjectMetadata,
     TrackerConnection,
@@ -100,6 +102,155 @@ class GitHubTracker(BaseTracker):
                     raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
         return results
 
+    async def _request(
+        self,
+        method: str,
+        endpoint: str,
+        data: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Make a request to the GitHub API.
+
+        Args:
+            method: HTTP method (GET, POST, PATCH, PUT, DELETE)
+            endpoint: API endpoint path
+            data: Request body data
+            params: Query parameters
+
+        Returns:
+            Response data
+        """
+        url = (
+            f"{self.API_BASE_URL}{endpoint}"
+            if endpoint.startswith("/")
+            else f"{self.API_BASE_URL}/{endpoint}"
+        )
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.request(
+                    method,
+                    url,
+                    headers=self.headers,
+                    json=data,
+                    params=params,
+                )
+
+                if response.status_code == HTTP_STATUS_UNAUTHORIZED:
+                    raise TrackerAuthenticationError("GitHub authentication failed")
+                elif response.status_code >= 400:
+                    raise TrackerResponseError(
+                        f"GitHub API error: {response.status_code} - {response.text}"
+                    )
+
+                return response.json()
+            except httpx.RequestError as e:
+                raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
+
+    def _parse_github_issue(self, issue_data: Dict[str, Any]) -> Issue:
+        """Parse a GitHub issue into our standard format.
+
+        Args:
+            issue_data: Raw GitHub issue data.
+
+        Returns:
+            Standardized issue.
+        """
+        owner = self.connection_details.get("owner", "")
+        repo = self.connection_details.get("repo", "")
+
+        # Parse assignee
+        assignee = None
+        if issue_data.get("assignee"):
+            assignee = IssueUser(
+                id=str(issue_data["assignee"]["id"]),
+                name=issue_data["assignee"]["login"],
+                email=None,
+                avatar_url=issue_data["assignee"]["avatar_url"],
+            )
+
+        # Parse reporter
+        reporter = None
+        if issue_data.get("user"):
+            reporter = IssueUser(
+                id=str(issue_data["user"]["id"]),
+                name=issue_data["user"]["login"],
+                email=None,
+                avatar_url=issue_data["user"]["avatar_url"],
+            )
+
+        # Parse status
+        status_id = "closed" if issue_data["state"] == "closed" else "open"
+        status_name = "Closed" if issue_data["state"] == "closed" else "Open"
+        status_category = "done" if issue_data["state"] == "closed" else "todo"
+
+        status = IssueStatus(
+            id=status_id,
+            name=status_name,
+            category=status_category,
+        )
+
+        # Parse labels
+        labels = [label["name"] for label in issue_data.get("labels", [])]
+
+        # Parse priority from labels
+        priority = None
+        priority_map = {
+            "priority:high": IssuePriority(id="high", name="High", level=3),
+            "priority:medium": IssuePriority(id="medium", name="Medium", level=2),
+            "priority:low": IssuePriority(id="low", name="Low", level=1),
+        }
+
+        for label in labels:
+            if label in priority_map:
+                priority = priority_map[label]
+                break
+
+        # Parse dates
+        created_at = datetime.fromisoformat(
+            issue_data["created_at"].replace("Z", "+00:00")
+        )
+        updated_at = datetime.fromisoformat(
+            issue_data["updated_at"].replace("Z", "+00:00")
+        )
+        resolved_at = None
+        if issue_data.get("closed_at"):
+            resolved_at = datetime.fromisoformat(
+                issue_data["closed_at"].replace("Z", "+00:00")
+            )
+
+        # Create issue key
+        issue_key = (
+            f"{owner}/{repo}#{issue_data['number']}"
+            if repo
+            else f"{owner}#{issue_data['number']}"
+        )
+
+        return Issue(
+            id=str(issue_data["id"]),
+            key=issue_key,
+            title=issue_data["title"],
+            description=issue_data.get("body") or "",
+            status=status,
+            priority=priority,
+            created_at=created_at,
+            updated_at=updated_at,
+            resolved_at=resolved_at,
+            reporter=reporter,
+            assignee=assignee,
+            labels=labels,
+            components=[],
+            parent=None,
+            relations=[],
+            comments=[],
+            url=issue_data["html_url"],
+            api_url=issue_data["url"],
+            tracker_type="github",
+            project_key=f"{owner}/{repo}" if repo else owner,
+            custom_fields={},
+        )
+
     @async_retry()
     async def _make_request_delete(self, endpoint: str) -> bool:
         """
@@ -183,8 +334,46 @@ class GitHubTracker(BaseTracker):
             return TrackerConnection(connected=False, message=str(e))
 
     async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
-        """Get metadata about a project."""
-        raise NotImplementedError
+        """Get metadata about a GitHub project.
+
+        Args:
+            project_key: Project key (owner/repo format).
+
+        Returns:
+            Project metadata.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        repo_full_name = f"{owner}/{repo}"
+
+        # Get repository details
+        repo_data = await self._make_request(f"repos/{repo_full_name}")
+
+        # GitHub has simple status model: open/closed
+        statuses = [
+            IssueStatus(id="open", name="Open", category="todo"),
+            IssueStatus(id="closed", name="Closed", category="done"),
+        ]
+
+        # GitHub doesn't have built-in priorities, but commonly uses labels
+        priorities = [
+            IssuePriority(id="high", name="priority:high", level=3),
+            IssuePriority(id="medium", name="priority:medium", level=2),
+            IssuePriority(id="low", name="priority:low", level=1),
+        ]
+
+        return ProjectMetadata(
+            key=repo_full_name,
+            name=repo_data.get("name", repo),
+            description=repo_data.get("description"),
+            statuses=statuses,
+            priorities=priorities,
+            url=repo_data.get("html_url"),
+        )
 
     async def search_issues(
         self,
@@ -193,11 +382,109 @@ class GitHubTracker(BaseTracker):
         limit: int = 10,
         offset: int = 0,
     ) -> Tuple[List[Issue], int]:
-        """Search for issues in a project."""
-        raise NotImplementedError
+        """Search for issues in a GitHub repository.
 
-    async def get_issue(self, issue_id: str) -> Dict[str, Any]:
-        """Get a specific issue by ID."""
+        Args:
+            project_key: Project key (ignored for GitHub).
+            filter_params: Filter parameters.
+            limit: Maximum number of issues to return.
+            offset: Pagination offset.
+
+        Returns:
+            Tuple of (list of issues, total count).
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        # Build the search query
+        query_parts = []
+
+        if repo:
+            query_parts.append(f"repo:{owner}/{repo}")
+        else:
+            query_parts.append(f"user:{owner}")
+
+        if filter_params.query:
+            query_parts.append(filter_params.query)
+
+        if filter_params.status:
+            for status in filter_params.status:
+                if status.lower() == "open" or status.lower() == "closed":
+                    query_parts.append(f"is:{status.lower()}")
+
+        if filter_params.labels:
+            for label in filter_params.labels:
+                query_parts.append(f'label:"{label}"')
+
+        if filter_params.created_after:
+            date_str = filter_params.created_after.strftime("%Y-%m-%d")
+            query_parts.append(f"created:>={date_str}")
+
+        if filter_params.created_before:
+            date_str = filter_params.created_before.strftime("%Y-%m-%d")
+            query_parts.append(f"created:<={date_str}")
+
+        if filter_params.updated_after:
+            date_str = filter_params.updated_after.strftime("%Y-%m-%d")
+            query_parts.append(f"updated:>={date_str}")
+
+        if filter_params.updated_before:
+            date_str = filter_params.updated_before.strftime("%Y-%m-%d")
+            query_parts.append(f"updated:<={date_str}")
+
+        if filter_params.assigned_to:
+            query_parts.append(f"assignee:{filter_params.assigned_to}")
+
+        if filter_params.reported_by:
+            query_parts.append(f"author:{filter_params.reported_by}")
+
+        # Build the final query
+        query = " ".join(query_parts)
+
+        # Determine sort options
+        sort_field = "updated"
+        if filter_params.sort_by:
+            if filter_params.sort_by in ["created", "updated", "comments"]:
+                sort_field = filter_params.sort_by
+
+        sort_direction = "desc"
+        if filter_params.sort_direction and filter_params.sort_direction.lower() in [
+            "asc",
+            "desc",
+        ]:
+            sort_direction = filter_params.sort_direction.lower()
+
+        # Calculate page number (GitHub uses 1-based pagination)
+        page = (offset // limit) + 1
+
+        # Make the search request
+        search_path = "/search/issues"
+        params = {
+            "q": query,
+            "sort": sort_field,
+            "order": sort_direction,
+            "per_page": limit,
+            "page": page,
+        }
+
+        search_data = await self._request("GET", search_path, params=params)
+
+        # Parse the issues
+        issues = []
+        for issue_data in search_data["items"]:
+            issues.append(self._parse_github_issue(issue_data))
+
+        return issues, search_data["total_count"]
+
+    async def get_issue(self, issue_id: str) -> Issue:
+        """Get a specific issue by ID.
+
+        Args:
+            issue_id: Issue number in the repository.
+
+        Returns:
+            Issue object.
+        """
         owner = self.connection_details.get("owner")
         repo = self.connection_details.get("repo")
 
@@ -214,33 +501,8 @@ class GitHubTracker(BaseTracker):
                 f"Issue {issue_id} is a pull request, not an issue"
             )
 
-        try:
-            issue_created_at = datetime.strptime(
-                issue_data["created_at"], "%Y-%m-%dT%H:%M:%SZ"
-            )
-            issue_updated_at = datetime.strptime(
-                issue_data["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
-            )
-        except (ValueError, TypeError):
-            issue_created_at = datetime.now()
-            issue_updated_at = datetime.now()
-
-        return {
-            "external_id": str(issue_data["id"]),
-            "key": f"{repo_full_name}#{issue_data['number']}",
-            "title": issue_data["title"],
-            "description": issue_data.get("body", ""),
-            "state": issue_data["state"],
-            "created_at": issue_created_at,
-            "updated_at": issue_updated_at,
-            "labels": [label.get("name", "") for label in issue_data.get("labels", [])],
-            "assignees": [
-                assignee["login"]
-                for assignee in issue_data.get("assignees", [])
-                if assignee and "login" in assignee
-            ],
-            "url": issue_data["html_url"],
-        }
+        # Use the mapper to convert to Issue object
+        return self._parse_github_issue(issue_data)
 
     async def get_comments(self, issue_id: str) -> List[IssueComment]:
         """Get comments for an issue."""
@@ -296,22 +558,185 @@ class GitHubTracker(BaseTracker):
             return []
 
     async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
-        """Create a new issue."""
-        raise NotImplementedError
+        """Create a new GitHub issue.
+
+        Args:
+            project_key: Project key (ignored for GitHub).
+            issue_data: Issue data.
+
+        Returns:
+            Created issue.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        # Build the request body
+        body = {
+            "title": issue_data.title,
+            "body": issue_data.description or "",
+        }
+
+        # Set assignee if provided
+        if issue_data.assignee:
+            body["assignee"] = issue_data.assignee
+
+        # Set labels if provided
+        if issue_data.labels:
+            body["labels"] = issue_data.labels
+
+        # Create the issue
+        issues_path = f"/repos/{owner}/{repo}/issues"
+        created_issue_data = await self._request("POST", issues_path, data=body)
+
+        # Parse and return the issue
+        return self._parse_github_issue(created_issue_data)
 
     async def update_issue(self, issue_id: str, issue_data: IssueUpdate) -> Issue:
-        """Update an existing issue."""
-        raise NotImplementedError
+        """Update an existing GitHub issue.
+
+        Args:
+            issue_id: Issue number in the repository.
+            issue_data: Updated issue data.
+
+        Returns:
+            Updated issue.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        # Issue ID might be in various formats, so we extract just the number
+        issue_number = issue_id
+        if "/" in issue_id:
+            parts = issue_id.split("/")
+            issue_number = parts[-1]
+        if "#" in issue_number:
+            issue_number = issue_number.split("#")[-1]
+
+        # Build the request body
+        body = {}
+
+        if issue_data.title is not None:
+            body["title"] = issue_data.title
+
+        if issue_data.description is not None:
+            body["body"] = issue_data.description
+
+        if issue_data.status is not None:
+            body["state"] = issue_data.status.lower()
+
+        if issue_data.assignee is not None:
+            body["assignee"] = issue_data.assignee
+
+        if issue_data.labels is not None:
+            body["labels"] = issue_data.labels
+
+        # Update the issue
+        issue_path = f"/repos/{owner}/{repo}/issues/{issue_number}"
+        updated_issue_data = await self._request("PATCH", issue_path, data=body)
+
+        # Parse and return the issue
+        return self._parse_github_issue(updated_issue_data)
 
     async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
-        """Add a comment to an issue."""
-        raise NotImplementedError
+        """Add a comment to a GitHub issue.
+
+        Args:
+            issue_id: Issue number in the repository.
+            comment: Comment text.
+
+        Returns:
+            Created comment.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        # Issue ID might be in various formats, so we extract just the number
+        issue_number = issue_id
+        if "/" in issue_id:
+            parts = issue_id.split("/")
+            issue_number = parts[-1]
+        if "#" in issue_number:
+            issue_number = issue_number.split("#")[-1]
+
+        # Build the request body
+        body = {
+            "body": comment,
+        }
+
+        # Add the comment
+        comments_path = f"/repos/{owner}/{repo}/issues/{issue_number}/comments"
+        comment_data = await self._request("POST", comments_path, data=body)
+
+        # Parse and return the comment
+        return IssueComment(
+            id=str(comment_data["id"]),
+            body=comment_data["body"],
+            created_at=datetime.fromisoformat(
+                comment_data["created_at"].replace("Z", "+00:00")
+            ),
+            updated_at=datetime.fromisoformat(
+                comment_data["updated_at"].replace("Z", "+00:00")
+            ),
+            author=IssueUser(
+                id=str(comment_data["user"]["id"]),
+                name=comment_data["user"]["login"],
+                email=None,
+                avatar_url=comment_data["user"]["avatar_url"],
+            ),
+            url=comment_data.get("html_url"),
+        )
 
     async def add_relation(
         self, issue_id: str, related_issue_id: str, relation_type: str
     ) -> bool:
-        """Add a relation between issues."""
-        raise NotImplementedError
+        """Add a relation between GitHub issues.
+
+        Since GitHub doesn't have a built-in way to relate issues beyond
+        mentioning them in comments or body, this method adds a comment
+        to the issue referencing the related issue.
+
+        Args:
+            issue_id: Source issue number.
+            related_issue_id: Target issue number.
+            relation_type: Relation type.
+
+        Returns:
+            Whether the operation was successful.
+        """
+        # Issue IDs might be in various formats, so we extract just the numbers
+        issue_number = issue_id
+        if "/" in issue_id:
+            parts = issue_id.split("/")
+            issue_number = parts[-1]
+        if "#" in issue_number:
+            issue_number = issue_number.split("#")[-1]
+
+        related_issue_number = related_issue_id
+        if "/" in related_issue_id:
+            parts = related_issue_id.split("/")
+            related_issue_number = parts[-1]
+        if "#" in related_issue_number:
+            related_issue_number = related_issue_number.split("#")[-1]
+
+        # Format the relation as a comment
+        comment = f"This issue {relation_type} #{related_issue_number}"
+
+        # Add the comment
+        try:
+            await self.add_comment(issue_number, comment)
+            return True
+        except Exception as e:
+            logger.exception(f"Failed to add relation: {e}")
+            return False
 
     async def get_organizations(self) -> List[Dict[str, Any]]:
         """

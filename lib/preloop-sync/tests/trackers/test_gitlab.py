@@ -239,6 +239,26 @@ class TestGitLabTracker(unittest.IsolatedAsyncioTestCase):
         mock_issue.web_url = "http://gitlab.com/testgroup/testproject/issues/1"
         mock_issue.labels = ["bug", "critical"]
         mock_issue.assignees = [{"username": "user1"}]
+        # Add attributes dict for the parser
+        mock_issue.attributes = {
+            "id": 12345,
+            "iid": 1,
+            "title": "Test Issue",
+            "description": "Description for issue",
+            "state": "opened",
+            "created_at": "2023-01-01T10:00:00.000Z",
+            "updated_at": "2023-01-02T11:00:00.000Z",
+            "web_url": "http://gitlab.com/testgroup/testproject/issues/1",
+            "labels": ["bug", "critical"],
+            "assignee": None,
+            "assignees": [],
+            "author": {
+                "id": 123,
+                "name": "Author",
+                "avatar_url": "https://example.com/avatar.png",
+            },
+            "_links": {"self": "http://gitlab.com/api/v4/projects/proj-1/issues/1"},
+        }
         mock_project.issues.get.return_value = mock_issue
 
         tracker = GitLabTracker("tracker-1", "api-key", {"project_id": "proj-1"})
@@ -248,25 +268,14 @@ class TestGitLabTracker(unittest.IsolatedAsyncioTestCase):
         mock_gl_instance.projects.get.assert_called_once_with("proj-1")
         mock_project.issues.get.assert_called_once_with("1")
 
-        # Verify issue data transformation
-        self.assertEqual(issue["title"], "Test Issue")
-        self.assertEqual(issue["external_id"], "12345")
-        self.assertEqual(issue["key"], "testgroup/testproject#1")
-        self.assertEqual(issue["state"], "opened")
-        self.assertEqual(issue["labels"], ["bug", "critical"])
-        self.assertEqual(issue["assignees"], ["user1"])
-        self.assertEqual(issue["description"], "Description for issue")
-        self.assertEqual(
-            issue["created_at"],
-            datetime.strptime("2023-01-01T10:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"),
-        )
-        self.assertEqual(
-            issue["updated_at"],
-            datetime.strptime("2023-01-02T11:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"),
-        )
-        self.assertEqual(
-            issue["url"], "http://gitlab.com/testgroup/testproject/issues/1"
-        )
+        # Verify issue data transformation - Now result is an Issue object
+        self.assertEqual(issue.title, "Test Issue")
+        self.assertEqual(issue.id, "12345")
+        self.assertEqual(issue.key, "testgroup/testproject#1")
+        self.assertEqual(issue.status.id, "opened")
+        self.assertEqual(issue.labels, ["bug", "critical"])
+        self.assertEqual(issue.description, "Description for issue")
+        self.assertEqual(issue.url, "http://gitlab.com/testgroup/testproject/issues/1")
 
 
 class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
@@ -609,6 +618,26 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_issue.web_url = "http://gitlab.com/testgroup/testproject/issues/1"
         mock_issue.labels = ["bug", "critical"]
         mock_issue.assignees = [{"username": "user1"}]
+        # Add attributes dict for the parser
+        mock_issue.attributes = {
+            "id": 12345,
+            "iid": 1,
+            "title": "Test Issue",
+            "description": "Description for issue",
+            "state": "opened",
+            "created_at": "2023-01-01T10:00:00.000Z",
+            "updated_at": "2023-01-02T11:00:00.000Z",
+            "web_url": "http://gitlab.com/testgroup/testproject/issues/1",
+            "labels": ["bug", "critical"],
+            "assignee": None,
+            "assignees": [],
+            "author": {
+                "id": 123,
+                "name": "Author",
+                "avatar_url": "https://example.com/avatar.png",
+            },
+            "_links": {"self": "http://gitlab.com/api/v4/projects/proj-1/issues/1"},
+        }
         mock_project.issues.get.return_value = mock_issue
 
         tracker = GitLabTracker("tracker-1", "api-key", {"project_id": "proj-1"})
@@ -618,22 +647,11 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_gl_instance.projects.get.assert_called_once_with("proj-1")
         mock_project.issues.get.assert_called_once_with("1")
 
-        # Verify issue data transformation
-        self.assertEqual(issue["title"], "Test Issue")
-        self.assertEqual(issue["external_id"], "12345")
-        self.assertEqual(issue["key"], "testgroup/testproject#1")
-        self.assertEqual(issue["state"], "opened")
-        self.assertEqual(issue["labels"], ["bug", "critical"])
-        self.assertEqual(issue["assignees"], ["user1"])
-        self.assertEqual(issue["description"], "Description for issue")
-        self.assertEqual(
-            issue["created_at"],
-            datetime.strptime("2023-01-01T10:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"),
-        )
-        self.assertEqual(
-            issue["updated_at"],
-            datetime.strptime("2023-01-02T11:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"),
-        )
-        self.assertEqual(
-            issue["url"], "http://gitlab.com/testgroup/testproject/issues/1"
-        )
+        # Verify issue data transformation - Now result is an Issue object
+        self.assertEqual(issue.title, "Test Issue")
+        self.assertEqual(issue.id, "12345")
+        self.assertEqual(issue.key, "testgroup/testproject#1")
+        self.assertEqual(issue.status.id, "opened")
+        self.assertEqual(issue.labels, ["bug", "critical"])
+        self.assertEqual(issue.description, "Description for issue")
+        self.assertEqual(issue.url, "http://gitlab.com/testgroup/testproject/issues/1")
