@@ -1250,7 +1250,7 @@ class GitHubTracker(BaseTracker):
         try:
             # Look up webhook by external_id (the GitHub webhook ID)
             existing_webhook = crud_webhook.get_by_external_id(
-                db, external_id=str(hook_id)
+                db, external_id=str(hook_id), tracker_id=self.tracker_id
             )
 
             if existing_webhook:

@@ -1154,7 +1154,7 @@ class GitLabTracker(BaseTracker):
                         db = next(get_db_session())
                         try:
                             existing_webhook = crud_webhook.get_by_external_id(
-                                db, external_id=str(hook.id)
+                                db, external_id=str(hook.id), tracker_id=self.tracker_id
                             )
 
                             if existing_webhook:
@@ -1216,7 +1216,7 @@ class GitLabTracker(BaseTracker):
                     db = next(get_db_session())
                     try:
                         existing_webhook = crud_webhook.get_by_external_id(
-                            db, external_id=str(hook.id)
+                            db, external_id=str(hook.id), tracker_id=self.tracker_id
                         )
 
                         if existing_webhook:
