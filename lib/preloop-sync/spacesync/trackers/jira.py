@@ -1190,7 +1190,25 @@ class JiraTracker(BaseTracker):
 
             response.raise_for_status()
             webhook_data = response.json()
-            webhook_id = str(webhook_data.get("id"))
+
+            # Extract webhook ID - Jira API returns it in the 'self' URL, not as an 'id' field
+            # The 'self' URL looks like: https://example.atlassian.net/rest/webhooks/1.0/webhook/123
+            webhook_id = webhook_data.get(
+                "id"
+            )  # Try id first (for tests/older API versions)
+            if not webhook_id and "self" in webhook_data:
+                # Extract from self URL (actual Jira Cloud API behavior)
+                self_url = webhook_data["self"]
+                webhook_id = self_url.split("/")[-1]
+
+            if not webhook_id:
+                logger.error(
+                    f"Could not extract webhook ID from response. "
+                    f"Response: {webhook_data}"
+                )
+                return False
+
+            webhook_id = str(webhook_id)  # Ensure it's a string
 
             logger.info(
                 f"Webhook created in Jira with ID: {webhook_id}. "

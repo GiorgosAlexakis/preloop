@@ -232,8 +232,33 @@ def unregister_webhooks_command(
         try:
             tracker_client_instance = TrackerClient(tracker=tracker_orm_instance)
 
+            # Step 1: Unregister webhooks from database
+            if not hasattr(tracker_client_instance.client, "unregister_all_webhooks"):
+                click.echo(
+                    f"Tracker type {tracker_orm_instance.tracker_type} does not support unregister_all_webhooks. Skipping."
+                )
+                continue
+
+            unregister_method = tracker_client_instance.client.unregister_all_webhooks
+            if inspect.iscoroutinefunction(unregister_method):
+                summary = asyncio.run(unregister_method(db=db))
+            else:
+                summary = unregister_method(db=db)
+
+            click.echo(
+                f"  Unregistered (from database): {summary.get('unregistered', 0)}"
+            )
+            click.echo(f"  Failed: {summary.get('failed', 0)}")
+            click.echo(f"  Not Found (matching pattern): {summary.get('not_found', 0)}")
+            total_unregistered += summary.get("unregistered", 0)
+            total_failed += summary.get("failed", 0)
+            total_not_found += summary.get("not_found", 0)
+
+            # Step 2: If --cleanup-all, also cleanup stale webhooks (not in database)
             if cleanup_all:
-                logger.info(f"Running cleanup for tracker {tracker_orm_instance.id}...")
+                logger.info(
+                    f"Running stale webhook cleanup for tracker {tracker_orm_instance.id}..."
+                )
                 if hasattr(tracker_client_instance.client, "cleanup_stale_webhooks"):
                     cleanup_method = (
                         tracker_client_instance.client.cleanup_stale_webhooks
@@ -264,38 +289,15 @@ def unregister_webhooks_command(
                             )
 
                     click.echo(
-                        f"  Cleanup of stale webhooks for tracker {tracker_orm_instance.id} completed."
-                    )
-                    click.echo(
-                        f"  Unregistered: {cleanup_result.get('unregistered', 0)}"
+                        f"  Stale webhooks cleaned up: {cleanup_result.get('unregistered', 0)}"
                     )
                     click.echo(f"  Failed: {cleanup_result.get('failed', 0)}")
                     total_unregistered += cleanup_result.get("unregistered", 0)
                     total_failed += cleanup_result.get("failed", 0)
                 else:
                     click.echo(
-                        f"  Tracker type {tracker_orm_instance.tracker_type} does not support --cleanup-all."
+                        f"  Tracker type {tracker_orm_instance.tracker_type} does not support stale webhook cleanup."
                     )
-                continue
-
-            if not hasattr(tracker_client_instance.client, "unregister_all_webhooks"):
-                click.echo(
-                    f"Tracker type {tracker_orm_instance.tracker_type} does not support unregister_all_webhooks. Skipping."
-                )
-                continue
-
-            unregister_method = tracker_client_instance.client.unregister_all_webhooks
-            if inspect.iscoroutinefunction(unregister_method):
-                summary = asyncio.run(unregister_method(db=db))
-            else:
-                summary = unregister_method(db=db)
-
-            click.echo(f"  Unregistered: {summary.get('unregistered', 0)}")
-            click.echo(f"  Failed: {summary.get('failed', 0)}")
-            click.echo(f"  Not Found (matching pattern): {summary.get('not_found', 0)}")
-            total_unregistered += summary.get("unregistered", 0)
-            total_failed += summary.get("failed", 0)
-            total_not_found += summary.get("not_found", 0)
 
         except Exception as e:
             click.echo(f"Error processing tracker {tracker_orm_instance.id}: {e}")
