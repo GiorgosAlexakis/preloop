@@ -231,7 +231,7 @@ class JiraTracker(BaseTracker):
 
         if filter_params.labels:
             label_clause = " OR ".join(
-                [f"labels = '{l}'" for l in filter_params.labels]
+                [f"labels = '{label}'" for label in filter_params.labels]
             )
             jql_parts.append(f"({label_clause})")
 
@@ -1087,9 +1087,7 @@ class JiraTracker(BaseTracker):
 
                 # Parse dependencies from issue links
                 if issue_data["fields"].get("issuelinks"):
-                    transformed_issue[
-                        "dependencies"
-                    ] = await self._parse_jira_dependencies(
+                    transformed_issue["dependencies"] = await self._parse_dependencies(
                         issue_data["fields"]["issuelinks"]
                     )
 
@@ -1102,7 +1100,7 @@ class JiraTracker(BaseTracker):
 
         return all_issues
 
-    async def _parse_jira_dependencies(
+    async def _parse_dependencies(
         self, issuelinks: List[Dict[str, Any]]
     ) -> List[Dict[str, str]]:
         """Parse Jira issue links into dependencies."""
@@ -1130,7 +1128,7 @@ class JiraTracker(BaseTracker):
                 continue
         return dependencies
 
-    async def register_webhook(
+    def register_webhook(
         self,
         db: Session,
         project: Project,
@@ -1214,7 +1212,7 @@ class JiraTracker(BaseTracker):
                 f"Unexpected error registering webhook for {project.identifier}: {str(e)}"
             )
 
-    async def unregister_webhook(self, db: Session, webhook: Webhook) -> bool:
+    def unregister_webhook(self, db: Session, webhook: Webhook) -> bool:
         """Unregister a webhook for a project using the database record."""
         if not self.jira_client:
             logger.error("Jira client not initialized. Cannot unregister webhook.")
@@ -1247,7 +1245,7 @@ class JiraTracker(BaseTracker):
         )
         return True
 
-    async def unregister_all_webhooks(
+    def unregister_all_webhooks(
         self, db: Session, webhook_url_pattern: Optional[str] = None
     ) -> Dict[str, int]:
         """Unregister all webhooks for all projects in an organization."""
@@ -1297,7 +1295,7 @@ class JiraTracker(BaseTracker):
         logger.info(f"Jira unregister_all_webhooks summary: {results}")
         return results
 
-    async def cleanup_stale_webhooks(self, spacebridge_url: str) -> Dict[str, int]:
+    def cleanup_stale_webhooks(self, spacebridge_url: str) -> Dict[str, int]:
         """
         Deletes all webhooks from Jira that are associated with a given SpaceBridge URL.
 
@@ -1370,7 +1368,7 @@ class JiraTracker(BaseTracker):
         )
         return results
 
-    async def is_webhook_registered(self, webhook: "Webhook") -> bool:
+    def is_webhook_registered(self, webhook: "Webhook") -> bool:
         """
         Check if a webhook is registered in the tracker.
 
@@ -1399,7 +1397,7 @@ class JiraTracker(BaseTracker):
             )
             return False
 
-    async def get_webhooks(self) -> List[Dict[str, Any]]:
+    def get_webhooks(self) -> List[Dict[str, Any]]:
         """
         Get all webhooks for the tracker.
 
@@ -1424,7 +1422,7 @@ class JiraTracker(BaseTracker):
             self._handle_jira_error(e, "getting webhooks")
             return []
 
-    async def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
+    def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
         """
         Delete a webhook from the tracker.
 
@@ -1454,7 +1452,7 @@ class JiraTracker(BaseTracker):
             logger.error(f"Failed to delete webhook {webhook_id}: {e}")
             return False
 
-    async def is_webhook_registered_for_project(
+    def is_webhook_registered_for_project(
         self, project: "Project", webhook_url: str
     ) -> bool:
         """
@@ -1471,7 +1469,7 @@ class JiraTracker(BaseTracker):
             return False
 
         try:
-            hooks = await self.get_webhooks()
+            hooks = self.get_webhooks()
             for hook in hooks:
                 if hook.get("url") == webhook_url:
                     # Check if the hook is for the correct project
@@ -1482,7 +1480,7 @@ class JiraTracker(BaseTracker):
         except (TrackerConnectionError, TrackerResponseError):
             return False
 
-    async def is_webhook_registered_for_organization(
+    def is_webhook_registered_for_organization(
         self, organization: "Organization", webhook_url: str
     ) -> bool:
         """

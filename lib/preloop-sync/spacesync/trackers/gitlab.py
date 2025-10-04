@@ -1092,6 +1092,73 @@ class GitLabTracker(BaseTracker):
             )
             return False
 
+    async def cleanup_stale_webhooks(self, spacebridge_url: str) -> Dict[str, int]:
+        """
+        Cleans up stale webhooks from GitLab, for both groups and projects.
+
+        Args:
+            spacebridge_url: The base URL of the SpaceBridge instance.
+
+        Returns:
+            A dictionary summarizing the actions taken, e.g., `{"unregistered": count, "failed": count}`.
+        """
+        results = {"unregistered": 0, "failed": 0}
+        try:
+            groups = await self._make_request(self.gl.groups.list, all=True)
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(f"Failed to retrieve groups for stale webhook cleanup: {e}")
+            return results
+
+        for group in groups:
+            try:
+                hooks = await self._make_request(group.hooks.list, all=True)
+                for hook in hooks:
+                    if hook.url.startswith(spacebridge_url):
+                        try:
+                            await self._make_request(hook.delete)
+                            results["unregistered"] += 1
+                        except (
+                            TrackerConnectionError,
+                            TrackerResponseError,
+                        ) as delete_error:
+                            logger.error(
+                                f"Failed to delete stale group webhook {hook.id} for group {group.id}: {delete_error}"
+                            )
+                            results["failed"] += 1
+            except (TrackerConnectionError, TrackerResponseError) as list_error:
+                logger.error(f"Failed to list hooks for group {group.id}: {list_error}")
+                results["failed"] += 1
+
+        try:
+            projects = await self._make_request(self.gl.projects.list, all=True)
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(f"Failed to retrieve projects for stale webhook cleanup: {e}")
+            return results
+
+        for project in projects:
+            try:
+                hooks = await self._make_request(project.hooks.list, all=True)
+                for hook in hooks:
+                    if hook.url.startswith(spacebridge_url):
+                        try:
+                            await self._make_request(hook.delete)
+                            results["unregistered"] += 1
+                        except (
+                            TrackerConnectionError,
+                            TrackerResponseError,
+                        ) as delete_error:
+                            logger.error(
+                                f"Failed to delete stale project webhook {hook.id} for project {project.id}: {delete_error}"
+                            )
+                            results["failed"] += 1
+            except (TrackerConnectionError, TrackerResponseError) as list_error:
+                logger.error(
+                    f"Failed to list hooks for project {project.id}: {list_error}"
+                )
+                results["failed"] += 1
+
+        return results
+
     async def get_issue(self, issue_id: str) -> Issue:
         """Get a single issue from GitLab.
 

@@ -253,6 +253,7 @@ class TestGitLabTrackerCRUD(IsolatedAsyncioTestCase):
         issues, total = await tracker.search_issues("proj-1", filter_params, limit=10)
 
         # Assert
+        self.assertEqual(total, 1)
         self.assertGreater(len(issues), 0)
         # search_issues doesn't pass project to parser, so it uses project_id from connection_details
         self.assertEqual(issues[0].key, "proj-1#1")

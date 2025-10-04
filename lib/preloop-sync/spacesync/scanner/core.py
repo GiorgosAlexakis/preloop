@@ -420,10 +420,10 @@ async def _process_organization(
             if client.tracker_type == "jira":
                 for project in projects:
                     try:
-                        if not await client.client.is_webhook_registered_for_project(
+                        if not client.client.is_webhook_registered_for_project(
                             project, webhook_target_url
                         ):
-                            await client.client.register_webhook(
+                            client.client.register_webhook(
                                 db=db,
                                 project=project,
                                 webhook_url=webhook_target_url,
