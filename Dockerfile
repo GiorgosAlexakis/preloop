@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libpq-dev \
     build-essential \
+    curl \
+    vim \
+    procps \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,7 +27,7 @@ COPY spacesync/setup.py spacesync/
 COPY spacesync/requirements.txt spacesync/
 
 # Install build dependencies and Python packages in separate layers for better caching
-RUN pip install -U --no-cache-dir build setuptools pip wheel mkdocs mkdocs-material mkdocs-mermaid2-plugin
+RUN pip install -U --no-cache-dir build setuptools pip wheel mkdocs mkdocs-material mkdocs-mermaid2-plugin ipdb
 
 # Copy only necessary files for SpaceModels and spacesync installation
 COPY SpaceModels/ SpaceModels/
