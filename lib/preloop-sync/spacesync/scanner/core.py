@@ -407,7 +407,11 @@ async def _process_organization(
     projects = await client.scan_projects(db, org)
     org_stats["projects"] = len(projects)
     spacebridge_url_str = os.getenv("SPACEBRIDGE_URL")
-    if spacebridge_url_str:
+    if not spacebridge_url_str:
+        logger.warning(
+            "SPACEBRIDGE_URL environment variable not set. Skipping webhook registration."
+        )
+    else:
         try:
             webhook_target_path = (
                 f"/api/v1/private/webhooks/{client.tracker_type}/{org.id}"
@@ -418,16 +422,29 @@ async def _process_organization(
                 current_secret_to_use = secrets.token_hex(32)
 
             if client.tracker_type == "jira":
+                logger.info(
+                    f"Checking webhook registration for {len(projects)} Jira projects"
+                )
                 for project in projects:
                     try:
-                        if not client.client.is_webhook_registered_for_project(
+                        is_registered = client.client.is_webhook_registered_for_project(
                             project, webhook_target_url
-                        ):
-                            client.client.register_webhook(
+                        )
+                        logger.info(
+                            f"Webhook for project {project.identifier} registered: {is_registered}"
+                        )
+                        if not is_registered:
+                            logger.info(
+                                f"Registering webhook for project {project.identifier}"
+                            )
+                            result = client.client.register_webhook(
                                 db=db,
                                 project=project,
                                 webhook_url=webhook_target_url,
                                 secret=current_secret_to_use,
+                            )
+                            logger.info(
+                                f"Webhook registration result for {project.identifier}: {result}"
                             )
                     except Exception as e:
                         logger.error(
