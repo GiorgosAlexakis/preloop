@@ -1105,12 +1105,34 @@ class GitLabTracker(BaseTracker):
         results = {"unregistered": 0, "failed": 0}
         skip_group_webhooks = False
 
+        # Check if this is GitLab CE by fetching tracker metadata
+        from spacemodels.crud import crud_tracker
+        from spacemodels.db.session import get_db_session
+
+        db = next(get_db_session())
         try:
-            groups = await self._make_request(self.gl.groups.list, all=True)
-        except (TrackerConnectionError, TrackerResponseError) as e:
-            logger.error(f"Failed to retrieve groups for stale webhook cleanup: {e}")
-            # If we can't list groups, skip to project webhooks
-            skip_group_webhooks = True
+            tracker = crud_tracker.get(db, id=self.tracker_id)
+            if tracker and tracker.meta_data:
+                is_gitlab_ce = tracker.meta_data.get("gitlab_ce", False)
+                if is_gitlab_ce:
+                    logger.info(
+                        f"Tracker {self.tracker_id} is marked as GitLab CE, skipping group webhooks"
+                    )
+                    skip_group_webhooks = True
+        finally:
+            db.close()
+
+        if not skip_group_webhooks:
+            try:
+                groups = await self._make_request(self.gl.groups.list, all=True)
+            except (TrackerConnectionError, TrackerResponseError) as e:
+                logger.error(
+                    f"Failed to retrieve groups for stale webhook cleanup: {e}"
+                )
+                # If we can't list groups, skip to project webhooks
+                skip_group_webhooks = True
+                groups = []
+        else:
             groups = []
 
         if not skip_group_webhooks:
