@@ -1221,7 +1221,15 @@ class GitHubTracker(BaseTracker):
     async def _process_hook(
         self, hook: dict, spacebridge_url: str, results: dict, base_endpoint: str
     ) -> None:
-        """Processes a single webhook for cleanup."""
+        """
+        Processes a single webhook for cleanup.
+
+        Stale webhooks are webhooks that:
+        1. Have a URL starting with spacebridge_url (they point to our SpaceBridge instance)
+        2. Are NOT registered in our database (they were created but not tracked, or orphaned)
+
+        This method checks if the webhook is stale and deletes it if so.
+        """
         hook_id = hook.get("id")
         hook_config = hook.get("config", {})
         hook_url = hook_config.get("url")
@@ -1229,15 +1237,39 @@ class GitHubTracker(BaseTracker):
         if not all([hook_id, hook_url]):
             return
 
+        # Only consider webhooks pointing to our SpaceBridge instance
         if not hook_url.startswith(spacebridge_url):
+            # This webhook points to a different service, ignore it
+            return
+
+        # Check if this webhook exists in our database
+        from spacemodels.crud import crud_webhook
+        from spacemodels.db.session import get_db_session
+
+        db = next(get_db_session())
+        try:
+            # Look up webhook by external_id (the GitHub webhook ID)
+            existing_webhook = crud_webhook.get_by_external_id(
+                db, external_id=str(hook_id)
+            )
+
+            if existing_webhook:
+                # Webhook is in our database, keep it
+                logger.debug(
+                    f"Webhook {hook_id} in {base_endpoint} is registered in database, keeping it."
+                )
+                return
+
+            # Webhook points to our SpaceBridge but is NOT in database - it's stale
             logger.info(
-                f"Found stale webhook {hook_id} in {base_endpoint} pointing to {hook_url}. Deleting..."
+                f"Found stale webhook {hook_id} in {base_endpoint} pointing to {hook_url}. "
+                f"This webhook is not in our database. Deleting..."
             )
             try:
                 delete_endpoint = f"{base_endpoint}/{hook_id}"
                 if await self._make_request_delete(delete_endpoint):
                     logger.info(
-                        f"Successfully deleted webhook {hook_id} from {base_endpoint}."
+                        f"Successfully deleted stale webhook {hook_id} from {base_endpoint}."
                     )
                     results["unregistered"] += 1
                 else:
@@ -1250,6 +1282,8 @@ class GitHubTracker(BaseTracker):
                     f"An error occurred while deleting webhook {hook_id} from {base_endpoint}: {e}"
                 )
                 results["failed"] += 1
+        finally:
+            db.close()
 
     async def is_webhook_registered(self, webhook: "Webhook") -> bool:
         """

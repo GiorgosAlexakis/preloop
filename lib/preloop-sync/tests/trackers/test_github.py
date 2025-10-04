@@ -722,19 +722,26 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
     async def test_cleanup_stale_webhooks_org_hooks(
         self, mock_make_request, mock_make_request_delete
     ):
+        """
+        Test that cleanup_stale_webhooks only deletes webhooks that:
+        1. Point to our spacebridge_url
+        2. Are NOT in our database
+
+        This test has a webhook pointing to spacebridge_url that's not in DB, so it should be deleted.
+        """
         # Arrange
         tracker = GitHubTracker("tracker-1", "api-key", {})
         mock_make_request.side_effect = [
             {"login": "user", "html_url": ""},
             [{"login": "org1", "url": "...", "id": "org1", "name": "org1"}],
-            [{"config": {"url": "http://stale.com/webhook"}, "id": 1}],
+            [{"config": {"url": "http://my-spacebridge.com/webhook"}, "id": 1}],
         ]
         mock_make_request_delete.return_value = True
 
         # Act
         results = await tracker.cleanup_stale_webhooks("http://my-spacebridge.com")
 
-        # Assert
+        # Assert: Should delete the stale webhook (points to spacebridge but not in DB)
         self.assertEqual(results["unregistered"], 1)
         self.assertEqual(results["failed"], 0)
         mock_make_request_delete.assert_called_with("orgs/org1/hooks/1")
@@ -744,6 +751,10 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
     async def test_cleanup_stale_webhooks_project_hooks(
         self, mock_make_request, mock_make_request_delete
     ):
+        """
+        Test cleanup for project-level webhooks.
+        A webhook pointing to spacebridge_url that's not in DB should be deleted.
+        """
         # Arrange
         tracker = GitHubTracker("tracker-1", "api-key", {})
         repo_meta = {
@@ -762,7 +773,7 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
             {"login": "user", "html_url": ""},
             [{"login": "org1", "url": "...", "id": "org1", "name": "org1"}],
             [repo_meta],
-            [{"config": {"url": "http://stale.com/webhook"}, "id": 2}],
+            [{"config": {"url": "http://my-spacebridge.com/webhook"}, "id": 2}],
             [],
         ]
         mock_make_request_delete.return_value = True
@@ -772,7 +783,7 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
             "http://my-spacebridge.com", cleanup_projects=True
         )
 
-        # Assert
+        # Assert: Should delete the stale webhook (points to spacebridge but not in DB)
         self.assertEqual(results["unregistered"], 1)
         self.assertEqual(results["failed"], 0)
         mock_make_request_delete.assert_called_with("repos/org1/repo1/hooks/2")
@@ -782,18 +793,23 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
     async def test_cleanup_stale_webhooks_no_stale_hooks(
         self, mock_make_request, mock_make_request_delete
     ):
+        """
+        Test that webhooks pointing to OTHER URLs (not our spacebridge_url) are ignored.
+        A webhook at "http://other-service.com/webhook" should NOT be deleted
+        even though it's not in our DB, because it doesn't point to our SpaceBridge.
+        """
         # Arrange
         tracker = GitHubTracker("tracker-1", "api-key", {})
         mock_make_request.side_effect = [
             {"login": "user", "html_url": ""},
             [{"login": "org1", "url": "...", "id": "org1", "name": "org1"}],
-            [{"config": {"url": "http://my-spacebridge.com/webhook"}, "id": 1}],
+            [{"config": {"url": "http://other-service.com/webhook"}, "id": 1}],
         ]
 
         # Act
         results = await tracker.cleanup_stale_webhooks("http://my-spacebridge.com")
 
-        # Assert
+        # Assert: Should NOT delete webhooks that don't point to our SpaceBridge
         self.assertEqual(results["unregistered"], 0)
         self.assertEqual(results["failed"], 0)
         mock_make_request_delete.assert_not_called()

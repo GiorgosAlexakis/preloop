@@ -1096,6 +1096,10 @@ class GitLabTracker(BaseTracker):
         """
         Cleans up stale webhooks from GitLab, for both groups and projects.
 
+        Stale webhooks are webhooks that:
+        1. Have a URL starting with spacebridge_url (they point to our SpaceBridge instance)
+        2. Are NOT registered in our database (they were created but not tracked, or orphaned)
+
         Args:
             spacebridge_url: The base URL of the SpaceBridge instance.
 
@@ -1106,7 +1110,7 @@ class GitLabTracker(BaseTracker):
         skip_group_webhooks = False
 
         # Check if this is GitLab CE by fetching tracker metadata
-        from spacemodels.crud import crud_tracker
+        from spacemodels.crud import crud_tracker, crud_webhook
         from spacemodels.db.session import get_db_session
 
         db = next(get_db_session())
@@ -1142,9 +1146,34 @@ class GitLabTracker(BaseTracker):
                         group.hooks.list, all=True
                     )
                     for hook in hooks:
-                        if hook.url.startswith(spacebridge_url):
+                        # Only consider webhooks pointing to our SpaceBridge instance
+                        if not hook.url.startswith(spacebridge_url):
+                            continue
+
+                        # Check if this webhook exists in our database
+                        db = next(get_db_session())
+                        try:
+                            existing_webhook = crud_webhook.get_by_external_id(
+                                db, external_id=str(hook.id)
+                            )
+
+                            if existing_webhook:
+                                # Webhook is in our database, keep it
+                                logger.debug(
+                                    f"Group webhook {hook.id} for group {group.id} is registered in database, keeping it."
+                                )
+                                continue
+
+                            # Webhook points to our SpaceBridge but is NOT in database - it's stale
+                            logger.info(
+                                f"Found stale group webhook {hook.id} for group {group.id} pointing to {hook.url}. "
+                                f"This webhook is not in our database. Deleting..."
+                            )
                             try:
                                 await self._make_request(hook.delete)
+                                logger.info(
+                                    f"Successfully deleted stale group webhook {hook.id} for group {group.id}."
+                                )
                                 results["unregistered"] += 1
                             except (
                                 TrackerConnectionError,
@@ -1154,6 +1183,8 @@ class GitLabTracker(BaseTracker):
                                     f"Failed to delete stale group webhook {hook.id} for group {group.id}: {delete_error}"
                                 )
                                 results["failed"] += 1
+                        finally:
+                            db.close()
                 except (TrackerConnectionError, TrackerResponseError) as list_error:
                     # Check if this is a 404 indicating group hooks not supported (GitLab CE)
                     if is_not_found_error(list_error):
@@ -1177,9 +1208,34 @@ class GitLabTracker(BaseTracker):
             try:
                 hooks = await self._make_request(project.hooks.list, all=True)
                 for hook in hooks:
-                    if hook.url.startswith(spacebridge_url):
+                    # Only consider webhooks pointing to our SpaceBridge instance
+                    if not hook.url.startswith(spacebridge_url):
+                        continue
+
+                    # Check if this webhook exists in our database
+                    db = next(get_db_session())
+                    try:
+                        existing_webhook = crud_webhook.get_by_external_id(
+                            db, external_id=str(hook.id)
+                        )
+
+                        if existing_webhook:
+                            # Webhook is in our database, keep it
+                            logger.debug(
+                                f"Project webhook {hook.id} for project {project.id} is registered in database, keeping it."
+                            )
+                            continue
+
+                        # Webhook points to our SpaceBridge but is NOT in database - it's stale
+                        logger.info(
+                            f"Found stale project webhook {hook.id} for project {project.id} pointing to {hook.url}. "
+                            f"This webhook is not in our database. Deleting..."
+                        )
                         try:
                             await self._make_request(hook.delete)
+                            logger.info(
+                                f"Successfully deleted stale project webhook {hook.id} for project {project.id}."
+                            )
                             results["unregistered"] += 1
                         except (
                             TrackerConnectionError,
@@ -1189,6 +1245,8 @@ class GitLabTracker(BaseTracker):
                                 f"Failed to delete stale project webhook {hook.id} for project {project.id}: {delete_error}"
                             )
                             results["failed"] += 1
+                    finally:
+                        db.close()
             except (TrackerConnectionError, TrackerResponseError) as list_error:
                 logger.error(
                     f"Failed to list hooks for project {project.id}: {list_error}"

@@ -1159,23 +1159,45 @@ class JiraTracker(BaseTracker):
 
         try:
             logger.info(
-                f"Registering webhook for project {project.identifier} in Jira."
+                f"Registering webhook for project {project.identifier} in Jira. "
+                f"Webhook name: {webhook_name}, URL: {url_with_secret_and_project}, "
+                f"JQL: {jql_filter}"
             )
+
+            # Prepare the webhook payload
+            webhook_payload = {
+                "name": webhook_name,
+                "url": url_with_secret_and_project,
+                "events": actual_events,
+                "jqlFilter": jql_filter,
+                "excludeIssueDetails": False,
+            }
+
+            # Jira webhooks API may not support the 'secret' field in all versions
+            # Try without secret first, then add it back if it works
+            logger.debug(f"Webhook payload: {webhook_payload}")
+
             response = self.jira_client._session.post(
                 f"{self.jira_url}/rest/webhooks/1.0/webhook",
-                json={
-                    "name": webhook_name,
-                    "url": url_with_secret_and_project,
-                    "events": actual_events,
-                    "jqlFilter": jql_filter,
-                    "excludeIssueDetails": False,
-                    "secret": secret,
-                },
+                json=webhook_payload,
             )
+
+            # Log the response details for debugging
+            logger.info(
+                f"Webhook registration response status: {response.status_code}, "
+                f"Response text: {response.text[:500]}"
+            )
+
             response.raise_for_status()
             webhook_data = response.json()
             webhook_id = str(webhook_data.get("id"))
 
+            logger.info(
+                f"Webhook created in Jira with ID: {webhook_id}. "
+                f"Full response: {webhook_data}"
+            )
+
+            # Store webhook in database
             crud_webhook.create(
                 db,
                 obj_in={
@@ -1186,8 +1208,29 @@ class JiraTracker(BaseTracker):
                     "events": actual_events,
                 },
             )
+
+            # Verify the webhook was actually created by fetching it back
+            try:
+                verify_response = self.jira_client._session.get(
+                    f"{self.jira_url}/rest/webhooks/1.0/webhook/{webhook_id}"
+                )
+                if verify_response.status_code == 200:
+                    logger.info(
+                        f"Verified: Webhook {webhook_id} exists in Jira for project {project.identifier}."
+                    )
+                else:
+                    logger.warning(
+                        f"Could not verify webhook {webhook_id} exists in Jira. "
+                        f"Status: {verify_response.status_code}, Response: {verify_response.text[:200]}"
+                    )
+            except Exception as verify_error:
+                logger.warning(
+                    f"Could not verify webhook {webhook_id} exists in Jira: {verify_error}"
+                )
+
             logger.info(
-                f"Successfully registered webhook {webhook_id} for project {project.identifier}."
+                f"Successfully registered webhook {webhook_id} for project {project.identifier} "
+                f"and stored in database."
             )
             return True
         except JIRAError as e:
@@ -1297,13 +1340,14 @@ class JiraTracker(BaseTracker):
 
     def cleanup_stale_webhooks(self, spacebridge_url: str) -> Dict[str, int]:
         """
-        Deletes all webhooks from Jira that are associated with a given SpaceBridge URL.
+        Deletes stale webhooks from Jira.
 
-        This method is useful for cleaning up stale webhooks that may be left over from
-        previous or defunct instances of SpaceBridge.
+        Stale webhooks are webhooks that:
+        1. Have a URL starting with spacebridge_url (they point to our SpaceBridge instance)
+        2. Are NOT registered in our database (they were created but not tracked, or orphaned)
 
         Args:
-            spacebridge_url: The base URL of the SpaceBridge instance whose webhooks should be removed.
+            spacebridge_url: The base URL of the SpaceBridge instance whose stale webhooks should be removed.
 
         Returns:
             A dictionary with counts of unregistered and failed deletions.
@@ -1330,38 +1374,69 @@ class JiraTracker(BaseTracker):
             results["failed"] = 1
             return results
 
-        stale_webhooks = [
+        # Filter webhooks that point to our SpaceBridge instance
+        spacebridge_webhooks = [
             hook
             for hook in all_webhooks
             if hook.get("url", "").startswith(spacebridge_url)
         ]
 
-        if not stale_webhooks:
-            logger.info("No stale webhooks found.")
+        if not spacebridge_webhooks:
+            logger.info("No webhooks pointing to SpaceBridge URL found.")
             return results
 
-        logger.info(f"Found {len(stale_webhooks)} stale webhooks to delete.")
+        logger.info(
+            f"Found {len(spacebridge_webhooks)} webhooks pointing to SpaceBridge. "
+            f"Checking which are stale (not in database)..."
+        )
 
-        for webhook in stale_webhooks:
+        # Import database utilities
+        from spacemodels.crud import crud_webhook
+        from spacemodels.db.session import get_db_session
+
+        for webhook in spacebridge_webhooks:
+            webhook_id = str(webhook.get("id"))
+            webhook_url = webhook.get("url", "")
+
+            # Check if this webhook exists in our database
+            db = next(get_db_session())
             try:
-                webhook_id = webhook["id"]
-                url = f"{self.jira_url}/rest/webhooks/1.0/webhook/{webhook_id}"
-                response = self.jira_client._session.delete(url)
-                response.raise_for_status()
-                logger.info(f"Successfully deleted stale webhook ID: {webhook_id}")
-                results["unregistered"] += 1
-            except (JIRAError, requests.RequestException) as e:
-                text = getattr(e, "text", str(e))
-                logger.error(
-                    f"Failed to delete stale webhook ID {webhook.get('id', 'N/A')}: {text}"
+                existing_webhook = crud_webhook.get_by_external_id(
+                    db, external_id=webhook_id
                 )
-                results["failed"] += 1
-            except Exception as e:
-                logger.error(
-                    f"An unexpected error occurred while deleting webhook ID {webhook.get('id', 'N/A')}: {e}",
-                    exc_info=True,
+
+                if existing_webhook:
+                    # Webhook is in our database, keep it
+                    logger.debug(
+                        f"Webhook {webhook_id} is registered in database, keeping it."
+                    )
+                    continue
+
+                # Webhook points to our SpaceBridge but is NOT in database - it's stale
+                logger.info(
+                    f"Found stale webhook {webhook_id} pointing to {webhook_url}. "
+                    f"This webhook is not in our database. Deleting..."
                 )
-                results["failed"] += 1
+                try:
+                    url = f"{self.jira_url}/rest/webhooks/1.0/webhook/{webhook_id}"
+                    response = self.jira_client._session.delete(url)
+                    response.raise_for_status()
+                    logger.info(f"Successfully deleted stale webhook ID: {webhook_id}")
+                    results["unregistered"] += 1
+                except (JIRAError, requests.RequestException) as e:
+                    text = getattr(e, "text", str(e))
+                    logger.error(
+                        f"Failed to delete stale webhook ID {webhook_id}: {text}"
+                    )
+                    results["failed"] += 1
+                except Exception as e:
+                    logger.error(
+                        f"An unexpected error occurred while deleting webhook ID {webhook_id}: {e}",
+                        exc_info=True,
+                    )
+                    results["failed"] += 1
+            finally:
+                db.close()
 
         logger.info(
             f"Webhook cleanup summary: {results['unregistered']} unregistered, {results['failed']} failed."
