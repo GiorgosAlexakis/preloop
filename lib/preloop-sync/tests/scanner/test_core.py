@@ -669,8 +669,8 @@ async def test_process_organization_jira(
     mock_client.scan_projects.return_value = [mock_project]
     mock_client.scan_issues.return_value = ([], 0)
     mock_client.tracker_type = "jira"
-    mock_client.client.is_webhook_registered_for_project = AsyncMock(return_value=False)
-    mock_client.client.register_webhook = AsyncMock()
+    mock_client.client.is_webhook_registered_for_project = MagicMock(return_value=False)
+    mock_client.client.register_webhook = MagicMock()
 
     # Act
     stats = await _process_organization(

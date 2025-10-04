@@ -43,7 +43,7 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_project = MagicMock()
         mock_project.id = "proj-db-id"
         mock_project.identifier = "TEST"
-        result = await self.tracker.register_webhook(
+        result = self.tracker.register_webhook(
             db=self.mock_db_session,
             project=mock_project,
             webhook_url="https://example.com/webhook",
@@ -65,7 +65,7 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_project = MagicMock()
         mock_project.id = "proj-db-id"
         mock_project.identifier = "TEST"
-        result = await self.tracker.register_webhook(
+        result = self.tracker.register_webhook(
             db=self.mock_db_session,
             project=mock_project,
             webhook_url="https://example.com/webhook",
@@ -85,7 +85,7 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
             id="wh-db-id", project_id="proj-db-id", external_id="12345"
         )
         self.mock_jira_client._session.delete.return_value = MagicMock(status_code=204)
-        result = await self.tracker.unregister_webhook(
+        result = self.tracker.unregister_webhook(
             db=self.mock_db_session, webhook=mock_webhook
         )
 
@@ -105,7 +105,7 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         self.mock_jira_client._session.delete.side_effect = JIRAError(
             status_code=404, text="Not Found"
         )
-        result = await self.tracker.unregister_webhook(
+        result = self.tracker.unregister_webhook(
             db=self.mock_db_session, webhook=mock_webhook
         )
 
@@ -128,7 +128,7 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = mock_webhooks_data
         self.mock_jira_client._session.get.return_value = mock_response
-        result = await self.tracker.cleanup_stale_webhooks(spacebridge_url)
+        result = self.tracker.cleanup_stale_webhooks(spacebridge_url)
         self.assertEqual(result, {"unregistered": 2, "failed": 0})
         self.mock_jira_client._session.get.assert_called_once_with(
             "https://myjira.atlassian.net/rest/webhooks/1.0/webhook"
@@ -155,7 +155,7 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
             MagicMock(status_code=204),
             JIRAError(status_code=500, text="Internal Server Error"),
         ]
-        result = await self.tracker.cleanup_stale_webhooks(spacebridge_url)
+        result = self.tracker.cleanup_stale_webhooks(spacebridge_url)
         self.assertEqual(result, {"unregistered": 1, "failed": 1})
         self.mock_jira_client._session.get.assert_called_once_with(
             "https://myjira.atlassian.net/rest/webhooks/1.0/webhook"
