@@ -4,6 +4,7 @@ CLI commands for SpaceSync.
 
 import asyncio
 import click
+import inspect
 import os
 import uuid
 from typing import List, Optional
@@ -234,19 +235,34 @@ def unregister_webhooks_command(
             if cleanup_all:
                 logger.info(f"Running cleanup for tracker {tracker_orm_instance.id}...")
                 if hasattr(tracker_client_instance.client, "cleanup_stale_webhooks"):
+                    cleanup_method = (
+                        tracker_client_instance.client.cleanup_stale_webhooks
+                    )
+
+                    # Call the method with appropriate parameters
                     if tracker_orm_instance.tracker_type == "github":
-                        cleanup_result = asyncio.run(
-                            tracker_client_instance.client.cleanup_stale_webhooks(
+                        if inspect.iscoroutinefunction(cleanup_method):
+                            cleanup_result = asyncio.run(
+                                cleanup_method(
+                                    spacebridge_url=spacebridge_url,
+                                    cleanup_projects=cleanup_project_webhooks,
+                                )
+                            )
+                        else:
+                            cleanup_result = cleanup_method(
                                 spacebridge_url=spacebridge_url,
                                 cleanup_projects=cleanup_project_webhooks,
                             )
-                        )
                     else:
-                        cleanup_result = asyncio.run(
-                            tracker_client_instance.client.cleanup_stale_webhooks(
+                        if inspect.iscoroutinefunction(cleanup_method):
+                            cleanup_result = asyncio.run(
+                                cleanup_method(spacebridge_url=spacebridge_url)
+                            )
+                        else:
+                            cleanup_result = cleanup_method(
                                 spacebridge_url=spacebridge_url
                             )
-                        )
+
                     click.echo(
                         f"  Cleanup of stale webhooks for tracker {tracker_orm_instance.id} completed."
                     )
@@ -268,9 +284,11 @@ def unregister_webhooks_command(
                 )
                 continue
 
-            summary = asyncio.run(
-                tracker_client_instance.client.unregister_all_webhooks(db=db)
-            )
+            unregister_method = tracker_client_instance.client.unregister_all_webhooks
+            if inspect.iscoroutinefunction(unregister_method):
+                summary = asyncio.run(unregister_method(db=db))
+            else:
+                summary = unregister_method(db=db)
 
             click.echo(f"  Unregistered: {summary.get('unregistered', 0)}")
             click.echo(f"  Failed: {summary.get('failed', 0)}")

@@ -1103,31 +1103,47 @@ class GitLabTracker(BaseTracker):
             A dictionary summarizing the actions taken, e.g., `{"unregistered": count, "failed": count}`.
         """
         results = {"unregistered": 0, "failed": 0}
+        skip_group_webhooks = False
+
         try:
             groups = await self._make_request(self.gl.groups.list, all=True)
         except (TrackerConnectionError, TrackerResponseError) as e:
             logger.error(f"Failed to retrieve groups for stale webhook cleanup: {e}")
-            return results
+            # If we can't list groups, skip to project webhooks
+            skip_group_webhooks = True
+            groups = []
 
-        for group in groups:
-            try:
-                hooks = await self._make_request(group.hooks.list, all=True)
-                for hook in hooks:
-                    if hook.url.startswith(spacebridge_url):
-                        try:
-                            await self._make_request(hook.delete)
-                            results["unregistered"] += 1
-                        except (
-                            TrackerConnectionError,
-                            TrackerResponseError,
-                        ) as delete_error:
-                            logger.error(
-                                f"Failed to delete stale group webhook {hook.id} for group {group.id}: {delete_error}"
-                            )
-                            results["failed"] += 1
-            except (TrackerConnectionError, TrackerResponseError) as list_error:
-                logger.error(f"Failed to list hooks for group {group.id}: {list_error}")
-                results["failed"] += 1
+        if not skip_group_webhooks:
+            for group in groups:
+                try:
+                    hooks = await self._make_request_no_retry(
+                        group.hooks.list, all=True
+                    )
+                    for hook in hooks:
+                        if hook.url.startswith(spacebridge_url):
+                            try:
+                                await self._make_request(hook.delete)
+                                results["unregistered"] += 1
+                            except (
+                                TrackerConnectionError,
+                                TrackerResponseError,
+                            ) as delete_error:
+                                logger.error(
+                                    f"Failed to delete stale group webhook {hook.id} for group {group.id}: {delete_error}"
+                                )
+                                results["failed"] += 1
+                except (TrackerConnectionError, TrackerResponseError) as list_error:
+                    # Check if this is a 404 indicating group hooks not supported (GitLab CE)
+                    if is_not_found_error(list_error):
+                        logger.info(
+                            "Group webhooks not supported (likely GitLab CE), skipping remaining groups"
+                        )
+                        skip_group_webhooks = True
+                        break
+                    logger.error(
+                        f"Failed to list hooks for group {group.id}: {list_error}"
+                    )
+                    results["failed"] += 1
 
         try:
             projects = await self._make_request(self.gl.projects.list, all=True)
