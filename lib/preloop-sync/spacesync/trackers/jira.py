@@ -825,6 +825,12 @@ class JiraTracker(BaseTracker):
             # Check if description is already in ADF format (JSON string or dict)
             import json
 
+            logger.info(
+                f"Processing description update: type={type(issue_data.description).__name__}, "
+                f"length={len(str(issue_data.description))}, "
+                f"first 200 chars: {str(issue_data.description)[:200]}"
+            )
+
             desc_to_parse = None  # Will hold string to parse recursively, or None if no parsing needed
 
             if isinstance(issue_data.description, dict):
@@ -959,7 +965,10 @@ class JiraTracker(BaseTracker):
                             break
                     except (json.JSONDecodeError, ValueError) as e:
                         # Not JSON, stop parsing
-                        logger.debug(f"JSON parse failed at attempt {attempt + 1}: {e}")
+                        logger.info(f"JSON parse failed at attempt {attempt + 1}: {e}")
+                        logger.info(
+                            f"Failed to parse desc (length {len(desc)}): {desc[:500]}"
+                        )
                         break
 
                 if parsed_desc and isinstance(parsed_desc, dict):
