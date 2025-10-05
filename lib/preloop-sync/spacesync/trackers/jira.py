@@ -1044,6 +1044,11 @@ class JiraTracker(BaseTracker):
                 fields[field_key] = field_value
 
         # Update the issue
+        # Note: Jira API v2 uses plain text for descriptions, not ADF
+        # Convert ADF description to plain text if present
+        if "description" in fields and isinstance(fields["description"], dict):
+            fields["description"] = self._adf_to_plain_text(fields["description"])
+
         logger.info(f"Sending update request for {issue_id} with fields: {fields}")
         await self._make_request(
             "PUT",
