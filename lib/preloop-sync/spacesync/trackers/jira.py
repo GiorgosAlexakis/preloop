@@ -802,29 +802,50 @@ class JiraTracker(BaseTracker):
                 import json
 
                 desc = issue_data.description
-                max_parse_attempts = 5  # Prevent infinite loops
+                max_parse_attempts = 10  # Increased to handle deeply nested JSON
                 parsed_desc = None
 
-                for _ in range(max_parse_attempts):
+                logger.debug(
+                    f"Attempting to parse description (length: {len(desc)}), first 200 chars: {desc[:200]}"
+                )
+
+                for attempt in range(max_parse_attempts):
                     try:
                         parsed = json.loads(desc)
+                        logger.debug(
+                            f"Parse attempt {attempt + 1}: parsed type={type(parsed).__name__}"
+                        )
+
                         if isinstance(parsed, dict):
                             # Successfully parsed to a dict, check if it's ADF
                             if parsed.get("type") == "doc":
                                 parsed_desc = parsed
+                                logger.info(
+                                    f"Successfully parsed description to ADF format after {attempt + 1} attempts"
+                                )
                                 break
                             else:
-                                # Dict but not ADF, treat original as plain text
+                                # Dict but not ADF, treat current desc as plain text
+                                logger.debug(
+                                    f"Parsed to dict but not ADF (type={parsed.get('type')}), using as plain text"
+                                )
                                 break
                         elif isinstance(parsed, str):
                             # Still a string after parsing, try parsing again
                             desc = parsed
+                            logger.debug(
+                                f"Still a string after parsing, continuing (new length: {len(desc)})"
+                            )
                             continue
                         else:
                             # Some other type, stop parsing
+                            logger.debug(
+                                f"Parsed to unexpected type {type(parsed).__name__}, stopping"
+                            )
                             break
-                    except (json.JSONDecodeError, ValueError):
+                    except (json.JSONDecodeError, ValueError) as e:
                         # Not JSON, stop parsing
+                        logger.debug(f"JSON parse failed at attempt {attempt + 1}: {e}")
                         break
 
                 if parsed_desc and isinstance(parsed_desc, dict):
@@ -833,6 +854,9 @@ class JiraTracker(BaseTracker):
                 else:
                     # Not ADF or failed to parse, wrap as plain text
                     # Use the last successfully parsed string or original
+                    logger.info(
+                        f"Using description as plain text (final length: {len(desc)})"
+                    )
                     fields["description"] = {
                         "type": "doc",
                         "version": 1,
