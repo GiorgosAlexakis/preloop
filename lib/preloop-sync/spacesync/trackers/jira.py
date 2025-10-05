@@ -800,41 +800,48 @@ class JiraTracker(BaseTracker):
                 fields["description"] = issue_data.description
             elif isinstance(issue_data.description, str):
                 # Try to parse as JSON first (might already be ADF)
-                try:
-                    import json
+                # Handle multiple levels of JSON encoding by recursively parsing
+                import json
 
-                    parsed_desc = json.loads(issue_data.description)
-                    if (
-                        isinstance(parsed_desc, dict)
-                        and parsed_desc.get("type") == "doc"
-                    ):
-                        # It's already ADF format
-                        fields["description"] = parsed_desc
-                    else:
-                        # Not ADF, wrap as plain text
-                        fields["description"] = {
-                            "type": "doc",
-                            "version": 1,
-                            "content": [
-                                {
-                                    "type": "paragraph",
-                                    "content": [
-                                        {"type": "text", "text": issue_data.description}
-                                    ],
-                                }
-                            ],
-                        }
-                except (json.JSONDecodeError, ValueError):
-                    # Not JSON, treat as plain text
+                desc = issue_data.description
+                max_parse_attempts = 5  # Prevent infinite loops
+                parsed_desc = None
+
+                for _ in range(max_parse_attempts):
+                    try:
+                        parsed = json.loads(desc)
+                        if isinstance(parsed, dict):
+                            # Successfully parsed to a dict, check if it's ADF
+                            if parsed.get("type") == "doc":
+                                parsed_desc = parsed
+                                break
+                            else:
+                                # Dict but not ADF, treat original as plain text
+                                break
+                        elif isinstance(parsed, str):
+                            # Still a string after parsing, try parsing again
+                            desc = parsed
+                            continue
+                        else:
+                            # Some other type, stop parsing
+                            break
+                    except (json.JSONDecodeError, ValueError):
+                        # Not JSON, stop parsing
+                        break
+
+                if parsed_desc and isinstance(parsed_desc, dict):
+                    # Successfully parsed to ADF format
+                    fields["description"] = parsed_desc
+                else:
+                    # Not ADF or failed to parse, wrap as plain text
+                    # Use the last successfully parsed string or original
                     fields["description"] = {
                         "type": "doc",
                         "version": 1,
                         "content": [
                             {
                                 "type": "paragraph",
-                                "content": [
-                                    {"type": "text", "text": issue_data.description}
-                                ],
+                                "content": [{"type": "text", "text": desc}],
                             }
                         ],
                     }
