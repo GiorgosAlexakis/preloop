@@ -862,15 +862,15 @@ class JiraTracker(BaseTracker):
                 max_parse_attempts = 10  # Increased to handle deeply nested JSON
                 parsed_desc = None
 
-                logger.debug(
+                logger.info(
                     f"Attempting to parse description (length: {len(desc)}), first 200 chars: {desc[:200]}"
                 )
 
                 for attempt in range(max_parse_attempts):
                     try:
                         parsed = json.loads(desc)
-                        logger.debug(
-                            f"Parse attempt {attempt + 1}: parsed type={type(parsed).__name__}"
+                        logger.info(
+                            f"Parse attempt {attempt + 1}: parsed type={type(parsed).__name__}, first 100 chars: {str(parsed)[:100]}"
                         )
 
                         if isinstance(parsed, dict):
@@ -881,7 +881,7 @@ class JiraTracker(BaseTracker):
                                 text_content = self._extract_text_from_adf_content(
                                     parsed
                                 )
-                                logger.debug(
+                                logger.info(
                                     f"Extracted text from ADF (length: {len(text_content)}), first 100 chars: {text_content[:100]}"
                                 )
 
@@ -889,12 +889,48 @@ class JiraTracker(BaseTracker):
                                 if text_content and (
                                     text_content.startswith("{") or "\\" in text_content
                                 ):
-                                    # Text content looks like JSON, continue parsing
-                                    desc = text_content
-                                    logger.debug(
-                                        "Text content appears to be JSON, continuing to parse"
+                                    # Text content looks like JSON, try to parse it
+                                    logger.info(
+                                        "Text content appears to be JSON, attempting to parse it"
                                     )
-                                    continue
+                                    try:
+                                        # Try to parse the extracted text as JSON to validate it
+                                        json.loads(text_content)
+                                        # Successfully parsed the nested content
+                                        # Continue parsing by setting desc to the extracted text
+                                        desc = text_content
+                                        logger.info(
+                                            f"Successfully parsed nested JSON from text content, continuing (new desc length: {len(desc)})"
+                                        )
+                                        continue
+                                    except (
+                                        json.JSONDecodeError,
+                                        ValueError,
+                                    ) as nested_e:
+                                        # The text content looks like JSON but isn't valid JSON
+                                        # This means it's probably escaped/malformed
+                                        # Try to parse it as a plain text that needs cleaning
+                                        logger.warning(
+                                            f"Text content looks like JSON but failed to parse: {nested_e}. "
+                                            f"Converting to plain text."
+                                        )
+                                        # Use the plain text version
+                                        parsed_desc = {
+                                            "type": "doc",
+                                            "version": 1,
+                                            "content": [
+                                                {
+                                                    "type": "paragraph",
+                                                    "content": [
+                                                        {
+                                                            "type": "text",
+                                                            "text": text_content,
+                                                        }
+                                                    ],
+                                                }
+                                            ],
+                                        }
+                                        break
                                 else:
                                     # Real ADF with plain text content
                                     parsed_desc = parsed
