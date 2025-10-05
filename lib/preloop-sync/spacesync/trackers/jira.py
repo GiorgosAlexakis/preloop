@@ -493,6 +493,36 @@ class JiraTracker(BaseTracker):
 
         return plain_text
 
+    def _extract_text_from_adf_content(self, adf_node: Dict[str, Any]) -> str:
+        """
+        Extract raw text content from ADF, used to detect if text is still JSON.
+
+        This is a simpler version that just extracts text nodes without formatting.
+
+        Args:
+            adf_node: ADF document node
+
+        Returns:
+            Raw text content
+        """
+        texts = []
+
+        def recursive_extract(node: Dict[str, Any]):
+            if not isinstance(node, dict):
+                return
+
+            node_type = node.get("type")
+
+            if node_type == "text":
+                texts.append(node.get("text", ""))
+
+            if "content" in node and isinstance(node["content"], list):
+                for child in node["content"]:
+                    recursive_extract(child)
+
+        recursive_extract(adf_node)
+        return "".join(texts)
+
     def _map_jira_status(self, jira_status: Dict[str, Any]) -> IssueStatus:
         """Map Jira status to SpaceBridge status.
 
@@ -819,11 +849,32 @@ class JiraTracker(BaseTracker):
                         if isinstance(parsed, dict):
                             # Successfully parsed to a dict, check if it's ADF
                             if parsed.get("type") == "doc":
-                                parsed_desc = parsed
-                                logger.info(
-                                    f"Successfully parsed description to ADF format after {attempt + 1} attempts"
+                                # Check if the text content inside is still JSON
+                                # Extract text from the ADF structure
+                                text_content = self._extract_text_from_adf_content(
+                                    parsed
                                 )
-                                break
+                                logger.debug(
+                                    f"Extracted text from ADF (length: {len(text_content)}), first 100 chars: {text_content[:100]}"
+                                )
+
+                                # Check if extracted text is still JSON
+                                if text_content and (
+                                    text_content.startswith("{") or "\\" in text_content
+                                ):
+                                    # Text content looks like JSON, continue parsing
+                                    desc = text_content
+                                    logger.debug(
+                                        "Text content appears to be JSON, continuing to parse"
+                                    )
+                                    continue
+                                else:
+                                    # Real ADF with plain text content
+                                    parsed_desc = parsed
+                                    logger.info(
+                                        f"Successfully parsed description to ADF format after {attempt + 1} attempts"
+                                    )
+                                    break
                             else:
                                 # Dict but not ADF, treat current desc as plain text
                                 logger.debug(
