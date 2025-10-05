@@ -551,22 +551,21 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
         # The description should be unwrapped to just the actual text
         self.assertEqual(result.description, "Actual description text")
 
-        # Verify the PUT request was called with properly unwrapped ADF
+        # Verify the PUT request was called with properly unwrapped description
         put_call = self.tracker._make_request.call_args_list[0]
         fields_data = put_call[1]["json_data"]["fields"]
 
-        # The description should be valid ADF (not nested JSON strings)
+        # The description should be plain text (not ADF dict, not nested JSON strings)
+        # Jira API v2 expects plain text, so the tracker converts ADF to plain text
         self.assertIn("description", fields_data)
         desc = fields_data["description"]
-        self.assertIsInstance(desc, dict)
-        self.assertEqual(desc["type"], "doc")
+        self.assertIsInstance(desc, str)
 
-        # Extract the text content to verify it's been unwrapped
-        text_content = desc["content"][0]["content"][0]["text"]
-        self.assertEqual(text_content, "Actual description text")
+        # Verify it's been unwrapped to just the actual text
+        self.assertEqual(desc, "Actual description text")
         # Verify it's NOT still JSON (no escaped quotes or nested structures)
-        self.assertNotIn('\\"', text_content)
-        self.assertNotIn('{"type":', text_content)
+        self.assertNotIn('\\"', desc)
+        self.assertNotIn('{"type":', desc)
 
     async def test_update_issue_with_string_nested_json_description(self):
         """Test updating issue when description is a JSON string (from API serialization)."""
@@ -620,8 +619,8 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
         put_call = self.tracker._make_request.call_args_list[0]
         fields_data = put_call[1]["json_data"]["fields"]
 
+        # Description should be plain text (Jira API v2 expects plain text)
         desc = fields_data["description"]
-        self.assertIsInstance(desc, dict)
-        text_content = desc["content"][0]["content"][0]["text"]
-        self.assertEqual(text_content, "Real text")
-        self.assertNotIn('\\"', text_content)
+        self.assertIsInstance(desc, str)
+        self.assertEqual(desc, "Real text")
+        self.assertNotIn('\\"', desc)
