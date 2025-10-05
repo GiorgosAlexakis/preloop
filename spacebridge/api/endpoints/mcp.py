@@ -29,7 +29,8 @@ from spacebridge.api.endpoints.issue_compliance import (
     _calculate_issue_compliance,
     get_compliance_improvement_suggestion as api_get_compliance_suggestion,
 )
-from spacebridge.schemas.issue import IssueCreate, IssueUpdate
+from spacebridge.schemas.issue import IssueCreate
+from spacebridge.schemas.tracker_models import IssueUpdate
 from spacebridge.services.billing import BillingService
 from spacebridge.schemas.mcp import (
     GetIssueResponse,
@@ -405,13 +406,14 @@ async def update_issue(
             )
 
         try:
+            # Determine the correct identifier for the tracker API call
+            # Prefer using the key (e.g., "owner/repo#1" for GitHub) over external_id
+            # since external_id might be the internal tracker ID (e.g., GitHub's numeric ID)
+            issue_repo_id = issue_obj.key if issue_obj.key else issue_obj.external_id
+
             logger.info(
-                f"Calling tracker client to update issue {issue_obj.external_id} with data: {update_data_for_tracker}"
+                f"Calling tracker client to update issue {issue_repo_id} with data: {update_data_for_tracker}"
             )
-            # Use the issue's external_id for the tracker API call
-            issue_repo_id = issue_obj.external_id
-            if issue_obj.external_url:
-                issue_repo_id = issue_obj.external_url.split("/")[-1]
             await tracker_client.update_issue(
                 issue_repo_id, IssueUpdate(**update_data_for_tracker)
             )

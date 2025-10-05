@@ -468,29 +468,29 @@ test:integration:ui:
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_ui.py
 
-# test:integration:mcp:
-#   extends: .test:integration:template
-#   script:
-#     - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
-#     - source ~/.bashrc
-#     - export NVM_DIR="$HOME/.nvm"
-#     - source "$NVM_DIR/nvm.sh"
-#     - nvm install node
-#     - npm install -g @anthropic-ai/claude-code
-#     - pytest --confcutdir=tests/integration tests/integration/test_mcp_api.py
+.test:integration:mcp:template:
+  extends: .test:integration:template
+  before_script:
+    - pip install pytest httpx dotenv
+    - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
+    - source ~/.bashrc
+    - export NVM_DIR="$HOME/.nvm"
+    - source "$NVM_DIR/nvm.sh"
+    - nvm install node
+    - npm install -g @anthropic-ai/claude-code
 
 test:integration:api:github:
-  extends: .test:integration:template
+  extends: .test:integration:mcp:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m github
 
 test:integration:api:gitlab:
-  extends: .test:integration:template
+  extends: .test:integration:mcp:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m gitlab
 
 test:integration:api:jira:
-  extends: .test:integration:template
+  extends: .test:integration:mcp:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m jira
 
@@ -498,7 +498,6 @@ test:integration:api:jira:
   stage: cleanup
   needs: [
     "test:integration:ui",
-    # "test:integration:mcp",
     "test:integration:api:github",
     "test:integration:api:gitlab",
     "test:integration:api:jira"

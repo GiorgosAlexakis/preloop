@@ -103,6 +103,13 @@ python_files = "test_*.py"
 python_functions = "test_*"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: integration tests that require external services",
+    "mcp: tests that use Claude MCP tools",
+    "github: GitHub-specific tests",
+    "gitlab: GitLab-specific tests",
+    "jira: Jira-specific tests",
+]
 
 [tool.coverage.run]
 source = [

@@ -28,3 +28,5 @@ spec:
           env:
             - name: DATABASE_URL
               value: {{ include "spacebridge.databaseUrl" . }}
+            - name: OPENAI_API_KEY
+              value: {{ .Values.config.openai.apiKey }}

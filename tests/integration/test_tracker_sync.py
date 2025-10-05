@@ -275,6 +275,7 @@ def test_github_tracker_sync(spacebridge_client, github_client):
     - Webhook registration and propagation
     - Bi-directional sync (GitHub -> SpaceBridge, SpaceBridge -> GitHub)
     - Comment synchronization
+    - MCP tools (search, get_issue, update_issue)
     - Proper cleanup
     """
     print("\n" + "=" * 80)
@@ -458,7 +459,76 @@ def test_github_tracker_sync(spacebridge_client, github_client):
         )
 
         print("✓ Update propagated from SpaceBridge to GitHub")
-        print("\n✅ GitHub tracker sync test PASSED")
+
+        # Step 12: Test MCP Tools
+        print("\n" + "=" * 80)
+        print("STEP 12: MCP Tools Integration Test")
+        print("=" * 80)
+
+        # Setup MCP server
+        from tests.integration.helpers import (
+            cleanup_claude_mcp_server,
+            mcp_get_issue,
+            mcp_search_issue,
+            mcp_update_issue,
+            setup_claude_mcp_server,
+            verify_mcp_server,
+        )
+
+        setup_claude_mcp_server(SPACEBRIDGE_URL, SPACEBRIDGE_API_KEY)
+        verify_mcp_server()
+        print("✓ MCP server setup complete")
+
+        # Test search via MCP
+        search_output = mcp_search_issue(
+            "spacebridge", original_title, project=f"{owner}/{repo}", limit=10
+        )
+        assert len(search_output) > 0, "MCP search returned empty output"
+        assert GITHUB_ISSUE_KEY in search_output or f"#{number}" in search_output, (
+            f"Test issue {GITHUB_ISSUE_KEY} not found in MCP search results"
+        )
+        print("✓ Found issue via MCP search (verified in output)")
+
+        # Test get_issue via MCP
+        get_output = mcp_get_issue("spacebridge", GITHUB_ISSUE_KEY)
+        assert len(get_output) > 0, "MCP get_issue returned empty output"
+        assert original_title in get_output or GITHUB_ISSUE_KEY in get_output, (
+            "Issue details not found in MCP get_issue output"
+        )
+        print("✓ Retrieved issue via MCP get_issue (verified in output)")
+
+        # Test update_issue via MCP
+        mcp_test_suffix = " [MCP Test]"
+        update_output = mcp_update_issue(
+            "spacebridge",
+            GITHUB_ISSUE_KEY,
+            title=original_title + mcp_test_suffix,
+            description=original_description + "\n\nUpdated via MCP",
+        )
+        assert len(update_output) > 0, "MCP update_issue returned empty output"
+        print("✓ Updated issue via MCP update_issue")
+
+        # Verify MCP update propagated to GitHub
+        time.sleep(5)
+        github_after_mcp = github_client.get(f"/repos/{owner}/{repo}/issues/{number}")
+        github_after_mcp.raise_for_status()
+        github_issue_after_mcp = github_after_mcp.json()
+        assert github_issue_after_mcp["title"] == original_title + mcp_test_suffix
+        print("✓ MCP update propagated to GitHub")
+
+        # Restore original via MCP (cleanup MCP changes)
+        mcp_update_issue(
+            "spacebridge",
+            GITHUB_ISSUE_KEY,
+            title=original_title,
+            description=original_description,
+        )
+        time.sleep(2)
+        print("✓ Restored original state after MCP test")
+
+        cleanup_claude_mcp_server()
+        print("✓ MCP server cleanup complete")
+        print("\n✅ GitHub tracker sync test PASSED (including MCP)")
 
     finally:
         # Cleanup
@@ -690,7 +760,78 @@ def test_gitlab_tracker_sync(spacebridge_client, gitlab_client):
         )
 
         print("✓ Update propagated from SpaceBridge to GitLab")
-        print("\n✅ GitLab tracker sync test PASSED")
+
+        # Step 12: Test MCP Tools
+        print("\n" + "=" * 80)
+        print("STEP 12: MCP Tools Integration Test")
+        print("=" * 80)
+
+        # Setup MCP server
+        from tests.integration.helpers import (
+            cleanup_claude_mcp_server,
+            mcp_get_issue,
+            mcp_search_issue,
+            mcp_update_issue,
+            setup_claude_mcp_server,
+            verify_mcp_server,
+        )
+
+        setup_claude_mcp_server(SPACEBRIDGE_URL, SPACEBRIDGE_API_KEY)
+        verify_mcp_server()
+        print("✓ MCP server setup complete")
+
+        # Test search via MCP
+        search_output = mcp_search_issue(
+            "spacebridge", original_title, project=project_path, limit=10
+        )
+        assert len(search_output) > 0, "MCP search returned empty output"
+        assert GITLAB_ISSUE_KEY in search_output or f"#{iid}" in search_output, (
+            f"Test issue {GITLAB_ISSUE_KEY} not found in MCP search results"
+        )
+        print("✓ Found issue via MCP search (verified in output)")
+
+        # Test get_issue via MCP
+        get_output = mcp_get_issue("spacebridge", GITLAB_ISSUE_KEY)
+        assert len(get_output) > 0, "MCP get_issue returned empty output"
+        assert original_title in get_output or GITLAB_ISSUE_KEY in get_output, (
+            "Issue details not found in MCP get_issue output"
+        )
+        print("✓ Retrieved issue via MCP get_issue (verified in output)")
+
+        # Test update_issue via MCP
+        mcp_test_suffix = " [MCP Test]"
+        update_output = mcp_update_issue(
+            "spacebridge",
+            GITLAB_ISSUE_KEY,
+            title=original_title + mcp_test_suffix,
+            description=original_description + "\n\nUpdated via MCP",
+        )
+        assert len(update_output) > 0, "MCP update_issue returned empty output"
+        print("✓ Updated issue via MCP update_issue")
+
+        # Verify MCP update propagated to GitLab
+        time.sleep(5)
+        gitlab_after_mcp = gitlab_client.get(
+            f"/projects/{encoded_project_path}/issues/{iid}"
+        )
+        gitlab_after_mcp.raise_for_status()
+        gitlab_issue_after_mcp = gitlab_after_mcp.json()
+        assert gitlab_issue_after_mcp["title"] == original_title + mcp_test_suffix
+        print("✓ MCP update propagated to GitLab")
+
+        # Restore original via MCP (cleanup MCP changes)
+        mcp_update_issue(
+            "spacebridge",
+            GITLAB_ISSUE_KEY,
+            title=original_title,
+            description=original_description,
+        )
+        time.sleep(2)
+        print("✓ Restored original state after MCP test")
+
+        cleanup_claude_mcp_server()
+        print("✓ MCP server cleanup complete")
+        print("\n✅ GitLab tracker sync test PASSED (including MCP)")
 
     finally:
         # Cleanup
@@ -942,7 +1083,79 @@ def test_jira_tracker_sync(spacebridge_client, jira_client):
         )
 
         print("✓ Update propagated from SpaceBridge to Jira")
-        print("\n✅ Jira tracker sync test PASSED")
+
+        # Step 12: Test MCP Tools
+        print("\n" + "=" * 80)
+        print("STEP 12: MCP Tools Integration Test")
+        print("=" * 80)
+
+        # Setup MCP server
+        from tests.integration.helpers import (
+            cleanup_claude_mcp_server,
+            mcp_get_issue,
+            mcp_search_issue,
+            mcp_update_issue,
+            setup_claude_mcp_server,
+            verify_mcp_server,
+        )
+
+        setup_claude_mcp_server(SPACEBRIDGE_URL, SPACEBRIDGE_API_KEY)
+        verify_mcp_server()
+        print("✓ MCP server setup complete")
+
+        # Test search via MCP
+        search_output = mcp_search_issue(
+            "spacebridge", original_title, project=JIRA_PROJECT_ID, limit=10
+        )
+        assert len(search_output) > 0, "MCP search returned empty output"
+        assert JIRA_ISSUE_KEY in search_output, (
+            f"Test issue {JIRA_ISSUE_KEY} not found in MCP search results"
+        )
+        print("✓ Found issue via MCP search (verified in output)")
+
+        # Test get_issue via MCP
+        get_output = mcp_get_issue("spacebridge", JIRA_ISSUE_KEY)
+        assert len(get_output) > 0, "MCP get_issue returned empty output"
+        assert original_title in get_output or JIRA_ISSUE_KEY in get_output, (
+            "Issue details not found in MCP get_issue output"
+        )
+        print("✓ Retrieved issue via MCP get_issue (verified in output)")
+
+        # Test update_issue via MCP
+        mcp_test_suffix = " [MCP Test]"
+        update_output = mcp_update_issue(
+            "spacebridge",
+            JIRA_ISSUE_KEY,
+            title=original_title + mcp_test_suffix,
+            description=original_description + "\n\nUpdated via MCP",
+        )
+        assert len(update_output) > 0, "MCP update_issue returned empty output"
+        print("✓ Updated issue via MCP update_issue")
+
+        # Verify MCP update propagated to Jira
+        time.sleep(5)
+        jira_after_mcp = jira_client.get(f"/rest/api/3/issue/{JIRA_ISSUE_KEY}")
+        jira_after_mcp.raise_for_status()
+        jira_issue_after_mcp = jira_after_mcp.json()
+        assert (
+            jira_issue_after_mcp["fields"]["summary"]
+            == original_title + mcp_test_suffix
+        )
+        print("✓ MCP update propagated to Jira")
+
+        # Restore original via MCP (cleanup MCP changes)
+        mcp_update_issue(
+            "spacebridge",
+            JIRA_ISSUE_KEY,
+            title=original_title,
+            description=original_description,
+        )
+        time.sleep(2)
+        print("✓ Restored original state after MCP test")
+
+        cleanup_claude_mcp_server()
+        print("✓ MCP server cleanup complete")
+        print("\n✅ Jira tracker sync test PASSED (including MCP)")
 
     finally:
         # Cleanup

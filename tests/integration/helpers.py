@@ -128,22 +128,6 @@ def verify_mcp_server(server_name: str = "spacebridge"):
     return True
 
 
-def verify_mcp_tools(server_name: str = "spacebridge"):
-    """Verify that SpaceBridge MCP tools are available."""
-    print(f"\n🔍 Verifying MCP tools for server '{server_name}'...")
-
-    # List available tools
-    tools_output = run_command(["claude", "mcp", "tools", server_name])
-
-    expected_tools = ["get_issue", "create_issue", "update_issue", "search"]
-    for tool in expected_tools:
-        assert tool in tools_output, f"MCP tool '{tool}' not found"
-        print(f"  ✓ Found tool: {tool}")
-
-    print("✓ All required MCP tools are available")
-    return True
-
-
 def cleanup_claude_mcp_server(server_name: str = "spacebridge"):
     """Remove SpaceBridge MCP server from Claude Code."""
     print(f"\n🧹 Cleaning up Claude Code MCP server '{server_name}'...")
@@ -160,20 +144,14 @@ def mcp_create_issue(
     """Create an issue via MCP and return the issue key."""
     print(f"\n📝 Creating issue via MCP: {title}")
 
-    # Use claude mcp call to invoke create_issue tool
+    prompt = f"create issue in project {project} with title '{title}' and description '{description}'"
     result = run_command(
         [
             "claude",
-            "mcp",
-            "call",
-            server_name,
-            "create_issue",
-            "--arg",
-            f"project={project}",
-            "--arg",
-            f"title={title}",
-            "--arg",
-            f"description={description}",
+            "-p",
+            prompt,
+            "--allowedTools",
+            f"mcp__{server_name}__create_issue",
         ],
         timeout=timeout,
     )
@@ -195,61 +173,57 @@ def mcp_search_issue(
     project: str = None,
     limit: int = 10,
     timeout: int = 30,
-) -> list:
-    """Search for issues via MCP."""
+) -> str:
+    """
+    Search for issues via MCP.
+
+    Returns the text output from Claude (not parsed JSON).
+    Tests should verify that the expected issue key appears in the output.
+    """
     print(f"\n🔍 Searching via MCP: {query}")
 
-    cmd = [
-        "claude",
-        "mcp",
-        "call",
-        server_name,
-        "search",
-        "--arg",
-        f"query={query}",
-        "--arg",
-        f"limit={limit}",
-    ]
-
+    prompt = f"search for issues with query '{query}' with limit {limit}"
     if project:
-        cmd.extend(["--arg", f"project={project}"])
-
-    result = run_command(cmd, timeout=timeout)
-
-    # Parse the result
-    import json
-
-    result_data = json.loads(result)
-    results = result_data.get("results", [])
-
-    print(f"✓ Found {len(results)} issues via MCP")
-    return results
-
-
-def mcp_get_issue(server_name: str, issue: str, timeout: int = 30) -> Dict[str, Any]:
-    """Get issue details via MCP."""
-    print(f"\n📄 Getting issue via MCP: {issue}")
+        prompt += f" in project {project}"
 
     result = run_command(
         [
             "claude",
-            "mcp",
-            "call",
-            server_name,
-            "get_issue",
-            "--arg",
-            f"issue={issue}",
+            "-p",
+            prompt,
+            "--allowedTools",
+            f"mcp__{server_name}__search",
         ],
         timeout=timeout,
     )
 
-    # Parse the result
-    import json
+    print(f"✓ MCP search completed, output length: {len(result)} chars")
+    return result
 
-    issue_data = json.loads(result)
 
-    print(f"✓ Retrieved issue via MCP: {issue_data.get('key', issue)}")
-    return issue_data
+def mcp_get_issue(server_name: str, issue: str, timeout: int = 30) -> str:
+    """
+    Get issue details via MCP.
+
+    Returns the text output from Claude (not parsed JSON).
+    Tests should verify that key information appears in the output.
+    """
+    print(f"\n📄 Getting issue via MCP: {issue}")
+
+    prompt = f"get issue {issue}"
+    result = run_command(
+        [
+            "claude",
+            "-p",
+            prompt,
+            "--allowedTools",
+            f"mcp__{server_name}__get_issue",
+        ],
+        timeout=timeout,
+    )
+
+    print(f"✓ MCP get_issue completed, output length: {len(result)} chars")
+    return result
 
 
 def mcp_update_issue(
@@ -259,33 +233,33 @@ def mcp_update_issue(
     description: str = None,
     status: str = None,
     timeout: int = 30,
-) -> Dict[str, Any]:
-    """Update an issue via MCP."""
+) -> str:
+    """
+    Update an issue via MCP.
+
+    Returns the text output from Claude (not parsed JSON).
+    Tests should verify the update by checking the tracker directly.
+    """
     print(f"\n✏️  Updating issue via MCP: {issue}")
 
-    cmd = [
-        "claude",
-        "mcp",
-        "call",
-        server_name,
-        "update_issue",
-        "--arg",
-        f"issue={issue}",
-    ]
-
+    prompt = f"update issue {issue}"
     if title:
-        cmd.extend(["--arg", f"title={title}"])
+        prompt += f" with title '{title}'"
     if description:
-        cmd.extend(["--arg", f"description={description}"])
+        prompt += f" and description '{description}'"
     if status:
-        cmd.extend(["--arg", f"status={status}"])
+        prompt += f" and status '{status}'"
 
-    result = run_command(cmd, timeout=timeout)
+    result = run_command(
+        [
+            "claude",
+            "-p",
+            prompt,
+            "--allowedTools",
+            f"mcp__{server_name}__update_issue",
+        ],
+        timeout=timeout,
+    )
 
-    # Parse the result
-    import json
-
-    issue_data = json.loads(result)
-
-    print(f"✓ Updated issue via MCP: {issue_data.get('key', issue)}")
-    return issue_data
+    print(f"✓ MCP update_issue completed, output length: {len(result)} chars")
+    return result
