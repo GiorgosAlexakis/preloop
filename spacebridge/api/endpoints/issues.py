@@ -17,6 +17,7 @@ from spacebridge.schemas.issue import (
 from spacemodels.models.account import Account
 
 from spacemodels.crud import (
+    CRUDComment,
     CRUDIssue,
     CRUDOrganization,
     CRUDProject,
@@ -25,6 +26,7 @@ from spacemodels.crud import (
     crud_issue_embedding,
 )
 from spacemodels.db.session import get_db_session as get_db
+from spacemodels.models.comment import Comment
 from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
@@ -33,6 +35,7 @@ from spacebridge.api.auth import get_current_active_user
 
 
 # Initialize CRUD operations
+crud_comment = CRUDComment(Comment)
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
