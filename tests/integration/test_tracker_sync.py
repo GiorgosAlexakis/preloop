@@ -69,6 +69,7 @@ import os
 import time
 import uuid
 from typing import Any, Dict
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -189,9 +190,12 @@ def wait_for_issue(
     print(f"⏳ Waiting for issue {issue_key} to be indexed (timeout: {timeout}s)...")
     start_time = time.time()
 
+    # URL-encode the issue_key to handle special characters like #
+    encoded_issue_key = quote(issue_key, safe="")
+
     while time.time() - start_time < timeout:
         try:
-            response = client.get(f"/api/v1/issues/{issue_key}")
+            response = client.get(f"/api/v1/issues/{encoded_issue_key}")
             if response.status_code == 200:
                 elapsed = int(time.time() - start_time)
                 print(f"✓ Issue {issue_key} is now available (took {elapsed}s)")
@@ -213,9 +217,12 @@ def wait_for_issue_update(
     )
     start_time = time.time()
 
+    # URL-encode the issue_key to handle special characters like #
+    encoded_issue_key = quote(issue_key, safe="")
+
     while time.time() - start_time < timeout:
         try:
-            response = client.get(f"/api/v1/issues/{issue_key}")
+            response = client.get(f"/api/v1/issues/{encoded_issue_key}")
             if response.status_code == 200:
                 issue_data = response.json()
                 if issue_data.get("title") == expected_title:
@@ -420,8 +427,10 @@ def test_github_tracker_sync(spacebridge_client, github_client):
         print("STEP 10: SpaceBridge Update")
         print("=" * 80)
 
+        # URL-encode the issue key for the PUT request
+        encoded_issue_key = quote(GITHUB_ISSUE_KEY, safe="")
         update_response = spacebridge_client.put(
-            f"/api/v1/issues/{GITHUB_ISSUE_KEY}",
+            f"/api/v1/issues/{encoded_issue_key}",
             json={
                 "title": original_title,
                 "description": original_description,
