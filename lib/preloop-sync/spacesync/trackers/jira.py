@@ -1165,17 +1165,19 @@ class JiraTracker(BaseTracker):
             )
 
             # Prepare the webhook payload
+            # Jira Cloud supports HMAC-SHA256 webhook signing with the 'secret' field
             webhook_payload = {
                 "name": webhook_name,
                 "url": url_with_secret_and_project,
                 "events": actual_events,
                 "jqlFilter": jql_filter,
                 "excludeIssueDetails": False,
+                "secret": secret,  # Jira will sign webhooks with this secret using HMAC-SHA256
             }
 
-            # Jira webhooks API may not support the 'secret' field in all versions
-            # Try without secret first, then add it back if it works
-            logger.debug(f"Webhook payload: {webhook_payload}")
+            logger.debug(
+                f"Webhook payload (secret redacted): {webhook_payload.copy() | {'secret': '***'}}"
+            )
 
             response = self.jira_client._session.post(
                 f"{self.jira_url}/rest/webhooks/1.0/webhook",
