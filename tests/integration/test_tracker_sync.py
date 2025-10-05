@@ -28,15 +28,29 @@ Environment Variables Required:
 --------------------------------
 - SPACEBRIDGE_TEST_URL: SpaceBridge instance URL (e.g., https://test.spacebridge.io)
 - SPACEBRIDGE_TEST_API_KEY: API key for SpaceBridge authentication
+
+GitHub:
 - GITHUB_API_KEY: GitHub personal access token
 - GITHUB_ISSUE_KEY: Test issue in format "owner/repo#123"
-- GITLAB_API_URL: GitLab instance URL (e.g., https://gitlab.com)
+- GITHUB_ORG_ID: Organization ID or "personal" (for scope filtering)
+- GITHUB_PROJECT_ID: Repository ID (for scope filtering)
+
+GitLab:
+- GITLAB_URL: GitLab instance URL (e.g., https://gitlab.com)
 - GITLAB_API_KEY: GitLab personal access token
 - GITLAB_ISSUE_KEY: Test issue in format "group/project#123"
+- GITLAB_ORG_ID: Group ID (for scope filtering)
+- GITLAB_PROJECT_ID: Project ID (for scope filtering)
+
+Jira:
 - JIRA_URL: Jira instance URL (e.g., https://example.atlassian.net)
 - JIRA_API_KEY: Jira API token
 - JIRA_USERNAME: Jira username/email
 - JIRA_ISSUE_KEY: Test issue in format "PROJECT-123"
+- JIRA_ORG_ID: Organization identifier (for scope filtering)
+- JIRA_PROJECT_KEY: Project key like "PROJ" (for scope filtering)
+
+Timeouts:
 - INDEX_TIMEOUT: Max seconds to wait for initial indexing (default: 300)
 - WEBHOOK_PROPAGATION_TIMEOUT: Max seconds to wait for webhook propagation (default: 60)
 
@@ -66,17 +80,23 @@ SPACEBRIDGE_API_KEY = os.getenv("SPACEBRIDGE_TEST_API_KEY", "")
 # GitHub config
 GITHUB_API_KEY = os.getenv("GITHUB_API_KEY", "")
 GITHUB_ISSUE_KEY = os.getenv("GITHUB_ISSUE_KEY", "")  # e.g., "owner/repo#123"
+GITHUB_ORG_ID = os.getenv("GITHUB_ORG_ID", "")  # Organization ID or "personal"
+GITHUB_PROJECT_ID = os.getenv("GITHUB_PROJECT_ID", "")  # Repository ID
 
 # GitLab config
-GITLAB_API_URL = os.getenv("GITLAB_API_URL", "https://gitlab.com").rstrip("/")
+GITLAB_URL = os.getenv("GITLAB_URL", "https://gitlab.com").rstrip("/")
 GITLAB_API_KEY = os.getenv("GITLAB_API_KEY", "")
 GITLAB_ISSUE_KEY = os.getenv("GITLAB_ISSUE_KEY", "")  # e.g., "group/project#123"
+GITLAB_ORG_ID = os.getenv("GITLAB_ORG_ID", "")  # Group ID
+GITLAB_PROJECT_ID = os.getenv("GITLAB_PROJECT_ID", "")  # Project ID
 
 # Jira config
 JIRA_URL = os.getenv("JIRA_URL", "").rstrip("/")
 JIRA_API_KEY = os.getenv("JIRA_API_KEY", "")
 JIRA_USERNAME = os.getenv("JIRA_USERNAME", "")
 JIRA_ISSUE_KEY = os.getenv("JIRA_ISSUE_KEY", "")  # e.g., "PROJECT-123"
+JIRA_ORG_ID = os.getenv("JIRA_ORG_ID", "")  # Usually the Jira URL domain
+JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY", "")  # Project key (e.g., "PROJ")
 
 # Timeouts
 INDEX_TIMEOUT = int(os.getenv("INDEX_TIMEOUT", "300"))  # 5 minutes
@@ -126,7 +146,7 @@ def gitlab_client():
         pytest.skip("GITLAB_API_KEY required")
 
     headers = {"PRIVATE-TOKEN": GITLAB_API_KEY}
-    with httpx.Client(base_url=f"{GITLAB_API_URL}/api/v4", headers=headers) as client:
+    with httpx.Client(base_url=f"{GITLAB_URL}/api/v4", headers=headers) as client:
         yield client
 
 
@@ -256,7 +276,22 @@ def test_github_tracker_sync(spacebridge_client, github_client):
 
     # Parse GitHub issue key
     owner, repo, number = parse_github_issue_key(GITHUB_ISSUE_KEY)
-    connection_details = {"owner": owner, "repo": repo}
+
+    # Build scope rules to only sync specific org and project
+    scope_rules = []
+    if GITHUB_ORG_ID and GITHUB_PROJECT_ID:
+        scope_rules = [
+            {
+                "scope_type": "organization",
+                "rule_type": "include",
+                "identifier": GITHUB_ORG_ID,
+            },
+            {
+                "scope_type": "project",
+                "rule_type": "include",
+                "identifier": GITHUB_PROJECT_ID,
+            },
+        ]
 
     # Variables for cleanup
     tracker_id = None
@@ -274,13 +309,17 @@ def test_github_tracker_sync(spacebridge_client, github_client):
             "/api/v1/trackers",
             json={
                 "name": f"GitHub Test Tracker {TEST_RUN_ID}",
-                "tracker_type": "github",
+                "type": "github",  # Note: 'type' not 'tracker_type'
                 "api_key": GITHUB_API_KEY,
-                "connection_details": connection_details,
+                "config": {  # Note: 'config' not 'connection_details'
+                    "owner": owner,
+                    "repo": repo,
+                },
+                "scope_rules": scope_rules,
             },
         )
-        assert register_response.status_code == 200, (
-            f"Failed to register GitHub tracker: {register_response.text}"
+        assert register_response.status_code == 201, (
+            f"Failed to register GitHub tracker (status {register_response.status_code}): {register_response.text}"
         )
         tracker_data = register_response.json()
         tracker_id = tracker_data["id"]
