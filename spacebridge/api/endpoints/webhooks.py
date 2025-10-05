@@ -274,7 +274,7 @@ async def receive_webhook(
 
     elif tracker_type.lower() == "jira":
         # Jira Cloud webhooks use HMAC-SHA256 signature with a pre-configured secret.
-        # The signature is in the 'X-Atlassian-Signature' header, format: 'sha256=<signature>'
+        # The signature is in the 'X-Hub-Signature' header, format: 'sha256=<signature>'
         signature_header = request.headers.get("X-Hub-Signature")
         if not signature_header:
             logger.warning(
@@ -309,10 +309,16 @@ async def receive_webhook(
                     logger.warning(
                         f"Jira webhook signature mismatch for tracker ID {resolved_tracker.id}"
                     )
-                    # raise HTTPException(
-                    #     status_code=status.HTTP_403_FORBIDDEN,
-                    #     detail="Invalid Jira signature",
-                    # )
+                    # Notify admins
+                    await task_publisher.publish_task(
+                        "notify_admins",
+                        subject="Jira webhook signature mismatch",
+                        message=f"Jira webhook signature mismatch for tracker ID {resolved_tracker.id}",
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Invalid Jira signature",
+                    )
                 logger.info(
                     f"Jira webhook signature verified successfully for tracker ID {resolved_tracker.id}"
                 )

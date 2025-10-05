@@ -48,7 +48,7 @@ Jira:
 - JIRA_USERNAME: Jira username/email
 - JIRA_ISSUE_KEY: Test issue in format "PROJECT-123"
 - JIRA_ORG_ID: Organization identifier (for scope filtering)
-- JIRA_PROJECT_KEY: Project key like "PROJ" (for scope filtering)
+- JIRA_PROJECT_ID: Project key like "PROJ" (for scope filtering)
 
 Timeouts:
 - INDEX_TIMEOUT: Max seconds to wait for initial indexing (default: 300)
@@ -97,7 +97,7 @@ JIRA_API_KEY = os.getenv("JIRA_API_KEY", "")
 JIRA_USERNAME = os.getenv("JIRA_USERNAME", "")
 JIRA_ISSUE_KEY = os.getenv("JIRA_ISSUE_KEY", "")  # e.g., "PROJECT-123"
 JIRA_ORG_ID = os.getenv("JIRA_ORG_ID", "")  # Usually the Jira URL domain
-JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY", "")  # Project key (e.g., "PROJ")
+JIRA_PROJECT_ID = os.getenv("JIRA_PROJECT_ID", "")  # Project key (e.g., "PROJ")
 
 # Timeouts
 INDEX_TIMEOUT = int(os.getenv("INDEX_TIMEOUT", "300"))  # 5 minutes
@@ -739,7 +739,7 @@ def test_jira_tracker_sync(spacebridge_client, jira_client):
 
     # Build scope rules to only sync specific org and project
     scope_rules = []
-    if JIRA_ORG_ID and JIRA_PROJECT_KEY:
+    if JIRA_ORG_ID and JIRA_PROJECT_ID:
         scope_rules = [
             {
                 "scope_type": "ORGANIZATION",
@@ -749,7 +749,7 @@ def test_jira_tracker_sync(spacebridge_client, jira_client):
             {
                 "scope_type": "PROJECT",
                 "rule_type": "INCLUDE",
-                "identifier": JIRA_PROJECT_KEY,
+                "identifier": JIRA_PROJECT_ID,
             },
         ]
 
@@ -768,9 +768,9 @@ def test_jira_tracker_sync(spacebridge_client, jira_client):
         request_body = {
             "name": f"Jira Test Tracker {TEST_RUN_ID}",
             "type": "jira",
+            "url": JIRA_URL,  # URL at top level for Jira
             "api_key": JIRA_API_KEY,
             "config": {
-                "url": JIRA_URL,
                 "username": JIRA_USERNAME,
             },
             "scope_rules": scope_rules,
