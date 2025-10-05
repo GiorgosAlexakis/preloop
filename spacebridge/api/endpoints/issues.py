@@ -978,6 +978,23 @@ def get_issue(
             # Basic fallback if external_id exists but no URL found
             external_url = f"https://spacebridge.io/issues/{issue.id}"
 
+        # Fetch comments for this issue
+        comments = crud_comment.get_by_issue_id(db, issue_id=issue.id)
+        comments_list = [
+            {
+                "id": str(comment.id),
+                "external_id": comment.external_id,
+                "body": comment.body,
+                "created_at": comment.created_at.isoformat()
+                if comment.created_at
+                else None,
+                "updated_at": comment.updated_at.isoformat()
+                if comment.updated_at
+                else None,
+            }
+            for comment in comments
+        ]
+
         # Convert to IssueResponse model
         if issue.key:
             final_response_key = issue.key
@@ -1003,6 +1020,7 @@ def get_issue(
             meta_data=meta_data,
             labels=labels_list,
             assignee=assignee,
+            comments=comments_list,
         )
 
     except HTTPException:

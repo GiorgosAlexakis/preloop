@@ -615,10 +615,18 @@ async def receive_webhook(
             if not issue:
                 raise HTTPException(status_code=404, detail="Issue not found")
 
-            if tracker_type.lower() == "jira":
-                comment_data = parsed_payload.get("comment")
-            else:
+            # Extract comment data based on tracker type
+            if tracker_type.lower() == "gitlab":
                 comment_data = parsed_payload.get("object_attributes")
+            else:  # GitHub and Jira use "comment" field
+                comment_data = parsed_payload.get("comment")
+
+            if not comment_data:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No comment data found in webhook payload for {tracker_type}",
+                )
+
             transformed_comment = tracker_client.client.transform_comment(
                 comment_data, issue.id
             )

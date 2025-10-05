@@ -4705,6 +4705,16 @@ components:
           type: string
           title: Updated At
           description: Last update timestamp
+        comments:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Comments
+          description: List of comments on the issue
+          default: []
         score:
           anyOf:
           - type: number
