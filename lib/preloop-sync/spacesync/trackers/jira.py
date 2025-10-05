@@ -970,6 +970,7 @@ class JiraTracker(BaseTracker):
             projects.append(
                 {
                     "id": project["id"],
+                    "key": project["key"],  # Add the project key explicitly
                     "identifier": project["key"],
                     "name": project["name"],
                     "description": project.get("description", ""),
@@ -977,6 +978,29 @@ class JiraTracker(BaseTracker):
                 }
             )
         return projects
+
+    def transform_project(
+        self, proj_data: Dict[str, Any], organization_id: str
+    ) -> Dict[str, Any]:
+        """
+        Transform Jira project data to database format.
+
+        For Jira:
+        - identifier: The numeric project ID (for internal use)
+        - slug: The project key (used in webhooks and URLs, e.g., "SCRUM")
+        """
+        return {
+            "organization_id": organization_id,
+            "identifier": proj_data["id"],  # Numeric ID like "10000"
+            "slug": proj_data.get("key", ""),  # Project key like "SCRUM"
+            "name": proj_data["name"],
+            "description": proj_data.get("description", ""),
+            "meta_data": {
+                "url": proj_data.get("url", ""),
+                "external_id": proj_data.get("id", ""),
+                "source": "spacesync",
+            },
+        }
 
     async def get_issues(
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
