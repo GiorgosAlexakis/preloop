@@ -1353,7 +1353,7 @@ class JiraTracker(BaseTracker):
             if not issues_data:
                 break
 
-            # Process issues with basic transformation
+            # Process issues - return raw format with comments and dependencies added
             for issue_data in issues_data:
                 # Log the structure to debug missing external_id/title
                 logger.debug(
@@ -1364,10 +1364,12 @@ class JiraTracker(BaseTracker):
                     f"fields.summary={issue_data.get('fields', {}).get('summary')}"
                 )
 
+                fields = issue_data.get("fields", {})
+
+                # Process comments (scanner expects these at top level)
                 comments_data = []
-                # Get only first 20 comments as mentioned in migration guide
-                if issue_data["fields"].get("comment", {}).get("comments"):
-                    comments_list = issue_data["fields"]["comment"]["comments"][:20]
+                if fields.get("comment", {}).get("comments"):
+                    comments_list = fields["comment"]["comments"]
                     for comment_item in comments_list:
                         comment_url = f"{self.jira_url}/browse/{issue_data['key']}?focusedCommentId={comment_item['id']}"
                         comments_data.append(
@@ -1392,70 +1394,19 @@ class JiraTracker(BaseTracker):
                                 "url": comment_url,
                             }
                         )
+                issue_data["comments"] = comments_data
 
-                # Extract core fields with proper error handling
-                fields = issue_data.get("fields", {})
-                external_id = issue_data.get("id", "")
-                key = issue_data.get("key", "")
-                title = fields.get("summary", "")
-
-                # Log if critical fields are missing
-                if not external_id:
-                    logger.error(
-                        f"Missing 'id' field in get_issues response for key {key}. "
-                        f"Available top-level keys: {list(issue_data.keys())}"
-                    )
-                if not title:
-                    logger.error(
-                        f"Missing 'summary' field in get_issues response for key {key}. "
-                        f"Available field keys: {list(fields.keys())}"
-                    )
-
-                # Transform to the expected format
-                issue_url = f"{self.jira_url}/browse/{key}"
-                labels = fields.get("labels", [])
-                assignees = (
-                    [fields["assignee"]["displayName"]]
-                    if fields.get("assignee")
-                    else []
-                )
-                created_at = datetime.strptime(
-                    fields["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
-                )
-                updated_at = datetime.strptime(
-                    fields["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
-                )
-
-                transformed_issue = {
-                    "external_id": external_id,
-                    "key": key,
-                    "title": title,
-                    "description": self._convert_description_to_string(
-                        fields.get("description", "")
-                    ),
-                    "status": fields.get("status", {}).get("name", ""),
-                    "created_at": created_at,
-                    "updated_at": updated_at,
-                    "last_updated_external": updated_at,
-                    "last_synced": datetime.now(),
-                    "external_url": issue_url,
-                    "meta_data": {
-                        "labels": labels,
-                        "assignees": assignees,
-                        "url": issue_url,
-                        "source": "spacesync",
-                    },
-                    "comments": comments_data,
-                    "dependencies": [],  # Will be populated if issuelinks are present
-                }
-
-                # Parse dependencies from issue links
+                # Parse dependencies from issue links (scanner expects these at top level)
                 if fields.get("issuelinks"):
-                    transformed_issue["dependencies"] = await self._parse_dependencies(
+                    issue_data["dependencies"] = await self._parse_dependencies(
                         fields["issuelinks"]
                     )
+                else:
+                    issue_data["dependencies"] = []
 
-                all_issues.append(transformed_issue)
+                # Return raw issue_data in the same format as the API returns it
+                # This allows transform_issue() to process it consistently
+                all_issues.append(issue_data)
 
             # Check for next page
             next_page_token = issues_response.get("nextPageToken")
