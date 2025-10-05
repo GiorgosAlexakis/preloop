@@ -314,6 +314,7 @@ def unregister_webhooks_command(
         f"Total trackers/scopes where no matching webhooks were found: {total_not_found}"
     )
     click.echo("Webhook unregistration process finished.")
+    db.commit()
     db.close()
 
 
