@@ -1049,7 +1049,7 @@ class JiraTracker(BaseTracker):
             "description": self._convert_description_to_string(
                 fields.get("description", "")
             ),
-            "state": status_name,
+            "status": status_name,
             "created_at": created_at or datetime.now(),
             "updated_at": updated_at or datetime.now(),
             "labels": fields.get("labels", []),
