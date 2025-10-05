@@ -282,13 +282,13 @@ def test_github_tracker_sync(spacebridge_client, github_client):
     if GITHUB_ORG_ID and GITHUB_PROJECT_ID:
         scope_rules = [
             {
-                "scope_type": "organization",
-                "rule_type": "include",
+                "scope_type": "ORGANIZATION",
+                "rule_type": "INCLUDE",
                 "identifier": GITHUB_ORG_ID,
             },
             {
-                "scope_type": "project",
-                "rule_type": "include",
+                "scope_type": "PROJECT",
+                "rule_type": "INCLUDE",
                 "identifier": GITHUB_PROJECT_ID,
             },
         ]
@@ -305,18 +305,27 @@ def test_github_tracker_sync(spacebridge_client, github_client):
         print("STEP 2: Tracker Registration (GitHub)")
         print("=" * 80)
 
+        request_body = {
+            "name": f"GitHub Test Tracker {TEST_RUN_ID}",
+            "type": "github",  # Note: 'type' not 'tracker_type'
+            "api_key": GITHUB_API_KEY,
+            "config": {  # Note: 'config' not 'connection_details'
+                "owner": owner,
+                "repo": repo,
+            },
+            "scope_rules": scope_rules,
+        }
+
+        print("Request body (api_key redacted):")
+        import json
+
+        redacted_body = request_body.copy()
+        redacted_body["api_key"] = "***REDACTED***"
+        print(json.dumps(redacted_body, indent=2))
+
         register_response = spacebridge_client.post(
             "/api/v1/trackers",
-            json={
-                "name": f"GitHub Test Tracker {TEST_RUN_ID}",
-                "type": "github",  # Note: 'type' not 'tracker_type'
-                "api_key": GITHUB_API_KEY,
-                "config": {  # Note: 'config' not 'connection_details'
-                    "owner": owner,
-                    "repo": repo,
-                },
-                "scope_rules": scope_rules,
-            },
+            json=request_body,
         )
         assert register_response.status_code == 201, (
             f"Failed to register GitHub tracker (status {register_response.status_code}): {register_response.text}"
@@ -324,6 +333,8 @@ def test_github_tracker_sync(spacebridge_client, github_client):
         tracker_data = register_response.json()
         tracker_id = tracker_data["id"]
         print(f"✓ Registered GitHub tracker: {tracker_id}")
+        print("Response data:")
+        print(json.dumps(tracker_data, indent=2))
 
         # Step 3: Verify tracker is listed
         print("\n" + "=" * 80)
