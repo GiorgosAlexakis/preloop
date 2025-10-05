@@ -913,6 +913,35 @@ class GitLabTracker(BaseTracker):
             )
             return False
 
+    def transform_comment(
+        self,
+        comment_data: Dict[str, Any],
+        issue_db_id: str,
+        author_db_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Transform GitLab comment data to a format that can be stored in the database.
+        GitLab uses 'note' instead of 'body' for comment text.
+        """
+        external_id = str(comment_data.get("id"))
+        return {
+            "issue_id": issue_db_id,
+            "external_id": external_id,
+            "author": None,
+            "body": comment_data.get("note", ""),  # GitLab uses 'note' not 'body'
+            "type": "issue",
+            "meta_data": {
+                "comment_id": external_id,
+                "external_author": str(comment_data.get("author"))
+                if comment_data.get("author")
+                else None,
+                "url": comment_data.get("url"),
+                "source": "spacesync",
+            },
+            "updated_at": comment_data.get("updated_at"),
+            "created_at": comment_data.get("created_at"),
+        }
+
     async def register_webhook(self, **kwargs: Any) -> bool:
         """Register a webhook for the tracker."""
         raise NotImplementedError
