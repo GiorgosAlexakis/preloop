@@ -848,10 +848,10 @@ class JiraTracker(BaseTracker):
                 ):
                     # Text content appears to be JSON, need to parse recursively
                     logger.info(
-                        "Description dict contains JSON text, converting to string for recursive parsing"
+                        "Description dict contains JSON text, will parse the extracted text"
                     )
-                    # Convert dict back to JSON string for recursive parsing
-                    desc_to_parse = json.dumps(issue_data.description)
+                    # Use the extracted text content for recursive parsing, not the whole dict
+                    desc_to_parse = text_content
                 else:
                     # Clean ADF with plain text, use as-is
                     fields["description"] = issue_data.description
