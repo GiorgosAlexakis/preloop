@@ -1260,14 +1260,12 @@ async def update_issue(
 
             try:
                 logger.info(
-                    f"Calling tracker client to update issue {issue.external_id} with data: {update_data_for_tracker}"
+                    f"Calling tracker client to update issue {issue.key} with data: {update_data_for_tracker}"
                 )
-                # Use the issue's external_id for the tracker API call
-                issue_repo_id = issue.external_id
-                if issue.external_url:
-                    issue_repo_id = issue.external_url.split("/")[-1]
+                # Use the issue's key for the tracker API call (e.g., "owner/repo#123")
+                # The tracker client will extract the issue number from it
                 await tracker_client.update_issue(
-                    issue_repo_id, IssueUpdate(**update_data_for_tracker)
+                    issue.key, IssueUpdate(**update_data_for_tracker)
                 )
                 logger.info(
                     f"Successfully updated issue {issue.external_id} via tracker client."
