@@ -854,26 +854,16 @@ class GitHubTracker(BaseTracker):
                 if isinstance(raw_comments_data, dict):
                     raw_comments_data = [raw_comments_data]
                 for comment_item in raw_comments_data:
-                    comment_created_at = datetime.strptime(
-                        comment_item["created_at"], "%Y-%m-%dT%H:%M:%SZ"
-                    )
-                    comment_updated_at = datetime.strptime(
-                        comment_item["updated_at"], "%Y-%m-%dT%H:%M:%SZ"
-                    )
-
+                    # Store as dictionary for transform_comment compatibility
                     comments_data_transformed.append(
-                        IssueComment(
-                            id=str(comment_item["id"]),
-                            body=comment_item.get("body", "") or "",
-                            author=IssueUser(
-                                id=str(comment_item["user"]["id"]),
-                                name=comment_item["user"]["login"],
-                                avatar_url=comment_item["user"]["avatar_url"],
-                            ),
-                            created_at=comment_created_at,
-                            updated_at=comment_updated_at,
-                            url=comment_item.get("html_url"),
-                        )
+                        {
+                            "id": comment_item["id"],
+                            "body": comment_item.get("body", "") or "",
+                            "user": comment_item["user"],
+                            "created_at": comment_item["created_at"],
+                            "updated_at": comment_item["updated_at"],
+                            "html_url": comment_item.get("html_url"),
+                        }
                     )
             except TrackerResponseError as e:
                 logger.error(
@@ -889,9 +879,9 @@ class GitHubTracker(BaseTracker):
                     await self._parse_dependencies(issue_data["body"], repo_name)
                 )
             for comment in comments_data_transformed:
-                if comment.body:
+                if comment.get("body"):
                     dependencies.extend(
-                        await self._parse_dependencies(comment.body, repo_name)
+                        await self._parse_dependencies(comment["body"], repo_name)
                     )
             issue_data["dependencies"] = dependencies
 
