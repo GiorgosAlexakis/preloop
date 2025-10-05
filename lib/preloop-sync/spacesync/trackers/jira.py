@@ -1319,8 +1319,7 @@ class JiraTracker(BaseTracker):
             "jql": jql,
             "maxResults": JIRA_DEFAULT_PAGE_SIZE,
             "fields": [
-                "id",
-                "key",
+                # Note: "id" and "key" are top-level fields, not in "fields" object
                 "summary",
                 "description",
                 "status",
@@ -1356,6 +1355,15 @@ class JiraTracker(BaseTracker):
 
             # Process issues with basic transformation
             for issue_data in issues_data:
+                # Log the structure to debug missing external_id/title
+                logger.debug(
+                    f"Processing issue from get_issues: "
+                    f"top-level keys={list(issue_data.keys())}, "
+                    f"id={issue_data.get('id')}, "
+                    f"key={issue_data.get('key')}, "
+                    f"fields.summary={issue_data.get('fields', {}).get('summary')}"
+                )
+
                 comments_data = []
                 # Get only first 20 comments as mentioned in migration guide
                 if issue_data["fields"].get("comment", {}).get("comments"):
@@ -1385,29 +1393,47 @@ class JiraTracker(BaseTracker):
                             }
                         )
 
+                # Extract core fields with proper error handling
+                fields = issue_data.get("fields", {})
+                external_id = issue_data.get("id", "")
+                key = issue_data.get("key", "")
+                title = fields.get("summary", "")
+
+                # Log if critical fields are missing
+                if not external_id:
+                    logger.error(
+                        f"Missing 'id' field in get_issues response for key {key}. "
+                        f"Available top-level keys: {list(issue_data.keys())}"
+                    )
+                if not title:
+                    logger.error(
+                        f"Missing 'summary' field in get_issues response for key {key}. "
+                        f"Available field keys: {list(fields.keys())}"
+                    )
+
                 # Transform to the expected format
-                issue_url = f"{self.jira_url}/browse/{issue_data['key']}"
-                labels = issue_data["fields"].get("labels", [])
+                issue_url = f"{self.jira_url}/browse/{key}"
+                labels = fields.get("labels", [])
                 assignees = (
-                    [issue_data["fields"]["assignee"]["displayName"]]
-                    if issue_data["fields"].get("assignee")
+                    [fields["assignee"]["displayName"]]
+                    if fields.get("assignee")
                     else []
                 )
                 created_at = datetime.strptime(
-                    issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                    fields["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
                 )
                 updated_at = datetime.strptime(
-                    issue_data["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                    fields["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
                 )
 
                 transformed_issue = {
-                    "external_id": issue_data["id"],
-                    "key": issue_data["key"],
-                    "title": issue_data["fields"]["summary"],
+                    "external_id": external_id,
+                    "key": key,
+                    "title": title,
                     "description": self._convert_description_to_string(
-                        issue_data["fields"].get("description", "")
+                        fields.get("description", "")
                     ),
-                    "status": issue_data["fields"]["status"]["name"],
+                    "status": fields.get("status", {}).get("name", ""),
                     "created_at": created_at,
                     "updated_at": updated_at,
                     "last_updated_external": updated_at,
@@ -1424,9 +1450,9 @@ class JiraTracker(BaseTracker):
                 }
 
                 # Parse dependencies from issue links
-                if issue_data["fields"].get("issuelinks"):
+                if fields.get("issuelinks"):
                     transformed_issue["dependencies"] = await self._parse_dependencies(
-                        issue_data["fields"]["issuelinks"]
+                        fields["issuelinks"]
                     )
 
                 all_issues.append(transformed_issue)
