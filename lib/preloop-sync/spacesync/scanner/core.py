@@ -604,6 +604,7 @@ async def scan_tracker(
             if (
                 org.last_webhook_update
                 and (now - org.last_webhook_update) < POLLING_THRESHOLD
+                and org.last_polling_update
                 and (now - org.last_polling_update) < RECHECK_PROJECT_WEBHOOK_INTERVAL
                 and not force_update
             ):

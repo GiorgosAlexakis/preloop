@@ -1,4 +1,3 @@
-import asyncio
 from spacesync.config import logger
 from spacemodels.db.session import get_db_session
 from spacemodels.crud import crud_tracker
@@ -9,7 +8,7 @@ def scan_tracker_task(tracker_id: int, since=None, force_update=False):
     return poll_tracker(tracker_id, since, force_update)
 
 
-def poll_tracker(tracker_id: int, since=None, force_update=False):
+async def poll_tracker(tracker_id: int, since=None, force_update=False):
     logger.info(f"Starting scan for tracker {tracker_id}")
     db = next(get_db_session())
     try:
@@ -18,10 +17,8 @@ def poll_tracker(tracker_id: int, since=None, force_update=False):
             logger.error(f"Tracker {tracker_id} not found")
             return None
 
-        # Run the async scan_tracker in an event loop
-        stats = asyncio.run(
-            scan_tracker(db, tracker, since=since, force_update=force_update)
-        )
+        # Await the async scan_tracker directly
+        stats = await scan_tracker(db, tracker, since=since, force_update=force_update)
         crud_tracker.validate(db, id=tracker_id, is_valid=True)
         logger.info(f"Scan for tracker {tracker_id} completed. Stats: {stats}")
         return stats

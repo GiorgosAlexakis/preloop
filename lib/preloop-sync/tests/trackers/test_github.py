@@ -2,7 +2,6 @@ import pytest
 import unittest
 from unittest.mock import patch, MagicMock
 from unittest import IsolatedAsyncioTestCase
-from datetime import datetime
 import httpx
 from spacesync.exceptions import (
     TrackerAuthenticationError,
@@ -210,12 +209,12 @@ class TestGitHubTrackerComments(unittest.IsolatedAsyncioTestCase):
         )
 
         comment_data = transformed_issue["comments"][0]
-        self.assertEqual(comment_data.id, "101")
-        self.assertEqual(comment_data.body, "This is a comment on the issue.")
-        self.assertEqual(comment_data.author.name, "commenter")
+        self.assertEqual(comment_data["id"], 101)
+        self.assertEqual(comment_data["body"], "This is a comment on the issue.")
+        self.assertEqual(comment_data["user"]["login"], "commenter")
         self.assertEqual(
-            comment_data.created_at,
-            datetime.strptime("2011-04-22T14:00:00Z", "%Y-%m-%dT%H:%M:%SZ"),
+            comment_data["created_at"],
+            "2011-04-22T14:00:00Z",
         )
 
         # Verify API calls (simplified check of calls made)

@@ -904,6 +904,8 @@ class GitHubTracker(BaseTracker):
         endpoint = f"orgs/{org_identifier}/hooks"
         events = [
             "issues",
+            "issue_comment",
+            "discussion",
             "project",
             "repository",
             "push",
