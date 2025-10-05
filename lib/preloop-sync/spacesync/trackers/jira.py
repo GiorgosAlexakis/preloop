@@ -823,15 +823,42 @@ class JiraTracker(BaseTracker):
 
         if issue_data.description is not None:
             # Check if description is already in ADF format (JSON string or dict)
+            import json
+
+            desc_to_parse = None  # Will hold string to parse recursively, or None if no parsing needed
+
             if isinstance(issue_data.description, dict):
-                # Already a dict, use as-is
-                fields["description"] = issue_data.description
+                # Already a dict, but check if text content is nested JSON
+                text_content = self._extract_text_from_adf_content(
+                    issue_data.description
+                )
+                logger.debug(
+                    f"Description is dict (ADF), extracted text length: {len(text_content)}, first 100 chars: {text_content[:100]}"
+                )
+
+                # Check if extracted text looks like JSON
+                if text_content and (
+                    text_content.startswith("{") or "\\" in text_content
+                ):
+                    # Text content appears to be JSON, need to parse recursively
+                    logger.info(
+                        "Description dict contains JSON text, converting to string for recursive parsing"
+                    )
+                    # Convert dict back to JSON string for recursive parsing
+                    desc_to_parse = json.dumps(issue_data.description)
+                else:
+                    # Clean ADF with plain text, use as-is
+                    fields["description"] = issue_data.description
+                    logger.debug("Description is clean ADF, using as-is")
             elif isinstance(issue_data.description, str):
+                # String input, needs recursive parsing
+                desc_to_parse = issue_data.description
+
+            # Recursive parsing logic for strings (and dicts converted to strings)
+            if desc_to_parse is not None:
                 # Try to parse as JSON first (might already be ADF)
                 # Handle multiple levels of JSON encoding by recursively parsing
-                import json
-
-                desc = issue_data.description
+                desc = desc_to_parse
                 max_parse_attempts = 10  # Increased to handle deeply nested JSON
                 parsed_desc = None
 
@@ -918,9 +945,6 @@ class JiraTracker(BaseTracker):
                             }
                         ],
                     }
-            else:
-                # Unknown type, skip
-                pass
 
         if issue_data.priority is not None:
             fields["priority"] = {"name": issue_data.priority}

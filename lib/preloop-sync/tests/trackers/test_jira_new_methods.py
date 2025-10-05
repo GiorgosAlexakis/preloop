@@ -480,3 +480,148 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
         self.assertEqual(result.name, "Test Project")
         self.assertGreater(len(result.statuses), 0)
         self.assertGreater(len(result.priorities), 0)
+
+    async def test_update_issue_with_nested_json_description(self):
+        """Test updating issue with nested JSON in description (regression test for nested JSON bug)."""
+        # Arrange
+        from spacebridge.schemas.tracker_models import IssueUpdate
+
+        # Simulate a description that comes from the database with nested JSON
+        # This is the exact pattern that was causing the "Operation value must be a string" error
+        nested_json_description = {
+            "type": "doc",
+            "version": 1,
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": '{"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Actual description text"}]}]}',
+                        }
+                    ],
+                }
+            ],
+        }
+
+        # Create IssueUpdate with string, then patch it to have a dict
+        # This simulates what happens when Pydantic/API parsing converts JSON strings to dicts
+        issue_update = IssueUpdate(
+            title="Test Issue",
+            description="placeholder",  # Valid string for validation
+        )
+        # Now manually set it to the problematic dict (simulating post-parsing state)
+        issue_update.description = nested_json_description
+
+        updated_issue_data = {
+            "id": "12345",
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Test Issue",
+                "description": {
+                    "type": "doc",
+                    "version": 1,
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [
+                                {"type": "text", "text": "Actual description text"}
+                            ],
+                        }
+                    ],
+                },
+                "status": {"id": "1", "name": "Open", "statusCategory": {"key": "new"}},
+                "created": "2023-01-01T10:00:00.000+0000",
+                "updated": "2023-01-02T10:00:00.000+0000",
+                "project": {"key": "TEST"},
+            },
+        }
+
+        self.tracker._make_request = AsyncMock()
+        self.tracker._make_request.side_effect = [
+            None,  # PUT request
+            updated_issue_data,  # GET updated issue
+        ]
+
+        # Act
+        result = await self.tracker.update_issue("TEST-123", issue_update)
+
+        # Assert
+        self.assertEqual(result.title, "Test Issue")
+        # The description should be unwrapped to just the actual text
+        self.assertEqual(result.description, "Actual description text")
+
+        # Verify the PUT request was called with properly unwrapped ADF
+        put_call = self.tracker._make_request.call_args_list[0]
+        fields_data = put_call[1]["json_data"]["fields"]
+
+        # The description should be valid ADF (not nested JSON strings)
+        self.assertIn("description", fields_data)
+        desc = fields_data["description"]
+        self.assertIsInstance(desc, dict)
+        self.assertEqual(desc["type"], "doc")
+
+        # Extract the text content to verify it's been unwrapped
+        text_content = desc["content"][0]["content"][0]["text"]
+        self.assertEqual(text_content, "Actual description text")
+        # Verify it's NOT still JSON (no escaped quotes or nested structures)
+        self.assertNotIn('\\"', text_content)
+        self.assertNotIn('{"type":', text_content)
+
+    async def test_update_issue_with_string_nested_json_description(self):
+        """Test updating issue when description is a JSON string (from API serialization)."""
+        # Arrange
+        from spacebridge.schemas.tracker_models import IssueUpdate
+
+        # Simulate description as a JSON string (like what might come from Pydantic serialization)
+        nested_json_string = '{"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "{\\"type\\": \\"doc\\", \\"version\\": 1, \\"content\\": [{\\"type\\": \\"paragraph\\", \\"content\\": [{\\"type\\": \\"text\\", \\"text\\": \\"Real text\\"}]}]}"}]}]}'
+
+        issue_update = IssueUpdate(
+            title="Test Issue",
+            description=nested_json_string,  # Pass as string
+        )
+
+        updated_issue_data = {
+            "id": "12345",
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Test Issue",
+                "description": {
+                    "type": "doc",
+                    "version": 1,
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [{"type": "text", "text": "Real text"}],
+                        }
+                    ],
+                },
+                "status": {"id": "1", "name": "Open", "statusCategory": {"key": "new"}},
+                "created": "2023-01-01T10:00:00.000+0000",
+                "updated": "2023-01-02T10:00:00.000+0000",
+                "project": {"key": "TEST"},
+            },
+        }
+
+        self.tracker._make_request = AsyncMock()
+        self.tracker._make_request.side_effect = [
+            None,  # PUT request
+            updated_issue_data,  # GET updated issue
+        ]
+
+        # Act
+        result = await self.tracker.update_issue("TEST-123", issue_update)
+
+        # Assert
+        self.assertEqual(result.title, "Test Issue")
+        self.assertEqual(result.description, "Real text")
+
+        # Verify the PUT request unwrapped the nested JSON properly
+        put_call = self.tracker._make_request.call_args_list[0]
+        fields_data = put_call[1]["json_data"]["fields"]
+
+        desc = fields_data["description"]
+        self.assertIsInstance(desc, dict)
+        text_content = desc["content"][0]["content"][0]["text"]
+        self.assertEqual(text_content, "Real text")
+        self.assertNotIn('\\"', text_content)
