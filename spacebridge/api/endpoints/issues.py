@@ -797,14 +797,15 @@ async def create_issue(
         )
 
         # Create the issue - Pass the project identifier expected by the tracker client
-        # Use project.identifier as the most likely candidate for project_key
-        project_key_for_tracker = proj.identifier
+        # For most trackers (Jira, Linear, etc.), use identifier (the external project key)
+        # For Git-based trackers (GitHub, GitLab), this will be the repo name
+        project_key_for_tracker = proj.identifier or proj.slug
         if not project_key_for_tracker:
-            # Fallback or specific logic might be needed if identifier isn't the key
-            # For now, raise error if identifier is missing
+            # Fallback or specific logic might be needed if both are missing
+            # For now, raise error
             raise HTTPException(
                 status_code=500,
-                detail="Project identifier is missing for tracker interaction.",
+                detail="Project identifier/slug is missing for tracker interaction.",
             )
 
         created_issue = await tracker_client.create_issue(
