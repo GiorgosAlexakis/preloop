@@ -982,7 +982,9 @@ def get_issue(
             external_url = f"https://spacebridge.io/issues/{issue.id}"
 
         # Fetch comments for this issue
-        comments = crud_comment.get_by_issue_id(db, issue_id=issue.id)
+        comments = crud_comment.get_multi_by_issue(
+            db, issue_id=issue.id, account_id=current_user.id
+        )
         comments_list = [
             {
                 "id": str(comment.id),
