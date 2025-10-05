@@ -1422,9 +1422,16 @@ class JiraTracker(BaseTracker):
         results = {"unregistered": 0, "failed": 0, "not_found": 0}
         logger.info(f"Unregistering all webhooks for Jira tracker {self.tracker_id}.")
 
-        organization_id = crud_organization.get_for_tracker(
+        organizations = crud_organization.get_for_tracker(
             db, tracker_id=self.tracker_id
-        )[0].id
+        )
+        if not organizations:
+            logger.warning(
+                f"No organizations found for tracker {self.tracker_id}. No webhooks to unregister."
+            )
+            return results
+
+        organization_id = organizations[0].id
         projects = crud_project.get_for_organization(
             db, organization_id=organization_id
         )
