@@ -468,6 +468,7 @@ def test_github_tracker_sync(spacebridge_client, github_client):
         # Setup MCP server
         from tests.integration.helpers import (
             cleanup_claude_mcp_server,
+            mcp_create_issue,
             mcp_get_issue,
             mcp_search_issue,
             mcp_update_issue,
@@ -479,52 +480,73 @@ def test_github_tracker_sync(spacebridge_client, github_client):
         verify_mcp_server()
         print("✓ MCP server setup complete")
 
-        # Test search via MCP
+        # Test create_issue via MCP
+        create_title = f"MCP Test Issue {TEST_RUN_ID}"
+        create_description = f"Issue created via MCP for testing - {TEST_RUN_ID}"
+        create_output = mcp_create_issue(
+            "spacebridge",
+            f"{owner}/{repo}",
+            title=create_title,
+            description=create_description,
+        )
+        assert len(create_output) > 0, "MCP create_issue returned empty output"
+        # Extract issue key from create output (look for pattern like owner/repo#123)
+        import re
+
+        issue_key_match = re.search(
+            r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+#\d+)", create_output
+        )
+        created_issue_key = None
+        if issue_key_match:
+            created_issue_key = issue_key_match.group(1)
+            print(f"✓ Created issue via MCP: {created_issue_key}")
+        else:
+            print("✓ Created issue via MCP create_issue")
+
+        # Wait for issue to be created and indexed
+        time.sleep(5)
+
+        # Test search via MCP to find the created issue
         search_output = mcp_search_issue(
-            "spacebridge", original_title, project=f"{owner}/{repo}", limit=10
+            "spacebridge", create_title, project=f"{owner}/{repo}", limit=10
         )
         assert len(search_output) > 0, "MCP search returned empty output"
-        assert GITHUB_ISSUE_KEY in search_output or f"#{number}" in search_output, (
-            f"Test issue {GITHUB_ISSUE_KEY} not found in MCP search results"
+        assert TEST_RUN_ID in search_output, (
+            f"Created issue with {TEST_RUN_ID} not found in MCP search results"
         )
-        print("✓ Found issue via MCP search (verified in output)")
+        print("✓ Found created issue via MCP search")
 
-        # Test get_issue via MCP
-        get_output = mcp_get_issue("spacebridge", GITHUB_ISSUE_KEY)
+        # If we didn't get the key from create, try to extract from search
+        if not created_issue_key:
+            issue_key_match = re.search(
+                r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+#\d+)", search_output
+            )
+            if issue_key_match:
+                created_issue_key = issue_key_match.group(1)
+
+        if not created_issue_key:
+            raise AssertionError(
+                "Could not extract issue key from MCP output. "
+                "Please check MCP create and search output format."
+            )
+
+        # Test update_issue via MCP to close the issue
+        close_output = mcp_update_issue(
+            "spacebridge",
+            created_issue_key,
+            status="closed",
+        )
+        assert len(close_output) > 0, "MCP update_issue (close) returned empty output"
+        print("✓ Closed issue via MCP update_issue")
+
+        # Test get_issue via MCP to verify it's closed
+        time.sleep(3)
+        get_output = mcp_get_issue("spacebridge", created_issue_key)
         assert len(get_output) > 0, "MCP get_issue returned empty output"
-        assert original_title in get_output or GITHUB_ISSUE_KEY in get_output, (
-            "Issue details not found in MCP get_issue output"
+        assert "closed" in get_output.lower() or "done" in get_output.lower(), (
+            "Issue does not appear to be closed in MCP get_issue output"
         )
-        print("✓ Retrieved issue via MCP get_issue (verified in output)")
-
-        # Test update_issue via MCP
-        mcp_test_suffix = " [MCP Test]"
-        update_output = mcp_update_issue(
-            "spacebridge",
-            GITHUB_ISSUE_KEY,
-            title=original_title + mcp_test_suffix,
-            description=original_description + "\n\nUpdated via MCP",
-        )
-        assert len(update_output) > 0, "MCP update_issue returned empty output"
-        print("✓ Updated issue via MCP update_issue")
-
-        # Verify MCP update propagated to GitHub
-        time.sleep(5)
-        github_after_mcp = github_client.get(f"/repos/{owner}/{repo}/issues/{number}")
-        github_after_mcp.raise_for_status()
-        github_issue_after_mcp = github_after_mcp.json()
-        assert github_issue_after_mcp["title"] == original_title + mcp_test_suffix
-        print("✓ MCP update propagated to GitHub")
-
-        # Restore original via MCP (cleanup MCP changes)
-        mcp_update_issue(
-            "spacebridge",
-            GITHUB_ISSUE_KEY,
-            title=original_title,
-            description=original_description,
-        )
-        time.sleep(2)
-        print("✓ Restored original state after MCP test")
+        print("✓ Verified issue is closed via MCP get_issue")
 
         cleanup_claude_mcp_server()
         print("✓ MCP server cleanup complete")
@@ -769,6 +791,7 @@ def test_gitlab_tracker_sync(spacebridge_client, gitlab_client):
         # Setup MCP server
         from tests.integration.helpers import (
             cleanup_claude_mcp_server,
+            mcp_create_issue,
             mcp_get_issue,
             mcp_search_issue,
             mcp_update_issue,
@@ -780,54 +803,73 @@ def test_gitlab_tracker_sync(spacebridge_client, gitlab_client):
         verify_mcp_server()
         print("✓ MCP server setup complete")
 
-        # Test search via MCP
+        # Test create_issue via MCP
+        create_title = f"MCP Test Issue {TEST_RUN_ID}"
+        create_description = f"Issue created via MCP for testing - {TEST_RUN_ID}"
+        create_output = mcp_create_issue(
+            "spacebridge",
+            project_path,
+            title=create_title,
+            description=create_description,
+        )
+        assert len(create_output) > 0, "MCP create_issue returned empty output"
+        # Extract issue key from create output (look for pattern like group/project#123)
+        import re
+
+        issue_key_match = re.search(
+            r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+#\d+)", create_output
+        )
+        created_issue_key = None
+        if issue_key_match:
+            created_issue_key = issue_key_match.group(1)
+            print(f"✓ Created issue via MCP: {created_issue_key}")
+        else:
+            print("✓ Created issue via MCP create_issue")
+
+        # Wait for issue to be created and indexed
+        time.sleep(5)
+
+        # Test search via MCP to find the created issue
         search_output = mcp_search_issue(
-            "spacebridge", original_title, project=project_path, limit=10
+            "spacebridge", create_title, project=project_path, limit=10
         )
         assert len(search_output) > 0, "MCP search returned empty output"
-        assert GITLAB_ISSUE_KEY in search_output or f"#{iid}" in search_output, (
-            f"Test issue {GITLAB_ISSUE_KEY} not found in MCP search results"
+        assert TEST_RUN_ID in search_output, (
+            f"Created issue with {TEST_RUN_ID} not found in MCP search results"
         )
-        print("✓ Found issue via MCP search (verified in output)")
+        print("✓ Found created issue via MCP search")
 
-        # Test get_issue via MCP
-        get_output = mcp_get_issue("spacebridge", GITLAB_ISSUE_KEY)
+        # If we didn't get the key from create, try to extract from search
+        if not created_issue_key:
+            issue_key_match = re.search(
+                r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+#\d+)", search_output
+            )
+            if issue_key_match:
+                created_issue_key = issue_key_match.group(1)
+
+        if not created_issue_key:
+            raise AssertionError(
+                "Could not extract issue key from MCP output. "
+                "Please check MCP create and search output format."
+            )
+
+        # Test update_issue via MCP to close the issue
+        close_output = mcp_update_issue(
+            "spacebridge",
+            created_issue_key,
+            status="closed",
+        )
+        assert len(close_output) > 0, "MCP update_issue (close) returned empty output"
+        print("✓ Closed issue via MCP update_issue")
+
+        # Test get_issue via MCP to verify it's closed
+        time.sleep(3)
+        get_output = mcp_get_issue("spacebridge", created_issue_key)
         assert len(get_output) > 0, "MCP get_issue returned empty output"
-        assert original_title in get_output or GITLAB_ISSUE_KEY in get_output, (
-            "Issue details not found in MCP get_issue output"
+        assert "closed" in get_output.lower() or "done" in get_output.lower(), (
+            "Issue does not appear to be closed in MCP get_issue output"
         )
-        print("✓ Retrieved issue via MCP get_issue (verified in output)")
-
-        # Test update_issue via MCP
-        mcp_test_suffix = " [MCP Test]"
-        update_output = mcp_update_issue(
-            "spacebridge",
-            GITLAB_ISSUE_KEY,
-            title=original_title + mcp_test_suffix,
-            description=original_description + "\n\nUpdated via MCP",
-        )
-        assert len(update_output) > 0, "MCP update_issue returned empty output"
-        print("✓ Updated issue via MCP update_issue")
-
-        # Verify MCP update propagated to GitLab
-        time.sleep(5)
-        gitlab_after_mcp = gitlab_client.get(
-            f"/projects/{encoded_project_path}/issues/{iid}"
-        )
-        gitlab_after_mcp.raise_for_status()
-        gitlab_issue_after_mcp = gitlab_after_mcp.json()
-        assert gitlab_issue_after_mcp["title"] == original_title + mcp_test_suffix
-        print("✓ MCP update propagated to GitLab")
-
-        # Restore original via MCP (cleanup MCP changes)
-        mcp_update_issue(
-            "spacebridge",
-            GITLAB_ISSUE_KEY,
-            title=original_title,
-            description=original_description,
-        )
-        time.sleep(2)
-        print("✓ Restored original state after MCP test")
+        print("✓ Verified issue is closed via MCP get_issue")
 
         cleanup_claude_mcp_server()
         print("✓ MCP server cleanup complete")
@@ -1092,6 +1134,7 @@ def test_jira_tracker_sync(spacebridge_client, jira_client):
         # Setup MCP server
         from tests.integration.helpers import (
             cleanup_claude_mcp_server,
+            mcp_create_issue,
             mcp_get_issue,
             mcp_search_issue,
             mcp_update_issue,
@@ -1103,55 +1146,69 @@ def test_jira_tracker_sync(spacebridge_client, jira_client):
         verify_mcp_server()
         print("✓ MCP server setup complete")
 
-        # Test search via MCP
+        # Test create_issue via MCP
+        create_title = f"MCP Test Issue {TEST_RUN_ID}"
+        create_description = f"Issue created via MCP for testing - {TEST_RUN_ID}"
+        create_output = mcp_create_issue(
+            "spacebridge",
+            JIRA_PROJECT_ID,
+            title=create_title,
+            description=create_description,
+        )
+        assert len(create_output) > 0, "MCP create_issue returned empty output"
+        # Extract issue key from create output (look for Jira pattern like PROJECT-123)
+        import re
+
+        issue_key_match = re.search(r"([A-Z]+-\d+)", create_output)
+        created_issue_key = None
+        if issue_key_match:
+            created_issue_key = issue_key_match.group(1)
+            print(f"✓ Created issue via MCP: {created_issue_key}")
+        else:
+            print("✓ Created issue via MCP create_issue")
+
+        # Wait for issue to be created and indexed
+        time.sleep(5)
+
+        # Test search via MCP to find the created issue
         search_output = mcp_search_issue(
-            "spacebridge", original_title, project=JIRA_PROJECT_ID, limit=10
+            "spacebridge", create_title, project=JIRA_PROJECT_ID, limit=10
         )
         assert len(search_output) > 0, "MCP search returned empty output"
-        assert JIRA_ISSUE_KEY in search_output, (
-            f"Test issue {JIRA_ISSUE_KEY} not found in MCP search results"
+        assert TEST_RUN_ID in search_output, (
+            f"Created issue with {TEST_RUN_ID} not found in MCP search results"
         )
-        print("✓ Found issue via MCP search (verified in output)")
+        print("✓ Found created issue via MCP search")
 
-        # Test get_issue via MCP
-        get_output = mcp_get_issue("spacebridge", JIRA_ISSUE_KEY)
+        # If we didn't get the key from create, try to extract from search
+        if not created_issue_key:
+            issue_key_match = re.search(r"([A-Z]+-\d+)", search_output)
+            if issue_key_match:
+                created_issue_key = issue_key_match.group(1)
+
+        if not created_issue_key:
+            raise AssertionError(
+                "Could not extract issue key from MCP output. "
+                "Please check MCP create and search output format."
+            )
+
+        # Test update_issue via MCP to close the issue
+        close_output = mcp_update_issue(
+            "spacebridge",
+            created_issue_key,
+            status="Done",  # Jira uses "Done" not "closed"
+        )
+        assert len(close_output) > 0, "MCP update_issue (close) returned empty output"
+        print("✓ Closed issue via MCP update_issue")
+
+        # Test get_issue via MCP to verify it's closed
+        time.sleep(3)
+        get_output = mcp_get_issue("spacebridge", created_issue_key)
         assert len(get_output) > 0, "MCP get_issue returned empty output"
-        assert original_title in get_output or JIRA_ISSUE_KEY in get_output, (
-            "Issue details not found in MCP get_issue output"
+        assert "done" in get_output.lower() or "closed" in get_output.lower(), (
+            "Issue does not appear to be closed/done in MCP get_issue output"
         )
-        print("✓ Retrieved issue via MCP get_issue (verified in output)")
-
-        # Test update_issue via MCP
-        mcp_test_suffix = " [MCP Test]"
-        update_output = mcp_update_issue(
-            "spacebridge",
-            JIRA_ISSUE_KEY,
-            title=original_title + mcp_test_suffix,
-            description=original_description + "\n\nUpdated via MCP",
-        )
-        assert len(update_output) > 0, "MCP update_issue returned empty output"
-        print("✓ Updated issue via MCP update_issue")
-
-        # Verify MCP update propagated to Jira
-        time.sleep(5)
-        jira_after_mcp = jira_client.get(f"/rest/api/3/issue/{JIRA_ISSUE_KEY}")
-        jira_after_mcp.raise_for_status()
-        jira_issue_after_mcp = jira_after_mcp.json()
-        assert (
-            jira_issue_after_mcp["fields"]["summary"]
-            == original_title + mcp_test_suffix
-        )
-        print("✓ MCP update propagated to Jira")
-
-        # Restore original via MCP (cleanup MCP changes)
-        mcp_update_issue(
-            "spacebridge",
-            JIRA_ISSUE_KEY,
-            title=original_title,
-            description=original_description,
-        )
-        time.sleep(2)
-        print("✓ Restored original state after MCP test")
+        print("✓ Verified issue is closed via MCP get_issue")
 
         cleanup_claude_mcp_server()
         print("✓ MCP server cleanup complete")

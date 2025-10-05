@@ -14,7 +14,10 @@ from spacebridge.schemas.issue import (
     IssueResponse,
     IssueUpdate,
 )
-from spacebridge.schemas.tracker_models import IssueUpdate as TrackerIssueUpdate
+from spacebridge.schemas.tracker_models import (
+    IssueUpdate as TrackerIssueUpdate,
+    IssueCreate as TrackerIssueCreate,
+)
 from spacemodels.models.account import Account
 
 from spacemodels.crud import (
@@ -778,17 +781,19 @@ async def create_issue(
         # Get the tracker client using the resolved IDs, passing the current user for auth check
         tracker_client = await get_tracker_client(org.id, proj.id, db, current_user)
 
-        # Prepare the issue create model using the correct base class
-        tracker_issue = IssueCreate(  # Use IssueCreate from base.py
-            project=proj.slug or proj.identifier,
-            organization_id=proj.organization_id,
-            title=issue.title,
-            description=issue.description,
-            priority=issue.priority,
-            assignee=issue.assignee,
-            labels=issue.labels,
-            # Map API metadata to custom_fields if needed by the tracker base model
-            custom_fields=issue.meta_data or None,
+        # Prepare the issue create model using the correct tracker model
+        tracker_issue = (
+            TrackerIssueCreate(  # Use TrackerIssueCreate from tracker_models
+                project=proj.slug or proj.identifier,
+                organization_id=proj.organization_id,
+                title=issue.title,
+                description=issue.description,
+                priority=issue.priority,
+                assignee=issue.assignee,
+                labels=issue.labels,
+                # Map API metadata to custom_fields if needed by the tracker base model
+                custom_fields=issue.meta_data or None,
+            )
         )
 
         # Create the issue - Pass the project identifier expected by the tracker client

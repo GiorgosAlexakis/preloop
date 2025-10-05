@@ -141,7 +141,13 @@ def cleanup_claude_mcp_server(server_name: str = "spacebridge"):
 def mcp_create_issue(
     server_name: str, project: str, title: str, description: str, timeout: int = 30
 ) -> str:
-    """Create an issue via MCP and return the issue key."""
+    """
+    Create an issue via MCP.
+
+    Returns the text output from Claude (not parsed JSON).
+    Tests should verify the creation by checking the tracker directly or
+    checking that key information appears in the output.
+    """
     print(f"\n📝 Creating issue via MCP: {title}")
 
     prompt = f"create issue in project {project} with title '{title}' and description '{description}'"
@@ -156,15 +162,8 @@ def mcp_create_issue(
         timeout=timeout,
     )
 
-    # Parse the result to extract the issue ID/key
-    # The result should be JSON with issue_id
-    import json
-
-    result_data = json.loads(result)
-    issue_id = result_data.get("issue_id") or result_data.get("id")
-
-    print(f"✓ Created issue via MCP: {issue_id}")
-    return issue_id
+    print(f"✓ MCP create_issue completed, output length: {len(result)} chars")
+    return result
 
 
 def mcp_search_issue(
