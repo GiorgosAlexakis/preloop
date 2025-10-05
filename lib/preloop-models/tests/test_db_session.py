@@ -7,11 +7,16 @@ import pytest
 from sqlalchemy.orm import Session
 
 from spacemodels.db.session import get_db_session, get_engine, get_session_factory
+import spacemodels.db.session as session_module
 
 
 @pytest.fixture(autouse=True)  # Apply mock engine automatically to relevant tests
 def mock_engine_dependencies(monkeypatch):
     """Mock dependencies used by get_engine."""
+    # Reset global engine cache before each test
+    session_module._engine = None
+    session_module._session_factory = None
+
     mock_create = MagicMock()
     mock_engine_instance = MagicMock()
     mock_conn = MagicMock()
@@ -45,9 +50,14 @@ def test_get_engine_custom_url(mock_engine_dependencies):
     custom_url = "postgresql://user:pass@custom-host/db"
     engine = get_engine(custom_url)
 
-    # Verify create_engine was called with the custom URL
+    # Verify create_engine was called with the custom URL and connection pool parameters
     mock_engine_dependencies["create_engine"].assert_called_once_with(
-        custom_url, isolation_level="AUTOCOMMIT"
+        custom_url,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        echo=False,
     )
 
     # Verify connection test happened (execute called on connection mock)
@@ -73,9 +83,14 @@ def test_get_engine_from_env(mock_engine_dependencies):
     with patch.dict(os.environ, {"DATABASE_URL": env_url}):
         engine = get_engine()
 
-        # Verify create_engine was called with the URL from environment
+        # Verify create_engine was called with the URL from environment and pool parameters
         mock_engine_dependencies["create_engine"].assert_called_once_with(
-            env_url, isolation_level="AUTOCOMMIT"
+            env_url,
+            pool_size=10,
+            max_overflow=20,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            echo=False,
         )
 
         # Verify connection test happened
@@ -101,9 +116,14 @@ def test_get_engine_default(mock_engine_dependencies):
     with patch.dict(os.environ, {"DATABASE_URL": default_url}):
         engine = get_engine()  # Call without args
 
-        # Verify create_engine was called with the default URL
+        # Verify create_engine was called with the default URL and pool parameters
         mock_engine_dependencies["create_engine"].assert_called_once_with(
-            default_url, isolation_level="AUTOCOMMIT"
+            default_url,
+            pool_size=10,
+            max_overflow=20,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            echo=False,
         )
 
         # Verify connection test happened
@@ -122,6 +142,10 @@ def test_get_engine_default(mock_engine_dependencies):
 # Add test for error case (missing URL)
 def test_get_engine_error_fallback():
     """Test get_engine raises exception if DATABASE_URL is not set."""
+    # Reset global engine cache to ensure test starts fresh
+    session_module._engine = None
+    session_module._session_factory = None
+
     # Ensure DATABASE_URL is not set
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(Exception, match="DATABASE_URL not in env"):
