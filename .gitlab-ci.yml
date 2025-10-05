@@ -463,11 +463,6 @@ prod:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
     - playwright install
 
-test:integration:api:
-  extends: .test:integration:template
-  script:
-    - pytest --confcutdir=tests/integration tests/integration/test_api.py
-
 test:integration:ui:
   extends: .test:integration:template
   script:
@@ -484,17 +479,17 @@ test:integration:mcp:
     - npm install -g @anthropic-ai/claude-code
     - pytest --confcutdir=tests/integration tests/integration/test_mcp_api.py
 
-test:integration:tracker-sync-github:
+test:integration:api:github:
   extends: .test:integration:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m github
 
-test:integration:tracker-sync-gitlab:
+test:integration:api:gitlab:
   extends: .test:integration:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m gitlab
 
-test:integration:tracker-sync-jira:
+test:integration:api:jira:
   extends: .test:integration:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m jira
@@ -502,12 +497,11 @@ test:integration:tracker-sync-jira:
 .stop-env:template:
   stage: cleanup
   needs: [
-    "test:integration:api",
     "test:integration:ui",
     "test:integration:mcp",
-    "test:integration:tracker-sync-github",
-    "test:integration:tracker-sync-gitlab",
-    "test:integration:tracker-sync-jira"
+    "test:integration:api:github",
+    "test:integration:api:gitlab",
+    "test:integration:api:jira"
   ]
   image: dtzar/helm-kubectl:3.13.2
   when: manual
