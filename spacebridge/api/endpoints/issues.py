@@ -1160,7 +1160,9 @@ async def update_issue(
             except ValueError:
                 logger.warning(f"Invalid combined key format: {issue_id}")
                 # Proceed to next lookup method
-        elif not issue:  # 3. Try constructing combined key
+        elif (
+            not issue and project
+        ):  # 3. Try constructing combined key (only if project is available)
             logger.debug(f"Attempting lookup by constructing combined key: {issue_id}")
             issue_key = f"{project.slug}#{issue_id}"
             issue = crud_issue.get_by_key(db, key=issue_key, account_id=current_user.id)
