@@ -905,6 +905,11 @@ def get_issue(
 ):
     """Get details of a specific issue using its external ID."""
     try:
+        # URL decode the issue_id in case it's still encoded
+        from urllib.parse import unquote
+
+        issue_id = unquote(issue_id)
+
         user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
         tracker_ids = [t.id for t in user_trackers]
 
@@ -1053,6 +1058,11 @@ async def update_issue(
     current_user: Account = Depends(get_current_active_user),
 ):
     """Update an existing issue using its internal ID or external key."""
+    # URL decode the issue_id in case it's still encoded
+    from urllib.parse import unquote
+
+    issue_id = unquote(issue_id)
+
     logger.info(f"Attempting to update issue: {issue_id}")
     try:
         user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
