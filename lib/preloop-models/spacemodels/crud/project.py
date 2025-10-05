@@ -112,9 +112,14 @@ class CRUDProject(CRUDBase[Project]):
         self, db: Session, *, identifier: str, account_id: Optional[str] = None
     ) -> Optional[Project]:
         """
-        Get a project by identifier.
+        Get a project by identifier or slug.
+
+        For trackers like Jira that use both numeric IDs and human-readable keys,
+        this method checks both the identifier field and the slug field.
         """
-        query = db.query(Project).filter(Project.identifier == identifier)
+        query = db.query(Project).filter(
+            (Project.identifier == identifier) | (Project.slug == identifier)
+        )
         if account_id:
             query = (
                 query.join(Project.organization)
