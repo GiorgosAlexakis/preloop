@@ -1002,6 +1002,65 @@ class JiraTracker(BaseTracker):
             },
         }
 
+    def transform_issue(
+        self, issue_data: Dict[str, Any], project: Project
+    ) -> Dict[str, Any]:
+        """
+        Transform Jira issue data to database format.
+
+        Jira uses different field names than the base class expects:
+        - "summary" instead of "title"
+        - "status.name" instead of "status"
+        """
+        # Extract status - handle both webhook format and API format
+        status = issue_data.get("status")
+        if isinstance(status, dict):
+            status_name = status.get("name", "")
+        else:
+            status_name = status or ""
+
+        # Extract timestamps
+        created_at = None
+        if "created" in issue_data:
+            try:
+                created_at = datetime.strptime(
+                    issue_data["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                )
+            except (ValueError, TypeError):
+                pass
+
+        updated_at = None
+        if "updated" in issue_data:
+            try:
+                updated_at = datetime.strptime(
+                    issue_data["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                )
+            except (ValueError, TypeError):
+                pass
+
+        # Get fields from either top level (webhook) or nested in fields (API)
+        fields = issue_data.get("fields", issue_data)
+
+        return {
+            "project_id": project.id,
+            "external_id": str(issue_data.get("id", "")),
+            "key": issue_data.get("key", ""),
+            "title": fields.get("summary", ""),  # Jira uses "summary" not "title"
+            "description": self._convert_description_to_string(
+                fields.get("description", "")
+            ),
+            "state": status_name,
+            "created_at": created_at or datetime.now(),
+            "updated_at": updated_at or datetime.now(),
+            "labels": fields.get("labels", []),
+            "assignees": (
+                [fields["assignee"]["displayName"]] if fields.get("assignee") else []
+            ),
+            "url": f"{self.jira_url}/browse/{issue_data.get('key', '')}",
+            "tracker_id": self.tracker_id,
+            "comments": [],  # Comments are handled separately
+        }
+
     async def get_issues(
         self, organization_id: str, project_id: str, since: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
