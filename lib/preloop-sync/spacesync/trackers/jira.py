@@ -794,16 +794,53 @@ class JiraTracker(BaseTracker):
             fields["summary"] = issue_data.title
 
         if issue_data.description is not None:
-            fields["description"] = {
-                "type": "doc",
-                "version": 1,
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [{"type": "text", "text": issue_data.description}],
+            # Check if description is already in ADF format (JSON string or dict)
+            if isinstance(issue_data.description, dict):
+                # Already a dict, use as-is
+                fields["description"] = issue_data.description
+            elif isinstance(issue_data.description, str):
+                # Try to parse as JSON first (might already be ADF)
+                try:
+                    import json
+
+                    parsed_desc = json.loads(issue_data.description)
+                    if (
+                        isinstance(parsed_desc, dict)
+                        and parsed_desc.get("type") == "doc"
+                    ):
+                        # It's already ADF format
+                        fields["description"] = parsed_desc
+                    else:
+                        # Not ADF, wrap as plain text
+                        fields["description"] = {
+                            "type": "doc",
+                            "version": 1,
+                            "content": [
+                                {
+                                    "type": "paragraph",
+                                    "content": [
+                                        {"type": "text", "text": issue_data.description}
+                                    ],
+                                }
+                            ],
+                        }
+                except (json.JSONDecodeError, ValueError):
+                    # Not JSON, treat as plain text
+                    fields["description"] = {
+                        "type": "doc",
+                        "version": 1,
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [
+                                    {"type": "text", "text": issue_data.description}
+                                ],
+                            }
+                        ],
                     }
-                ],
-            }
+            else:
+                # Unknown type, skip
+                pass
 
         if issue_data.priority is not None:
             fields["priority"] = {"name": issue_data.priority}
@@ -1336,24 +1373,55 @@ class JiraTracker(BaseTracker):
                 },
             )
 
-            # Verify the webhook was actually created by fetching it back
-            try:
-                verify_response = self.jira_client._session.get(
-                    f"{self.jira_url}/rest/webhooks/1.0/webhook/{webhook_id}"
-                )
-                if verify_response.status_code == 200:
-                    logger.info(
-                        f"Verified: Webhook {webhook_id} exists in Jira for project {project.identifier}."
+            # Verify the webhook was actually created by fetching it back (with retries)
+            max_retries = 3
+            verified = False
+            for attempt in range(max_retries):
+                try:
+                    import time
+
+                    if attempt > 0:
+                        # Wait a bit before retrying
+                        time.sleep(2**attempt)  # Exponential backoff: 2, 4, 8 seconds
+
+                    verify_response = self.jira_client._session.get(
+                        f"{self.jira_url}/rest/webhooks/1.0/webhook/{webhook_id}"
                     )
-                else:
+                    if verify_response.status_code == 200:
+                        logger.info(
+                            f"Verified: Webhook {webhook_id} exists in Jira for project {project.identifier} (attempt {attempt + 1}/{max_retries})."
+                        )
+                        verified = True
+                        break
+                    else:
+                        logger.warning(
+                            f"Could not verify webhook {webhook_id} exists in Jira (attempt {attempt + 1}/{max_retries}). "
+                            f"Status: {verify_response.status_code}, Response: {verify_response.text[:200]}"
+                        )
+                except Exception as verify_error:
                     logger.warning(
-                        f"Could not verify webhook {webhook_id} exists in Jira. "
-                        f"Status: {verify_response.status_code}, Response: {verify_response.text[:200]}"
+                        f"Error verifying webhook {webhook_id} in Jira (attempt {attempt + 1}/{max_retries}): {verify_error}"
                     )
-            except Exception as verify_error:
-                logger.warning(
-                    f"Could not verify webhook {webhook_id} exists in Jira: {verify_error}"
+
+            # If verification failed after all retries, notify admins
+            if not verified:
+                error_msg = (
+                    f"Failed to verify webhook {webhook_id} for project {project.identifier} "
+                    f"after {max_retries} attempts. The webhook may not be properly registered in Jira."
                 )
+                logger.error(error_msg)
+                try:
+                    from spacesync.tasks import notify_admins
+
+                    notify_admins(
+                        subject=f"Jira Webhook Verification Failed: {project.identifier}",
+                        message=error_msg,
+                    )
+                except Exception as notify_error:
+                    logger.error(
+                        f"Failed to send admin notification: {notify_error}",
+                        exc_info=True,
+                    )
 
             logger.info(
                 f"Successfully registered webhook {webhook_id} for project {project.identifier} "
