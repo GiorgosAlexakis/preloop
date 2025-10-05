@@ -403,15 +403,13 @@ class JiraTracker(BaseTracker):
         Jira can return descriptions in different formats:
         - String (legacy)
         - Dict (Atlassian Document Format - ADF)
+
+        For storage in the database, we convert ADF to plain text
+        to avoid nested JSON encoding issues.
         """
         if isinstance(description, dict):
-            # Handle Atlassian Document Format (ADF)
-            try:
-                import json
-
-                return json.dumps(description)
-            except Exception:
-                return str(description)
+            # Handle Atlassian Document Format (ADF) - convert to plain text
+            return self._adf_to_plain_text(description)
         elif isinstance(description, str):
             return description
         elif description is None:
