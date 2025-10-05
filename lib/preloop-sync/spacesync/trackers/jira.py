@@ -874,9 +874,12 @@ class JiraTracker(BaseTracker):
 
                 for attempt in range(max_parse_attempts):
                     try:
-                        parsed = json.loads(desc)
+                        # Use JSONDecoder to handle cases where desc has extra text after JSON
+                        decoder = json.JSONDecoder()
+                        parsed, json_end_index = decoder.raw_decode(desc)
                         logger.info(
-                            f"Parse attempt {attempt + 1}: parsed type={type(parsed).__name__}, first 100 chars: {str(parsed)[:100]}"
+                            f"Parse attempt {attempt + 1}: parsed type={type(parsed).__name__}, "
+                            f"JSON ends at char {json_end_index}/{len(desc)}, first 100 chars: {str(parsed)[:100]}"
                         )
 
                         if isinstance(parsed, dict):
