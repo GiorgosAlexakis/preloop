@@ -1264,6 +1264,14 @@ class JiraTracker(BaseTracker):
         # Get fields from either top level (webhook) or nested in fields (API)
         fields = issue_data.get("fields", issue_data)
 
+        # Extract external_id - handle both webhook and API formats
+        external_id = issue_data.get("id")
+        if not external_id:
+            logger.warning(
+                f"Missing 'id' field in issue_data for key {issue_data.get('key')}. "
+                f"Available keys: {list(issue_data.keys())}"
+            )
+
         # Extract labels and assignees for meta_data
         labels = fields.get("labels", [])
         assignees = (
@@ -1273,7 +1281,7 @@ class JiraTracker(BaseTracker):
 
         return {
             "project_id": project.id,
-            "external_id": str(issue_data.get("id", "")),
+            "external_id": str(external_id) if external_id else "",
             "key": issue_data.get("key", ""),
             "title": fields.get("summary", ""),  # Jira uses "summary" not "title"
             "description": self._convert_description_to_string(
