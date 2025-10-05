@@ -14,6 +14,7 @@ from spacebridge.schemas.issue import (
     IssueResponse,
     IssueUpdate,
 )
+from spacebridge.schemas.tracker_models import IssueUpdate as TrackerIssueUpdate
 from spacemodels.models.account import Account
 
 from spacemodels.crud import (
@@ -1277,7 +1278,7 @@ async def update_issue(
                 # Use the issue's key for the tracker API call (e.g., "owner/repo#123")
                 # The tracker client will extract the issue number from it
                 await tracker_client.update_issue(
-                    issue.key, IssueUpdate(**update_data_for_tracker)
+                    issue.key, TrackerIssueUpdate(**update_data_for_tracker)
                 )
                 logger.info(
                     f"Successfully updated issue {issue.external_id} via tracker client."
