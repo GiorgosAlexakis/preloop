@@ -900,13 +900,18 @@ class JiraTracker(BaseTracker):
                                         "Text content appears to be JSON, attempting to parse it"
                                     )
                                     try:
-                                        # Try to parse the extracted text as JSON to validate it
-                                        json.loads(text_content)
-                                        # Successfully parsed the nested content
-                                        # Continue parsing by setting desc to the extracted text
-                                        desc = text_content
+                                        # Try to parse the extracted text as JSON
+                                        # Use JSONDecoder to find where valid JSON ends
+                                        decoder = json.JSONDecoder()
+                                        nested_parsed, json_end_index = (
+                                            decoder.raw_decode(text_content)
+                                        )
+
+                                        # Successfully parsed the JSON part
+                                        # Continue parsing by using the extracted JSON
+                                        desc = json.dumps(nested_parsed)
                                         logger.info(
-                                            f"Successfully parsed nested JSON from text content, continuing (new desc length: {len(desc)})"
+                                            f"Successfully extracted nested JSON (ends at char {json_end_index}), continuing (new desc length: {len(desc)})"
                                         )
                                         continue
                                     except (
@@ -915,12 +920,12 @@ class JiraTracker(BaseTracker):
                                     ) as nested_e:
                                         # The text content looks like JSON but isn't valid JSON
                                         # This means it's probably escaped/malformed
-                                        # Try to parse it as a plain text that needs cleaning
+                                        # Treat the whole text_content as plain text
                                         logger.warning(
                                             f"Text content looks like JSON but failed to parse: {nested_e}. "
                                             f"Converting to plain text."
                                         )
-                                        # Use the plain text version
+                                        # Use the plain text version (the text_content, not the whole desc)
                                         parsed_desc = {
                                             "type": "doc",
                                             "version": 1,
