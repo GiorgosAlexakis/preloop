@@ -631,6 +631,9 @@ async def receive_webhook(
                 comment_data, issue.id
             )
 
+            # Add tracker_id to the comment data
+            transformed_comment["tracker_id"] = resolved_tracker.id
+
             existing_comment = crud_comment.get_by_external_id(
                 db,
                 issue_id=issue.id,

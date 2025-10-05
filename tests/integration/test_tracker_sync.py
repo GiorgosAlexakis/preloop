@@ -641,10 +641,15 @@ def test_gitlab_tracker_sync(spacebridge_client, gitlab_client):
         issue_with_comments = wait_for_issue(
             spacebridge_client, GITLAB_ISSUE_KEY, WEBHOOK_PROPAGATION_TIMEOUT
         )
+        print(f"  Issue response: {issue_with_comments}")
+        print(f"  Comments in response: {issue_with_comments.get('comments', [])}")
+        print(f"  Looking for comment text: '{comment_text}'")
         assert any(
             comment_text in c.get("body", "")
             for c in issue_with_comments.get("comments", [])
-        ), "Comment not synced to SpaceBridge"
+        ), (
+            f"Comment not synced to SpaceBridge. Got {len(issue_with_comments.get('comments', []))} comments: {issue_with_comments.get('comments', [])}"
+        )
         print("✓ Comment synced to SpaceBridge")
 
         # Step 10: Update issue via SpaceBridge API (remove test suffix)
