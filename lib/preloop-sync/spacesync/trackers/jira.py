@@ -1041,6 +1041,13 @@ class JiraTracker(BaseTracker):
         # Get fields from either top level (webhook) or nested in fields (API)
         fields = issue_data.get("fields", issue_data)
 
+        # Extract labels and assignees for meta_data
+        labels = fields.get("labels", [])
+        assignees = (
+            [fields["assignee"]["displayName"]] if fields.get("assignee") else []
+        )
+        issue_url = f"{self.jira_url}/browse/{issue_data.get('key', '')}"
+
         return {
             "project_id": project.id,
             "external_id": str(issue_data.get("id", "")),
@@ -1052,13 +1059,16 @@ class JiraTracker(BaseTracker):
             "status": status_name,
             "created_at": created_at or datetime.now(),
             "updated_at": updated_at or datetime.now(),
-            "labels": fields.get("labels", []),
-            "assignees": (
-                [fields["assignee"]["displayName"]] if fields.get("assignee") else []
-            ),
-            "url": f"{self.jira_url}/browse/{issue_data.get('key', '')}",
+            "last_updated_external": updated_at or datetime.now(),
+            "last_synced": datetime.now(),
+            "external_url": issue_url,
+            "meta_data": {
+                "labels": labels,
+                "assignees": assignees,
+                "url": issue_url,
+                "source": "spacesync",
+            },
             "tracker_id": self.tracker_id,
-            "comments": [],  # Comments are handled separately
         }
 
     async def get_issues(
@@ -1145,6 +1155,20 @@ class JiraTracker(BaseTracker):
                         )
 
                 # Transform to the expected format
+                issue_url = f"{self.jira_url}/browse/{issue_data['key']}"
+                labels = issue_data["fields"].get("labels", [])
+                assignees = (
+                    [issue_data["fields"]["assignee"]["displayName"]]
+                    if issue_data["fields"].get("assignee")
+                    else []
+                )
+                created_at = datetime.strptime(
+                    issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                )
+                updated_at = datetime.strptime(
+                    issue_data["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
+                )
+
                 transformed_issue = {
                     "external_id": issue_data["id"],
                     "key": issue_data["key"],
@@ -1152,18 +1176,18 @@ class JiraTracker(BaseTracker):
                     "description": self._convert_description_to_string(
                         issue_data["fields"].get("description", "")
                     ),
-                    "state": issue_data["fields"]["status"]["name"],
-                    "created_at": datetime.strptime(
-                        issue_data["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z"
-                    ),
-                    "updated_at": datetime.strptime(
-                        issue_data["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z"
-                    ),
-                    "labels": issue_data["fields"].get("labels", []),
-                    "assignees": [issue_data["fields"]["assignee"]["displayName"]]
-                    if issue_data["fields"].get("assignee")
-                    else [],
-                    "url": f"{self.jira_url}/browse/{issue_data['key']}",
+                    "status": issue_data["fields"]["status"]["name"],
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                    "last_updated_external": updated_at,
+                    "last_synced": datetime.now(),
+                    "external_url": issue_url,
+                    "meta_data": {
+                        "labels": labels,
+                        "assignees": assignees,
+                        "url": issue_url,
+                        "source": "spacesync",
+                    },
                     "comments": comments_data,
                     "dependencies": [],  # Will be populated if issuelinks are present
                 }
