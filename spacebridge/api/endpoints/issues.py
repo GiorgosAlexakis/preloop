@@ -808,6 +808,11 @@ async def create_issue(
                 detail="Project identifier/slug is missing for tracker interaction.",
             )
 
+        logger.info(
+            f"Creating issue in tracker. Project (DB): id={proj.id}, name='{proj.name}', "
+            f"identifier='{proj.identifier}', slug='{proj.slug}'. "
+            f"Using project_key_for_tracker='{project_key_for_tracker}'"
+        )
         created_issue = await tracker_client.create_issue(
             project_key_for_tracker, tracker_issue
         )
