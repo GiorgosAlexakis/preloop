@@ -484,9 +484,31 @@ test:integration:mcp:
     - npm install -g @anthropic-ai/claude-code
     - pytest --confcutdir=tests/integration tests/integration/test_mcp_api.py
 
+test:integration:tracker-sync-github:
+  extends: .test:integration:template
+  script:
+    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m github
+
+test:integration:tracker-sync-gitlab:
+  extends: .test:integration:template
+  script:
+    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m gitlab
+
+test:integration:tracker-sync-jira:
+  extends: .test:integration:template
+  script:
+    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m jira
+
 .stop-env:template:
   stage: cleanup
-  needs: ["test:integration:api", "test:integration:ui", "test:integration:mcp"]
+  needs: [
+    "test:integration:api",
+    "test:integration:ui",
+    "test:integration:mcp",
+    "test:integration:tracker-sync-github",
+    "test:integration:tracker-sync-gitlab",
+    "test:integration:tracker-sync-jira"
+  ]
   image: dtzar/helm-kubectl:3.13.2
   when: manual
   allow_failure: true

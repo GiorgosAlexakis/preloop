@@ -490,9 +490,224 @@ def test_gitlab_tracker_sync(spacebridge_client, gitlab_client):
     """
     Complete integration test for GitLab tracker synchronization.
 
-    Similar flow to GitHub test but using GitLab API.
+    This test verifies:
+    - Tracker registration
+    - Initial issue indexing via polling
+    - Webhook registration and propagation
+    - Bi-directional sync (GitLab -> SpaceBridge, SpaceBridge -> GitLab)
+    - Comment synchronization
+    - Proper cleanup
     """
-    pytest.skip("GitLab test implementation pending - similar to GitHub test")
+    print("\n" + "=" * 80)
+    print("GITLAB TRACKER SYNC TEST")
+    print("=" * 80)
+
+    # Parse GitLab issue key
+    project_path, iid = parse_gitlab_issue_key(GITLAB_ISSUE_KEY)
+
+    # Build scope rules to only sync specific org and project
+    scope_rules = []
+    if GITLAB_ORG_ID and GITLAB_PROJECT_ID:
+        scope_rules = [
+            {
+                "scope_type": "ORGANIZATION",
+                "rule_type": "INCLUDE",
+                "identifier": GITLAB_ORG_ID,
+            },
+            {
+                "scope_type": "PROJECT",
+                "rule_type": "INCLUDE",
+                "identifier": GITLAB_PROJECT_ID,
+            },
+        ]
+
+    # Variables for cleanup
+    tracker_id = None
+    original_title = None
+    original_description = None
+    created_comment_ids = []
+
+    try:
+        # Step 2: Register tracker
+        print("\n" + "=" * 80)
+        print("STEP 2: Tracker Registration (GitLab)")
+        print("=" * 80)
+
+        request_body = {
+            "name": f"GitLab Test Tracker {TEST_RUN_ID}",
+            "type": "gitlab",
+            "api_key": GITLAB_API_KEY,
+            "config": {
+                "url": GITLAB_URL,
+            },
+            "scope_rules": scope_rules,
+        }
+
+        print("Request body (api_key redacted):")
+        import json
+
+        redacted_body = request_body.copy()
+        redacted_body["api_key"] = "***REDACTED***"
+        print(json.dumps(redacted_body, indent=2))
+
+        register_response = spacebridge_client.post(
+            "/api/v1/trackers",
+            json=request_body,
+        )
+        assert register_response.status_code == 201, (
+            f"Failed to register GitLab tracker (status {register_response.status_code}): {register_response.text}"
+        )
+        tracker_data = register_response.json()
+        tracker_id = tracker_data["id"]
+        print(f"✓ Registered GitLab tracker: {tracker_id}")
+        print("Response data:")
+        print(json.dumps(tracker_data, indent=2))
+
+        # Step 3: Verify tracker is listed
+        print("\n" + "=" * 80)
+        print("STEP 3: Tracker Verification")
+        print("=" * 80)
+
+        list_response = spacebridge_client.get("/api/v1/trackers")
+        assert list_response.status_code == 200
+        trackers = list_response.json()
+        assert any(t["id"] == tracker_id for t in trackers), (
+            "GitLab tracker not in list"
+        )
+        print("✓ GitLab tracker appears in tracker list")
+
+        # Step 5: Wait for initial indexing
+        print("\n" + "=" * 80)
+        print("STEP 5: Initial Indexing (Polling)")
+        print("=" * 80)
+
+        issue_data = wait_for_issue(spacebridge_client, GITLAB_ISSUE_KEY, INDEX_TIMEOUT)
+        original_title = issue_data["title"]
+        original_description = issue_data.get("description", "")
+        print(f"✓ Issue indexed: {GITLAB_ISSUE_KEY}")
+        print(f"  Original title: {original_title}")
+
+        # Step 7: Update issue via GitLab API
+        print("\n" + "=" * 80)
+        print("STEP 7: External Update (GitLab API)")
+        print("=" * 80)
+
+        new_title = f"{original_title} {TEST_RUN_ID}"
+        new_description = f"{original_description} {TEST_RUN_ID}"
+
+        # URL encode project path for GitLab API
+        from urllib.parse import quote as url_quote
+
+        encoded_project_path = url_quote(project_path, safe="")
+
+        update_response = gitlab_client.put(
+            f"/projects/{encoded_project_path}/issues/{iid}",
+            json={"title": new_title, "description": new_description},
+        )
+        update_response.raise_for_status()
+        print("✓ Updated issue via GitLab API")
+        print(f"  New title: {new_title}")
+
+        # Step 8: Wait for webhook propagation
+        print("\n" + "=" * 80)
+        print("STEP 8: Webhook Propagation Test")
+        print("=" * 80)
+
+        updated_issue = wait_for_issue_update(
+            spacebridge_client, GITLAB_ISSUE_KEY, new_title, WEBHOOK_PROPAGATION_TIMEOUT
+        )
+        assert updated_issue["title"] == new_title
+        assert TEST_RUN_ID in updated_issue.get("description", "")
+        print("✓ Webhook propagation successful")
+
+        # Step 9: Create comment via GitLab API
+        print("\n" + "=" * 80)
+        print("STEP 9: Comment Sync Test")
+        print("=" * 80)
+
+        comment_text = f"Test comment {TEST_RUN_ID}"
+        comment_response = gitlab_client.post(
+            f"/projects/{encoded_project_path}/issues/{iid}/notes",
+            json={"body": comment_text},
+        )
+        comment_response.raise_for_status()
+        comment_id = str(comment_response.json()["id"])
+        created_comment_ids.append(comment_id)
+        print(f"✓ Created comment via GitLab API: {comment_id}")
+
+        # Wait for comment to appear in SpaceBridge
+        print("  Waiting for comment to sync...")
+        time.sleep(10)  # Give webhook time to propagate
+        issue_with_comments = wait_for_issue(
+            spacebridge_client, GITLAB_ISSUE_KEY, WEBHOOK_PROPAGATION_TIMEOUT
+        )
+        assert any(
+            comment_text in c.get("body", "")
+            for c in issue_with_comments.get("comments", [])
+        ), "Comment not synced to SpaceBridge"
+        print("✓ Comment synced to SpaceBridge")
+
+        # Step 10: Update issue via SpaceBridge API (remove test suffix)
+        print("\n" + "=" * 80)
+        print("STEP 10: SpaceBridge Update")
+        print("=" * 80)
+
+        # URL-encode the issue key for the PUT request
+        encoded_issue_key = quote(GITLAB_ISSUE_KEY, safe="")
+        update_response = spacebridge_client.put(
+            f"/api/v1/issues/{encoded_issue_key}",
+            json={
+                "title": original_title,
+                "description": original_description,
+            },
+        )
+        assert update_response.status_code == 200, (
+            f"Failed to update issue via SpaceBridge: {update_response.text}"
+        )
+        print("✓ Updated issue via SpaceBridge API")
+
+        # Step 11: Verify update propagated to GitLab
+        print("\n" + "=" * 80)
+        print("STEP 11: Tracker Verification (GitLab)")
+        print("=" * 80)
+
+        time.sleep(5)  # Give sync time to complete
+        verify_response = gitlab_client.get(
+            f"/projects/{encoded_project_path}/issues/{iid}"
+        )
+        verify_response.raise_for_status()
+        gitlab_issue = verify_response.json()
+        assert gitlab_issue["title"] == original_title, (
+            f"Title not synced to GitLab: got '{gitlab_issue['title']}', expected '{original_title}'"
+        )
+        assert gitlab_issue["description"] == original_description, (
+            "Description not synced to GitLab"
+        )
+
+        print("✓ Update propagated from SpaceBridge to GitLab")
+        print("\n✅ GitLab tracker sync test PASSED")
+
+    finally:
+        # Cleanup
+        print("\n" + "=" * 80)
+        print("CLEANUP")
+        print("=" * 80)
+
+        # Delete created comments
+        from urllib.parse import quote as url_quote
+
+        encoded_project_path = url_quote(project_path, safe="")
+        for comment_id in created_comment_ids:
+            try:
+                gitlab_client.delete(
+                    f"/projects/{encoded_project_path}/issues/{iid}/notes/{comment_id}"
+                )
+                print(f"✓ Deleted comment: {comment_id}")
+            except Exception as e:
+                print(f"✗ Failed to delete comment {comment_id}: {e}")
+
+        # Note: We intentionally don't restore the issue title/description
+        # since the SpaceBridge update in Step 10 already restored them
 
 
 @pytest.mark.integration
@@ -505,6 +720,240 @@ def test_jira_tracker_sync(spacebridge_client, jira_client):
     """
     Complete integration test for Jira tracker synchronization.
 
-    Similar flow to GitHub test but using Jira API.
+    This test verifies:
+    - Tracker registration
+    - Initial issue indexing via polling
+    - Webhook registration and propagation
+    - Bi-directional sync (Jira -> SpaceBridge, SpaceBridge -> Jira)
+    - Comment synchronization
+    - Proper cleanup
     """
-    pytest.skip("Jira test implementation pending - similar to GitHub test")
+    print("\n" + "=" * 80)
+    print("JIRA TRACKER SYNC TEST")
+    print("=" * 80)
+
+    # Build scope rules to only sync specific org and project
+    scope_rules = []
+    if JIRA_ORG_ID and JIRA_PROJECT_KEY:
+        scope_rules = [
+            {
+                "scope_type": "ORGANIZATION",
+                "rule_type": "INCLUDE",
+                "identifier": JIRA_ORG_ID,
+            },
+            {
+                "scope_type": "PROJECT",
+                "rule_type": "INCLUDE",
+                "identifier": JIRA_PROJECT_KEY,
+            },
+        ]
+
+    # Variables for cleanup
+    tracker_id = None
+    original_title = None
+    original_description = None
+    created_comment_ids = []
+
+    try:
+        # Step 2: Register tracker
+        print("\n" + "=" * 80)
+        print("STEP 2: Tracker Registration (Jira)")
+        print("=" * 80)
+
+        request_body = {
+            "name": f"Jira Test Tracker {TEST_RUN_ID}",
+            "type": "jira",
+            "api_key": JIRA_API_KEY,
+            "config": {
+                "url": JIRA_URL,
+                "username": JIRA_USERNAME,
+            },
+            "scope_rules": scope_rules,
+        }
+
+        print("Request body (api_key redacted):")
+        import json
+
+        redacted_body = request_body.copy()
+        redacted_body["api_key"] = "***REDACTED***"
+        print(json.dumps(redacted_body, indent=2))
+
+        register_response = spacebridge_client.post(
+            "/api/v1/trackers",
+            json=request_body,
+        )
+        assert register_response.status_code == 201, (
+            f"Failed to register Jira tracker (status {register_response.status_code}): {register_response.text}"
+        )
+        tracker_data = register_response.json()
+        tracker_id = tracker_data["id"]
+        print(f"✓ Registered Jira tracker: {tracker_id}")
+        print("Response data:")
+        print(json.dumps(tracker_data, indent=2))
+
+        # Step 3: Verify tracker is listed
+        print("\n" + "=" * 80)
+        print("STEP 3: Tracker Verification")
+        print("=" * 80)
+
+        list_response = spacebridge_client.get("/api/v1/trackers")
+        assert list_response.status_code == 200
+        trackers = list_response.json()
+        assert any(t["id"] == tracker_id for t in trackers), "Jira tracker not in list"
+        print("✓ Jira tracker appears in tracker list")
+
+        # Step 5: Wait for initial indexing
+        print("\n" + "=" * 80)
+        print("STEP 5: Initial Indexing (Polling)")
+        print("=" * 80)
+
+        issue_data = wait_for_issue(spacebridge_client, JIRA_ISSUE_KEY, INDEX_TIMEOUT)
+        original_title = issue_data["title"]
+        original_description = issue_data.get("description", "")
+        print(f"✓ Issue indexed: {JIRA_ISSUE_KEY}")
+        print(f"  Original title: {original_title}")
+
+        # Step 7: Update issue via Jira API
+        print("\n" + "=" * 80)
+        print("STEP 7: External Update (Jira API)")
+        print("=" * 80)
+
+        new_title = f"{original_title} {TEST_RUN_ID}"
+        new_description = f"{original_description} {TEST_RUN_ID}"
+
+        update_response = jira_client.put(
+            f"/rest/api/3/issue/{JIRA_ISSUE_KEY}",
+            json={
+                "fields": {
+                    "summary": new_title,
+                    "description": {
+                        "type": "doc",
+                        "version": 1,
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": new_description}],
+                            }
+                        ],
+                    },
+                }
+            },
+        )
+        update_response.raise_for_status()
+        print("✓ Updated issue via Jira API")
+        print(f"  New title: {new_title}")
+
+        # Step 8: Wait for webhook propagation
+        print("\n" + "=" * 80)
+        print("STEP 8: Webhook Propagation Test")
+        print("=" * 80)
+
+        updated_issue = wait_for_issue_update(
+            spacebridge_client, JIRA_ISSUE_KEY, new_title, WEBHOOK_PROPAGATION_TIMEOUT
+        )
+        assert updated_issue["title"] == new_title
+        assert TEST_RUN_ID in updated_issue.get("description", "")
+        print("✓ Webhook propagation successful")
+
+        # Step 9: Create comment via Jira API
+        print("\n" + "=" * 80)
+        print("STEP 9: Comment Sync Test")
+        print("=" * 80)
+
+        comment_text = f"Test comment {TEST_RUN_ID}"
+        comment_response = jira_client.post(
+            f"/rest/api/3/issue/{JIRA_ISSUE_KEY}/comment",
+            json={
+                "body": {
+                    "type": "doc",
+                    "version": 1,
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [{"type": "text", "text": comment_text}],
+                        }
+                    ],
+                }
+            },
+        )
+        comment_response.raise_for_status()
+        comment_id = str(comment_response.json()["id"])
+        created_comment_ids.append(comment_id)
+        print(f"✓ Created comment via Jira API: {comment_id}")
+
+        # Wait for comment to appear in SpaceBridge
+        print("  Waiting for comment to sync...")
+        time.sleep(10)  # Give webhook time to propagate
+        issue_with_comments = wait_for_issue(
+            spacebridge_client, JIRA_ISSUE_KEY, WEBHOOK_PROPAGATION_TIMEOUT
+        )
+        assert any(
+            comment_text in c.get("body", "")
+            for c in issue_with_comments.get("comments", [])
+        ), "Comment not synced to SpaceBridge"
+        print("✓ Comment synced to SpaceBridge")
+
+        # Step 10: Update issue via SpaceBridge API (remove test suffix)
+        print("\n" + "=" * 80)
+        print("STEP 10: SpaceBridge Update")
+        print("=" * 80)
+
+        # URL-encode the issue key for the PUT request
+        encoded_issue_key = quote(JIRA_ISSUE_KEY, safe="")
+        update_response = spacebridge_client.put(
+            f"/api/v1/issues/{encoded_issue_key}",
+            json={
+                "title": original_title,
+                "description": original_description,
+            },
+        )
+        assert update_response.status_code == 200, (
+            f"Failed to update issue via SpaceBridge: {update_response.text}"
+        )
+        print("✓ Updated issue via SpaceBridge API")
+
+        # Step 11: Verify update propagated to Jira
+        print("\n" + "=" * 80)
+        print("STEP 11: Tracker Verification (Jira)")
+        print("=" * 80)
+
+        time.sleep(5)  # Give sync time to complete
+        verify_response = jira_client.get(f"/rest/api/3/issue/{JIRA_ISSUE_KEY}")
+        verify_response.raise_for_status()
+        jira_issue = verify_response.json()
+        assert jira_issue["fields"]["summary"] == original_title, (
+            f"Title not synced to Jira: got '{jira_issue['fields']['summary']}', expected '{original_title}'"
+        )
+        # Note: Jira description is complex format, so we check for the text content
+        jira_description = ""
+        if jira_issue["fields"].get("description"):
+            desc_content = jira_issue["fields"]["description"].get("content", [])
+            for block in desc_content:
+                for content in block.get("content", []):
+                    if content.get("type") == "text":
+                        jira_description += content.get("text", "")
+        assert original_description in jira_description, (
+            "Description not synced to Jira"
+        )
+
+        print("✓ Update propagated from SpaceBridge to Jira")
+        print("\n✅ Jira tracker sync test PASSED")
+
+    finally:
+        # Cleanup
+        print("\n" + "=" * 80)
+        print("CLEANUP")
+        print("=" * 80)
+
+        # Delete created comments
+        for comment_id in created_comment_ids:
+            try:
+                jira_client.delete(
+                    f"/rest/api/3/issue/{JIRA_ISSUE_KEY}/comment/{comment_id}"
+                )
+                print(f"✓ Deleted comment: {comment_id}")
+            except Exception as e:
+                print(f"✗ Failed to delete comment {comment_id}: {e}")
+
+        # Note: We intentionally don't restore the issue title/description
+        # since the SpaceBridge update in Step 10 already restored them
