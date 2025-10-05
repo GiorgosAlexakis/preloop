@@ -696,6 +696,8 @@ class GitLabTracker(BaseTracker):
 
             issue_data = issue_obj.attributes
             issue_data["comments"] = comments_data
+            # Construct the issue key in format "group/project#iid"
+            issue_data["key"] = f"{project_slug}#{issue_obj.iid}"
 
             # Parse dependencies from issue links if available
             dependencies = []
