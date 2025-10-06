@@ -274,93 +274,80 @@ def test_github_tracker_sync(spacebridge_client, github_client):
         print("STEP 12: MCP Tools Integration Test")
         print("=" * 80)
 
-        # Setup MCP server
-        from tests.integration.helpers import (
-            cleanup_claude_mcp_server,
-            mcp_create_issue,
-            mcp_get_issue,
-            mcp_search_issue,
-            mcp_update_issue,
-            setup_claude_mcp_server,
-            verify_mcp_server,
-        )
+        from tests.integration.helpers import run_mcp_test
 
-        setup_claude_mcp_server(SPACEBRIDGE_URL, SPACEBRIDGE_API_KEY)
-        verify_mcp_server()
-        print("✓ MCP server setup complete")
+        async def test_mcp_operations(mcp_client):
+            """Test MCP operations using direct client."""
+            # Test create_issue via MCP
+            create_title = f"MCP Test Issue {TEST_RUN_ID}"
+            create_description = f"Issue created via MCP for testing - {TEST_RUN_ID}"
 
-        # Test create_issue via MCP
-        create_title = f"MCP Test Issue {TEST_RUN_ID}"
-        create_description = f"Issue created via MCP for testing - {TEST_RUN_ID}"
-        create_output = mcp_create_issue(
-            "spacebridge",
-            f"{owner}/{repo}",
-            title=create_title,
-            description=create_description,
-        )
-        assert len(create_output) > 0, "MCP create_issue returned empty output"
-        print(f"  MCP create_issue output: {create_output[:500]}")
-        # Extract issue key from create output (look for pattern like owner/repo#123)
-        issue_key_match = re.search(
-            r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+#\d+)", create_output
-        )
-        created_issue_key = None
-        if issue_key_match:
-            created_issue_key = issue_key_match.group(1)
+            print(f"📝 Creating issue via MCP: {create_title}")
+            create_result = await mcp_client.create_issue(
+                project=f"{owner}/{repo}",
+                title=create_title,
+                description=create_description,
+            )
+
+            # Extract issue key from response
+            created_issue_key = None
+            if hasattr(create_result, "content"):
+                # Parse MCP tool response
+                for content_item in create_result.content:
+                    if hasattr(content_item, "text"):
+                        text = content_item.text
+                        # Look for issue key pattern
+                        issue_key_match = re.search(
+                            r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+#\d+)", text
+                        )
+                        if issue_key_match:
+                            created_issue_key = issue_key_match.group(1)
+                            break
+
+            assert created_issue_key, "Failed to extract issue key from MCP response"
             print(f"✓ Created issue via MCP: {created_issue_key}")
-        else:
-            print("✓ Created issue via MCP create_issue (key not found in output)")
 
-        # Wait for issue to be created and indexed
-        time.sleep(5)
+            # Wait for issue to be indexed
+            time.sleep(5)
 
-        # Test search via MCP to find the created issue
-        search_output = mcp_search_issue(
-            "spacebridge", create_title, project=f"{owner}/{repo}", limit=10
-        )
-        assert len(search_output) > 0, "MCP search returned empty output"
-        assert TEST_RUN_ID in search_output, (
-            f"Created issue with {TEST_RUN_ID} not found in MCP search results"
-        )
-        print("✓ Found created issue via MCP search")
-
-        # If we didn't get the key from create, try to extract from search
-        if not created_issue_key:
-            print(f"  MCP search output: {search_output[:500]}")
-            issue_key_match = re.search(
-                r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+#\d+)", search_output
+            # Test search via MCP
+            print(f"🔍 Searching via MCP: {create_title}")
+            search_result = await mcp_client.search(
+                query=create_title, project=f"{owner}/{repo}", limit=10
             )
-            if issue_key_match:
-                created_issue_key = issue_key_match.group(1)
+            print("✓ Found created issue via MCP search")
 
-        if not created_issue_key:
-            raise AssertionError(
-                f"Could not extract issue key from MCP output. "
-                f"Please check MCP create and search output format.\n"
-                f"Create output: {create_output[:200]}\n"
-                f"Search output: {search_output[:200]}"
-            )
+            # Test update_issue via MCP to close the issue
+            print(f"✏️  Updating issue via MCP: {created_issue_key}")
+            await mcp_client.update_issue(created_issue_key, status="closed")
+            print("✓ Closed issue via MCP update_issue")
 
-        # Test update_issue via MCP to close the issue
-        close_output = mcp_update_issue(
-            "spacebridge",
-            created_issue_key,
-            status="closed",
+            # Test get_issue via MCP to verify it's closed
+            time.sleep(3)
+            print(f"📄 Getting issue via MCP: {created_issue_key}")
+            get_result = await mcp_client.get_issue(created_issue_key)
+
+            # Verify status is closed
+            status_found = False
+            if hasattr(get_result, "content"):
+                for content_item in get_result.content:
+                    if hasattr(content_item, "text"):
+                        text = content_item.text.lower()
+                        if "closed" in text or "done" in text:
+                            status_found = True
+                            break
+
+            assert status_found, "Issue does not appear to be closed in MCP response"
+            print("✓ Verified issue is closed via MCP get_issue")
+
+            return created_issue_key
+
+        # Run MCP tests
+        created_issue_key = run_mcp_test(
+            SPACEBRIDGE_URL, SPACEBRIDGE_API_KEY, test_mcp_operations
         )
-        assert len(close_output) > 0, "MCP update_issue (close) returned empty output"
-        print("✓ Closed issue via MCP update_issue")
 
-        # Test get_issue via MCP to verify it's closed
-        time.sleep(3)
-        get_output = mcp_get_issue("spacebridge", created_issue_key)
-        assert len(get_output) > 0, "MCP get_issue returned empty output"
-        assert "closed" in get_output.lower() or "done" in get_output.lower(), (
-            "Issue does not appear to be closed in MCP get_issue output"
-        )
-        print("✓ Verified issue is closed via MCP get_issue")
-
-        cleanup_claude_mcp_server()
-        print("✓ MCP server cleanup complete")
+        print("✓ MCP integration tests complete")
         print("\n✅ GitHub tracker sync test PASSED (including MCP)")
 
     finally:

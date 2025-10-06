@@ -2,6 +2,7 @@
 Common helper functions and fixtures for integration tests.
 """
 
+import asyncio
 import subprocess
 import time
 from typing import Any, Dict
@@ -84,181 +85,49 @@ def wait_for_issue_update(
 
 
 # MCP Helper Functions
-def setup_claude_mcp_server(
-    base_url: str, api_key: str, server_name: str = "spacebridge"
-):
-    """Add SpaceBridge as an MCP server in Claude Code."""
-    print(f"\n⚙️  Setting up Claude Code MCP server '{server_name}'...")
-
-    # Remove if it exists (cleanup from previous runs)
-    try:
-        run_command(["claude", "mcp", "remove", server_name])
-        print(f"  Removed existing '{server_name}' server")
-    except subprocess.CalledProcessError:
-        pass  # Server doesn't exist, that's OK
-
-    # Add the server
-    run_command(
-        [
-            "claude",
-            "mcp",
-            "add",
-            "--transport",
-            "http",
-            server_name,
-            f"{base_url}/mcp/v1",
-            "--header",
-            f"Authorization: Bearer {api_key}",
-        ]
-    )
-    print(f"✓ Added SpaceBridge MCP server: {server_name}")
-
-
-def verify_mcp_server(server_name: str = "spacebridge"):
-    """Verify that the SpaceBridge MCP server is connected."""
-    print(f"\n🔍 Verifying MCP server '{server_name}' connection...")
-
-    mcp_servers = run_command(["claude", "mcp", "list"])
-    assert server_name in mcp_servers, f"MCP server '{server_name}' not found in list"
-    assert "✓ Connected" in mcp_servers or "Connected" in mcp_servers, (
-        f"MCP server '{server_name}' not connected"
-    )
-
-    print(f"✓ MCP server '{server_name}' is connected")
-    return True
-
-
-def cleanup_claude_mcp_server(server_name: str = "spacebridge"):
-    """Remove SpaceBridge MCP server from Claude Code."""
-    print(f"\n🧹 Cleaning up Claude Code MCP server '{server_name}'...")
-    try:
-        run_command(["claude", "mcp", "remove", server_name])
-        print(f"✓ Removed MCP server: {server_name}")
-    except subprocess.CalledProcessError as e:
-        print(f"  Warning: Could not remove MCP server: {e}")
-
-
-def mcp_create_issue(
-    server_name: str, project: str, title: str, description: str, timeout: int = 60
-) -> str:
+def create_mcp_client(base_url: str, api_key: str):
     """
-    Create an issue via MCP.
+    Create an MCP test client.
 
-    Returns the text output from Claude (not parsed JSON).
-    Tests should verify the creation by checking the tracker directly or
-    checking that key information appears in the output.
+    Args:
+        base_url: SpaceBridge base URL
+        api_key: API key for authentication
+
+    Returns:
+        MCPTestClient instance (use as async context manager)
     """
-    print(f"\n📝 Creating issue via MCP: {title}")
+    from tests.integration.mcp_client import MCPTestClient
 
-    prompt = f"create issue in project {project} with title '{title}' and description '{description}'"
-    result = run_command(
-        [
-            "claude",
-            "-p",
-            prompt,
-            "--allowedTools",
-            f"mcp__{server_name}__create_issue",
-        ],
-        timeout=timeout,
-    )
-
-    print(f"✓ MCP create_issue completed, output length: {len(result)} chars")
-    return result
+    return MCPTestClient(base_url, api_key)
 
 
-def mcp_search_issue(
-    server_name: str,
-    query: str,
-    project: str = None,
-    limit: int = 10,
-    timeout: int = 60,
-) -> str:
+def run_mcp_test(base_url: str, api_key: str, test_func):
     """
-    Search for issues via MCP.
+    Run an async MCP test from a synchronous context.
 
-    Returns the text output from Claude (not parsed JSON).
-    Tests should verify that the expected issue key appears in the output.
+    Args:
+        base_url: SpaceBridge base URL
+        api_key: API key for authentication
+        test_func: Async function that receives an MCPTestClient and performs tests
+
+    Returns:
+        Whatever test_func returns
+
+    Example:
+        async def my_test(mcp_client):
+            result = await mcp_client.create_issue(...)
+            return result
+
+        result = run_mcp_test(url, key, my_test)
     """
-    print(f"\n🔍 Searching via MCP: {query}")
 
-    prompt = f"search for issues with query '{query}' with limit {limit}"
-    if project:
-        prompt += f" in project {project}"
+    async def _wrapper():
+        async with create_mcp_client(base_url, api_key) as client:
+            return await test_func(client)
 
-    result = run_command(
-        [
-            "claude",
-            "-p",
-            prompt,
-            "--allowedTools",
-            f"mcp__{server_name}__search",
-        ],
-        timeout=timeout,
-    )
-
-    print(f"✓ MCP search completed, output length: {len(result)} chars")
-    return result
+    return asyncio.run(_wrapper())
 
 
-def mcp_get_issue(server_name: str, issue: str, timeout: int = 60) -> str:
-    """
-    Get issue details via MCP.
-
-    Returns the text output from Claude (not parsed JSON).
-    Tests should verify that key information appears in the output.
-    """
-    print(f"\n📄 Getting issue via MCP: {issue}")
-
-    prompt = f"get issue {issue}"
-    result = run_command(
-        [
-            "claude",
-            "-p",
-            prompt,
-            "--allowedTools",
-            f"mcp__{server_name}__get_issue",
-        ],
-        timeout=timeout,
-    )
-
-    print(f"✓ MCP get_issue completed, output length: {len(result)} chars")
-    return result
-
-
-def mcp_update_issue(
-    server_name: str,
-    issue: str,
-    title: str = None,
-    description: str = None,
-    status: str = None,
-    timeout: int = 60,
-) -> str:
-    """
-    Update an issue via MCP.
-
-    Returns the text output from Claude (not parsed JSON).
-    Tests should verify the update by checking the tracker directly.
-    """
-    print(f"\n✏️  Updating issue via MCP: {issue}")
-
-    prompt = f"update issue {issue}"
-    if title:
-        prompt += f" with title '{title}'"
-    if description:
-        prompt += f" and description '{description}'"
-    if status:
-        prompt += f" and status '{status}'"
-
-    result = run_command(
-        [
-            "claude",
-            "-p",
-            prompt,
-            "--allowedTools",
-            f"mcp__{server_name}__update_issue",
-        ],
-        timeout=timeout,
-    )
-
-    print(f"✓ MCP update_issue completed, output length: {len(result)} chars")
-    return result
+# Legacy CLI-based MCP functions have been removed.
+# Use create_mcp_client() and run_mcp_test() for direct,
+# fast MCP testing without spawning Claude CLI processes.
