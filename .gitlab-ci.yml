@@ -332,9 +332,9 @@ test:coverage:
       --set worker.pools[0].name=polling
       --set worker.pools[0].replicaCount=1
       --set worker.pools[0].tasks=poll_tracker
-      --set worker.pools[1].name=notify
+      --set worker.pools[1].name=maintenance
       --set worker.pools[1].replicaCount=1
-      --set worker.pools[1].tasks=notify_admins
+      --set worker.pools[1].tasks="{notify_admins,cleanup_tracker_webhooks}"
       --set worker.pools[2].name=webhook
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event
@@ -482,17 +482,17 @@ test:integration:ui:
 test:integration:api:github:
   extends: .test:integration:mcp:template
   script:
-    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m github
+    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_github.py -v -s
 
 test:integration:api:gitlab:
   extends: .test:integration:mcp:template
   script:
-    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m gitlab
+    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_gitlab.py -v -s
 
 test:integration:api:jira:
   extends: .test:integration:mcp:template
   script:
-    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync.py -v -s -m jira
+    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_jira.py -v -s
 
 .stop-env:template:
   stage: cleanup

@@ -390,6 +390,7 @@ async def delete_tracker(
     tracker_id: UUID4,
     current_user: UserResponse = Depends(get_current_active_user),
     hard_delete: bool = False,
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete a tracker by ID (soft delete by default, hard delete if specified)."""
@@ -435,6 +436,13 @@ async def delete_tracker(
 
     try:
         db.commit()
+
+        # Trigger webhook cleanup task
+        logger.info(f"Scheduling webhook cleanup for deleted tracker {tracker_id}")
+        await event_bus_service.publish_task(
+            "cleanup_tracker_webhooks", str(tracker_id)
+        )
+
         return {"message": message}
     except Exception as e:
         db.rollback()

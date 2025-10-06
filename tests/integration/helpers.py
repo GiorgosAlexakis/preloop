@@ -139,7 +139,7 @@ def cleanup_claude_mcp_server(server_name: str = "spacebridge"):
 
 
 def mcp_create_issue(
-    server_name: str, project: str, title: str, description: str, timeout: int = 30
+    server_name: str, project: str, title: str, description: str, timeout: int = 60
 ) -> str:
     """
     Create an issue via MCP.
@@ -171,7 +171,7 @@ def mcp_search_issue(
     query: str,
     project: str = None,
     limit: int = 10,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> str:
     """
     Search for issues via MCP.
@@ -200,7 +200,7 @@ def mcp_search_issue(
     return result
 
 
-def mcp_get_issue(server_name: str, issue: str, timeout: int = 30) -> str:
+def mcp_get_issue(server_name: str, issue: str, timeout: int = 60) -> str:
     """
     Get issue details via MCP.
 
@@ -231,7 +231,7 @@ def mcp_update_issue(
     title: str = None,
     description: str = None,
     status: str = None,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> str:
     """
     Update an issue via MCP.
