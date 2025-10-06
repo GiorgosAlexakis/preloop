@@ -334,7 +334,8 @@ test:coverage:
       --set worker.pools[0].tasks=poll_tracker
       --set worker.pools[1].name=maintenance
       --set worker.pools[1].replicaCount=1
-      --set worker.pools[1].tasks="{notify_admins,cleanup_tracker_webhooks}"
+      --set worker.pools[1].tasks[0]=notify_admins
+      --set worker.pools[1].tasks[1]=cleanup_tracker_webhooks
       --set worker.pools[2].name=webhook
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event

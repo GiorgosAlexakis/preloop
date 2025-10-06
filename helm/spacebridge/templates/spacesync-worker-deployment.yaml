@@ -35,7 +35,7 @@ spec:
             - spacesync
             - worker
             - "--tasks"
-            - "{{ .tasks }}"
+            - {{ if kindIs "slice" .tasks }}{{ join "," .tasks | quote }}{{ else }}{{ .tasks | quote }}{{ end }}
           securityContext:
             {{- toYaml $.Values.securityContext | nindent 12 }}
           image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
