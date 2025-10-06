@@ -799,7 +799,7 @@ async def create_issue(
         # Create the issue - Pass the project identifier expected by the tracker client
         # For most trackers (Jira, Linear, etc.), use identifier (the external project key)
         # For Git-based trackers (GitHub, GitLab), this will be the repo name
-        project_key_for_tracker = proj.identifier or proj.slug
+        project_key_for_tracker = proj.slug or proj.identifier
         if not project_key_for_tracker:
             # Fallback or specific logic might be needed if both are missing
             # For now, raise error
