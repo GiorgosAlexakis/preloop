@@ -752,16 +752,7 @@ class JiraTracker(BaseTracker):
 
         # Only add non-empty fields
         if issue_data.description:
-            fields["description"] = {
-                "type": "doc",
-                "version": 1,
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [{"type": "text", "text": issue_data.description}],
-                    }
-                ],
-            }
+            fields["description"] = issue_data.description
 
         # Set issue type (default to Task if not specified)
         fields["issuetype"] = {"name": "Task"}
@@ -1239,8 +1230,25 @@ class JiraTracker(BaseTracker):
         status = issue_data.get("status")
         if isinstance(status, dict):
             status_name = status.get("name", "")
+        elif isinstance(status, IssueStatus):
+            status_name = status.name
         else:
             status_name = status or ""
+
+        # If status_name is still empty, try to get from fields
+        if not status_name:
+            fields_status = issue_data.get("fields", {}).get("status")
+            if isinstance(fields_status, dict):
+                status_name = fields_status.get("name", "")
+            elif isinstance(fields_status, IssueStatus):
+                status_name = fields_status.name
+
+            if not status_name:
+                logger.warning(
+                    f"Could not extract status for Jira issue {issue_data.get('key', 'unknown')}. "
+                    f"Top-level status: {issue_data.get('status')}, "
+                    f"Fields status: {fields_status}"
+                )
 
         # Extract timestamps
         created_at = None
