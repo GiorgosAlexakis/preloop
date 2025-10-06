@@ -43,10 +43,6 @@ def is_http_error(error: Exception, status_code: int) -> bool:
     Returns:
         True if the error indicates the specified HTTP status code
     """
-    # Check if status code appears in string representation
-    if str(status_code) in str(error):
-        return True
-
     # Check if error has response_code attribute (python-gitlab style)
     if hasattr(error, "response_code") and error.response_code == status_code:
         return True
@@ -59,6 +55,12 @@ def is_http_error(error: Exception, status_code: int) -> bool:
     if hasattr(error, "response") and hasattr(error.response, "status_code"):
         if error.response.status_code == status_code:
             return True
+
+    # Check if status code appears in string representation (as a fallback)
+    # Use word boundary to avoid false positives from memory addresses
+    error_str = str(error)
+    if f" {status_code} " in error_str or error_str.startswith(f"{status_code} "):
+        return True
 
     return False
 
