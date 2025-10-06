@@ -886,6 +886,7 @@ async def create_issue(
             organization=org.name,
             project=proj.slug,
             project_id=proj.id,  # Add missing project_id
+            project_identifier=proj.identifier or proj.slug,
             title=db_issue.title,
             description=db_issue.description,
             status=db_issue.status,
@@ -1032,6 +1033,7 @@ def get_issue(
             organization=organization.name,
             project=project.name,
             project_id=issue.project_id,
+            project_identifier=project.identifier or project.slug,
             title=issue.title,
             description=issue.description,
             status=issue.status,
@@ -1400,6 +1402,7 @@ async def update_issue(
             organization=org_name,
             project=project_name,
             project_id=issue.project_id,
+            project_identifier=project.identifier or project.slug if project else None,
             title=issue.title,
             description=issue.description,
             status=issue.status,

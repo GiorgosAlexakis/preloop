@@ -4693,6 +4693,12 @@ components:
           type: string
           title: Project Id
           description: Project ID
+        project_identifier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Identifier
+          description: Project identifier/slug for API calls
         url:
           type: string
           title: Url
