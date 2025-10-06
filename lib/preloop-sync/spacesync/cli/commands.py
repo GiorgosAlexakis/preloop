@@ -2,7 +2,9 @@
 CLI commands for SpaceSync.
 """
 
+import asyncio
 import click
+import inspect
 import os
 import uuid
 from typing import List, Optional
@@ -77,7 +79,7 @@ def status(verbose: bool) -> None:
             if account_trackers:
                 for tracker in account_trackers:
                     click.echo(
-                        f"    - {tracker.tracker_type}: {tracker.connection_details}"
+                        f"    - {tracker.name} (ID: {tracker.id}) {tracker.tracker_type}"
                     )
             else:
                 click.echo("    No trackers configured")
@@ -230,41 +232,72 @@ def unregister_webhooks_command(
         try:
             tracker_client_instance = TrackerClient(tracker=tracker_orm_instance)
 
-            if cleanup_all:
-                logger.info(f"Running cleanup for tracker {tracker_orm_instance.id}...")
-                if hasattr(tracker_client_instance.client, "cleanup_stale_webhooks"):
-                    if tracker_orm_instance.tracker_type == "github":
-                        tracker_client_instance.client.cleanup_stale_webhooks(
-                            spacebridge_url=spacebridge_url,
-                            cleanup_projects=cleanup_project_webhooks,
-                        )
-                    else:
-                        tracker_client_instance.client.cleanup_stale_webhooks(
-                            spacebridge_url=spacebridge_url
-                        )
-                    click.echo(
-                        f"  Cleanup of stale webhooks for tracker {tracker_orm_instance.id} completed."
-                    )
-                else:
-                    click.echo(
-                        f"  Tracker type {tracker_orm_instance.tracker_type} does not support --cleanup-all."
-                    )
-                continue
-
+            # Step 1: Unregister webhooks from database
             if not hasattr(tracker_client_instance.client, "unregister_all_webhooks"):
                 click.echo(
                     f"Tracker type {tracker_orm_instance.tracker_type} does not support unregister_all_webhooks. Skipping."
                 )
                 continue
 
-            summary = tracker_client_instance.client.unregister_all_webhooks(db=db)
+            unregister_method = tracker_client_instance.client.unregister_all_webhooks
+            if inspect.iscoroutinefunction(unregister_method):
+                summary = asyncio.run(unregister_method(db=db))
+            else:
+                summary = unregister_method(db=db)
 
-            click.echo(f"  Unregistered: {summary.get('unregistered', 0)}")
+            click.echo(
+                f"  Unregistered (from database): {summary.get('unregistered', 0)}"
+            )
             click.echo(f"  Failed: {summary.get('failed', 0)}")
             click.echo(f"  Not Found (matching pattern): {summary.get('not_found', 0)}")
             total_unregistered += summary.get("unregistered", 0)
             total_failed += summary.get("failed", 0)
             total_not_found += summary.get("not_found", 0)
+
+            # Step 2: If --cleanup-all, also cleanup stale webhooks (not in database)
+            if cleanup_all:
+                logger.info(
+                    f"Running stale webhook cleanup for tracker {tracker_orm_instance.id}..."
+                )
+                if hasattr(tracker_client_instance.client, "cleanup_stale_webhooks"):
+                    cleanup_method = (
+                        tracker_client_instance.client.cleanup_stale_webhooks
+                    )
+
+                    # Call the method with appropriate parameters
+                    if tracker_orm_instance.tracker_type == "github":
+                        if inspect.iscoroutinefunction(cleanup_method):
+                            cleanup_result = asyncio.run(
+                                cleanup_method(
+                                    spacebridge_url=spacebridge_url,
+                                    cleanup_projects=cleanup_project_webhooks,
+                                )
+                            )
+                        else:
+                            cleanup_result = cleanup_method(
+                                spacebridge_url=spacebridge_url,
+                                cleanup_projects=cleanup_project_webhooks,
+                            )
+                    else:
+                        if inspect.iscoroutinefunction(cleanup_method):
+                            cleanup_result = asyncio.run(
+                                cleanup_method(spacebridge_url=spacebridge_url)
+                            )
+                        else:
+                            cleanup_result = cleanup_method(
+                                spacebridge_url=spacebridge_url
+                            )
+
+                    click.echo(
+                        f"  Stale webhooks cleaned up: {cleanup_result.get('unregistered', 0)}"
+                    )
+                    click.echo(f"  Failed: {cleanup_result.get('failed', 0)}")
+                    total_unregistered += cleanup_result.get("unregistered", 0)
+                    total_failed += cleanup_result.get("failed", 0)
+                else:
+                    click.echo(
+                        f"  Tracker type {tracker_orm_instance.tracker_type} does not support stale webhook cleanup."
+                    )
 
         except Exception as e:
             click.echo(f"Error processing tracker {tracker_orm_instance.id}: {e}")
@@ -281,6 +314,7 @@ def unregister_webhooks_command(
         f"Total trackers/scopes where no matching webhooks were found: {total_not_found}"
     )
     click.echo("Webhook unregistration process finished.")
+    db.commit()
     db.close()
 
 

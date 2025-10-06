@@ -1,4 +1,5 @@
 import unittest
+import pytest
 from unittest.mock import patch, MagicMock
 from jira import JIRAError
 
@@ -6,7 +7,8 @@ from spacesync.trackers.jira import JiraTracker
 from spacemodels.models import Webhook
 
 
-class TestJiraTrackerWebhooks(unittest.TestCase):
+@pytest.mark.asyncio
+class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.mock_jira_patcher = patch("spacesync.trackers.jira.JIRA")
         self.mock_crud_patcher = patch("spacesync.trackers.jira.crud_webhook")
@@ -32,7 +34,7 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         self.mock_jira_patcher.stop()
         self.mock_crud_patcher.stop()
 
-    def test_register_webhook_success(self):
+    async def test_register_webhook_success(self):
         """Test successful webhook registration when none exists in DB."""
         self.mock_crud_webhook.get_by_project_id.return_value = None
         mock_response = MagicMock()
@@ -55,7 +57,7 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         self.mock_jira_client._session.post.assert_called_once()
         self.mock_crud_webhook.create.assert_called_once()
 
-    def test_register_webhook_already_in_db(self):
+    async def test_register_webhook_already_in_db(self):
         """Test webhook registration is skipped if already in DB."""
         self.mock_crud_webhook.get_by_project_id.return_value = Webhook(
             id="wh-id", project_id="proj-db-id", external_id="123"
@@ -77,7 +79,7 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         self.mock_jira_client._session.post.assert_not_called()
         self.mock_crud_webhook.create.assert_not_called()
 
-    def test_unregister_webhook_success(self):
+    async def test_unregister_webhook_success(self):
         """Test successful unregistration of an existing webhook."""
         mock_webhook = Webhook(
             id="wh-db-id", project_id="proj-db-id", external_id="12345"
@@ -95,7 +97,7 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
             self.mock_db_session, id="wh-db-id"
         )
 
-    def test_unregister_webhook_not_in_jira(self):
+    async def test_unregister_webhook_not_in_jira(self):
         """Test unregistration when webhook is in DB but not in Jira (404)."""
         mock_webhook = Webhook(
             id="wh-db-id", project_id="proj-db-id", external_id="12345"
@@ -115,7 +117,7 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
             self.mock_db_session, id="wh-db-id"
         )
 
-    def test_cleanup_stale_webhooks(self):
+    async def test_cleanup_stale_webhooks(self):
         """Test cleaning up stale webhooks."""
         spacebridge_url = "https://stale-spacebridge.com"
         mock_webhooks_data = [
@@ -139,7 +141,7 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         )
         self.assertEqual(self.mock_jira_client._session.delete.call_count, 2)
 
-    def test_cleanup_stale_webhooks_with_failures(self):
+    async def test_cleanup_stale_webhooks_with_failures(self):
         """Test cleanup with some deletions failing."""
         spacebridge_url = "https://stale-spacebridge.com"
         mock_webhooks_data = [
@@ -167,25 +169,22 @@ class TestJiraTrackerWebhooks(unittest.TestCase):
         self.assertEqual(self.mock_jira_client._session.delete.call_count, 2)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-class TestJiraTracker(unittest.TestCase):
+@pytest.mark.asyncio
+class TestJiraTracker(unittest.IsolatedAsyncioTestCase):
     @patch("spacesync.trackers.jira.JIRA")
-    def test_get_organizations(self, mock_jira_class):
+    async def test_get_organizations(self, mock_jira_class):
         tracker = JiraTracker(
             "tracker-1",
             "api-key",
             {"url": "https://test.jira.com", "username": "testuser"},
         )
-        orgs = tracker.get_organizations()
+        orgs = await tracker.get_organizations()
 
         self.assertEqual(len(orgs), 1)
         self.assertEqual(orgs[0]["name"], "test.jira.com")
 
     @patch("spacesync.trackers.jira.JIRA")
-    def test_get_projects(self, mock_jira_class):
+    async def test_get_projects(self, mock_jira_class):
         tracker = JiraTracker(
             "tracker-1",
             "api-key",
@@ -203,7 +202,7 @@ class TestJiraTracker(unittest.TestCase):
                 }
             ],
         ) as mock_make_request:
-            projects = tracker.get_projects("org-1")
+            projects = await tracker.get_projects("org-1")
 
             self.assertEqual(len(projects), 1)
             self.assertEqual(projects[0]["name"], "Test Project")

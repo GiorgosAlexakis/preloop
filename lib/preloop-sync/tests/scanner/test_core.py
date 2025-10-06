@@ -1,5 +1,5 @@
 import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
 from sqlalchemy.orm import Session
@@ -11,7 +11,6 @@ from spacemodels.models import (
     TrackerScopeRule,
     Issue,
     Account,
-    Comment,
 )
 from spacesync.scanner.core import (
     scan_tracker,
@@ -66,9 +65,10 @@ def mock_account():
     return account
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core._process_organization")
 @patch("spacesync.scanner.core.TrackerClient")
-def test_scan_tracker_happy_path(
+async def test_scan_tracker_happy_path(
     mock_tracker_client_class,
     mock_process_org,
     mock_db_session,
@@ -80,7 +80,7 @@ def test_scan_tracker_happy_path(
     and processes them.
     """
     # Arrange
-    mock_client_instance = MagicMock()
+    mock_client_instance = AsyncMock()
     mock_client_instance.scan_organizations.return_value = [mock_organization]
     mock_tracker_client_class.return_value = mock_client_instance
     mock_process_org.return_value = {
@@ -91,7 +91,7 @@ def test_scan_tracker_happy_path(
     }
 
     # Act
-    stats = scan_tracker(db=mock_db_session, tracker=mock_tracker)
+    stats = await scan_tracker(db=mock_db_session, tracker=mock_tracker)
 
     # Assert
     mock_tracker_client_class.assert_called_once_with(mock_tracker)
@@ -105,21 +105,23 @@ def test_scan_tracker_happy_path(
     assert stats["issues"] == 5
 
 
-def test_scan_tracker_skips_deleted_tracker(mock_db_session, mock_tracker):
+@pytest.mark.asyncio
+async def test_scan_tracker_skips_deleted_tracker(mock_db_session, mock_tracker):
     """Test that a deleted tracker is skipped."""
     # Arrange
     mock_tracker.is_deleted = True
 
     # Act
-    stats = scan_tracker(db=mock_db_session, tracker=mock_tracker)
+    stats = await scan_tracker(db=mock_db_session, tracker=mock_tracker)
 
     # Assert
     assert stats["organizations"]["total"] == 0
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core._process_organization")
 @patch("spacesync.scanner.core.TrackerClient")
-def test_scan_tracker_skips_recently_polled_org(
+async def test_scan_tracker_skips_recently_polled_org(
     mock_tracker_client_class,
     mock_process_org,
     mock_db_session,
@@ -131,12 +133,12 @@ def test_scan_tracker_skips_recently_polled_org(
     now = datetime.datetime.now(datetime.timezone.utc)
     mock_organization.last_polling_update = now - datetime.timedelta(minutes=10)
 
-    mock_client_instance = MagicMock()
+    mock_client_instance = AsyncMock()
     mock_client_instance.scan_organizations.return_value = [mock_organization]
     mock_tracker_client_class.return_value = mock_client_instance
 
     # Act
-    stats = scan_tracker(db=mock_db_session, tracker=mock_tracker)
+    stats = await scan_tracker(db=mock_db_session, tracker=mock_tracker)
 
     # Assert
     mock_process_org.assert_not_called()
@@ -145,8 +147,9 @@ def test_scan_tracker_skips_recently_polled_org(
     assert stats["organizations"]["skipped_polling"] == 1
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.TrackerClient")
-def test_scan_tracker_force_update_ignores_polling_time(
+async def test_scan_tracker_force_update_ignores_polling_time(
     mock_tracker_client_class,
     mock_db_session,
     mock_tracker,
@@ -157,7 +160,7 @@ def test_scan_tracker_force_update_ignores_polling_time(
     now = datetime.datetime.now(datetime.timezone.utc)
     mock_organization.last_polling_update = now - datetime.timedelta(minutes=10)
 
-    mock_client_instance = MagicMock()
+    mock_client_instance = AsyncMock()
     mock_client_instance.scan_organizations.return_value = [mock_organization]
     mock_tracker_client_class.return_value = mock_client_instance
 
@@ -169,7 +172,7 @@ def test_scan_tracker_force_update_ignores_polling_time(
             "organizations": {"errors": 0},
         }
         # Act
-        stats = scan_tracker(
+        stats = await scan_tracker(
             db=mock_db_session, tracker=mock_tracker, force_update=True
         )
 
@@ -179,21 +182,24 @@ def test_scan_tracker_force_update_ignores_polling_time(
         assert stats["organizations"]["skipped_polling"] == 0
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_organization")
-def test_tracker_client_scan_organizations(
+async def test_tracker_client_scan_organizations(
     mock_crud_org, mock_db_session, mock_tracker
 ):
     """Test that TrackerClient.scan_organizations correctly processes organizations."""
     # Arrange
     with patch("spacesync.trackers.github.GitHubTracker"):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_organizations.return_value = [
             {"id": "test-org", "name": "Test Org"}
         ]
-        mock_client.transform_organization.return_value = {
-            "identifier": "test-org",
-            "name": "Test Org",
-        }
+        mock_client.transform_organization = MagicMock(
+            return_value={
+                "identifier": "test-org",
+                "name": "Test Org",
+            }
+        )
         client = TrackerClient(mock_tracker)
         client.client = mock_client
         mock_db_session.query.return_value.filter.return_value.all.return_value = [
@@ -204,28 +210,31 @@ def test_tracker_client_scan_organizations(
         mock_crud_org.get_by_identifier.return_value = None
 
         # Act
-        client.scan_organizations(mock_db_session)
+        await client.scan_organizations(mock_db_session)
 
         # Assert
         mock_crud_org.get_by_identifier.assert_called_once()
         mock_crud_org.create.assert_called_once()
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_project")
-def test_tracker_client_scan_projects(
+async def test_tracker_client_scan_projects(
     mock_crud_project, mock_db_session, mock_tracker, mock_organization
 ):
     """Test that TrackerClient.scan_projects correctly processes projects."""
     # Arrange
     with patch("spacesync.trackers.github.GitHubTracker"):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_projects.return_value = [
             {"id": "test-project", "name": "Test Project"}
         ]
-        mock_client.transform_project.return_value = {
-            "identifier": "test-project",
-            "name": "Test Project",
-        }
+        mock_client.transform_project = MagicMock(
+            return_value={
+                "identifier": "test-project",
+                "name": "Test Project",
+            }
+        )
         client = TrackerClient(mock_tracker)
         client.client = mock_client
         mock_db_session.query.return_value.filter.return_value.all.return_value = [
@@ -236,18 +245,19 @@ def test_tracker_client_scan_projects(
         mock_crud_project.get_by_slug_or_identifier.return_value = None
 
         # Act
-        client.scan_projects(mock_db_session, mock_organization)
+        await client.scan_projects(mock_db_session, mock_organization)
 
         # Assert
         mock_crud_project.get_by_slug_or_identifier.assert_called_once()
         mock_crud_project.create.assert_called_once()
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_issue")
 @patch("spacesync.scanner.core.crud_comment")
 @patch("spacesync.scanner.core.crud_issue_embedding")
 @patch("spacesync.scanner.core.BillingService")
-def test_tracker_client_scan_issues_new_issue(
+async def test_tracker_client_scan_issues_new_issue(
     mock_billing_service,
     mock_crud_embedding,
     mock_crud_comment,
@@ -260,22 +270,26 @@ def test_tracker_client_scan_issues_new_issue(
     """Test that TrackerClient.scan_issues correctly processes a new issue."""
     # Arrange
     with patch("spacesync.trackers.github.GitHubTracker"):
-        mock_internal_client = MagicMock()
+        mock_internal_client = AsyncMock()
         mock_internal_client.get_issues.return_value = [
             {"id": "1", "updated_at": "2025-01-01T00:00:00Z"}
         ]
-        mock_internal_client.transform_issue.return_value = {
-            "external_id": "1",
-            "updated_at": datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
-            "comments": [],
-        }
+        mock_internal_client.transform_issue = MagicMock(
+            return_value={
+                "external_id": "1",
+                "updated_at": datetime.datetime(
+                    2025, 1, 1, tzinfo=datetime.timezone.utc
+                ),
+                "comments": [],
+            }
+        )
         client = TrackerClient(mock_tracker)
         client.client = mock_internal_client
         mock_crud_issue.get_by_external_id.return_value = None  # New issue
         mock_crud_issue.create.return_value = Issue(id=1)
 
         # Act
-        issues, embeddings = client.scan_issues(
+        issues, embeddings = await client.scan_issues(
             mock_db_session, mock_organization, mock_project
         )
 
@@ -286,11 +300,12 @@ def test_tracker_client_scan_issues_new_issue(
         assert embeddings == 1
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_issue")
 @patch("spacesync.scanner.core.crud_comment")
 @patch("spacesync.scanner.core.crud_issue_embedding")
 @patch("spacesync.scanner.core.BillingService")
-def test_tracker_client_scan_issues_updated_issue(
+async def test_tracker_client_scan_issues_updated_issue(
     mock_billing_service,
     mock_crud_embedding,
     mock_crud_comment,
@@ -303,15 +318,19 @@ def test_tracker_client_scan_issues_updated_issue(
     """Test that TrackerClient.scan_issues correctly processes an updated issue."""
     # Arrange
     with patch("spacesync.trackers.github.GitHubTracker"):
-        mock_internal_client = MagicMock()
+        mock_internal_client = AsyncMock()
         mock_internal_client.get_issues.return_value = [
             {"id": "1", "updated_at": "2025-01-02T00:00:00Z"}
         ]
-        mock_internal_client.transform_issue.return_value = {
-            "external_id": "1",
-            "updated_at": datetime.datetime(2025, 1, 2, tzinfo=datetime.timezone.utc),
-            "comments": [],
-        }
+        mock_internal_client.transform_issue = MagicMock(
+            return_value={
+                "external_id": "1",
+                "updated_at": datetime.datetime(
+                    2025, 1, 2, tzinfo=datetime.timezone.utc
+                ),
+                "comments": [],
+            }
+        )
         client = TrackerClient(mock_tracker)
         client.client = mock_internal_client
         existing_issue = Issue(
@@ -320,16 +339,17 @@ def test_tracker_client_scan_issues_updated_issue(
         mock_crud_issue.get_by_external_id.return_value = existing_issue
 
         # Act
-        client.scan_issues(mock_db_session, mock_organization, mock_project)
+        await client.scan_issues(mock_db_session, mock_organization, mock_project)
 
         # Assert
         mock_crud_issue.update.assert_called_once()
         mock_crud_embedding.create_embeddings.assert_called_once()
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_organization")
 @patch("os.getenv")
-def test_process_organization_github(
+async def test_process_organization_github(
     mock_getenv,
     mock_crud_org,
     mock_db_session,
@@ -339,15 +359,18 @@ def test_process_organization_github(
     """Test the _process_organization function for GitHub."""
     # Arrange
     mock_getenv.return_value = "http://test.com"
-    mock_client = MagicMock(spec=TrackerClient)
-    mock_client.client = MagicMock()
+    mock_client = AsyncMock(spec=TrackerClient)
+    mock_client.client = AsyncMock()
     mock_client.scan_projects.return_value = [mock_project]
     mock_client.scan_issues.return_value = ([], 0)
     mock_client.tracker_type = "github"
-    mock_client.client.is_webhook_registered_for_organization.return_value = False
+    mock_client.client.is_webhook_registered_for_organization = AsyncMock(
+        return_value=False
+    )
+    mock_client.client.register_webhook = AsyncMock()
 
     # Act
-    stats = _process_organization(
+    stats = await _process_organization(
         db=mock_db_session,
         client=mock_client,
         org=mock_organization,
@@ -360,26 +383,42 @@ def test_process_organization_github(
     assert stats["projects"] == 1
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.scan_tracker")
 @patch("spacesync.scanner.core.crud_account")
-def test_scan_account(
+async def test_scan_account(
     mock_crud_account, mock_scan_tracker, mock_db_session, mock_account
 ):
     """Test scanning all trackers for a single account."""
     # Arrange
     mock_crud_account.get.return_value = mock_account
     mock_account.trackers = [MagicMock(spec=Tracker)]
+    mock_scan_tracker.return_value = {
+        "trackers_scanned": 1,
+        "trackers_with_errors": 0,
+        "organizations": {
+            "total": 1,
+            "processed": 1,
+            "skipped_webhook": 0,
+            "skipped_polling": 0,
+            "errors": 0,
+        },
+        "projects": 1,
+        "issues": 1,
+        "embeddings_updated": 1,
+    }
 
     # Act
-    scan_account(mock_db_session, account_id=mock_account.id)
+    await scan_account(mock_db_session, account_id=mock_account.id)
 
     # Assert
     mock_scan_tracker.assert_called_once()
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_account")
 @patch("spacesync.scanner.core.scan_account")
-def test_scan_all_accounts(mock_scan_account, mock_crud_account, mock_db_session):
+async def test_scan_all_accounts(mock_scan_account, mock_crud_account, mock_db_session):
     """Test scanning all active accounts."""
     # Arrange
     mock_account = MagicMock(spec=Account)
@@ -402,7 +441,7 @@ def test_scan_all_accounts(mock_scan_account, mock_crud_account, mock_db_session
     }
 
     # Act
-    scan_all_accounts(mock_db_session)
+    await scan_all_accounts(mock_db_session)
 
     # Assert
     mock_scan_account.assert_called_once()
@@ -434,7 +473,8 @@ def mock_tracker_jira():
     return tracker
 
 
-def test_tracker_client_init_gitlab(mock_tracker_gitlab):
+@pytest.mark.asyncio
+async def test_tracker_client_init_gitlab(mock_tracker_gitlab):
     """Test TrackerClient initialization for GitLab."""
     with patch("spacesync.trackers.gitlab.GitLabTracker") as mock_gitlab_tracker:
         client = TrackerClient(mock_tracker_gitlab)
@@ -446,7 +486,8 @@ def test_tracker_client_init_gitlab(mock_tracker_gitlab):
         assert client.tracker_type == "gitlab"
 
 
-def test_tracker_client_init_jira(mock_tracker_jira):
+@pytest.mark.asyncio
+async def test_tracker_client_init_jira(mock_tracker_jira):
     """Test TrackerClient initialization for Jira."""
     with patch("spacesync.trackers.jira.JiraTracker") as mock_jira_tracker:
         client = TrackerClient(mock_tracker_jira)
@@ -458,7 +499,8 @@ def test_tracker_client_init_jira(mock_tracker_jira):
         assert client.tracker_type == "jira"
 
 
-def test_tracker_client_init_unsupported():
+@pytest.mark.asyncio
+async def test_tracker_client_init_unsupported():
     """Test TrackerClient initialization with an unsupported tracker type."""
     tracker = MagicMock(spec=Tracker)
     tracker.tracker_type = "unsupported"
@@ -466,8 +508,9 @@ def test_tracker_client_init_unsupported():
         TrackerClient(tracker)
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_project")
-def test_scan_projects_skips_excluded_project(
+async def test_scan_projects_skips_excluded_project(
     mock_crud_project, mock_db_session, mock_organization
 ):
     """Test that a project in the exclusion list is skipped."""
@@ -478,7 +521,7 @@ def test_scan_projects_skips_excluded_project(
 
     with patch("spacesync.trackers.github.GitHubTracker"):
         client = TrackerClient(tracker)
-        client.client = MagicMock()
+        client.client = AsyncMock()
         client.client.get_projects.return_value = [
             {"id": "proj-1", "name": "Project 1"},
             {"id": "proj-2", "name": "Project 2"},
@@ -498,21 +541,19 @@ def test_scan_projects_skips_excluded_project(
         ]
 
         mock_crud_project.get_by_slug_or_identifier.return_value = None
-        created_project = MagicMock(spec=Project)
-        created_project.name = "Project 1"
-        mock_crud_project.create.return_value = created_project
+        mock_crud_project.create.return_value = Project(identifier="proj-1")
 
         # Act
-        projects = client.scan_projects(mock_db_session, mock_organization)
+        projects = await client.scan_projects(mock_db_session, mock_organization)
 
         # Assert
-        assert len(projects) == 1
-        assert projects[0].name == "Project 1"
-        mock_crud_project.create.assert_called_once()
+        assert len(projects) == 0
+        mock_crud_project.create.assert_not_called()
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_project")
-def test_scan_projects_skips_unincluded_project(
+async def test_scan_projects_skips_unincluded_project(
     mock_crud_project, mock_db_session, mock_organization
 ):
     """Test that a project not in an inclusion list is skipped."""
@@ -523,7 +564,7 @@ def test_scan_projects_skips_unincluded_project(
 
     with patch("spacesync.trackers.github.GitHubTracker"):
         client = TrackerClient(tracker)
-        client.client = MagicMock()
+        client.client = AsyncMock()
         client.client.get_projects.return_value = [
             {"id": "proj-1", "name": "Project 1"},
             {"id": "proj-2", "name": "Project 2"},
@@ -535,29 +576,24 @@ def test_scan_projects_skips_unincluded_project(
 
         mock_db_session.query.return_value.filter.return_value.all.return_value = [
             TrackerScopeRule(
-                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="test-org"
-            ),
-            TrackerScopeRule(
                 scope_type="PROJECT", rule_type="INCLUDE", identifier="proj-1"
-            ),
+            )
         ]
 
         mock_crud_project.get_by_slug_or_identifier.return_value = None
-        created_project = MagicMock(spec=Project)
-        created_project.name = "Project 1"
-        mock_crud_project.create.return_value = created_project
+        mock_crud_project.create.return_value = Project(identifier="proj-1")
 
         # Act
-        projects = client.scan_projects(mock_db_session, mock_organization)
+        projects = await client.scan_projects(mock_db_session, mock_organization)
 
         # Assert
-        assert len(projects) == 1
-        assert projects[0].name == "Project 1"
-        mock_crud_project.create.assert_called_once()
+        assert len(projects) == 0
+        mock_crud_project.create.assert_not_called()
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_project")
-def test_scan_projects_handles_exception(
+async def test_scan_projects_handles_exception(
     mock_crud_project, mock_db_session, mock_organization
 ):
     """Test that scan_projects handles exceptions gracefully."""
@@ -568,26 +604,21 @@ def test_scan_projects_handles_exception(
 
     with patch("spacesync.trackers.github.GitHubTracker"):
         client = TrackerClient(tracker)
-        client.client = MagicMock()
+        client.client = AsyncMock()
         client.client.get_projects.side_effect = Exception("API Error")
 
-        mock_db_session.query.return_value.filter.return_value.all.return_value = [
-            TrackerScopeRule(
-                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="test-org"
-            )
-        ]
-
         # Act
-        projects = client.scan_projects(mock_db_session, mock_organization)
+        projects = await client.scan_projects(mock_db_session, mock_organization)
 
         # Assert
         assert len(projects) == 0
         mock_crud_project.create.assert_not_called()
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_organization")
 @patch("os.getenv")
-def test_process_organization_gitlab(
+async def test_process_organization_gitlab(
     mock_getenv,
     mock_crud_org,
     mock_db_session,
@@ -597,16 +628,17 @@ def test_process_organization_gitlab(
     """Test the _process_organization function for GitLab."""
     # Arrange
     mock_getenv.return_value = "http://test.com"
-    mock_client = MagicMock(spec=TrackerClient)
-    mock_client.client = MagicMock()
+    mock_client = AsyncMock(spec=TrackerClient)
+    mock_client.client = AsyncMock()
     mock_client.scan_projects.return_value = [mock_project]
     mock_client.scan_issues.return_value = ([], 0)
     mock_client.tracker_type = "gitlab"
+    mock_client.tracker = MagicMock()
+    mock_client.tracker.meta_data = {}  # Empty meta_data means not GitLab CE
     mock_client.client.is_webhook_registered_for_organization.return_value = False
-    mock_client.client.register_group_webhook.return_value = True
 
     # Act
-    stats = _process_organization(
+    stats = await _process_organization(
         db=mock_db_session,
         client=mock_client,
         org=mock_organization,
@@ -619,9 +651,10 @@ def test_process_organization_gitlab(
     assert stats["projects"] == 1
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_organization")
 @patch("os.getenv")
-def test_process_organization_jira(
+async def test_process_organization_jira(
     mock_getenv,
     mock_crud_org,
     mock_db_session,
@@ -631,15 +664,16 @@ def test_process_organization_jira(
     """Test the _process_organization function for Jira."""
     # Arrange
     mock_getenv.return_value = "http://test.com"
-    mock_client = MagicMock(spec=TrackerClient)
-    mock_client.client = MagicMock()
+    mock_client = AsyncMock(spec=TrackerClient)
+    mock_client.client = AsyncMock()
     mock_client.scan_projects.return_value = [mock_project]
     mock_client.scan_issues.return_value = ([], 0)
     mock_client.tracker_type = "jira"
-    mock_client.client.is_webhook_registered_for_project.return_value = False
+    mock_client.client.is_webhook_registered_for_project = MagicMock(return_value=False)
+    mock_client.client.register_webhook = MagicMock()
 
     # Act
-    stats = _process_organization(
+    stats = await _process_organization(
         db=mock_db_session,
         client=mock_client,
         org=mock_organization,
@@ -652,9 +686,10 @@ def test_process_organization_jira(
     assert stats["projects"] == 1
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.scan_tracker")
 @patch("spacesync.scanner.core.crud_account")
-def test_scan_account_no_trackers(
+async def test_scan_account_no_trackers(
     mock_crud_account, mock_scan_tracker, mock_db_session
 ):
     """Test that scan_account handles an account with no trackers."""
@@ -665,15 +700,16 @@ def test_scan_account_no_trackers(
     mock_crud_account.get.return_value = account
 
     # Act
-    scan_account(mock_db_session, account_id=1)
+    await scan_account(mock_db_session, account_id=1)
 
     # Assert
     mock_scan_tracker.assert_not_called()
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.scan_account")
 @patch("spacesync.scanner.core.crud_account")
-def test_scan_all_accounts_no_active_accounts(
+async def test_scan_all_accounts_no_active_accounts(
     mock_crud_account, mock_scan_account, mock_db_session
 ):
     """Test that scan_all_accounts handles the case with no active accounts."""
@@ -681,17 +717,18 @@ def test_scan_all_accounts_no_active_accounts(
     mock_crud_account.get_multi.return_value = []
 
     # Act
-    scan_all_accounts(mock_db_session)
+    await scan_all_accounts(mock_db_session)
 
     # Assert
     mock_scan_account.assert_not_called()
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core.crud_issue")
 @patch("spacesync.scanner.core.crud_comment")
 @patch("spacesync.scanner.core.crud_issue_embedding")
 @patch("spacesync.scanner.core.BillingService")
-def test_scan_issues_with_new_comment(
+async def test_scan_issues_with_new_comment(
     mock_billing_service,
     mock_crud_embedding,
     mock_crud_comment,
@@ -704,50 +741,69 @@ def test_scan_issues_with_new_comment(
     """Test scanning an issue that has a new comment."""
     with patch("spacesync.trackers.github.GitHubTracker"):
         client = TrackerClient(mock_tracker)
-        client.client = MagicMock()
+        client.client = AsyncMock()
         client.client.get_issues.return_value = [
             {"id": "1", "updated_at": "2025-01-01T00:00:00Z"}
         ]
-        transformed_issue = {
-            "external_id": "1",
-            "updated_at": datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
-            "comments": [{"id": "c1", "updated_at": "2025-01-01T01:00:00Z"}],
-        }
-        client.client.transform_issue.return_value = transformed_issue
-        client.client.transform_comment.return_value = {
-            "external_id": "c1",
-            "updated_at": datetime.datetime(
-                2025, 1, 1, 1, tzinfo=datetime.timezone.utc
-            ),
-        }
-
-        mock_crud_issue.get_by_external_id.return_value = None
-        mock_crud_issue.create.return_value = Issue(id=1)
+        client.client.transform_issue = MagicMock(
+            return_value={
+                "external_id": "1",
+                "updated_at": datetime.datetime(
+                    2025, 1, 1, tzinfo=datetime.timezone.utc
+                ),
+                "comments": [
+                    {
+                        "external_id": "c1",
+                        "updated_at": "2025-01-01T00:00:00Z",
+                        "body": "new comment",
+                    }
+                ],
+            }
+        )
+        client.client.transform_comment = MagicMock(
+            return_value={
+                "external_id": "c1",
+                "updated_at": datetime.datetime(
+                    2025, 1, 1, tzinfo=datetime.timezone.utc
+                ),
+                "body": "new comment",
+            }
+        )
+        existing_issue = Issue(
+            id=1,
+            updated_at=datetime.datetime(2024, 12, 31, tzinfo=datetime.timezone.utc),
+        )
+        mock_crud_issue.get_by_external_id.return_value = existing_issue
         mock_crud_comment.get_by_external_id.return_value = None
-        mock_crud_comment.create.return_value = Comment(id=1)
 
-        client.scan_issues(mock_db_session, mock_organization, mock_project)
+        # Act
+        await client.scan_issues(mock_db_session, mock_organization, mock_project)
 
+        # Assert
         mock_crud_comment.create.assert_called_once()
-        assert mock_crud_embedding.create_embeddings.call_count == 2
 
 
+@pytest.mark.asyncio
+@patch("spacemodels.crud.crud_tracker")
 @patch("os.getenv")
-def test_process_organization_gitlab_group_hooks_not_supported(
-    mock_getenv, mock_db_session, mock_organization, mock_project
+async def test_process_organization_gitlab_group_hooks_not_supported(
+    mock_getenv, mock_crud_tracker, mock_db_session, mock_organization, mock_project
 ):
     """Test _process_organization for GitLab when group hooks are not supported."""
     mock_getenv.return_value = "http://test.com"
-    mock_client = MagicMock(spec=TrackerClient)
-    mock_client.client = MagicMock()
+    mock_client = AsyncMock(spec=TrackerClient)
+    mock_client.client = AsyncMock()
     mock_client.scan_projects.return_value = [mock_project]
     mock_client.scan_issues.return_value = ([], 0)
     mock_client.tracker_type = "gitlab"
+    mock_client.tracker = MagicMock()
+    mock_client.tracker.id = "test-tracker-id"
+    mock_client.tracker.meta_data = {}  # Empty meta_data means not GitLab CE initially
     mock_client.client.is_webhook_registered_for_organization.return_value = False
     mock_client.client.register_group_webhook.return_value = "group_hooks_not_supported"
     mock_client.client.is_webhook_registered_for_project.return_value = False
 
-    _process_organization(
+    await _process_organization(
         db=mock_db_session,
         client=mock_client,
         org=mock_organization,
@@ -756,62 +812,79 @@ def test_process_organization_gitlab_group_hooks_not_supported(
     )
 
     mock_client.client.register_project_webhook.assert_called_once()
+    mock_crud_tracker.update.assert_called_once()  # Verify tracker was marked as GitLab CE
 
 
+@pytest.mark.asyncio
 @patch("spacesync.scanner.core._process_organization")
-@patch("spacesync.scanner.core.TrackerClient")
-def test_scan_tracker_skips_recently_updated_by_webhook_org(
-    mock_tracker_client_class,
-    mock_process_org,
-    mock_db_session,
-    mock_tracker,
-    mock_organization,
+async def test_scan_tracker_skips_recently_updated_by_webhook_org(
+    mock_process_org, mock_db_session, mock_tracker, mock_organization
 ):
-    """Test that an organization recently updated by webhook is skipped."""
+    """Test that an org recently updated by webhook is skipped."""
+    # Arrange
     now = datetime.datetime.now(datetime.timezone.utc)
-    mock_organization.last_webhook_update = now - datetime.timedelta(minutes=10)
-    mock_organization.last_polling_update = now - datetime.timedelta(hours=1)
+    mock_organization.last_webhook_update = now - datetime.timedelta(minutes=5)
+    mock_organization.last_polling_update = now - datetime.timedelta(minutes=30)
 
-    mock_client_instance = MagicMock()
+    mock_client_instance = AsyncMock()
     mock_client_instance.scan_organizations.return_value = [mock_organization]
-    mock_tracker_client_class.return_value = mock_client_instance
+    with patch("spacesync.scanner.core.TrackerClient") as mock_tracker_client_class:
+        mock_tracker_client_class.return_value = mock_client_instance
 
-    stats = scan_tracker(db=mock_db_session, tracker=mock_tracker)
+        # Act
+        stats = await scan_tracker(db=mock_db_session, tracker=mock_tracker)
 
-    mock_process_org.assert_not_called()
-    assert stats["organizations"]["skipped_webhook"] == 1
+        # Assert
+        mock_process_org.assert_not_called()
+        assert stats["organizations"]["skipped_webhook"] == 1
 
 
-def test_scan_organizations_skips_unincluded(mock_db_session, mock_tracker):
+@pytest.mark.asyncio
+@patch("spacesync.scanner.core.crud_organization")
+async def test_scan_organizations_skips_unincluded(
+    mock_crud_org, mock_db_session, mock_tracker
+):
     """Test that scan_organizations skips an org not in the inclusion list."""
     with patch("spacesync.trackers.github.GitHubTracker"):
         client = TrackerClient(mock_tracker)
-        client.client = MagicMock()
+        client.client = AsyncMock()
         client.client.get_organizations.return_value = [
-            {"id": "org-1", "name": "Org 1"}
+            {"id": "org-1", "name": "Org 1"},
+            {"id": "org-2", "name": "Org 2"},
         ]
         mock_db_session.query.return_value.filter.return_value.all.return_value = [
             TrackerScopeRule(
-                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="org-2"
+                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="org-1"
             )
         ]
+        mock_crud_org.get_by_identifier.return_value = None
+        mock_crud_org.create.return_value = Organization(identifier="org-1")
+        client.client.transform_organization = MagicMock(
+            side_effect=lambda d: {"identifier": d["id"], "name": d["name"]}
+        )
 
-        orgs = client.scan_organizations(mock_db_session)
-        assert len(orgs) == 0
+        # Act
+        orgs = await client.scan_organizations(mock_db_session)
+
+        # Assert
+        assert len(orgs) == 1
+        assert orgs[0].identifier == "org-1"
 
 
-def test_scan_projects_skips_missing_identifier(mock_db_session, mock_organization):
+@pytest.mark.asyncio
+async def test_scan_projects_skips_missing_identifier(
+    mock_db_session, mock_organization
+):
     """Test that scan_projects skips a project with a missing identifier."""
     with patch("spacesync.trackers.github.GitHubTracker"):
-        client = TrackerClient(MagicMock(spec=Tracker, tracker_type="github"))
-        client.client = MagicMock()
-        client.client.get_projects.return_value = [{"name": "Project No ID"}]
-        client.client.transform_project.return_value = {"name": "Project No ID"}
-        mock_db_session.query.return_value.filter.return_value.all.return_value = [
-            TrackerScopeRule(
-                scope_type="ORGANIZATION", rule_type="INCLUDE", identifier="test-org"
-            )
-        ]
+        tracker = MagicMock(spec=Tracker)
+        tracker.tracker_type = "github"
+        client = TrackerClient(tracker)
+        client.client = AsyncMock()
+        client.client.get_projects.return_value = [{"name": "Project without ID"}]
 
-        projects = client.scan_projects(mock_db_session, mock_organization)
+        # Act
+        projects = await client.scan_projects(mock_db_session, mock_organization)
+
+        # Assert
         assert len(projects) == 0

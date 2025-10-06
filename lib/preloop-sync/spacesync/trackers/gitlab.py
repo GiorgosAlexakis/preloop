@@ -3,9 +3,10 @@ GitLab tracker implementation for SpaceSync using python-gitlab library.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
-from typing_extensions import Literal  # For Python < 3.8 compatibility with Literal
+from typing import Any, Dict, List, Optional, Union, Tuple
+from typing_extensions import Literal
 
+import asyncio
 import gitlab
 from sqlalchemy.orm import Session
 
@@ -15,12 +16,32 @@ from ..exceptions import (
     TrackerConnectionError,
     TrackerResponseError,
 )
-from ..utils import retry
 from .base import BaseTracker
+from .utils import (
+    is_not_found_error,
+    is_authentication_error,
+    is_conflict_error,
+    async_retry,
+    HTTP_STATUS_UNAUTHORIZED,
+    HTTP_STATUS_NOT_FOUND,
+    HTTP_STATUS_CONFLICT,
+)
 from spacemodels.models.project import Project
 from spacemodels.models.organization import Organization
 from spacemodels.models.webhook import Webhook
-from spacemodels.crud import crud_webhook, crud_project, crud_organization
+from spacemodels.crud import crud_webhook
+from spacebridge.schemas.tracker_models import (
+    Issue,
+    IssueComment,
+    IssueCreate,
+    IssueFilter,
+    IssuePriority,
+    IssueStatus,
+    IssueUpdate,
+    IssueUser,
+    ProjectMetadata,
+    TrackerConnection,
+)
 
 
 class GitLabTracker(BaseTracker):
@@ -31,338 +52,81 @@ class GitLabTracker(BaseTracker):
     ):
         """
         Initialize the GitLab tracker.
-
-        Args:
-            tracker_id: ID of the tracker in the database (UUID string).
-            api_key: GitLab API token.
-            connection_details: Connection details including GitLab instance URL (optional).
         """
         super().__init__(tracker_id, api_key, connection_details)
-        # The tracker object should be set on this instance by TrackerClient
-        # but it's missing at this point
-
-        # Use URL from connection_details if available
         gitlab_url = connection_details.get("url")
-
-        # If there's no URL, use https://gitlab.com/
         if not gitlab_url:
             gitlab_url = "https://gitlab.com"
-
-        # Strip '/api/v4' from the URL if present, as python-gitlab adds this automatically
         gitlab_url = gitlab_url.rstrip("/")
         if gitlab_url.endswith("/api/v4"):
-            # Remove the /api/v4 suffix
-            gitlab_url = gitlab_url[:-7]  # Remove last 7 characters (/api/v4)
-
+            gitlab_url = gitlab_url[:-7]
         self.url = gitlab_url
-
         try:
             self.gl = gitlab.Gitlab(self.url, private_token=api_key)
-            # Test connection and authentication
             self.gl.auth()
         except gitlab.exceptions.GitlabAuthenticationError as e:
             raise TrackerAuthenticationError(f"GitLab authentication failed: {str(e)}")
         except gitlab.exceptions.GitlabHttpError as e:
             raise TrackerConnectionError(f"GitLab connection error: {str(e)}")
 
-    @retry(max_attempts=2, exceptions=(TrackerConnectionError, TrackerResponseError))
-    def _make_request(self, method, *args, **kwargs):
+    @async_retry()
+    async def _make_request(self, method, *args, **kwargs):
         """
-        Execute a GitLab API request with error handling.
-
-        Args:
-            method: The python-gitlab method to call
-            *args: Positional arguments for the method
-            **kwargs: Keyword arguments for the method
-
-        Returns:
-            Result from the GitLab API call
-
-        Raises:
-            TrackerAuthenticationError: If authentication fails.
-            TrackerConnectionError: If connection fails.
-            TrackerResponseError: If response is invalid.
+        Execute a GitLab API request with error handling in a separate thread.
         """
         try:
-            result = method(*args, **kwargs)
+            # Run the synchronous method in a thread pool
+            result = await asyncio.to_thread(method, *args, **kwargs)
             return result
-        except gitlab.exceptions.GitlabAuthenticationError:
-            raise TrackerAuthenticationError("GitLab authentication failed")
+        except gitlab.exceptions.GitlabAuthenticationError as e:
+            raise TrackerAuthenticationError(f"GitLab authentication failed: {e}")
         except gitlab.exceptions.GitlabHttpError as e:
-            if e.response_code == 401:
-                raise TrackerAuthenticationError("GitLab authentication failed")
+            if e.response_code == HTTP_STATUS_UNAUTHORIZED:
+                raise TrackerAuthenticationError(f"GitLab authentication failed: {e}")
             else:
                 raise TrackerResponseError(f"GitLab API error: {e.response_code} - {e}")
         except gitlab.exceptions.GitlabConnectionError as e:
-            raise TrackerConnectionError(f"GitLab connection error: {str(e)}")
+            raise TrackerConnectionError(f"GitLab connection error: {e}")
         except Exception as e:
-            raise TrackerResponseError(f"GitLab API error: {str(e)}")
-
-    def get_organizations(self) -> List[Dict[str, Any]]:
-        """
-        Get organizations (groups) from GitLab.
-
-        Returns:
-            List of organization data dictionaries.
-        """
-        # For GitLab, organizations are groups
-        groups = self._make_request(self.gl.groups.list, all=True)
-
-        organizations = []
-        for group in groups:
-            organizations.append(
-                {"id": str(group.id), "name": group.name, "url": group.web_url}
-            )
-
-        return organizations
-
-    def get_projects(self, organization_id: str) -> List[Dict[str, Any]]:
-        """
-        Get projects for a group from GitLab.
-
-        Args:
-            organization_id: GitLab group ID.
-
-        Returns:
-            List of project data dictionaries.
-        """
-        # Get the group object first
-        group = self._make_request(self.gl.groups.get, organization_id)
-
-        # Get projects for the specified group
-        projects = self._make_request(group.projects.list, all=True)
-
-        project_list = []
-        for project in projects:
-            # Ensure we have the necessary attributes, especially path_with_namespace for the slug
-            project_attributes = (
-                project.attributes
-            )  # Use .attributes to get the raw dict
-            project_list.append(
-                {
-                    "id": str(project_attributes.get("id")),
-                    "name": project_attributes.get("name"),
-                    "description": project_attributes.get("description", ""),
-                    "url": project_attributes.get("web_url"),
-                    "path_with_namespace": project_attributes.get(
-                        "path_with_namespace"
-                    ),
-                    # Add metadata including timestamps
-                    "meta_data": {
-                        "created_at": project_attributes.get("created_at"),
-                        "updated_at": project_attributes.get(
-                            "last_activity_at"
-                        ),  # Use last_activity_at for updates
-                    },
-                }
-            )
-
-        return project_list
-
-    def transform_project(
-        self, proj_data: Dict[str, Any], organization_id: str
-    ) -> Dict[str, Any]:
-        """
-        Transform GitLab project data, adding the slug.
-
-        Args:
-            proj_data: Project data from the GitLab API.
-            organization_id: Database ID of the organization (UUID string).
-
-        Returns:
-            Transformed project data ready for database storage, including slug.
-        """
-        # Start with the base transformation
-        transformed_data = super().transform_project(proj_data, organization_id)
-
-        # Extract slug from GitLab's path_with_namespace if available
-        # The raw proj_data comes from the get_projects method which uses project.attributes
-        # Let's adjust get_projects to return the full object or ensure path_with_namespace is there.
-        # For now, assume proj_data might contain it directly or within meta_data if get_projects is adjusted.
-        # A safer approach is to modify get_projects first. Let's assume proj_data has 'path_with_namespace' for now.
-
-        # Re-checking get_projects: It returns a dict like:
-        # { 'id': ..., 'name': ..., 'description': ..., 'url': ... }
-        # It DOES NOT include path_with_namespace. We need to modify get_projects first.
-
-        # --- Let's modify get_projects first ---
-        # This insert is now incorrect, need to modify get_projects instead/before this.
-        # Backtracking: Modify get_projects to include 'path_with_namespace'
-
-        # --- Corrected Plan ---
-        # 1. Modify get_projects in gitlab.py to include 'path_with_namespace' in the returned dict.
-        # 2. Override transform_project in gitlab.py to extract 'path_with_namespace' and add it as 'slug'.
-
-        # --- Applying Step 1 (Modify get_projects) ---
-        # This requires an apply_diff, not insert_content.
-
-        # --- Applying Step 2 (Override transform_project) ---
-        # Assuming Step 1 is done, this insert would be correct.
-        gitlab_slug = proj_data.get(
-            "path_with_namespace"
-        )  # Assumes get_projects was modified
-        if gitlab_slug:
-            transformed_data["slug"] = gitlab_slug
-        else:
-            # Fallback or log warning if path_with_namespace wasn't added
-            logger.warning(
-                f"Could not determine slug (path_with_namespace) for GitLab project ID {proj_data.get('id')}"
-            )
-
-        return transformed_data
-
-    def get_issues(
-        self, organization_id: str, project_id: str, since: Optional[datetime] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Get issues for a project from GitLab, including their comments (notes).
-
-        Args:
-            organization_id: GitLab group ID (not used in API call but kept for interface consistency).
-            project_id: GitLab project ID.
-            since: Only return issues updated since this datetime.
-
-        Returns:
-            List of issue data dictionaries, each including a 'comments' list.
-        """
-        project = self._make_request(self.gl.projects.get, project_id)
-        project_slug = project.path_with_namespace
-        if not project_slug:
+            # Catching potential exceptions from to_thread if the callable fails
             logger.error(
-                f"Could not determine path_with_namespace (slug) for GitLab project ID {project_id}"
+                f"An unexpected error occurred in GitLab request: {e}", exc_info=True
             )
-            raise TrackerResponseError(
-                f"Missing path_with_namespace for GitLab project ID {project_id}"
+            raise TrackerResponseError(f"GitLab API error: {e}")
+
+    async def _make_request_no_retry(self, method, *args, **kwargs):
+        """
+        Execute a GitLab API request without retry logic.
+        Used for operations where we want to immediately handle specific errors like 404.
+        """
+        try:
+            # Run the synchronous method in a thread pool
+            result = await asyncio.to_thread(method, *args, **kwargs)
+            return result
+        except gitlab.exceptions.GitlabAuthenticationError as e:
+            raise TrackerAuthenticationError(f"GitLab authentication failed: {e}")
+        except gitlab.exceptions.GitlabHttpError as e:
+            if e.response_code == HTTP_STATUS_UNAUTHORIZED:
+                raise TrackerAuthenticationError(f"GitLab authentication failed: {e}")
+            else:
+                raise TrackerResponseError(f"GitLab API error: {e.response_code} - {e}")
+        except gitlab.exceptions.GitlabConnectionError as e:
+            raise TrackerConnectionError(f"GitLab connection error: {e}")
+        except Exception as e:
+            # Catching potential exceptions from to_thread if the callable fails
+            logger.error(
+                f"An unexpected error occurred in GitLab request: {e}", exc_info=True
             )
+            raise TrackerResponseError(f"GitLab API error: {e}")
 
-        kwargs = {"all": True, "include_metadata": True}
-        if since:
-            kwargs["updated_after"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        gitlab_issues = self._make_request(project.issues.list, **kwargs)
-
-        issue_list_with_comments = []
-        for issue_obj in gitlab_issues:
-            try:
-                notes = self._make_request(
-                    issue_obj.notes.list, all=True, sort="asc", order_by="created_at"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to fetch notes for GitLab issue {issue_obj.iid} in project {project_id}: {e}"
-                )
-                notes = []
-
-            comments_data = []
-            for note in notes:
-                if note.system:
-                    continue
-
-                author = None
-                if hasattr(note, "author") and isinstance(note.author, dict):
-                    author = note.author.get("username")
-
-                try:
-                    created_at_dt = datetime.strptime(
-                        note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                    updated_at_dt = datetime.strptime(
-                        note.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                except (ValueError, TypeError) as ve:  # Added TypeError for None values
-                    logger.warning(
-                        f"Could not parse datetime for note {note.id} on issue {issue_obj.iid}: {ve}. Using fallback."
-                    )
-                    created_at_dt = (
-                        datetime.now()
-                    )  # Fallback, consider if note.created_at can be None
-                    if isinstance(note.created_at, str):
-                        try:
-                            created_at_dt = datetime.strptime(
-                                note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                            )
-                        except ValueError:
-                            pass  # Keep datetime.now() if parsing fails
-                    updated_at_dt = created_at_dt
-
-                comments_data.append(
-                    {
-                        "id": str(note.id),
-                        "body": note.body or "",
-                        "author": author,
-                        "created_at": created_at_dt,
-                        "updated_at": updated_at_dt,
-                        "url": f"{issue_obj.web_url}#note_{note.id}",
-                    }
-                )
-
-            external_id = str(issue_obj.id)
-            key = f"{project_slug}#{issue_obj.iid}"
-
-            try:
-                issue_created_at = datetime.strptime(
-                    issue_obj.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
-                issue_updated_at = datetime.strptime(
-                    issue_obj.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
-            except (ValueError, TypeError) as ve:  # Added TypeError for None values
-                logger.warning(
-                    f"Could not parse datetime for issue {issue_obj.iid}: {ve}. Using fallback."
-                )
-                issue_created_at = datetime.now()
-                if isinstance(issue_obj.created_at, str):
-                    try:
-                        issue_created_at = datetime.strptime(
-                            issue_obj.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                        )
-                    except ValueError:
-                        pass  # Keep datetime.now() if parsing fails
-                issue_updated_at = issue_created_at
-
-            # Fetch issue links for dependencies
-            try:
-                issue_links = self._make_request(issue_obj.links.list)
-            except Exception as e:
-                logger.error(
-                    f"Failed to fetch links for GitLab issue {issue_obj.iid} in project {project_id}: {e}"
-                )
-                issue_links = []
-
-            issue_dependencies = self._parse_dependencies(issue_links)
-
-            issue_list_with_comments.append(
-                {
-                    "external_id": external_id,
-                    "key": key,
-                    "title": issue_obj.title,
-                    "description": issue_obj.description or "",
-                    "state": issue_obj.state,
-                    "created_at": issue_created_at,
-                    "updated_at": issue_updated_at,
-                    "labels": issue_obj.labels if hasattr(issue_obj, "labels") else [],
-                    "assignees": [
-                        assignee["username"]
-                        for assignee in issue_obj.assignees
-                        if isinstance(assignee, dict) and "username" in assignee
-                    ]
-                    if hasattr(issue_obj, "assignees")
-                    else [],
-                    "url": issue_obj.web_url,
-                    "comments": comments_data,
-                    "dependencies": issue_dependencies,
-                }
-            )
-        return issue_list_with_comments
-
-    def _parse_dependencies(self, issue_links: List[Any]) -> List[Dict[str, str]]:
+    async def _parse_dependencies(self, issue_links: List[Any]) -> List[Dict[str, str]]:
         """Parse issue links from GitLab API response."""
         dependencies = []
         for link in issue_links:
             try:
                 # This is inefficient, as it makes an API call per link.
                 # A future optimization could be to cache project slugs.
-                target_project = self._make_request(
+                target_project = await self._make_request(
                     self.gl.projects.get, link.project_id
                 )
                 target_key = f"{target_project.path_with_namespace}#{link.iid}"
@@ -383,47 +147,646 @@ class GitLabTracker(BaseTracker):
                 continue
         return dependencies
 
-    def transform_issue(
-        self, issue_data: Dict[str, Any], project: Project
-    ) -> Dict[str, Any]:
-        """
-        Transforms GitLab issue data into a standardized format.
-        """
-        if "key" not in issue_data:
-            issue_data["key"] = f"{project.slug}#{issue_data['iid']}"
-        if issue_data["state"] in ["closed", "done", "completed", "fixed"]:
-            issue_data["state"] = "closed"
-        transformed_data = super().transform_issue(issue_data, project)
-        labels = transformed_data.get("meta_data", {}).get("labels", [])
-        new_labels = [
-            label["title"] if isinstance(label, dict) and "title" in label else label
-            for label in labels
-        ]
-        transformed_data["meta_data"]["labels"] = new_labels
+    def _parse_gitlab_issue(self, issue_data: Dict[str, Any], project=None) -> Issue:
+        """Parse a GitLab issue into our standard format.
 
-        return transformed_data
+        Args:
+            issue_data: Raw GitLab issue data (as dict or GitLab API object).
+            project: Optional GitLab project object (used to get path_with_namespace).
 
-    def transform_comment(
-        self,
-        comment_data: Dict[str, Any],
-        issue_db_id: str,
-        author_db_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        Returns:
+            Standardized Issue object.
         """
-        Transforms GitLab comment data into a standardized format.
-        """
-        transformed_data = super().transform_comment(
-            comment_data, issue_db_id, author_db_id
+        # Handle both dict and GitLab API object
+        if not isinstance(issue_data, dict):
+            # Convert GitLab API object to dict
+            issue_dict = issue_data.attributes
+        else:
+            issue_dict = issue_data
+
+        # Parse assignee
+        assignee = None
+        assignee_data = issue_dict.get("assignee") or (
+            issue_dict.get("assignees", []) and issue_dict.get("assignees")[0]
+        )
+        if assignee_data:
+            if isinstance(assignee_data, dict):
+                assignee = IssueUser(
+                    id=str(assignee_data["id"]),
+                    name=assignee_data.get("name", ""),
+                    email=None,
+                    avatar_url=assignee_data.get("avatar_url"),
+                )
+
+        # Parse author (reporter)
+        reporter = None
+        author_data = issue_dict.get("author")
+        if author_data:
+            if isinstance(author_data, dict):
+                reporter = IssueUser(
+                    id=str(author_data["id"]),
+                    name=author_data.get("name", ""),
+                    email=None,
+                    avatar_url=author_data.get("avatar_url"),
+                )
+
+        # Parse status
+        state = issue_dict.get("state", "opened")
+        status_id = state
+        status_name = "Closed" if state == "closed" else "Open"
+        status_category = "done" if state == "closed" else "todo"
+
+        status = IssueStatus(
+            id=status_id,
+            name=status_name,
+            category=status_category,
         )
 
-        # GitLab-specific transformations can be added here if needed
+        # Parse labels
+        labels = issue_dict.get("labels", [])
 
-        return transformed_data
+        # Parse priority from labels
+        priority = None
+        priority_map = {
+            "priority::critical": IssuePriority(
+                id="critical", name="Critical", level=4
+            ),
+            "priority::high": IssuePriority(id="high", name="High", level=3),
+            "priority::medium": IssuePriority(id="medium", name="Medium", level=2),
+            "priority::low": IssuePriority(id="low", name="Low", level=1),
+        }
 
-    def register_webhook(self, **kwargs: Any) -> bool:
-        raise NotImplementedError("GitLabTracker.register_webhook is not implemented.")
+        for label in labels:
+            if label.lower() in priority_map:
+                priority = priority_map[label.lower()]
+                break
 
-    def register_group_webhook(
+        # Parse dates
+        created_at = datetime.fromisoformat(
+            issue_dict["created_at"].replace("Z", "+00:00")
+        )
+        updated_at = datetime.fromisoformat(
+            issue_dict["updated_at"].replace("Z", "+00:00")
+        )
+
+        # Handle closed_at
+        resolved_at = None
+        if issue_dict.get("closed_at"):
+            resolved_at = datetime.fromisoformat(
+                issue_dict["closed_at"].replace("Z", "+00:00")
+            )
+
+        # Get project_id - prefer path_with_namespace from project object if available
+        if project and hasattr(project, "path_with_namespace"):
+            project_id = project.path_with_namespace
+        else:
+            project_id = self.connection_details.get("project_id", "")
+
+        # Create issue key
+        iid = issue_dict.get("iid", issue_dict.get("id"))
+        issue_key = f"{project_id}#{iid}"
+
+        return Issue(
+            id=str(issue_dict["id"]),
+            key=issue_key,
+            title=issue_dict["title"],
+            description=issue_dict.get("description") or "",
+            status=status,
+            priority=priority,
+            created_at=created_at,
+            updated_at=updated_at,
+            resolved_at=resolved_at,
+            reporter=reporter,
+            assignee=assignee,
+            labels=labels,
+            components=[],
+            parent=None,
+            relations=[],
+            comments=[],
+            url=issue_dict.get("web_url", ""),
+            api_url=issue_dict.get("_links", {}).get("self", ""),
+            tracker_type="gitlab",
+            project_key=project_id,
+            custom_fields={},
+        )
+
+    async def test_connection(self) -> TrackerConnection:
+        """Test the connection to the tracker."""
+        try:
+            await self._make_request(self.gl.version)
+            return TrackerConnection(connected=True, message="Connection successful")
+        except (
+            TrackerAuthenticationError,
+            TrackerConnectionError,
+            TrackerResponseError,
+        ) as e:
+            return TrackerConnection(connected=False, message=str(e))
+
+    async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
+        """Get metadata about a GitLab project.
+
+        Args:
+            project_key: Project ID or path.
+
+        Returns:
+            Project metadata.
+        """
+        project_id = self.connection_details.get("project_id", project_key)
+        project = await self._make_request(self.gl.projects.get, project_id)
+
+        # GitLab has simple status model: opened/closed
+        statuses = [
+            IssueStatus(id="opened", name="Open", category="todo"),
+            IssueStatus(id="closed", name="Closed", category="done"),
+        ]
+
+        # GitLab doesn't have built-in priorities, but commonly uses labels
+        priorities = [
+            IssuePriority(id="critical", name="priority::critical", level=4),
+            IssuePriority(id="high", name="priority::high", level=3),
+            IssuePriority(id="medium", name="priority::medium", level=2),
+            IssuePriority(id="low", name="priority::low", level=1),
+        ]
+
+        return ProjectMetadata(
+            key=project.path_with_namespace,
+            name=project.name,
+            description=project.description,
+            statuses=statuses,
+            priorities=priorities,
+            url=project.web_url,
+        )
+
+    async def search_issues(
+        self,
+        project_key: str,
+        filter_params: IssueFilter,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> Tuple[List[Issue], int]:
+        """Search for issues in a GitLab project.
+
+        Args:
+            project_key: Project ID or path.
+            filter_params: Filter parameters.
+            limit: Maximum number of issues to return.
+            offset: Pagination offset.
+
+        Returns:
+            Tuple of (list of issues, total count).
+        """
+        project_id = self.connection_details.get("project_id", project_key)
+        project = await self._make_request(self.gl.projects.get, project_id)
+
+        # Build query parameters
+        kwargs = {
+            "per_page": limit,
+            "page": (offset // limit) + 1,
+        }
+
+        # Add search term if provided
+        if filter_params.query:
+            kwargs["search"] = filter_params.query
+
+        # Add state filter if provided
+        if filter_params.status:
+            if any(s.lower() == "closed" for s in filter_params.status):
+                kwargs["state"] = "closed"
+            elif any(s.lower() in ["opened", "open"] for s in filter_params.status):
+                kwargs["state"] = "opened"
+
+        # Add label filter if provided
+        if filter_params.labels:
+            kwargs["labels"] = filter_params.labels
+
+        # Add assignee filter if provided
+        if filter_params.assigned_to:
+            kwargs["assignee_username"] = filter_params.assigned_to
+
+        # Add date filters if provided
+        if filter_params.created_after:
+            kwargs["created_after"] = filter_params.created_after.isoformat()
+
+        if filter_params.created_before:
+            kwargs["created_before"] = filter_params.created_before.isoformat()
+
+        if filter_params.updated_after:
+            kwargs["updated_after"] = filter_params.updated_after.isoformat()
+
+        if filter_params.updated_before:
+            kwargs["updated_before"] = filter_params.updated_before.isoformat()
+
+        # Add sort parameters if provided
+        if filter_params.sort_by:
+            sort_map = {
+                "created": "created_at",
+                "updated": "updated_at",
+                "priority": "priority",
+            }
+            kwargs["order_by"] = sort_map.get(filter_params.sort_by, "created_at")
+
+        if filter_params.sort_direction:
+            kwargs["sort"] = filter_params.sort_direction.lower()
+
+        # Get issues
+        issues_data = await self._make_request(project.issues.list, **kwargs)
+
+        # Parse issues
+        issues = []
+        for issue_obj in issues_data:
+            issues.append(self._parse_gitlab_issue(issue_obj))
+
+        # Get total count (GitLab python library doesn't provide this easily, so we estimate)
+        # For accurate count, we'd need to make a separate API call
+        total_count = len(issues)
+
+        return issues, total_count
+
+    async def create_issue(self, project_key: str, issue_data: IssueCreate) -> Issue:
+        """Create a new GitLab issue.
+
+        Args:
+            project_key: Project ID or path.
+            issue_data: Issue data.
+
+        Returns:
+            Created issue.
+        """
+        project_id = self.connection_details.get("project_id", project_key)
+        project = await self._make_request(self.gl.projects.get, project_id)
+
+        # Build issue data
+        issue_dict = {
+            "title": issue_data.title,
+            "description": issue_data.description or "",
+        }
+
+        # Add labels if provided
+        if issue_data.labels:
+            issue_dict["labels"] = ",".join(issue_data.labels)
+
+        # Add assignee if provided (would need to look up user ID)
+        if issue_data.assignee:
+            issue_dict["assignee_ids"] = [issue_data.assignee]
+
+        # Create the issue
+        created_issue = await self._make_request(project.issues.create, issue_dict)
+
+        # Parse and return the issue
+        return self._parse_gitlab_issue(created_issue)
+
+    async def update_issue(self, issue_id: str, issue_data: IssueUpdate) -> Issue:
+        """Update an existing GitLab issue.
+
+        Args:
+            issue_id: Issue IID or ID.
+            issue_data: Updated issue data.
+
+        Returns:
+            Updated issue.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        # Extract issue IID from various formats
+        issue_iid = issue_id
+        if "#" in issue_id:
+            issue_iid = issue_id.split("#")[-1]
+        if "/" in issue_iid:
+            issue_iid = issue_iid.split("/")[-1]
+
+        project = await self._make_request(self.gl.projects.get, project_id)
+        issue = await self._make_request(project.issues.get, issue_iid)
+
+        # Build update data
+        update_dict = {}
+
+        if issue_data.title is not None:
+            update_dict["title"] = issue_data.title
+
+        if issue_data.description is not None:
+            update_dict["description"] = issue_data.description
+
+        if issue_data.status is not None:
+            # Map status to GitLab state_event
+            if issue_data.status.lower() == "closed":
+                update_dict["state_event"] = "close"
+            elif issue_data.status.lower() in ["opened", "open"]:
+                update_dict["state_event"] = "reopen"
+
+        if issue_data.labels is not None:
+            update_dict["labels"] = ",".join(issue_data.labels)
+
+        if issue_data.assignee is not None:
+            update_dict["assignee_ids"] = [issue_data.assignee]
+
+        # Update the issue
+        for key, value in update_dict.items():
+            setattr(issue, key, value)
+
+        await self._make_request(issue.save)
+
+        # Parse and return the issue
+        return self._parse_gitlab_issue(issue)
+
+    async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
+        """Add a comment to a GitLab issue.
+
+        Args:
+            issue_id: Issue IID or ID.
+            comment: Comment text.
+
+        Returns:
+            Created comment.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        # Extract issue IID from various formats
+        issue_iid = issue_id
+        if "#" in issue_id:
+            issue_iid = issue_id.split("#")[-1]
+        if "/" in issue_iid:
+            issue_iid = issue_iid.split("/")[-1]
+
+        project = await self._make_request(self.gl.projects.get, project_id)
+        issue = await self._make_request(project.issues.get, issue_iid)
+
+        # Create the comment (note)
+        note_dict = {"body": comment}
+        note = await self._make_request(issue.notes.create, note_dict)
+
+        # Parse and return the comment
+        return IssueComment(
+            id=str(note.id),
+            body=note.body,
+            created_at=datetime.fromisoformat(note.created_at.replace("Z", "+00:00")),
+            updated_at=datetime.fromisoformat(note.updated_at.replace("Z", "+00:00")),
+            author=IssueUser(
+                id=str(note.author["id"]),
+                name=note.author.get("name", ""),
+                email=None,
+                avatar_url=note.author.get("avatar_url"),
+            ),
+            url=f"{project.web_url}/-/issues/{issue_iid}#note_{note.id}",
+        )
+
+    async def add_relation(
+        self, issue_id: str, related_issue_id: str, relation_type: str
+    ) -> bool:
+        """Add a relation between GitLab issues.
+
+        Args:
+            issue_id: Source issue IID.
+            related_issue_id: Target issue IID.
+            relation_type: Relation type (ignored by GitLab).
+
+        Returns:
+            Whether the operation was successful.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        # Extract issue IIDs from various formats
+        issue_iid = issue_id
+        if "#" in issue_id:
+            issue_iid = issue_id.split("#")[-1]
+        if "/" in issue_iid:
+            issue_iid = issue_iid.split("/")[-1]
+
+        related_issue_iid = related_issue_id
+        if "#" in related_issue_id:
+            related_issue_iid = related_issue_id.split("#")[-1]
+        if "/" in related_issue_iid:
+            related_issue_iid = related_issue_iid.split("/")[-1]
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            issue = await self._make_request(project.issues.get, issue_iid)
+
+            # Create link data
+            link_dict = {
+                "target_project_id": project_id,
+                "target_issue_iid": related_issue_iid,
+            }
+
+            # Create the link
+            await self._make_request(issue.links.create, link_dict)
+            return True
+        except Exception as e:
+            logger.exception(f"Failed to add relation: {e}")
+            return False
+
+    async def get_organizations(self) -> List[Dict[str, Any]]:
+        """
+        Get organizations (groups) from GitLab.
+        """
+        groups = await self._make_request(self.gl.groups.list, all=True)
+        organizations = []
+        for group in groups:
+            organizations.append(
+                {"id": str(group.id), "name": group.name, "url": group.web_url}
+            )
+        return organizations
+
+    async def get_projects(self, organization_id: str) -> List[Dict[str, Any]]:
+        """
+        Get projects for a group from GitLab.
+        """
+        group = await self._make_request(self.gl.groups.get, organization_id)
+        projects = await self._make_request(group.projects.list, all=True)
+        project_list = []
+        for project in projects:
+            project_attributes = project.attributes
+            project_list.append(
+                {
+                    "id": str(project_attributes.get("id")),
+                    "identifier": str(project_attributes.get("id")),
+                    "name": project_attributes.get("name"),
+                    "description": project_attributes.get("description", ""),
+                    "url": project_attributes.get("web_url"),
+                    "path_with_namespace": project_attributes.get(
+                        "path_with_namespace"
+                    ),
+                    "meta_data": {
+                        "created_at": project_attributes.get("created_at"),
+                        "updated_at": project_attributes.get("last_activity_at"),
+                    },
+                }
+            )
+        return project_list
+
+    def transform_project(
+        self, proj_data: Dict[str, Any], organization_id: str
+    ) -> Dict[str, Any]:
+        """Transforms a GitLab project into the common format."""
+        return {
+            "organization_id": organization_id,
+            "identifier": str(proj_data["id"]),
+            "name": proj_data["name"],
+            "description": proj_data.get("description", ""),
+            "slug": proj_data.get("path_with_namespace", ""),
+            "meta_data": {
+                "url": proj_data.get("url", ""),
+                "external_id": proj_data.get("id", ""),
+                "source": "spacesync",
+                "path_with_namespace": proj_data.get("path_with_namespace"),
+            },
+        }
+
+    async def get_issues(
+        self, organization_id: str, project_id: str, since: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get issues for a project from GitLab.
+        """
+        project = await self._make_request(self.gl.projects.get, project_id)
+        project_slug = project.path_with_namespace
+        if not project_slug:
+            raise TrackerResponseError(
+                f"Missing path_with_namespace for GitLab project ID {project_id}"
+            )
+
+        kwargs = {"all": True, "include_metadata": True}
+        if since:
+            kwargs["updated_after"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        gitlab_issues = await self._make_request(project.issues.list, **kwargs)
+
+        issue_list_with_comments = []
+        for issue_obj in gitlab_issues:
+            try:
+                notes = await self._make_request(
+                    issue_obj.notes.list, all=True, sort="asc", order_by="created_at"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to fetch notes for GitLab issue {issue_obj.iid} in project {project_id}: {e}"
+                )
+                notes = []
+
+            comments_data = []
+            for note in notes:
+                if note.system:
+                    continue
+                author_data = None
+                if hasattr(note, "author") and isinstance(note.author, dict):
+                    author_data = {
+                        "id": str(note.author.get("id")),
+                        "name": note.author.get("username"),
+                        "avatar_url": note.author.get("avatar_url"),
+                    }
+                comments_data.append(
+                    {
+                        "id": str(note.id),
+                        "body": note.body or "",
+                        "author": author_data,
+                        "created_at": datetime.strptime(
+                            note.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                        ),
+                        "updated_at": datetime.strptime(
+                            note.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
+                        ),
+                        "url": f"{issue_obj.web_url}#note_{note.id}",
+                    }
+                )
+
+            issue_data = issue_obj.attributes
+            issue_data["comments"] = comments_data
+            # Construct the issue key in format "group/project#iid"
+            issue_data["key"] = f"{project_slug}#{issue_obj.iid}"
+
+            # Parse dependencies from issue links if available
+            dependencies = []
+            if hasattr(issue_obj, "links") and issue_obj.links:
+                # issue_obj.links is a ProjectIssueLinkManager, need to call list() to get actual links
+                try:
+                    links_list = await self._make_request(
+                        issue_obj.links.list, all=True
+                    )
+                    dependencies = await self._parse_dependencies(links_list)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to parse dependencies for issue {issue_obj.iid}: {e}"
+                    )
+                    dependencies = []
+            issue_data["dependencies"] = dependencies
+
+            issue_list_with_comments.append(issue_data)
+        return issue_list_with_comments
+
+    async def register_project_webhook(
+        self, db: Session, project: Project, webhook_url: str, secret: str
+    ) -> bool:
+        """
+        Register a webhook for the given GitLab project.
+        """
+        hook_attrs = {
+            "url": webhook_url,
+            "token": secret,
+            "issues_events": True,
+            "push_events": True,
+            "merge_requests_events": True,
+            "note_events": True,
+            "pipeline_events": True,
+            "job_events": True,
+            "repository_update_events": True,
+            "enable_ssl_verification": True,
+        }
+
+        try:
+            gitlab_project = await self._make_request(
+                self.gl.projects.get, project.identifier
+            )
+            existing_hooks = await self._make_request(
+                gitlab_project.hooks.list, all=True
+            )
+            for h in existing_hooks:
+                if h.url == webhook_url:
+                    return True
+
+            hook = await self._make_request(gitlab_project.hooks.create, hook_attrs)
+            crud_webhook.create(
+                db,
+                obj_in={
+                    "external_id": str(hook.id),
+                    "url": webhook_url,
+                    "secret": secret,
+                    "project_id": project.id,
+                    "events": [
+                        "issues",
+                        "push",
+                        "merge_requests",
+                        "notes",
+                        "pipeline",
+                        "job",
+                        "repository_update",
+                    ],
+                },
+            )
+            return True
+        except TrackerResponseError as e:
+            if str(HTTP_STATUS_CONFLICT) in str(e):  # Conflict
+                logger.warning(
+                    f"Project webhook for GitLab project '{project.identifier}' (URL: {webhook_url}) already exists ({HTTP_STATUS_CONFLICT} Conflict)."
+                )
+                return True
+            logger.error(
+                f"Failed to create project webhook for GitLab project '{project.identifier}': {e}",
+                exc_info=True,
+            )
+            return False
+        except Exception as e:
+            logger.error(
+                f"An unexpected error occurred during project webhook registration for GitLab project '{project.identifier}': {e}",
+                exc_info=True,
+            )
+            return False
+
+    async def register_group_webhook(
         self, db: Session, organization: Organization, webhook_url: str, secret: str
     ) -> Union[bool, Literal["group_hooks_not_supported"]]:
         """
@@ -459,27 +822,32 @@ class GitLabTracker(BaseTracker):
 
         try:
             logger.info(
-                f"GitLabTracker: Attempting self.gl.groups.get() for group webhook. org_identifier='{organization.identifier}', client API URL='{self.gl.url}'"
+                f"GitLabTracker: Attempting self.gl.groups.get() for group webhook. org_identifier='{organization.identifier}', client API URL='{self.url}'"
             )
-            group = self._make_request(self.gl.groups.get, organization.identifier)
+            group = await self._make_request(
+                self.gl.groups.get, organization.identifier
+            )
 
             # Try to list existing hooks. A 404 here indicates group hooks are not supported.
             try:
-                existing_hooks = group.hooks.list(all=True)
+                existing_hooks = await self._make_request_no_retry(
+                    group.hooks.list, all=True
+                )
                 for h in existing_hooks:
                     if h.url == webhook_url:
                         logger.warning(
                             f"Group webhook for GitLab group '{organization.identifier}' (URL: {webhook_url}) already exists (ID: {h.id})."
                         )
                         return True
-            except gitlab.exceptions.GitlabListError as e:
-                if e.response_code == 404:
+            except Exception as e:
+                # Check if this is a 404 error indicating group hooks not supported
+                if is_not_found_error(e):
                     logger.info(
                         f"Listing group hooks for GitLab group '{organization.identifier}' failed with 404. Assuming group hooks are not supported (e.g., GitLab CE)."
                     )
                     return "group_hooks_not_supported"
                 logger.error(
-                    f"Error listing group hooks for GitLab group '{organization.identifier}': {e.response_code} - {e.error_message}",
+                    f"Error listing group hooks for GitLab group '{organization.identifier}': {e}",
                     exc_info=True,
                 )
                 return False  # Other errors during list are a failure
@@ -489,7 +857,7 @@ class GitLabTracker(BaseTracker):
                 f"Attempting to create group hook for GitLab group '{organization.identifier}' (URL: {webhook_url})."
             )
             try:
-                hook = group.hooks.create(hook_attrs)
+                hook = await self._make_request_no_retry(group.hooks.create, hook_attrs)
                 logger.info(
                     f"Successfully created group webhook (ID: {hook.id}) for GitLab group '{organization.identifier}'."
                 )
@@ -499,394 +867,94 @@ class GitLabTracker(BaseTracker):
                         "external_id": str(hook.id),
                         "url": webhook_url,
                         "secret": secret,
-                        "events": "all",
                         "organization_id": organization.id,
+                        "events": [
+                            "issues",
+                            "push",
+                            "merge_requests",
+                            "notes",
+                            "pipeline",
+                            "job",
+                            "repository_update",
+                        ],
                     },
                 )
                 return True
-            except gitlab.exceptions.GitlabCreateError as e:
-                if e.response_code == 409:  # Conflict
+            except Exception as e:
+                # Check for various error conditions
+                if is_conflict_error(e):  # Conflict
                     logger.warning(
                         f"Group webhook for GitLab group '{organization.identifier}' (URL: {webhook_url}) already exists (409 on create)."
                     )
                     return True
-                elif e.response_code == 404:  # Not Found on create
+                elif is_not_found_error(e):  # Not Found on create
                     logger.warning(
                         f"Creating group hook for GitLab group '{organization.identifier}' failed with 404. Assuming group hooks are not supported (e.g., GitLab CE)."
                     )
                     return "group_hooks_not_supported"
-                elif e.response_code == 401:
+                elif is_authentication_error(e):
                     logger.error(
                         f"GitLab authentication failed (401) creating group hook for '{organization.identifier}'."
                     )
-                    return False
-                elif e.response_code == 403:
-                    logger.error(
-                        f"Permission denied (403) creating group hook for '{organization.identifier}'. Check token permissions."
-                    )
-                    return False
+                    raise TrackerAuthenticationError("GitLab authentication failed")
                 else:
                     logger.error(
-                        f"GitLab API error {e.response_code} creating group hook for '{organization.identifier}'. Response: {e.error_message}",
+                        f"Failed to create group webhook for GitLab group '{organization.identifier}': {e}",
                         exc_info=True,
                     )
                     return False
 
-        except gitlab.exceptions.GitlabGetError as e:
-            if e.response_code == 404:
-                logger.error(
-                    f"GitLab group '{organization.identifier}' not found when attempting to register group webhook."
-                )
-                return False  # Group itself not found
-            else:
-                logger.error(
-                    f"Error getting GitLab group '{organization.identifier}' for group webhook: {e.response_code} - {e.error_message}",
-                    exc_info=True,
-                )
-                return False
-        except (
-            gitlab.exceptions.GitlabAuthenticationError
-        ) as e:  # Should be caught by _make_request
-            logger.error(
-                f"GitLab authentication error during group webhook setup for '{organization.identifier}': {e}",
-                exc_info=True,
-            )
-            raise  # Re-raise
-        except Exception as e:  # Catch-all for unexpected issues
-            logger.error(
-                f"Unexpected error registering group webhook for GitLab group '{organization.identifier}': {e}",
-                exc_info=True,
-            )
-            return False
-
-    def register_project_webhook(
-        self, db: Session, project: Project, webhook_url: str, secret: str
-    ) -> bool:
-        """
-        Register a webhook for the given GitLab project.
-
-        Args:
-            db: The database session.
-            project: The project to register the webhook for.
-            webhook_url: The target URL for the webhook.
-            secret: The secret token to use for the webhook.
-
-        Returns:
-            True if registration was successful or webhook already exists, False otherwise.
-        """
-        logger.info(
-            f"Attempting to register project webhook for GitLab project ID '{project.identifier}' pointing to {webhook_url}"
-        )
-
-        hook_attrs = {
-            "url": webhook_url,
-            "token": secret,
-            "issues_events": True,
-            "push_events": True,
-            "merge_requests_events": True,
-            "note_events": True,
-            "pipeline_events": True,
-            "job_events": True,
-            "repository_update_events": True,
-            "enable_ssl_verification": True,
-        }
-
-        try:
-            logger.info(
-                f"GitLabTracker: Attempting self.gl.projects.get() for project webhook. proj_identifier='{project.identifier}', client API URL='{self.gl.url}'"
-            )
-            gitlab_project = self._make_request(
-                self.gl.projects.get, project.identifier
-            )
-
-            # Check for existing hooks
-            try:
-                existing_hooks = gitlab_project.hooks.list(all=True)
-                for h in existing_hooks:
-                    if h.url == webhook_url:
-                        logger.warning(
-                            f"Project webhook for GitLab project '{project.identifier}' (URL: {webhook_url}) already exists (ID: {h.id})."
-                        )
-                        return True
-            except gitlab.exceptions.GitlabListError as e:
-                logger.error(
-                    f"Error listing project hooks for GitLab project '{project.identifier}': {e.response_code} - {e.error_message}",
-                    exc_info=True,
-                )
-                return False
-
-            # If hook doesn't exist, create it
-            logger.info(
-                f"Attempting to create project hook for GitLab project '{project.identifier}' (URL: {webhook_url})."
-            )
-            try:
-                hook = gitlab_project.hooks.create(hook_attrs)
-                logger.info(
-                    f"Successfully created project webhook (ID: {hook.id}) for GitLab project '{project.identifier}'."
-                )
-                crud_webhook.create(
-                    db,
-                    obj_in={
-                        "external_id": str(hook.id),
-                        "url": webhook_url,
-                        "secret": secret,
-                        "events": "all",
-                        "project_id": project.id,
-                    },
-                )
-                return True
-            except gitlab.exceptions.GitlabCreateError as e:
-                if e.response_code == 409:  # Conflict
-                    logger.warning(
-                        f"Project webhook for GitLab project '{project.identifier}' (URL: {webhook_url}) already exists (409 on create)."
-                    )
-                    return True
-                elif e.response_code == 401:
-                    logger.error(
-                        f"GitLab authentication failed (401) creating project hook for '{project.identifier}'."
-                    )
-                    return False
-                elif e.response_code == 403:
-                    logger.error(
-                        f"Permission denied (403) creating project hook for '{project.identifier}'. Check token permissions."
-                    )
-                    return False
-                else:
-                    logger.error(
-                        f"GitLab API error {e.response_code} creating project hook for '{project.identifier}'. Response: {e.error_message}",
-                        exc_info=True,
-                    )
-                    return False
-
-        except gitlab.exceptions.GitlabGetError as e:
-            if e.response_code == 404:
-                logger.error(
-                    f"GitLab project '{project.identifier}' not found when attempting to register project webhook."
-                )
-            else:
-                logger.error(
-                    f"Error getting GitLab project '{project.identifier}' for project webhook: {e.response_code} - {e.error_message}",
-                    exc_info=True,
-                )
-            return False
-        except (
-            gitlab.exceptions.GitlabAuthenticationError
-        ) as e:  # Should be caught by _make_request
-            logger.error(
-                f"GitLab authentication error during project webhook setup for '{project.identifier}': {e}",
-                exc_info=True,
-            )
-            raise  # Re-raise
-        except Exception as e:  # Catch-all for unexpected issues
-            logger.error(
-                f"Unexpected error registering project webhook for GitLab project '{project.identifier}': {e}",
-                exc_info=True,
-            )
-            return False
-
-    def unregister_webhook(self, db: Session, webhook: Webhook) -> bool:
-        """
-        Unregister a specific webhook by its ID for a GitLab group or project.
-
-        Args:
-            db: The database session.
-            webhook: The Webhook object to unregister.
-
-        Returns:
-            True if unregistration was successful or webhook was already gone, False otherwise.
-        """
-        target_entity = None
-        entity_type = ""
-        entity_id_for_log = ""
-        webhook_id = webhook.external_id
-
-        try:
-            if webhook.organization:
-                entity_type = "group"
-                entity_id_for_log = str(webhook.organization.identifier)
-                target_entity = self._make_request(
-                    self.gl.groups.get, entity_id_for_log
-                )
-            elif webhook.project:
-                entity_type = "project"
-                entity_id_for_log = str(webhook.project.identifier)
-                target_entity = self._make_request(
-                    self.gl.projects.get, entity_id_for_log
-                )
-            else:
-                logger.error(
-                    f"Webhook {webhook.id} has no organization or project associated."
-                )
-                crud_webhook.remove(db, id=webhook.id)
-                return False
-
-            logger.info(
-                f"GitLab: Attempting to delete webhook ID {webhook_id} from {entity_type} '{entity_id_for_log}'."
-            )
-            hook_manager = target_entity.hooks
-            self._make_request(hook_manager.delete, webhook_id)
-            logger.info(
-                f"Successfully unregistered webhook {webhook_id} from GitLab {entity_type} {entity_id_for_log}."
-            )
-
-        except gitlab.exceptions.GitlabDeleteError as e:
-            if e.response_code != 404:
-                logger.error(
-                    f"Failed to unregister webhook {webhook_id} for GitLab {entity_type} {entity_id_for_log}: {e.response_code} - {e.error_message}",
-                    exc_info=True,
-                )
-                return False
-            logger.warning(
-                f"Webhook {webhook_id} for GitLab {entity_type} {entity_id_for_log} not found during delete. Assuming already unregistered."
-            )
-            crud_webhook.remove(db, id=webhook.id)
-        except gitlab.exceptions.GitlabGetError as e:
-            if e.response_code != 404:
-                logger.error(
-                    f"Error getting GitLab {entity_type} {entity_id_for_log} for webhook unregistration: {e.response_code} - {e.error_message}",
-                    exc_info=True,
-                )
-                return False
-            logger.warning(
-                f"GitLab {entity_type} {entity_id_for_log} not found when trying to unregister webhook. Assuming webhook is already gone."
-            )
-            crud_webhook.remove(db, id=webhook.id)
+        except TrackerAuthenticationError:
+            raise
         except Exception as e:
             logger.error(
-                f"Unexpected error unregistering webhook for GitLab {entity_type} {entity_id_for_log}: {e}",
+                f"An unexpected error occurred during group webhook registration for GitLab group '{organization.identifier}': {e}",
                 exc_info=True,
             )
-            crud_webhook.remove(db, id=webhook.id)
             return False
 
-        # If we reach here, the webhook is gone from GitLab (or was never there), so remove from DB
-        crud_webhook.remove(db, id=webhook.id)
-        logger.info(
-            f"Removed webhook record {webhook.id} for {entity_type} {entity_id_for_log} from database."
-        )
-        return True
-
-    def unregister_all_webhooks(self, db: Session) -> Dict[str, int]:
+    def transform_comment(
+        self,
+        comment_data: Dict[str, Any],
+        issue_db_id: str,
+        author_db_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
-        Unregister all webhooks for all organizations and projects managed by this tracker instance.
+        Transform GitLab comment data to a format that can be stored in the database.
+        GitLab uses 'note' instead of 'body' for comment text.
         """
-        results = {"unregistered": 0, "failed": 0, "not_found": 0}
-        logger.info(f"Unregistering all webhooks for GitLab tracker {self.tracker_id}.")
-        orgs = crud_organization.get_for_tracker(db, tracker_id=self.tracker_id)
-        for org in orgs:
-            self.unregister_all_webhooks_for_organization(db, org, results)
-        if results["unregistered"] > 0:
-            logger.info(
-                f"Unregistered {results['unregistered']} webhooks for GitLab tracker {self.tracker_id}."
-            )
-        else:
-            projects = crud_project.get_for_tracker(db, tracker_id=self.tracker_id)
-            for project in projects:
-                self.unregister_all_webhooks_for_project(db, project, results)
-            if results["unregistered"] > 0:
-                logger.info(
-                    f"Unregistered {results['unregistered']} webhooks for GitLab tracker {self.tracker_id}."
-                )
-            else:
-                logger.info(f"No webhooks found for GitLab tracker {self.tracker_id}.")
+        external_id = str(comment_data.get("id"))
+        return {
+            "issue_id": issue_db_id,
+            "external_id": external_id,
+            "author": None,
+            "body": comment_data.get("note", ""),  # GitLab uses 'note' not 'body'
+            "type": "issue",
+            "meta_data": {
+                "comment_id": external_id,
+                "external_author": str(comment_data.get("author"))
+                if comment_data.get("author")
+                else None,
+                "url": comment_data.get("url"),
+                "source": "spacesync",
+            },
+            "updated_at": comment_data.get("updated_at"),
+            "created_at": comment_data.get("created_at"),
+        }
 
-        logger.info(f"GitLab unregister_all_webhooks summary: {results}")
-        return results
+    async def register_webhook(self, **kwargs: Any) -> bool:
+        """Register a webhook for the tracker."""
+        raise NotImplementedError
 
-    def unregister_all_webhooks_for_organization(
-        self, db: Session, organization: Organization, results: Dict[str, int]
-    ):
-        results = {"unregistered": 0, "failed": 0, "not_found": 0}
-        webhooks = crud_webhook.get_all_by_organization(
-            db, organization_id=organization.id
-        )
-        for webhook in webhooks:
-            if self.unregister_webhook(db, webhook):
-                results["unregistered"] += 1
-            else:
-                results["failed"] += 1
-        return results
+    async def delete_webhook(self, webhook_id: str) -> bool:
+        """Delete a webhook."""
+        raise NotImplementedError
 
-    def unregister_all_webhooks_for_project(
-        self, db: Session, project: Project, results: Dict[str, int]
-    ):
-        results = {"unregistered": 0, "failed": 0, "not_found": 0}
-        webhooks = crud_webhook.get_all_by_project(db, project_id=project.id)
-        for webhook in webhooks:
-            if self.unregister_webhook(db, webhook):
-                results["unregistered"] += 1
-            else:
-                results["failed"] += 1
-        return results
+    async def get_webhooks(self, organization_id: str) -> List[Dict[str, Any]]:
+        """Get webhooks for an organization."""
+        raise NotImplementedError
 
-    def cleanup_stale_webhooks(self, spacebridge_url: str) -> dict:
-        """
-        Cleans up stale webhooks from GitLab, for both groups and projects.
-
-        Args:
-            spacebridge_url: The base URL of the SpaceBridge instance.
-
-        Returns:
-            A dictionary summarizing the actions taken, e.g., `{"unregistered": count, "failed": count}`.
-        """
-        results = {"unregistered": 0, "failed": 0}
-        try:
-            groups = self._make_request(self.gl.groups.list, all=True)
-        except (TrackerConnectionError, TrackerResponseError) as e:
-            logger.error(f"Failed to retrieve groups for stale webhook cleanup: {e}")
-            return results
-
-        for group in groups:
-            try:
-                hooks = self._make_request(group.hooks.list, all=True)
-                for hook in hooks:
-                    if not hook.url.startswith(spacebridge_url):
-                        try:
-                            self._make_request(hook.delete)
-                            results["unregistered"] += 1
-                        except (
-                            TrackerConnectionError,
-                            TrackerResponseError,
-                        ) as delete_error:
-                            logger.error(
-                                f"Failed to delete stale group webhook {hook.id} for group {group.id}: {delete_error}"
-                            )
-                            results["failed"] += 1
-            except (TrackerConnectionError, TrackerResponseError) as list_error:
-                logger.error(f"Failed to list hooks for group {group.id}: {list_error}")
-                results["failed"] += 1
-
-        try:
-            projects = self._make_request(self.gl.projects.list, all=True)
-        except (TrackerConnectionError, TrackerResponseError) as e:
-            logger.error(f"Failed to retrieve projects for stale webhook cleanup: {e}")
-            return results
-
-        for project in projects:
-            try:
-                hooks = self._make_request(project.hooks.list, all=True)
-                for hook in hooks:
-                    if not hook.url.startswith(spacebridge_url):
-                        try:
-                            self._make_request(hook.delete)
-                            results["unregistered"] += 1
-                        except (
-                            TrackerConnectionError,
-                            TrackerResponseError,
-                        ) as delete_error:
-                            logger.error(
-                                f"Failed to delete stale project webhook {hook.id} for project {project.id}: {delete_error}"
-                            )
-                            results["failed"] += 1
-            except (TrackerConnectionError, TrackerResponseError) as list_error:
-                logger.error(
-                    f"Failed to list hooks for project {project.id}: {list_error}"
-                )
-                results["failed"] += 1
-
-        return results
-
-    def is_webhook_registered(self, webhook: "Webhook") -> bool:
+    async def is_webhook_registered(self, webhook: "Webhook") -> bool:
         """
         Check if a webhook is registered in the tracker.
 
@@ -901,95 +969,135 @@ class GitLabTracker(BaseTracker):
 
         if webhook.project:
             try:
-                project = self._make_request(
+                project = await self._make_request(
                     self.gl.projects.get, webhook.project.identifier
                 )
-                self._make_request(project.hooks.get, webhook.external_id)
+                await self._make_request(project.hooks.get, webhook.external_id)
                 return True
             except (TrackerResponseError, gitlab.exceptions.GitlabGetError) as e:
-                if hasattr(e, "response_code") and e.response_code == 404:
+                if "404" in str(e):
                     return False
-                raise
+                logger.error(
+                    f"Failed to check project webhook {webhook.external_id}: {e}"
+                )
+                return False
         elif webhook.organization:
             try:
-                group = self._make_request(
+                group = await self._make_request(
                     self.gl.groups.get, webhook.organization.identifier
                 )
-                self._make_request(group.hooks.get, webhook.external_id)
+                await self._make_request(group.hooks.get, webhook.external_id)
                 return True
             except (TrackerResponseError, gitlab.exceptions.GitlabGetError) as e:
-                if hasattr(e, "response_code") and e.response_code == 404:
+                if "404" in str(e):
                     return False
-                raise
+                logger.error(
+                    f"Failed to check group webhook {webhook.external_id}: {e}"
+                )
+                return False
         return False
 
-    def get_webhooks(self, organization_id: str) -> List[Dict[str, Any]]:
-        """Get all webhooks for a specific group and its projects."""
-        all_webhooks = []
-        try:
-            group = self._make_request(self.gl.groups.get, organization_id)
-            group_hooks = self._make_request(group.hooks.list, all=True)
-            all_webhooks.extend([h.attributes for h in group_hooks])
-        except (TrackerConnectionError, TrackerResponseError) as e:
-            logger.error(
-                f"Failed to retrieve group hooks for group {organization_id}: {e}"
+    async def unregister_all_webhooks(
+        self, db: Session, webhook_url_pattern: Optional[str] = None
+    ) -> Dict[str, int]:
+        """
+        Unregister all webhooks, optionally matching a URL pattern.
+
+        This method iterates through all relevant scopes (organizations and projects)
+        for the tracker and attempts to unregister webhooks.
+
+        Args:
+            db: Database session to use for operations.
+            webhook_url_pattern: If provided, only unregister webhooks whose URL
+                                 matches this pattern. Otherwise, removes all webhooks
+                                 associated with this tracker.
+
+        Returns:
+            A dictionary summarizing the actions taken:
+            {"unregistered": count, "failed": count, "not_found": count}.
+        """
+        results = {"unregistered": 0, "failed": 0, "not_found": 0}
+        logger.info(f"Unregistering all webhooks for GitLab tracker {self.tracker_id}.")
+
+        # Get all organizations for this tracker from SpaceModels
+        from spacemodels.crud import crud_organization, crud_project
+
+        orgs = crud_organization.get_for_tracker(db, tracker_id=self.tracker_id)
+        for org in orgs:
+            await self._unregister_all_webhooks_for_organization(db, org, results)
+
+        if results["unregistered"] == 0:
+            # If no organization webhooks, try project webhooks
+            projects = crud_project.get_for_tracker(db, tracker_id=self.tracker_id)
+            for project in projects:
+                await self._unregister_all_webhooks_for_project(db, project, results)
+
+        if results["unregistered"] > 0:
+            logger.info(
+                f"Unregistered {results['unregistered']} webhooks for GitLab tracker {self.tracker_id}."
             )
+        else:
+            logger.info(f"No webhooks found for GitLab tracker {self.tracker_id}.")
 
-        projects = self.get_projects(organization_id)
-        for proj in projects:
-            proj_identifier = proj["id"]
-            try:
-                project = self._make_request(self.gl.projects.get, proj_identifier)
-                project_hooks = self._make_request(project.hooks.list, all=True)
-                all_webhooks.extend([h.attributes for h in project_hooks])
-            except (TrackerConnectionError, TrackerResponseError) as e:
-                logger.error(
-                    f"Failed to retrieve project hooks for project {proj_identifier}: {e}"
+        logger.info(f"GitLab unregister_all_webhooks summary: {results}")
+        return results
+
+    async def _unregister_all_webhooks_for_organization(
+        self, db: Session, organization: Organization, results: Dict[str, int]
+    ):
+        """Unregister all webhooks for a specific organization."""
+        webhooks = crud_webhook.get_all_by_organization(
+            db, organization_id=organization.id
+        )
+        for webhook in webhooks:
+            if await self.unregister_webhook(db, webhook):
+                results["unregistered"] += 1
+            else:
+                results["failed"] += 1
+
+    async def _unregister_all_webhooks_for_project(
+        self, db: Session, project: Project, results: Dict[str, int]
+    ):
+        """Unregister all webhooks for a specific project."""
+        webhooks = crud_webhook.get_all_by_project(db, project_id=project.id)
+        for webhook in webhooks:
+            if await self.unregister_webhook(db, webhook):
+                results["unregistered"] += 1
+            else:
+                results["failed"] += 1
+
+    async def unregister_webhook(self, db: Session, webhook: Webhook) -> bool:
+        """Unregister a webhook."""
+        try:
+            if webhook.project:
+                project = await self._make_request(
+                    self.gl.projects.get, webhook.project.identifier
                 )
-        return all_webhooks
+                await self._make_request(project.hooks.delete, webhook.external_id)
+            elif webhook.organization:
+                group = await self._make_request(
+                    self.gl.groups.get, webhook.organization.identifier
+                )
+                await self._make_request(group.hooks.delete, webhook.external_id)
+            else:
+                return False
 
-    def delete_webhook(self, webhook: Dict[str, Any]) -> bool:
-        """
-        Delete a webhook by its ID.
-        """
-        webhook_id = webhook.get("id")
-        if not webhook_id:
+            crud_webhook.remove(db, id=webhook.id)
+            return True
+        except Exception:
             return False
 
-        # Determine if it's a group or project hook
-        if "project_id" in webhook:
-            try:
-                project = self._make_request(
-                    self.gl.projects.get, webhook["project_id"]
-                )
-                self._make_request(project.hooks.delete, webhook_id)
-                return True
-            except (TrackerConnectionError, TrackerResponseError) as e:
-                logger.error(f"Failed to delete project webhook {webhook_id}: {e}")
-                return False
-        elif "group_id" in webhook:
-            try:
-                org = self._make_request(self.gl.groups.get, webhook["group_id"])
-                org_identifier = org["id"]
-                group = self._make_request(self.gl.groups.get, org_identifier)
-                self._make_request(group.hooks.delete, webhook_id)
-                return True
-            except (TrackerConnectionError, TrackerResponseError) as e:
-                logger.error(f"Failed to delete group webhook {webhook_id}: {e}")
-                return False
-        return False
-
-    def is_webhook_registered_for_project(
+    async def is_webhook_registered_for_project(
         self, project: "Project", webhook_url: str
     ) -> bool:
         """
         Check if a webhook is registered for a specific project.
         """
         try:
-            gitlab_project = self._make_request(
+            gitlab_project = await self._make_request(
                 self.gl.projects.get, project.identifier
             )
-            hooks = self._make_request(gitlab_project.hooks.list, all=True)
+            hooks = await self._make_request(gitlab_project.hooks.list, all=True)
             return any(h.url == webhook_url for h in hooks)
         except (TrackerConnectionError, TrackerResponseError) as e:
             logger.error(
@@ -997,15 +1105,17 @@ class GitLabTracker(BaseTracker):
             )
             return False
 
-    def is_webhook_registered_for_organization(
+    async def is_webhook_registered_for_organization(
         self, organization: "Organization", webhook_url: str
     ) -> bool:
         """
         Check if a webhook is registered for a specific organization (group).
         """
         try:
-            group = self._make_request(self.gl.groups.get, organization.identifier)
-            hooks = self._make_request(group.hooks.list, all=True)
+            group = await self._make_request(
+                self.gl.groups.get, organization.identifier
+            )
+            hooks = await self._make_request(group.hooks.list, all=True)
             return any(h.url == webhook_url for h in hooks)
         except (TrackerConnectionError, TrackerResponseError) as e:
             logger.error(
@@ -1013,45 +1123,227 @@ class GitLabTracker(BaseTracker):
             )
             return False
 
-    def get_issue(
-        self, organization_id: str, project_id: str, issue_id: str
-    ) -> Dict[str, Any]:
+    async def cleanup_stale_webhooks(self, spacebridge_url: str) -> Dict[str, int]:
         """
-        Get a single issue from GitLab.
+        Cleans up stale webhooks from GitLab, for both groups and projects.
+
+        Stale webhooks are webhooks that:
+        1. Have a URL starting with spacebridge_url (they point to our SpaceBridge instance)
+        2. Are NOT registered in our database (they were created but not tracked, or orphaned)
 
         Args:
-            organization_id: GitLab group ID.
-            project_id: GitLab project ID.
+            spacebridge_url: The base URL of the SpaceBridge instance.
+
+        Returns:
+            A dictionary summarizing the actions taken, e.g., `{"unregistered": count, "failed": count}`.
+        """
+        results = {"unregistered": 0, "failed": 0}
+        skip_group_webhooks = False
+
+        # Check if this is GitLab CE by fetching tracker metadata
+        from spacemodels.crud import crud_tracker, crud_webhook
+        from spacemodels.db.session import get_db_session
+
+        db = next(get_db_session())
+        try:
+            tracker = crud_tracker.get(db, id=self.tracker_id)
+            if tracker and tracker.meta_data:
+                is_gitlab_ce = tracker.meta_data.get("gitlab_ce", False)
+                if is_gitlab_ce:
+                    logger.info(
+                        f"Tracker {self.tracker_id} is marked as GitLab CE, skipping group webhooks"
+                    )
+                    skip_group_webhooks = True
+        finally:
+            db.close()
+
+        if not skip_group_webhooks:
+            try:
+                groups = await self._make_request(self.gl.groups.list, all=True)
+            except (TrackerConnectionError, TrackerResponseError) as e:
+                logger.error(
+                    f"Failed to retrieve groups for stale webhook cleanup: {e}"
+                )
+                # If we can't list groups, skip to project webhooks
+                skip_group_webhooks = True
+                groups = []
+        else:
+            groups = []
+
+        if not skip_group_webhooks:
+            for group in groups:
+                try:
+                    hooks = await self._make_request_no_retry(
+                        group.hooks.list, all=True
+                    )
+                    for hook in hooks:
+                        # Only consider webhooks pointing to our SpaceBridge instance
+                        if not hook.url.startswith(spacebridge_url):
+                            continue
+
+                        # Check if this webhook exists in our database
+                        db = next(get_db_session())
+                        try:
+                            existing_webhook = crud_webhook.get_by_external_id(
+                                db, external_id=str(hook.id), tracker_id=self.tracker_id
+                            )
+
+                            if existing_webhook:
+                                # Webhook is in our database, keep it
+                                logger.debug(
+                                    f"Group webhook {hook.id} for group {group.id} is registered in database, keeping it."
+                                )
+                                continue
+
+                            # Webhook points to our SpaceBridge but is NOT in database - it's stale
+                            logger.info(
+                                f"Found stale group webhook {hook.id} for group {group.id} pointing to {hook.url}. "
+                                f"This webhook is not in our database. Deleting..."
+                            )
+                            try:
+                                await self._make_request(hook.delete)
+                                logger.info(
+                                    f"Successfully deleted stale group webhook {hook.id} for group {group.id}."
+                                )
+                                results["unregistered"] += 1
+                            except (
+                                TrackerConnectionError,
+                                TrackerResponseError,
+                            ) as delete_error:
+                                logger.error(
+                                    f"Failed to delete stale group webhook {hook.id} for group {group.id}: {delete_error}"
+                                )
+                                results["failed"] += 1
+                        finally:
+                            db.close()
+                except (TrackerConnectionError, TrackerResponseError) as list_error:
+                    # Check if this is a 404 indicating group hooks not supported (GitLab CE)
+                    if is_not_found_error(list_error):
+                        logger.info(
+                            "Group webhooks not supported (likely GitLab CE), skipping remaining groups"
+                        )
+                        skip_group_webhooks = True
+                        break
+                    logger.error(
+                        f"Failed to list hooks for group {group.id}: {list_error}"
+                    )
+                    results["failed"] += 1
+
+        try:
+            projects = await self._make_request(self.gl.projects.list, all=True)
+        except (TrackerConnectionError, TrackerResponseError) as e:
+            logger.error(f"Failed to retrieve projects for stale webhook cleanup: {e}")
+            return results
+
+        for project in projects:
+            try:
+                hooks = await self._make_request(project.hooks.list, all=True)
+                for hook in hooks:
+                    # Only consider webhooks pointing to our SpaceBridge instance
+                    if not hook.url.startswith(spacebridge_url):
+                        continue
+
+                    # Check if this webhook exists in our database
+                    db = next(get_db_session())
+                    try:
+                        existing_webhook = crud_webhook.get_by_external_id(
+                            db, external_id=str(hook.id), tracker_id=self.tracker_id
+                        )
+
+                        if existing_webhook:
+                            # Webhook is in our database, keep it
+                            logger.debug(
+                                f"Project webhook {hook.id} for project {project.id} is registered in database, keeping it."
+                            )
+                            continue
+
+                        # Webhook points to our SpaceBridge but is NOT in database - it's stale
+                        logger.info(
+                            f"Found stale project webhook {hook.id} for project {project.id} pointing to {hook.url}. "
+                            f"This webhook is not in our database. Deleting..."
+                        )
+                        try:
+                            await self._make_request(hook.delete)
+                            logger.info(
+                                f"Successfully deleted stale project webhook {hook.id} for project {project.id}."
+                            )
+                            results["unregistered"] += 1
+                        except (
+                            TrackerConnectionError,
+                            TrackerResponseError,
+                        ) as delete_error:
+                            logger.error(
+                                f"Failed to delete stale project webhook {hook.id} for project {project.id}: {delete_error}"
+                            )
+                            results["failed"] += 1
+                    finally:
+                        db.close()
+            except (TrackerConnectionError, TrackerResponseError) as list_error:
+                logger.error(
+                    f"Failed to list hooks for project {project.id}: {list_error}"
+                )
+                results["failed"] += 1
+
+        return results
+
+    async def get_issue(self, issue_id: str) -> Issue:
+        """Get a single issue from GitLab.
+
+        Args:
             issue_id: GitLab issue IID.
 
         Returns:
-            A dictionary containing the issue data.
+            Issue object.
         """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
         try:
-            project = self._make_request(self.gl.projects.get, project_id)
-            issue = self._make_request(project.issues.get, issue_id)
+            project = await self._make_request(self.gl.projects.get, project_id)
+            issue = await self._make_request(project.issues.get, issue_id)
         except gitlab.exceptions.GitlabGetError as e:
-            if e.response_code == 404:
+            if e.response_code == HTTP_STATUS_NOT_FOUND:
                 raise TrackerResponseError(
                     f"Issue {issue_id} not found in project {project_id}"
                 )
             raise
 
-        project_slug = project.path_with_namespace
-        key = f"{project_slug}#{issue.iid}"
+        # Use the mapper to convert to Issue object, passing project for path_with_namespace
+        return self._parse_gitlab_issue(issue, project=project)
+
+    async def get_comments(self, issue_id: str) -> List[IssueComment]:
+        """Get comments for an issue."""
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            issue = await self._make_request(project.issues.get, issue_id)
+        except gitlab.exceptions.GitlabGetError as e:
+            if e.response_code == HTTP_STATUS_NOT_FOUND:
+                raise TrackerResponseError(
+                    f"Issue {issue_id} not found in project {project_id}"
+                )
+            raise
 
         comments_data = []
         try:
-            notes = self._make_request(
+            notes = await self._make_request(
                 issue.notes.list, all=True, sort="asc", order_by="created_at"
             )
             for note in notes:
                 if note.system:
                     continue
 
-                author = None
+                author_data = None
                 if hasattr(note, "author") and isinstance(note.author, dict):
-                    author = note.author.get("username")
+                    author_data = IssueUser(
+                        id=str(note.author.get("id")),
+                        name=note.author.get("username"),
+                        avatar_url=note.author.get("avatar_url"),
+                    )
 
                 try:
                     created_at_dt = datetime.strptime(
@@ -1072,50 +1364,16 @@ class GitLabTracker(BaseTracker):
                     updated_at_dt = created_at_dt
 
                 comments_data.append(
-                    {
-                        "id": str(note.id),
-                        "body": note.body or "",
-                        "author": author,
-                        "created_at": created_at_dt,
-                        "updated_at": updated_at_dt,
-                        "url": f"{issue.web_url}#note_{note.id}",
-                    }
+                    IssueComment(
+                        id=str(note.id),
+                        body=note.body or "",
+                        author=author_data,
+                        created_at=created_at_dt,
+                        updated_at=updated_at_dt,
+                        url=f"{issue.web_url}#note_{note.id}",
+                    )
                 )
         except Exception as e:
-            logger.error(f"Failed to fetch notes for issue {issue.iid}: {e}")
+            logger.error(f"Failed to fetch notes for issue {issue_id}: {e}")
 
-        try:
-            issue_created_at = datetime.strptime(
-                issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-            )
-            issue_updated_at = datetime.strptime(
-                issue.updated_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-            )
-        except (ValueError, TypeError):
-            issue_created_at = datetime.now()
-            if isinstance(issue.created_at, str):
-                try:
-                    issue_created_at = datetime.strptime(
-                        issue.created_at, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                except ValueError:
-                    pass
-            issue_updated_at = issue_created_at
-
-        return {
-            "external_id": str(issue.id),
-            "key": key,
-            "title": issue.title,
-            "description": issue.description or "",
-            "state": issue.state,
-            "created_at": issue_created_at,
-            "updated_at": issue_updated_at,
-            "labels": issue.labels,
-            "assignees": [
-                assignee["username"]
-                for assignee in issue.assignees
-                if isinstance(assignee, dict) and "username" in assignee
-            ],
-            "url": issue.web_url,
-            "comments": comments_data,
-        }
+        return comments_data
