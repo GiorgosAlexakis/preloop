@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, selectinload
 from typing import Any, Dict, List, Literal, Optional, Tuple
 import logging
 import openai
@@ -41,16 +41,17 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate,
 )
 from spacemodels.models.account import Account  # Import Account model
-from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.issue import Issue
-from spacemodels.models.tracker import Tracker
 
 from .issues import update_issue
 
 from spacebridge.api.auth import get_current_active_user  # Import user dependency
 from spacebridge.config import get_settings, Settings
-from spacebridge.api.common import load_duplicates_prompts_config
+from spacebridge.api.common import (
+    load_duplicates_prompts_config,
+    get_accessible_projects,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +260,7 @@ def propose_issue_duplicate_resolution(
     # Check if the user has access to the project containing the issues
     # Raises an exception if not
     project_id = existing_duplicate.issue1.project_id
-    accessible_projects = _get_accessible_projects(db, current_user, [project_id])
+    accessible_projects = get_accessible_projects(db, current_user, [project_id])
     if not accessible_projects:
         raise HTTPException(
             status_code=403,
@@ -691,28 +692,6 @@ def _find_issue_duplicates_logic(
     return paginated_duplicates, model.id
 
 
-def _get_accessible_projects(
-    db: Session,
-    current_user: Account,
-    project_ids: Optional[List[str]],
-) -> List[Project]:
-    """Get the list of accessible projects for the given user and project IDs."""
-    project_query = (
-        db.query(Project)
-        .options(joinedload(Project.organization).joinedload(Organization.tracker))
-        .join(Project.organization)
-        .join(Organization.tracker)
-        .filter(Tracker.account_id == current_user.id)
-        .filter(Tracker.is_active)
-        .filter(Tracker.is_deleted.is_(False))
-    )
-
-    if project_ids:
-        project_query = project_query.filter(Project.id.in_(project_ids))
-
-    return project_query.all()
-
-
 @router.get("/issue-duplicates", response_model=ProjectDuplicatesResponse)
 def find_issue_duplicates(
     project_ids: Optional[List[str]] = Query(
@@ -754,7 +733,7 @@ def find_issue_duplicates(
     """
     Finds potential duplicate issues within specified projects.
     """
-    accessible_projects = _get_accessible_projects(
+    accessible_projects = get_accessible_projects(
         db=db, current_user=current_user, project_ids=project_ids
     )
 
@@ -797,7 +776,7 @@ def get_projects_duplicate_stats(
     """
     Get statistics about duplicate issues for specified projects.
     """
-    accessible_projects = _get_accessible_projects(
+    accessible_projects = get_accessible_projects(
         db=db, current_user=current_user, project_ids=project_ids
     )
 
@@ -860,7 +839,7 @@ def get_resolution_suggestion(
 
     # Authorization check
     project_id = issue1.project_id
-    accessible_projects = _get_accessible_projects(db, current_user, [project_id])
+    accessible_projects = get_accessible_projects(db, current_user, [project_id])
     if not accessible_projects:
         raise HTTPException(
             status_code=403,

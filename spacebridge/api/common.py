@@ -16,6 +16,8 @@ from spacemodels.crud import (
 from spacemodels.models.account import Account
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
+from spacemodels.models.tracker import Tracker
+from spacemodels.models.tracker_scope_rule import TrackerScopeRule
 import yaml
 import os
 
@@ -319,3 +321,102 @@ def load_duplicates_prompts_config(config_path: str) -> Dict[str, Any]:
         return {}
 
     return config_data.get("duplicates", {})
+
+
+def get_accessible_projects(
+    db: Session,
+    current_user: Account,
+    project_ids: Optional[List[str]] = None,
+) -> List[Project]:
+    """Get the list of accessible projects for the given user and project IDs.
+
+    Applies TrackerScopeRule filtering to ensure only projects that match the
+    tracker's scope configuration are returned. This follows the same logic as
+    spacesync scanner:
+    1. Organization must be in INCLUDE rules
+    2. Project must not be in EXCLUDE rules
+    3. If PROJECT INCLUDE rules exist, project must be in them
+
+    Args:
+        db: Database session
+        current_user: Current authenticated user
+        project_ids: Optional list of project IDs to filter by. If None, returns
+            all accessible projects for the user.
+
+    Returns:
+        List of Project objects that the user has access to and that match
+        the tracker scope rules.
+    """
+    from sqlalchemy.orm import joinedload
+
+    # Build base query for projects belonging to user's active trackers
+    project_query = (
+        db.query(Project)
+        .options(joinedload(Project.organization).joinedload(Organization.tracker))
+        .join(Project.organization)
+        .join(Organization.tracker)
+        .filter(Tracker.account_id == current_user.id)
+        .filter(Tracker.is_active)
+        .filter(Tracker.is_deleted.is_(False))
+    )
+
+    # Apply project ID filter if provided
+    if project_ids:
+        project_query = project_query.filter(Project.id.in_(project_ids))
+
+    all_projects = project_query.all()
+
+    # Apply TrackerScopeRule filtering
+    filtered_projects = []
+    for project in all_projects:
+        tracker = project.organization.tracker
+
+        # Get scope rules for this tracker
+        rules = (
+            db.query(TrackerScopeRule)
+            .filter(TrackerScopeRule.tracker_id == tracker.id)
+            .all()
+        )
+
+        # Build rule sets (same logic as scanner/core.py)
+        org_inclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "ORGANIZATION" and r.rule_type == "INCLUDE"
+        }
+        project_inclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "PROJECT" and r.rule_type == "INCLUDE"
+        }
+        project_exclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "PROJECT" and r.rule_type == "EXCLUDE"
+        }
+
+        # Check organization inclusion (required)
+        if project.organization.identifier not in org_inclusions:
+            logger.debug(
+                f"Skipping project {project.name} - organization {project.organization.identifier} "
+                f"not in inclusion list for tracker {tracker.id}"
+            )
+            continue
+
+        # Check project exclusion
+        if project.identifier in project_exclusions:
+            logger.debug(
+                f"Skipping project {project.name} ({project.identifier}) - in exclusion list"
+            )
+            continue
+
+        # Check project inclusion (if any inclusion rules exist)
+        if project_inclusions and project.identifier not in project_inclusions:
+            logger.debug(
+                f"Skipping project {project.name} ({project.identifier}) - not in inclusion list"
+            )
+            continue
+
+        filtered_projects.append(project)
+
+    return filtered_projects

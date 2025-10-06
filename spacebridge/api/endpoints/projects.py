@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from spacebridge.api.auth import get_current_active_user
+from spacebridge.api.common import get_accessible_projects
 
 from spacebridge.schemas.project import (
     ProjectCreate,
@@ -102,42 +103,35 @@ def list_projects(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ) -> List[dict]:
-    """List projects accessible to the current user, optionally filtered by organization."""
-    projects = []
+    """List projects accessible to the current user, applying scope rules and optionally filtered by organization."""
+    # Use get_accessible_projects which applies TrackerScopeRule filtering
+    accessible_projects = get_accessible_projects(
+        db=db,
+        current_user=current_user,
+        project_ids=None,  # Get all accessible projects
+    )
+
+    # Apply organization filter if provided
     if organization_id:
-        # If organization_id is provided, check access first
+        # Check organization access first
         organization = crud_organization.get(
             db, id=organization_id, account_id=current_user.id
         )
         if not organization:
             raise HTTPException(status_code=404, detail="Organization not found")
-        # Fetch projects for this specific organization
-        projects = crud_project.get_for_organization(
-            db, organization_id=organization_id, skip=offset, limit=limit
-        )
-    else:
-        # List projects from all organizations the user has access to
-        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
-        tracker_ids = [t.id for t in user_trackers]
-        if tracker_ids:
-            user_orgs = (
-                db.query(Organization)
-                .filter(Organization.tracker_id.in_(tracker_ids))
-                .all()
-            )
-            org_ids = [o.id for o in user_orgs]
-            if org_ids:
-                projects = (
-                    db.query(Project)
-                    .filter(Project.organization_id.in_(org_ids))
-                    .filter(Project.is_active)
-                    .offset(offset)
-                    .limit(limit)
-                    .all()
-                )
+
+        # Filter to only projects in this organization
+        accessible_projects = [
+            p for p in accessible_projects if p.organization_id == organization_id
+        ]
+
+    # Apply pagination
+    total = len(accessible_projects)
+    paginated_projects = accessible_projects[offset : offset + limit]
+
     # Convert datetime objects to ISO format strings
     result = []
-    for project in projects:
+    for project in paginated_projects:
         result.append(
             {
                 "id": project.id,
@@ -163,7 +157,7 @@ def list_organization_projects(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_active_user),
 ):
-    """List all projects for an organization, ensuring user has access."""
+    """List all projects for an organization, applying scope rules and ensuring user has access."""
     # Check if organization exists
     organization = crud_organization.get(
         db, id=organization_id, account_id=current_user.id
@@ -171,17 +165,25 @@ def list_organization_projects(
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    # Use the CRUD method to get projects for the organization
-    projects = crud_project.get_for_organization(
-        db, organization_id=organization_id, skip=offset, limit=limit
+    # Use get_accessible_projects which applies TrackerScopeRule filtering
+    accessible_projects = get_accessible_projects(
+        db=db,
+        current_user=current_user,
+        project_ids=None,
     )
 
-    # Count total projects for this organization
-    total = crud_project.count_for_organization(db, organization_id=organization_id)
+    # Filter to only projects in this organization
+    org_projects = [
+        p for p in accessible_projects if p.organization_id == organization_id
+    ]
+
+    # Apply pagination
+    total = len(org_projects)
+    paginated_projects = org_projects[offset : offset + limit]
 
     # Convert SQLAlchemy model objects to dictionaries
     project_dicts = []
-    for project in projects:
+    for project in paginated_projects:
         project_dict = {
             "id": project.id,
             "name": project.name,

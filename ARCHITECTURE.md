@@ -144,6 +144,100 @@ The `SpaceLit` application is structured around a component-based architecture.
 *   **Implementations:** Concrete classes for each supported tracker (Jira, GitHub, GitLab).
 *   **Features:** Handles authentication, API specifics, rate limiting, and error mapping for each tracker.
 
+### Tracker Scope Rules
+
+**Purpose:** TrackerScopeRule provides fine-grained control over which organizations and projects within a tracker are synchronized and accessible. This allows users to focus on relevant data and reduce noise.
+
+**Data Model:** Defined in `SpaceModels/spacemodels/models/tracker_scope_rule.py`
+
+*   **Fields:**
+    *   `tracker_id`: Foreign key to the Tracker
+    *   `scope_type`: Enum - `ORGANIZATION` or `PROJECT`
+    *   `rule_type`: Enum - `INCLUDE` or `EXCLUDE`
+    *   `identifier`: String - the organization or project identifier (e.g., `"my-org"` or `"my-org/my-repo"`)
+
+**Filtering Logic:** The following rules are applied consistently across all components (SpaceSync scanner, API endpoints, cleanup scripts):
+
+1.  **Organization Level (Required):**
+    *   An organization MUST have an `INCLUDE` rule to be processed.
+    *   Organizations can have `EXCLUDE` rules, but these are currently unused (organizations are opt-in via `INCLUDE` only).
+    *   If an organization is not explicitly included, all its projects are skipped.
+
+2.  **Project Level (Within Included Organizations):**
+    *   For each included organization, projects are filtered using **EITHER** include rules **OR** exclude rules, **NOT BOTH**.
+    *   **Include Mode:** If any `PROJECT` + `INCLUDE` rules exist for projects within an organization, **ONLY** those explicitly listed projects are processed. All other projects in that organization are skipped.
+    *   **Exclude Mode:** If only `PROJECT` + `EXCLUDE` rules exist for projects within an organization (and no `PROJECT` + `INCLUDE` rules), then **ALL** projects **EXCEPT** the excluded ones are processed.
+    *   **No Project Rules:** If there are no project-level rules for an organization, **ALL** projects within that organization are processed (default behavior).
+
+**Important Constraints:**
+
+*   **Mutual Exclusivity:** An organization **MUST NOT** have both `PROJECT` + `INCLUDE` and `PROJECT` + `EXCLUDE` rules. This would create ambiguous filtering logic.
+    *   ✅ Valid: Org has only `PROJECT` + `INCLUDE` rules (whitelist mode)
+    *   ✅ Valid: Org has only `PROJECT` + `EXCLUDE` rules (blacklist mode)
+    *   ✅ Valid: Org has no project-level rules (all projects included)
+    *   ❌ Invalid: Org has both `PROJECT` + `INCLUDE` and `PROJECT` + `EXCLUDE` rules
+
+**Validation:** The system should validate that no organization has conflicting project-level rules when scope rules are created or updated. This validation should be implemented at:
+
+*   API endpoints that create/update TrackerScopeRule records
+*   Database constraints (if feasible)
+*   UI validation when configuring tracker scopes
+
+**Implementation Locations:**
+
+*   **Scanner (SpaceSync):** `spacesync/spacesync/scanner/core.py` - Lines 73-191
+    *   Filters organizations and projects during synchronization
+    *   Skips organizations not in the include list
+    *   Applies project include/exclude logic
+*   **API (get_tracker_client):** `spacebridge/api/common.py` - Lines 118-173
+    *   Validates scope when a user requests access to a specific organization/project
+    *   Returns HTTP 403 if access is denied
+*   **API (get_accessible_projects):** `spacebridge/api/common.py` - Lines 326-422
+    *   Returns list of projects accessible to a user based on scope rules
+    *   Used by search endpoints, project listing, and other features that query across projects
+*   **API (Projects Endpoints):** `spacebridge/api/endpoints/projects.py`
+    *   `GET /projects` - Lists only accessible projects based on scope rules
+    *   `GET /organizations/{organization_id}/projects` - Lists only accessible projects within an organization
+*   **API (Search Endpoint):** `spacebridge/api/endpoints/search.py`
+    *   `GET /search` - Applies scope filtering to all search results (similarity and fulltext)
+    *   Always filters by accessible projects, even when no project/org filter is specified
+*   **Cleanup Script:** `spacebridge/scripts/cleanup_out_of_scope_issues.py` - Lines 38-131
+    *   Identifies issues that violate current scope rules
+    *   Allows administrators to clean up out-of-scope data
+
+**Example Configurations:**
+
+*   **Scenario 1: Include specific organization, all projects**
+    ```
+    ORGANIZATION + INCLUDE: "my-org"
+    (no project-level rules)
+    Result: All projects in "my-org" are synced
+    ```
+
+*   **Scenario 2: Include specific organization, whitelist specific projects**
+    ```
+    ORGANIZATION + INCLUDE: "my-org"
+    PROJECT + INCLUDE: "my-org/project-a"
+    PROJECT + INCLUDE: "my-org/project-b"
+    Result: Only "project-a" and "project-b" in "my-org" are synced
+    ```
+
+*   **Scenario 3: Include specific organization, blacklist specific projects**
+    ```
+    ORGANIZATION + INCLUDE: "my-org"
+    PROJECT + EXCLUDE: "my-org/archived-project"
+    PROJECT + EXCLUDE: "my-org/deprecated-project"
+    Result: All projects in "my-org" EXCEPT "archived-project" and "deprecated-project" are synced
+    ```
+
+*   **Scenario 4: INVALID - Mixed include/exclude**
+    ```
+    ORGANIZATION + INCLUDE: "my-org"
+    PROJECT + INCLUDE: "my-org/project-a"
+    PROJECT + EXCLUDE: "my-org/project-b"
+    Result: ❌ INVALID - This configuration should be rejected
+    ```
+
 ### Database (PostgreSQL + PGVector)
 *   **Role:** Central data store for metadata and vector embeddings.
 *   **Managed by:** `SpaceModels` submodule.

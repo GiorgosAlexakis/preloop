@@ -1095,8 +1095,8 @@ paths:
       tags:
       - Projects
       summary: List Projects
-      description: List projects accessible to the current user, optionally filtered
-        by organization.
+      description: List projects accessible to the current user, applying scope rules
+        and optionally filtered by organization.
       operationId: list_projects_api_v1_projects_get
       security:
       - bearerAuth: []
@@ -1147,7 +1147,8 @@ paths:
       tags:
       - Projects
       summary: List Organization Projects
-      description: List all projects for an organization, ensuring user has access.
+      description: List all projects for an organization, applying scope rules and
+        ensuring user has access.
       operationId: list_organization_projects_api_v1_organizations__organization_id__projects_get
       security:
       - bearerAuth: []

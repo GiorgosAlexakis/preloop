@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from spacebridge.api.auth import get_current_active_user
+from spacebridge.api.common import get_accessible_projects
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels import models as sm_models
 from spacemodels.models.account import Account
@@ -80,98 +81,31 @@ async def perform_search(
     - Filters: project_id, limit, etc. Note: issue_id, organization_id, author are not used for similarity search.
     """
     # --- Project and Organization Resolution Logic ---
-    resolved_project_ids_param: Optional[List[str]] = None
-    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
-    tracker_ids = [t.id for t in user_trackers]
-    if project_id or project or organization_id or organization:
-        if not tracker_ids:
-            # User has no trackers, so any project/org filter yields no results
-            resolved_project_ids_param = []
-        else:
-            actual_organization_id: Optional[str] = None
-            org_filter_is_valid = True
-            if organization_id:
-                org_obj = crud_organization.get(
-                    db, id=organization_id, account_id=current_user.id
-                )
-                if org_obj and org_obj.tracker_id in tracker_ids:
-                    actual_organization_id = org_obj.id
-                else:
-                    org_filter_is_valid = False
-            elif organization:
-                # Query organizations accessible by the user and filter by name
-                user_accessible_orgs = (
-                    db.query(sm_models.Organization)
-                    .filter(sm_models.Organization.tracker_id.in_(tracker_ids))
-                    .all()
-                )
-                named_org = next(
-                    (o for o in user_accessible_orgs if o.name == organization), None
-                )
-                if named_org:
-                    actual_organization_id = named_org.id
-                else:
-                    org_filter_is_valid = False
+    # ALWAYS get accessible projects to apply scope rules
+    accessible_projects = get_accessible_projects(
+        db=db,
+        current_user=current_user,
+        project_ids=[project_id] if project_id else None,
+    )
 
-            if not org_filter_is_valid:
-                resolved_project_ids_param = []  # Org filter failed
-            else:
-                # Organization filter is valid or was not specified; proceed to resolve project
-                if project_id:
-                    proj_obj = crud_project.get(
-                        db, id=project_id, account_id=current_user.id
-                    )
-                    if proj_obj and proj_obj.is_active:  # Check active status first
-                        # A project is accessible if its organization's tracker is in tracker_ids
-                        project_org = crud_organization.get(
-                            db,
-                            id=proj_obj.organization_id,
-                            account_id=current_user.id,
-                        )
-                        if project_org and project_org.tracker_id in tracker_ids:
-                            # Now check if it matches actual_organization_id if that filter is active
-                            if (
-                                not actual_organization_id
-                                or proj_obj.organization_id == actual_organization_id
-                            ):
-                                resolved_project_ids_param = [proj_obj.id]
-                            else:
-                                resolved_project_ids_param = []  # Does not match org filter
-                        else:
-                            resolved_project_ids_param = []  # Tracker not accessible or org not found for project
-                    else:
-                        resolved_project_ids_param = []  # Project not found or inactive
-                elif project:  # Filter by project name
-                    query_proj = (
-                        db.query(sm_models.Project)
-                        .join(sm_models.Organization)
-                        .filter(
-                            sm_models.Project.name == project,
-                            sm_models.Organization.tracker_id.in_(tracker_ids),
-                            sm_models.Project.is_active,
-                        )
-                    )
-                    if actual_organization_id:
-                        query_proj = query_proj.filter(
-                            sm_models.Project.organization_id == actual_organization_id
-                        )
-                    matched_projects = query_proj.all()
-                    resolved_project_ids_param = [p.id for p in matched_projects]
-                elif (
-                    actual_organization_id
-                ):  # Only org filter, no specific project filter
-                    query_proj_org = (
-                        db.query(sm_models.Project)
-                        .join(sm_models.Organization)
-                        .filter(
-                            sm_models.Project.organization_id == actual_organization_id,
-                            sm_models.Organization.tracker_id.in_(tracker_ids),
-                            sm_models.Project.is_active,
-                        )
-                    )
-                    matched_projects_in_org = query_proj_org.all()
-                    resolved_project_ids_param = [p.id for p in matched_projects_in_org]
-                # If no project/org filters were specified at all, resolved_project_ids_param remains None
+    # Apply additional filtering based on organization/project name filters
+    if organization_id or organization:
+        # Filter by organization
+        if organization_id:
+            accessible_projects = [
+                p for p in accessible_projects if p.organization_id == organization_id
+            ]
+        elif organization:
+            accessible_projects = [
+                p for p in accessible_projects if p.organization.name == organization
+            ]
+
+    if project:
+        # Filter by project name
+        accessible_projects = [p for p in accessible_projects if p.name == project]
+
+    # Extract project IDs - this now always contains scope-filtered projects
+    resolved_project_ids_param = [p.id for p in accessible_projects]
 
     # --- End of Project and Organization Resolution Logic ---
 

@@ -25,6 +25,7 @@ from spacesync.services.event_bus import event_bus_service
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.tracker import Tracker, TrackerType, TrackerScopeRule
+from spacemodels.crud.tracker_scope_rule import crud_tracker_scope_rule
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -173,6 +174,17 @@ async def register_tracker(
             f"Creating new tracker: name='{name}', "
             f"type={tracker_type.value}, account_id={account.id}"
         )
+
+        # Validate scope rules before creating the tracker
+        if scope_rules_data:
+            is_valid, error_message = crud_tracker_scope_rule.validate_scope_rules(
+                scope_rules_data
+            )
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid scope rules: {error_message}",
+                )
 
         # Create the tracker with the account reference and project selection fields
         scope_rules = []
@@ -325,13 +337,24 @@ async def update_tracker(
 
     # Handle scope_rules separately
     if "scope_rules" in update_data:
+        # Validate new scope rules before updating
+        new_scope_rules_data = update_data.pop("scope_rules")
+        if new_scope_rules_data is not None:
+            is_valid, error_message = crud_tracker_scope_rule.validate_scope_rules(
+                new_scope_rules_data
+            )
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid scope rules: {error_message}",
+                )
+
         # Delete existing scope rules
         db.query(TrackerScopeRule).filter(
             TrackerScopeRule.tracker_id == tracker.id
         ).delete(synchronize_session=False)
 
         # Create new scope rules from the payload
-        new_scope_rules_data = update_data.pop("scope_rules")
         if new_scope_rules_data is not None:
             new_scope_rules = []
             for rule_data in new_scope_rules_data:
