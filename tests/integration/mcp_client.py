@@ -9,7 +9,8 @@ connect directly to SpaceBridge's MCP HTTP endpoint.
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from mcp.client.streamable_http import create_mcp_http_client
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 
 class MCPTestClient:
@@ -27,33 +28,51 @@ class MCPTestClient:
         self.mcp_url = f"{self.base_url}/mcp/v1"
         self.api_key = api_key
         self.session = None
+        self.context = None
 
     async def connect(self):
         """Connect to MCP server."""
         headers = {"Authorization": f"Bearer {self.api_key}"}
 
-        self.session = await create_mcp_http_client(
-            url=self.mcp_url,
-            headers=headers,
-        ).__aenter__()
+        # Create the streamable HTTP connection
+        async with streamablehttp_client(url=self.mcp_url, headers=headers) as streams:
+            read_stream, write_stream, _ = streams
 
-        # Initialize the session
-        await self.session.initialize()
+            # Create a client session
+            self.session = ClientSession(read_stream, write_stream)
+            self.context = self.session
+
+            # Initialize the MCP session
+            await self.session.initialize()
 
     async def disconnect(self):
         """Disconnect from MCP server."""
         if self.session:
             await self.session.__aexit__(None, None, None)
             self.session = None
+            self.context = None
 
     async def __aenter__(self):
         """Async context manager entry."""
-        await self.connect()
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+
+        # Need to handle the async generator context correctly
+        self.context = streamablehttp_client(url=self.mcp_url, headers=headers)
+        streams = await self.context.__aenter__()
+        read_stream, write_stream, _ = streams
+
+        # Create and initialize session
+        self.session = ClientSession(read_stream, write_stream)
+        await self.session.initialize()
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
-        await self.disconnect()
+        if self.context:
+            await self.context.__aexit__(exc_type, exc_val, exc_tb)
+            self.context = None
+            self.session = None
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
