@@ -291,20 +291,67 @@ def test_github_tracker_sync(spacebridge_client, github_client):
 
             # Extract issue key from response
             created_issue_key = None
-            if hasattr(create_result, "content"):
-                # Parse MCP tool response
+
+            # Try structuredContent first (most reliable) - FastMCP puts Pydantic model fields here
+            if (
+                hasattr(create_result, "structuredContent")
+                and create_result.structuredContent
+            ):
+                url = create_result.structuredContent.get("url")
+                if url:
+                    # Parse GitHub URL: https://github.com/owner/repo/issues/123
+                    url_match = re.search(
+                        r"github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/issues/(\d+)",
+                        url,
+                    )
+                    if url_match:
+                        owner_name, repo_name, issue_number = url_match.groups()
+                        created_issue_key = f"{owner_name}/{repo_name}#{issue_number}"
+
+            # Fallback to parsing content text - FastMCP puts JSON serialized model here
+            if not created_issue_key and hasattr(create_result, "content"):
                 for content_item in create_result.content:
                     if hasattr(content_item, "text"):
                         text = content_item.text
-                        # Look for issue key pattern
-                        issue_key_match = re.search(
-                            r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+#\d+)", text
-                        )
-                        if issue_key_match:
-                            created_issue_key = issue_key_match.group(1)
-                            break
+                        # Try to parse JSON and extract URL
+                        try:
+                            import json
 
-            assert created_issue_key, "Failed to extract issue key from MCP response"
+                            data = json.loads(text)
+                            url = data.get("url")
+                            if url:
+                                url_match = re.search(
+                                    r"github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/issues/(\d+)",
+                                    url,
+                                )
+                                if url_match:
+                                    owner_name, repo_name, issue_number = (
+                                        url_match.groups()
+                                    )
+                                    created_issue_key = (
+                                        f"{owner_name}/{repo_name}#{issue_number}"
+                                    )
+                                    break
+                        except json.JSONDecodeError:
+                            # Try direct regex on text as final fallback
+                            text_match = re.search(
+                                r"github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/issues/(\d+)",
+                                text,
+                            )
+                            if text_match:
+                                owner_name, repo_name, issue_number = (
+                                    text_match.groups()
+                                )
+                                created_issue_key = (
+                                    f"{owner_name}/{repo_name}#{issue_number}"
+                                )
+                                break
+
+            assert created_issue_key, (
+                f"Failed to extract issue key from MCP response. "
+                f"Debug info - has structuredContent: {hasattr(create_result, 'structuredContent')}, "
+                f"has content: {hasattr(create_result, 'content')}"
+            )
             print(f"✓ Created issue via MCP: {created_issue_key}")
 
             # Wait for issue to be indexed

@@ -28,51 +28,37 @@ class MCPTestClient:
         self.mcp_url = f"{self.base_url}/mcp/v1"
         self.api_key = api_key
         self.session = None
-        self.context = None
-
-    async def connect(self):
-        """Connect to MCP server."""
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-
-        # Create the streamable HTTP connection
-        async with streamablehttp_client(url=self.mcp_url, headers=headers) as streams:
-            read_stream, write_stream, _ = streams
-
-            # Create a client session
-            self.session = ClientSession(read_stream, write_stream)
-            self.context = self.session
-
-            # Initialize the MCP session
-            await self.session.initialize()
-
-    async def disconnect(self):
-        """Disconnect from MCP server."""
-        if self.session:
-            await self.session.__aexit__(None, None, None)
-            self.session = None
-            self.context = None
+        self.stream_context = None
 
     async def __aenter__(self):
         """Async context manager entry."""
         headers = {"Authorization": f"Bearer {self.api_key}"}
 
-        # Need to handle the async generator context correctly
-        self.context = streamablehttp_client(url=self.mcp_url, headers=headers)
-        streams = await self.context.__aenter__()
+        # Create the streamable HTTP connection
+        self.stream_context = streamablehttp_client(url=self.mcp_url, headers=headers)
+        streams = await self.stream_context.__aenter__()
         read_stream, write_stream, _ = streams
 
-        # Create and initialize session
-        self.session = ClientSession(read_stream, write_stream)
+        # Create session and enter its context
+        session = ClientSession(read_stream, write_stream)
+        self.session = await session.__aenter__()
+
+        # Initialize the MCP session
         await self.session.initialize()
 
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
-        if self.context:
-            await self.context.__aexit__(exc_type, exc_val, exc_tb)
-            self.context = None
+        # Exit session context first
+        if self.session:
+            await self.session.__aexit__(exc_type, exc_val, exc_tb)
             self.session = None
+
+        # Then exit stream context
+        if self.stream_context:
+            await self.stream_context.__aexit__(exc_type, exc_val, exc_tb)
+            self.stream_context = None
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """

@@ -470,14 +470,15 @@ test:integration:ui:
 
 .test:integration:mcp:template:
   extends: .test:integration:template
+  image: python:3.12-alpine
   before_script:
-    - pip install pytest httpx dotenv
-    - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
-    - source ~/.bashrc
-    - export NVM_DIR="$HOME/.nvm"
-    - source "$NVM_DIR/nvm.sh"
-    - nvm install node
-    - npm install -g @anthropic-ai/claude-code
+    - pip install pytest httpx dotenv mcp
+    # - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
+    # - source ~/.bashrc
+    # - export NVM_DIR="$HOME/.nvm"
+    # - source "$NVM_DIR/nvm.sh"
+    # - nvm install node
+    # - npm install -g @anthropic-ai/claude-code
 
 test:integration:api:github:
   extends: .test:integration:mcp:template

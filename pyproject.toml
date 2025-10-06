@@ -60,6 +60,7 @@ dev = [
     "ruff>=0.11.3",
     "httpx>=0.24.1",
     "playwright>=1.30.0",
+    "mcp>=1.0.0",  # MCP client for integration tests
 ]
 
 [tool.black]
