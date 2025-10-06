@@ -511,7 +511,7 @@ test:integration:api:jira:
     - branches
   script:
     - helm delete $CI_COMMIT_REF_NAME --namespace $NAMESPACE
-    - kubectl delete job --namespace $NAMESPACE $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job || true
+    - kubectl delete job --namespace $NAMESPACE $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job $CI_COMMIT_REF_NAME-spacebridge-webhook-cleanup-job || true
 
 stop-test-env:
   extends: .stop-env:template
