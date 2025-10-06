@@ -250,6 +250,11 @@ async def perform_search(
                 db, id=db_obj.project_id, account_id=current_user.id
             )  # Still need project for response model
             project_name = issue_project.name if issue_project else None
+            project_identifier = (
+                issue_project.identifier or issue_project.slug
+                if issue_project
+                else None
+            )
             organization_name = None
             if issue_project:
                 issue_org = crud_organization.get(
@@ -273,6 +278,7 @@ async def perform_search(
                 priority=db_obj.priority,
                 organization=organization_name,
                 project=project_name,
+                project_identifier=project_identifier,
                 url=external_url or f"https://spacebridge.io/issues/{db_obj.id}",
                 created_at=db_obj.created_at,
                 updated_at=db_obj.updated_at,

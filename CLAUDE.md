@@ -15,6 +15,12 @@ Use the Lit.dev framework for frontend code. If you create new web components en
 - **Docker development**: `docker-compose up`
 - **Install pre-commit**: `pre-commit install`
 
+## Git Workflow
+
+- **NEVER push code without explicit user approval** - Always wait for the user to review and explicitly ask you to push
+- **NEVER use git push in any form unless explicitly requested by the user**
+- After making changes, present them to the user for review before any git operations beyond committing locally
+
 ## Commit message Guidelines
 
 - All commit messages should include references to relevant issues in the tracker. Use the SpaceBridge-MCP tools to find or create issues for every change. Include the issue key in the commit message footer. Ensure issue title and description are clear and concise, always in present tense.

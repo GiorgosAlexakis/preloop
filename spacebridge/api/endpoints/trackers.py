@@ -19,7 +19,7 @@ from spacebridge.schemas.tracker import (
 from spacebridge.schemas.tracker import (
     ProjectIdentifier,
 )  # Corrected import location
-from spacebridge.trackers.factory import create_tracker_client
+from spacesync.spacesync.trackers import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
 from spacesync.services.event_bus import event_bus_service
 from spacemodels.db.session import get_db_session
@@ -121,9 +121,12 @@ async def register_tracker(
         # Create the client
         client = await create_tracker_client(
             tracker_type=tracker_type.value,
-            base_url=str(url_str) if url_str else None,
-            token=api_key,
-            config=config or {},
+            tracker_id="test-connection",
+            api_key=api_key,
+            connection_details={
+                "url": str(url_str) if url_str else None,
+                **(config or {}),
+            },
         )
 
         # Test the connection
@@ -387,6 +390,7 @@ async def delete_tracker(
     tracker_id: UUID4,
     current_user: UserResponse = Depends(get_current_active_user),
     hard_delete: bool = False,
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete a tracker by ID (soft delete by default, hard delete if specified)."""
@@ -432,6 +436,13 @@ async def delete_tracker(
 
     try:
         db.commit()
+
+        # Trigger webhook cleanup task
+        logger.info(f"Scheduling webhook cleanup for deleted tracker {tracker_id}")
+        await event_bus_service.publish_task(
+            "cleanup_tracker_webhooks", str(tracker_id)
+        )
+
         return {"message": message}
     except Exception as e:
         db.rollback()
@@ -475,9 +486,12 @@ async def test_connection_and_list_orgs(
     try:
         client = await create_tracker_client(
             tracker_type=test_data.tracker_type.value,
-            base_url=str(test_data.url) if test_data.url else None,
-            token=test_data.api_key,
-            config=test_data.connection_details or {},
+            tracker_id="test-connection",
+            api_key=test_data.api_key,
+            connection_details={
+                "url": str(test_data.url) if test_data.url else None,
+                **(test_data.connection_details or {}),
+            },
         )
         if not client:
             raise ValueError(
@@ -497,9 +511,11 @@ async def test_connection_and_list_orgs(
 
         orgs = await client.get_organizations()
         if len(orgs) == 1:
-            projects = await client.list_projects(orgs[0].id)
-            orgs[0].children = [
-                ProjectIdentifier(id=p.id, name=p.name, identifier=p.id, type="project")
+            projects = await client.get_projects(orgs[0]["id"])
+            orgs[0]["children"] = [
+                ProjectIdentifier(
+                    id=p["id"], name=p["name"], identifier=p["id"], type="project"
+                )
                 for p in projects
             ]
         return TrackerTestResponse(
@@ -550,15 +566,18 @@ async def list_projects_for_org(
             project_data.url = project_data.url + "/"
         client = await create_tracker_client(
             tracker_type=project_data.tracker_type.value,
-            base_url=str(project_data.url) if project_data.url else None,
-            token=project_data.api_key,
-            config=project_data.connection_details or {},
+            tracker_id="list-projects",
+            api_key=project_data.api_key,
+            connection_details={
+                "url": str(project_data.url) if project_data.url else None,
+                **(project_data.connection_details or {}),
+            },
         )
         if not client:
             raise HTTPException(
                 status_code=400, detail="Could not create tracker client"
             )
-        return await client.list_projects(project_data.organization_identifier)
+        return await client.get_projects(project_data.organization_identifier)
 
     except Exception as e:
         logger.exception(

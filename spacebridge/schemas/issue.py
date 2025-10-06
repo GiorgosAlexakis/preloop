@@ -112,9 +112,15 @@ class IssueResponse(IssueBase):
     organization: str = Field(..., description="Organization name")
     project: str = Field(..., description="Project name")
     project_id: str = Field(..., description="Project ID")
+    project_identifier: Optional[str] = Field(
+        None, description="Project identifier/slug for API calls"
+    )
     url: str = Field(..., description="URL to the issue in the original tracker")
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
+    comments: Optional[List[Dict[str, Any]]] = Field(
+        default=[], description="List of comments on the issue"
+    )
     score: Optional[float] = Field(
         None, description="Similarity score for search results (if applicable)"
     )

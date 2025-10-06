@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 from spacebridge.tools.base import Context
-from spacebridge.trackers.base import IssueCreate
-from spacebridge.trackers.factory import TrackerFactory
+from spacebridge.schemas.tracker_models import IssueCreate
+from spacesync.spacesync.trackers.factory import create_tracker_client
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
 from spacemodels.db.session import get_db_session as get_db
@@ -39,7 +39,7 @@ class IssueInfo(BaseModel):
     id: str
     key: Optional[str] = None
     title: str
-    description: str
+    description: Optional[str] = None
     url: Optional[str] = None
     source: str
     status: Optional[str] = None
@@ -174,8 +174,11 @@ async def create_issue(
             tracker_config = tracker_settings[tracker_to_use]
 
             # Create a tracker client
-            tracker_client = await TrackerFactory.create_client(
-                tracker_to_use, tracker_config
+            tracker_client = await create_tracker_client(
+                tracker_type=tracker_to_use,
+                tracker_id=proj.tracker_id,
+                api_key=tracker_config["api_key"],
+                connection_details=tracker_config,
             )
 
             if not tracker_client:
@@ -191,8 +194,20 @@ async def create_issue(
             )
 
             # Convert issue to dictionary and add source
-            issue_dict = issue.dict()
+            issue_dict = issue.model_dump()
             issue_dict["source"] = tracker_to_use
+
+            # Flatten nested objects for IssueInfo
+            if issue.status:
+                issue_dict["status"] = issue.status.name
+            if issue.priority:
+                issue_dict["priority"] = issue.priority.name
+            if issue.assignee:
+                issue_dict["assignee"] = issue.assignee.name
+            if issue.created_at:
+                issue_dict["created_at"] = issue.created_at.isoformat()
+            if issue.updated_at:
+                issue_dict["updated_at"] = issue.updated_at.isoformat()
 
             # Return using the response model
             return CreateIssueResponse(

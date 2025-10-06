@@ -1,13 +1,13 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-init-db-job
+  name: {{ include "spacebridge.fullname" . }}-webhook-cleanup-job
   labels:
     {{- include "spacebridge.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook": pre-delete
     "helm.sh/hook-weight": "-5"
-    "helm.sh/hook-delete-policy": hook-succeeded
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
 spec:
   template:
     metadata:
@@ -16,17 +16,16 @@ spec:
     spec:
       restartPolicy: Never
       containers:
-        - name: init-db-runner
+        - name: webhook-cleanup
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              python /app/spacesync/scripts/init_db.py --force && \
-              cd /app/SpaceModels && \
-              alembic stamp head
+          command: ["spacesync", "unregister-webhooks", "--cleanup-all"]
           env:
             - name: DATABASE_URL
               value: {{ include "spacebridge.databaseUrl" . }}
-            - name: OPENAI_API_KEY
-              value: {{ .Values.config.openai.apiKey }}
+            - name: SPACEBRIDGE_URL
+              value: {{ .Values.environment.spacebridgeUrl | quote }}
+            - name: LOG_LEVEL
+              value: "INFO"
+      # Set a reasonable timeout for the job
+      activeDeadlineSeconds: 300

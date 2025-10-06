@@ -4693,6 +4693,12 @@ components:
           type: string
           title: Project Id
           description: Project ID
+        project_identifier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Identifier
+          description: Project identifier/slug for API calls
         url:
           type: string
           title: Url
@@ -4705,6 +4711,16 @@ components:
           type: string
           title: Updated At
           description: Last update timestamp
+        comments:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Comments
+          description: List of comments on the issue
+          default: []
         score:
           anyOf:
           - type: number

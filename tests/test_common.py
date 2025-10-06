@@ -96,7 +96,7 @@ def test_load_duplicates_prompts_config_file_not_found():
 @patch("spacebridge.api.common.crud_organization")
 @patch("spacebridge.api.common.crud_project")
 @patch("spacebridge.api.common.crud_tracker_scope_rule")
-@patch("spacebridge.api.common.TrackerFactory.create_client")
+@patch("spacebridge.api.common.create_tracker_client")
 async def test_get_tracker_client_success(
     mock_create_client,
     mock_crud_scope_rule,
@@ -108,23 +108,32 @@ async def test_get_tracker_client_success(
     """Test get_tracker_client successfully."""
     org_id = str(uuid.uuid4())
     proj_id = str(uuid.uuid4())
+    tracker = Tracker(
+        id=str(uuid.uuid4()),
+        name="test-tracker",
+        account_id=test_user.id,
+        tracker_type="github",
+        api_key="key",
+        url="url",
+    )
+    db_session.add(tracker)
     organization = Organization(
         id=org_id,
         identifier="org-identifier",
-        tracker=Tracker(
-            id=1,
-            account_id=test_user.id,
-            tracker_type="github",
-            api_key="key",
-            url="url",
-        ),
+        name="org-name",
+        tracker_id=tracker.id,
     )
+    db_session.add(organization)
+    db_session.commit()
     project = Project(
         id=proj_id,
         organization_id=organization.id,
         identifier="proj-identifier",
         name="proj-name",
+        tracker_settings={"github": {}},
     )
+    db_session.add(project)
+    db_session.commit()
     mock_crud_organization.get.return_value = organization
     mock_crud_project.get.return_value = project
     mock_crud_scope_rule.get_by_tracker.return_value = [
@@ -171,7 +180,23 @@ async def test_get_tracker_client_project_not_found(
     mock_crud_project, mock_crud_organization, db_session, test_user
 ):
     """Test get_tracker_client with project not found."""
-    organization = Organization(id=str(uuid.uuid4()), identifier="org-identifier")
+    tracker = Tracker(
+        id=str(uuid.uuid4()),
+        name="test-tracker",
+        account_id=test_user.id,
+        tracker_type="github",
+        api_key="key",
+        url="url",
+    )
+    db_session.add(tracker)
+    organization = Organization(
+        id=str(uuid.uuid4()),
+        identifier="org-identifier",
+        name="org-name",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
     mock_crud_organization.get.return_value = organization
     mock_crud_project.get.return_value = None
     with pytest.raises(HTTPException) as excinfo:

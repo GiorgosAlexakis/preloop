@@ -93,7 +93,7 @@ pre-commit:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
     - export COVERAGE_FILE=".coverage.${CI_JOB_NAME}"
-    - pytest -v --cov --cov-report= --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
+    - pytest -v --cov spacebridge --cov SpaceModels --cov=spacesync --cov-report= --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
   artifacts:
     paths:
       - ".coverage.*"
@@ -118,12 +118,17 @@ test:unit:spacesync:
 test:unit:spacebridge-other:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/test_*.py tests/tools tests/trackers"
+    TEST_PATHS: "tests/test_*.py tests/tools tests/services"
 
 test:unit:spacebridge-endpoints-ai-models:
   extends: .test:unit:template
   variables:
     TEST_PATHS: "tests/endpoints/test_ai_models.py"
+
+test:unit:spacebridge-endpoints-auth:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_auth.py"
 
 # test:unit:spacebridge-endpoints-billing:
 #   extends: .test:unit:template
@@ -218,6 +223,7 @@ test:coverage:
     - test:unit:spacesync
     - test:unit:spacebridge-other
     - test:unit:spacebridge-endpoints-ai-models
+    - test:unit:spacebridge-endpoints-auth
     # - test:unit:spacebridge-endpoints-billing
     - test:unit:spacebridge-endpoints-comments
     # - test:unit:spacebridge-endpoints-embedding
@@ -279,7 +285,7 @@ test:coverage:
       print('==============================================')
       "
     - coverage combine
-    - coverage report --fail-under=52
+    - coverage report --fail-under=59
     - coverage xml -o coverage.xml
 
   artifacts:
@@ -326,9 +332,9 @@ test:coverage:
       --set worker.pools[0].name=polling
       --set worker.pools[0].replicaCount=1
       --set worker.pools[0].tasks=poll_tracker
-      --set worker.pools[1].name=notify
+      --set worker.pools[1].name=maintenance
       --set worker.pools[1].replicaCount=1
-      --set worker.pools[1].tasks=notify_admins
+      --set worker.pools[1].tasks="{notify_admins,cleanup_tracker_webhooks}"
       --set worker.pools[2].name=webhook
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event
@@ -343,7 +349,7 @@ test:coverage:
       --set ingress.hosts[0].paths[0].path=/
       --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
       --set ingress.tls[0].hosts[0]=${TARGET_DOMAIN}
-      --set ingress.tls[0].secretName=spacebridge-staging-tls
+      --set ingress.tls[0].secretName=spacebridge-${ENV_NAME}-tls
       --set environment.spacebridgeUrl=https://${TARGET_DOMAIN}
       --set database.cnpg.name=${DATABASE_NAME}
     - echo "Helm deployment finished."
@@ -441,40 +447,6 @@ prod:
       else
         echo "S3 credentials not fully configured (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION). Skipping S3 upload.";
       fi
-  script:
-    - set -e
-    - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
-    - echo "Starting Helm deployment..."
-    - helm repo add nats https://nats-io.github.io/k8s/helm/charts
-    - helm dependency update ./helm/spacebridge
-    - helm dependency build ./helm/spacebridge
-    - helm upgrade --install spacebridge ./helm/spacebridge
-      --namespace spacebridge
-      --set image.tag=${CI_COMMIT_SHA}
-      --set spacelit.tag=${SPACELIT_COMMIT_SHA}
-      --set config.openai.apiKey=${OPENAI_API_KEY}
-      --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
-      --set config.smtp.host=${SMTP_HOST}
-      --set config.smtp.port=${SMTP_PORT}
-      --set config.smtp.username=${SMTP_USERNAME}
-      --set config.smtp.password=${SMTP_PASSWORD}
-      --set config.smtp.from=${SMTP_FROM}
-      --set config.smtp.fromName=${SMTP_FROM_NAME}
-      --set ingress.enabled=true
-      --set stripe.enabled=true
-      --set stripe.secretKey=${STRIPE_SECRET_KEY_PROD}
-      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET_PROD}
-      --set worker.pools[0].name=polling
-      --set worker.pools[0].replicaCount=1
-      --set worker.pools[0].tasks=poll_tracker
-      --set worker.pools[1].name=notify
-      --set worker.pools[1].replicaCount=1
-      --set worker.pools[1].tasks=notify_admins
-      --set worker.pools[2].name=webhook
-      --set worker.pools[2].replicaCount=1
-      --set worker.pools[2].tasks=process_webhook_event
-      --set database.cnpg.name=spacebridge-db
-    - echo "Helm deployment finished."
   artifacts:
     paths:
       - "db_backup_*.sql.xz"
@@ -491,30 +463,46 @@ prod:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
     - playwright install
 
-test:integration:api:
-  extends: .test:integration:template
-  script:
-    - pytest --confcutdir=tests/integration tests/integration/test_api.py
-
 test:integration:ui:
   extends: .test:integration:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_ui.py
 
-test:integration:mcp:
+.test:integration:mcp:template:
   extends: .test:integration:template
+  image: python:3.12-alpine
+  before_script:
+    - pip install pytest httpx dotenv mcp
+    # - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
+    # - source ~/.bashrc
+    # - export NVM_DIR="$HOME/.nvm"
+    # - source "$NVM_DIR/nvm.sh"
+    # - nvm install node
+    # - npm install -g @anthropic-ai/claude-code
+
+test:integration:api:github:
+  extends: .test:integration:mcp:template
   script:
-    - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
-    - source ~/.bashrc
-    - export NVM_DIR="$HOME/.nvm"
-    - source "$NVM_DIR/nvm.sh"
-    - nvm install node
-    - npm install -g @anthropic-ai/claude-code
-    - pytest --confcutdir=tests/integration tests/integration/test_mcp_api.py
+    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_github.py -v -s
+
+test:integration:api:gitlab:
+  extends: .test:integration:mcp:template
+  script:
+    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_gitlab.py -v -s
+
+test:integration:api:jira:
+  extends: .test:integration:mcp:template
+  script:
+    - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_jira.py -v -s
 
 .stop-env:template:
   stage: cleanup
-  needs: ["test:integration:api", "test:integration:ui", "test:integration:mcp"]
+  needs: [
+    "test:integration:ui",
+    "test:integration:api:github",
+    "test:integration:api:gitlab",
+    "test:integration:api:jira"
+  ]
   image: dtzar/helm-kubectl:3.13.2
   when: manual
   allow_failure: true
@@ -524,7 +512,7 @@ test:integration:mcp:
     - branches
   script:
     - helm delete $CI_COMMIT_REF_NAME --namespace $NAMESPACE
-    - kubectl delete job --namespace $NAMESPACE $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job || true
+    - kubectl delete job --namespace $NAMESPACE $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job $CI_COMMIT_REF_NAME-spacebridge-webhook-cleanup-job || true
 
 stop-test-env:
   extends: .stop-env:template

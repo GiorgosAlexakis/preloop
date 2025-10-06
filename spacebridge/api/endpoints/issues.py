@@ -14,9 +14,14 @@ from spacebridge.schemas.issue import (
     IssueResponse,
     IssueUpdate,
 )
+from spacebridge.schemas.tracker_models import (
+    IssueUpdate as TrackerIssueUpdate,
+    IssueCreate as TrackerIssueCreate,
+)
 from spacemodels.models.account import Account
 
 from spacemodels.crud import (
+    CRUDComment,
     CRUDIssue,
     CRUDOrganization,
     CRUDProject,
@@ -25,6 +30,7 @@ from spacemodels.crud import (
     crud_issue_embedding,
 )
 from spacemodels.db.session import get_db_session as get_db
+from spacemodels.models.comment import Comment
 from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
@@ -33,6 +39,7 @@ from spacebridge.api.auth import get_current_active_user
 
 
 # Initialize CRUD operations
+crud_comment = CRUDComment(Comment)
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
@@ -774,30 +781,38 @@ async def create_issue(
         # Get the tracker client using the resolved IDs, passing the current user for auth check
         tracker_client = await get_tracker_client(org.id, proj.id, db, current_user)
 
-        # Prepare the issue create model using the correct base class
-        tracker_issue = IssueCreate(  # Use IssueCreate from base.py
-            project=proj.slug or proj.identifier,
-            organization_id=proj.organization_id,
-            title=issue.title,
-            description=issue.description,
-            priority=issue.priority,
-            assignee=issue.assignee,
-            labels=issue.labels,
-            # Map API metadata to custom_fields if needed by the tracker base model
-            custom_fields=issue.meta_data or None,
+        # Prepare the issue create model using the correct tracker model
+        tracker_issue = (
+            TrackerIssueCreate(  # Use TrackerIssueCreate from tracker_models
+                project=proj.slug or proj.identifier,
+                organization_id=proj.organization_id,
+                title=issue.title,
+                description=issue.description,
+                priority=issue.priority,
+                assignee=issue.assignee,
+                labels=issue.labels,
+                # Map API metadata to custom_fields if needed by the tracker base model
+                custom_fields=issue.meta_data or None,
+            )
         )
 
         # Create the issue - Pass the project identifier expected by the tracker client
-        # Use project.identifier as the most likely candidate for project_key
-        project_key_for_tracker = proj.identifier
+        # For most trackers (Jira, Linear, etc.), use identifier (the external project key)
+        # For Git-based trackers (GitHub, GitLab), this will be the repo name
+        project_key_for_tracker = proj.slug or proj.identifier
         if not project_key_for_tracker:
-            # Fallback or specific logic might be needed if identifier isn't the key
-            # For now, raise error if identifier is missing
+            # Fallback or specific logic might be needed if both are missing
+            # For now, raise error
             raise HTTPException(
                 status_code=500,
-                detail="Project identifier is missing for tracker interaction.",
+                detail="Project identifier/slug is missing for tracker interaction.",
             )
 
+        logger.info(
+            f"Creating issue in tracker. Project (DB): id={proj.id}, name='{proj.name}', "
+            f"identifier='{proj.identifier}', slug='{proj.slug}'. "
+            f"Using project_key_for_tracker='{project_key_for_tracker}'"
+        )
         created_issue = await tracker_client.create_issue(
             project_key_for_tracker, tracker_issue
         )
@@ -871,6 +886,7 @@ async def create_issue(
             organization=org.name,
             project=proj.slug,
             project_id=proj.id,  # Add missing project_id
+            project_identifier=proj.identifier or proj.slug,
             title=db_issue.title,
             description=db_issue.description,
             status=db_issue.status,
@@ -902,6 +918,11 @@ def get_issue(
 ):
     """Get details of a specific issue using its external ID."""
     try:
+        # URL decode the issue_id in case it's still encoded
+        from urllib.parse import unquote
+
+        issue_id = unquote(issue_id)
+
         user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
         tracker_ids = [t.id for t in user_trackers]
 
@@ -978,6 +999,25 @@ def get_issue(
             # Basic fallback if external_id exists but no URL found
             external_url = f"https://spacebridge.io/issues/{issue.id}"
 
+        # Fetch comments for this issue
+        comments = crud_comment.get_multi_by_issue(
+            db, issue_id=issue.id, account_id=current_user.id
+        )
+        comments_list = [
+            {
+                "id": str(comment.id),
+                "external_id": comment.external_id,
+                "body": comment.body,
+                "created_at": comment.created_at.isoformat()
+                if comment.created_at
+                else None,
+                "updated_at": comment.updated_at.isoformat()
+                if comment.updated_at
+                else None,
+            }
+            for comment in comments
+        ]
+
         # Convert to IssueResponse model
         if issue.key:
             final_response_key = issue.key
@@ -993,6 +1033,7 @@ def get_issue(
             organization=organization.name,
             project=project.name,
             project_id=issue.project_id,
+            project_identifier=project.identifier or project.slug,
             title=issue.title,
             description=issue.description,
             status=issue.status,
@@ -1003,6 +1044,7 @@ def get_issue(
             meta_data=meta_data,
             labels=labels_list,
             assignee=assignee,
+            comments=comments_list,
         )
 
     except HTTPException:
@@ -1030,6 +1072,11 @@ async def update_issue(
     current_user: Account = Depends(get_current_active_user),
 ):
     """Update an existing issue using its internal ID or external key."""
+    # URL decode the issue_id in case it's still encoded
+    from urllib.parse import unquote
+
+    issue_id = unquote(issue_id)
+
     logger.info(f"Attempting to update issue: {issue_id}")
     try:
         user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
@@ -1127,7 +1174,9 @@ async def update_issue(
             except ValueError:
                 logger.warning(f"Invalid combined key format: {issue_id}")
                 # Proceed to next lookup method
-        elif not issue:  # 3. Try constructing combined key
+        elif (
+            not issue and project
+        ):  # 3. Try constructing combined key (only if project is available)
             logger.debug(f"Attempting lookup by constructing combined key: {issue_id}")
             issue_key = f"{project.slug}#{issue_id}"
             issue = crud_issue.get_by_key(db, key=issue_key, account_id=current_user.id)
@@ -1237,14 +1286,12 @@ async def update_issue(
 
             try:
                 logger.info(
-                    f"Calling tracker client to update issue {issue.external_id} with data: {update_data_for_tracker}"
+                    f"Calling tracker client to update issue {issue.key} with data: {update_data_for_tracker}"
                 )
-                # Use the issue's external_id for the tracker API call
-                issue_repo_id = issue.external_id
-                if issue.external_url:
-                    issue_repo_id = issue.external_url.split("/")[-1]
+                # Use the issue's key for the tracker API call (e.g., "owner/repo#123")
+                # The tracker client will extract the issue number from it
                 await tracker_client.update_issue(
-                    issue_repo_id, IssueUpdate(**update_data_for_tracker)
+                    issue.key, TrackerIssueUpdate(**update_data_for_tracker)
                 )
                 logger.info(
                     f"Successfully updated issue {issue.external_id} via tracker client."
@@ -1355,6 +1402,7 @@ async def update_issue(
             organization=org_name,
             project=project_name,
             project_id=issue.project_id,
+            project_identifier=project.identifier or project.slug if project else None,
             title=issue.title,
             description=issue.description,
             status=issue.status,

@@ -54,7 +54,9 @@ def send_email(
 
     # Create message container
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
+    # Remove protocol from URL
+    portal_url = settings.spacebridge_url.replace("https://", "").replace("http://", "")
+    msg["Subject"] = f"[{portal_url}] {subject}"
     msg["From"] = from_email
     msg["To"] = to_email
 

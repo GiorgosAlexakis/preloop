@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from spacebridge.tools.project.test_connection import verify_connection
-from spacebridge.trackers.base import TrackerConnection
+from spacebridge.schemas.tracker_models import TrackerConnection
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 
@@ -51,6 +51,7 @@ def mock_project():
     proj.name = "Test Project"
     proj.identifier = "test-proj"
     proj.tracker_settings = {"github": {"api_key": "test-key"}}
+    proj.tracker_id = "github"
     return proj
 
 
@@ -58,9 +59,9 @@ def mock_project():
 @patch("spacebridge.tools.project.test_connection.get_db")
 @patch("spacebridge.tools.project.test_connection.CRUDOrganization")
 @patch("spacebridge.tools.project.test_connection.CRUDProject")
-@patch("spacebridge.tools.project.test_connection.TrackerFactory")
+@patch("spacebridge.tools.project.test_connection.create_tracker_client")
 async def test_connection_happy_path(
-    mock_tracker_factory_class,
+    mock_create_tracker_client,
     mock_crud_project_class,
     mock_crud_organization_class,
     mock_get_db,
@@ -83,10 +84,10 @@ async def test_connection_happy_path(
     mock_tracker_client.test_connection.return_value = TrackerConnection(
         connected=True,
         message="Connection successful",
+        rate_limit=None,
+        server_info=None,
     )
-    mock_tracker_factory_class.create_client = AsyncMock(
-        return_value=mock_tracker_client
-    )
+    mock_create_tracker_client.return_value = mock_tracker_client
 
     # Act
     result = await verify_connection(
