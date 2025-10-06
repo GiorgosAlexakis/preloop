@@ -57,9 +57,22 @@ def is_http_error(error: Exception, status_code: int) -> bool:
             return True
 
     # Check if status code appears in string representation (as a fallback)
-    # Use word boundary to avoid false positives from memory addresses
+    # Use word boundaries to avoid false positives from memory addresses
     error_str = str(error)
-    if f" {status_code} " in error_str or error_str.startswith(f"{status_code} "):
+    status_str = str(status_code)
+
+    # Common patterns in error messages:
+    # - "404 Not Found"  -> starts with code followed by space
+    # - "Error 404: "    -> code followed by colon
+    # - "status 404 "    -> code surrounded by spaces
+    if (
+        error_str.startswith(f"{status_str} ")
+        or error_str.startswith(f"{status_str}:")
+        or f" {status_str} " in error_str
+        or f" {status_str}:" in error_str
+        or f":{status_str} " in error_str
+        or f":{status_str}:" in error_str
+    ):
         return True
 
     return False
