@@ -22,7 +22,7 @@ def create_flow(
     current_user: Account = Depends(get_current_active_user),
 ):
     """Create new flow."""
-    flow = crud_flow.create(db=db, obj_in=flow_in, account_id=current_user.id)
+    flow = crud_flow.create(db=db, flow_in=flow_in, account_id=current_user.id)
     return flow
 
 
@@ -99,7 +99,9 @@ def update_flow(
     flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
-    flow = crud_flow.update(db=db, db_obj=flow, obj_in=flow_in)
+    flow = crud_flow.update(
+        db=db, db_obj=flow, flow_in=flow_in, account_id=current_user.id
+    )
     return flow
 
 
