@@ -60,23 +60,26 @@ class FlowExecutionOrchestrator:
         return self.flow.prompt_template.format(**self.trigger_event_data)
 
     def _prepare_execution_context(self) -> Dict[str, Any]:
-        """Prepare the full execution context for OpenHands."""
-        logger.info("Preparing execution context")
+        """Prepare the full execution context for the agent."""
+        logger.info("Preparing execution context for agent")
         resolved_prompt = self._resolve_prompt()
         # This is a placeholder for the execution context preparation logic
         return {
             "prompt": resolved_prompt,
             "model": self.flow.ai_model.model_identifier,
             "api_key": self.flow.ai_model.api_key,
-            "agent_config": self.flow.openhands_agent_config,
+            "agent_type": self.flow.agent_type,
+            "agent_config": self.flow.agent_config,
             "mcp_servers": self.flow.allowed_mcp_servers,
             "mcp_tools": self.flow.allowed_mcp_tools,
         }
 
-    def _start_openhands_session(self, execution_context: Dict[str, Any]):
-        """Launch and monitor an OpenHands agent session."""
-        logger.info("Starting OpenHands agent session")
-        # This is a placeholder for the OpenHands integration logic
+    def _start_agent_session(self, execution_context: Dict[str, Any]):
+        """Launch and monitor an agent session via Agent Execution Infrastructure."""
+        agent_type = execution_context["agent_type"]
+        logger.info(f"Starting {agent_type} agent session")
+        # This is a placeholder for the Agent Execution Infrastructure integration logic
+        # The infrastructure will handle spawning containers based on agent_type
         pass
 
     def _create_execution_log(self):
@@ -111,7 +114,7 @@ class FlowExecutionOrchestrator:
             await self._update_execution_log(status="INITIALIZING")
             execution_context = self._prepare_execution_context()
             await self._update_execution_log(status="RUNNING")
-            self._start_openhands_session(execution_context)
+            self._start_agent_session(execution_context)
             await self._update_execution_log(status="SUCCEEDED")
         except Exception as e:
             logger.error(f"Flow execution failed: {e}", exc_info=True)

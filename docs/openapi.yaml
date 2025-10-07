@@ -4015,10 +4015,14 @@ components:
             format: uuid
           - type: 'null'
           title: Ai Model Id
-        openhands_agent_config:
+        agent_type:
+          type: string
+          title: Agent Type
+          default: openhands
+        agent_config:
           additionalProperties: true
           type: object
-          title: Openhands Agent Config
+          title: Agent Config
         allowed_mcp_servers:
           items:
             type: string
@@ -4055,7 +4059,7 @@ components:
       - trigger_event_source
       - trigger_event_type
       - prompt_template
-      - openhands_agent_config
+      - agent_config
       title: FlowCreate
     FlowResponse:
       properties:
@@ -4101,12 +4105,18 @@ components:
             format: uuid
           - type: 'null'
           title: Ai Model Id
-        openhands_agent_config:
+        agent_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Type
+          default: openhands
+        agent_config:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
-          title: Openhands Agent Config
+          title: Agent Config
         allowed_mcp_servers:
           anyOf:
           - items:
@@ -4202,12 +4212,18 @@ components:
             format: uuid
           - type: 'null'
           title: Ai Model Id
-        openhands_agent_config:
+        agent_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Type
+          default: openhands
+        agent_config:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
-          title: Openhands Agent Config
+          title: Agent Config
         allowed_mcp_servers:
           anyOf:
           - items:

@@ -43,14 +43,8 @@
 - [x] Hybrid search combining vector and metadata
 - [x] Batch indexing mechanism
 
-### SpaceBridge-MCP (Companion MCP Server)
-- [x] Minimal MCP server implementation with stdio transport
-- [x] HTTP client for connecting to SpaceBridge REST API
-- [x] Tool registration and discovery
-- [x] Parameter validation and transformation
-- [ ] Error handling and reporting
 
-### Event-Driven Agentic Flows (Target: June 2025)
+### Event-Driven Agentic Flows
 
 #### Epic 1: Enhanced Event Ingestion & Webhook Coverage
 - [x] **Task 1.1: Implement Configurable Event Subscriptions (GitHub & GitLab)** ([Issue #55](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/55))
@@ -82,15 +76,15 @@
 - [ ] **Task 4.1: Develop Flow Trigger Service** ([Issue #65](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/65))
     *   *Description:* Create the service that subscribes to the NATS event bus, matches incoming events against active `Flow` definitions, and initiates their execution.
 - [ ] **Task 4.2: Develop Flow Execution Orchestrator** ([Issue #66](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/66))
-    *   *Description:* Build the orchestrator to manage Flow lifecycles: retrieve definitions, resolve dynamic prompts, handle API key decryption, and manage OpenHands agent sessions.
-- [ ] **Task 4.3: OpenHands Integration & Execution Infrastructure** ([Issue #67](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/67))
-    *   *Description:* Integrate the OpenHands library. Set up the necessary infrastructure (e.g., Docker/Kubernetes as per `ARCHITECTURE.md`) for running isolated OpenHands agent sessions.
+    *   *Description:* Build the orchestrator to manage Flow lifecycles: retrieve definitions, resolve dynamic prompts, handle API key decryption, and manage agent sessions via the Agent Execution Infrastructure.
+- [ ] **Task 4.3: Agent Execution Infrastructure & OpenHands Integration** ([Issue #67](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/67))
+    *   *Description:* Build the Agent Execution Infrastructure abstraction layer for running agents in isolated containers. Integrate OpenHands as the first agent implementation. Support for additional agents (Claude Code, Aider) can be added later by creating container images.
 - [ ] **Task 4.4: Implement Dynamic Prompt Construction & Context Resolution** ([Issue #68](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/68))
     *   *Description:* Develop logic within the Flow Execution Orchestrator to parse `prompt_template` placeholders and dynamically fetch/inject required context data from `SpaceModels` or other services.
-- [ ] **Task 4.5: Enable MCP Tool Interaction from OpenHands Agents** ([Issue #69](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/69))
-    *   *Description:* Configure OpenHands agents to directly call allowed MCP tools on specified MCP servers, adhering to `allowed_mcp_servers` and `allowed_mcp_tools` in the `Flow` definition.
+- [ ] **Task 4.5: Enable MCP Tool Interaction from Agents** ([Issue #69](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/69))
+    *   *Description:* Configure agents to directly call allowed MCP tools on specified MCP servers, adhering to `allowed_mcp_servers` and `allowed_mcp_tools` in the `Flow` definition. Initial implementation for OpenHands, extensible to other agent types.
 - [ ] **Task 4.6: Implement Comprehensive Flow Execution Logging** ([Issue #70](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/70))
-    *   *Description:* Ensure detailed logging of Flow executions into the `FlowExecutions` table, and integrate with centralized logging for OpenHands agent operational logs.
+    *   *Description:* Ensure detailed logging of Flow executions into the `FlowExecutions` table, and integrate with centralized logging for agent operational logs (container logs, process output, etc.).
 
 #### Epic 5: Security & Initial Content
 - [ ] **Task 5.1: Secure `AIModel` API Keys (Initial Implementation)** ([Issue #71](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/71))

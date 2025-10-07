@@ -29,7 +29,7 @@ maintainers:
     email: support@spacecode.ai
 
 # Icon for the chart (optional)
-icon: http://spacebridge.io/assets/favicon.png
+icon: https://spacebridge.io/assets/favicon.png
 
 # Dependencies
 # CloudNativePG operator should be installed in the cluster

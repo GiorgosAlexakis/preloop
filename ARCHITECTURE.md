@@ -387,9 +387,9 @@ graph TD
         direction TB
         FlowTriggerService["Flow Trigger Service (part of Worker)"]
         FlowExecOrchestrator["Flow Execution Orchestrator"]
-        OpenHandsInfra["OpenHands Execution Infrastructure (Docker/Kubernetes)"]
-        subgraph "OpenHands Agent Session (Container)"
-            OpenHandsAgent["OpenHands Agent"]
+        AgentInfra["Agent Execution Infrastructure (Docker/K8s/CLI)"]
+        subgraph "Agent Session (Container or Process)"
+            Agent["Agent (OpenHands, Claude Code, Aider, etc.)"]
             AIModelClient["AIModel Client (via AIModel)"]
             MCPClient["MCP Client (for allowed tools)"]
         end
@@ -407,11 +407,11 @@ graph TD
     FlowTriggerService -- Initiates Execution --> FlowExecOrchestrator
     FlowExecOrchestrator -- Reads Flow/AIModel --> SpaceModelsDB
     FlowExecOrchestrator -- Resolves Prompt Data --> SpaceModelsDB
-    FlowExecOrchestrator -- Manages --> OpenHandsInfra
-    OpenHandsInfra -- Runs --> OpenHandsAgent
-    OpenHandsAgent -- Uses --> AIModelClient
+    FlowExecOrchestrator -- Manages --> AgentInfra
+    AgentInfra -- Runs --> Agent
+    Agent -- Uses --> AIModelClient
     AIModelClient -- Calls --> AIModelAPIs
-    OpenHandsAgent -- Uses --> MCPClient
+    Agent -- Uses --> MCPClient
     MCPClient -- Calls --> MCPServers
     FlowExecOrchestrator -- Writes Logs --> SpaceModelsDB
     APIExt -- Manages --> SpaceModelsDB
@@ -421,7 +421,7 @@ graph TD
 
 *   **Flow Definition (`Flows`):**
     *   Stored in the `SpaceModels` database.
-    *   Details the triggering event, prompt template, selected `AIModel` ID, OpenHands agent configuration (e.g., specific agent type, parameters), and a list of allowed MCP servers and specific tools.
+    *   Details the triggering event, prompt template, selected `AIModel` ID, agent type (e.g., "openhands", "claude-code", "aider"), agent configuration (e.g., specific agent parameters), and a list of allowed MCP servers and specific tools.
     *   Presets are implemented as special, non-editable (or cloneable) records in this table.
 *   **AI Model (`AIModel`):**
     *   Stored in `SpaceModels`.
@@ -443,21 +443,32 @@ graph TD
     *   Responsible for managing the lifecycle of a single Flow execution.
     *   Retrieves the `Flow` definition and its associated `AIModel` (including the encrypted API key) from the database.
     *   **Dynamic Prompt Resolution:** Parses the `prompt_template` and resolves any placeholders (e.g., `{{project_docs_summary}}`, `{{relevant_code_files}}`) by querying `SpaceModels` or other SpaceBridge services for the necessary context data.
-    *   Decrypts the API key and prepares the complete execution context for OpenHands, including the fully resolved prompt, AI model details (model name, API endpoint, decrypted API key), and the specific list of allowed MCP servers/tools.
-    *   Initiates and manages an OpenHands agent session, potentially by requesting a new container from the OpenHands Execution Infrastructure.
+    *   Decrypts the API key and prepares the complete execution context for the agent, including the fully resolved prompt, AI model details (model name, API endpoint, decrypted API key), and the specific list of allowed MCP servers/tools.
+    *   Initiates and manages an agent session via the Agent Execution Infrastructure based on the configured `agent_type`.
     *   Monitors the execution and records results/logs.
-*   **OpenHands Execution Infrastructure:**
-    *   Manages the runtime environment for OpenHands agents.
-    *   As per OpenHands capabilities, this will involve spinning up a new container (e.g., via Docker socket on localhost or as a Kubernetes job) for each Flow execution. This ensures isolation and scalability.
-    *   The Flow Execution Orchestrator will interact with this infrastructure to start, monitor, and terminate agent sessions.
-*   **OpenHands Agent (running in a container):**
-    *   The core agentic execution environment provided by the OpenHands library.
-    *   Receives the resolved prompt, AI model configuration , and allowed MCP toolset from the Flow Execution Orchestrator.
+*   **Agent Execution Infrastructure:**
+    *   Manages the runtime environment for agentic workflows.
+    *   **Production Mode (Container-based):** All agents run in isolated containers (Docker or Kubernetes) for security, isolation, and scalability. Each Flow execution spawns a new container regardless of agent type.
+    *   **Development Mode (Optional):** For local development only, CLI-based agents can be run as processes to simplify testing and iteration.
+    *   Provides an abstraction layer for different agent types:
+        *   **OpenHands**: Container with the OpenHands library and runtime dependencies
+        *   **Claude Code**: Container with `claude-code` CLI pre-installed
+        *   **Aider**: Container with `aider` CLI and dependencies pre-installed
+        *   **Future**: Other agent frameworks as containers
+    *   The Flow Execution Orchestrator interacts with this infrastructure to start, monitor, and terminate agent sessions.
+*   **Agent (running in a container):**
+    *   The core agentic execution environment running in an isolated container (or process in dev mode).
+    *   Supported agent types:
+        *   **OpenHands**: Library-based agent (default implementation)
+        *   **Claude Code**: CLI-based agent using `claude-code` command
+        *   **Aider**: CLI-based agent using `aider` command
+        *   **Other agents**: Extensible to support additional agent frameworks
+    *   Receives the resolved prompt, AI model configuration, and allowed MCP toolset from the Flow Execution Orchestrator.
     *   Manages the interaction with the configured AI model.
-    *   **Direct MCP Calls:** The AI model, operating within the OpenHands agent, will directly call the allowed MCP tools on the specified MCP servers. OpenHands will need to be configured or provided with the necessary network access and potentially authentication details (if any) for these MCP servers.
+    *   **Direct MCP Calls:** The agent can directly call the allowed MCP tools on the specified MCP servers, with necessary network access and authentication provided by the execution infrastructure.
 *   **Flow Execution Log (`FlowExecutions`):**
     *   A database table in `SpaceModels` to record the history and outcome of each Flow run.
-    *   Includes details like the triggering event, start/end times, status (pending, running, succeeded, failed), the resolved input prompt, a summary of actions taken by the agent, logs of MCP tool usage, and a reference to more detailed logs from the OpenHands session (e.g., container logs or a session ID).
+    *   Includes details like the triggering event, start/end times, status (pending, running, succeeded, failed), the resolved input prompt, a summary of actions taken by the agent, logs of MCP tool usage, and a reference to more detailed logs from the agent session (e.g., container logs, session ID, or process output).
 *   **SpaceBridge API Extensions:**
     *   New API endpoints will be added to the `SpaceBridge API` for:
         *   CRUD (Create, Read, Update, Delete) operations on `Flows` and `AIModels`.
@@ -478,7 +489,8 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `trigger_config`: JSON (Optional, for more complex trigger conditions, e.g., specific branch for commits, specific labels for issues)
     *   `prompt_template`: Text (The prompt template with placeholders like `{{placeholder_name}}`)
     *   `ai_model_id`: Foreign Key to `AIModel.id`
-    *   `openhands_agent_config`: JSON (Configuration for the OpenHands agent, e.g., `{"agent_type": "CodeActAgent", "max_iterations": 10}`)
+    *   `agent_type`: String (Type of agent to use, e.g., 'openhands', 'claude-code', 'aider', 'custom')
+    *   `agent_config`: JSON (Configuration for the agent, e.g., `{"agent_type": "CodeActAgent", "max_iterations": 10}` for OpenHands, or `{"model": "claude-3-5-sonnet", "auto_test": true}` for Aider)
     *   `allowed_mcp_servers`: JSON Array of strings (e.g., `["spacebridge-mcp", "code_analysis_mcp"]`)
     *   `allowed_mcp_tools`: JSON Array of objects (e.g., `[{"server_name": "spacebridge-mcp", "tool_name": "search_issues"}, {"server_name": "code_analysis_mcp", "tool_name": "lint_file"}]`)
     *   `is_preset`: Boolean (Indicates if this is a system-defined preset)
@@ -514,7 +526,7 @@ The following Pydantic schemas and corresponding SQLAlchemy models will be defin
     *   `model_output_summary`: Text (Optional, a concise summary of the AI model's final output or key findings)
     *   `actions_taken_summary`: JSON Array (A structured log of significant actions performed by the agent, e.g., files created, MCP tools called with parameters)
     *   `mcp_usage_logs`: JSON Array of objects (Detailed log of each MCP tool call: `{"server_name", "tool_name", "arguments", "timestamp", "status", "result_summary"}`)
-    *   `openhands_session_reference`: String (e.g., OpenHands session ID, Kubernetes job ID, Docker container ID, or path to detailed logs)
+    *   `agent_session_reference`: String (e.g., agent session ID, Kubernetes job ID, Docker container ID, process ID, or path to detailed logs)
     *   `error_message`: Text (If status is 'FAILED', stores the error message or stack trace)
     *   `created_at`: Timestamp
     *   `updated_at`: Timestamp
@@ -551,8 +563,8 @@ sequenceDiagram
 sequenceDiagram
     participant FlowExecOrch as Flow Execution Orchestrator
     participant ModelsDB as SpaceModels (Flows, AIModels, Context Data)
-    participant OpenHandsInfra as OpenHands Execution Infrastructure
-    participant OHAgent as OpenHands Agent (in Container)
+    participant AgentInfra as Agent Execution Infrastructure
+    participant Agent as Agent (Container or Process)
     participant AIModel_API as AI Model API
     participant MCP_Srv as Allowed MCP Server(s)
 
@@ -561,17 +573,17 @@ sequenceDiagram
     Note over FlowExecOrch: Decrypts API key
     FlowExecOrch->>+ModelsDB: Get data for dynamic prompt placeholders
     ModelsDB-->>-FlowExecOrch: Return context data
-    Note over FlowExecOrch: Resolves prompt, prepares OpenHands context (decrypted API key, allowed MCPs)
-    FlowExecOrch->>+OpenHandsInfra: Request OpenHands Agent session (with context)
-    OpenHandsInfra->>+OHAgent: Starts Agent in new container
-    OHAgent->>+AIModel_API: Interacts with AI model (sends prompt, receives responses)
-    AIModel_API-->>-OHAgent: AI model responses
+    Note over FlowExecOrch: Resolves prompt, prepares agent context (decrypted API key, allowed MCPs)
+    FlowExecOrch->>+AgentInfra: Request agent session (with agent_type and context)
+    AgentInfra->>+Agent: Starts agent (container, process, or other)
+    Agent->>+AIModel_API: Interacts with AI model (sends prompt, receives responses)
+    AIModel_API-->>-Agent: AI model responses
     alt If AI model decides to use an MCP tool
-        OHAgent->>+MCP_Srv: Calls allowed MCP tool directly
-        MCP_Srv-->>-OHAgent: Tool result
+        Agent->>+MCP_Srv: Calls allowed MCP tool directly
+        MCP_Srv-->>-Agent: Tool result
     end
-    OHAgent-->>-OpenHandsInfra: Execution logs/status
-    OpenHandsInfra-->>-FlowExecOrch: Execution logs/status/results
+    Agent-->>-AgentInfra: Execution logs/status
+    AgentInfra-->>-FlowExecOrch: Execution logs/status/results
     FlowExecOrch->>+ModelsDB: Store execution results in FlowExecutions table
 ```
 
@@ -652,19 +664,23 @@ graph TD
     *   MCP servers are *consumers* in this context. The OpenHands agents, as configured per Flow, will directly call tools on these MCP servers.
     *   The `Flow` definition will specify which MCP servers and which specific tools on those servers the agent is permitted to use.
 
-### 6. OpenHands Integration - Key Aspects
+### 6. Agent Integration - Key Aspects
 
-*   **Flow to OpenHands Configuration:** The `Flow.openhands_agent_config` field will store JSON specifying the OpenHands agent type (e.g., `CodeActAgent`, `PlannerAgent`) and any necessary parameters for that agent. The Flow Execution Orchestrator translates this, along with the resolved prompt and AI model details, into the arguments needed to start an OpenHands session.
-*   **Dynamic Prompts:** The Flow Execution Orchestrator resolves placeholders in `Flow.prompt_template` *before* passing the final prompt to OpenHands.
+*   **Agent Type Selection:** The `Flow.agent_type` field specifies which agent implementation to use (e.g., 'openhands', 'claude-code', 'aider'). The Agent Execution Infrastructure uses this to determine how to start and manage the agent session.
+*   **Agent Configuration:** The `Flow.agent_config` field stores JSON with agent-specific configuration:
+    *   **OpenHands**: `{"agent_type": "CodeActAgent", "max_iterations": 10}`
+    *   **Claude Code**: `{"model": "claude-3-5-sonnet", "max_tokens": 4096}`
+    *   **Aider**: `{"model": "claude-3-5-sonnet", "auto_test": true, "edit_format": "diff"}`
+*   **Dynamic Prompts:** The Flow Execution Orchestrator resolves placeholders in `Flow.prompt_template` *before* passing the final prompt to any agent.
 *   **AI Model Selection & API Key Management:**
     *   `Flow.ai_model_id` links to a `AIModel` record.
-    *   `AIModel.api_key_encrypted` stores the encrypted API key in the database (for initial implementation).
-    *   The Flow Execution Orchestrator is responsible for retrieving this encrypted key, decrypting it, and passing the plaintext API key securely to the OpenHands agent session, ideally as an environment variable or secure input specific to that containerized session. (Future: Retrieve from OpenBAO via a reference).
+    *   `AIModel.api_key` stores the API key in the database (unencrypted for initial implementation).
+    *   The Flow Execution Orchestrator retrieves the API key and passes it securely to the agent session via environment variables or secure configuration specific to that session. (Future: Retrieve from OpenBAO via a reference).
 *   **MCP Tool Discovery & Invocation:**
     *   The `Flow.allowed_mcp_servers` and `Flow.allowed_mcp_tools` define the explicit allowlist.
-    *   The OpenHands agent environment will need to be configured such that it can make network calls to these allowed MCP servers.
-    *   If MCPs require authentication, mechanisms for securely providing necessary tokens/keys to the OpenHands agent for *only* the allowed MCPs will be needed. This might involve the Flow Execution Orchestrator injecting temporary credentials or connection details into the OpenHands session.
-    *   OpenHands' own tool/action definition capabilities will be used to represent the allowed MCP tools to the AI model.
+    *   The agent environment is configured to make network calls to these allowed MCP servers.
+    *   If MCPs require authentication, the Flow Execution Orchestrator injects necessary tokens/keys for *only* the allowed MCPs into the agent session.
+    *   Agent-specific mechanisms are used to expose MCP tools (e.g., OpenHands' tool/action definitions, MCP configuration files for CLI agents).
 
 ### 7. Security Considerations
 
@@ -681,7 +697,7 @@ graph TD
     *   Validate all inputs for Flow definitions, especially prompt templates and configurations.
     *   Sanitize any data from events or dynamic context before it's incorporated into prompts to prevent injection attacks against the AI model or downstream tools.
 *   **Resource Limits for Agents:**
-    *   OpenHands agents (especially if running in containers) should have resource limits (CPU, memory, execution time) to prevent abuse or runaway processes.
+    *   All agents (especially container-based ones) should have resource limits (CPU, memory, execution time) to prevent abuse or runaway processes.
 *   **Logging and Auditing:**
     *   Comprehensive logging of Flow executions, including which MCP tools were called with what parameters (sensitive data redacted).
     *   Audit trails for changes to `Flows` and `AIModels`.
@@ -693,16 +709,16 @@ graph TD
 *   **Task Queue (NATS):** NATS is chosen for its high performance, lightweight nature, and scalability, allowing the system to handle a high volume of incoming tasks.
 *   **Flow Trigger Service:** Can be scaled horizontally if event processing becomes a bottleneck. It should be stateless.
 *   **Flow Execution Orchestrator:** Can also be scaled, though individual orchestration tasks might be stateful for the duration of a Flow.
-*   **OpenHands Execution Infrastructure:**
-    *   Leveraging containers (Docker or Kubernetes jobs) for OpenHands agents is key to scalability. Each Flow execution runs in an isolated container.
+*   **Agent Execution Infrastructure:**
+    *   Leveraging containers (Docker or Kubernetes jobs) for all agent types is key to scalability and security. Each Flow execution runs in an isolated container.
     *   The system can be configured to run these containers on a Docker host (via socket) or a Kubernetes cluster, allowing for dynamic scaling of agent execution capacity based on demand.
-    *   The orchestrator will manage the lifecycle of these containerized jobs.
+    *   The orchestrator manages the lifecycle of these containerized jobs.
 *   **Database:** `SpaceModels` (PostgreSQL) should be monitored for performance. Read replicas can be used for read-heavy operations like fetching Flow definitions or execution logs.
 *   **Extensibility:**
     *   **New Event Sources:** Add new parsers/adapters to publish `process_webhook_event` tasks. The Flow Trigger Service can then match these new event types.
-    *   **New AI Models:** Add new `AIModel` records. The Flow Execution Orchestrator and OpenHands need to be compatible with the new model's API.
-    *   **New MCP Tools/Servers:** Update the allowlist options. OpenHands agents need to be able to make calls to these new tools.
-    *   **New Agent Capabilities:** As OpenHands evolves or new agent frameworks emerge, the Flow Execution Orchestrator can be adapted to integrate with them.
+    *   **New AI Models:** Add new `AIModel` records. The Flow Execution Orchestrator and agents need to be compatible with the new model's API.
+    *   **New MCP Tools/Servers:** Update the allowlist options. Agents need to be able to make calls to these new tools.
+    *   **New Agent Types:** Create new container images for additional agent frameworks. Update the Agent Execution Infrastructure to support the new agent type. The abstraction layer makes this straightforward.
 
 ### 9. Preset Use Case Examples
 
