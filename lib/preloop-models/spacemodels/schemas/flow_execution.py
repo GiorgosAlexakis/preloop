@@ -40,8 +40,9 @@ class FlowExecutionBase(BaseModel):
     mcp_usage_logs: Optional[List[Dict[str, Any]]] = Field(
         None, description="Detailed log of each MCP tool call"
     )
-    openhands_session_reference: Optional[str] = Field(
-        None, description="Reference to OpenHands session (e.g., ID, K8s job ID)"
+    agent_session_reference: Optional[str] = Field(
+        None,
+        description="Reference to agent session (e.g., session ID, K8s job ID, container ID, process ID)",
     )
     error_message: Optional[str] = Field(
         None, description="Error message if the execution failed"
@@ -63,7 +64,7 @@ class FlowExecutionUpdate(BaseModel):
     model_output_summary: Optional[str] = None
     actions_taken_summary: Optional[List[Dict[str, Any]]] = None
     mcp_usage_logs: Optional[List[Dict[str, Any]]] = None
-    openhands_session_reference: Optional[str] = None
+    agent_session_reference: Optional[str] = None
     error_message: Optional[str] = None
 
 

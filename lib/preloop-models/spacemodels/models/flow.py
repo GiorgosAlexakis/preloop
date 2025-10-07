@@ -22,7 +22,8 @@ class Flow(Base, TimestampMixin):
         ForeignKey("ai_model.id"),
         nullable=True,
     )
-    openhands_agent_config = Column(JSON, nullable=False)  # Changed from JSONB
+    agent_type = Column(String, nullable=False, default="openhands")
+    agent_config = Column(JSON, nullable=False)  # Changed from JSONB
     allowed_mcp_servers = Column(
         JSON,
         nullable=False,

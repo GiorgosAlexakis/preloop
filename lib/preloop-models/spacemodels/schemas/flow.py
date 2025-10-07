@@ -14,7 +14,8 @@ class FlowBase(BaseModel):
     trigger_config: Optional[Dict[str, Any]] = None
     prompt_template: Optional[str] = None
     ai_model_id: Optional[uuid.UUID] = None
-    openhands_agent_config: Optional[Dict[str, Any]] = None
+    agent_type: Optional[str] = "openhands"
+    agent_config: Optional[Dict[str, Any]] = None
     allowed_mcp_servers: Optional[List[str]] = None
     allowed_mcp_tools: Optional[List[Dict[str, Any]]] = None
     is_preset: Optional[bool] = False
@@ -27,7 +28,8 @@ class FlowCreate(FlowBase):
     trigger_event_source: str
     trigger_event_type: str
     prompt_template: str
-    openhands_agent_config: Dict[str, Any]
+    agent_type: str = "openhands"
+    agent_config: Dict[str, Any]
     allowed_mcp_servers: List[str] = []
     allowed_mcp_tools: List[Dict[str, Any]] = []
 
