@@ -27,8 +27,9 @@ async def list_flow_containers() -> List[Dict[str, Any]]:
 
     try:
         # Get containers with spacebridge labels
+        # Docker API expects label filters as a list
         containers = await docker.containers.list(
-            all=True, filters={"label": "spacebridge.agent_type"}
+            all=True, filters={"label": ["spacebridge.agent_type"]}
         )
 
         container_info = []
