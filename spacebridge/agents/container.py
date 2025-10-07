@@ -1,5 +1,6 @@
 """Container-based agent executor for Docker and Kubernetes."""
 
+import json
 import logging
 import os
 from typing import Any, Dict, Optional
@@ -8,6 +9,7 @@ import aiodocker
 from aiodocker.exceptions import DockerError
 
 from .base import AgentExecutionResult, AgentExecutor, AgentStatus
+from spacebridge.services.mcp_config_service import MCPConfigService
 
 logger = logging.getLogger(__name__)
 
@@ -99,13 +101,33 @@ class ContainerAgentExecutor(AgentExecutor):
         if "model_provider" in execution_context:
             env["AI_MODEL_PROVIDER"] = execution_context["model_provider"]
 
-        # Add MCP restrictions if specified
-        if execution_context.get("allowed_mcp_servers"):
-            env["ALLOWED_MCP_SERVERS"] = ",".join(
-                execution_context["allowed_mcp_servers"]
+        # Add MCP configuration using MCP config service
+        allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
+        allowed_mcp_tools = execution_context.get("allowed_mcp_tools", [])
+        account_api_token = execution_context.get("account_api_token")
+
+        if allowed_mcp_servers or allowed_mcp_tools:
+            # Generate MCP environment variables
+            mcp_env = MCPConfigService.generate_mcp_environment_vars(
+                allowed_mcp_servers, allowed_mcp_tools
             )
-        if execution_context.get("allowed_mcp_tools"):
-            env["ALLOWED_MCP_TOOLS"] = ",".join(execution_context["allowed_mcp_tools"])
+            env.update(mcp_env)
+
+            # Add account API token for SpaceBridge MCP authentication
+            if account_api_token:
+                env["SPACEBRIDGE_API_TOKEN"] = account_api_token
+            else:
+                self.logger.warning(
+                    "No account API token provided for SpaceBridge MCP access"
+                )
+
+            # Generate MCP config file (will be used by agents that support config files)
+            mcp_config = MCPConfigService.generate_mcp_config(
+                allowed_mcp_servers,
+                allowed_mcp_tools,
+                account_api_token=account_api_token,
+            )
+            env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
         # Container configuration
         container_config = {

@@ -102,4 +102,10 @@ class OpenHandsAgent(ContainerAgentExecutor):
         if "max_tokens" in model_params:
             env["LLM_MAX_TOKENS"] = str(model_params["max_tokens"])
 
+        # MCP configuration is already added by ContainerAgentExecutor
+        # OpenHands can access MCP tools via the environment variables:
+        # - MCP_ALLOWED_SERVERS: comma-separated list of allowed servers
+        # - MCP_ALLOWED_TOOLS: JSON map of server -> [tools]
+        # - SPACEBRIDGE_MCP_URL: URL to SpaceBridge MCP endpoint
+
         return env

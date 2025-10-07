@@ -81,8 +81,12 @@ class TestContainerAgentExecutor:
             "agent_config": {},
             "model_identifier": "gpt-4",
             "model_api_key": "test-key",
-            "allowed_mcp_servers": ["server1"],
-            "allowed_mcp_tools": ["tool1", "tool2"],
+            "allowed_mcp_servers": ["spacebridge-mcp"],
+            "allowed_mcp_tools": [
+                {"server_name": "spacebridge-mcp", "tool_name": "tool1"},
+                {"server_name": "spacebridge-mcp", "tool_name": "tool2"},
+            ],
+            "account_api_token": "test-token",
         }
 
         session_ref = await container_executor.start(execution_context)

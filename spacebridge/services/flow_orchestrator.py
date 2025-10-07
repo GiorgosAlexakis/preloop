@@ -13,6 +13,14 @@ from spacemodels.crud import crud_flow_execution
 from spacemodels.models.flow import Flow
 from spacemodels.models.ai_model import AIModel
 from spacebridge.agents import create_agent_executor, AgentStatus
+from spacebridge.services.prompt_resolvers import (
+    resolver_registry,
+    ResolverContext,
+    TriggerEventResolver,
+    ProjectResolver,
+    AccountResolver,
+)
+from spacebridge.services.flow_execution_logger import FlowExecutionLogger
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +42,7 @@ class FlowExecutionOrchestrator:
         self.ai_model: Optional[AIModel] = None
         self.execution_log = None
         self.nats_client: Client = nats_client
+        self.execution_logger = FlowExecutionLogger()
 
     async def _publish_update(self, message_type: str, payload: Dict[str, Any]):
         """Publishes a structured message to the NATS stream for real-time updates."""
@@ -86,59 +95,138 @@ class FlowExecutionOrchestrator:
         else:
             logger.info("No AI model specified for this flow")
 
-    def _resolve_prompt(self) -> str:
+    async def _resolve_prompt(self) -> str:
         """
-        Resolve dynamic placeholders in the prompt template.
+        Resolve dynamic placeholders in the prompt template using registered resolvers.
 
-        This is a basic implementation that supports simple {{key}} placeholders.
-        Task 4.4 will implement more sophisticated context resolution.
+        Supports placeholders like:
+        - {{trigger_event.payload.issue.title}}
+        - {{project.name}}
+        - {{account.email}}
         """
         logger.info("Resolving prompt template")
 
+        # Ensure resolvers are registered
+        self._ensure_resolvers_registered()
+
         prompt_template = self.flow.prompt_template
         resolved_prompt = prompt_template
+
+        # Create resolver context
+        resolver_context = ResolverContext(
+            db=self.db,
+            trigger_event_data=self.trigger_event_data,
+            flow_id=str(self.flow_id),
+            execution_id=str(self.execution_log.id) if self.execution_log else "",
+        )
 
         # Extract all {{placeholder}} patterns
         placeholders = re.findall(r"\{\{(\w+(?:\.\w+)*)\}\}", prompt_template)
 
         for placeholder in placeholders:
-            # Support nested keys like "payload.issue.title"
-            keys = placeholder.split(".")
-            value = self.trigger_event_data
+            # Split prefix and path (e.g., "trigger_event.payload.title" -> "trigger_event" + "payload.title")
+            parts = placeholder.split(".", 1)
+            prefix = parts[0]
+            path = parts[1] if len(parts) > 1 else ""
 
-            try:
-                for key in keys:
-                    if isinstance(value, dict):
-                        value = value.get(key)
+            # Get resolver for this prefix
+            resolver = resolver_registry.get(prefix)
+
+            if resolver:
+                try:
+                    # Resolve the placeholder
+                    value = await resolver.resolve(path, resolver_context)
+
+                    if value is not None:
+                        # Replace the placeholder with the value
+                        resolved_prompt = resolved_prompt.replace(
+                            f"{{{{{placeholder}}}}}", str(value)
+                        )
+                        logger.debug(f"Resolved {{{{{placeholder}}}}}: {value}")
                     else:
-                        value = None
-                        break
-
+                        logger.warning(
+                            f"Placeholder {{{{{placeholder}}}}} resolved to None, leaving as-is"
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Error resolving placeholder {{{{{placeholder}}}}}: {e}",
+                        exc_info=True,
+                    )
+            else:
+                # Try simple replacement from trigger_event_data for backwards compatibility
+                value = self._simple_resolve(placeholder, self.trigger_event_data)
                 if value is not None:
-                    # Replace the placeholder with the value
                     resolved_prompt = resolved_prompt.replace(
                         f"{{{{{placeholder}}}}}", str(value)
                     )
-                    logger.debug(
-                        f"Resolved {{{{placeholder}}}}: {placeholder} -> {value}"
-                    )
+                    logger.debug(f"Simple resolved {{{{{placeholder}}}}}: {value}")
                 else:
                     logger.warning(
-                        "Placeholder {{placeholder}} not found in trigger data, leaving as-is"
+                        f"No resolver found for prefix '{prefix}' and simple resolution failed for {{{{{placeholder}}}}}"
                     )
-            except Exception as e:
-                logger.warning(f"Error resolving placeholder {{{{placeholder}}}}: {e}")
 
         logger.info("Prompt resolution complete")
         return resolved_prompt
 
-    def _prepare_execution_context(self) -> Dict[str, Any]:
+    def _ensure_resolvers_registered(self):
+        """Ensure all built-in resolvers are registered."""
+        # Register built-in resolvers if not already registered
+        if not resolver_registry.get("trigger_event"):
+            resolver_registry.register(TriggerEventResolver())
+        if not resolver_registry.get("project"):
+            resolver_registry.register(ProjectResolver())
+        if not resolver_registry.get("account"):
+            resolver_registry.register(AccountResolver())
+
+    def _simple_resolve(self, placeholder: str, data: Dict[str, Any]) -> Optional[str]:
+        """
+        Simple fallback resolver for backwards compatibility.
+
+        Args:
+            placeholder: Placeholder string (e.g., "payload.issue.title")
+            data: Dictionary to resolve from
+
+        Returns:
+            Resolved value or None
+        """
+        keys = placeholder.split(".")
+        value = data
+
+        try:
+            for key in keys:
+                if isinstance(value, dict):
+                    value = value.get(key)
+                else:
+                    return None
+
+            return str(value) if value is not None else None
+        except Exception:
+            return None
+
+    async def _prepare_execution_context(self) -> Dict[str, Any]:
         """Prepare the full execution context for the agent."""
         logger.info(
             f"Preparing execution context for agent type: {self.flow.agent_type}"
         )
 
-        resolved_prompt = self._resolve_prompt()
+        resolved_prompt = await self._resolve_prompt()
+
+        # Get account API token for SpaceBridge MCP access
+        account_api_token = None
+        if self.flow.account_id:
+            from spacemodels.models import Account
+
+            account = (
+                self.db.query(Account)
+                .filter(Account.id == self.flow.account_id)
+                .first()
+            )
+            if account and hasattr(account, "api_token"):
+                account_api_token = account.api_token
+            else:
+                logger.warning(
+                    f"Could not find API token for account {self.flow.account_id}"
+                )
 
         execution_context = {
             "flow_id": str(self.flow_id),
@@ -148,6 +236,8 @@ class FlowExecutionOrchestrator:
             "agent_config": self.flow.agent_config,
             "allowed_mcp_servers": self.flow.allowed_mcp_servers,
             "allowed_mcp_tools": self.flow.allowed_mcp_tools,
+            "account_id": self.flow.account_id,
+            "account_api_token": account_api_token,
         }
 
         # Add AI model details if available
@@ -210,6 +300,9 @@ class FlowExecutionOrchestrator:
         agent_config = self.flow.agent_config
 
         logger.info(f"Monitoring agent execution {session_reference}")
+        self.execution_logger.log_milestone(
+            "agent_monitoring_started", {"session_reference": session_reference}
+        )
 
         try:
             # Create agent executor to monitor the session
@@ -221,6 +314,7 @@ class FlowExecutionOrchestrator:
             max_wait_time = 3600  # 1 hour max execution time
             poll_interval = 5  # Check every 5 seconds
             elapsed = 0
+            last_log_check = 0
 
             while elapsed < max_wait_time:
                 status = await agent_executor.get_status(session_reference)
@@ -230,6 +324,17 @@ class FlowExecutionOrchestrator:
                     "agent_status", {"status": status.value, "elapsed": elapsed}
                 )
 
+                # Periodically collect and parse logs for actions/MCP calls
+                if elapsed - last_log_check >= 30:  # Every 30 seconds
+                    try:
+                        logs = await agent_executor.get_logs(
+                            session_reference, tail=100
+                        )
+                        self.execution_logger.parse_agent_logs(logs)
+                        last_log_check = elapsed
+                    except Exception as log_err:
+                        logger.debug(f"Could not fetch/parse logs: {log_err}")
+
                 if status in (
                     AgentStatus.SUCCEEDED,
                     AgentStatus.FAILED,
@@ -238,11 +343,26 @@ class FlowExecutionOrchestrator:
                     # Agent finished, get final result
                     result = await agent_executor.get_result(session_reference)
 
+                    # Parse final logs
+                    try:
+                        final_logs = await agent_executor.get_logs(
+                            session_reference, tail=1000
+                        )
+                        self.execution_logger.parse_agent_logs(final_logs)
+                    except Exception as log_err:
+                        logger.debug(f"Could not parse final logs: {log_err}")
+
+                    self.execution_logger.log_milestone(
+                        "agent_execution_completed",
+                        {"status": status.value, "exit_code": result.exit_code},
+                    )
+
                     return {
                         "status": result.status.value,
                         "output_summary": result.output_summary,
                         "error_message": result.error_message,
-                        "actions_taken": result.actions_taken,
+                        "actions_taken": self.execution_logger.get_actions_taken(),
+                        "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
                         "exit_code": result.exit_code,
                     }
 
@@ -254,11 +374,14 @@ class FlowExecutionOrchestrator:
             logger.warning(
                 f"Agent execution {session_reference} timed out after {max_wait_time}s"
             )
+            self.execution_logger.log_milestone("agent_execution_timeout")
             await agent_executor.stop(session_reference)
 
             return {
                 "status": "FAILED",
                 "error_message": f"Execution timed out after {max_wait_time} seconds",
+                "actions_taken": self.execution_logger.get_actions_taken(),
+                "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
             }
 
         except Exception as e:
@@ -266,9 +389,14 @@ class FlowExecutionOrchestrator:
                 f"Error monitoring agent execution {session_reference}: {e}",
                 exc_info=True,
             )
+            self.execution_logger.log_milestone(
+                "agent_execution_error", {"error": str(e)}
+            )
             return {
                 "status": "FAILED",
                 "error_message": f"Monitoring error: {str(e)}",
+                "actions_taken": self.execution_logger.get_actions_taken(),
+                "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
             }
 
     def _create_execution_log(self):
@@ -327,7 +455,7 @@ class FlowExecutionOrchestrator:
             await self._update_execution_log(status="INITIALIZING")
 
             # Stage 3: Prepare execution context
-            execution_context = self._prepare_execution_context()
+            execution_context = await self._prepare_execution_context()
 
             # Store resolved prompt for debugging/audit
             await self._update_execution_log(
@@ -347,13 +475,14 @@ class FlowExecutionOrchestrator:
             # Stage 5: Monitor agent execution and collect results
             agent_result = await self._monitor_agent_execution(session_reference)
 
-            # Update execution log with final results
+            # Update execution log with final results including detailed logs
             final_status = agent_result.get("status", "FAILED")
             await self._update_execution_log(
                 status=final_status,
                 model_output_summary=agent_result.get("output_summary"),
                 error_message=agent_result.get("error_message"),
                 actions_taken_summary=agent_result.get("actions_taken"),
+                mcp_usage_logs=agent_result.get("mcp_usage_logs"),
                 end_time=datetime.now(timezone.utc),
             )
 

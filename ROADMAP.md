@@ -73,11 +73,11 @@
     *   *Description:* Design and implement a system for defining, managing, and allowing users to utilize or clone pre-defined Flow templates.
 
 #### Epic 4: Flow Execution Engine Development
-- [ ] **Task 4.1: Develop Flow Trigger Service** ([Issue #65](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/65))
+- [x] **Task 4.1: Develop Flow Trigger Service** ([Issue #65](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/65))
     *   *Description:* Create the service that subscribes to the NATS event bus, matches incoming events against active `Flow` definitions, and initiates their execution.
-- [ ] **Task 4.2: Develop Flow Execution Orchestrator** ([Issue #66](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/66))
+- [x] **Task 4.2: Develop Flow Execution Orchestrator** ([Issue #66](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/66))
     *   *Description:* Build the orchestrator to manage Flow lifecycles: retrieve definitions, resolve dynamic prompts, handle API key decryption, and manage agent sessions via the Agent Execution Infrastructure.
-- [ ] **Task 4.3: Agent Execution Infrastructure & OpenHands Integration** ([Issue #67](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/67))
+- [x] **Task 4.3: Agent Execution Infrastructure & OpenHands Integration** ([Issue #67](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/67))
     *   *Description:* Build the Agent Execution Infrastructure abstraction layer for running agents in isolated containers. Integrate OpenHands as the first agent implementation. Support for additional agents (Claude Code, Aider) can be added later by creating container images.
 - [ ] **Task 4.4: Implement Dynamic Prompt Construction & Context Resolution** ([Issue #68](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/68))
     *   *Description:* Develop logic within the Flow Execution Orchestrator to parse `prompt_template` placeholders and dynamically fetch/inject required context data from `SpaceModels` or other services.
