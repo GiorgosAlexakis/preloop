@@ -12,6 +12,7 @@ from spacemodels import schemas
 from spacemodels.crud import crud_flow_execution
 from spacemodels.models.flow import Flow
 from spacemodels.models.ai_model import AIModel
+from spacebridge.agents import create_agent_executor, AgentStatus
 
 logger = logging.getLogger(__name__)
 
@@ -166,24 +167,109 @@ class FlowExecutionOrchestrator:
         logger.info("Execution context prepared successfully")
         return execution_context
 
-    def _start_agent_session(self, execution_context: Dict[str, Any]) -> str:
+    async def _start_agent_session(self, execution_context: Dict[str, Any]) -> str:
         """
-        Launch and monitor an agent session via Agent Execution Infrastructure.
+        Launch an agent session via Agent Execution Infrastructure.
 
-        This is a placeholder for Task 4.3 implementation.
+        Args:
+            execution_context: Context for agent execution
 
         Returns:
-            agent_session_reference: Reference to the agent session (e.g., container ID, job ID)
+            agent_session_reference: Reference to the agent session (container ID, job ID, etc.)
         """
         agent_type = execution_context["agent_type"]
-        logger.info(f"Starting {agent_type} agent session (placeholder implementation)")
+        agent_config = execution_context["agent_config"]
 
-        # TODO (Task 4.3): Implement actual agent execution infrastructure
-        # For now, return a mock session reference
-        session_reference = f"mock-{agent_type}-session-{uuid.uuid4().hex[:8]}"
+        logger.info(f"Starting {agent_type} agent session")
 
-        logger.info(f"Agent session started: {session_reference}")
-        return session_reference
+        try:
+            # Create agent executor using factory
+            agent_executor = create_agent_executor(agent_type, agent_config)
+
+            # Start the agent
+            session_reference = await agent_executor.start(execution_context)
+
+            logger.info(f"Agent session started: {session_reference}")
+            return session_reference
+
+        except Exception as e:
+            logger.error(f"Failed to start {agent_type} agent: {e}", exc_info=True)
+            raise
+
+    async def _monitor_agent_execution(self, session_reference: str) -> Dict[str, Any]:
+        """
+        Monitor agent execution until completion.
+
+        Args:
+            session_reference: Reference to the agent session
+
+        Returns:
+            Dict with execution results including status, output, errors
+        """
+        agent_type = self.flow.agent_type
+        agent_config = self.flow.agent_config
+
+        logger.info(f"Monitoring agent execution {session_reference}")
+
+        try:
+            # Create agent executor to monitor the session
+            agent_executor = create_agent_executor(agent_type, agent_config)
+
+            # Poll agent status until completion
+            import asyncio
+
+            max_wait_time = 3600  # 1 hour max execution time
+            poll_interval = 5  # Check every 5 seconds
+            elapsed = 0
+
+            while elapsed < max_wait_time:
+                status = await agent_executor.get_status(session_reference)
+
+                # Publish status update
+                await self._publish_update(
+                    "agent_status", {"status": status.value, "elapsed": elapsed}
+                )
+
+                if status in (
+                    AgentStatus.SUCCEEDED,
+                    AgentStatus.FAILED,
+                    AgentStatus.STOPPED,
+                ):
+                    # Agent finished, get final result
+                    result = await agent_executor.get_result(session_reference)
+
+                    return {
+                        "status": result.status.value,
+                        "output_summary": result.output_summary,
+                        "error_message": result.error_message,
+                        "actions_taken": result.actions_taken,
+                        "exit_code": result.exit_code,
+                    }
+
+                # Wait before next poll
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+
+            # Timeout reached
+            logger.warning(
+                f"Agent execution {session_reference} timed out after {max_wait_time}s"
+            )
+            await agent_executor.stop(session_reference)
+
+            return {
+                "status": "FAILED",
+                "error_message": f"Execution timed out after {max_wait_time} seconds",
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error monitoring agent execution {session_reference}: {e}",
+                exc_info=True,
+            )
+            return {
+                "status": "FAILED",
+                "error_message": f"Monitoring error: {str(e)}",
+            }
 
     def _create_execution_log(self):
         """Create an initial record in FlowExecutions."""
@@ -250,8 +336,7 @@ class FlowExecutionOrchestrator:
             )
 
             # Stage 4: Start agent session
-            # TODO (Task 4.3): This will actually start the agent
-            session_reference = self._start_agent_session(execution_context)
+            session_reference = await self._start_agent_session(execution_context)
 
             # Update with session reference
             await self._update_execution_log(
@@ -259,15 +344,21 @@ class FlowExecutionOrchestrator:
                 agent_session_reference=session_reference,
             )
 
-            # TODO (Task 4.3): Monitor agent execution and collect results
-            # For now, we immediately mark as succeeded (placeholder)
+            # Stage 5: Monitor agent execution and collect results
+            agent_result = await self._monitor_agent_execution(session_reference)
+
+            # Update execution log with final results
+            final_status = agent_result.get("status", "FAILED")
             await self._update_execution_log(
-                status="SUCCEEDED",
-                model_output_summary="Placeholder: Agent execution not yet implemented (Task 4.3)",
+                status=final_status,
+                model_output_summary=agent_result.get("output_summary"),
+                error_message=agent_result.get("error_message"),
+                actions_taken_summary=agent_result.get("actions_taken"),
+                end_time=datetime.now(timezone.utc),
             )
 
             logger.info(
-                f"Flow execution completed successfully: {self.execution_log.id}"
+                f"Flow execution completed with status {final_status}: {self.execution_log.id}"
             )
 
         except Exception as e:

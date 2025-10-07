@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from spacebridge.services.flow_orchestrator import FlowExecutionOrchestrator
+from spacebridge.agents.base import AgentStatus, AgentExecutionResult
 from spacemodels.models import Flow, Account
 from spacemodels.schemas.flow import FlowCreate
 
@@ -79,6 +80,28 @@ def event_data():
     }
 
 
+@pytest.fixture
+def mock_agent_executor():
+    """Create a mock agent executor that simulates successful execution."""
+    mock_executor = AsyncMock()
+
+    # Mock successful agent execution
+    mock_executor.start = AsyncMock(return_value="mock-openhands-session-123")
+    mock_executor.get_status = AsyncMock(return_value=AgentStatus.SUCCEEDED)
+    mock_executor.get_result = AsyncMock(
+        return_value=AgentExecutionResult(
+            status=AgentStatus.SUCCEEDED,
+            session_reference="mock-openhands-session-123",
+            output_summary="Agent completed the task successfully",
+            actions_taken=None,  # Let the orchestrator handle this field
+            exit_code=0,
+        )
+    )
+    mock_executor.stop = AsyncMock()
+
+    return mock_executor
+
+
 class TestFlowExecutionOrchestrator:
     """Test suite for FlowExecutionOrchestrator."""
 
@@ -89,40 +112,48 @@ class TestFlowExecutionOrchestrator:
         test_flow: Flow,
         mock_nats_client,
         event_data,
+        mock_agent_executor,
     ):
         """Test complete execution lifecycle ending in success."""
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        # Verify execution log was created
-        assert orchestrator.execution_log is not None
-        assert orchestrator.execution_log.flow_id == test_flow.id
-        assert orchestrator.execution_log.status == "SUCCEEDED"
-        assert orchestrator.execution_log.trigger_event_id == "evt_123456"
+            # Verify execution log was created
+            assert orchestrator.execution_log is not None
+            assert orchestrator.execution_log.flow_id == test_flow.id
+            assert orchestrator.execution_log.status == "SUCCEEDED"
+            assert orchestrator.execution_log.trigger_event_id == "evt_123456"
 
-        # Verify resolved prompt contains resolved placeholders
-        assert (
-            "Bug in authentication" in orchestrator.execution_log.resolved_input_prompt
-        )
-        assert "Users cannot login" in orchestrator.execution_log.resolved_input_prompt
+            # Verify resolved prompt contains resolved placeholders
+            assert (
+                "Bug in authentication"
+                in orchestrator.execution_log.resolved_input_prompt
+            )
+            assert (
+                "Users cannot login" in orchestrator.execution_log.resolved_input_prompt
+            )
 
-        # Verify agent session reference was set
-        assert orchestrator.execution_log.agent_session_reference is not None
-        assert (
-            "mock-openhands-session"
-            in orchestrator.execution_log.agent_session_reference
-        )
+            # Verify agent session reference was set
+            assert orchestrator.execution_log.agent_session_reference is not None
+            assert (
+                "mock-openhands-session"
+                in orchestrator.execution_log.agent_session_reference
+            )
 
-        # Verify NATS updates were published
-        assert (
-            mock_nats_client.publish.call_count >= 3
-        )  # At least PENDING, INITIALIZING, RUNNING, SUCCEEDED
+            # Verify NATS updates were published
+            assert (
+                mock_nats_client.publish.call_count >= 3
+            )  # At least PENDING, INITIALIZING, RUNNING, SUCCEEDED
 
     @pytest.mark.skip(
         reason="FK constraint prevents creating execution log for non-existent flow. "
@@ -148,6 +179,7 @@ class TestFlowExecutionOrchestrator:
         db_session: Session,
         test_flow: Flow,
         mock_nats_client,
+        mock_agent_executor,
     ):
         """Test simple prompt placeholder resolution."""
         event_data = {
@@ -160,18 +192,23 @@ class TestFlowExecutionOrchestrator:
         test_flow.prompt_template = "Commit: {{payload.message}}"
         db_session.commit()
 
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        assert (
-            orchestrator.execution_log.resolved_input_prompt == "Commit: Fixed bug #123"
-        )
+            assert (
+                orchestrator.execution_log.resolved_input_prompt
+                == "Commit: Fixed bug #123"
+            )
 
     @pytest.mark.asyncio
     async def test_prompt_resolution_nested(
@@ -180,22 +217,27 @@ class TestFlowExecutionOrchestrator:
         test_flow: Flow,
         mock_nats_client,
         event_data,
+        mock_agent_executor,
     ):
         """Test nested placeholder resolution."""
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        # Verify nested placeholders were resolved
-        resolved = orchestrator.execution_log.resolved_input_prompt
-        assert "Bug in authentication" in resolved
-        assert "Users cannot login" in resolved
-        assert "{{" not in resolved  # No unresolved placeholders
+            # Verify nested placeholders were resolved
+            resolved = orchestrator.execution_log.resolved_input_prompt
+            assert "Bug in authentication" in resolved
+            assert "Users cannot login" in resolved
+            assert "{{" not in resolved  # No unresolved placeholders
 
     @pytest.mark.asyncio
     async def test_prompt_resolution_missing_placeholder(
@@ -203,6 +245,7 @@ class TestFlowExecutionOrchestrator:
         db_session: Session,
         test_flow: Flow,
         mock_nats_client,
+        mock_agent_executor,
     ):
         """Test handling of missing placeholders."""
         event_data = {
@@ -211,19 +254,23 @@ class TestFlowExecutionOrchestrator:
             "payload": {},  # Missing issue data
         }
 
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        # Verify execution succeeded even with missing placeholders
-        assert orchestrator.execution_log.status == "SUCCEEDED"
-        # Unresolved placeholders should remain in template
-        assert "{{" in orchestrator.execution_log.resolved_input_prompt
+            # Verify execution succeeded even with missing placeholders
+            assert orchestrator.execution_log.status == "SUCCEEDED"
+            # Unresolved placeholders should remain in template
+            assert "{{" in orchestrator.execution_log.resolved_input_prompt
 
     @pytest.mark.asyncio
     async def test_execution_context_without_ai_model(
@@ -232,20 +279,25 @@ class TestFlowExecutionOrchestrator:
         test_flow: Flow,
         mock_nats_client,
         event_data,
+        mock_agent_executor,
     ):
         """Test execution context when no AI model is specified."""
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        # Verify execution succeeded without AI model
-        assert orchestrator.execution_log.status == "SUCCEEDED"
-        assert orchestrator.ai_model is None
+            # Verify execution succeeded without AI model
+            assert orchestrator.execution_log.status == "SUCCEEDED"
+            assert orchestrator.ai_model is None
 
     @pytest.mark.skip(reason="AIModel table migration not yet created")
     @pytest.mark.asyncio
@@ -266,24 +318,29 @@ class TestFlowExecutionOrchestrator:
         test_flow: Flow,
         mock_nats_client,
         event_data,
+        mock_agent_executor,
     ):
         """Test that NATS updates are published at each stage."""
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        # Verify NATS publish was called multiple times
-        assert mock_nats_client.publish.call_count >= 3
+            # Verify NATS publish was called multiple times
+            assert mock_nats_client.publish.call_count >= 3
 
-        # Verify subject format
-        first_call = mock_nats_client.publish.call_args_list[0]
-        subject = first_call[0][0]
-        assert subject.startswith("flow-updates.")
+            # Verify subject format
+            first_call = mock_nats_client.publish.call_args_list[0]
+            subject = first_call[0][0]
+            assert subject.startswith("flow-updates.")
 
     @pytest.mark.asyncio
     async def test_nats_client_not_connected(
@@ -291,26 +348,31 @@ class TestFlowExecutionOrchestrator:
         db_session: Session,
         test_flow: Flow,
         event_data,
+        mock_agent_executor,
     ):
         """Test handling when NATS client is not connected."""
         mock_nats = AsyncMock()
         mock_nats.is_connected = False
         mock_nats.publish = AsyncMock()
 
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats,
+            )
 
-        # Should not raise error even if NATS is unavailable
-        await orchestrator.run()
+            # Should not raise error even if NATS is unavailable
+            await orchestrator.run()
 
-        # Verify execution succeeded despite NATS issues
-        assert orchestrator.execution_log.status == "SUCCEEDED"
-        # NATS publish should not have been called
-        mock_nats.publish.assert_not_called()
+            # Verify execution succeeded despite NATS issues
+            assert orchestrator.execution_log.status == "SUCCEEDED"
+            # NATS publish should not have been called
+            mock_nats.publish.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_lifecycle_states(
@@ -319,23 +381,28 @@ class TestFlowExecutionOrchestrator:
         test_flow: Flow,
         mock_nats_client,
         event_data,
+        mock_agent_executor,
     ):
         """Test that execution goes through correct lifecycle states."""
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        # Check final state
-        assert orchestrator.execution_log.status == "SUCCEEDED"
+            # Check final state
+            assert orchestrator.execution_log.status == "SUCCEEDED"
 
-        # Verify timestamps
-        assert orchestrator.execution_log.start_time is not None
-        assert orchestrator.execution_log.created_at is not None
+            # Verify timestamps
+            assert orchestrator.execution_log.start_time is not None
+            assert orchestrator.execution_log.created_at is not None
 
     @pytest.mark.asyncio
     async def test_agent_config_passed_to_context(
@@ -344,25 +411,30 @@ class TestFlowExecutionOrchestrator:
         test_flow: Flow,
         mock_nats_client,
         event_data,
+        mock_agent_executor,
     ):
         """Test that agent_config is included in execution context."""
         # Set specific agent config
         test_flow.agent_config = {"max_iterations": 20, "custom_param": "value"}
         db_session.commit()
 
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        # Verify execution succeeded with custom config
-        assert orchestrator.execution_log.status == "SUCCEEDED"
-        assert orchestrator.flow.agent_config["max_iterations"] == 20
-        assert orchestrator.flow.agent_config["custom_param"] == "value"
+            # Verify execution succeeded with custom config
+            assert orchestrator.execution_log.status == "SUCCEEDED"
+            assert orchestrator.flow.agent_config["max_iterations"] == 20
+            assert orchestrator.flow.agent_config["custom_param"] == "value"
 
     @pytest.mark.asyncio
     async def test_allowed_mcp_servers_in_context(
@@ -371,23 +443,28 @@ class TestFlowExecutionOrchestrator:
         test_flow: Flow,
         mock_nats_client,
         event_data,
+        mock_agent_executor,
     ):
         """Test that allowed_mcp_servers are included in context."""
         # Set MCP server restrictions
         test_flow.allowed_mcp_servers = ["github", "slack"]
         db_session.commit()
 
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        assert orchestrator.execution_log.status == "SUCCEEDED"
-        assert orchestrator.flow.allowed_mcp_servers == ["github", "slack"]
+            assert orchestrator.execution_log.status == "SUCCEEDED"
+            assert orchestrator.flow.allowed_mcp_servers == ["github", "slack"]
 
     @pytest.mark.asyncio
     async def test_trigger_event_details_stored(
@@ -396,29 +473,37 @@ class TestFlowExecutionOrchestrator:
         test_flow: Flow,
         mock_nats_client,
         event_data,
+        mock_agent_executor,
     ):
         """Test that trigger event details are stored in execution log."""
-        orchestrator = FlowExecutionOrchestrator(
-            db=db_session,
-            flow_id=test_flow.id,
-            trigger_event_data=event_data,
-            nats_client=mock_nats_client,
-        )
+        with patch(
+            "spacebridge.services.flow_orchestrator.create_agent_executor",
+            return_value=mock_agent_executor,
+        ):
+            orchestrator = FlowExecutionOrchestrator(
+                db=db_session,
+                flow_id=test_flow.id,
+                trigger_event_data=event_data,
+                nats_client=mock_nats_client,
+            )
 
-        await orchestrator.run()
+            await orchestrator.run()
 
-        # Verify event details were stored
-        assert orchestrator.execution_log.trigger_event_details is not None
-        assert orchestrator.execution_log.trigger_event_details["source"] == "github"
-        assert (
-            orchestrator.execution_log.trigger_event_details["type"] == "issue_created"
-        )
-        assert (
-            orchestrator.execution_log.trigger_event_details["payload"]["issue"][
-                "title"
-            ]
-            == "Bug in authentication"
-        )
+            # Verify event details were stored
+            assert orchestrator.execution_log.trigger_event_details is not None
+            assert (
+                orchestrator.execution_log.trigger_event_details["source"] == "github"
+            )
+            assert (
+                orchestrator.execution_log.trigger_event_details["type"]
+                == "issue_created"
+            )
+            assert (
+                orchestrator.execution_log.trigger_event_details["payload"]["issue"][
+                    "title"
+                ]
+                == "Bug in authentication"
+            )
 
     @pytest.mark.asyncio
     async def test_error_handling_during_execution(

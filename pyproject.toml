@@ -33,6 +33,7 @@ dependencies = [
     "nats-py>=2.6.0", # Added for NATS integration
     "stripe>=12.4.0",
     "fastmcp>=0.1.0",
+    "aiodocker>=0.21.0", # Added for agent container execution
     # Using SpaceModels for database models and operations
     # "spacemodels @ file://${PROJECT_ROOT}/SpaceModels",
     # "spacesync @ file://${PROJECT_ROOT}/spacesync",
