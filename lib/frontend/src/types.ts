@@ -23,7 +23,7 @@ export interface FetchIssuesListParams {
 
 export interface SearchIssuesParams {
   query: string;
-  search_type: 'similarity' | 'full_text';
+  search_type: 'similarity' | 'fulltext';
   embedding_type: 'issue' | 'comment';
   project_ids?: string[];
   limit?: number;

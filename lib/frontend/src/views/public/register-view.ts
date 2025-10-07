@@ -73,6 +73,7 @@ export class RegisterView extends LitElement {
                 label="Password"
                 id="password"
                 name="password"
+                minlength="8"
                 required
                 password-toggle
               ></sl-input>
