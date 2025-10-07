@@ -43,6 +43,7 @@ class FlowExecutionOrchestrator:
         self.execution_log = None
         self.nats_client: Client = nats_client
         self.execution_logger = FlowExecutionLogger()
+        self.temporary_api_key_id: Optional[uuid.UUID] = None
 
     async def _publish_update(self, message_type: str, payload: Dict[str, Any]):
         """Publishes a structured message to the NATS stream for real-time updates."""
@@ -178,6 +179,85 @@ class FlowExecutionOrchestrator:
         if not resolver_registry.get("account"):
             resolver_registry.register(AccountResolver())
 
+    def _create_temporary_api_token(self) -> tuple[Optional[str], Optional[uuid.UUID]]:
+        """
+        Create a temporary API token for this flow execution.
+
+        Returns:
+            Tuple of (token_key, token_id) or (None, None) if creation failed
+        """
+        import secrets
+        from datetime import timedelta
+        from spacemodels.models import Account, ApiKey
+
+        try:
+            account = (
+                self.db.query(Account)
+                .filter(Account.id == self.flow.account_id)
+                .first()
+            )
+
+            if not account:
+                logger.warning(f"Account {self.flow.account_id} not found")
+                return None, None
+
+            # Generate a secure random token
+            token_key = f"flow_{secrets.token_urlsafe(32)}"
+
+            # Create API key that expires in 2 hours
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
+
+            api_key = ApiKey(
+                name=f"Flow Execution {self.execution_log.id if self.execution_log else 'temp'}",
+                key=token_key,
+                created_by=account.username,
+                expires_at=expires_at,
+                is_active=True,
+                scopes=["mcp:read", "mcp:write"],  # Limited scopes for MCP access
+            )
+
+            self.db.add(api_key)
+            self.db.commit()
+            self.db.refresh(api_key)
+
+            logger.info(
+                f"Created temporary API token {api_key.id} for flow execution, expires at {expires_at}"
+            )
+
+            return token_key, api_key.id
+
+        except Exception as e:
+            logger.error(f"Failed to create temporary API token: {e}", exc_info=True)
+            self.db.rollback()
+            return None, None
+
+    def _cleanup_temporary_api_token(self):
+        """Delete the temporary API token created for this flow execution."""
+        if not self.temporary_api_key_id:
+            return
+
+        try:
+            from spacemodels.models import ApiKey
+
+            api_key = (
+                self.db.query(ApiKey)
+                .filter(ApiKey.id == self.temporary_api_key_id)
+                .first()
+            )
+
+            if api_key:
+                self.db.delete(api_key)
+                self.db.commit()
+                logger.info(f"Deleted temporary API token {self.temporary_api_key_id}")
+            else:
+                logger.warning(
+                    f"Temporary API token {self.temporary_api_key_id} not found for cleanup"
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup temporary API token: {e}", exc_info=True)
+            self.db.rollback()
+
     def _simple_resolve(self, placeholder: str, data: Dict[str, Any]) -> Optional[str]:
         """
         Simple fallback resolver for backwards compatibility.
@@ -211,21 +291,15 @@ class FlowExecutionOrchestrator:
 
         resolved_prompt = await self._resolve_prompt()
 
-        # Get account API token for SpaceBridge MCP access
+        # Create short-lived API token for this flow execution
         account_api_token = None
         if self.flow.account_id:
-            from spacemodels.models import Account
-
-            account = (
-                self.db.query(Account)
-                .filter(Account.id == self.flow.account_id)
-                .first()
+            account_api_token, self.temporary_api_key_id = (
+                self._create_temporary_api_token()
             )
-            if account and hasattr(account, "api_token"):
-                account_api_token = account.api_token
-            else:
+            if not account_api_token:
                 logger.warning(
-                    f"Could not find API token for account {self.flow.account_id}"
+                    f"Could not create temporary API token for account {self.flow.account_id}"
                 )
 
         execution_context = {
@@ -510,3 +584,6 @@ class FlowExecutionOrchestrator:
                     )
             else:
                 logger.error("Cannot update execution log - not created yet")
+        finally:
+            # Always cleanup the temporary API token
+            self._cleanup_temporary_api_token()
