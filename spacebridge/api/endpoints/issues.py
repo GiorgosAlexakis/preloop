@@ -46,6 +46,30 @@ crud_issue = CRUDIssue(Issue)
 crud_tracker = CRUDTracker(Tracker)
 
 
+def extract_label_strings(labels_data) -> List[str]:
+    """
+    Extract label strings from label data which might be objects or strings.
+
+    Args:
+        labels_data: Can be a list of label objects (dicts with 'title'/'name'),
+                    strings, or a mix
+
+    Returns:
+        List of label strings
+    """
+    labels = []
+    if isinstance(labels_data, list):
+        for label in labels_data:
+            if isinstance(label, dict):
+                # Extract title or name from label object
+                labels.append(label.get("title") or label.get("name") or str(label))
+            elif isinstance(label, str):
+                labels.append(label)
+            else:
+                labels.append(str(label))
+    return labels
+
+
 # Define the filter class for issue searching
 class IssueFilter:
     def __init__(self, query: str, limit: int = 10):
@@ -390,9 +414,9 @@ async def search_issues(
                             created_at=issue.created_at,
                             updated_at=issue.updated_at,
                             meta_data=metadata_dict,
-                            labels=metadata_dict.get("labels", [])
-                            if isinstance(metadata_dict.get("labels"), list)
-                            else [],
+                            labels=extract_label_strings(
+                                metadata_dict.get("labels", [])
+                            ),
                             assignee=metadata_dict.get("assignee"),
                             score=score,  # Include similarity score
                         )
@@ -530,9 +554,9 @@ async def search_issues(
                             created_at=issue.created_at,
                             updated_at=issue.updated_at,
                             meta_data=metadata_dict,
-                            labels=metadata_dict.get("labels", [])
-                            if isinstance(metadata_dict.get("labels"), list)
-                            else [],
+                            labels=extract_label_strings(
+                                metadata_dict.get("labels", [])
+                            ),
                             assignee=metadata_dict.get("assignee"),
                             score=0.0,  # No score for full-text search
                         )
@@ -879,6 +903,9 @@ async def create_issue(
             )
             # Construct a placeholder or leave empty based on requirements. For now, empty.
 
+        # Extract label strings from label objects
+        labels = extract_label_strings(db_issue.meta_data.get("labels", []))
+
         return IssueResponse(
             id=str(db_issue.id),
             external_id=db_issue.external_id,
@@ -892,7 +919,7 @@ async def create_issue(
             status=db_issue.status,
             priority=db_issue.priority,
             assignee=db_issue.meta_data.get("assignee"),
-            labels=db_issue.meta_data.get("labels", []),
+            labels=labels,
             url=response_url,  # Use the resolved URL
             created_at=db_issue.created_at,
             updated_at=db_issue.updated_at,
@@ -990,7 +1017,11 @@ def get_issue(
 
         # Extract data from JSON fields if available
         meta_data = issue.meta_data or {}
-        labels_list = meta_data.get("labels", []) if isinstance(meta_data, dict) else []
+        labels_list = (
+            extract_label_strings(meta_data.get("labels", []))
+            if isinstance(meta_data, dict)
+            else []
+        )
         assignee = meta_data.get("assignee") if isinstance(meta_data, dict) else None
 
         # Determine the URL
@@ -1381,7 +1412,11 @@ async def update_issue(
             project_slug = project.slug
 
         meta_data = issue.meta_data or {}
-        labels_list = meta_data.get("labels", []) if isinstance(meta_data, dict) else []
+        labels_list = (
+            extract_label_strings(meta_data.get("labels", []))
+            if isinstance(meta_data, dict)
+            else []
+        )
         assignee = meta_data.get("assignee") if isinstance(meta_data, dict) else None
         external_url = (
             meta_data.get("url") or issue.external_url or f"/issues/{issue.id}"

@@ -201,6 +201,11 @@ async def perform_search(
             external_url = db_obj.external_url
             metadata_dict = db_obj.meta_data or {}
 
+            # Extract label strings from label objects (helper function defined in issues.py)
+            from spacebridge.api.endpoints.issues import extract_label_strings
+
+            labels = extract_label_strings(metadata_dict.get("labels", []))
+
             item_schema = IssueResponse(
                 id=str(db_obj.id),
                 project_id=str(db_obj.project_id),
@@ -217,9 +222,7 @@ async def perform_search(
                 created_at=db_obj.created_at,
                 updated_at=db_obj.updated_at,
                 meta_data=metadata_dict,
-                labels=metadata_dict.get("labels", [])
-                if isinstance(metadata_dict.get("labels"), list)
-                else [],
+                labels=labels,
                 assignee=metadata_dict.get("assignee"),
                 score=score,
             )
