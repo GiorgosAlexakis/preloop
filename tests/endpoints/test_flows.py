@@ -30,7 +30,8 @@ def test_create_flow(mock_account: Account, mocker: MockerFixture):
         trigger_event_type="commit_to_main",
         prompt_template="Test prompt",
         ai_model_id=uuid.uuid4(),
-        openhands_agent_config={"agent_type": "CodeActAgent"},
+        agent_type="openhands",
+        agent_config={"agent_type": "CodeActAgent"},
         allowed_mcp_servers=[],
         allowed_mcp_tools=[],
     )
