@@ -32,6 +32,12 @@ def upgrade() -> None:
     # Rename openhands_agent_config to agent_config in flow table
     op.alter_column("flow", "openhands_agent_config", new_column_name="agent_config")
 
+    # Add execution_logs column to flow_execution table
+    op.add_column(
+        "flow_execution",
+        sa.Column("execution_logs", sa.JSON(), nullable=True),
+    )
+
     # Rename openhands_session_reference to agent_session_reference in flow_execution table
     op.alter_column(
         "flow_execution",
@@ -54,3 +60,6 @@ def downgrade() -> None:
 
     # Drop agent_type column from flow table
     op.drop_column("flow", "agent_type")
+
+    # Drop execution_logs column from flow_execution table
+    op.drop_column("flow_execution", "execution_logs")

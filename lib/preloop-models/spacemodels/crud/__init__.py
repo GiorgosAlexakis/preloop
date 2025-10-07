@@ -24,6 +24,7 @@ from .base import CRUDBase
 from .comment import CRUDComment, crud_comment
 from .embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
 from .flow import CRUDFlow  # Import CRUDFlow class
+from .flow_execution import CRUDFlowExecution
 from .issue import CRUDIssue
 from .organization import CRUDOrganization  # Removed create_organization import
 from .project import CRUDProject
@@ -51,6 +52,7 @@ crud_ai_model = CRUDAIModel(AIModel)
 # crud_comment is already instantiated in its own file
 crud_webhook = CRUDWebhook(Webhook)
 crud_flow = CRUDFlow()  # Instantiate CRUDFlow
+crud_flow_execution = CRUDFlowExecution()  # Instantiate CRUDFlowExecution
 crud_tracker_scope_rule = CRUDTrackerScopeRule(TrackerScopeRule)
 crud_issue_relationship = CRUDIssueRelationship(IssueRelationship)
 crud_issue_set = CRUDIssueSet(IssueSet)
@@ -71,6 +73,7 @@ __all__ = [
     "CRUDComment",
     "CRUDAIModel",
     "CRUDFlow",
+    "CRUDFlowExecution",
     "CRUDIssueComplianceResult",
     "CRUDIssueSet",
     "crud_account",
@@ -87,6 +90,7 @@ __all__ = [
     "crud_ai_model",
     "crud_webhook",
     "crud_flow",
+    "crud_flow_execution",
     "crud_issue_relationship",
     "issue_compliance_result",
     "crud_issue_set",
