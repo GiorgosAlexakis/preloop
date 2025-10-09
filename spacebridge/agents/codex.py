@@ -1,4 +1,4 @@
-"""OpenHands agent implementation."""
+"""OpenAI Codex CLI agent implementation."""
 
 import json
 import logging
@@ -14,29 +14,28 @@ from .container import ContainerAgentExecutor
 logger = logging.getLogger(__name__)
 
 
-class OpenHandsAgent(ContainerAgentExecutor):
+class CodexAgent(ContainerAgentExecutor):
     """
-    OpenHands agent executor.
+    OpenAI Codex CLI agent executor.
 
-    Runs OpenHands (formerly OpenDevin) in a Docker container for
-    autonomous software development tasks.
+    Runs OpenAI's Codex CLI tool (https://github.com/openai/codex) in a Docker
+    container for autonomous coding tasks.
     """
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Initialize OpenHands agent.
+        Initialize Codex agent.
 
         Args:
             config: Agent configuration including:
-                - agent_type: Specific OpenHands agent type (CodeActAgent, etc.)
-                - max_iterations: Maximum number of agent iterations
-                - custom settings for OpenHands
+                - model: OpenAI model to use (default: gpt-4)
+                - custom settings for Codex CLI
         """
-        # Use OpenHands Docker image (custom build with tmux for local runtime)
-        image = os.getenv("OPENHANDS_IMAGE", "spacebridge/openhands:latest-tmux")
+        # Use Node.js base image for Codex CLI
+        image = os.getenv("CODEX_IMAGE", "node:20-slim")
 
         super().__init__(
-            agent_type="openhands",
+            agent_type="codex",
             config=config,
             image=image,
             use_kubernetes=os.getenv("USE_KUBERNETES", "false").lower() == "true",
@@ -44,7 +43,7 @@ class OpenHandsAgent(ContainerAgentExecutor):
 
     async def start(self, execution_context: Dict[str, Any]) -> str:
         """
-        Start OpenHands agent with specialized configuration.
+        Start Codex agent with specialized configuration.
 
         Args:
             execution_context: Execution context
@@ -52,31 +51,32 @@ class OpenHandsAgent(ContainerAgentExecutor):
         Returns:
             Container ID or pod name
         """
-        # Enhance execution context with OpenHands-specific settings
-        openhands_context = execution_context.copy()
+        # Enhance execution context with Codex-specific settings
+        codex_context = execution_context.copy()
 
-        # Extract OpenHands agent config
+        # Extract Codex config
         agent_config = execution_context.get("agent_config", {})
 
-        # Set OpenHands agent type (CodeActAgent, PlannerAgent, etc.)
-        openhands_agent_type = agent_config.get("agent_type", "CodeActAgent")
-        openhands_context["openhands_agent_type"] = openhands_agent_type
-
-        # Set max iterations
-        max_iterations = agent_config.get("max_iterations", 10)
-        openhands_context["max_iterations"] = max_iterations
+        # Set Codex model - prefer model_identifier from AIModel, fall back to agent_config
+        model_identifier = execution_context.get("model_identifier")
+        agent_model = agent_config.get("model")
 
         self.logger.info(
-            f"Starting OpenHands with agent_type={openhands_agent_type}, "
-            f"max_iterations={max_iterations}"
+            f"Codex model resolution: model_identifier={model_identifier}, "
+            f"agent_config.model={agent_model}"
         )
 
+        model = model_identifier or agent_model or "gpt-4"
+        codex_context["codex_model"] = model
+
+        self.logger.info(f"Starting Codex CLI with model={model}")
+
         # Start the container with enhanced context
-        return await super().start(openhands_context)
+        return await super().start(codex_context)
 
     async def _start_docker_container(self, execution_context: Dict[str, Any]) -> str:
         """
-        Start OpenHands in a Docker container with headless mode configuration.
+        Start Codex CLI in a Docker container.
 
         Args:
             execution_context: Execution context
@@ -87,7 +87,14 @@ class OpenHandsAgent(ContainerAgentExecutor):
         docker = await self._get_docker_client()
         execution_id = execution_context["execution_id"]
 
-        # Prepare OpenHands-specific environment variables
+        # Log execution context for debugging
+        self.logger.info(
+            f"_start_docker_container called with codex_model={execution_context.get('codex_model')}, "
+            f"model_identifier={execution_context.get('model_identifier')}, "
+            f"has_model_api_key={('model_api_key' in execution_context)}"
+        )
+
+        # Prepare Codex-specific environment variables
         env = await self._prepare_environment(execution_context)
 
         # Add MCP configuration using MCP config service
@@ -110,7 +117,7 @@ class OpenHandsAgent(ContainerAgentExecutor):
                     "No account API token provided for SpaceBridge MCP access"
                 )
 
-            # Generate MCP config file (will be used by agents that support config files)
+            # Generate MCP config file
             mcp_config = MCPConfigService.generate_mcp_config(
                 allowed_mcp_servers,
                 allowed_mcp_tools,
@@ -118,28 +125,69 @@ class OpenHandsAgent(ContainerAgentExecutor):
             )
             env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
-        # Build the command to run OpenHands in headless mode
-        # We need to completely bypass the entrypoint.sh script
-        max_iterations = execution_context.get("max_iterations", 10)
+        # Build the command to run Codex CLI with the prompt
         prompt = execution_context["prompt"]
+        # Try codex_model first (set by start()), then model_identifier, then default
+        model = (
+            execution_context.get("codex_model")
+            or execution_context.get("model_identifier")
+            or "gpt-4"
+        )
 
-        # Create the command that runs OpenHands directly
-        # Using bash -c to ensure proper execution without entrypoint.sh
-        cmd = [
-            "bash",
-            "-c",
-            f'cd /app && /app/.venv/bin/python -m openhands.core.main -t "{prompt}" -i {max_iterations}',
-        ]
+        self.logger.info(f"Using model for Codex CLI: {model}")
+
+        # Escape prompt for shell
+        escaped_prompt = prompt.replace('"', '\\"').replace("'", "\\'")
+
+        # Create a script that installs codex and runs it
+        script = f"""
+set -e
+
+# Install Codex CLI globally
+npm install -g @openai/codex
+
+# Create config directory
+mkdir -p ~/.codex
+
+# Debug: Print environment variables
+echo "=== DEBUG: Environment variables ==="
+echo "OPENAI_API_KEY: ${{OPENAI_API_KEY:0:10}}..." || echo "OPENAI_API_KEY: NOT SET"
+echo "Model being configured: {model}"
+echo "==================================="
+
+# Create config file with API key and model
+cat > ~/.codex/config.toml << EOF
+[ai]
+api_key = "$OPENAI_API_KEY"
+model = "{model}"
+
+[settings]
+zero_data_retention = true
+EOF
+
+# Debug: Show config file
+echo "=== DEBUG: Config file content ==="
+cat ~/.codex/config.toml
+echo "==================================="
+
+# Run codex in non-interactive mode with the prompt
+echo "{escaped_prompt}" | codex exec --model "{model}" --skip-git-repo-check
+"""
+
+        self.logger.info(
+            f"Container config: model={model}, "
+            f"has_api_key={'OPENAI_API_KEY' in env}, "
+            f"env_vars={list(env.keys())}"
+        )
+
+        cmd = ["bash", "-c", script]
 
         # Container configuration
         container_config = {
             "Image": self.image,
             "Env": [f"{k}={v}" for k, v in env.items()],
-            # Override entrypoint completely - set to empty list to disable entrypoint.sh
-            "Entrypoint": [],
-            # Run OpenHands in headless mode
             "Cmd": cmd,
-            "WorkingDir": "/app",
+            "WorkingDir": "/workspace",
             "Labels": {
                 "spacebridge.flow_id": execution_context["flow_id"],
                 "spacebridge.execution_id": execution_id,
@@ -176,21 +224,21 @@ class OpenHandsAgent(ContainerAgentExecutor):
             self._containers[container_id] = container
 
             self.logger.info(
-                f"Started OpenHands container {container_id[:12]} in headless mode for execution {execution_id}"
+                f"Started Codex CLI container {container_id[:12]} for execution {execution_id}"
             )
             return container_id
 
         except DockerError as e:
             self.logger.error(
-                f"Failed to start OpenHands container for execution {execution_id}: {e}"
+                f"Failed to start Codex CLI container for execution {execution_id}: {e}"
             )
-            raise RuntimeError(f"Failed to start OpenHands container: {e}")
+            raise RuntimeError(f"Failed to start Codex CLI container: {e}")
 
     async def _prepare_environment(
         self, execution_context: Dict[str, Any]
     ) -> Dict[str, str]:
         """
-        Prepare OpenHands-specific environment variables.
+        Prepare Codex-specific environment variables.
 
         Args:
             execution_context: Execution context
@@ -198,33 +246,13 @@ class OpenHandsAgent(ContainerAgentExecutor):
         Returns:
             Environment variables dict
         """
-        env = {
-            "AGENT_TYPE": execution_context.get("openhands_agent_type", "CodeActAgent"),
-            "MAX_ITERATIONS": str(execution_context.get("max_iterations", 10)),
-            "PROMPT": execution_context["prompt"],
-            "RUNTIME": "local",  # Use local runtime - runs directly in the container without Docker-in-Docker
-            "WORKSPACE_BASE": "/workspace",  # Working directory for the agent
-        }
+        env = {}
 
-        # Add AI model configuration
-        if "model_identifier" in execution_context:
-            env["LLM_MODEL"] = execution_context["model_identifier"]
+        # Add OpenAI API key
         if "model_api_key" in execution_context:
-            env["LLM_API_KEY"] = execution_context["model_api_key"]
-        if "model_provider" in execution_context:
-            env["LLM_PROVIDER"] = execution_context["model_provider"]
+            env["OPENAI_API_KEY"] = execution_context["model_api_key"]
 
-        # Add model parameters if specified
-        model_params = execution_context.get("model_parameters") or {}
-        if model_params and "temperature" in model_params:
-            env["LLM_TEMPERATURE"] = str(model_params["temperature"])
-        if model_params and "max_tokens" in model_params:
-            env["LLM_MAX_TOKENS"] = str(model_params["max_tokens"])
-
-        # MCP configuration is already added by ContainerAgentExecutor
-        # OpenHands can access MCP tools via the environment variables:
-        # - MCP_ALLOWED_SERVERS: comma-separated list of allowed servers
-        # - MCP_ALLOWED_TOOLS: JSON map of server -> [tools]
-        # - SPACEBRIDGE_MCP_URL: URL to SpaceBridge MCP endpoint
+        # Set home directory for config storage
+        env["HOME"] = "/root"
 
         return env

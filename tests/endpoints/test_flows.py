@@ -56,7 +56,7 @@ def test_create_flow(mock_account: Account, mocker: MockerFixture):
     # Assert
     assert result.name == flow_in.name
     mock_crud_flow.create.assert_called_once_with(
-        db=mocker.ANY, obj_in=flow_in, account_id=mock_account.id
+        db=mocker.ANY, flow_in=flow_in, account_id=mock_account.id
     )
 
 
@@ -148,7 +148,7 @@ def test_update_flow(mock_account: Account, mocker: MockerFixture):
         db=mocker.ANY, id=flow_id, account_id=mock_account.id
     )
     mock_crud_flow.update.assert_called_once_with(
-        db=mocker.ANY, db_obj=mock_flow, obj_in=flow_update
+        db=mocker.ANY, db_obj=mock_flow, flow_in=flow_update, account_id=mock_account.id
     )
 
 

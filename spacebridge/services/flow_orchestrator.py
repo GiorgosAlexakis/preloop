@@ -1,6 +1,7 @@
 import logging
 import uuid
 import json
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 import re
@@ -44,6 +45,10 @@ class FlowExecutionOrchestrator:
         self.nats_client: Client = nats_client
         self.execution_logger = FlowExecutionLogger()
         self.temporary_api_key_id: Optional[uuid.UUID] = None
+        self._log_streaming_task: Optional[asyncio.Task] = None
+        self._command_subscription: Optional[Any] = None
+        self._stop_requested = asyncio.Event()
+        self._user_messages: asyncio.Queue = asyncio.Queue()
 
     async def _publish_update(self, message_type: str, payload: Dict[str, Any]):
         """Publishes a structured message to the NATS stream for real-time updates."""
@@ -73,8 +78,11 @@ class FlowExecutionOrchestrator:
         """Retrieve the Flow definition and associated AIModel."""
         logger.info(f"Retrieving flow details for flow_id: {self.flow_id}")
 
-        # Get flow - use correct CRUD method signature
-        self.flow = self.db.query(Flow).filter(Flow.id == self.flow_id).first()
+        # Get flow - convert UUID to string for comparison
+        flow_id_str = (
+            str(self.flow_id) if isinstance(self.flow_id, uuid.UUID) else self.flow_id
+        )
+        self.flow = self.db.query(Flow).filter(Flow.id == flow_id_str).first()
         if not self.flow:
             raise ValueError(f"Flow with id {self.flow_id} not found")
 
@@ -84,14 +92,25 @@ class FlowExecutionOrchestrator:
 
         # Get AI model if specified
         if self.flow.ai_model_id:
+            from sqlalchemy import cast, String
+
+            ai_model_id_str = (
+                str(self.flow.ai_model_id)
+                if isinstance(self.flow.ai_model_id, uuid.UUID)
+                else self.flow.ai_model_id
+            )
             self.ai_model = (
                 self.db.query(AIModel)
-                .filter(AIModel.id == self.flow.ai_model_id)
+                .filter(cast(AIModel.id, String) == ai_model_id_str)
                 .first()
             )
             if not self.ai_model:
                 logger.warning(
                     f"AI model {self.flow.ai_model_id} not found for flow {self.flow_id}"
+                )
+            else:
+                logger.info(
+                    f"Loaded AI model: {self.ai_model.name} ({self.ai_model.model_identifier})"
                 )
         else:
             logger.info("No AI model specified for this flow")
@@ -316,6 +335,11 @@ class FlowExecutionOrchestrator:
 
         # Add AI model details if available
         if self.ai_model:
+            logger.info(
+                f"AI model loaded: id={self.ai_model.id}, "
+                f"identifier={self.ai_model.model_identifier}, "
+                f"provider={self.ai_model.provider_name}"
+            )
             execution_context.update(
                 {
                     "model_identifier": self.ai_model.model_identifier,
@@ -326,10 +350,113 @@ class FlowExecutionOrchestrator:
                 }
             )
         else:
-            logger.warning("No AI model configured, agent will need to use defaults")
+            logger.warning(
+                f"No AI model configured for flow {self.flow.id}, "
+                f"ai_model_id={self.flow.ai_model_id if hasattr(self.flow, 'ai_model_id') else 'N/A'}, "
+                "agent will need to use defaults"
+            )
 
         logger.info("Execution context prepared successfully")
         return execution_context
+
+    async def _stream_logs_to_nats(self, agent_executor, session_reference: str):
+        """
+        Background task to stream agent logs to NATS in real-time.
+
+        Args:
+            agent_executor: Agent executor instance
+            session_reference: Container/Job reference
+        """
+        logger.info(f"Starting log streaming for {session_reference}")
+
+        try:
+            async for log_line in agent_executor.stream_logs(session_reference):
+                # Parse log line for structured data
+                self.execution_logger.parse_agent_logs([log_line])
+
+                # Publish to NATS
+                await self._publish_update(
+                    "agent_log_line",
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "line": log_line,
+                    },
+                )
+
+        except asyncio.CancelledError:
+            logger.info(f"Log streaming cancelled for {session_reference}")
+        except Exception as e:
+            logger.error(
+                f"Error streaming logs for {session_reference}: {e}", exc_info=True
+            )
+            await self._publish_update(
+                "agent_log_error", {"error": f"Log streaming error: {str(e)}"}
+            )
+
+    async def _listen_for_commands(self):
+        """
+        Subscribe to NATS commands for user intervention.
+
+        Listens on subject: flow-commands.{execution_id}
+        """
+        if not self.nats_client or not self.nats_client.is_connected:
+            logger.warning("NATS not connected, cannot listen for commands")
+            return
+
+        command_subject = f"flow-commands.{self.execution_log.id}"
+
+        try:
+
+            async def command_handler(msg):
+                try:
+                    command_data = json.loads(msg.data.decode())
+                    command_type = command_data.get("command")
+
+                    logger.info(
+                        f"Received command: {command_type} for execution {self.execution_log.id}"
+                    )
+
+                    if command_type == "stop":
+                        logger.info("User requested stop")
+                        self._stop_requested.set()
+                    elif command_type == "send_message":
+                        message = command_data.get("message", "")
+                        logger.info(f"User sent message: {message}")
+                        await self._user_messages.put(message)
+                    elif command_type == "pause":
+                        logger.info("User requested pause (not yet implemented)")
+                        # TODO: Implement pause functionality
+                    else:
+                        logger.warning(f"Unknown command type: {command_type}")
+
+                except Exception as e:
+                    logger.error(f"Error handling command: {e}", exc_info=True)
+
+            # Subscribe to commands
+            self._command_subscription = await self.nats_client.subscribe(
+                command_subject, cb=command_handler
+            )
+            logger.info(f"Listening for commands on {command_subject}")
+
+        except Exception as e:
+            logger.error(f"Failed to setup command subscription: {e}", exc_info=True)
+
+    async def _cleanup_monitoring(self):
+        """Cleanup monitoring resources (log streaming, command subscription)."""
+        # Cancel log streaming task
+        if self._log_streaming_task and not self._log_streaming_task.done():
+            self._log_streaming_task.cancel()
+            try:
+                await self._log_streaming_task
+            except asyncio.CancelledError:
+                pass
+
+        # Unsubscribe from commands
+        if self._command_subscription:
+            try:
+                await self._command_subscription.unsubscribe()
+            except Exception as e:
+                logger.error(f"Error unsubscribing from commands: {e}")
 
     async def _start_agent_session(self, execution_context: Dict[str, Any]) -> str:
         """
@@ -362,7 +489,7 @@ class FlowExecutionOrchestrator:
 
     async def _monitor_agent_execution(self, session_reference: str) -> Dict[str, Any]:
         """
-        Monitor agent execution until completion.
+        Monitor agent execution until completion with real-time log streaming.
 
         Args:
             session_reference: Reference to the agent session
@@ -378,36 +505,38 @@ class FlowExecutionOrchestrator:
             "agent_monitoring_started", {"session_reference": session_reference}
         )
 
+        # Create agent executor to monitor the session
+        agent_executor = create_agent_executor(agent_type, agent_config)
+
         try:
-            # Create agent executor to monitor the session
-            agent_executor = create_agent_executor(agent_type, agent_config)
+            # Start listening for user commands
+            await self._listen_for_commands()
+
+            # Start background task for log streaming
+            self._log_streaming_task = asyncio.create_task(
+                self._stream_logs_to_nats(agent_executor, session_reference)
+            )
 
             # Poll agent status until completion
-            import asyncio
-
             max_wait_time = 3600  # 1 hour max execution time
-            poll_interval = 5  # Check every 5 seconds
+            poll_interval = 5  # Check status every 5 seconds
             elapsed = 0
-            last_log_check = 0
 
             while elapsed < max_wait_time:
+                # Check if user requested stop
+                if self._stop_requested.is_set():
+                    logger.info(
+                        f"User requested stop for execution {self.execution_log.id}"
+                    )
+                    await agent_executor.stop(session_reference)
+                    await self._publish_update("user_stopped", {"elapsed": elapsed})
+                    break
                 status = await agent_executor.get_status(session_reference)
 
                 # Publish status update
                 await self._publish_update(
                     "agent_status", {"status": status.value, "elapsed": elapsed}
                 )
-
-                # Periodically collect and parse logs for actions/MCP calls
-                if elapsed - last_log_check >= 30:  # Every 30 seconds
-                    try:
-                        logs = await agent_executor.get_logs(
-                            session_reference, tail=100
-                        )
-                        self.execution_logger.parse_agent_logs(logs)
-                        last_log_check = elapsed
-                    except Exception as log_err:
-                        logger.debug(f"Could not fetch/parse logs: {log_err}")
 
                 if status in (
                     AgentStatus.SUCCEEDED,
@@ -416,15 +545,6 @@ class FlowExecutionOrchestrator:
                 ):
                     # Agent finished, get final result
                     result = await agent_executor.get_result(session_reference)
-
-                    # Parse final logs
-                    try:
-                        final_logs = await agent_executor.get_logs(
-                            session_reference, tail=1000
-                        )
-                        self.execution_logger.parse_agent_logs(final_logs)
-                    except Exception as log_err:
-                        logger.debug(f"Could not parse final logs: {log_err}")
 
                     self.execution_logger.log_milestone(
                         "agent_execution_completed",
@@ -472,6 +592,9 @@ class FlowExecutionOrchestrator:
                 "actions_taken": self.execution_logger.get_actions_taken(),
                 "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
             }
+        finally:
+            # Always cleanup monitoring resources
+            await self._cleanup_monitoring()
 
     def _create_execution_log(self):
         """Create an initial record in FlowExecutions."""
@@ -504,7 +627,17 @@ class FlowExecutionOrchestrator:
         self.execution_log = updated_log
 
         # Publish update to NATS for real-time UI updates
-        await self._publish_update("status_update", {"status": status, **kwargs})
+        # Convert datetime objects to ISO format strings for JSON serialization
+        serializable_kwargs = {}
+        for key, value in kwargs.items():
+            if isinstance(value, datetime):
+                serializable_kwargs[key] = value.isoformat()
+            else:
+                serializable_kwargs[key] = value
+
+        await self._publish_update(
+            "status_update", {"status": status, **serializable_kwargs}
+        )
 
         logger.debug(f"Execution log updated: status={status}")
 

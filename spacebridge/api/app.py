@@ -254,9 +254,23 @@ async def lifespan(app: FastAPI):
     app.state.nats_consumer_task = loop.create_task(nats_consumer(manager))
     logger.info("NATS consumer for WebSockets started.")
 
+    # Start the execution monitor for cleaning up stale executions
+    from spacebridge.services.execution_monitor import get_execution_monitor
+
+    execution_monitor = get_execution_monitor()
+    await execution_monitor.start()
+
     yield
 
     # Shutdown logic
+    # Stop the execution monitor
+    try:
+        execution_monitor = get_execution_monitor()
+        await execution_monitor.stop()
+        logger.info("Execution monitor stopped.")
+    except Exception as e:
+        logger.error(f"Error stopping execution monitor: {e}", exc_info=True)
+
     # Cancel the NATS consumer task
     if hasattr(app.state, "nats_consumer_task"):
         app.state.nats_consumer_task.cancel()

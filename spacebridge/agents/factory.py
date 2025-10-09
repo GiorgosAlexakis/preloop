@@ -5,6 +5,9 @@ from typing import Any, Dict
 
 from .base import AgentExecutor
 from .openhands import OpenHandsAgent
+from .aider import AiderAgent
+from .claude_code import ClaudeCodeAgent
+from .codex import CodexAgent
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +17,7 @@ def create_agent_executor(agent_type: str, config: Dict[str, Any]) -> AgentExecu
     Create an agent executor based on agent type.
 
     Args:
-        agent_type: Type of agent (e.g., 'openhands', 'claude-code', 'aider')
+        agent_type: Type of agent (e.g., 'openhands', 'claude-code', 'aider', 'codex')
         config: Agent-specific configuration
 
     Returns:
@@ -28,13 +31,13 @@ def create_agent_executor(agent_type: str, config: Dict[str, Any]) -> AgentExecu
     if agent_type_lower == "openhands":
         return OpenHandsAgent(config)
     elif agent_type_lower == "claude-code":
-        # TODO: Implement Claude Code agent
-        raise NotImplementedError("Claude Code agent not yet implemented")
+        return ClaudeCodeAgent(config)
     elif agent_type_lower == "aider":
-        # TODO: Implement Aider agent
-        raise NotImplementedError("Aider agent not yet implemented")
+        return AiderAgent(config)
+    elif agent_type_lower == "codex":
+        return CodexAgent(config)
     else:
         raise ValueError(
             f"Unsupported agent type: {agent_type}. "
-            f"Supported types: openhands, claude-code, aider"
+            f"Supported types: openhands, claude-code, aider, codex"
         )

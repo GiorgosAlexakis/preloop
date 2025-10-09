@@ -4,6 +4,9 @@ import pytest
 
 from spacebridge.agents.factory import create_agent_executor
 from spacebridge.agents.openhands import OpenHandsAgent
+from spacebridge.agents.aider import AiderAgent
+from spacebridge.agents.claude_code import ClaudeCodeAgent
+from spacebridge.agents.codex import CodexAgent
 
 
 class TestAgentFactory:
@@ -31,19 +34,43 @@ class TestAgentFactory:
             agent = create_agent_executor(agent_type, config)
             assert isinstance(agent, OpenHandsAgent)
 
-    def test_create_claude_code_agent_not_implemented(self):
-        """Test that Claude Code agent raises NotImplementedError."""
-        config = {}
+    def test_create_claude_code_agent(self):
+        """Test creating a Claude Code agent."""
+        config = {
+            "model": "claude-sonnet-4",
+            "max_tokens": 4096,
+        }
 
-        with pytest.raises(NotImplementedError, match="Claude Code agent"):
-            create_agent_executor("claude-code", config)
+        agent = create_agent_executor("claude-code", config)
 
-    def test_create_aider_agent_not_implemented(self):
-        """Test that Aider agent raises NotImplementedError."""
-        config = {}
+        assert isinstance(agent, ClaudeCodeAgent)
+        assert agent.agent_type == "claude-code"
+        assert agent.config == config
 
-        with pytest.raises(NotImplementedError, match="Aider agent"):
-            create_agent_executor("aider", config)
+    def test_create_aider_agent(self):
+        """Test creating an Aider agent."""
+        config = {
+            "model": "gpt-4",
+            "edit_format": "whole",
+        }
+
+        agent = create_agent_executor("aider", config)
+
+        assert isinstance(agent, AiderAgent)
+        assert agent.agent_type == "aider"
+        assert agent.config == config
+
+    def test_create_codex_agent(self):
+        """Test creating a Codex agent."""
+        config = {
+            "model": "gpt-4",
+        }
+
+        agent = create_agent_executor("codex", config)
+
+        assert isinstance(agent, CodexAgent)
+        assert agent.agent_type == "codex"
+        assert agent.config == config
 
     def test_unsupported_agent_type(self):
         """Test that unsupported agent type raises ValueError."""
@@ -64,6 +91,7 @@ class TestAgentFactory:
             assert "openhands" in error_msg
             assert "claude-code" in error_msg
             assert "aider" in error_msg
+            assert "codex" in error_msg
 
     def test_config_passed_to_agent(self):
         """Test that configuration is passed to the agent."""
@@ -101,15 +129,25 @@ class TestAgentFactory:
 
     def test_agent_type_validation(self):
         """Test that agent type validation works correctly."""
-        valid_types = ["openhands", "OPENHANDS", "OpenHands"]
-        invalid_types = ["open hands", "open-hands-v2", "", "  ", "123"]
+        valid_types = {
+            "openhands": OpenHandsAgent,
+            "OPENHANDS": OpenHandsAgent,
+            "OpenHands": OpenHandsAgent,
+            "aider": AiderAgent,
+            "AIDER": AiderAgent,
+            "claude-code": ClaudeCodeAgent,
+            "CLAUDE-CODE": ClaudeCodeAgent,
+            "codex": CodexAgent,
+            "CODEX": CodexAgent,
+        }
+        invalid_types = ["open hands", "open-hands-v2", "", "  ", "123", "unknown"]
 
         # Valid types should work
-        for agent_type in valid_types:
+        for agent_type, expected_class in valid_types.items():
             agent = create_agent_executor(agent_type, {})
-            assert isinstance(agent, OpenHandsAgent)
+            assert isinstance(agent, expected_class)
 
         # Invalid types should raise ValueError
         for agent_type in invalid_types:
-            with pytest.raises((ValueError, NotImplementedError)):
+            with pytest.raises(ValueError):
                 create_agent_executor(agent_type, {})

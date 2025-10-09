@@ -7,10 +7,44 @@ from typing import Dict
 from fastapi import WebSocket
 from nats.aio.client import Client
 from nats.aio.msg import Msg
+from sqlalchemy import text
 
 from spacesync.services.event_bus import get_task_publisher
+from spacemodels.db.session import get_db_session as get_db
 
 logger = logging.getLogger(__name__)
+
+
+async def persist_execution_log(execution_id: str, log_data: dict):
+    """
+    Appends a log entry to the execution_logs array in the database.
+
+    Args:
+        execution_id: ID of the flow execution
+        log_data: Log message data to append
+    """
+    try:
+        db = next(get_db())
+        try:
+            # Use PostgreSQL's JSONB append operator to add log to array
+            # If execution_logs is NULL, initialize it as an empty array first
+            # Convert the dict to JSON string for proper JSONB casting
+            log_json = json.dumps(log_data)
+            db.execute(
+                text("""
+                    UPDATE flow_execution
+                    SET execution_logs = COALESCE(execution_logs, '[]'::jsonb) || CAST(:log_entry AS jsonb)
+                    WHERE id = :execution_id
+                """),
+                {"execution_id": execution_id, "log_entry": log_json},
+            )
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(
+            f"Failed to persist log for execution {execution_id}: {e}", exc_info=True
+        )
 
 
 class WebSocketManager:
@@ -63,6 +97,7 @@ class WebSocketManager:
 async def nats_consumer(manager: "WebSocketManager"):
     """
     Consumes messages from NATS and broadcasts them to WebSocket clients.
+    Also persists execution logs to the database.
     """
     task_publisher = await get_task_publisher()
     nats_client: Client = task_publisher.nc
@@ -73,9 +108,13 @@ async def nats_consumer(manager: "WebSocketManager"):
     async def message_handler(msg: Msg):
         try:
             data = json.loads(msg.data.decode())
-            # Here, you could add filtering logic based on execution_id
-            # to send messages only to relevant clients.
-            # For now, we broadcast to all.
+
+            # Persist log messages to database
+            execution_id = data.get("execution_id")
+            if execution_id:
+                await persist_execution_log(execution_id, data)
+
+            # Broadcast to WebSocket clients
             await manager.broadcast_json(data)
         except json.JSONDecodeError:
             logger.warning(f"Received non-JSON message from NATS: {msg.data.decode()}")

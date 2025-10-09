@@ -97,32 +97,33 @@ class TestContainerAgentExecutor:
 
     @pytest.mark.asyncio
     async def test_start_kubernetes_fallback(self, mock_docker):
-        """Test that Kubernetes execution falls back to Docker."""
-        executor = ContainerAgentExecutor(
-            agent_type="test-agent",
-            config={},
-            image="test-image:latest",
-            use_kubernetes=True,
-        )
+        """Test that Kubernetes execution falls back to Docker when not available."""
+        with patch("spacebridge.agents.container.KUBERNETES_AVAILABLE", False):
+            executor = ContainerAgentExecutor(
+                agent_type="test-agent",
+                config={},
+                image="test-image:latest",
+                use_kubernetes=True,
+            )
 
-        # Mock image inspection and container creation
-        mock_docker.images.inspect = AsyncMock()
-        mock_container = AsyncMock()
-        mock_container.id = "container-k8s-123"
-        type(mock_container).id = PropertyMock(return_value="container-k8s-123")
-        mock_container.start = AsyncMock()
-        mock_docker.containers.create = AsyncMock(return_value=mock_container)
+            # Mock image inspection and container creation
+            mock_docker.images.inspect = AsyncMock()
+            mock_container = AsyncMock()
+            mock_container.id = "container-k8s-123"
+            type(mock_container).id = PropertyMock(return_value="container-k8s-123")
+            mock_container.start = AsyncMock()
+            mock_docker.containers.create = AsyncMock(return_value=mock_container)
 
-        execution_context = {
-            "flow_id": "flow-123",
-            "execution_id": "exec-456",
-            "prompt": "Test",
-            "agent_config": {},
-        }
+            execution_context = {
+                "flow_id": "flow-123",
+                "execution_id": "exec-456",
+                "prompt": "Test",
+                "agent_config": {},
+            }
 
-        # Should fall back to Docker
-        session_ref = await executor.start(execution_context)
-        assert session_ref == "container-k8s-123"
+            # Should fall back to Docker when Kubernetes is not available
+            session_ref = await executor.start(execution_context)
+            assert session_ref == "container-k8s-123"
 
     @pytest.mark.asyncio
     async def test_get_status_running(self, container_executor, mock_docker):
@@ -251,6 +252,23 @@ class TestContainerAgentExecutor:
         assert logs[1] == "Log line 2"
         assert logs[2] == "Log line 3"
         mock_container.log.assert_called_once_with(stdout=True, stderr=True, tail=3)
+
+    @pytest.mark.asyncio
+    async def test_get_logs_string_format(self, container_executor, mock_docker):
+        """Test retrieving container logs when API returns strings instead of bytes."""
+        mock_container = AsyncMock()
+        # Some aiodocker versions return strings
+        mock_container.log = AsyncMock(
+            return_value=["String log 1", "String log 2", "String log 3"]
+        )
+        mock_docker.containers.get = AsyncMock(return_value=mock_container)
+
+        logs = await container_executor.get_logs("container-123", tail=3)
+
+        assert len(logs) == 3
+        assert logs[0] == "String log 1"
+        assert logs[1] == "String log 2"
+        assert logs[2] == "String log 3"
 
     @pytest.mark.asyncio
     async def test_container_labels(self, container_executor, mock_docker):
