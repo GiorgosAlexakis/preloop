@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "web-test-runner \"src/**/*.test.{ts,js}\"",
+    "test:coverage": "web-test-runner \"src/**/*.test.{ts,js}\" --coverage",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "prepare": "husky",
@@ -53,6 +54,7 @@
   "devDependencies": {
     "@open-wc/testing": "^4.0.0",
     "@types/marked": "^5.0.2",
+    "@types/mocha": "^10.0.10",
     "@types/sinon": "^17.0.4",
     "@web/dev-server-esbuild": "^1.0.4",
     "@web/test-runner": "^0.18.0",

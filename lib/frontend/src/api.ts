@@ -546,6 +546,44 @@ export async function getFlowExecutions(): Promise<any[]> {
   return response.json();
 }
 
+export async function getFlowExecution(executionId: string): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow execution');
+  }
+  return response.json();
+}
+
+export async function triggerFlowExecution(flowId: string): Promise<any> {
+  const response = await fetchWithAuth(`/api/v1/flows/${flowId}/trigger`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to trigger flow execution');
+  }
+  return response.json();
+}
+
+export async function sendCommandToExecution(
+  executionId: string,
+  command: string,
+  payload?: any
+): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}/command`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, payload }),
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to send command to execution');
+  }
+}
+
 export async function cloneFlowPreset(presetId: string): Promise<any> {
   const response = await fetchWithAuth(
     `/api/v1/flows/presets/${presetId}/clone`,

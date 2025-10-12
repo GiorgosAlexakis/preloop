@@ -38,10 +38,17 @@ interface Flow {
   max_iterations?: number;
   max_budget?: number;
   is_preset?: boolean;
+  is_enabled?: boolean;
+  agent_type?: string;
 }
 
 @customElement('flow-view')
 export class FlowView extends LitElement {
+  // Vaadin Router lifecycle callback
+  onBeforeEnter(location: any) {
+    this.flowId = location.params.flowId;
+  }
+
   static styles = css`
     :host {
       display: block;
@@ -72,6 +79,9 @@ export class FlowView extends LitElement {
   private isNew = true;
 
   @state()
+  private isEditing = false;
+
+  @state()
   private trackers: any[] = [];
 
   @state()
@@ -92,27 +102,57 @@ export class FlowView extends LitElement {
   @state()
   private projects: any[] = [];
 
+  @state()
+  private recentExecutions: any[] = [];
+
   async connectedCallback() {
     super.connectedCallback();
-    this.trackers = await getTrackers();
-    this.models = await getAIModels();
-    this.presets = await getFlowPresets();
-    // this.mcpServers = await getMcpServers(); // This will be uncommented once the API function is created
+
     const urlParams = new URLSearchParams(window.location.search);
     const presetId = urlParams.get('preset_id');
-    if (presetId) {
+    this.isEditing = urlParams.get('edit') === 'true';
+
+    if (this.flowId) {
+      // Viewing or editing an existing flow
+      this.isNew = false;
+      this.showPresets = false;
+      this.flow = await getFlow(this.flowId);
+
+      // Load recent executions for this flow
+      const allExecutions = await import('../../api').then((m) =>
+        m.getFlowExecutions()
+      );
+      this.recentExecutions = allExecutions
+        .filter((exec: any) => exec.flow_id === this.flowId)
+        .sort(
+          (a: any, b: any) =>
+            new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+        )
+        .slice(0, 10);
+    } else if (presetId) {
+      // Creating from preset
+      this.trackers = await getTrackers();
+      this.models = await getAIModels();
+      this.presets = await getFlowPresets();
       const preset = this.presets.find((p) => p.id === presetId);
       if (preset) {
         this.selectPreset(preset);
       }
-    } else if (this.flowId) {
-      this.isNew = false;
-      this.showPresets = false;
-      this.flow = await getFlow(this.flowId);
+    } else {
+      // Creating new flow
+      this.trackers = await getTrackers();
+      this.models = await getAIModels();
+      this.presets = await getFlowPresets();
     }
   }
 
   render() {
+    if (!this.isNew && !this.isEditing) {
+      // View mode - show flow details
+      return this.renderFlowDetails();
+    }
+
+    // Edit/Create mode - show form
     return html`
       <view-header
         headerText="${this.isNew ? 'Create Flow' : 'Edit Flow'}"
@@ -125,6 +165,167 @@ export class FlowView extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  renderFlowDetails() {
+    return html`
+      <view-header headerText="${this.flow.name}"></view-header>
+      <div class="column-layout">
+        <div class="main-column">
+          <!-- Actions -->
+          <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+            <sl-button href="/console/flows">
+              <sl-icon name="arrow-left"></sl-icon>
+              Back to Flows
+            </sl-button>
+            <sl-button href="/console/flows/${this.flowId}?edit=true">
+              <sl-icon name="pencil"></sl-icon>
+              Edit Flow
+            </sl-button>
+            <sl-button variant="primary" @click=${this.testRun}>
+              <sl-icon name="play-circle"></sl-icon>
+              Test Run
+            </sl-button>
+          </div>
+
+          <!-- Flow Info Card -->
+          <sl-card style="margin-bottom: 16px;">
+            <div slot="header">
+              <sl-icon name="info-circle"></sl-icon>
+              Flow Details
+            </div>
+            <div
+              style="display: grid; grid-template-columns: 150px 1fr; gap: 12px;"
+            >
+              <strong>Name:</strong>
+              <span>${this.flow.name}</span>
+
+              ${this.flow.description
+                ? html`
+                    <strong>Description:</strong>
+                    <span>${this.flow.description}</span>
+                  `
+                : ''}
+
+              <strong>Agent Type:</strong>
+              <sl-badge>${this.flow.agent_type}</sl-badge>
+
+              <strong>Trigger:</strong>
+              <span
+                >${this.flow.trigger_event_source} -
+                ${this.flow.trigger_event_type}</span
+              >
+
+              <strong>Status:</strong>
+              <sl-badge
+                variant="${this.flow.is_enabled ? 'success' : 'neutral'}"
+              >
+                ${this.flow.is_enabled ? 'Enabled' : 'Disabled'}
+              </sl-badge>
+            </div>
+          </sl-card>
+
+          <!-- Recent Executions -->
+          <sl-card>
+            <div slot="header">
+              <sl-icon name="clock-history"></sl-icon>
+              Recent Executions
+            </div>
+            ${this.recentExecutions.length === 0
+              ? html`<p>No executions yet. Click "Test Run" to start one.</p>`
+              : html`
+                  <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                      <tr>
+                        <th style="text-align: left; padding: 8px;">Status</th>
+                        <th style="text-align: left; padding: 8px;">Started</th>
+                        <th style="text-align: left; padding: 8px;">
+                          Duration
+                        </th>
+                        <th style="text-align: left; padding: 8px;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${this.recentExecutions.map(
+                        (exec) => html`
+                          <tr>
+                            <td style="padding: 8px;">
+                              <sl-badge
+                                variant=${this.getStatusVariant(exec.status)}
+                              >
+                                ${exec.status}
+                              </sl-badge>
+                            </td>
+                            <td style="padding: 8px;">
+                              ${new Date(exec.start_time).toLocaleString()}
+                            </td>
+                            <td style="padding: 8px;">
+                              ${exec.end_time
+                                ? this.calculateDuration(
+                                    exec.start_time,
+                                    exec.end_time
+                                  )
+                                : 'Running...'}
+                            </td>
+                            <td style="padding: 8px;">
+                              <sl-button
+                                size="small"
+                                href="/console/flows/executions/${exec.id}"
+                              >
+                                <sl-icon name="eye"></sl-icon>
+                                View
+                              </sl-button>
+                            </td>
+                          </tr>
+                        `
+                      )}
+                    </tbody>
+                  </table>
+                `}
+          </sl-card>
+        </div>
+      </div>
+    `;
+  }
+
+  getStatusVariant(status: string) {
+    switch (status) {
+      case 'SUCCEEDED':
+        return 'success';
+      case 'FAILED':
+        return 'danger';
+      case 'RUNNING':
+        return 'primary';
+      default:
+        return 'neutral';
+    }
+  }
+
+  calculateDuration(startTime: string, endTime: string): string {
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const durationMs = end.getTime() - start.getTime();
+    const seconds = Math.floor(durationMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
+  }
+
+  async testRun() {
+    if (!this.flowId) return;
+    try {
+      const execution = await import('../../api').then((m) =>
+        m.triggerFlowExecution(this.flowId!)
+      );
+      // Navigate to execution view
+      window.location.href = `/console/flows/executions/${execution.id}`;
+    } catch (error) {
+      console.error('Failed to trigger flow execution:', error);
+      alert('Failed to trigger flow execution');
+    }
   }
 
   renderPresets() {
