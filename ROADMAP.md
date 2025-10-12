@@ -43,6 +43,28 @@
 - [x] Hybrid search combining vector and metadata
 - [x] Batch indexing mechanism
 
+### MCP Server with Dynamic Tool Filtering
+- [x] **Phase 1A: Default Tools with Dynamic Filtering** ([PRELOOP_ARCHITECTURE.md](PRELOOP_ARCHITECTURE.md))
+    - [x] Implement `DynamicFastMCP` extending FastMCP for per-request tool filtering
+    - [x] Register 6 default tools (get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance)
+    - [x] Implement conditional tool visibility based on tracker presence
+    - [x] Integrate StreamableHTTP transport with JWT authentication
+    - [x] Use ContextVar for async-safe user context propagation
+    - [x] Mount MCP server at `/mcp/v1` with lifespan management
+- [ ] **Phase 1B: External MCP Servers & Tool Proxying** (Future)
+    - [ ] Add support for user-configured external MCP servers
+    - [ ] Implement MCP client pool for external server connections
+    - [ ] Implement tool discovery and caching from external servers
+    - [ ] Enable proxied tool execution
+- [ ] **Phase 2: Approval Workflow** (Future)
+    - [ ] Implement human-in-the-loop approval for tool execution
+    - [ ] NATS integration for approval requests
+    - [ ] Slack/Mattermost integrations for notifications
+- [ ] **Phase 3: Tools UI** (Future)
+    - [ ] Build UI for tool management
+    - [ ] MCP server management interface
+    - [ ] Approval dashboard
+
 
 ### Event-Driven Agentic Flows
 

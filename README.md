@@ -14,7 +14,7 @@ SpaceBridge.io drives your product using AI. It ingests issues, comments, docume
 - Evaluation of compliance metrics and recommendations for improvement
 - Event Driven Agentic Flows triggered by issue tracker events, with real-time monitoring.
 - A comprehensive Web UI for managing trackers, projects, and flows.
-- MCP server & RESTful API.
+- MCP server with dynamic tool filtering based on tracker configuration & RESTful API.
 
 ## Supported Issue Trackers
 
@@ -229,9 +229,11 @@ SpaceBridge provides a RESTful API with the following key endpoints:
 
 ### Using MCP Tools via API
 
-The SpaceBridge API now includes integrated MCP tool endpoints, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
+The SpaceBridge API now includes integrated MCP tool endpoints with dynamic tool filtering, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
 
 **Authentication:** All MCP endpoints use the same Bearer Token authentication as the rest of the API.
+
+**Dynamic Tool Visibility:** MCP tools are only visible when your account has one or more trackers configured. This ensures tools have the necessary context to operate effectively. If you connect with an account that has no trackers, you will see an empty tool list.
 
 **Connecting with Claude Code:**
 
@@ -245,13 +247,13 @@ You can connect Claude Code directly to your SpaceBridge instance using the `cla
       --transport http \
       --header "Authorization: Bearer YOUR_API_KEY" \
       spacebridge \
-      https://YOUR_SPACEBRIDGE_URL/api/v1/mcp
+      https://YOUR_SPACEBRIDGE_URL/mcp/v1
     ```
 
     - `--transport http`: Specifies that the server uses the HTTP transport.
     - `--header "Authorization: Bearer YOUR_API_KEY"`: Provides the necessary authentication header for all requests.
     - `spacebridge`: This is the name you will use to refer to the server (e.g., `@spacebridge get_issue ...`).
-    - `https://YOUR_SPACEBRIDGE_URL/api/v1/mcp`: This is the base URL for the SpaceBridge MCP endpoints.
+    - `https://YOUR_SPACEBRIDGE_URL/mcp/v1`: This is the base URL for the SpaceBridge MCP endpoints.
 
 **Example Workflow (using `curl`):**
 

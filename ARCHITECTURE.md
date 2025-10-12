@@ -312,11 +312,32 @@ SpaceBridge implements a RESTful HTTP API using FastAPI, which provides:
 - Middleware for authentication, logging, etc.
 
 ### MCP Implementation
-The MCP server is implemented directly within the FastAPI application. This provides several advantages:
-- **HTTP Transport:** Natively supports HTTP-based MCP clients, enabling secure remote access.
+The MCP server is implemented directly within the FastAPI application using a custom extension of FastMCP. This provides several advantages:
+- **HTTP Transport:** Natively supports HTTP-based MCP clients via StreamableHTTP, enabling secure remote access.
 - **Unified Authentication:** Leverages the same JWT authentication as the rest of the API.
 - **Code Reusability:** Directly calls internal services and CRUD operations, reducing code duplication.
 - **Scalability:** Benefits from the same deployment and scaling infrastructure as the main API.
+
+#### Dynamic Tool Filtering (Phase 1A)
+The MCP server implements per-user dynamic tool filtering using `DynamicFastMCP`, a custom subclass of FastMCP:
+
+**Implementation Details:**
+- **`DynamicFastMCP`** (`spacebridge/services/dynamic_fastmcp.py`): Extends FastMCP and overrides `_list_tools()` and `_mcp_call_tool()` methods
+- **Tool Visibility:** Default tools (get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance) are only visible when the authenticated account has one or more trackers configured
+- **User Context Propagation:** Uses Python's `ContextVar` for async-safe user context storage across request boundaries
+- **Authentication:** `SpaceBridgeBearerAuthBackend` validates JWT tokens and injects user context into the request scope
+- **Middleware:** `UserContextMiddleware` extracts authenticated user info and stores it in a ContextVar for access during tool listing and execution
+- **StreamableHTTP Transport:** Uses FastMCP's proven `http_app(transport="streamable-http")` implementation for bidirectional streaming
+- **Endpoint:** Mounted at `/mcp/v1` with full authentication and lifespan management
+
+**Tool Registration:**
+All default tools are registered in `spacebridge/services/initialize_mcp.py` using FastMCP's `@mcp.tool()` decorator, then filtered at runtime based on user context.
+
+**Benefits:**
+- Zero performance overhead for tool registration (happens once at startup)
+- Dynamic filtering happens only during tool list requests
+- Full compatibility with FastMCP's StreamableHTTP implementation
+- Backward compatible with existing authentication infrastructure
 
 ### Language and Framework
 Python is chosen as the primary language due to its strong ecosystem for machine learning and data processing, which is essential for similarity search and embedding generation. FastAPI is used for the REST API due to its performance, type safety, and automatic OpenAPI documentation generation.
