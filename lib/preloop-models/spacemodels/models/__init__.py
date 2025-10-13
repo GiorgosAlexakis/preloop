@@ -21,6 +21,8 @@ from .plan import Plan, Subscription, MonthlyUsage
 from .issue_relationship import IssueRelationship
 from .issue_set import IssueSet
 from .tool_configuration import ToolConfiguration
+from .mcp_server import MCPServer
+from .mcp_tool import MCPTool
 
 __all__ = [
     "Base",
@@ -49,4 +51,6 @@ __all__ = [
     "IssueRelationship",
     "IssueSet",
     "ToolConfiguration",
+    "MCPServer",
+    "MCPTool",
 ]

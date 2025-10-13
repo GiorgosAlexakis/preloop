@@ -12,6 +12,16 @@ from .tool_configuration import (
     ToolConfigurationUpdate,
     ToolConfigurationResponse,
 )
+from .mcp_server import (
+    MCPServerCreate,
+    MCPServerUpdate,
+    MCPServerResponse,
+)
+from .mcp_tool import (
+    MCPToolCreate,
+    MCPToolUpdate,
+    MCPToolResponse,
+)
 
 __all__ = [
     "FlowCreate",
@@ -32,4 +42,10 @@ __all__ = [
     "ToolConfigurationCreate",
     "ToolConfigurationUpdate",
     "ToolConfigurationResponse",
+    "MCPServerCreate",
+    "MCPServerUpdate",
+    "MCPServerResponse",
+    "MCPToolCreate",
+    "MCPToolUpdate",
+    "MCPToolResponse",
 ]
