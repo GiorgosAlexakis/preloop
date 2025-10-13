@@ -20,6 +20,7 @@ from .issue_compliance_result import IssueComplianceResult
 from .plan import Plan, Subscription, MonthlyUsage
 from .issue_relationship import IssueRelationship
 from .issue_set import IssueSet
+from .tool_configuration import ToolConfiguration
 
 __all__ = [
     "Base",
@@ -47,4 +48,5 @@ __all__ = [
     "MonthlyUsage",
     "IssueRelationship",
     "IssueSet",
+    "ToolConfiguration",
 ]

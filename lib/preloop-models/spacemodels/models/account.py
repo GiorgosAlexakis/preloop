@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from .ai_model import AIModel
     from .plan import Subscription
     from .flow import Flow
+    from .tool_configuration import ToolConfiguration
 
 
 class Account(Base):
@@ -83,6 +84,9 @@ class Account(Base):
         back_populates="account",
         cascade="all, delete-orphan",
         foreign_keys="[Flow.account_id]",
+    )
+    tool_configurations: Mapped[List["ToolConfiguration"]] = relationship(
+        "ToolConfiguration", back_populates="account", cascade="all, delete-orphan"
     )
 
     # Many-to-many relationship helper for organizational roles
