@@ -2,16 +2,20 @@
 
 This extends FastMCP to support dynamic tool lists based on authenticated user context
 while keeping FastMCP's proven StreamableHTTP transport implementation.
+
+Phase 1B: Added support for proxied tools from external MCP servers.
 """
 
 import logging
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 from mcp import types
 
 from spacebridge.services.dynamic_mcp_server import UserContext, has_tracker
+from spacebridge.services.mcp_client_pool import get_mcp_client_pool
+from spacebridge.services.mcp_tool_discovery import get_all_enabled_proxied_tools
 from spacemodels.db.session import get_db_session as get_db
 
 logger = logging.getLogger(__name__)
@@ -31,6 +35,8 @@ class DynamicFastMCP(FastMCP):
         self._user_context_provider: Optional[Callable[[], Optional[UserContext]]] = (
             None
         )
+        # Track proxied tool -> server mapping for routing
+        self._proxied_tool_servers: Dict[str, str] = {}
         logger.info("DynamicFastMCP initialized")
 
     def set_user_context_provider(self, provider: Callable[[], Optional[UserContext]]):
@@ -52,12 +58,11 @@ class DynamicFastMCP(FastMCP):
         of available tools. We filter the full tool list based on the current
         user's context.
 
+        Phase 1B: Now includes proxied tools from external MCP servers.
+
         Returns:
             List of tools available to the current user
         """
-        # Get full tool list from parent
-        all_tools = await super()._list_tools()
-
         # Get current user context
         user_context = self._get_current_user_context()
 
@@ -69,22 +74,56 @@ class DynamicFastMCP(FastMCP):
             f"Filtering tools for user {user_context.username}, has_tracker={user_context.has_tracker}"
         )
 
-        # Filter based on user configuration
-        if not user_context.has_tracker:
-            logger.info(
-                f"User {user_context.username} has no trackers, returning empty tool list"
-            )
-            return []
+        # Start with empty list
+        available_tools = []
 
-        # If user has tracker, return all tools
-        # (Phase 1A: simple all-or-nothing based on tracker presence)
+        # Add default tools if user has tracker
+        if user_context.has_tracker:
+            default_tools = await super()._list_tools()
+            available_tools.extend(default_tools)
+            logger.info(f"Added {len(default_tools)} default tools")
+
+        # Add proxied tools from external MCP servers (Phase 1B)
+        try:
+            db = next(get_db())
+            try:
+                proxied_tools_data = await get_all_enabled_proxied_tools(
+                    user_context.account_id, db
+                )
+
+                # Clear previous proxied tool mappings
+                # (only keep mappings for current user's tools)
+                self._proxied_tool_servers.clear()
+
+                # Convert MCPTool records to FastMCP Tool objects
+                for mcp_server, mcp_tool in proxied_tools_data:
+                    # Create Tool object from cached schema
+                    tool = Tool(
+                        name=mcp_tool.name,
+                        description=mcp_tool.description or "",
+                        parameters=mcp_tool.input_schema,
+                    )
+                    available_tools.append(tool)
+
+                    # Track which server this tool belongs to
+                    self._proxied_tool_servers[mcp_tool.name] = str(mcp_server.id)
+
+                logger.info(f"Added {len(proxied_tools_data)} proxied tools")
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"Error loading proxied tools: {e}", exc_info=True)
+            # Continue with just default tools
+
         logger.info(
-            f"Returning {len(all_tools)} tools for user {user_context.username}"
+            f"Returning {len(available_tools)} total tools for user {user_context.username}"
         )
-        for tool in all_tools:
+        for tool in available_tools:
             logger.info(f"  - {tool.name}")
 
-        return all_tools
+        return available_tools
 
     def _get_current_user_context(self) -> Optional[UserContext]:
         """Get the current user context for this request.
@@ -113,10 +152,13 @@ class DynamicFastMCP(FastMCP):
     async def _mcp_call_tool(
         self, name: str, arguments: dict | None
     ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-        """Override tool execution to check user access.
+        """Override tool execution to check user access and route appropriately.
 
         This is called by FastMCP's protocol handler before executing a tool.
-        We check if the user has access to the requested tool.
+        We check if the user has access to the requested tool, then route
+        to either default tool handlers or external MCP servers.
+
+        Phase 1B: Added routing to external MCP servers for proxied tools.
 
         Args:
             name: Tool name
@@ -147,8 +189,61 @@ class DynamicFastMCP(FastMCP):
                 )
             ]
 
-        # User has access, call parent implementation
-        logger.info(f"Executing tool {name} for user {user_context.username}")
+        # Check if this is a proxied tool (Phase 1B)
+        if name in self._proxied_tool_servers:
+            # Route to external MCP server
+            server_id = self._proxied_tool_servers[name]
+            logger.info(
+                f"Routing tool {name} to external MCP server {server_id} "
+                f"for user {user_context.username}"
+            )
+
+            try:
+                # Get server configuration from database
+                db = next(get_db())
+                try:
+                    from spacemodels.models.mcp_server import MCPServer
+
+                    mcp_server = (
+                        db.query(MCPServer).filter(MCPServer.id == server_id).first()
+                    )
+
+                    if not mcp_server:
+                        return [
+                            types.TextContent(
+                                type="text",
+                                text=f"Error: MCP server {server_id} not found",
+                            )
+                        ]
+
+                    # Get client from pool
+                    client_pool = get_mcp_client_pool()
+                    client = await client_pool.get_client(
+                        server_id=server_id,
+                        url=mcp_server.url,
+                        auth_type=mcp_server.auth_type,
+                        auth_config=mcp_server.auth_config,
+                        transport=mcp_server.transport,
+                    )
+
+                    # Call tool on external server
+                    result = await client.call_tool(name, arguments or {})
+                    logger.info(f"Tool {name} executed successfully on external server")
+                    return result
+
+                finally:
+                    db.close()
+
+            except Exception as e:
+                logger.error(f"Error executing proxied tool {name}: {e}", exc_info=True)
+                return [
+                    types.TextContent(
+                        type="text", text=f"Error executing tool: {str(e)}"
+                    )
+                ]
+
+        # Default tool - call parent implementation
+        logger.info(f"Executing default tool {name} for user {user_context.username}")
         return await super()._mcp_call_tool(name, arguments)
 
 

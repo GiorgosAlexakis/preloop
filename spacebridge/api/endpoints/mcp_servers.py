@@ -1,0 +1,411 @@
+"""MCP Servers router for managing external MCP server connections."""
+
+import logging
+from typing import Dict, List
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from spacebridge.api.auth.jwt import get_current_active_user
+from spacebridge.schemas.auth import UserResponse
+from spacebridge.services.mcp_tool_discovery import (
+    get_cached_tools_for_server,
+    scan_mcp_server_tools,
+)
+from spacemodels.db.session import get_db_session
+from spacemodels.models.account import Account
+from spacemodels.models.mcp_server import MCPServer
+from spacemodels.schemas.mcp_server import (
+    MCPServerCreate,
+    MCPServerResponse,
+    MCPServerUpdate,
+)
+from spacemodels.schemas.mcp_tool import MCPToolResponse
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+def get_account(db: Session, current_user: UserResponse) -> Account:
+    """Fetch the account for the current user, raising an exception if not found.
+
+    Args:
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        Account object
+
+    Raises:
+        HTTPException: If account not found
+    """
+    account = (
+        db.query(Account).filter(Account.username == current_user.username).first()
+    )
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
+        )
+    return account
+
+
+@router.post("/mcp-servers", status_code=status.HTTP_201_CREATED)
+async def create_mcp_server(
+    server_data: MCPServerCreate,
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> MCPServerResponse:
+    """Create a new external MCP server configuration.
+
+    Args:
+        server_data: MCP server configuration data
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Created MCP server
+
+    Raises:
+        HTTPException: If creation fails
+    """
+    logger.info(f"User {current_user.username} creating MCP server: {server_data.name}")
+
+    # Get user's account
+    account = get_account(db, current_user)
+
+    # Check if server with same name already exists for this account
+    existing_server = (
+        db.query(MCPServer)
+        .filter(
+            MCPServer.account_id == account.id,
+            MCPServer.name == server_data.name,
+        )
+        .first()
+    )
+
+    if existing_server:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"MCP server with name '{server_data.name}' already exists",
+        )
+
+    # Create new MCP server
+    try:
+        new_server = MCPServer(
+            account_id=str(account.id),
+            name=server_data.name,
+            url=server_data.url,
+            transport=server_data.transport or "http-streaming",
+            auth_type=server_data.auth_type or "none",
+            auth_config=server_data.auth_config,
+            status=server_data.status or "active",
+        )
+
+        db.add(new_server)
+        db.commit()
+        db.refresh(new_server)
+
+        logger.info(
+            f"Created MCP server {new_server.id} for user {current_user.username}"
+        )
+
+        return MCPServerResponse.model_validate(new_server)
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating MCP server: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating MCP server: {str(e)}",
+        )
+
+
+@router.get("/mcp-servers", response_model=List[MCPServerResponse])
+async def list_mcp_servers(
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> List[MCPServerResponse]:
+    """List all MCP servers for the current user.
+
+    Args:
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        List of MCP servers
+    """
+    account = get_account(db, current_user)
+
+    servers = db.query(MCPServer).filter(MCPServer.account_id == account.id).all()
+
+    return [MCPServerResponse.model_validate(server) for server in servers]
+
+
+@router.get("/mcp-servers/{server_id}", response_model=MCPServerResponse)
+async def get_mcp_server(
+    server_id: UUID,
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> MCPServerResponse:
+    """Get a specific MCP server by ID.
+
+    Args:
+        server_id: MCP server ID
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        MCP server details
+
+    Raises:
+        HTTPException: If server not found or access denied
+    """
+    account = get_account(db, current_user)
+
+    server = (
+        db.query(MCPServer)
+        .filter(
+            MCPServer.id == server_id,
+            MCPServer.account_id == account.id,
+        )
+        .first()
+    )
+
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="MCP server not found or access denied",
+        )
+
+    return MCPServerResponse.model_validate(server)
+
+
+@router.put("/mcp-servers/{server_id}", response_model=MCPServerResponse)
+async def update_mcp_server(
+    server_id: UUID,
+    server_update: MCPServerUpdate,
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> MCPServerResponse:
+    """Update an existing MCP server configuration.
+
+    Args:
+        server_id: MCP server ID
+        server_update: Updated server data
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Updated MCP server
+
+    Raises:
+        HTTPException: If server not found or update fails
+    """
+    account = get_account(db, current_user)
+
+    server = (
+        db.query(MCPServer)
+        .filter(
+            MCPServer.id == server_id,
+            MCPServer.account_id == account.id,
+        )
+        .first()
+    )
+
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="MCP server not found or access denied",
+        )
+
+    # Update fields
+    update_data = server_update.model_dump(exclude_unset=True)
+
+    try:
+        for field, value in update_data.items():
+            setattr(server, field, value)
+
+        db.commit()
+        db.refresh(server)
+
+        logger.info(f"Updated MCP server {server_id} for user {current_user.username}")
+
+        return MCPServerResponse.model_validate(server)
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating MCP server {server_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating MCP server: {str(e)}",
+        )
+
+
+@router.delete("/mcp-servers/{server_id}", status_code=status.HTTP_200_OK)
+async def delete_mcp_server(
+    server_id: UUID,
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> Dict[str, str]:
+    """Delete an MCP server.
+
+    Args:
+        server_id: MCP server ID
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If server not found or deletion fails
+    """
+    account = get_account(db, current_user)
+
+    server = (
+        db.query(MCPServer)
+        .filter(
+            MCPServer.id == server_id,
+            MCPServer.account_id == account.id,
+        )
+        .first()
+    )
+
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="MCP server not found or access denied",
+        )
+
+    try:
+        db.delete(server)
+        db.commit()
+
+        logger.info(f"Deleted MCP server {server_id} for user {current_user.username}")
+
+        return {"message": "MCP server deleted successfully"}
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting MCP server {server_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting MCP server: {str(e)}",
+        )
+
+
+@router.post("/mcp-servers/{server_id}/scan", status_code=status.HTTP_200_OK)
+async def scan_mcp_server(
+    server_id: UUID,
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> Dict[str, str]:
+    """Trigger a tool discovery scan for an MCP server.
+
+    Args:
+        server_id: MCP server ID
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Success message with tool count
+
+    Raises:
+        HTTPException: If server not found or scan fails
+    """
+    account = get_account(db, current_user)
+
+    server = (
+        db.query(MCPServer)
+        .filter(
+            MCPServer.id == server_id,
+            MCPServer.account_id == account.id,
+        )
+        .first()
+    )
+
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="MCP server not found or access denied",
+        )
+
+    try:
+        logger.info(
+            f"User {current_user.username} triggering scan for MCP server {server_id}"
+        )
+
+        tools = await scan_mcp_server_tools(server_id, db)
+
+        logger.info(
+            f"Scan complete for MCP server {server_id}: {len(tools)} tools discovered"
+        )
+
+        return {
+            "message": f"Scan completed successfully. Discovered {len(tools)} tools.",
+            "tool_count": str(len(tools)),
+        }
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Error scanning MCP server {server_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error scanning MCP server: {str(e)}",
+        )
+
+
+@router.get("/mcp-servers/{server_id}/tools", response_model=List[MCPToolResponse])
+async def list_mcp_server_tools(
+    server_id: UUID,
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> List[MCPToolResponse]:
+    """List discovered tools for an MCP server.
+
+    Args:
+        server_id: MCP server ID
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        List of discovered tools
+
+    Raises:
+        HTTPException: If server not found or access denied
+    """
+    account = get_account(db, current_user)
+
+    server = (
+        db.query(MCPServer)
+        .filter(
+            MCPServer.id == server_id,
+            MCPServer.account_id == account.id,
+        )
+        .first()
+    )
+
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="MCP server not found or access denied",
+        )
+
+    try:
+        tools = await get_cached_tools_for_server(server_id, db)
+
+        return [MCPToolResponse.model_validate(tool) for tool in tools]
+
+    except Exception as e:
+        logger.error(
+            f"Error listing tools for MCP server {server_id}: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing tools: {str(e)}",
+        )

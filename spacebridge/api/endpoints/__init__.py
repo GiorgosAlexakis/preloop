@@ -9,6 +9,7 @@ __all__ = [
     "health",
     "issues",
     "issue_compliance",
+    "mcp_servers",
     "organizations",
     "projects",
     "search",  # Added new search endpoint

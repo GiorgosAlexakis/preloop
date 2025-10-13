@@ -774,6 +774,238 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/mcp-servers:
+    get:
+      tags:
+      - MCP Servers
+      summary: List Mcp Servers
+      description: "List all MCP servers for the current user.\n\nArgs:\n    current_user:\
+        \ Current authenticated user\n    db: Database session\n\nReturns:\n    List\
+        \ of MCP servers"
+      operationId: list_mcp_servers_api_v1_mcp_servers_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/MCPServerResponse'
+                type: array
+                title: Response List Mcp Servers Api V1 Mcp Servers Get
+      security:
+      - bearerAuth: []
+    post:
+      tags:
+      - MCP Servers
+      summary: Create Mcp Server
+      description: "Create a new external MCP server configuration.\n\nArgs:\n   \
+        \ server_data: MCP server configuration data\n    current_user: Current authenticated\
+        \ user\n    db: Database session\n\nReturns:\n    Created MCP server\n\nRaises:\n\
+        \    HTTPException: If creation fails"
+      operationId: create_mcp_server_api_v1_mcp_servers_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MCPServerCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPServerResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/mcp-servers/{server_id}:
+    get:
+      tags:
+      - MCP Servers
+      summary: Get Mcp Server
+      description: "Get a specific MCP server by ID.\n\nArgs:\n    server_id: MCP\
+        \ server ID\n    current_user: Current authenticated user\n    db: Database\
+        \ session\n\nReturns:\n    MCP server details\n\nRaises:\n    HTTPException:\
+        \ If server not found or access denied"
+      operationId: get_mcp_server_api_v1_mcp_servers__server_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: server_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Server Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPServerResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - MCP Servers
+      summary: Update Mcp Server
+      description: "Update an existing MCP server configuration.\n\nArgs:\n    server_id:\
+        \ MCP server ID\n    server_update: Updated server data\n    current_user:\
+        \ Current authenticated user\n    db: Database session\n\nReturns:\n    Updated\
+        \ MCP server\n\nRaises:\n    HTTPException: If server not found or update\
+        \ fails"
+      operationId: update_mcp_server_api_v1_mcp_servers__server_id__put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: server_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Server Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MCPServerUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPServerResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - MCP Servers
+      summary: Delete Mcp Server
+      description: "Delete an MCP server.\n\nArgs:\n    server_id: MCP server ID\n\
+        \    current_user: Current authenticated user\n    db: Database session\n\n\
+        Returns:\n    Success message\n\nRaises:\n    HTTPException: If server not\
+        \ found or deletion fails"
+      operationId: delete_mcp_server_api_v1_mcp_servers__server_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: server_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Server Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Delete Mcp Server Api V1 Mcp Servers  Server Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/mcp-servers/{server_id}/scan:
+    post:
+      tags:
+      - MCP Servers
+      summary: Scan Mcp Server
+      description: "Trigger a tool discovery scan for an MCP server.\n\nArgs:\n  \
+        \  server_id: MCP server ID\n    current_user: Current authenticated user\n\
+        \    db: Database session\n\nReturns:\n    Success message with tool count\n\
+        \nRaises:\n    HTTPException: If server not found or scan fails"
+      operationId: scan_mcp_server_api_v1_mcp_servers__server_id__scan_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: server_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Server Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Scan Mcp Server Api V1 Mcp Servers  Server Id  Scan
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/mcp-servers/{server_id}/tools:
+    get:
+      tags:
+      - MCP Servers
+      summary: List Mcp Server Tools
+      description: "List discovered tools for an MCP server.\n\nArgs:\n    server_id:\
+        \ MCP server ID\n    current_user: Current authenticated user\n    db: Database\
+        \ session\n\nReturns:\n    List of discovered tools\n\nRaises:\n    HTTPException:\
+        \ If server not found or access denied"
+      operationId: list_mcp_server_tools_api_v1_mcp_servers__server_id__tools_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: server_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Server Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MCPToolResponse'
+                title: Response List Mcp Server Tools Api V1 Mcp Servers  Server Id  Tools
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/issue-dependencies/detect:
     post:
       tags:
@@ -5075,6 +5307,214 @@ components:
       - password
       title: LoginRequest
       description: Model for login requests.
+    MCPServerCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        url:
+          type: string
+          title: Url
+        transport:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Transport
+          description: 'Transport protocol (default: http-streaming)'
+          default: http-streaming
+        auth_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Auth Type
+          description: 'Authentication type: ''none'', ''bearer'', ''api_key'''
+          default: none
+        auth_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Auth Config
+          description: JSON configuration for authentication
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+          description: 'Server status: ''active'', ''error'', ''disabled'''
+          default: active
+        account_id:
+          type: string
+          title: Account Id
+      type: object
+      required:
+      - name
+      - url
+      - account_id
+      title: MCPServerCreate
+      description: Schema for creating an MCP server.
+    MCPServerResponse:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+          description: User-defined name for this MCP server
+        url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Url
+          description: URL of the external MCP server
+        transport:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Transport
+          description: 'Transport protocol (default: http-streaming)'
+          default: http-streaming
+        auth_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Auth Type
+          description: 'Authentication type: ''none'', ''bearer'', ''api_key'''
+          default: none
+        auth_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Auth Config
+          description: JSON configuration for authentication
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+          description: 'Server status: ''active'', ''error'', ''disabled'''
+          default: active
+        id:
+          type: string
+          title: Id
+        account_id:
+          type: string
+          title: Account Id
+        last_scan_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Scan At
+        last_error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Error
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - account_id
+      - created_at
+      - updated_at
+      title: MCPServerResponse
+      description: Schema for MCP server response.
+    MCPServerUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+          description: User-defined name for this MCP server
+        url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Url
+          description: URL of the external MCP server
+        transport:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Transport
+          description: 'Transport protocol (default: http-streaming)'
+          default: http-streaming
+        auth_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Auth Type
+          description: 'Authentication type: ''none'', ''bearer'', ''api_key'''
+          default: none
+        auth_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Auth Config
+          description: JSON configuration for authentication
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+          description: 'Server status: ''active'', ''error'', ''disabled'''
+          default: active
+      type: object
+      title: MCPServerUpdate
+      description: Schema for updating an MCP server.
+    MCPToolResponse:
+      properties:
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Tool description
+        input_schema:
+          additionalProperties: true
+          type: object
+          title: Input Schema
+        id:
+          type: string
+          title: Id
+        mcp_server_id:
+          type: string
+          title: Mcp Server Id
+        discovered_at:
+          type: string
+          title: Discovered At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - name
+      - input_schema
+      - id
+      - mcp_server_id
+      - discovered_at
+      - created_at
+      - updated_at
+      title: MCPToolResponse
+      description: Schema for MCP tool response.
     OnboardingRequest:
       properties:
         email:

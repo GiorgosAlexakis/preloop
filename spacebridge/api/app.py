@@ -31,6 +31,7 @@ from spacebridge.api.endpoints import (
     issues,
     issue_compliance,
     issue_dependencies,
+    mcp_servers,
     organizations,
     projects,
     search as search_router,
@@ -521,6 +522,12 @@ def create_app() -> FastAPI:
         trackers.router,
         prefix="/api/v1",
         tags=["Trackers"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        mcp_servers.router,
+        prefix="/api/v1",
+        tags=["MCP Servers"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
