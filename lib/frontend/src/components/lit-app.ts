@@ -15,6 +15,7 @@ import '../views/public/static-view.ts';
 import '../views/authed/console-shell.ts';
 import '../views/authed/dashboard-view.ts';
 import '../views/authed/trackers-view.ts';
+import '../views/authed/tools-view.ts';
 import '../views/authed/issues-view.ts';
 import '../views/authed/issues-compliance-view.ts';
 import '../views/authed/issues-dependencies-view.ts';
@@ -33,6 +34,7 @@ import '../views/authed/flows-view.ts';
 import '../views/authed/flow-view.ts';
 import '../views/authed/flow-executions-view.ts';
 import '../views/authed/flow-execution-view.ts';
+import '../views/authed/approval-view.ts';
 import './app-header.ts';
 import './app-footer.ts';
 
@@ -98,6 +100,7 @@ export class LitApp extends LitElement {
         children: [
           { path: '', component: 'dashboard-view' },
           { path: 'trackers', component: 'trackers-view' },
+          { path: 'tools', component: 'tools-view' },
           {
             path: 'issues',
             children: [
@@ -130,6 +133,7 @@ export class LitApp extends LitElement {
           { path: 'settings/appearance', component: 'appearance-view' },
           { path: 'settings/subscription', component: 'subscription-view' },
           { path: 'pricing', component: 'pricing-view' },
+          { path: 'approval/:requestId', component: 'approval-view' },
         ],
       },
     ]);
