@@ -20,9 +20,10 @@ from .issue_compliance_result import IssueComplianceResult
 from .plan import Plan, Subscription, MonthlyUsage
 from .issue_relationship import IssueRelationship
 from .issue_set import IssueSet
-from .tool_configuration import ToolConfiguration
+from .tool_configuration import ToolConfiguration, ApprovalPolicy
 from .mcp_server import MCPServer
 from .mcp_tool import MCPTool
+from .approval_request import ApprovalRequest, ApprovalRequestStatus
 
 __all__ = [
     "Base",
@@ -51,6 +52,9 @@ __all__ = [
     "IssueRelationship",
     "IssueSet",
     "ToolConfiguration",
+    "ApprovalPolicy",
     "MCPServer",
     "MCPTool",
+    "ApprovalRequest",
+    "ApprovalRequestStatus",
 ]

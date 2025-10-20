@@ -1,8 +1,10 @@
-"""Tool configuration model for managing MCP tool settings."""
+"""Tool configuration model for managing tool settings and approval policies."""
 
+import uuid
 from typing import TYPE_CHECKING, Dict, Optional
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ForeignKey, String, UniqueConstraint, Integer
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Boolean, JSON
 
@@ -10,65 +12,93 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .account import Account
+    from .mcp_server import MCPServer
+    from .approval_request import ApprovalRequest
 
 
 class ToolConfiguration(Base):
     """Tool configuration model for managing per-account tool settings.
 
-    This model controls which MCP tools are available to each account and
-    their approval policies. It applies to both default (built-in) tools
-    and proxied tools from external MCP servers.
-
-    For Phase 1A, only default tools are supported. External tool support
-    will be added in Phase 1B.
+    This model controls which tools are available to each account and
+    their approval policies. It supports:
+    - Built-in/default tools (always available)
+    - External MCP server tools
+    - Future HTTP tools
 
     Attributes:
         id: Unique identifier for the configuration.
         account_id: The account this configuration belongs to.
-        tool_identifier: Unique identifier for the tool.
-            Format: "default:tool_name" for built-in tools
-                    "mcp_server_id:tool_name" for proxied tools (Phase 1B)
-        is_default_tool: True for built-in tools, False for proxied tools.
-        enabled: Whether the tool is enabled for this account.
-        preloop_policy: Approval policy for the tool (Phase 2).
-            Values: "none", "always", "per_session", "parameter_based"
-        approval_config: JSON configuration for approval workflow (Phase 2).
-            Example: {"slack_webhook": "...", "approvers": [...]}
+        tool_name: Name of the tool.
+        tool_source: Source type ('builtin', 'mcp', 'http').
+        mcp_server_id: Reference to MCP server (if tool_source='mcp').
+        is_enabled: Whether the tool is enabled for this account.
+        requires_approval: Whether the tool requires pre-execution approval ("preloop").
+        approval_policy_id: Reference to approval policy (if requires_approval=True).
+        tool_description: Description of what the tool does.
+        tool_schema: JSON schema for tool parameters.
+        custom_config: Additional configuration options.
     """
 
     __tablename__ = "tool_configuration"
 
-    # Tool identification
-    tool_identifier: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        index=True,
-        comment="Format: 'default:tool_name' or 'mcp_server_id:tool_name'",
-    )
-    is_default_tool: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-        comment="True for built-in tools, False for proxied tools",
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
-    # Enablement
-    enabled: Mapped[bool] = mapped_column(
+    # Tool identification
+    tool_name: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, comment="Name of the tool"
+    )
+    tool_source: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="builtin",
+        index=True,
+        comment="Source type: 'builtin', 'mcp', 'http'",
+    )
+
+    # For external tools, reference to the source
+    mcp_server_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("mcp_server.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="Reference to MCP server (if tool_source='mcp')",
+    )
+    http_endpoint_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="Reference to HTTP endpoint (future: if tool_source='http')",
+    )
+
+    # Configuration
+    is_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, comment="Whether the tool is enabled"
     )
-
-    # Approval workflow (Phase 2 - nullable for now)
-    preloop_policy: Mapped[Optional[str]] = mapped_column(
-        String(50),
-        nullable=True,
-        default="none",
-        comment="Approval policy: 'none', 'always', 'per_session', 'parameter_based'",
+    requires_approval: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Whether the tool requires pre-execution approval (preloop)",
     )
-    approval_config: Mapped[Optional[Dict]] = mapped_column(
-        JSON,
+
+    # Reference to reusable approval policy
+    approval_policy_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("approval_policy.id", ondelete="SET NULL"),
         nullable=True,
-        default=dict,
-        comment="JSON configuration for approval workflow",
+        index=True,
+        comment="Reference to approval policy (if requires_approval=True)",
+    )
+
+    # Metadata
+    tool_description: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, comment="Description of what the tool does"
+    )
+    tool_schema: Mapped[Optional[Dict]] = mapped_column(
+        JSON, nullable=True, comment="JSON schema for tool parameters"
+    )
+    custom_config: Mapped[Optional[Dict]] = mapped_column(
+        JSON, nullable=True, comment="Additional configuration options"
     )
 
     # Foreign keys
@@ -83,13 +113,139 @@ class ToolConfiguration(Base):
     account: Mapped["Account"] = relationship(
         "Account", back_populates="tool_configurations"
     )
+    mcp_server: Mapped[Optional["MCPServer"]] = relationship(
+        "MCPServer", back_populates="tool_configurations"
+    )
+    approval_policy: Mapped[Optional["ApprovalPolicy"]] = relationship(
+        "ApprovalPolicy",
+        back_populates="tool_configurations",
+    )
+    approval_requests: Mapped[list["ApprovalRequest"]] = relationship(
+        "ApprovalRequest",
+        back_populates="tool_configuration",
+        cascade="all, delete-orphan",
+    )
 
-    # Unique constraint: one configuration per tool per account
+    # Unique constraint: one configuration per tool+source per account
     __table_args__ = (
-        UniqueConstraint("account_id", "tool_identifier", name="uq_account_tool"),
+        UniqueConstraint(
+            "account_id",
+            "tool_name",
+            "tool_source",
+            "mcp_server_id",
+            name="uq_account_tool_source",
+        ),
     )
 
     def __repr__(self) -> str:
         """Return string representation of the configuration."""
-        status = "enabled" if self.enabled else "disabled"
-        return f"<ToolConfiguration {self.tool_identifier} ({status}) for account {self.account_id}>"
+        status = "enabled" if self.is_enabled else "disabled"
+        preloop = " (preloop)" if self.requires_approval else ""
+        return f"<ToolConfiguration {self.tool_name} [{self.tool_source}] ({status}{preloop}) for account {self.account_id}>"
+
+
+class ApprovalPolicy(Base):
+    """Reusable approval policy for tools that require pre-execution approval.
+
+    This model defines how approval requests should be handled for tools
+    with requires_approval=True. Policies are account-scoped and reusable
+    across multiple tool configurations.
+
+    Attributes:
+        id: Unique identifier for the policy.
+        account_id: The account this policy belongs to.
+        name: Human-readable name for the policy.
+        description: Optional description of what this policy does.
+        approval_type: Type of approval mechanism ('slack', 'mattermost', etc.).
+        channel: Slack/Mattermost channel for approval requests.
+        user: Specific user to request approval from.
+        approval_config: Generic configuration for approval mechanism.
+        timeout_seconds: How long to wait for approval before timing out.
+        require_reason: Whether approver must provide a reason.
+    """
+
+    __tablename__ = "approval_policy"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    # Policy identification
+    account_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("account.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="The account this policy belongs to",
+    )
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="Human-readable name for the policy",
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        comment="Optional description of what this policy does",
+    )
+
+    # Approval mechanism
+    approval_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="slack",
+        comment="Type of approval: 'slack', 'mattermost', 'webhook', 'manual'",
+    )
+
+    # Slack/Mattermost configuration
+    channel: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="Channel for approval requests"
+    )
+    user: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="Specific user to request approval from"
+    )
+
+    # Generic approval configuration (for future extensibility)
+    approval_config: Mapped[Optional[Dict]] = mapped_column(
+        JSON, nullable=True, comment="Generic configuration for approval mechanism"
+    )
+
+    # Policy settings
+    timeout_seconds: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        default=300,
+        comment="How long to wait for approval (default: 5 minutes)",
+    )
+    require_reason: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Whether approver must provide a reason",
+    )
+
+    # Relationships
+    account: Mapped["Account"] = relationship("Account")
+    tool_configurations: Mapped[list["ToolConfiguration"]] = relationship(
+        "ToolConfiguration", back_populates="approval_policy"
+    )
+    approval_requests: Mapped[list["ApprovalRequest"]] = relationship(
+        "ApprovalRequest",
+        back_populates="approval_policy",
+        cascade="all, delete-orphan",
+    )
+
+    # Unique constraint: one policy name per account
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "name",
+            name="uq_account_policy_name",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        """Return string representation of the policy."""
+        target = self.channel or self.user or "unknown"
+        return f"<ApprovalPolicy(name={self.name}, type={self.approval_type}, target={target})>"

@@ -13,6 +13,7 @@ from .mixins import TimestampMixin
 if TYPE_CHECKING:
     from .account import Account
     from .mcp_tool import MCPTool
+    from .tool_configuration import ToolConfiguration
 
 
 class MCPServer(Base, TimestampMixin):
@@ -62,6 +63,9 @@ class MCPServer(Base, TimestampMixin):
     # Relationships
     account: Mapped["Account"] = relationship(back_populates="mcp_servers")
     tools: Mapped[List["MCPTool"]] = relationship(
+        back_populates="mcp_server", cascade="all, delete-orphan"
+    )
+    tool_configurations: Mapped[List["ToolConfiguration"]] = relationship(
         back_populates="mcp_server", cascade="all, delete-orphan"
     )
 

@@ -11,6 +11,9 @@ from .tool_configuration import (
     ToolConfigurationCreate,
     ToolConfigurationUpdate,
     ToolConfigurationResponse,
+    ApprovalPolicyCreate,
+    ApprovalPolicyUpdate,
+    ApprovalPolicyResponse,
 )
 from .mcp_server import (
     MCPServerCreate,
@@ -42,6 +45,9 @@ __all__ = [
     "ToolConfigurationCreate",
     "ToolConfigurationUpdate",
     "ToolConfigurationResponse",
+    "ApprovalPolicyCreate",
+    "ApprovalPolicyUpdate",
+    "ApprovalPolicyResponse",
     "MCPServerCreate",
     "MCPServerUpdate",
     "MCPServerResponse",

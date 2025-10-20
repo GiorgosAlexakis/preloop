@@ -2,8 +2,9 @@
 
 from datetime import datetime
 from typing import Any, Dict, Optional
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class MCPServerBase(BaseModel):
@@ -28,11 +29,14 @@ class MCPServerBase(BaseModel):
 
 
 class MCPServerCreate(MCPServerBase):
-    """Schema for creating an MCP server."""
+    """Schema for creating an MCP server.
+
+    Note: account_id is not included here as it's extracted from
+    the authenticated user in the endpoint handler.
+    """
 
     name: str
     url: str
-    account_id: str
 
 
 class MCPServerUpdate(MCPServerBase):
@@ -44,7 +48,7 @@ class MCPServerUpdate(MCPServerBase):
 class MCPServerResponse(MCPServerBase):
     """Schema for MCP server response."""
 
-    id: str
+    id: UUID
     account_id: str
     last_scan_at: Optional[str] = None
     last_error: Optional[str] = None
@@ -52,3 +56,8 @@ class MCPServerResponse(MCPServerBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("id")
+    def serialize_id(self, id: UUID) -> str:
+        """Serialize UUID to string."""
+        return str(id)
