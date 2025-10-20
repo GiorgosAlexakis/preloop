@@ -3,7 +3,7 @@ Tests for new Jira tracker methods (get_issue and get_comments).
 """
 
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from unittest import IsolatedAsyncioTestCase
 from datetime import datetime
 
@@ -21,7 +21,11 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
             "username": "test@example.com",
             "project_key": "TEST",
         }
-        self.tracker = JiraTracker("tracker-1", "api-token", self.connection_details)
+        # Mock the JIRA client to avoid real API calls during initialization
+        with patch("spacesync.trackers.jira.JIRA"):
+            self.tracker = JiraTracker(
+                "tracker-1", "api-token", self.connection_details
+            )
         # Set base_url attribute that is used in URL construction
         self.tracker.base_url = "https://test.atlassian.net"
 
