@@ -67,7 +67,7 @@ async def create_mcp_server(
         Created MCP server
 
     Raises:
-        HTTPException: If creation fails
+        HTTPException: If creation fails or validation fails
     """
     logger.info(f"User {current_user.username} creating MCP server: {server_data.name}")
 
@@ -90,6 +90,29 @@ async def create_mcp_server(
             detail=f"MCP server with name '{server_data.name}' already exists",
         )
 
+    # Validate connection to the MCP server before saving
+    from spacebridge.services.mcp_client_pool import MCPClient
+
+    validation_error = None
+    try:
+        logger.info(f"Validating connection to MCP server at {server_data.url}")
+        test_client = MCPClient(
+            url=server_data.url,
+            auth_type=server_data.auth_type or "none",
+            auth_config=server_data.auth_config,
+            transport=server_data.transport or "http-streaming",
+        )
+
+        # Try to connect and initialize
+        await test_client.connect()
+        logger.info(f"✓ Successfully validated MCP server at {server_data.url}")
+        await test_client.close()
+
+    except Exception as e:
+        validation_error = str(e)
+        logger.warning(f"Failed to validate MCP server at {server_data.url}: {e}")
+        # Don't raise here - we'll store the error and mark status as 'error'
+
     # Create new MCP server
     try:
         new_server = MCPServer(
@@ -99,16 +122,33 @@ async def create_mcp_server(
             transport=server_data.transport or "http-streaming",
             auth_type=server_data.auth_type or "none",
             auth_config=server_data.auth_config,
-            status=server_data.status or "active",
+            status="error" if validation_error else "active",
+            last_error=validation_error if validation_error else None,
         )
 
         db.add(new_server)
         db.commit()
         db.refresh(new_server)
 
-        logger.info(
-            f"Created MCP server {new_server.id} for user {current_user.username}"
-        )
+        if validation_error:
+            logger.warning(
+                f"Created MCP server {new_server.id} with error status: {validation_error}"
+            )
+        else:
+            logger.info(
+                f"Created MCP server {new_server.id} for user {current_user.username}"
+            )
+
+            # Automatically scan for tools on successful creation
+            try:
+                logger.info(f"Auto-scanning MCP server {new_server.id} for tools")
+                tools = await scan_mcp_server_tools(new_server.id, db)
+                logger.info(
+                    f"Auto-scan complete: discovered {len(tools)} tools for {new_server.name}"
+                )
+            except Exception as e:
+                logger.warning(f"Auto-scan failed for {new_server.id}: {e}")
+                # Don't fail the creation if scan fails - user can manually rescan
 
         return MCPServerResponse.model_validate(new_server)
 

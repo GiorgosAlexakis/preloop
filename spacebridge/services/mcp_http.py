@@ -337,6 +337,68 @@ async def mcp_http_streaming_endpoint(
                     media_type="application/json",
                 )
 
+            # Check if tool requires approval
+            approval_required = await server._check_approval_required(
+                user_ctx, tool_name
+            )
+
+            if approval_required:
+                logger.info(
+                    f"Tool {tool_name} requires approval - initiating approval flow"
+                )
+                try:
+                    # Wait for approval
+                    await server._request_and_wait_for_approval(
+                        user_ctx, tool_name, tool_args
+                    )
+                    logger.info(
+                        f"Tool {tool_name} approved - proceeding with execution"
+                    )
+                except TimeoutError as e:
+                    logger.warning(f"Approval timeout for tool {tool_name}: {e}")
+                    response_data = {
+                        "jsonrpc": "2.0",
+                        "id": body.get("id", 1),
+                        "error": {
+                            "code": -32000,
+                            "message": f"Approval timeout: {str(e)}",
+                        },
+                    }
+                    return Response(
+                        content=json.dumps(response_data),
+                        media_type="application/json",
+                    )
+                except PermissionError as e:
+                    logger.warning(f"Approval declined for tool {tool_name}: {e}")
+                    response_data = {
+                        "jsonrpc": "2.0",
+                        "id": body.get("id", 1),
+                        "error": {
+                            "code": -32000,
+                            "message": f"Approval declined: {str(e)}",
+                        },
+                    }
+                    return Response(
+                        content=json.dumps(response_data),
+                        media_type="application/json",
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Approval flow error for tool {tool_name}: {e}", exc_info=True
+                    )
+                    response_data = {
+                        "jsonrpc": "2.0",
+                        "id": body.get("id", 1),
+                        "error": {
+                            "code": -32000,
+                            "message": f"Approval error: {str(e)}",
+                        },
+                    }
+                    return Response(
+                        content=json.dumps(response_data),
+                        media_type="application/json",
+                    )
+
             # Execute tool
             handler = server._tool_handlers.get(tool_name)
             if not handler:

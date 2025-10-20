@@ -137,13 +137,18 @@ async def get_all_enabled_proxied_tools(
 ) -> List[tuple[MCPServer, MCPTool]]:
     """Get all enabled proxied tools for an account.
 
+    This checks tool_configuration to see if tools have been explicitly disabled.
+    By default, tools are enabled unless explicitly configured otherwise.
+
     Args:
         account_id: Account ID
         db: Database session
 
     Returns:
-        List of (MCPServer, MCPTool) tuples for enabled servers
+        List of (MCPServer, MCPTool) tuples for enabled tools
     """
+    from spacemodels.models.tool_configuration import ToolConfiguration
+
     # Get all active MCP servers for this account
     mcp_servers = (
         db.query(MCPServer)
@@ -151,11 +156,79 @@ async def get_all_enabled_proxied_tools(
         .all()
     )
 
-    # Get all tools for these servers
+    # Get all tool configurations for this account (for filtering)
+    tool_configs = (
+        db.query(ToolConfiguration)
+        .filter(
+            ToolConfiguration.account_id == account_id,
+            ToolConfiguration.tool_source == "mcp",
+        )
+        .all()
+    )
+
+    # Build a map of (tool_name, server_id) -> is_enabled
+    config_map = {
+        (tc.tool_name, str(tc.mcp_server_id)): tc.is_enabled for tc in tool_configs
+    }
+
+    # Get all tools for these servers and filter by configuration
     proxied_tools = []
     for server in mcp_servers:
         tools = db.query(MCPTool).filter(MCPTool.mcp_server_id == server.id).all()
         for tool in tools:
-            proxied_tools.append((server, tool))
+            # Check if tool has explicit configuration
+            config_key = (tool.name, str(server.id))
+            is_enabled = config_map.get(config_key, True)  # Default to enabled
+
+            if is_enabled:
+                proxied_tools.append((server, tool))
+            else:
+                logger.debug(
+                    f"Skipping disabled tool {tool.name} from server {server.name}"
+                )
 
     return proxied_tools
+
+
+async def get_enabled_builtin_tools(
+    account_id: str, all_builtin_tools: List, db: Session
+) -> List:
+    """Filter builtin tools based on tool_configuration.
+
+    This checks tool_configuration to see if builtin tools have been explicitly disabled.
+    By default, builtin tools are enabled unless explicitly configured otherwise.
+
+    Args:
+        account_id: Account ID
+        all_builtin_tools: List of all builtin Tool objects
+        db: Database session
+
+    Returns:
+        List of enabled builtin Tool objects
+    """
+    from spacemodels.models.tool_configuration import ToolConfiguration
+
+    # Get all tool configurations for builtin tools for this account
+    tool_configs = (
+        db.query(ToolConfiguration)
+        .filter(
+            ToolConfiguration.account_id == account_id,
+            ToolConfiguration.tool_source == "builtin",
+        )
+        .all()
+    )
+
+    # Build a map of tool_name -> is_enabled
+    config_map = {tc.tool_name: tc.is_enabled for tc in tool_configs}
+
+    # Filter tools by configuration
+    enabled_tools = []
+    for tool in all_builtin_tools:
+        is_enabled = config_map.get(tool.name, True)  # Default to enabled
+
+        if is_enabled:
+            enabled_tools.append(tool)
+        else:
+            logger.debug(f"Skipping disabled builtin tool {tool.name}")
+
+    return enabled_tools

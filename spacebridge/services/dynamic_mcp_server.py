@@ -157,6 +157,48 @@ class DynamicMCPServer:
                         )
                     ]
 
+                # Check if tool requires approval
+                approval_required = await self._check_approval_required(
+                    user_context, name
+                )
+
+                if approval_required:
+                    logger.info(
+                        f"Tool {name} requires approval - initiating approval flow"
+                    )
+                    try:
+                        # Wait for approval
+                        await self._request_and_wait_for_approval(
+                            user_context, name, arguments or {}
+                        )
+                        logger.info(f"Tool {name} approved - proceeding with execution")
+                    except TimeoutError as e:
+                        logger.warning(f"Approval timeout for tool {name}: {e}")
+                        return [
+                            types.TextContent(
+                                type="text",
+                                text=f"Approval timeout: {str(e)}",
+                            )
+                        ]
+                    except PermissionError as e:
+                        logger.warning(f"Approval declined for tool {name}: {e}")
+                        return [
+                            types.TextContent(
+                                type="text",
+                                text=f"Approval declined: {str(e)}",
+                            )
+                        ]
+                    except Exception as e:
+                        logger.error(
+                            f"Approval flow error for tool {name}: {e}", exc_info=True
+                        )
+                        return [
+                            types.TextContent(
+                                type="text",
+                                text=f"Approval error: {str(e)}",
+                            )
+                        ]
+
                 # Execute the tool
                 handler = self._tool_handlers.get(name)
                 if not handler:
@@ -236,6 +278,183 @@ class DynamicMCPServer:
         except Exception as e:
             logger.error(f"Error extracting user context: {e}", exc_info=True)
             return None
+
+    async def _check_approval_required(
+        self, user_context: UserContext, tool_name: str
+    ) -> bool:
+        """Check if a tool requires approval for this user.
+
+        Args:
+            user_context: User context
+            tool_name: Name of the tool
+
+        Returns:
+            True if approval is required, False otherwise
+        """
+        try:
+            from spacemodels.db.session import get_async_db_session
+            from spacemodels.models import ToolConfiguration
+            from sqlalchemy import select
+
+            logger.info(
+                f"Checking approval requirement for tool '{tool_name}' "
+                f"(account_id={user_context.account_id})"
+            )
+
+            # Get database session
+            async with get_async_db_session() as db:
+                # Check if there's a tool configuration for this tool
+                # First check default tools
+                result = await db.execute(
+                    select(ToolConfiguration).where(
+                        ToolConfiguration.account_id == user_context.account_id,
+                        ToolConfiguration.tool_name == tool_name,
+                        ToolConfiguration.tool_source == "builtin",
+                    )
+                )
+                config = result.scalar_one_or_none()
+
+                if config:
+                    logger.info(
+                        f"Found builtin tool config for '{tool_name}': "
+                        f"requires_approval={config.requires_approval}, "
+                        f"approval_policy_id={config.approval_policy_id}"
+                    )
+                else:
+                    logger.info(
+                        f"No builtin tool config found for '{tool_name}', checking MCP tools"
+                    )
+
+                # If not found in default tools, check proxied tools
+                if not config:
+                    result = await db.execute(
+                        select(ToolConfiguration).where(
+                            ToolConfiguration.account_id == user_context.account_id,
+                            ToolConfiguration.tool_name == tool_name,
+                            ToolConfiguration.tool_source == "mcp",
+                        )
+                    )
+                    config = result.scalar_one_or_none()
+
+                    if config:
+                        logger.info(
+                            f"Found MCP tool config for '{tool_name}': "
+                            f"requires_approval={config.requires_approval}, "
+                            f"approval_policy_id={config.approval_policy_id}, "
+                            f"mcp_server_id={config.mcp_server_id}"
+                        )
+                    else:
+                        logger.warning(
+                            f"No tool configuration found for '{tool_name}' "
+                            f"(account_id={user_context.account_id})"
+                        )
+
+                # Return whether approval is required
+                requires_approval = config.requires_approval if config else False
+                logger.info(
+                    f"Approval requirement check result for '{tool_name}': {requires_approval}"
+                )
+                return requires_approval
+
+        except Exception as e:
+            logger.error(f"Error checking approval requirement: {e}", exc_info=True)
+            return False
+
+    async def _request_and_wait_for_approval(
+        self, user_context: UserContext, tool_name: str, tool_args: dict
+    ):
+        """Request approval and wait for user response.
+
+        Args:
+            user_context: User context
+            tool_name: Name of the tool
+            tool_args: Tool arguments
+
+        Raises:
+            TimeoutError: If approval request times out
+            PermissionError: If approval is declined
+            Exception: If approval flow fails
+        """
+        try:
+            from spacemodels.db.session import get_async_db_session
+            from spacemodels.models import ToolConfiguration, ApprovalPolicy
+            from spacebridge.services.approval_service import ApprovalService
+            from sqlalchemy import select
+            import os
+
+            # Get base URL from environment or default
+            base_url = os.getenv("BASE_URL", "http://localhost:8000")
+
+            async with get_async_db_session() as db:
+                # Get tool configuration
+                result = await db.execute(
+                    select(ToolConfiguration).where(
+                        ToolConfiguration.account_id == user_context.account_id,
+                        ToolConfiguration.tool_name == tool_name,
+                    )
+                )
+                config = result.scalar_one_or_none()
+
+                if not config or not config.approval_policy_id:
+                    raise Exception("No approval policy configured for this tool")
+
+                # Get approval policy
+                result = await db.execute(
+                    select(ApprovalPolicy).where(
+                        ApprovalPolicy.id == config.approval_policy_id
+                    )
+                )
+                policy = result.scalar_one_or_none()
+
+                if not policy:
+                    raise Exception("Approval policy not found")
+
+                # Create approval service
+                approval_service = ApprovalService(db, base_url)
+
+                # Create approval request and send notification
+                approval_request = await approval_service.create_and_notify(
+                    account_id=user_context.account_id,
+                    tool_configuration_id=config.id,
+                    approval_policy=policy,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    agent_reasoning=None,  # Could be extracted from context if available
+                    execution_id=None,  # Could be extracted from context if available
+                )
+
+                logger.info(
+                    f"Approval request created: {approval_request.id}, waiting for response..."
+                )
+
+                # Wait for approval with polling
+                final_request = await approval_service.wait_for_approval(
+                    approval_request.id, poll_interval=2.0
+                )
+
+                # Check final status
+                if final_request.status == "declined":
+                    raise PermissionError(
+                        "Tool execution declined"
+                        + (
+                            f": {final_request.approver_comment}"
+                            if final_request.approver_comment
+                            else ""
+                        )
+                    )
+                elif final_request.status == "cancelled":
+                    raise PermissionError("Tool execution cancelled")
+                elif final_request.status != "approved":
+                    raise Exception(
+                        f"Unexpected approval status: {final_request.status}"
+                    )
+
+                # Approval granted!
+                logger.info(f"Tool {tool_name} approved by user")
+
+        except Exception as e:
+            logger.error(f"Error in approval flow: {e}", exc_info=True)
+            raise
 
     def _get_tools_for_user(self, user_context: UserContext) -> List[types.Tool]:
         """Build user-specific tool list.

@@ -472,6 +472,94 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/public/approval/{request_id}:
+    get:
+      tags:
+      - Public Approval
+      - public-approval
+      summary: Get Approval Request Public
+      description: "Get approval request details using token (no authentication required).\n\
+        \nArgs:\n    request_id: UUID of the approval request\n    token: Secure token\
+        \ from the approval link\n\nReturns:\n    Public approval request details\n\
+        \nRaises:\n    HTTPException: If token is invalid or request not found"
+      operationId: get_approval_request_public_api_v1_public_approval__request_id__get
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Request Id
+      - name: token
+        in: query
+        required: true
+        schema:
+          type: string
+          description: Approval token
+          title: Token
+        description: Approval token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalRequestPublic'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/public/approval/{request_id}/decide:
+    post:
+      tags:
+      - Public Approval
+      - public-approval
+      summary: Decide Approval Request Public
+      description: "Approve or decline an approval request using token (no authentication\
+        \ required).\n\nArgs:\n    request_id: UUID of the approval request\n    decision:\
+        \ Approval decision (approve/decline) and optional comment\n    token: Secure\
+        \ token from the approval link\n\nReturns:\n    Updated approval request\n\
+        \nRaises:\n    HTTPException: If token is invalid, request not found, or already\
+        \ resolved"
+      operationId: decide_approval_request_public_api_v1_public_approval__request_id__decide_post
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Request Id
+      - name: token
+        in: query
+        required: true
+        schema:
+          type: string
+          description: Approval token
+          title: Token
+        description: Approval token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecisionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalRequestPublic'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/health:
     get:
       tags:
@@ -802,7 +890,7 @@ paths:
       description: "Create a new external MCP server configuration.\n\nArgs:\n   \
         \ server_data: MCP server configuration data\n    current_user: Current authenticated\
         \ user\n    db: Database session\n\nReturns:\n    Created MCP server\n\nRaises:\n\
-        \    HTTPException: If creation fails"
+        \    HTTPException: If creation fails or validation fails"
       operationId: create_mcp_server_api_v1_mcp_servers_post
       requestBody:
         content:
@@ -1000,6 +1088,558 @@ paths:
                   $ref: '#/components/schemas/MCPToolResponse'
                 title: Response List Mcp Server Tools Api V1 Mcp Servers  Server Id  Tools
                   Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tools:
+    get:
+      tags:
+      - Tools
+      summary: List All Tools
+      description: "List all available tools (builtin + external) with their configuration\
+        \ status.\n\nReturns a comprehensive list of:\n- All builtin tools\n- All\
+        \ tools from active MCP servers\n- Configuration status for each tool (enabled/disabled,\
+        \ preloop)\n\nArgs:\n    current_user: Current authenticated user\n    db:\
+        \ Database session\n\nReturns:\n    List of tool dictionaries with metadata\
+        \ and configuration"
+      operationId: list_all_tools_api_v1_tools_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  additionalProperties: true
+                  type: object
+                type: array
+                title: Response List All Tools Api V1 Tools Get
+      security:
+      - bearerAuth: []
+  /api/v1/tool-configurations:
+    post:
+      tags:
+      - Tools
+      summary: Create Tool Configuration
+      description: "Create a new tool configuration.\n\nArgs:\n    config_data: Tool\
+        \ configuration data\n    current_user: Current authenticated user\n    db:\
+        \ Database session\n\nReturns:\n    Created tool configuration\n\nRaises:\n\
+        \    HTTPException: If configuration already exists or creation fails"
+      operationId: create_tool_configuration_api_v1_tool_configurations_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolConfigurationCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolConfigurationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/tool-configurations/{config_id}:
+    get:
+      tags:
+      - Tools
+      summary: Get Tool Configuration
+      description: "Get a specific tool configuration.\n\nArgs:\n    config_id: Tool\
+        \ configuration ID\n    current_user: Current authenticated user\n    db:\
+        \ Database session\n\nReturns:\n    Tool configuration details\n\nRaises:\n\
+        \    HTTPException: If configuration not found or access denied"
+      operationId: get_tool_configuration_api_v1_tool_configurations__config_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolConfigurationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Tools
+      summary: Update Tool Configuration
+      description: "Update an existing tool configuration.\n\nArgs:\n    config_id:\
+        \ Tool configuration ID\n    config_update: Updated configuration data\n \
+        \   current_user: Current authenticated user\n    db: Database session\n\n\
+        Returns:\n    Updated tool configuration\n\nRaises:\n    HTTPException: If\
+        \ configuration not found or update fails"
+      operationId: update_tool_configuration_api_v1_tool_configurations__config_id__put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolConfigurationUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolConfigurationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Tools
+      summary: Delete Tool Configuration
+      description: "Delete a tool configuration.\n\nArgs:\n    config_id: Tool configuration\
+        \ ID\n    current_user: Current authenticated user\n    db: Database session\n\
+        \nReturns:\n    Success message\n\nRaises:\n    HTTPException: If configuration\
+        \ not found or deletion fails"
+      operationId: delete_tool_configuration_api_v1_tool_configurations__config_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Delete Tool Configuration Api V1 Tool Configurations  Config
+                  Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/approval-policies:
+    get:
+      tags:
+      - Tools
+      summary: List Approval Policies
+      description: "List all approval policies for the current user's account.\n\n\
+        Args:\n    current_user: Current authenticated user\n    db: Database session\n\
+        \nReturns:\n    List of approval policies"
+      operationId: list_approval_policies_api_v1_approval_policies_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ApprovalPolicyResponse'
+                type: array
+                title: Response List Approval Policies Api V1 Approval Policies Get
+      security:
+      - bearerAuth: []
+    post:
+      tags:
+      - Tools
+      summary: Create Approval Policy
+      description: "Create a reusable approval policy.\n\nArgs:\n    policy_data:\
+        \ Approval policy data\n    current_user: Current authenticated user\n   \
+        \ db: Database session\n\nReturns:\n    Created approval policy\n\nRaises:\n\
+        \    HTTPException: If policy with same name already exists or creation fails"
+      operationId: create_approval_policy_api_v1_approval_policies_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalPolicyCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalPolicyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/approval-policies/{policy_id}:
+    get:
+      tags:
+      - Tools
+      summary: Get Approval Policy
+      description: "Get an approval policy by ID.\n\nArgs:\n    policy_id: Approval\
+        \ policy ID\n    current_user: Current authenticated user\n    db: Database\
+        \ session\n\nReturns:\n    Approval policy details\n\nRaises:\n    HTTPException:\
+        \ If policy not found or access denied"
+      operationId: get_approval_policy_api_v1_approval_policies__policy_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Policy Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalPolicyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Tools
+      summary: Update Approval Policy
+      description: "Update an approval policy.\n\nArgs:\n    policy_id: Approval policy\
+        \ ID\n    policy_update: Updated policy data\n    current_user: Current authenticated\
+        \ user\n    db: Database session\n\nReturns:\n    Updated approval policy\n\
+        \nRaises:\n    HTTPException: If policy not found or update fails"
+      operationId: update_approval_policy_api_v1_approval_policies__policy_id__put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Policy Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalPolicyUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalPolicyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Tools
+      summary: Delete Approval Policy
+      description: "Delete an approval policy.\n\nNote: This will set approval_policy_id\
+        \ to NULL for any tool configurations\nusing this policy (due to ondelete=\"\
+        SET NULL\").\n\nArgs:\n    policy_id: Approval policy ID\n    current_user:\
+        \ Current authenticated user\n    db: Database session\n\nReturns:\n    Success\
+        \ message\n\nRaises:\n    HTTPException: If policy not found or deletion fails"
+      operationId: delete_approval_policy_api_v1_approval_policies__policy_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Policy Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Delete Approval Policy Api V1 Approval Policies  Policy
+                  Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/approval-requests/{request_id}:
+    get:
+      tags:
+      - Approval Requests
+      - approval_requests
+      summary: Get Approval Request
+      description: "Get an approval request by ID.\n\nArgs:\n    request_id: Approval\
+        \ request ID\n    current_account: Current authenticated account\n\nReturns:\n\
+        \    Approval request\n\nRaises:\n    HTTPException: If request not found\
+        \ or unauthorized"
+      operationId: get_approval_request_api_v1_approval_requests__request_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/approval-requests/:
+    get:
+      tags:
+      - Approval Requests
+      - approval_requests
+      summary: List Approval Requests
+      description: "List approval requests for the current account.\n\nArgs:\n   \
+        \ status: Filter by status (pending, approved, declined, etc.)\n    execution_id:\
+        \ Filter by execution ID\n    limit: Maximum number of results\n    skip:\
+        \ Number of results to skip\n    current_account: Current authenticated account\n\
+        \nReturns:\n    List of approval requests"
+      operationId: list_approval_requests_api_v1_approval_requests__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by status
+          title: Status
+        description: Filter by status
+      - name: execution_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by execution ID
+          title: Execution Id
+        description: Filter by execution ID
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          description: Maximum number of results
+          default: 50
+          title: Limit
+        description: Maximum number of results
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          description: Number of results to skip
+          default: 0
+          title: Skip
+        description: Number of results to skip
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApprovalRequestResponse'
+                title: Response List Approval Requests Api V1 Approval Requests  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/approval-requests/{request_id}/approve:
+    post:
+      tags:
+      - Approval Requests
+      - approval_requests
+      summary: Approve Request
+      description: "Approve an approval request.\n\nArgs:\n    request_id: Approval\
+        \ request ID\n    decision: Approval decision with optional comment\n    request:\
+        \ HTTP request\n    current_account: Current authenticated account\n\nReturns:\n\
+        \    Updated approval request\n\nRaises:\n    HTTPException: If request not\
+        \ found or unauthorized"
+      operationId: approve_request_api_v1_approval_requests__request_id__approve_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Request Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/approval-requests/{request_id}/decline:
+    post:
+      tags:
+      - Approval Requests
+      - approval_requests
+      summary: Decline Request
+      description: "Decline an approval request.\n\nArgs:\n    request_id: Approval\
+        \ request ID\n    decision: Approval decision with optional comment\n    request:\
+        \ HTTP request\n    current_account: Current authenticated account\n\nReturns:\n\
+        \    Updated approval request\n\nRaises:\n    HTTPException: If request not\
+        \ found or unauthorized"
+      operationId: decline_request_api_v1_approval_requests__request_id__decline_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Request Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/approval-requests/{request_id}/decide:
+    post:
+      tags:
+      - Approval Requests
+      - approval_requests
+      summary: Decide Request
+      description: "Approve or decline an approval request based on decision.approved.\n\
+        \nThis is a convenience endpoint that calls approve or decline based on\n\
+        the decision.approved boolean.\n\nArgs:\n    request_id: Approval request\
+        \ ID\n    decision: Approval decision with approved flag and optional comment\n\
+        \    request: HTTP request\n    current_account: Current authenticated account\n\
+        \nReturns:\n    Updated approval request\n\nRaises:\n    HTTPException: If\
+        \ request not found or unauthorized"
+      operationId: decide_request_api_v1_approval_requests__request_id__decide_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Request Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalRequestResponse'
         '422':
           description: Validation Error
           content:
@@ -3915,6 +4555,348 @@ components:
       - requests_by_endpoint
       title: ApiUsageStatistics
       description: Model for API usage statistics.
+    ApprovalDecision:
+      properties:
+        approved:
+          type: boolean
+          title: Approved
+          description: Whether the request is approved or declined
+        comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Comment
+          description: Comment from the approver
+      type: object
+      required:
+      - approved
+      title: ApprovalDecision
+      description: Schema for approval decision.
+    ApprovalDecisionRequest:
+      properties:
+        action:
+          type: string
+          title: Action
+        comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Comment
+      type: object
+      required:
+      - action
+      title: ApprovalDecisionRequest
+      description: Request to approve or decline.
+    ApprovalPolicyCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Optional description of what this policy does
+        approval_type:
+          type: string
+          title: Approval Type
+          default: slack
+        channel:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Channel
+          description: Channel for approval requests
+        user:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User
+          description: Specific user to request approval from
+        approval_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Approval Config
+          description: Generic configuration for approval mechanism
+        timeout_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Timeout Seconds
+          description: 'How long to wait for approval (default: 5 minutes)'
+          default: 300
+        require_reason:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Require Reason
+          description: Whether approver must provide a reason
+          default: false
+      type: object
+      required:
+      - name
+      title: ApprovalPolicyCreate
+      description: Schema for creating approval policy.
+    ApprovalPolicyResponse:
+      properties:
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Optional description of what this policy does
+        approval_type:
+          type: string
+          title: Approval Type
+        channel:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Channel
+          description: Channel for approval requests
+        user:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User
+          description: Specific user to request approval from
+        approval_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Approval Config
+          description: Generic configuration for approval mechanism
+        timeout_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Timeout Seconds
+          description: 'How long to wait for approval (default: 5 minutes)'
+          default: 300
+        require_reason:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Require Reason
+          description: Whether approver must provide a reason
+          default: false
+        id:
+          type: string
+          title: Id
+        account_id:
+          type: string
+          title: Account Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - name
+      - approval_type
+      - id
+      - account_id
+      - created_at
+      - updated_at
+      title: ApprovalPolicyResponse
+      description: Schema for approval policy response.
+    ApprovalPolicyUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+          description: Human-readable name for the policy
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Optional description of what this policy does
+        approval_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approval Type
+          description: 'Type of approval: ''slack'', ''mattermost'', ''webhook'',
+            ''manual'''
+          default: slack
+        channel:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Channel
+          description: Channel for approval requests
+        user:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User
+          description: Specific user to request approval from
+        approval_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Approval Config
+          description: Generic configuration for approval mechanism
+        timeout_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Timeout Seconds
+          description: 'How long to wait for approval (default: 5 minutes)'
+          default: 300
+        require_reason:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Require Reason
+          description: Whether approver must provide a reason
+          default: false
+      type: object
+      title: ApprovalPolicyUpdate
+      description: Schema for updating approval policy.
+    ApprovalRequestPublic:
+      properties:
+        id:
+          type: string
+          title: Id
+        tool_name:
+          type: string
+          title: Tool Name
+        tool_args:
+          additionalProperties: true
+          type: object
+          title: Tool Args
+        agent_reasoning:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Reasoning
+        status:
+          type: string
+          title: Status
+        requested_at:
+          type: string
+          title: Requested At
+        expires_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expires At
+      type: object
+      required:
+      - id
+      - tool_name
+      - tool_args
+      - agent_reasoning
+      - status
+      - requested_at
+      - expires_at
+      title: ApprovalRequestPublic
+      description: Public view of approval request (no sensitive account data).
+    ApprovalRequestResponse:
+      properties:
+        tool_name:
+          type: string
+          title: Tool Name
+          description: Name of the tool being executed
+        tool_args:
+          additionalProperties: true
+          type: object
+          title: Tool Args
+          description: Arguments passed to the tool
+        agent_reasoning:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Reasoning
+          description: Agent's reasoning for the tool call
+        execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Execution Id
+          description: Flow execution ID (if applicable)
+        id:
+          type: string
+          format: uuid
+          title: Id
+        account_id:
+          type: string
+          title: Account Id
+        tool_configuration_id:
+          type: string
+          format: uuid
+          title: Tool Configuration Id
+        approval_policy_id:
+          type: string
+          format: uuid
+          title: Approval Policy Id
+        status:
+          type: string
+          title: Status
+        requested_at:
+          type: string
+          format: date-time
+          title: Requested At
+        resolved_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Resolved At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        approver_comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approver Comment
+        webhook_posted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Webhook Posted At
+        webhook_error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Webhook Error
+      type: object
+      required:
+      - tool_name
+      - id
+      - account_id
+      - tool_configuration_id
+      - approval_policy_id
+      - status
+      - requested_at
+      - resolved_at
+      - expires_at
+      - approver_comment
+      - webhook_posted_at
+      - webhook_error
+      title: ApprovalRequestResponse
+      description: Schema for approval request response.
     Body_get_resolution_suggestion_api_v1_ai_suggestion_post:
       properties:
         issue1_id:
@@ -5343,16 +6325,17 @@ components:
           title: Status
           description: 'Server status: ''active'', ''error'', ''disabled'''
           default: active
-        account_id:
-          type: string
-          title: Account Id
       type: object
       required:
       - name
       - url
-      - account_id
       title: MCPServerCreate
-      description: Schema for creating an MCP server.
+      description: 'Schema for creating an MCP server.
+
+
+        Note: account_id is not included here as it''s extracted from
+
+        the authenticated user in the endpoint handler.'
     MCPServerResponse:
       properties:
         name:
@@ -6179,6 +7162,225 @@ components:
       - expires_in
       title: Token
       description: Token response model.
+    ToolConfigurationCreate:
+      properties:
+        tool_name:
+          type: string
+          title: Tool Name
+        tool_source:
+          type: string
+          title: Tool Source
+          default: builtin
+        mcp_server_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Mcp Server Id
+          description: Reference to MCP server (if tool_source='mcp')
+        http_endpoint_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Http Endpoint Id
+          description: 'Reference to HTTP endpoint (future: if tool_source=''http'')'
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+          description: Whether the tool is enabled
+          default: true
+        requires_approval:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Requires Approval
+          description: Whether the tool requires pre-execution approval (preloop)
+          default: false
+        approval_policy_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Approval Policy Id
+          description: Reference to approval policy (if requires_approval=True)
+        tool_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tool Description
+          description: Description of what the tool does
+        tool_schema:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Tool Schema
+          description: JSON schema for tool parameters
+        custom_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Custom Config
+          description: Additional configuration options
+        account_id:
+          type: string
+          title: Account Id
+      type: object
+      required:
+      - tool_name
+      - account_id
+      title: ToolConfigurationCreate
+      description: Schema for creating tool configuration.
+    ToolConfigurationResponse:
+      properties:
+        tool_name:
+          type: string
+          title: Tool Name
+        tool_source:
+          type: string
+          title: Tool Source
+        mcp_server_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Mcp Server Id
+        http_endpoint_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Http Endpoint Id
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+        requires_approval:
+          type: boolean
+          title: Requires Approval
+        approval_policy_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approval Policy Id
+        tool_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tool Description
+          description: Description of what the tool does
+        tool_schema:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Tool Schema
+          description: JSON schema for tool parameters
+        custom_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Custom Config
+          description: Additional configuration options
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        account_id:
+          type: string
+          title: Account Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - tool_name
+      - tool_source
+      - is_enabled
+      - requires_approval
+      - id
+      - account_id
+      - created_at
+      - updated_at
+      title: ToolConfigurationResponse
+      description: Schema for tool configuration response.
+    ToolConfigurationUpdate:
+      properties:
+        tool_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tool Name
+          description: Name of the tool
+        tool_source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tool Source
+          description: 'Source type: ''builtin'', ''mcp'', ''http'''
+          default: builtin
+        mcp_server_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Mcp Server Id
+          description: Reference to MCP server (if tool_source='mcp')
+        http_endpoint_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Http Endpoint Id
+          description: 'Reference to HTTP endpoint (future: if tool_source=''http'')'
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+          description: Whether the tool is enabled
+          default: true
+        requires_approval:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Requires Approval
+          description: Whether the tool requires pre-execution approval (preloop)
+          default: false
+        approval_policy_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Approval Policy Id
+          description: Reference to approval policy (if requires_approval=True)
+        tool_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tool Description
+          description: Description of what the tool does
+        tool_schema:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Tool Schema
+          description: JSON schema for tool parameters
+        custom_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Custom Config
+          description: Additional configuration options
+      type: object
+      title: ToolConfigurationUpdate
+      description: Schema for updating tool configuration.
     TrackerResponse:
       properties:
         name:

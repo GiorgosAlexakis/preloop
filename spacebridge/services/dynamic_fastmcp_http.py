@@ -98,10 +98,11 @@ def setup_dynamic_mcp_http(mcp: DynamicFastMCP):
     # Get FastMCP's built-in HTTP app with StreamableHTTP transport
     # path="/v1" means it will serve on /v1 within the mounted app
     # So mounting at /mcp makes it available at /mcp/v1
+    # NOTE: json_response must be None (not True) to allow SSE streaming for progress
     base_app = mcp.http_app(
         path="/v1",
         transport="streamable-http",
-        json_response=True,
+        json_response=None,  # Allow SSE streaming for progress notifications
         stateless_http=False,
     )
     logger.info("Got FastMCP's http_app with streamable-http transport for path /v1")

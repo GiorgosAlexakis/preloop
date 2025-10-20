@@ -65,13 +65,31 @@ def clone_preset(
     if not preset or not preset.is_preset:
         raise HTTPException(status_code=404, detail="Preset not found")
 
+    # Build dict excluding fields we want to override or that aren't in FlowCreate
+    preset_dict = {
+        k: v
+        for k, v in preset.__dict__.items()
+        if k
+        not in [
+            "_sa_instance_state",
+            "id",
+            "created_at",
+            "updated_at",
+            "name",
+            "is_preset",
+            "account_id",
+        ]
+    }
+
     cloned_flow_in = schemas.FlowCreate(
-        **preset.__dict__,
+        **preset_dict,
         name=f"Copy of {preset.name}",
         is_preset=False,
         account_id=current_user.id,
     )
-    cloned_flow = crud_flow.create(db=db, flow_in=cloned_flow_in)
+    cloned_flow = crud_flow.create(
+        db=db, flow_in=cloned_flow_in, account_id=current_user.id
+    )
     return cloned_flow
 
 

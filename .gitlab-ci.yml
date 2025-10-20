@@ -285,7 +285,7 @@ test:coverage:
       print('==============================================')
       "
     - coverage combine
-    - coverage report --fail-under=59
+    - coverage report --fail-under=60
     - coverage xml -o coverage.xml
 
   artifacts:

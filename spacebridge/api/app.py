@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pyinstrument import Profiler
 from pyinstrument.renderers import SpeedscopeRenderer
@@ -26,6 +26,7 @@ from spacebridge.api.middleware import UIRoutingMiddleware
 from fastapi.encoders import jsonable_encoder
 from spacebridge.api.auth import auth_router, get_current_active_user
 from spacebridge.api.endpoints import (
+    approval_requests,
     comments,
     health,
     issues,
@@ -34,7 +35,9 @@ from spacebridge.api.endpoints import (
     mcp_servers,
     organizations,
     projects,
+    public_approval,
     search as search_router,
+    tools,
     trackers,
     version,
     embedding as embedding_router,
@@ -479,6 +482,7 @@ def create_app() -> FastAPI:
         # Apply security to all endpoints except auth endpoints, landing page, health checks, and docs
         excluded_prefixes = [
             "/api/v1/auth",
+            "/api/v1/public/approval",
             "/api/v1/billing/plans",
             "/api/v1/billing/create-checkout-session",
             "/",
@@ -487,6 +491,7 @@ def create_app() -> FastAPI:
             "/register",
             "/logout",
             "/api/v1/health",
+            "/approval",
         ]
         for path in openapi_schema["paths"]:
             # Check if path starts with any excluded prefix
@@ -516,6 +521,9 @@ def create_app() -> FastAPI:
     logger.info("MCP routes configured with DynamicMCPServer")
     # Add routers
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
+    app.include_router(
+        public_approval.router, prefix="/api/v1", tags=["Public Approval"]
+    )  # No auth required
     app.include_router(health.router, prefix="/api/v1", tags=["Health"])
     app.include_router(version.router, prefix="/api/v1", tags=["Version"])
     app.include_router(
@@ -528,6 +536,18 @@ def create_app() -> FastAPI:
         mcp_servers.router,
         prefix="/api/v1",
         tags=["MCP Servers"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        tools.router,
+        prefix="/api/v1",
+        tags=["Tools"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        approval_requests.router,
+        prefix="/api/v1",
+        tags=["Approval Requests"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
@@ -615,6 +635,13 @@ def create_app() -> FastAPI:
 
     # WebSocket router
     app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
+
+    # --- Public Approval Page ---
+    @app.get("/approval/{request_id}", include_in_schema=False)
+    async def serve_approval_page(request_id: str):
+        """Serve the public approval page."""
+        approval_html_path = base_dir / "spacebridge" / "templates" / "approval.html"
+        return FileResponse(str(approval_html_path), media_type="text/html")
 
     # --- SPA Static Files (Production) ---
     # In production, serve the built Lit frontend from the root

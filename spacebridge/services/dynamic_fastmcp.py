@@ -37,6 +37,8 @@ class DynamicFastMCP(FastMCP):
         )
         # Track proxied tool -> server mapping for routing
         self._proxied_tool_servers: Dict[str, str] = {}
+        # Track registered proxied tools to avoid re-registration
+        self._registered_proxied_tools: set = set()
         logger.info("DynamicFastMCP initialized")
 
     def set_user_context_provider(self, provider: Callable[[], Optional[UserContext]]):
@@ -80,10 +82,17 @@ class DynamicFastMCP(FastMCP):
         # Add default tools if user has tracker
         if user_context.has_tracker:
             default_tools = await super()._list_tools()
-            available_tools.extend(default_tools)
-            logger.info(f"Added {len(default_tools)} default tools")
+            # Filter out internal proxied tool names (they start with "account_")
+            builtin_tools = [
+                t for t in default_tools if not t.name.startswith("account_")
+            ]
+            available_tools.extend(builtin_tools)
+            logger.info(
+                f"Added {len(builtin_tools)} default tools (filtered {len(default_tools) - len(builtin_tools)} internal names)"
+            )
 
         # Add proxied tools from external MCP servers (Phase 1B)
+        # Now with dynamic registration for streaming approval support
         try:
             db = next(get_db())
             try:
@@ -91,24 +100,75 @@ class DynamicFastMCP(FastMCP):
                     user_context.account_id, db
                 )
 
-                # Clear previous proxied tool mappings
-                # (only keep mappings for current user's tools)
-                self._proxied_tool_servers.clear()
+                # Dynamically register wrapper functions for proxied tools
+                proxied_tool_map = {}  # Track original_name -> internal_name mapping
 
-                # Convert MCPTool records to FastMCP Tool objects
                 for mcp_server, mcp_tool in proxied_tools_data:
-                    # Create Tool object from cached schema
-                    tool = Tool(
-                        name=mcp_tool.name,
-                        description=mcp_tool.description or "",
-                        parameters=mcp_tool.input_schema,
+                    # Create internal name with namespace (sanitize account_id)
+                    safe_account_id = user_context.account_id.replace("-", "_")
+                    internal_name = f"account_{safe_account_id}_{mcp_tool.name}"
+                    proxied_tool_map[mcp_tool.name] = (
+                        internal_name,
+                        mcp_tool,
+                        mcp_server,
                     )
-                    available_tools.append(tool)
 
-                    # Track which server this tool belongs to
+                    # Only register if not already registered
+                    if internal_name not in self._registered_proxied_tools:
+                        logger.info(
+                            f"Dynamically registering proxied tool: {mcp_tool.name} "
+                            f"(internal: {internal_name})"
+                        )
+
+                        # Create wrapper function with approval and streaming
+                        wrapper = self._create_proxied_tool_wrapper(
+                            tool_name=mcp_tool.name,
+                            server_id=str(mcp_server.id),
+                            account_id=user_context.account_id,
+                            description=mcp_tool.description or "",
+                            input_schema=mcp_tool.input_schema,
+                        )
+
+                        # Register with FastMCP using @mcp.tool() decorator
+                        self.tool()(wrapper)
+
+                        # Track as registered
+                        self._registered_proxied_tools.add(internal_name)
+
+                    # Always track the mapping for name translation
                     self._proxied_tool_servers[mcp_tool.name] = str(mcp_server.id)
 
-                logger.info(f"Added {len(proxied_tools_data)} proxied tools")
+                # Now get all registered tools and map back to original names
+                all_registered = await super()._list_tools()
+                logger.info(
+                    f"Total registered tools after dynamic registration: {len(all_registered)}"
+                )
+
+                for original_name, (
+                    internal_name,
+                    mcp_tool,
+                    mcp_server,
+                ) in proxied_tool_map.items():
+                    # Check if this tool was registered
+                    if any(t.name == internal_name for t in all_registered):
+                        # Add with original name for client visibility
+                        tool = Tool(
+                            name=original_name,  # Client sees original name
+                            description=mcp_tool.description or "",
+                            parameters=mcp_tool.input_schema,
+                        )
+                        available_tools.append(tool)
+                        logger.info(
+                            f"Exposing proxied tool: {original_name} (internal: {internal_name}) mcp_server: {mcp_server}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Proxied tool {internal_name} was not found in registered tools!"
+                        )
+
+                logger.info(
+                    f"Added {len(proxied_tool_map)} proxied tools to available list"
+                )
 
             finally:
                 db.close()
@@ -149,19 +209,205 @@ class DynamicFastMCP(FastMCP):
             logger.error(f"Error getting user context: {e}", exc_info=True)
             return None
 
+    def _create_proxied_tool_wrapper(
+        self,
+        tool_name: str,
+        server_id: str,
+        account_id: str,
+        description: str,
+        input_schema: dict,
+    ):
+        """Factory to create wrapper functions for proxied tools with approval and streaming.
+
+        Creates a function with explicit parameters based on the input_schema.
+        FastMCP doesn't support **kwargs, so we need to build the function dynamically.
+
+        Args:
+            tool_name: Name of the tool
+            server_id: MCP server ID
+            account_id: Owner account ID
+            description: Tool description
+            input_schema: Tool input schema (JSON Schema)
+
+        Returns:
+            Async wrapper function with Context support and explicit parameters
+        """
+        from fastmcp import Context
+
+        # Create internal name with namespace to avoid collisions
+        # Sanitize account_id for Python identifier (replace hyphens with underscores)
+        safe_account_id = account_id.replace("-", "_")
+        internal_name = f"account_{safe_account_id}_{tool_name}"
+
+        # Extract parameters from input schema
+        properties = input_schema.get("properties", {})
+        required_params = set(input_schema.get("required", []))
+
+        # Build parameter list dynamically
+        params = []
+        param_names = []
+
+        for param_name, param_def in properties.items():
+            param_names.append(param_name)
+            param_type = param_def.get("type", "string")
+
+            # Map JSON Schema types to Python type names
+            if param_type == "string":
+                type_str = "str"
+            elif param_type == "integer":
+                type_str = "int"
+            elif param_type == "number":
+                type_str = "float"
+            elif param_type == "boolean":
+                type_str = "bool"
+            elif param_type == "array":
+                type_str = "list"
+            elif param_type == "object":
+                type_str = "dict"
+            else:
+                type_str = "str"  # Default to string
+
+            # Add Optional if not required
+            if param_name not in required_params:
+                params.append(f"{param_name}: Optional[{type_str}] = None")
+            else:
+                params.append(f"{param_name}: {type_str}")
+
+        # Add Context parameter at the end
+        params.append("ctx: Optional[Context] = None")
+
+        # Create function signature string
+        params_str = ", ".join(params)
+
+        # Create the wrapper function using exec (yes, it's safe here - we control the input)
+        wrapper_code = f"""
+async def {internal_name}({params_str}) -> str:
+    # DEBUG: Log Context availability
+    logger.info(f"[WRAPPER] {{tool_name}} called with Context: {{ctx is not None}}")
+    if ctx:
+        logger.info(f"[WRAPPER] Context type: {{type(ctx)}}, has report_progress: {{hasattr(ctx, 'report_progress')}}")
+
+    # SECURITY CHECK: Verify caller owns this tool
+    user_context = self._get_current_user_context()
+    if not user_context or user_context.account_id != account_id:
+        logger.warning(
+            f"Security violation: User {{user_context.account_id if user_context else 'None'}} "
+            f"attempted to call tool '{{tool_name}}' owned by {{account_id}}"
+        )
+        return "Access denied: Tool not available"
+
+    # Collect all arguments
+    arguments = {{}}
+    for param_name in param_names:
+        value = locals().get(param_name)
+        if value is not None:
+            arguments[param_name] = value
+
+    # Check approval with streaming (we have Context!)
+    from spacebridge.services.approval_helper import require_approval
+
+    approved, error = await require_approval(
+        tool_name=tool_name,
+        tool_source="mcp",
+        account_id=account_id,
+        arguments=arguments,
+        ctx=ctx,
+    )
+
+    if not approved:
+        return error
+
+    # Call external MCP server
+    try:
+        db = next(get_db())
+        try:
+            from spacemodels.models.mcp_server import MCPServer
+
+            mcp_server = (
+                db.query(MCPServer).filter(MCPServer.id == server_id).first()
+            )
+
+            if not mcp_server:
+                return f"Error: MCP server {{server_id}} not found"
+
+            # Get client from pool
+            client_pool = get_mcp_client_pool()
+            client = await client_pool.get_client(
+                server_id=server_id,
+                url=mcp_server.url,
+                auth_type=mcp_server.auth_type,
+                auth_config=mcp_server.auth_config,
+                transport=mcp_server.transport,
+            )
+
+            # Call tool on external server
+            result = await client.call_tool(tool_name, arguments)
+            logger.info(
+                f"Tool {{tool_name}} executed successfully on external server"
+            )
+
+            # Convert result to string
+            if isinstance(result, list):
+                return "\\n".join(
+                    item.text if hasattr(item, "text") else str(item)
+                    for item in result
+                )
+            return str(result)
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(
+            f"Error executing proxied tool {{tool_name}}: {{e}}", exc_info=True
+        )
+        return f"Error executing tool: {{str(e)}}"
+"""
+
+        # Create local namespace with required variables
+        namespace = {
+            "self": self,
+            "account_id": account_id,
+            "tool_name": tool_name,
+            "server_id": server_id,
+            "param_names": param_names,
+            "logger": logger,
+            "get_db": get_db,
+            "get_mcp_client_pool": get_mcp_client_pool,
+            "Optional": Optional,
+            "Context": Context,
+        }
+
+        # Execute the code to create the function
+        exec(wrapper_code, namespace)
+        wrapper = namespace[internal_name]
+
+        # Set function metadata
+        wrapper.__doc__ = description
+        # Store original name and owner for reference
+        wrapper._display_name = tool_name  # type: ignore
+        wrapper._account_id = account_id  # type: ignore
+
+        logger.info(
+            f"Created wrapper function for {tool_name} with parameters: {param_names}"
+        )
+
+        return wrapper
+
     async def _mcp_call_tool(
         self, name: str, arguments: dict | None
     ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-        """Override tool execution to check user access and route appropriately.
+        """Override tool execution for access validation and name translation.
 
         This is called by FastMCP's protocol handler before executing a tool.
-        We check if the user has access to the requested tool, then route
-        to either default tool handlers or external MCP servers.
+        We check if the user has access to the requested tool, then translate
+        the tool name if it's a proxied tool (client name -> internal name).
 
-        Phase 1B: Added routing to external MCP servers for proxied tools.
+        Approval is now handled at the function level (in tool implementations)
+        for both builtin and proxied tools, allowing streaming progress updates.
 
         Args:
-            name: Tool name
+            name: Tool name (as seen by client)
             arguments: Tool arguments
 
         Returns:
@@ -189,61 +435,17 @@ class DynamicFastMCP(FastMCP):
                 )
             ]
 
-        # Check if this is a proxied tool (Phase 1B)
+        # Translate tool name for proxied tools
+        # Client calls "calculate_fibonacci", we translate to "account_123_calculate_fibonacci"
         if name in self._proxied_tool_servers:
-            # Route to external MCP server
-            server_id = self._proxied_tool_servers[name]
-            logger.info(
-                f"Routing tool {name} to external MCP server {server_id} "
-                f"for user {user_context.username}"
-            )
+            safe_account_id = user_context.account_id.replace("-", "_")
+            internal_name = f"account_{safe_account_id}_{name}"
+            logger.info(f"Translating proxied tool name: {name} -> {internal_name}")
+            # Call with translated name
+            return await super()._mcp_call_tool(internal_name, arguments)
 
-            try:
-                # Get server configuration from database
-                db = next(get_db())
-                try:
-                    from spacemodels.models.mcp_server import MCPServer
-
-                    mcp_server = (
-                        db.query(MCPServer).filter(MCPServer.id == server_id).first()
-                    )
-
-                    if not mcp_server:
-                        return [
-                            types.TextContent(
-                                type="text",
-                                text=f"Error: MCP server {server_id} not found",
-                            )
-                        ]
-
-                    # Get client from pool
-                    client_pool = get_mcp_client_pool()
-                    client = await client_pool.get_client(
-                        server_id=server_id,
-                        url=mcp_server.url,
-                        auth_type=mcp_server.auth_type,
-                        auth_config=mcp_server.auth_config,
-                        transport=mcp_server.transport,
-                    )
-
-                    # Call tool on external server
-                    result = await client.call_tool(name, arguments or {})
-                    logger.info(f"Tool {name} executed successfully on external server")
-                    return result
-
-                finally:
-                    db.close()
-
-            except Exception as e:
-                logger.error(f"Error executing proxied tool {name}: {e}", exc_info=True)
-                return [
-                    types.TextContent(
-                        type="text", text=f"Error executing tool: {str(e)}"
-                    )
-                ]
-
-        # Default tool - call parent implementation
-        logger.info(f"Executing default tool {name} for user {user_context.username}")
+        # Builtin tool - call with original name
+        logger.info(f"Calling builtin tool: {name}")
         return await super()._mcp_call_tool(name, arguments)
 
 
