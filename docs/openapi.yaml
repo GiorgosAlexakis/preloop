@@ -867,10 +867,16 @@ paths:
       tags:
       - MCP Servers
       summary: List Mcp Servers
-      description: "List all MCP servers for the current user.\n\nArgs:\n    current_user:\
-        \ Current authenticated user\n    db: Database session\n\nReturns:\n    List\
-        \ of MCP servers"
+      description: "List all MCP servers for the current user.\n\nArgs:\n    account:\
+        \ Current user's account (from dependency)\n    db: Database session\n\nReturns:\n\
+        \    List of MCP servers"
       operationId: list_mcp_servers_api_v1_mcp_servers_get
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -881,6 +887,12 @@ paths:
                   $ref: '#/components/schemas/MCPServerResponse'
                 type: array
                 title: Response List Mcp Servers Api V1 Mcp Servers Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
     post:
@@ -888,15 +900,16 @@ paths:
       - MCP Servers
       summary: Create Mcp Server
       description: "Create a new external MCP server configuration.\n\nArgs:\n   \
-        \ server_data: MCP server configuration data\n    current_user: Current authenticated\
-        \ user\n    db: Database session\n\nReturns:\n    Created MCP server\n\nRaises:\n\
-        \    HTTPException: If creation fails or validation fails"
+        \ server_data: MCP server configuration data\n    account: Current user's\
+        \ account (from dependency)\n    db: Database session\n\nReturns:\n    Created\
+        \ MCP server\n\nRaises:\n    HTTPException: If creation fails or validation\
+        \ fails"
       operationId: create_mcp_server_api_v1_mcp_servers_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MCPServerCreate'
+              $ref: '#/components/schemas/Body_create_mcp_server_api_v1_mcp_servers_post'
         required: true
       responses:
         '201':
@@ -919,8 +932,8 @@ paths:
       - MCP Servers
       summary: Get Mcp Server
       description: "Get a specific MCP server by ID.\n\nArgs:\n    server_id: MCP\
-        \ server ID\n    current_user: Current authenticated user\n    db: Database\
-        \ session\n\nReturns:\n    MCP server details\n\nRaises:\n    HTTPException:\
+        \ server ID\n    account: Current user's account (from dependency)\n    db:\
+        \ Database session\n\nReturns:\n    MCP server details\n\nRaises:\n    HTTPException:\
         \ If server not found or access denied"
       operationId: get_mcp_server_api_v1_mcp_servers__server_id__get
       security:
@@ -933,6 +946,12 @@ paths:
           type: string
           format: uuid
           title: Server Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -951,10 +970,10 @@ paths:
       - MCP Servers
       summary: Update Mcp Server
       description: "Update an existing MCP server configuration.\n\nArgs:\n    server_id:\
-        \ MCP server ID\n    server_update: Updated server data\n    current_user:\
-        \ Current authenticated user\n    db: Database session\n\nReturns:\n    Updated\
-        \ MCP server\n\nRaises:\n    HTTPException: If server not found or update\
-        \ fails"
+        \ MCP server ID\n    server_update: Updated server data\n    account: Current\
+        \ user's account (from dependency)\n    db: Database session\n\nReturns:\n\
+        \    Updated MCP server\n\nRaises:\n    HTTPException: If server not found\
+        \ or update fails"
       operationId: update_mcp_server_api_v1_mcp_servers__server_id__put
       security:
       - bearerAuth: []
@@ -971,7 +990,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MCPServerUpdate'
+              $ref: '#/components/schemas/Body_update_mcp_server_api_v1_mcp_servers__server_id__put'
       responses:
         '200':
           description: Successful Response
@@ -990,8 +1009,8 @@ paths:
       - MCP Servers
       summary: Delete Mcp Server
       description: "Delete an MCP server.\n\nArgs:\n    server_id: MCP server ID\n\
-        \    current_user: Current authenticated user\n    db: Database session\n\n\
-        Returns:\n    Success message\n\nRaises:\n    HTTPException: If server not\
+        \    account: Current user's account (from dependency)\n    db: Database session\n\
+        \nReturns:\n    Success message\n\nRaises:\n    HTTPException: If server not\
         \ found or deletion fails"
       operationId: delete_mcp_server_api_v1_mcp_servers__server_id__delete
       security:
@@ -1004,6 +1023,12 @@ paths:
           type: string
           format: uuid
           title: Server Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1026,7 +1051,7 @@ paths:
       - MCP Servers
       summary: Scan Mcp Server
       description: "Trigger a tool discovery scan for an MCP server.\n\nArgs:\n  \
-        \  server_id: MCP server ID\n    current_user: Current authenticated user\n\
+        \  server_id: MCP server ID\n    account: Current user's account (from dependency)\n\
         \    db: Database session\n\nReturns:\n    Success message with tool count\n\
         \nRaises:\n    HTTPException: If server not found or scan fails"
       operationId: scan_mcp_server_api_v1_mcp_servers__server_id__scan_post
@@ -1040,6 +1065,12 @@ paths:
           type: string
           format: uuid
           title: Server Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1063,9 +1094,9 @@ paths:
       - MCP Servers
       summary: List Mcp Server Tools
       description: "List discovered tools for an MCP server.\n\nArgs:\n    server_id:\
-        \ MCP server ID\n    current_user: Current authenticated user\n    db: Database\
-        \ session\n\nReturns:\n    List of discovered tools\n\nRaises:\n    HTTPException:\
-        \ If server not found or access denied"
+        \ MCP server ID\n    account: Current user's account (from dependency)\n \
+        \   db: Database session\n\nReturns:\n    List of discovered tools\n\nRaises:\n\
+        \    HTTPException: If server not found or access denied"
       operationId: list_mcp_server_tools_api_v1_mcp_servers__server_id__tools_get
       security:
       - bearerAuth: []
@@ -1077,6 +1108,12 @@ paths:
           type: string
           format: uuid
           title: Server Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1102,10 +1139,16 @@ paths:
       description: "List all available tools (builtin + external) with their configuration\
         \ status.\n\nReturns a comprehensive list of:\n- All builtin tools\n- All\
         \ tools from active MCP servers\n- Configuration status for each tool (enabled/disabled,\
-        \ preloop)\n\nArgs:\n    current_user: Current authenticated user\n    db:\
-        \ Database session\n\nReturns:\n    List of tool dictionaries with metadata\
-        \ and configuration"
+        \ preloop)\n\nArgs:\n    account: Current user's account (from dependency)\n\
+        \    db: Database session\n\nReturns:\n    List of tool dictionaries with\
+        \ metadata and configuration"
       operationId: list_all_tools_api_v1_tools_get
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -1117,6 +1160,12 @@ paths:
                   type: object
                 type: array
                 title: Response List All Tools Api V1 Tools Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
   /api/v1/tool-configurations:
@@ -1125,15 +1174,15 @@ paths:
       - Tools
       summary: Create Tool Configuration
       description: "Create a new tool configuration.\n\nArgs:\n    config_data: Tool\
-        \ configuration data\n    current_user: Current authenticated user\n    db:\
-        \ Database session\n\nReturns:\n    Created tool configuration\n\nRaises:\n\
-        \    HTTPException: If configuration already exists or creation fails"
+        \ configuration data\n    account: Current user's account (from dependency)\n\
+        \    db: Database session\n\nReturns:\n    Created tool configuration\n\n\
+        Raises:\n    HTTPException: If configuration already exists or creation fails"
       operationId: create_tool_configuration_api_v1_tool_configurations_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ToolConfigurationCreate'
+              $ref: '#/components/schemas/Body_create_tool_configuration_api_v1_tool_configurations_post'
         required: true
       responses:
         '201':
@@ -1156,9 +1205,9 @@ paths:
       - Tools
       summary: Get Tool Configuration
       description: "Get a specific tool configuration.\n\nArgs:\n    config_id: Tool\
-        \ configuration ID\n    current_user: Current authenticated user\n    db:\
-        \ Database session\n\nReturns:\n    Tool configuration details\n\nRaises:\n\
-        \    HTTPException: If configuration not found or access denied"
+        \ configuration ID\n    account: Current user's account (from dependency)\n\
+        \    db: Database session\n\nReturns:\n    Tool configuration details\n\n\
+        Raises:\n    HTTPException: If configuration not found or access denied"
       operationId: get_tool_configuration_api_v1_tool_configurations__config_id__get
       security:
       - bearerAuth: []
@@ -1170,6 +1219,12 @@ paths:
           type: string
           format: uuid
           title: Config Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1189,9 +1244,9 @@ paths:
       summary: Update Tool Configuration
       description: "Update an existing tool configuration.\n\nArgs:\n    config_id:\
         \ Tool configuration ID\n    config_update: Updated configuration data\n \
-        \   current_user: Current authenticated user\n    db: Database session\n\n\
-        Returns:\n    Updated tool configuration\n\nRaises:\n    HTTPException: If\
-        \ configuration not found or update fails"
+        \   account: Current user's account (from dependency)\n    db: Database session\n\
+        \nReturns:\n    Updated tool configuration\n\nRaises:\n    HTTPException:\
+        \ If configuration not found or update fails"
       operationId: update_tool_configuration_api_v1_tool_configurations__config_id__put
       security:
       - bearerAuth: []
@@ -1208,7 +1263,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ToolConfigurationUpdate'
+              $ref: '#/components/schemas/Body_update_tool_configuration_api_v1_tool_configurations__config_id__put'
       responses:
         '200':
           description: Successful Response
@@ -1227,9 +1282,9 @@ paths:
       - Tools
       summary: Delete Tool Configuration
       description: "Delete a tool configuration.\n\nArgs:\n    config_id: Tool configuration\
-        \ ID\n    current_user: Current authenticated user\n    db: Database session\n\
-        \nReturns:\n    Success message\n\nRaises:\n    HTTPException: If configuration\
-        \ not found or deletion fails"
+        \ ID\n    account: Current user's account (from dependency)\n    db: Database\
+        \ session\n\nReturns:\n    Success message\n\nRaises:\n    HTTPException:\
+        \ If configuration not found or deletion fails"
       operationId: delete_tool_configuration_api_v1_tool_configurations__config_id__delete
       security:
       - bearerAuth: []
@@ -1241,6 +1296,12 @@ paths:
           type: string
           format: uuid
           title: Config Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1264,9 +1325,15 @@ paths:
       - Tools
       summary: List Approval Policies
       description: "List all approval policies for the current user's account.\n\n\
-        Args:\n    current_user: Current authenticated user\n    db: Database session\n\
-        \nReturns:\n    List of approval policies"
+        Args:\n    account: Current user's account (from dependency)\n    db: Database\
+        \ session\n\nReturns:\n    List of approval policies"
       operationId: list_approval_policies_api_v1_approval_policies_get
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -1277,6 +1344,12 @@ paths:
                   $ref: '#/components/schemas/ApprovalPolicyResponse'
                 type: array
                 title: Response List Approval Policies Api V1 Approval Policies Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
     post:
@@ -1284,15 +1357,15 @@ paths:
       - Tools
       summary: Create Approval Policy
       description: "Create a reusable approval policy.\n\nArgs:\n    policy_data:\
-        \ Approval policy data\n    current_user: Current authenticated user\n   \
-        \ db: Database session\n\nReturns:\n    Created approval policy\n\nRaises:\n\
+        \ Approval policy data\n    account: Current user's account (from dependency)\n\
+        \    db: Database session\n\nReturns:\n    Created approval policy\n\nRaises:\n\
         \    HTTPException: If policy with same name already exists or creation fails"
       operationId: create_approval_policy_api_v1_approval_policies_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApprovalPolicyCreate'
+              $ref: '#/components/schemas/Body_create_approval_policy_api_v1_approval_policies_post'
         required: true
       responses:
         '201':
@@ -1315,9 +1388,9 @@ paths:
       - Tools
       summary: Get Approval Policy
       description: "Get an approval policy by ID.\n\nArgs:\n    policy_id: Approval\
-        \ policy ID\n    current_user: Current authenticated user\n    db: Database\
-        \ session\n\nReturns:\n    Approval policy details\n\nRaises:\n    HTTPException:\
-        \ If policy not found or access denied"
+        \ policy ID\n    account: Current user's account (from dependency)\n    db:\
+        \ Database session\n\nReturns:\n    Approval policy details\n\nRaises:\n \
+        \   HTTPException: If policy not found or access denied"
       operationId: get_approval_policy_api_v1_approval_policies__policy_id__get
       security:
       - bearerAuth: []
@@ -1329,6 +1402,12 @@ paths:
           type: string
           format: uuid
           title: Policy Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1347,9 +1426,10 @@ paths:
       - Tools
       summary: Update Approval Policy
       description: "Update an approval policy.\n\nArgs:\n    policy_id: Approval policy\
-        \ ID\n    policy_update: Updated policy data\n    current_user: Current authenticated\
-        \ user\n    db: Database session\n\nReturns:\n    Updated approval policy\n\
-        \nRaises:\n    HTTPException: If policy not found or update fails"
+        \ ID\n    policy_update: Updated policy data\n    account: Current user's\
+        \ account (from dependency)\n    db: Database session\n\nReturns:\n    Updated\
+        \ approval policy\n\nRaises:\n    HTTPException: If policy not found or update\
+        \ fails"
       operationId: update_approval_policy_api_v1_approval_policies__policy_id__put
       security:
       - bearerAuth: []
@@ -1366,7 +1446,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApprovalPolicyUpdate'
+              $ref: '#/components/schemas/Body_update_approval_policy_api_v1_approval_policies__policy_id__put'
       responses:
         '200':
           description: Successful Response
@@ -1386,9 +1466,10 @@ paths:
       summary: Delete Approval Policy
       description: "Delete an approval policy.\n\nNote: This will set approval_policy_id\
         \ to NULL for any tool configurations\nusing this policy (due to ondelete=\"\
-        SET NULL\").\n\nArgs:\n    policy_id: Approval policy ID\n    current_user:\
-        \ Current authenticated user\n    db: Database session\n\nReturns:\n    Success\
-        \ message\n\nRaises:\n    HTTPException: If policy not found or deletion fails"
+        SET NULL\").\n\nArgs:\n    policy_id: Approval policy ID\n    account: Current\
+        \ user's account (from dependency)\n    db: Database session\n\nReturns:\n\
+        \    Success message\n\nRaises:\n    HTTPException: If policy not found or\
+        \ deletion fails"
       operationId: delete_approval_policy_api_v1_approval_policies__policy_id__delete
       security:
       - bearerAuth: []
@@ -1400,6 +1481,12 @@ paths:
           type: string
           format: uuid
           title: Policy Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -4897,6 +4984,39 @@ components:
       - webhook_error
       title: ApprovalRequestResponse
       description: Schema for approval request response.
+    Body_create_approval_policy_api_v1_approval_policies_post:
+      properties:
+        policy_data:
+          $ref: '#/components/schemas/ApprovalPolicyCreate'
+        current_user:
+          $ref: '#/components/schemas/UserResponse'
+      type: object
+      required:
+      - policy_data
+      - current_user
+      title: Body_create_approval_policy_api_v1_approval_policies_post
+    Body_create_mcp_server_api_v1_mcp_servers_post:
+      properties:
+        server_data:
+          $ref: '#/components/schemas/MCPServerCreate'
+        current_user:
+          $ref: '#/components/schemas/UserResponse'
+      type: object
+      required:
+      - server_data
+      - current_user
+      title: Body_create_mcp_server_api_v1_mcp_servers_post
+    Body_create_tool_configuration_api_v1_tool_configurations_post:
+      properties:
+        config_data:
+          $ref: '#/components/schemas/ToolConfigurationCreate'
+        current_user:
+          $ref: '#/components/schemas/UserResponse'
+      type: object
+      required:
+      - config_data
+      - current_user
+      title: Body_create_tool_configuration_api_v1_tool_configurations_post
     Body_get_resolution_suggestion_api_v1_ai_suggestion_post:
       properties:
         issue1_id:
@@ -4949,6 +5069,39 @@ components:
       - username
       - password
       title: Body_login_form_api_v1_auth_token_post
+    Body_update_approval_policy_api_v1_approval_policies__policy_id__put:
+      properties:
+        policy_update:
+          $ref: '#/components/schemas/ApprovalPolicyUpdate'
+        current_user:
+          $ref: '#/components/schemas/UserResponse'
+      type: object
+      required:
+      - policy_update
+      - current_user
+      title: Body_update_approval_policy_api_v1_approval_policies__policy_id__put
+    Body_update_mcp_server_api_v1_mcp_servers__server_id__put:
+      properties:
+        server_update:
+          $ref: '#/components/schemas/MCPServerUpdate'
+        current_user:
+          $ref: '#/components/schemas/UserResponse'
+      type: object
+      required:
+      - server_update
+      - current_user
+      title: Body_update_mcp_server_api_v1_mcp_servers__server_id__put
+    Body_update_tool_configuration_api_v1_tool_configurations__config_id__put:
+      properties:
+        config_update:
+          $ref: '#/components/schemas/ToolConfigurationUpdate'
+        current_user:
+          $ref: '#/components/schemas/UserResponse'
+      type: object
+      required:
+      - config_update
+      - current_user
+      title: Body_update_tool_configuration_api_v1_tool_configurations__config_id__put
     CheckoutSessionDetailsResponse:
       properties:
         email:

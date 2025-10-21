@@ -50,29 +50,6 @@ def mock_db():
     return MagicMock()
 
 
-class TestGetAccount:
-    """Test get_account helper function."""
-
-    async def test_get_account_success(self, mock_db, mock_user, mock_account):
-        """Test successful account retrieval."""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_account
-
-        result = tools.get_account(mock_db, mock_user)
-
-        assert result == mock_account
-        mock_db.query.assert_called_once()
-
-    async def test_get_account_not_found(self, mock_db, mock_user):
-        """Test account not found raises exception."""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-
-        with pytest.raises(HTTPException) as exc_info:
-            tools.get_account(mock_db, mock_user)
-
-        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
-        assert "User account not found" in exc_info.value.detail
-
-
 class TestListAllTools:
     """Test list_all_tools endpoint."""
 
@@ -80,17 +57,17 @@ class TestListAllTools:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test listing tools when no configurations exist."""
+        # Mock CRUD operations
         mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get_multi_by_account",
+            return_value=[],
+        )
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_mcp_server.get_active_by_account",
+            return_value=[],
         )
 
-        # Mock tool configurations query
-        mock_db.query.return_value.filter.return_value.all.side_effect = [
-            [],  # No tool configurations
-            [],  # No MCP servers
-        ]
-
-        result = await tools.list_all_tools(current_user=mock_user, db=mock_db)
+        result = await tools.list_all_tools(account=mock_account, db=mock_db)
 
         # Should return all builtin tools with defaults
         assert len(result) == len(tools.BUILTIN_TOOLS)
@@ -102,10 +79,6 @@ class TestListAllTools:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test listing tools with existing configurations."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         # Create mock tool configuration
         policy_id = uuid.uuid4()
         config = MagicMock(spec=ToolConfiguration)
@@ -117,12 +90,17 @@ class TestListAllTools:
         config.requires_approval = True
         config.approval_policy_id = policy_id
 
-        mock_db.query.return_value.filter.return_value.all.side_effect = [
-            [config],  # Tool configurations
-            [],  # No MCP servers
-        ]
+        # Mock CRUD operations
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get_multi_by_account",
+            return_value=[config],
+        )
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_mcp_server.get_active_by_account",
+            return_value=[],
+        )
 
-        result = await tools.list_all_tools(current_user=mock_user, db=mock_db)
+        result = await tools.list_all_tools(account=mock_account, db=mock_db)
 
         # Find the configured tool
         get_issue_tool = next(t for t in result if t["name"] == "get_issue")
@@ -135,10 +113,6 @@ class TestListAllTools:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test listing tools including MCP server tools."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         # Create mock MCP server and tools
         server_id = uuid.uuid4()
         mcp_server = MagicMock(spec=MCPServer)
@@ -151,20 +125,21 @@ class TestListAllTools:
         mcp_tool.description = "A custom MCP tool"
         mcp_tool.input_schema = {"type": "object", "properties": {}}
 
-        # Setup query mocks
-        def query_side_effect(model):
-            mock_query = MagicMock()
-            if model == ToolConfiguration:
-                mock_query.filter.return_value.all.return_value = []
-            elif model == MCPServer:
-                mock_query.filter.return_value.all.return_value = [mcp_server]
-            elif model == MCPTool:
-                mock_query.filter.return_value.all.return_value = [mcp_tool]
-            return mock_query
+        # Mock CRUD operations
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get_multi_by_account",
+            return_value=[],
+        )
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_mcp_server.get_active_by_account",
+            return_value=[mcp_server],
+        )
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_mcp_tool.get_by_server",
+            return_value=[mcp_tool],
+        )
 
-        mock_db.query.side_effect = query_side_effect
-
-        result = await tools.list_all_tools(current_user=mock_user, db=mock_db)
+        result = await tools.list_all_tools(account=mock_account, db=mock_db)
 
         # Should have builtin tools + MCP tool
         assert len(result) == len(tools.BUILTIN_TOOLS) + 1
@@ -184,10 +159,6 @@ class TestToolConfigurationEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test creating a new tool configuration."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         config_data = ToolConfigurationCreate(
             tool_name="get_issue",
             tool_source="builtin",
@@ -197,7 +168,10 @@ class TestToolConfigurationEndpoints:
         )
 
         # Mock no existing config
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get_multi_by_account",
+            return_value=[],
+        )
 
         # Mock db.refresh to set database-generated fields
         def mock_refresh(obj):
@@ -211,7 +185,7 @@ class TestToolConfigurationEndpoints:
 
         result = await tools.create_tool_configuration(
             config_data=config_data,
-            current_user=mock_user,
+            account=mock_account,
             db=mock_db,
         )
 
@@ -223,10 +197,6 @@ class TestToolConfigurationEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test creating tool configuration that already exists."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         config_data = ToolConfigurationCreate(
             tool_name="get_issue",
             tool_source="builtin",
@@ -235,14 +205,19 @@ class TestToolConfigurationEndpoints:
 
         # Mock existing config
         existing_config = MagicMock(spec=ToolConfiguration)
-        mock_db.query.return_value.filter.return_value.first.return_value = (
-            existing_config
+        existing_config.tool_name = "get_issue"
+        existing_config.tool_source = "builtin"
+        existing_config.mcp_server_id = None
+
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get_multi_by_account",
+            return_value=[existing_config],
         )
 
         with pytest.raises(HTTPException) as exc_info:
             await tools.create_tool_configuration(
                 config_data=config_data,
-                current_user=mock_user,
+                account=mock_account,
                 db=mock_db,
             )
 
@@ -253,10 +228,6 @@ class TestToolConfigurationEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test getting a tool configuration."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         config_id = uuid.uuid4()
         config = MagicMock(spec=ToolConfiguration)
         config.id = config_id
@@ -276,11 +247,14 @@ class TestToolConfigurationEndpoints:
         config.created_at = datetime.now(UTC)
         config.updated_at = datetime.now(UTC)
 
-        mock_db.query.return_value.filter.return_value.first.return_value = config
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=config,
+        )
 
         result = await tools.get_tool_configuration(
             config_id=config_id,
-            current_user=mock_user,
+            account=mock_account,
             db=mock_db,
         )
 
@@ -290,17 +264,17 @@ class TestToolConfigurationEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test getting non-existent tool configuration."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         config_id = uuid.uuid4()
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=None,
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await tools.get_tool_configuration(
                 config_id=config_id,
-                current_user=mock_user,
+                account=mock_account,
                 db=mock_db,
             )
 
@@ -310,10 +284,6 @@ class TestToolConfigurationEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test updating a tool configuration."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         config_id = uuid.uuid4()
         config = MagicMock(spec=ToolConfiguration)
         config.id = config_id
@@ -333,14 +303,17 @@ class TestToolConfigurationEndpoints:
         config.created_at = datetime.now(UTC)
         config.updated_at = datetime.now(UTC)
 
-        mock_db.query.return_value.filter.return_value.first.return_value = config
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=config,
+        )
 
         update_data = ToolConfigurationUpdate(is_enabled=False)
 
         result = await tools.update_tool_configuration(
             config_id=config_id,
             config_update=update_data,
-            current_user=mock_user,
+            account=mock_account,
             db=mock_db,
         )
 
@@ -351,17 +324,17 @@ class TestToolConfigurationEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test deleting a tool configuration."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         config_id = uuid.uuid4()
         config = MagicMock(spec=ToolConfiguration)
-        mock_db.query.return_value.filter.return_value.first.return_value = config
+
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=config,
+        )
 
         result = await tools.delete_tool_configuration(
             config_id=config_id,
-            current_user=mock_user,
+            account=mock_account,
             db=mock_db,
         )
 
@@ -377,10 +350,6 @@ class TestApprovalPolicyEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test listing approval policies."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         policy = MagicMock(spec=ApprovalPolicy)
         policy.id = uuid.uuid4()
         policy.account_id = str(mock_account.id)
@@ -397,10 +366,13 @@ class TestApprovalPolicyEndpoints:
         policy.created_at = datetime.now(UTC)
         policy.updated_at = datetime.now(UTC)
 
-        mock_db.query.return_value.filter.return_value.all.return_value = [policy]
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.get_multi_by_account",
+            return_value=[policy],
+        )
 
         result = await tools.list_approval_policies(
-            current_user=mock_user,
+            account=mock_account,
             db=mock_db,
         )
 
@@ -411,10 +383,6 @@ class TestApprovalPolicyEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test creating an approval policy."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         policy_data = ApprovalPolicyCreate(
             name="Test Policy",
             approval_type="slack",
@@ -422,7 +390,10 @@ class TestApprovalPolicyEndpoints:
         )
 
         # Mock no existing policy with same name
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.get_by_name",
+            return_value=None,
+        )
 
         # Mock db.refresh to set database-generated fields
         def mock_refresh(obj):
@@ -436,7 +407,7 @@ class TestApprovalPolicyEndpoints:
 
         result = await tools.create_approval_policy(
             policy_data=policy_data,
-            current_user=mock_user,
+            account=mock_account,
             db=mock_db,
         )
 
@@ -448,10 +419,6 @@ class TestApprovalPolicyEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test creating approval policy with duplicate name."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         policy_data = ApprovalPolicyCreate(
             name="Test Policy",
             approval_type="slack",
@@ -460,14 +427,16 @@ class TestApprovalPolicyEndpoints:
 
         # Mock existing policy
         existing_policy = MagicMock(spec=ApprovalPolicy)
-        mock_db.query.return_value.filter.return_value.first.return_value = (
-            existing_policy
+
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.get_by_name",
+            return_value=existing_policy,
         )
 
         with pytest.raises(HTTPException) as exc_info:
             await tools.create_approval_policy(
                 policy_data=policy_data,
-                current_user=mock_user,
+                account=mock_account,
                 db=mock_db,
             )
 
@@ -478,10 +447,6 @@ class TestApprovalPolicyEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test getting an approval policy."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         policy_id = uuid.uuid4()
         policy = MagicMock(spec=ApprovalPolicy)
         policy.id = policy_id
@@ -499,11 +464,14 @@ class TestApprovalPolicyEndpoints:
         policy.created_at = datetime.now(UTC)
         policy.updated_at = datetime.now(UTC)
 
-        mock_db.query.return_value.filter.return_value.first.return_value = policy
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.get",
+            return_value=policy,
+        )
 
         result = await tools.get_approval_policy(
             policy_id=policy_id,
-            current_user=mock_user,
+            account=mock_account,
             db=mock_db,
         )
 
@@ -513,10 +481,6 @@ class TestApprovalPolicyEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test updating an approval policy."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         policy_id = uuid.uuid4()
         policy = MagicMock(spec=ApprovalPolicy)
         policy.id = policy_id
@@ -534,18 +498,24 @@ class TestApprovalPolicyEndpoints:
         policy.created_at = datetime.now(UTC)
         policy.updated_at = datetime.now(UTC)
 
-        # Mock queries for get and duplicate check
-        mock_db.query.return_value.filter.return_value.first.side_effect = [
-            policy,  # First call: get the policy
-            None,  # Second call: no duplicate with new name
-        ]
+        # Mock the get method to return policy
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.get",
+            return_value=policy,
+        )
+
+        # Mock the get_by_name method for duplicate check (no duplicate with new name)
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.get_by_name",
+            return_value=None,
+        )
 
         update_data = ApprovalPolicyUpdate(name="New Name")
 
         result = await tools.update_approval_policy(
             policy_id=policy_id,
             policy_update=update_data,
-            current_user=mock_user,
+            account=mock_account,
             db=mock_db,
         )
 
@@ -556,21 +526,24 @@ class TestApprovalPolicyEndpoints:
         self, mock_db, mock_user, mock_account, mocker
     ):
         """Test deleting an approval policy."""
-        mocker.patch(
-            "spacebridge.api.endpoints.tools.get_account", return_value=mock_account
-        )
-
         policy_id = uuid.uuid4()
         policy = MagicMock(spec=ApprovalPolicy)
 
         # Mock policy lookup
-        mock_db.query.return_value.filter.return_value.first.return_value = policy
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.get",
+            return_value=policy,
+        )
+
         # Mock tool count query
-        mock_db.query.return_value.filter.return_value.count.return_value = 2
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.count_by_policy",
+            return_value=2,
+        )
 
         result = await tools.delete_approval_policy(
             policy_id=policy_id,
-            current_user=mock_user,
+            account=mock_account,
             db=mock_db,
         )
 

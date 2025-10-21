@@ -7,12 +7,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from spacebridge.api.auth.jwt import get_current_active_user
-from spacebridge.schemas.auth import UserResponse
+from spacebridge.api.common import get_account_for_user
 from spacebridge.services.mcp_tool_discovery import (
     get_cached_tools_for_server,
     scan_mcp_server_tools,
 )
+from spacemodels.crud import crud_mcp_server
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.mcp_server import MCPServer
@@ -27,40 +27,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_account(db: Session, current_user: UserResponse) -> Account:
-    """Fetch the account for the current user, raising an exception if not found.
-
-    Args:
-        db: Database session
-        current_user: Current authenticated user
-
-    Returns:
-        Account object
-
-    Raises:
-        HTTPException: If account not found
-    """
-    account = (
-        db.query(Account).filter(Account.username == current_user.username).first()
-    )
-    if not account:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
-        )
-    return account
-
-
 @router.post("/mcp-servers", status_code=status.HTTP_201_CREATED)
 async def create_mcp_server(
     server_data: MCPServerCreate,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> MCPServerResponse:
     """Create a new external MCP server configuration.
 
     Args:
         server_data: MCP server configuration data
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -69,19 +46,11 @@ async def create_mcp_server(
     Raises:
         HTTPException: If creation fails or validation fails
     """
-    logger.info(f"User {current_user.username} creating MCP server: {server_data.name}")
-
-    # Get user's account
-    account = get_account(db, current_user)
+    logger.info(f"User {account.username} creating MCP server: {server_data.name}")
 
     # Check if server with same name already exists for this account
-    existing_server = (
-        db.query(MCPServer)
-        .filter(
-            MCPServer.account_id == account.id,
-            MCPServer.name == server_data.name,
-        )
-        .first()
+    existing_server = crud_mcp_server.get_by_name(
+        db, account_id=str(account.id), name=server_data.name
     )
 
     if existing_server:
@@ -136,7 +105,7 @@ async def create_mcp_server(
             )
         else:
             logger.info(
-                f"Created MCP server {new_server.id} for user {current_user.username}"
+                f"Created MCP server {new_server.id} for user {account.username}"
             )
 
             # Automatically scan for tools on successful creation
@@ -163,21 +132,19 @@ async def create_mcp_server(
 
 @router.get("/mcp-servers", response_model=List[MCPServerResponse])
 async def list_mcp_servers(
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> List[MCPServerResponse]:
     """List all MCP servers for the current user.
 
     Args:
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
         List of MCP servers
     """
-    account = get_account(db, current_user)
-
-    servers = db.query(MCPServer).filter(MCPServer.account_id == account.id).all()
+    servers = crud_mcp_server.get_multi_by_account(db, account_id=str(account.id))
 
     return [MCPServerResponse.model_validate(server) for server in servers]
 
@@ -185,14 +152,14 @@ async def list_mcp_servers(
 @router.get("/mcp-servers/{server_id}", response_model=MCPServerResponse)
 async def get_mcp_server(
     server_id: UUID,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> MCPServerResponse:
     """Get a specific MCP server by ID.
 
     Args:
         server_id: MCP server ID
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -201,16 +168,7 @@ async def get_mcp_server(
     Raises:
         HTTPException: If server not found or access denied
     """
-    account = get_account(db, current_user)
-
-    server = (
-        db.query(MCPServer)
-        .filter(
-            MCPServer.id == server_id,
-            MCPServer.account_id == account.id,
-        )
-        .first()
-    )
+    server = crud_mcp_server.get(db, id=server_id, account_id=str(account.id))
 
     if not server:
         raise HTTPException(
@@ -225,7 +183,7 @@ async def get_mcp_server(
 async def update_mcp_server(
     server_id: UUID,
     server_update: MCPServerUpdate,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> MCPServerResponse:
     """Update an existing MCP server configuration.
@@ -233,7 +191,7 @@ async def update_mcp_server(
     Args:
         server_id: MCP server ID
         server_update: Updated server data
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -242,16 +200,7 @@ async def update_mcp_server(
     Raises:
         HTTPException: If server not found or update fails
     """
-    account = get_account(db, current_user)
-
-    server = (
-        db.query(MCPServer)
-        .filter(
-            MCPServer.id == server_id,
-            MCPServer.account_id == account.id,
-        )
-        .first()
-    )
+    server = crud_mcp_server.get(db, id=server_id, account_id=str(account.id))
 
     if not server:
         raise HTTPException(
@@ -269,7 +218,7 @@ async def update_mcp_server(
         db.commit()
         db.refresh(server)
 
-        logger.info(f"Updated MCP server {server_id} for user {current_user.username}")
+        logger.info(f"Updated MCP server {server_id} for user {account.username}")
 
         return MCPServerResponse.model_validate(server)
 
@@ -285,14 +234,14 @@ async def update_mcp_server(
 @router.delete("/mcp-servers/{server_id}", status_code=status.HTTP_200_OK)
 async def delete_mcp_server(
     server_id: UUID,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete an MCP server.
 
     Args:
         server_id: MCP server ID
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -301,16 +250,7 @@ async def delete_mcp_server(
     Raises:
         HTTPException: If server not found or deletion fails
     """
-    account = get_account(db, current_user)
-
-    server = (
-        db.query(MCPServer)
-        .filter(
-            MCPServer.id == server_id,
-            MCPServer.account_id == account.id,
-        )
-        .first()
-    )
+    server = crud_mcp_server.get(db, id=server_id, account_id=str(account.id))
 
     if not server:
         raise HTTPException(
@@ -322,7 +262,7 @@ async def delete_mcp_server(
         db.delete(server)
         db.commit()
 
-        logger.info(f"Deleted MCP server {server_id} for user {current_user.username}")
+        logger.info(f"Deleted MCP server {server_id} for user {account.username}")
 
         return {"message": "MCP server deleted successfully"}
 
@@ -338,14 +278,14 @@ async def delete_mcp_server(
 @router.post("/mcp-servers/{server_id}/scan", status_code=status.HTTP_200_OK)
 async def scan_mcp_server(
     server_id: UUID,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Trigger a tool discovery scan for an MCP server.
 
     Args:
         server_id: MCP server ID
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -354,16 +294,7 @@ async def scan_mcp_server(
     Raises:
         HTTPException: If server not found or scan fails
     """
-    account = get_account(db, current_user)
-
-    server = (
-        db.query(MCPServer)
-        .filter(
-            MCPServer.id == server_id,
-            MCPServer.account_id == account.id,
-        )
-        .first()
-    )
+    server = crud_mcp_server.get(db, id=server_id, account_id=str(account.id))
 
     if not server:
         raise HTTPException(
@@ -373,7 +304,7 @@ async def scan_mcp_server(
 
     try:
         logger.info(
-            f"User {current_user.username} triggering scan for MCP server {server_id}"
+            f"User {account.username} triggering scan for MCP server {server_id}"
         )
 
         tools = await scan_mcp_server_tools(server_id, db)
@@ -403,14 +334,14 @@ async def scan_mcp_server(
 @router.get("/mcp-servers/{server_id}/tools", response_model=List[MCPToolResponse])
 async def list_mcp_server_tools(
     server_id: UUID,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> List[MCPToolResponse]:
     """List discovered tools for an MCP server.
 
     Args:
         server_id: MCP server ID
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -419,16 +350,7 @@ async def list_mcp_server_tools(
     Raises:
         HTTPException: If server not found or access denied
     """
-    account = get_account(db, current_user)
-
-    server = (
-        db.query(MCPServer)
-        .filter(
-            MCPServer.id == server_id,
-            MCPServer.account_id == account.id,
-        )
-        .first()
-    )
+    server = crud_mcp_server.get(db, id=server_id, account_id=str(account.id))
 
     if not server:
         raise HTTPException(

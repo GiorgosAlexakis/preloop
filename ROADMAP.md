@@ -51,17 +51,22 @@
     - [x] Integrate StreamableHTTP transport with JWT authentication
     - [x] Use ContextVar for async-safe user context propagation
     - [x] Mount MCP server at `/mcp/v1` with lifespan management
-- [ ] **Phase 1B: External MCP Servers & Tool Proxying** (Future)
-    - [ ] Add support for user-configured external MCP servers
-    - [ ] Implement MCP client pool for external server connections
-    - [ ] Implement tool discovery and caching from external servers
-    - [ ] Enable proxied tool execution
-- [ ] **Phase 2: Approval Workflow** (Future)
-    - [ ] Implement human-in-the-loop approval for tool execution
-    - [ ] NATS integration for approval requests
-    - [ ] Slack/Mattermost integrations for notifications
-- [ ] **Phase 3: Tools UI** (Future)
-    - [ ] Build UI for tool management
+- [x] **Phase 1B: External MCP Servers & Tool Proxying** ✅ COMPLETED
+    - [x] Add support for user-configured external MCP servers (MCPServer model, CRUD operations)
+    - [x] Implement MCP client pool for external server connections (MCPClientPool with connection pooling)
+    - [x] Implement tool discovery and caching from external servers (scan endpoint, MCPTool model)
+    - [x] Enable proxied tool execution (DynamicMCPServer with proxied tool support)
+- [x] **Phase 2: Approval Workflow** ✅ COMPLETED
+    - [x] Implement human-in-the-loop approval for tool execution (ApprovalService, ToolConfiguration)
+    - [x] Database models for approval policies and requests (ApprovalPolicy, ApprovalRequest)
+    - [x] Webhook integrations for notifications (Slack, Mattermost, custom webhooks)
+    - [x] Public approval response endpoint
+    - [x] Tool configuration management (API endpoints for tool configs and approval policies)
+- [ ] **Phase 3: Tools UI** (Partially Complete - Backend Ready)
+    - [x] API endpoints for tool management
+    - [x] API endpoints for MCP server management
+    - [x] API endpoints for approval management
+    - [ ] Build UI components for tool management
     - [ ] MCP server management interface
     - [ ] Approval dashboard
 
@@ -95,18 +100,24 @@
     *   *Description:* Design and implement a system for defining, managing, and allowing users to utilize or clone pre-defined Flow templates.
 
 #### Epic 4: Flow Execution Engine Development
-- [x] **Task 4.1: Develop Flow Trigger Service** ([Issue #65](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/65))
+- [x] **Task 4.1: Develop Flow Trigger Service** ([Issue #65](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/65)) ✅
     *   *Description:* Create the service that subscribes to the NATS event bus, matches incoming events against active `Flow` definitions, and initiates their execution.
-- [x] **Task 4.2: Develop Flow Execution Orchestrator** ([Issue #66](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/66))
+    *   *Status:* Implemented in `spacebridge/services/flow_orchestrator.py` with webhook integration
+- [x] **Task 4.2: Develop Flow Execution Orchestrator** ([Issue #66](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/66)) ✅
     *   *Description:* Build the orchestrator to manage Flow lifecycles: retrieve definitions, resolve dynamic prompts, handle API key decryption, and manage agent sessions via the Agent Execution Infrastructure.
-- [x] **Task 4.3: Agent Execution Infrastructure & OpenHands Integration** ([Issue #67](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/67))
+    *   *Status:* `FlowOrchestrator` class handles full lifecycle management with NATS integration
+- [x] **Task 4.3: Agent Execution Infrastructure & OpenHands Integration** ([Issue #67](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/67)) ✅
     *   *Description:* Build the Agent Execution Infrastructure abstraction layer for running agents in isolated containers. Integrate OpenHands as the first agent implementation. Support for additional agents (Claude Code, Aider) can be added later by creating container images.
-- [ ] **Task 4.4: Implement Dynamic Prompt Construction & Context Resolution** ([Issue #68](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/68))
+    *   *Status:* Container-based execution with Docker/K8s support, OpenHands integration complete
+- [x] **Task 4.4: Implement Dynamic Prompt Construction & Context Resolution** ([Issue #68](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/68)) ✅
     *   *Description:* Develop logic within the Flow Execution Orchestrator to parse `prompt_template` placeholders and dynamically fetch/inject required context data from `SpaceModels` or other services.
-- [ ] **Task 4.5: Enable MCP Tool Interaction from Agents** ([Issue #69](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/69))
+    *   *Status:* Prompt resolver system implemented with variable substitution
+- [x] **Task 4.5: Enable MCP Tool Interaction from Agents** ([Issue #69](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/69)) ✅
     *   *Description:* Configure agents to directly call allowed MCP tools on specified MCP servers, adhering to `allowed_mcp_servers` and `allowed_mcp_tools` in the `Flow` definition. Initial implementation for OpenHands, extensible to other agent types.
-- [ ] **Task 4.6: Implement Comprehensive Flow Execution Logging** ([Issue #70](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/70))
+    *   *Status:* MCP tool integration complete with temporary API keys for agent sessions
+- [x] **Task 4.6: Implement Comprehensive Flow Execution Logging** ([Issue #70](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/70)) ✅
     *   *Description:* Ensure detailed logging of Flow executions into the `FlowExecutions` table, and integrate with centralized logging for agent operational logs (container logs, process output, etc.).
+    *   *Status:* Real-time execution monitoring via NATS with WebSocket streaming to UI
 
 #### Epic 5: Security & Initial Content
 - [ ] **Task 5.1: Secure `AIModel` API Keys (Initial Implementation)** ([Issue #71](https://gitlab.spacecode.ai/spacecode/spacebridge/-/issues/71))

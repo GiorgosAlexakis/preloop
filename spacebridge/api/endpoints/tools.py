@@ -7,12 +7,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from spacebridge.api.auth.jwt import get_current_active_user
-from spacebridge.schemas.auth import UserResponse
+from spacebridge.api.common import get_account_for_user
+from spacemodels.crud import (
+    crud_approval_policy,
+    crud_mcp_server,
+    crud_mcp_tool,
+    crud_tool_configuration,
+)
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
-from spacemodels.models.mcp_server import MCPServer
-from spacemodels.models.mcp_tool import MCPTool
 from spacemodels.models.tool_configuration import ApprovalPolicy, ToolConfiguration
 from spacemodels.schemas.tool_configuration import (
     ApprovalPolicyCreate,
@@ -130,32 +133,9 @@ BUILTIN_TOOLS = [
 ]
 
 
-def get_account(db: Session, current_user: UserResponse) -> Account:
-    """Fetch the account for the current user.
-
-    Args:
-        db: Database session
-        current_user: Current authenticated user
-
-    Returns:
-        Account object
-
-    Raises:
-        HTTPException: If account not found
-    """
-    account = (
-        db.query(Account).filter(Account.username == current_user.username).first()
-    )
-    if not account:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
-        )
-    return account
-
-
 @router.get("/tools", response_model=List[Dict])
 async def list_all_tools(
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> List[Dict]:
     """List all available tools (builtin + external) with their configuration status.
@@ -166,19 +146,15 @@ async def list_all_tools(
     - Configuration status for each tool (enabled/disabled, preloop)
 
     Args:
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
         List of tool dictionaries with metadata and configuration
     """
-    account = get_account(db, current_user)
-
     # Get all tool configurations for this account
-    tool_configs = (
-        db.query(ToolConfiguration)
-        .filter(ToolConfiguration.account_id == account.id)
-        .all()
+    tool_configs = crud_tool_configuration.get_multi_by_account(
+        db, account_id=str(account.id)
     )
 
     # Create a lookup map: (tool_name, source, mcp_server_id) -> config
@@ -217,17 +193,10 @@ async def list_all_tools(
         )
 
     # Add external MCP tools
-    mcp_servers = (
-        db.query(MCPServer)
-        .filter(
-            MCPServer.account_id == account.id,
-            MCPServer.status == "active",
-        )
-        .all()
-    )
+    mcp_servers = crud_mcp_server.get_active_by_account(db, account_id=str(account.id))
 
     for server in mcp_servers:
-        mcp_tools = db.query(MCPTool).filter(MCPTool.mcp_server_id == server.id).all()
+        mcp_tools = crud_mcp_tool.get_by_server(db, server_id=server.id)
 
         for mcp_tool in mcp_tools:
             config = config_map.get((mcp_tool.name, "mcp", str(server.id)))
@@ -252,7 +221,7 @@ async def list_all_tools(
             )
 
     logger.info(
-        f"Returning {len(tools)} tools for user {current_user.username} "
+        f"Returning {len(tools)} tools for user {account.username} "
         f"({len(BUILTIN_TOOLS)} builtin, {len(tools) - len(BUILTIN_TOOLS)} external)"
     )
 
@@ -262,14 +231,14 @@ async def list_all_tools(
 @router.post("/tool-configurations", status_code=status.HTTP_201_CREATED)
 async def create_tool_configuration(
     config_data: ToolConfigurationCreate,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> ToolConfigurationResponse:
     """Create a new tool configuration.
 
     Args:
         config_data: Tool configuration data
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -278,18 +247,20 @@ async def create_tool_configuration(
     Raises:
         HTTPException: If configuration already exists or creation fails
     """
-    account = get_account(db, current_user)
-
     # Check if configuration already exists
-    existing_config = (
-        db.query(ToolConfiguration)
-        .filter(
-            ToolConfiguration.account_id == account.id,
-            ToolConfiguration.tool_name == config_data.tool_name,
-            ToolConfiguration.tool_source == config_data.tool_source,
-            ToolConfiguration.mcp_server_id == config_data.mcp_server_id,
-        )
-        .first()
+    # Get all configs and filter in Python since we need multi-field matching
+    all_configs = crud_tool_configuration.get_multi_by_account(
+        db, account_id=str(account.id), limit=1000
+    )
+    existing_config = next(
+        (
+            c
+            for c in all_configs
+            if c.tool_name == config_data.tool_name
+            and c.tool_source == config_data.tool_source
+            and c.mcp_server_id == config_data.mcp_server_id
+        ),
+        None,
     )
 
     if existing_config:
@@ -322,7 +293,7 @@ async def create_tool_configuration(
 
         logger.info(
             f"Created tool configuration for {config_data.tool_name} "
-            f"(user: {current_user.username})"
+            f"(user: {account.username})"
         )
 
         return ToolConfigurationResponse.model_validate(new_config)
@@ -341,14 +312,14 @@ async def create_tool_configuration(
 )
 async def get_tool_configuration(
     config_id: UUID,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> ToolConfigurationResponse:
     """Get a specific tool configuration.
 
     Args:
         config_id: Tool configuration ID
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -357,15 +328,8 @@ async def get_tool_configuration(
     Raises:
         HTTPException: If configuration not found or access denied
     """
-    account = get_account(db, current_user)
-
-    config = (
-        db.query(ToolConfiguration)
-        .filter(
-            ToolConfiguration.id == config_id,
-            ToolConfiguration.account_id == account.id,
-        )
-        .first()
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
     )
 
     if not config:
@@ -383,7 +347,7 @@ async def get_tool_configuration(
 async def update_tool_configuration(
     config_id: UUID,
     config_update: ToolConfigurationUpdate,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> ToolConfigurationResponse:
     """Update an existing tool configuration.
@@ -391,7 +355,7 @@ async def update_tool_configuration(
     Args:
         config_id: Tool configuration ID
         config_update: Updated configuration data
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -400,15 +364,8 @@ async def update_tool_configuration(
     Raises:
         HTTPException: If configuration not found or update fails
     """
-    account = get_account(db, current_user)
-
-    config = (
-        db.query(ToolConfiguration)
-        .filter(
-            ToolConfiguration.id == config_id,
-            ToolConfiguration.account_id == account.id,
-        )
-        .first()
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
     )
 
     if not config:
@@ -428,7 +385,7 @@ async def update_tool_configuration(
         db.refresh(config)
 
         logger.info(
-            f"Updated tool configuration {config_id} for user {current_user.username}"
+            f"Updated tool configuration {config_id} for user {account.username}"
         )
 
         return ToolConfigurationResponse.model_validate(config)
@@ -447,14 +404,14 @@ async def update_tool_configuration(
 @router.delete("/tool-configurations/{config_id}", status_code=status.HTTP_200_OK)
 async def delete_tool_configuration(
     config_id: UUID,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete a tool configuration.
 
     Args:
         config_id: Tool configuration ID
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -463,15 +420,8 @@ async def delete_tool_configuration(
     Raises:
         HTTPException: If configuration not found or deletion fails
     """
-    account = get_account(db, current_user)
-
-    config = (
-        db.query(ToolConfiguration)
-        .filter(
-            ToolConfiguration.id == config_id,
-            ToolConfiguration.account_id == account.id,
-        )
-        .first()
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
     )
 
     if not config:
@@ -485,7 +435,7 @@ async def delete_tool_configuration(
         db.commit()
 
         logger.info(
-            f"Deleted tool configuration {config_id} for user {current_user.username}"
+            f"Deleted tool configuration {config_id} for user {account.username}"
         )
 
         return {"message": "Tool configuration deleted successfully"}
@@ -506,26 +456,22 @@ async def delete_tool_configuration(
 
 @router.get("/approval-policies", response_model=List[ApprovalPolicyResponse])
 async def list_approval_policies(
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> List[ApprovalPolicyResponse]:
     """List all approval policies for the current user's account.
 
     Args:
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
         List of approval policies
     """
-    account = get_account(db, current_user)
-
-    policies = (
-        db.query(ApprovalPolicy).filter(ApprovalPolicy.account_id == account.id).all()
-    )
+    policies = crud_approval_policy.get_multi_by_account(db, account_id=str(account.id))
 
     logger.info(
-        f"Returning {len(policies)} approval policies for user {current_user.username}"
+        f"Returning {len(policies)} approval policies for user {account.username}"
     )
 
     return [ApprovalPolicyResponse.model_validate(p) for p in policies]
@@ -534,14 +480,14 @@ async def list_approval_policies(
 @router.post("/approval-policies", status_code=status.HTTP_201_CREATED)
 async def create_approval_policy(
     policy_data: ApprovalPolicyCreate,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> ApprovalPolicyResponse:
     """Create a reusable approval policy.
 
     Args:
         policy_data: Approval policy data
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -550,16 +496,9 @@ async def create_approval_policy(
     Raises:
         HTTPException: If policy with same name already exists or creation fails
     """
-    account = get_account(db, current_user)
-
     # Check if policy with same name already exists
-    existing_policy = (
-        db.query(ApprovalPolicy)
-        .filter(
-            ApprovalPolicy.account_id == account.id,
-            ApprovalPolicy.name == policy_data.name,
-        )
-        .first()
+    existing_policy = crud_approval_policy.get_by_name(
+        db, account_id=str(account.id), name=policy_data.name
     )
 
     if existing_policy:
@@ -588,8 +527,7 @@ async def create_approval_policy(
         db.refresh(new_policy)
 
         logger.info(
-            f"Created approval policy '{policy_data.name}' "
-            f"(user: {current_user.username})"
+            f"Created approval policy '{policy_data.name}' (user: {account.username})"
         )
 
         return ApprovalPolicyResponse.model_validate(new_policy)
@@ -606,14 +544,14 @@ async def create_approval_policy(
 @router.get("/approval-policies/{policy_id}", response_model=ApprovalPolicyResponse)
 async def get_approval_policy(
     policy_id: UUID,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> ApprovalPolicyResponse:
     """Get an approval policy by ID.
 
     Args:
         policy_id: Approval policy ID
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -622,16 +560,7 @@ async def get_approval_policy(
     Raises:
         HTTPException: If policy not found or access denied
     """
-    account = get_account(db, current_user)
-
-    policy = (
-        db.query(ApprovalPolicy)
-        .filter(
-            ApprovalPolicy.id == policy_id,
-            ApprovalPolicy.account_id == account.id,
-        )
-        .first()
-    )
+    policy = crud_approval_policy.get(db, id=policy_id, account_id=str(account.id))
 
     if not policy:
         raise HTTPException(
@@ -646,7 +575,7 @@ async def get_approval_policy(
 async def update_approval_policy(
     policy_id: UUID,
     policy_update: ApprovalPolicyUpdate,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> ApprovalPolicyResponse:
     """Update an approval policy.
@@ -654,7 +583,7 @@ async def update_approval_policy(
     Args:
         policy_id: Approval policy ID
         policy_update: Updated policy data
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -663,16 +592,7 @@ async def update_approval_policy(
     Raises:
         HTTPException: If policy not found or update fails
     """
-    account = get_account(db, current_user)
-
-    policy = (
-        db.query(ApprovalPolicy)
-        .filter(
-            ApprovalPolicy.id == policy_id,
-            ApprovalPolicy.account_id == account.id,
-        )
-        .first()
-    )
+    policy = crud_approval_policy.get(db, id=policy_id, account_id=str(account.id))
 
     if not policy:
         raise HTTPException(
@@ -686,16 +606,10 @@ async def update_approval_policy(
     try:
         # Check if name is being updated and if it conflicts
         if "name" in update_data and update_data["name"] != policy.name:
-            existing_policy = (
-                db.query(ApprovalPolicy)
-                .filter(
-                    ApprovalPolicy.account_id == account.id,
-                    ApprovalPolicy.name == update_data["name"],
-                    ApprovalPolicy.id != policy_id,
-                )
-                .first()
+            existing_policy = crud_approval_policy.get_by_name(
+                db, account_id=str(account.id), name=update_data["name"]
             )
-            if existing_policy:
+            if existing_policy and existing_policy.id != policy_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Approval policy with name '{update_data['name']}' already exists",
@@ -707,9 +621,7 @@ async def update_approval_policy(
         db.commit()
         db.refresh(policy)
 
-        logger.info(
-            f"Updated approval policy {policy_id} for user {current_user.username}"
-        )
+        logger.info(f"Updated approval policy {policy_id} for user {account.username}")
 
         return ApprovalPolicyResponse.model_validate(policy)
 
@@ -728,7 +640,7 @@ async def update_approval_policy(
 @router.delete("/approval-policies/{policy_id}", status_code=status.HTTP_200_OK)
 async def delete_approval_policy(
     policy_id: UUID,
-    current_user: UserResponse = Depends(get_current_active_user),
+    account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete an approval policy.
@@ -738,7 +650,7 @@ async def delete_approval_policy(
 
     Args:
         policy_id: Approval policy ID
-        current_user: Current authenticated user
+        account: Current user's account (from dependency)
         db: Database session
 
     Returns:
@@ -747,16 +659,7 @@ async def delete_approval_policy(
     Raises:
         HTTPException: If policy not found or deletion fails
     """
-    account = get_account(db, current_user)
-
-    policy = (
-        db.query(ApprovalPolicy)
-        .filter(
-            ApprovalPolicy.id == policy_id,
-            ApprovalPolicy.account_id == account.id,
-        )
-        .first()
-    )
+    policy = crud_approval_policy.get(db, id=policy_id, account_id=str(account.id))
 
     if not policy:
         raise HTTPException(
@@ -766,10 +669,8 @@ async def delete_approval_policy(
 
     try:
         # Count how many tool configurations use this policy
-        tool_count = (
-            db.query(ToolConfiguration)
-            .filter(ToolConfiguration.approval_policy_id == policy_id)
-            .count()
+        tool_count = crud_tool_configuration.count_by_policy(
+            db, policy_id=str(policy_id)
         )
 
         db.delete(policy)
@@ -777,7 +678,7 @@ async def delete_approval_policy(
 
         logger.info(
             f"Deleted approval policy {policy_id} (was used by {tool_count} tools) "
-            f"for user {current_user.username}"
+            f"for user {account.username}"
         )
 
         return {

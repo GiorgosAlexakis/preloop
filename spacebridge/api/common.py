@@ -3,14 +3,17 @@
 import logging
 from typing import Any, Dict, Optional, List
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from spacemodels.db.session import get_db_session
+from spacebridge.schemas.auth import UserResponse
 from spacebridge.schemas.issue_compliance import CompliancePromptMetadata
 from spacesync.spacesync.trackers import create_tracker_client
 from spacemodels.crud import (
     CRUDOrganization,
     CRUDProject,
+    crud_account,
     crud_tracker_scope_rule,
 )
 from spacemodels.models.account import Account
@@ -420,3 +423,32 @@ def get_accessible_projects(
         filtered_projects.append(project)
 
     return filtered_projects
+
+
+def get_account_for_user(
+    current_user: UserResponse,
+    db: Session = Depends(get_db_session),
+) -> Account:
+    """Get Account model for authenticated user.
+
+    This consolidated function replaces duplicate get_account() helpers
+    found across multiple endpoint files. It uses the CRUD layer instead
+    of direct database queries.
+
+    Args:
+        current_user: Authenticated user from JWT token
+        db: Database session
+
+    Returns:
+        Account instance for the authenticated user
+
+    Raises:
+        HTTPException: 401 if account not found for user
+    """
+    account = crud_account.get_by_username(db, username=current_user.username)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account not found",
+        )
+    return account

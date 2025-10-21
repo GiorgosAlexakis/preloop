@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 from nats.aio.client import Client
 
 from spacemodels import schemas
-from spacemodels.crud import crud_flow_execution
+from spacemodels.crud import (
+    crud_account,
+    crud_ai_model,
+    crud_api_key,
+    crud_flow_execution,
+)
 from spacemodels.models.flow import Flow
 from spacemodels.models.ai_model import AIModel
 from spacebridge.agents import create_agent_executor, AgentStatus
@@ -82,6 +87,8 @@ class FlowExecutionOrchestrator:
         flow_id_str = (
             str(self.flow_id) if isinstance(self.flow_id, uuid.UUID) else self.flow_id
         )
+        # Direct query without account filtering since this is an internal service
+        # and we don't have the account_id yet (it's a property of the flow itself)
         self.flow = self.db.query(Flow).filter(Flow.id == flow_id_str).first()
         if not self.flow:
             raise ValueError(f"Flow with id {self.flow_id} not found")
@@ -92,18 +99,12 @@ class FlowExecutionOrchestrator:
 
         # Get AI model if specified
         if self.flow.ai_model_id:
-            from sqlalchemy import cast, String
-
             ai_model_id_str = (
                 str(self.flow.ai_model_id)
                 if isinstance(self.flow.ai_model_id, uuid.UUID)
                 else self.flow.ai_model_id
             )
-            self.ai_model = (
-                self.db.query(AIModel)
-                .filter(cast(AIModel.id, String) == ai_model_id_str)
-                .first()
-            )
+            self.ai_model = crud_ai_model.get(self.db, id=ai_model_id_str)
             if not self.ai_model:
                 logger.warning(
                     f"AI model {self.flow.ai_model_id} not found for flow {self.flow_id}"
@@ -207,14 +208,10 @@ class FlowExecutionOrchestrator:
         """
         import secrets
         from datetime import timedelta
-        from spacemodels.models import Account, ApiKey
+        from spacemodels.models import ApiKey
 
         try:
-            account = (
-                self.db.query(Account)
-                .filter(Account.id == self.flow.account_id)
-                .first()
-            )
+            account = crud_account.get(self.db, id=self.flow.account_id)
 
             if not account:
                 logger.warning(f"Account {self.flow.account_id} not found")
@@ -256,13 +253,7 @@ class FlowExecutionOrchestrator:
             return
 
         try:
-            from spacemodels.models import ApiKey
-
-            api_key = (
-                self.db.query(ApiKey)
-                .filter(ApiKey.id == self.temporary_api_key_id)
-                .first()
-            )
+            api_key = crud_api_key.get(self.db, id=self.temporary_api_key_id)
 
             if api_key:
                 self.db.delete(api_key)
