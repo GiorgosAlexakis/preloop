@@ -1,9 +1,15 @@
-"""add_approval_request_table
+"""create_approval_request_table
 
-Revision ID: 196418f4da7e
+Revision ID: 59d885f87415
 Revises: 9f557696858b
-Create Date: 2025-10-17 04:16:51.622571
+Create Date: 2025-10-22 00:00:00.000000
 
+Note: This migration consolidates three original migrations:
+- 196418f4da7e: Create approval_request table
+- 5afff993cf6a: Add timestamps (created_at, updated_at)
+- 478fc3894fb0: Add approval_token column
+
+All fields are now created in a single migration for cleaner history.
 """
 
 from typing import Sequence, Union
@@ -13,14 +19,14 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "196418f4da7e"
+revision: str = "59d885f87415"
 down_revision: Union[str, None] = "9f557696858b"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
+    """Upgrade schema: create approval_request table with all fields."""
     # Create approval_request_status enum
     from sqlalchemy.dialects.postgresql import ENUM
 
@@ -43,7 +49,7 @@ def upgrade() -> None:
         END $$;
     """)
 
-    # Create approval_request table
+    # Create approval_request table with all fields
     op.create_table(
         "approval_request",
         sa.Column(
@@ -147,14 +153,44 @@ def upgrade() -> None:
             nullable=True,
             comment="Error message if webhook posting failed",
         ),
+        # Timestamp columns (from 5afff993cf6a)
+        sa.Column(
+            "created_at",
+            sa.DateTime(),
+            server_default=sa.text("now()"),
+            nullable=False,
+            comment="When this record was created",
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(),
+            server_default=sa.text("now()"),
+            nullable=False,
+            comment="When this record was last updated",
+        ),
+        # Approval token column (from 478fc3894fb0)
+        sa.Column(
+            "approval_token",
+            sa.String(64),
+            nullable=False,
+            unique=True,
+            comment="Unique token for approval via URL",
+        ),
     )
 
     # Create indexes
     op.create_index("ix_approval_request_status", "approval_request", ["status"])
+    op.create_index(
+        "ix_approval_request_approval_token",
+        "approval_request",
+        ["approval_token"],
+        unique=True,
+    )
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    """Downgrade schema: drop approval_request table."""
+    op.drop_index("ix_approval_request_approval_token", table_name="approval_request")
     op.drop_index("ix_approval_request_status", table_name="approval_request")
     op.drop_table("approval_request")
     op.execute("DROP TYPE IF EXISTS approval_request_status")
