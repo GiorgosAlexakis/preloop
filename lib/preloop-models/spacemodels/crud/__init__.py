@@ -39,6 +39,9 @@ from .issue_compliance_result import (
 from .issue_relationship import CRUDIssueRelationship
 from .issue_set import CRUDIssueSet
 from .tool_configuration import CRUDToolConfiguration
+from .mcp_server import CRUDMCPServer
+from .mcp_tool import CRUDMCPTool
+from .approval_policy import CRUDApprovalPolicy
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)
@@ -58,6 +61,9 @@ crud_tracker_scope_rule = CRUDTrackerScopeRule(TrackerScopeRule)
 crud_issue_relationship = CRUDIssueRelationship(IssueRelationship)
 crud_issue_set = CRUDIssueSet(IssueSet)
 crud_tool_configuration = CRUDToolConfiguration()  # Instantiate CRUDToolConfiguration
+crud_mcp_server = CRUDMCPServer()  # Instantiate CRUDMCPServer
+crud_mcp_tool = CRUDMCPTool()  # Instantiate CRUDMCPTool
+crud_approval_policy = CRUDApprovalPolicy()  # Instantiate CRUDApprovalPolicy
 
 __all__ = [
     "CRUDBase",
@@ -79,6 +85,9 @@ __all__ = [
     "CRUDIssueComplianceResult",
     "CRUDIssueSet",
     "CRUDToolConfiguration",
+    "CRUDMCPServer",
+    "CRUDMCPTool",
+    "CRUDApprovalPolicy",
     "crud_account",
     "crud_tracker",
     "crud_tracker_scope_rule",
@@ -98,4 +107,7 @@ __all__ = [
     "issue_compliance_result",
     "crud_issue_set",
     "crud_tool_configuration",
+    "crud_mcp_server",
+    "crud_mcp_tool",
+    "crud_approval_policy",
 ]

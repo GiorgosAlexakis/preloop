@@ -209,3 +209,19 @@ class CRUDToolConfiguration(CRUDBase[models.ToolConfiguration]):
             db.delete(db_config)
             db.commit()
         return db_config
+
+    def count_by_policy(self, db: Session, policy_id: str) -> int:
+        """Count tool configurations using a specific approval policy.
+
+        Args:
+            db: The database session.
+            policy_id: The ID of the approval policy.
+
+        Returns:
+            The count of tool configurations using this policy.
+        """
+        return (
+            db.query(self.model)
+            .filter(self.model.approval_policy_id == policy_id)
+            .count()
+        )
