@@ -1511,9 +1511,9 @@ paths:
       - approval_requests
       summary: Get Approval Request
       description: "Get an approval request by ID.\n\nArgs:\n    request_id: Approval\
-        \ request ID\n    current_account: Current authenticated account\n\nReturns:\n\
-        \    Approval request\n\nRaises:\n    HTTPException: If request not found\
-        \ or unauthorized"
+        \ request ID\n    current_account: Current authenticated account\n    db:\
+        \ Database session\n\nReturns:\n    Approval request\n\nRaises:\n    HTTPException:\
+        \ If request not found or unauthorized"
       operationId: get_approval_request_api_v1_approval_requests__request_id__get
       security:
       - bearerAuth: []

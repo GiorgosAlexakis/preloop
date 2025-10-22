@@ -9,7 +9,8 @@ from sqlalchemy import select
 
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.services.approval_service import ApprovalService
-from spacemodels.db.session import get_async_db_session
+from spacemodels.crud import crud_approval_request
+from spacemodels.db.session import get_async_db_session, get_db_session
 from spacemodels.models import Account, ApprovalRequest
 from spacemodels.schemas.approval_request import (
     ApprovalRequestResponse,
@@ -23,15 +24,17 @@ router = APIRouter(
 
 
 @router.get("/{request_id}", response_model=ApprovalRequestResponse)
-async def get_approval_request(
+def get_approval_request(
     request_id: uuid.UUID,
     current_account: Account = Depends(get_current_active_user),
+    db=Depends(get_db_session),
 ) -> ApprovalRequest:
     """Get an approval request by ID.
 
     Args:
         request_id: Approval request ID
         current_account: Current authenticated account
+        db: Database session
 
     Returns:
         Approval request
@@ -39,22 +42,15 @@ async def get_approval_request(
     Raises:
         HTTPException: If request not found or unauthorized
     """
-    async with get_async_db_session() as db:
-        result = await db.execute(
-            select(ApprovalRequest).where(ApprovalRequest.id == request_id)
-        )
-        approval_request = result.scalar_one_or_none()
+    # Use CRUD layer with account_id filtering
+    approval_request = crud_approval_request.get(
+        db, id=str(request_id), account_id=current_account.id
+    )
 
-        if not approval_request:
-            raise HTTPException(status_code=404, detail="Approval request not found")
+    if not approval_request:
+        raise HTTPException(status_code=404, detail="Approval request not found")
 
-        # Check authorization
-        if approval_request.account_id != current_account.id:
-            raise HTTPException(
-                status_code=403, detail="Not authorized to view this approval request"
-            )
-
-        return approval_request
+    return approval_request
 
 
 @router.get("/", response_model=list[ApprovalRequestResponse])
