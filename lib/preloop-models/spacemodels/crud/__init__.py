@@ -42,6 +42,7 @@ from .tool_configuration import CRUDToolConfiguration
 from .mcp_server import CRUDMCPServer
 from .mcp_tool import CRUDMCPTool
 from .approval_policy import CRUDApprovalPolicy
+from .approval_request import CRUDApprovalRequest, crud_approval_request
 
 crud_account = CRUDAccount(Account)
 crud_tracker = CRUDTracker(Tracker)
@@ -88,6 +89,7 @@ __all__ = [
     "CRUDMCPServer",
     "CRUDMCPTool",
     "CRUDApprovalPolicy",
+    "CRUDApprovalRequest",
     "crud_account",
     "crud_tracker",
     "crud_tracker_scope_rule",
@@ -110,4 +112,5 @@ __all__ = [
     "crud_mcp_server",
     "crud_mcp_tool",
     "crud_approval_policy",
+    "crud_approval_request",
 ]
