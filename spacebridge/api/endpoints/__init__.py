@@ -5,13 +5,24 @@
 
 # Define __all__ to explicitly list all endpoint modules in this package
 __all__ = [
+    "approval_requests",
     "comments",
     "health",
     "issues",
     "issue_compliance",
+    "issue_dependencies",
+    "issue_duplicates",
+    "mcp_servers",
     "organizations",
     "projects",
-    "search",  # Added new search endpoint
+    "public_approval",
+    "search",
+    "tools",
     "trackers",
     "version",
+    "webhooks",
+    "flows",
+    "ai_models",
+    "billing",
+    "websockets",
 ]

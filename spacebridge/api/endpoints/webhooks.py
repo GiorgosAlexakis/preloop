@@ -557,9 +557,16 @@ async def receive_webhook(
             )
 
             if existing_issue:
+                logger.info(
+                    f"Updating existing issue {existing_issue.id} - "
+                    f"Current title: '{existing_issue.title}', "
+                    f"Webhook title: '{transformed_issue.get('title')}', "
+                    f"Update fields: {list(transformed_issue.keys())}"
+                )
                 db_issue = crud_issue.update(
                     db, db_obj=existing_issue, obj_in=transformed_issue
                 )
+                logger.info(f"After update, issue title: '{db_issue.title}'")
             else:
                 db_issue = crud_issue.create(db, obj_in=transformed_issue)
 

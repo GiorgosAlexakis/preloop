@@ -312,11 +312,140 @@ SpaceBridge implements a RESTful HTTP API using FastAPI, which provides:
 - Middleware for authentication, logging, etc.
 
 ### MCP Implementation
-The MCP server is implemented directly within the FastAPI application. This provides several advantages:
-- **HTTP Transport:** Natively supports HTTP-based MCP clients, enabling secure remote access.
+The MCP server is implemented directly within the FastAPI application using a custom extension of FastMCP. This provides several advantages:
+- **HTTP Transport:** Natively supports HTTP-based MCP clients via StreamableHTTP, enabling secure remote access.
 - **Unified Authentication:** Leverages the same JWT authentication as the rest of the API.
 - **Code Reusability:** Directly calls internal services and CRUD operations, reducing code duplication.
 - **Scalability:** Benefits from the same deployment and scaling infrastructure as the main API.
+
+#### Dynamic Tool Filtering (Phase 1A)
+The MCP server implements per-user dynamic tool filtering using `DynamicFastMCP`, a custom subclass of FastMCP:
+
+**Implementation Details:**
+- **`DynamicFastMCP`** (`spacebridge/services/dynamic_fastmcp.py`): Extends FastMCP and overrides `_list_tools()` and `_mcp_call_tool()` methods
+- **Tool Visibility:** Default tools (get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance) are only visible when the authenticated account has one or more trackers configured
+- **User Context Propagation:** Uses Python's `ContextVar` for async-safe user context storage across request boundaries
+- **Authentication:** `SpaceBridgeBearerAuthBackend` validates JWT tokens and injects user context into the request scope
+- **Middleware:** `UserContextMiddleware` extracts authenticated user info and stores it in a ContextVar for access during tool listing and execution
+- **StreamableHTTP Transport:** Uses FastMCP's proven `http_app(transport="streamable-http")` implementation for bidirectional streaming
+- **Endpoint:** Mounted at `/mcp/v1` with full authentication and lifespan management
+
+**Tool Registration:**
+All default tools are registered in `spacebridge/services/initialize_mcp.py` using FastMCP's `@mcp.tool()` decorator, then filtered at runtime based on user context.
+
+**Benefits:**
+- Zero performance overhead for tool registration (happens once at startup)
+- Dynamic filtering happens only during tool list requests
+- Full compatibility with FastMCP's StreamableHTTP implementation
+- Backward compatible with existing authentication infrastructure
+
+### Tool Configuration and Approval Workflow
+
+SpaceBridge includes comprehensive infrastructure for managing tool configurations and implementing human-in-the-loop approval workflows for sensitive tool operations.
+
+#### Tool Configuration Management
+
+**Database Models:**
+- **`ToolConfiguration`**: Defines which tools are enabled for an account, their configuration parameters, and approval requirements
+  - Links to an optional `ApprovalPolicy` for tools requiring human approval
+  - Supports both default (built-in) and proxied (external MCP server) tools
+  - Stores tool-specific configuration in JSONB format
+
+- **`ApprovalPolicy`**: Defines rules for when and how tool executions require approval
+  - Configurable approval modes: manual, auto-approve, auto-reject
+  - Optional webhook integration for external approval systems
+  - Supports policy-specific settings (e.g., timeout duration, required approvers)
+
+#### Approval Workflow Architecture
+
+```mermaid
+graph TD
+    subgraph "MCP Client"
+        Client["MCP Client (Claude Code, etc.)"]
+    end
+
+    subgraph "SpaceBridge API"
+        MCPEndpoint["MCP Endpoint (/mcp/v1)"]
+        DynamicMCP["DynamicMCPServer"]
+        ApprovalCheck["Approval Check"]
+    end
+
+    subgraph "Approval System"
+        ApprovalService["ApprovalService"]
+        ApprovalDB["ApprovalRequest (DB)"]
+        WebhookNotifier["Webhook Notifier"]
+    end
+
+    subgraph "External Systems"
+        Slack["Slack/Mattermost"]
+        CustomWebhook["Custom Approval System"]
+    end
+
+    Client --> MCPEndpoint
+    MCPEndpoint --> DynamicMCP
+    DynamicMCP --> ApprovalCheck
+
+    ApprovalCheck -->|Requires Approval| ApprovalService
+    ApprovalService --> ApprovalDB
+    ApprovalService --> WebhookNotifier
+
+    WebhookNotifier --> Slack
+    WebhookNotifier --> CustomWebhook
+
+    CustomWebhook -->|Approve/Decline| ApprovalService
+    Slack -->|Approve/Decline| ApprovalService
+
+    ApprovalService -->|Approved| DynamicMCP
+    ApprovalService -->|Declined| Client
+```
+
+**Approval Flow:**
+1. MCP client initiates a tool call through the `/mcp/v1` endpoint
+2. `DynamicMCPServer` checks if the tool requires approval via `_check_approval_required()`
+3. If approval is required:
+   - `ApprovalService.create_and_notify()` creates an `ApprovalRequest` record
+   - Webhook notifications are sent to configured channels (Slack, Mattermost, custom endpoints)
+   - The service waits for approval with configurable timeout
+4. Approver reviews request and responds via:
+   - Public approval API endpoint (`/api/v1/public/approval/{request_id}/respond`)
+   - Direct API call to SpaceBridge
+5. On approval, tool execution proceeds; on decline, error is returned to client
+
+**API Endpoints:**
+- `GET /api/v1/tool-configurations` - List all tool configurations for account
+- `POST /api/v1/tool-configurations` - Create new tool configuration
+- `PUT /api/v1/tool-configurations/{id}` - Update tool configuration
+- `DELETE /api/v1/tool-configurations/{id}` - Delete tool configuration
+- `GET /api/v1/approval-policies` - List approval policies
+- `POST /api/v1/approval-policies` - Create approval policy
+- `GET /api/v1/approval-requests` - List approval requests
+- `POST /api/v1/public/approval/{id}/respond` - Public endpoint for approval responses
+
+### MCP Server Management
+
+SpaceBridge supports configuration and management of external MCP servers, enabling tool proxying and federation.
+
+**Database Model:**
+- **`MCPServer`**: Stores configuration for external MCP servers
+  - Connection details (URL, transport type, authentication)
+  - Status tracking (active, inactive, error)
+  - Tool discovery and caching
+  - Account-scoped isolation
+
+**Features:**
+- Automatic tool discovery from external MCP servers
+- Connection pooling and health checking via `MCPClientPool`
+- Support for multiple authentication schemes (bearer token, API key, none)
+- StreamableHTTP and SSE transport protocols
+- Tool scanning and metadata caching
+
+**API Endpoints:**
+- `GET /api/v1/mcp-servers` - List configured MCP servers
+- `POST /api/v1/mcp-servers` - Add new MCP server
+- `PUT /api/v1/mcp-servers/{id}` - Update MCP server configuration
+- `DELETE /api/v1/mcp-servers/{id}` - Remove MCP server
+- `POST /api/v1/mcp-servers/{id}/scan` - Trigger tool discovery scan
+- `GET /api/v1/mcp-servers/{id}/tools` - List tools available on server
 
 ### Language and Framework
 Python is chosen as the primary language due to its strong ecosystem for machine learning and data processing, which is essential for similarity search and embedding generation. FastAPI is used for the REST API due to its performance, type safety, and automatic OpenAPI documentation generation.

@@ -51,7 +51,7 @@ class MCPConfigService:
                 # SpaceBridge MCP endpoints with authentication
                 server_config = {
                     "type": "http",
-                    "url": f"{spacebridge_url}/api/v1/mcp",
+                    "url": f"{spacebridge_url}/mcp/v1",
                     "transport": "sse",
                 }
 
@@ -118,7 +118,7 @@ class MCPConfigService:
         spacebridge_url = os.getenv(
             "SPACEBRIDGE_URL", "http://host.docker.internal:8000"
         )
-        env["SPACEBRIDGE_MCP_URL"] = f"{spacebridge_url}/api/v1/mcp"
+        env["SPACEBRIDGE_MCP_URL"] = f"{spacebridge_url}/mcp/v1"
 
         return env
 

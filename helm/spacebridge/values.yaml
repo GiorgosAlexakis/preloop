@@ -28,7 +28,8 @@ spacelit:
   pullPolicy: Always
 
 # Image pull secrets
-imagePullSecrets: []
+imagePullSecrets:
+  - name: registry-secret
 
 # Service account configuration
 serviceAccount:
