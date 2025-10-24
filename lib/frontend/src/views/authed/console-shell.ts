@@ -164,13 +164,12 @@ export class ConsoleShell extends LitElement {
                 Overview
               </sl-menu-item>
             </a>
-            <a href="/console/trackers">
+            <a href="/console/tools">
               <sl-menu-item>
-                <sl-icon name="database" slot="prefix"></sl-icon>
-                Trackers
+                <sl-icon name="tools" slot="prefix"></sl-icon>
+                Tools
               </sl-menu-item>
             </a>
-
             ${this._showFlows()
               ? html`<a href="/console/flows">
                   <sl-menu-item>
@@ -179,7 +178,12 @@ export class ConsoleShell extends LitElement {
                   </sl-menu-item>
                 </a>`
               : html``}
-
+            <a href="/console/trackers">
+              <sl-menu-item>
+                <sl-icon name="database" slot="prefix"></sl-icon>
+                Trackers
+              </sl-menu-item>
+            </a>
             <sl-details>
               <span slot="summary">
                 <sl-icon name="kanban" style="padding-right: 6px;"></sl-icon>

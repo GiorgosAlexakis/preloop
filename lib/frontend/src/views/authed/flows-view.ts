@@ -286,10 +286,7 @@ export class FlowsView extends LitElement {
     return html`
       <sl-card class="flow-card">
         <div slot="header" class="flow-header">
-          <div class="flow-title">
-            <sl-icon name=${flow.icon || 'gear'}></sl-icon>
-            ${flow.name}
-          </div>
+          <div class="flow-title">${flow.name}</div>
           ${activeCount > 0
             ? html`<sl-badge variant="primary" pulse
                 >${activeCount} active</sl-badge
