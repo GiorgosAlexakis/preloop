@@ -480,8 +480,9 @@ paths:
       summary: Get Approval Request Public
       description: "Get approval request details using token (no authentication required).\n\
         \nArgs:\n    request_id: UUID of the approval request\n    token: Secure token\
-        \ from the approval link\n\nReturns:\n    Public approval request details\n\
-        \nRaises:\n    HTTPException: If token is invalid or request not found"
+        \ from the approval link\n    db: Database session\n\nReturns:\n    Public\
+        \ approval request details\n\nRaises:\n    HTTPException: If token is invalid\
+        \ or request not found"
       operationId: get_approval_request_public_api_v1_public_approval__request_id__get
       parameters:
       - name: request_id
@@ -521,9 +522,9 @@ paths:
       description: "Approve or decline an approval request using token (no authentication\
         \ required).\n\nArgs:\n    request_id: UUID of the approval request\n    decision:\
         \ Approval decision (approve/decline) and optional comment\n    token: Secure\
-        \ token from the approval link\n\nReturns:\n    Updated approval request\n\
-        \nRaises:\n    HTTPException: If token is invalid, request not found, or already\
-        \ resolved"
+        \ token from the approval link\n    db_sync: Synchronous database session\
+        \ for validation\n\nReturns:\n    Updated approval request\n\nRaises:\n  \
+        \  HTTPException: If token is invalid, request not found, or already resolved"
       operationId: decide_approval_request_public_api_v1_public_approval__request_id__decide_post
       parameters:
       - name: request_id

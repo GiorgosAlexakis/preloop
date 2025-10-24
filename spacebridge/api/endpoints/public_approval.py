@@ -4,13 +4,14 @@ import uuid
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from spacemodels.db.session import get_async_db_session
-from spacemodels.models import ApprovalRequest
+from sqlalchemy.orm import Session
+
+from spacemodels.crud import crud_approval_request
+from spacemodels.db.session import get_async_db_session, get_db_session
 from spacebridge.services.approval_service import ApprovalService
-from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +38,17 @@ class ApprovalRequestPublic(BaseModel):
 
 
 @router.get("/{request_id}")
-async def get_approval_request_public(
+def get_approval_request_public(
     request_id: uuid.UUID,
     token: str = Query(..., description="Approval token"),
+    db: Session = Depends(get_db_session),
 ) -> ApprovalRequestPublic:
     """Get approval request details using token (no authentication required).
 
     Args:
         request_id: UUID of the approval request
         token: Secure token from the approval link
+        db: Database session
 
     Returns:
         Public approval request details
@@ -53,34 +56,29 @@ async def get_approval_request_public(
     Raises:
         HTTPException: If token is invalid or request not found
     """
-    async with get_async_db_session() as db:
-        # Get approval request and validate token
-        result = await db.execute(
-            select(ApprovalRequest).where(
-                ApprovalRequest.id == request_id,
-                ApprovalRequest.approval_token == token,
-            )
-        )
-        approval_request = result.scalar_one_or_none()
+    # Get approval request and validate token using CRUD layer
+    approval_request = crud_approval_request.get_by_id_and_token(
+        db, request_id=str(request_id), token=token
+    )
 
-        if not approval_request:
-            logger.warning(f"Invalid token or request not found: {request_id}")
-            raise HTTPException(
-                status_code=404, detail="Approval request not found or invalid token"
-            )
-
-        # Return public data only
-        return ApprovalRequestPublic(
-            id=str(approval_request.id),
-            tool_name=approval_request.tool_name,
-            tool_args=approval_request.tool_args,
-            agent_reasoning=approval_request.agent_reasoning,
-            status=approval_request.status,
-            requested_at=approval_request.requested_at.isoformat(),
-            expires_at=approval_request.expires_at.isoformat()
-            if approval_request.expires_at
-            else None,
+    if not approval_request:
+        logger.warning(f"Invalid token or request not found: {request_id}")
+        raise HTTPException(
+            status_code=404, detail="Approval request not found or invalid token"
         )
+
+    # Return public data only
+    return ApprovalRequestPublic(
+        id=str(approval_request.id),
+        tool_name=approval_request.tool_name,
+        tool_args=approval_request.tool_args,
+        agent_reasoning=approval_request.agent_reasoning,
+        status=approval_request.status,
+        requested_at=approval_request.requested_at.isoformat(),
+        expires_at=approval_request.expires_at.isoformat()
+        if approval_request.expires_at
+        else None,
+    )
 
 
 @router.post("/{request_id}/decide")
@@ -88,6 +86,7 @@ async def decide_approval_request_public(
     request_id: uuid.UUID,
     decision: ApprovalDecisionRequest,
     token: str = Query(..., description="Approval token"),
+    db_sync: Session = Depends(get_db_session),
 ) -> ApprovalRequestPublic:
     """Approve or decline an approval request using token (no authentication required).
 
@@ -95,6 +94,7 @@ async def decide_approval_request_public(
         request_id: UUID of the approval request
         decision: Approval decision (approve/decline) and optional comment
         token: Secure token from the approval link
+        db_sync: Synchronous database session for validation
 
     Returns:
         Updated approval request
@@ -102,35 +102,31 @@ async def decide_approval_request_public(
     Raises:
         HTTPException: If token is invalid, request not found, or already resolved
     """
-    async with get_async_db_session() as db:
-        # Get approval request and validate token
-        result = await db.execute(
-            select(ApprovalRequest).where(
-                ApprovalRequest.id == request_id,
-                ApprovalRequest.approval_token == token,
-            )
+    # Validate token using CRUD layer (sync)
+    approval_request = crud_approval_request.get_by_id_and_token(
+        db_sync, request_id=str(request_id), token=token
+    )
+
+    if not approval_request:
+        logger.warning(f"Invalid token or request not found: {request_id}")
+        raise HTTPException(
+            status_code=404, detail="Approval request not found or invalid token"
         )
-        approval_request = result.scalar_one_or_none()
 
-        if not approval_request:
-            logger.warning(f"Invalid token or request not found: {request_id}")
-            raise HTTPException(
-                status_code=404, detail="Approval request not found or invalid token"
-            )
+    # Check if already resolved
+    if approval_request.status in ["approved", "declined", "cancelled", "expired"]:
+        logger.warning(
+            f"Approval request {request_id} already resolved: {approval_request.status}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Approval request already {approval_request.status}",
+        )
 
-        # Check if already resolved
-        if approval_request.status in ["approved", "declined", "cancelled", "expired"]:
-            logger.warning(
-                f"Approval request {request_id} already resolved: {approval_request.status}"
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=f"Approval request already {approval_request.status}",
-            )
-
-        # Process decision
+    # Process decision using approval service (async)
+    async with get_async_db_session() as db_async:
         approval_service = ApprovalService(
-            db, ""
+            db_async, ""
         )  # base_url not needed for this operation
 
         if decision.action == "approve":
