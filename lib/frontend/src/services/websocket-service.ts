@@ -1,64 +1,175 @@
 class WebSocketService {
-  private ws?: WebSocket;
-  private onMessageCallback?: (message: any) => void;
-  private heartbeatInterval?: number;
+  private connections: Map<string, WebSocket> = new Map();
+  private heartbeatIntervals: Map<string, number> = new Map();
 
-  connect(url: string, onMessageCallback: (message: any) => void) {
-    this.ws = new WebSocket(url);
-    this.onMessageCallback = onMessageCallback;
+  /**
+   * Connect to a WebSocket endpoint
+   * @param key Unique identifier for this connection
+   * @param url WebSocket URL
+   * @param onMessageCallback Callback for incoming messages
+   * @param onOpenCallback Optional callback when connection opens
+   * @param onCloseCallback Optional callback when connection closes
+   */
+  connect(
+    key: string,
+    url: string,
+    onMessageCallback: (message: any) => void,
+    onOpenCallback?: () => void,
+    onCloseCallback?: () => void
+  ) {
+    // Disconnect existing connection if any
+    this.disconnect(key);
 
-    this.ws.onopen = () => {
-      console.log('WebSocket connected');
-      this.startHeartbeat();
+    const ws = new WebSocket(url);
+    this.connections.set(key, ws);
+
+    ws.onopen = () => {
+      console.log(`WebSocket connected: ${key}`);
+      this.startHeartbeat(key);
+      if (onOpenCallback) {
+        onOpenCallback();
+      }
     };
 
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
       if (event.data === 'ping') {
-        this.ws?.send('pong');
+        ws.send('pong');
         return;
       }
-      const message = JSON.parse(event.data);
-      if (this.onMessageCallback) {
-        this.onMessageCallback(message);
+
+      try {
+        const message = JSON.parse(event.data);
+        onMessageCallback(message);
+      } catch (e) {
+        console.error('Failed to parse WebSocket message:', e);
       }
     };
 
-    this.ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      this.stopHeartbeat();
+    ws.onclose = () => {
+      console.log(`WebSocket disconnected: ${key}`);
+      this.stopHeartbeat(key);
+      this.connections.delete(key);
+      if (onCloseCallback) {
+        onCloseCallback();
+      }
     };
 
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+    ws.onerror = (error) => {
+      console.error(`WebSocket error (${key}):`, error);
     };
   }
 
-  private startHeartbeat() {
-    this.heartbeatInterval = window.setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send('pong'); // Respond to keep-alive
+  /**
+   * Connect to a flow execution WebSocket for real-time updates
+   */
+  connectToExecution(
+    executionId: string,
+    onMessageCallback: (message: any) => void,
+    onOpenCallback?: () => void,
+    onCloseCallback?: () => void
+  ) {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = window.location.host;
+    const url = `${protocol}://${host}/api/v1/ws/flow-executions/${executionId}`;
+
+    this.connect(
+      `execution-${executionId}`,
+      url,
+      onMessageCallback,
+      onOpenCallback,
+      onCloseCallback
+    );
+  }
+
+  /**
+   * Connect to general WebSocket for all flow updates
+   */
+  connectToFlowUpdates(
+    onMessageCallback: (message: any) => void,
+    onOpenCallback?: () => void,
+    onCloseCallback?: () => void
+  ) {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = window.location.host;
+    const url = `${protocol}://${host}/api/v1/ws`;
+
+    this.connect(
+      'flow-updates',
+      url,
+      onMessageCallback,
+      onOpenCallback,
+      onCloseCallback
+    );
+  }
+
+  private startHeartbeat(key: string) {
+    const interval = window.setInterval(() => {
+      const ws = this.connections.get(key);
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send('pong');
       }
     }, 30000); // 30 seconds
+
+    this.heartbeatIntervals.set(key, interval);
   }
 
-  private stopHeartbeat() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
+  private stopHeartbeat(key: string) {
+    const interval = this.heartbeatIntervals.get(key);
+    if (interval) {
+      clearInterval(interval);
+      this.heartbeatIntervals.delete(key);
     }
   }
 
-  disconnect() {
-    if (this.ws) {
-      this.ws.close();
+  disconnect(key: string) {
+    const ws = this.connections.get(key);
+    if (ws) {
+      ws.close();
+      this.connections.delete(key);
+    }
+    this.stopHeartbeat(key);
+  }
+
+  /**
+   * Disconnect from execution WebSocket
+   */
+  disconnectFromExecution(executionId: string) {
+    this.disconnect(`execution-${executionId}`);
+  }
+
+  /**
+   * Disconnect from general flow updates WebSocket
+   */
+  disconnectFromFlowUpdates() {
+    this.disconnect('flow-updates');
+  }
+
+  /**
+   * Disconnect all WebSocket connections
+   */
+  disconnectAll() {
+    for (const key of this.connections.keys()) {
+      this.disconnect(key);
     }
   }
 
-  send(data: any) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data));
+  /**
+   * Send data to a specific WebSocket connection
+   */
+  send(key: string, data: any) {
+    const ws = this.connections.get(key);
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(data));
     } else {
-      console.warn('WebSocket not connected. Cannot send data.');
+      console.warn(`WebSocket not connected (${key}). Cannot send data.`);
     }
+  }
+
+  /**
+   * Send command to execution
+   */
+  sendToExecution(executionId: string, data: any) {
+    this.send(`execution-${executionId}`, data);
   }
 }
 

@@ -546,6 +546,44 @@ export async function getFlowExecutions(): Promise<any[]> {
   return response.json();
 }
 
+export async function getFlowExecution(executionId: string): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow execution');
+  }
+  return response.json();
+}
+
+export async function triggerFlowExecution(flowId: string): Promise<any> {
+  const response = await fetchWithAuth(`/api/v1/flows/${flowId}/trigger`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to trigger flow execution');
+  }
+  return response.json();
+}
+
+export async function sendCommandToExecution(
+  executionId: string,
+  command: string,
+  payload?: any
+): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}/command`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, payload }),
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to send command to execution');
+  }
+}
+
 export async function cloneFlowPreset(presetId: string): Promise<any> {
   const response = await fetchWithAuth(
     `/api/v1/flows/presets/${presetId}/clone`,
@@ -817,6 +855,275 @@ export async function getCurrentSubscription() {
       return null; // No subscription found
     }
     throw new Error('Failed to fetch subscription');
+  }
+  return response.json();
+}
+
+// Tools API
+export async function getTools(): Promise<any[]> {
+  const response = await fetchWithAuth('/api/v1/tools');
+  if (!response.ok) {
+    throw new Error('Failed to fetch tools');
+  }
+  return response.json();
+}
+
+export async function createToolConfiguration(config: any): Promise<any> {
+  const response = await fetchWithAuth('/api/v1/tool-configurations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to create tool configuration');
+  }
+  return response.json();
+}
+
+export async function getToolConfiguration(configId: string): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/tool-configurations/${configId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch tool configuration');
+  }
+  return response.json();
+}
+
+export async function updateToolConfiguration(
+  configId: string,
+  config: any
+): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/tool-configurations/${configId}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update tool configuration');
+  }
+  return response.json();
+}
+
+export async function deleteToolConfiguration(configId: string): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/tool-configurations/${configId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to delete tool configuration');
+  }
+}
+
+// Approval Policies API
+export async function getApprovalPolicies(): Promise<any[]> {
+  const response = await fetchWithAuth('/api/v1/approval-policies');
+  if (!response.ok) {
+    throw new Error('Failed to fetch approval policies');
+  }
+  return response.json();
+}
+
+export async function createApprovalPolicy(policy: any): Promise<any> {
+  const response = await fetchWithAuth('/api/v1/approval-policies', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(policy),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to create approval policy');
+  }
+  return response.json();
+}
+
+export async function getApprovalPolicy(policyId: string): Promise<any> {
+  const response = await fetchWithAuth(`/api/v1/approval-policies/${policyId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch approval policy');
+  }
+  return response.json();
+}
+
+export async function updateApprovalPolicy(
+  policyId: string,
+  policy: any
+): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/approval-policies/${policyId}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(policy),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update approval policy');
+  }
+  return response.json();
+}
+
+export async function deleteApprovalPolicy(policyId: string): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/approval-policies/${policyId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to delete approval policy');
+  }
+}
+
+// MCP Servers API
+export async function getMCPServers(): Promise<any[]> {
+  const response = await fetchWithAuth('/api/v1/mcp-servers');
+  if (!response.ok) {
+    throw new Error('Failed to fetch MCP servers');
+  }
+  return response.json();
+}
+
+export async function createMCPServer(server: any): Promise<any> {
+  const response = await fetchWithAuth('/api/v1/mcp-servers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(server),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to create MCP server');
+  }
+  return response.json();
+}
+
+export async function getMCPServer(serverId: string): Promise<any> {
+  const response = await fetchWithAuth(`/api/v1/mcp-servers/${serverId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch MCP server');
+  }
+  return response.json();
+}
+
+export async function updateMCPServer(
+  serverId: string,
+  server: any
+): Promise<any> {
+  const response = await fetchWithAuth(`/api/v1/mcp-servers/${serverId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(server),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update MCP server');
+  }
+  return response.json();
+}
+
+export async function deleteMCPServer(serverId: string): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/mcp-servers/${serverId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete MCP server');
+  }
+}
+
+export async function scanMCPServer(serverId: string): Promise<any> {
+  const response = await fetchWithAuth(`/api/v1/mcp-servers/${serverId}/scan`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to scan MCP server');
+  }
+  return response.json();
+}
+
+export async function getMCPServerTools(serverId: string): Promise<any[]> {
+  const response = await fetchWithAuth(`/api/v1/mcp-servers/${serverId}/tools`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch MCP server tools');
+  }
+  return response.json();
+}
+
+// Approval Requests API
+export async function getApprovalRequest(requestId: string): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/approval-requests/${requestId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch approval request');
+  }
+  return response.json();
+}
+
+export async function listApprovalRequests(params?: {
+  status?: string;
+  execution_id?: string;
+  limit?: number;
+  skip?: number;
+}): Promise<any[]> {
+  const queryParams = new URLSearchParams();
+  if (params?.status) queryParams.append('status', params.status);
+  if (params?.execution_id)
+    queryParams.append('execution_id', params.execution_id);
+  if (params?.limit) queryParams.append('limit', params.limit.toString());
+  if (params?.skip) queryParams.append('skip', params.skip.toString());
+
+  const response = await fetchWithAuth(
+    `/api/v1/approval-requests?${queryParams.toString()}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch approval requests');
+  }
+  return response.json();
+}
+
+export async function approveRequest(
+  requestId: string,
+  comment?: string
+): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/approval-requests/${requestId}/approve`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: true, comment: comment || null }),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to approve request');
+  }
+  return response.json();
+}
+
+export async function declineRequest(
+  requestId: string,
+  comment?: string
+): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/approval-requests/${requestId}/decline`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: false, comment: comment || null }),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to decline request');
   }
   return response.json();
 }

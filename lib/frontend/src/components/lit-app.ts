@@ -1,7 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { router } from '../router';
-import { webSocketService } from '../services/websocket-service';
 import '../views/public/landing-view.ts';
 import '../views/public/login-view.ts';
 import '../views/public/register-view.ts';
@@ -16,6 +15,7 @@ import '../views/public/static-view.ts';
 import '../views/authed/console-shell.ts';
 import '../views/authed/dashboard-view.ts';
 import '../views/authed/trackers-view.ts';
+import '../views/authed/tools-view.ts';
 import '../views/authed/issues-view.ts';
 import '../views/authed/issues-compliance-view.ts';
 import '../views/authed/issues-dependencies-view.ts';
@@ -29,10 +29,12 @@ import '../views/authed/settings/profile-view.ts';
 import '../views/authed/settings/security-view.ts';
 import '../views/authed/settings/appearance-view.ts';
 import '../views/authed/settings/subscription-view.ts';
+import '../components/settings-tabs.ts';
 import '../views/authed/flows-view.ts';
 import '../views/authed/flow-view.ts';
 import '../views/authed/flow-executions-view.ts';
 import '../views/authed/flow-execution-view.ts';
+import '../views/authed/approval-view.ts';
 import './app-header.ts';
 import './app-footer.ts';
 
@@ -98,6 +100,7 @@ export class LitApp extends LitElement {
         children: [
           { path: '', component: 'dashboard-view' },
           { path: 'trackers', component: 'trackers-view' },
+          { path: 'tools', component: 'tools-view' },
           {
             path: 'issues',
             children: [
@@ -122,19 +125,15 @@ export class LitApp extends LitElement {
             ],
           },
           { path: '/api-usage', component: 'api-usage-view' },
-          {
-            path: 'settings',
-            children: [
-              { path: '', component: 'settings-view' },
-              { path: 'profile', component: 'profile-view' },
-              { path: 'security', component: 'security-view' },
-              { path: 'api-keys', component: 'api-keys-view' },
-              { path: 'ai-models', component: 'ai-models-view' },
-              { path: 'appearance', component: 'appearance-view' },
-              { path: 'subscription', component: 'subscription-view' },
-            ],
-          },
+          { path: 'settings', redirect: '/console/settings/profile' },
+          { path: 'settings/profile', component: 'profile-view' },
+          { path: 'settings/security', component: 'security-view' },
+          { path: 'settings/api-keys', component: 'api-keys-view' },
+          { path: 'settings/ai-models', component: 'ai-models-view' },
+          { path: 'settings/appearance', component: 'appearance-view' },
+          { path: 'settings/subscription', component: 'subscription-view' },
           { path: 'pricing', component: 'pricing-view' },
+          { path: 'approval/:requestId', component: 'approval-view' },
         ],
       },
     ]);
@@ -145,30 +144,13 @@ export class LitApp extends LitElement {
   }
 
   connectWebSocket() {
-    const wsUrl = `ws${window.location.protocol === 'https:' ? 's' : ''}://${window.location.host}/api/v1/ws`;
-    webSocketService.connect(wsUrl, (message) => {
-      // Handle incoming messages from the server
-      // For now, we just log them
-      console.log('Received message:', message);
-    });
+    // Connect to general flow updates WebSocket
+    // This is handled by webSocketService.connectToFlowUpdates()
+    // which is called from flow-executions-view
+    // No need to connect here globally
   }
 
   setupEventListeners() {
-    this.addEventListener('click', (e) => this.trackEvent('click', e));
-    // Add other event listeners as needed
-  }
-
-  trackEvent(type: string, event: Event) {
-    const target = event.target as HTMLElement;
-    const payload = {
-      type,
-      target: {
-        id: target.id,
-        tagName: target.tagName,
-        innerText: target.innerText.slice(0, 100), // Limit text length
-      },
-      path: window.location.pathname,
-    };
-    webSocketService.send(payload);
+    // Event listeners can be added here as needed
   }
 }
