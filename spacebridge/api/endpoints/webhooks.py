@@ -5,17 +5,16 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from spacemodels.crud import (
     crud_comment,
     crud_issue,
     crud_issue_embedding,
+    crud_organization,
     crud_project,
 )
-from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.db.session import get_db_session
-from spacemodels.models.organization import Organization  # Added
 from spacemodels.models.tracker import Tracker
 from spacesync.scanner.core import TrackerClient
 
@@ -101,13 +100,8 @@ async def receive_webhook(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported tracker_type: {tracker_type}",
         )
-    # Use the direct Organization model
-    organization_data = (
-        db.query(Organization)
-        .options(joinedload(Organization.tracker))
-        .filter(Organization.id == organization_id)
-        .first()
-    )
+    # Use CRUD layer to get organization with tracker
+    organization_data = crud_organization.get_with_tracker(db, id=organization_id)
     if not organization_data:
         logger.warning(
             f"Organization not found for id={organization_id}, tracker_type={tracker_type}"

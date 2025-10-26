@@ -293,8 +293,9 @@ class DynamicMCPServer:
         """
         try:
             from spacemodels.db.session import get_async_db_session
-            from spacemodels.models import ToolConfiguration
-            from sqlalchemy import select
+            from spacemodels.crud.tool_configuration import (
+                get_tool_config_by_name_and_source_async,
+            )
 
             logger.info(
                 f"Checking approval requirement for tool '{tool_name}' "
@@ -304,15 +305,13 @@ class DynamicMCPServer:
             # Get database session
             async with get_async_db_session() as db:
                 # Check if there's a tool configuration for this tool
-                # First check default tools
-                result = await db.execute(
-                    select(ToolConfiguration).where(
-                        ToolConfiguration.account_id == user_context.account_id,
-                        ToolConfiguration.tool_name == tool_name,
-                        ToolConfiguration.tool_source == "builtin",
-                    )
+                # First check default tools using CRUD
+                config = await get_tool_config_by_name_and_source_async(
+                    db,
+                    account_id=user_context.account_id,
+                    tool_name=tool_name,
+                    tool_source="builtin",
                 )
-                config = result.scalar_one_or_none()
 
                 if config:
                     logger.info(
@@ -325,16 +324,14 @@ class DynamicMCPServer:
                         f"No builtin tool config found for '{tool_name}', checking MCP tools"
                     )
 
-                # If not found in default tools, check proxied tools
+                # If not found in default tools, check proxied tools using CRUD
                 if not config:
-                    result = await db.execute(
-                        select(ToolConfiguration).where(
-                            ToolConfiguration.account_id == user_context.account_id,
-                            ToolConfiguration.tool_name == tool_name,
-                            ToolConfiguration.tool_source == "mcp",
-                        )
+                    config = await get_tool_config_by_name_and_source_async(
+                        db,
+                        account_id=user_context.account_id,
+                        tool_name=tool_name,
+                        tool_source="mcp",
                     )
-                    config = result.scalar_one_or_none()
 
                     if config:
                         logger.info(
@@ -377,34 +374,40 @@ class DynamicMCPServer:
         """
         try:
             from spacemodels.db.session import get_async_db_session
-            from spacemodels.models import ToolConfiguration, ApprovalPolicy
+            from spacemodels.crud.tool_configuration import (
+                get_tool_config_by_name_and_source_async,
+            )
+            from spacemodels.crud.approval_policy import get_approval_policy_async
             from spacebridge.services.approval_service import ApprovalService
-            from sqlalchemy import select
             import os
 
             # Get base URL from environment or default
             base_url = os.getenv("BASE_URL", "http://localhost:8000")
 
             async with get_async_db_session() as db:
-                # Get tool configuration
-                result = await db.execute(
-                    select(ToolConfiguration).where(
-                        ToolConfiguration.account_id == user_context.account_id,
-                        ToolConfiguration.tool_name == tool_name,
-                    )
+                # Get tool configuration using CRUD
+                # Try builtin first, then mcp
+                config = await get_tool_config_by_name_and_source_async(
+                    db,
+                    account_id=user_context.account_id,
+                    tool_name=tool_name,
+                    tool_source="builtin",
                 )
-                config = result.scalar_one_or_none()
+                if not config:
+                    config = await get_tool_config_by_name_and_source_async(
+                        db,
+                        account_id=user_context.account_id,
+                        tool_name=tool_name,
+                        tool_source="mcp",
+                    )
 
                 if not config or not config.approval_policy_id:
                     raise Exception("No approval policy configured for this tool")
 
-                # Get approval policy
-                result = await db.execute(
-                    select(ApprovalPolicy).where(
-                        ApprovalPolicy.id == config.approval_policy_id
-                    )
+                # Get approval policy using CRUD
+                policy = await get_approval_policy_async(
+                    db, policy_id=config.approval_policy_id
                 )
-                policy = result.scalar_one_or_none()
 
                 if not policy:
                     raise Exception("Approval policy not found")
@@ -567,14 +570,10 @@ def has_tracker(account: Account, db: Session) -> bool:
     Returns:
         True if account has trackers, False otherwise
     """
-    # Query trackers directly to avoid DetachedInstanceError
-    from sqlalchemy import select
-    from spacemodels.models.tracker import Tracker
+    # Use CRUD method to check for trackers
+    from spacemodels.crud import crud_tracker
 
-    result = db.execute(
-        select(Tracker).where(Tracker.account_id == account.id).limit(1)
-    )
-    return result.first() is not None
+    return crud_tracker.has_tracker(db, account_id=account.id)
 
 
 def register_default_tools(server: DynamicMCPServer):

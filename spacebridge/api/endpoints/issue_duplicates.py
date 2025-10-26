@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Literal, Optional, Tuple
 import logging
 import openai
@@ -536,14 +536,13 @@ def _find_issue_duplicates_logic(
     processed_issues = 0  # Track total processed issues
 
     for project in accessible_projects:
-        # Limit issues per project to prevent memory overload
-        project_issues = (
-            db.query(Issue)
-            .options(selectinload(Issue.embeddings))
-            .filter(Issue.project_id == project.id)
-            .filter(Issue.status.in_([status]) if status and status != "all" else True)
-            .limit(max_issues_per_project)  # Add limit here
-            .all()
+        # Limit issues per project to prevent memory overload using CRUD layer
+        project_issues = crud_issue.get_for_project_with_embeddings(
+            db,
+            project_id=project.id,
+            status=status if status and status != "all" else None,
+            limit=max_issues_per_project,
+            account_id=current_user.id,
         )
 
         for issue in project_issues:

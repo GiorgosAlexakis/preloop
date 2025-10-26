@@ -114,28 +114,25 @@ class TestCreateSubscription:
 class TestRecordUsage:
     """Test record_usage method."""
 
-    def test_record_usage_creates_new_record(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.monthly_usage")
+    def test_record_usage_creates_new_record(
+        self, mock_monthly_usage, mock_subscription, billing_service, mock_db
+    ):
         """Test recording usage creates new monthly usage record."""
         account_id = uuid.uuid4()
         subscription_id = uuid.uuid4()
 
         # Mock active subscription
-        mock_subscription = MagicMock(spec=Subscription)
-        mock_subscription.id = subscription_id
-        mock_subscription.current_period_start = datetime.now()
-        mock_subscription.current_period_end = datetime.now() + timedelta(days=30)
+        mock_subscription_obj = MagicMock(spec=Subscription)
+        mock_subscription_obj.id = subscription_id
+        mock_subscription_obj.current_period_start = datetime.now()
+        mock_subscription_obj.current_period_end = datetime.now() + timedelta(days=30)
 
-        # Mock database queries
-        def mock_query_side_effect(*args):
-            mock_query = MagicMock()
-            if args[0] == Subscription:
-                mock_query.filter.return_value.filter.return_value.first.return_value = mock_subscription
-            elif args[0] == MonthlyUsage:
-                # No existing usage record
-                mock_query.filter.return_value.filter.return_value.filter.return_value.first.return_value = None
-            return mock_query
+        mock_subscription.get_active_for_account.return_value = mock_subscription_obj
 
-        mock_db.query.side_effect = mock_query_side_effect
+        # No existing usage record
+        mock_monthly_usage.get_for_current_cycle.return_value = None
 
         # Mock db.refresh
         def mock_refresh(obj):
@@ -150,30 +147,31 @@ class TestRecordUsage:
 
         assert mock_db.add.called
         assert mock_db.commit.called
+        mock_subscription.get_active_for_account.assert_called_once_with(
+            mock_db, account_id=str(account_id)
+        )
+        mock_monthly_usage.get_for_current_cycle.assert_called_once()
 
-    def test_record_usage_updates_existing_record(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.monthly_usage")
+    def test_record_usage_updates_existing_record(
+        self, mock_monthly_usage, mock_subscription, billing_service, mock_db
+    ):
         """Test recording usage updates existing monthly usage record."""
         account_id = uuid.uuid4()
         subscription_id = uuid.uuid4()
 
         # Mock active subscription
-        mock_subscription = MagicMock(spec=Subscription)
-        mock_subscription.id = subscription_id
+        mock_subscription_obj = MagicMock(spec=Subscription)
+        mock_subscription_obj.id = subscription_id
+
+        mock_subscription.get_active_for_account.return_value = mock_subscription_obj
 
         # Mock existing usage record
         mock_usage = MagicMock(spec=MonthlyUsage)
         mock_usage.usage_counts = {"executions": 10}
 
-        # Mock database queries
-        def mock_query_side_effect(*args):
-            mock_query = MagicMock()
-            if args[0] == Subscription:
-                mock_query.filter.return_value.filter.return_value.first.return_value = mock_subscription
-            elif args[0] == MonthlyUsage:
-                mock_query.filter.return_value.filter.return_value.filter.return_value.first.return_value = mock_usage
-            return mock_query
-
-        mock_db.query.side_effect = mock_query_side_effect
+        mock_monthly_usage.get_for_current_cycle.return_value = mock_usage
 
         result = billing_service.record_usage(account_id, "executions", 5)
 
@@ -182,38 +180,39 @@ class TestRecordUsage:
         assert mock_db.add.called
         assert mock_db.commit.called
 
-    def test_record_usage_no_active_subscription(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    def test_record_usage_no_active_subscription(
+        self, mock_subscription, billing_service, mock_db
+    ):
         """Test recording usage when no active subscription exists."""
         account_id = uuid.uuid4()
 
         # Mock no active subscription
-        mock_db.query.return_value.filter.return_value.filter.return_value.first.return_value = None
+        mock_subscription.get_active_for_account.return_value = None
 
         result = billing_service.record_usage(account_id, "executions", 1)
 
         assert result is None
         assert not mock_db.commit.called
 
-    def test_record_usage_new_metric(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.monthly_usage")
+    def test_record_usage_new_metric(
+        self, mock_monthly_usage, mock_subscription, billing_service, mock_db
+    ):
         """Test recording usage for a new metric type."""
         account_id = uuid.uuid4()
         subscription_id = uuid.uuid4()
 
-        mock_subscription = MagicMock(spec=Subscription)
-        mock_subscription.id = subscription_id
+        mock_subscription_obj = MagicMock(spec=Subscription)
+        mock_subscription_obj.id = subscription_id
+
+        mock_subscription.get_active_for_account.return_value = mock_subscription_obj
 
         mock_usage = MagicMock(spec=MonthlyUsage)
         mock_usage.usage_counts = {"executions": 10}
 
-        def mock_query_side_effect(*args):
-            mock_query = MagicMock()
-            if args[0] == Subscription:
-                mock_query.filter.return_value.filter.return_value.first.return_value = mock_subscription
-            elif args[0] == MonthlyUsage:
-                mock_query.filter.return_value.filter.return_value.filter.return_value.first.return_value = mock_usage
-            return mock_query
-
-        mock_db.query.side_effect = mock_query_side_effect
+        mock_monthly_usage.get_for_current_cycle.return_value = mock_usage
 
         result = billing_service.record_usage(account_id, "api_calls", 100)
 
@@ -224,7 +223,11 @@ class TestRecordUsage:
 class TestCheckLimit:
     """Test check_limit method."""
 
-    def test_check_limit_within_limit(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.monthly_usage")
+    def test_check_limit_within_limit(
+        self, mock_monthly_usage, mock_subscription, billing_service, mock_db
+    ):
         """Test check_limit returns True when within limit."""
         account_id = uuid.uuid4()
 
@@ -232,104 +235,93 @@ class TestCheckLimit:
         mock_plan = MagicMock(spec=Plan)
         mock_plan.features = {"executions_monthly": 1000}
 
-        mock_subscription = MagicMock(spec=Subscription)
-        mock_subscription.id = uuid.uuid4()
-        mock_subscription.plan = mock_plan
+        mock_subscription_obj = MagicMock(spec=Subscription)
+        mock_subscription_obj.id = uuid.uuid4()
+        mock_subscription_obj.plan = mock_plan
+
+        mock_subscription.get_active_for_account.return_value = mock_subscription_obj
 
         # Mock usage record
         mock_usage = MagicMock(spec=MonthlyUsage)
         mock_usage.usage_counts = {"executions": 500}
 
-        def mock_query_side_effect(*args):
-            mock_query = MagicMock()
-            if args[0] == Subscription:
-                mock_query.join.return_value.filter.return_value.filter.return_value.first.return_value = mock_subscription
-            elif args[0] == MonthlyUsage:
-                mock_query.filter.return_value.filter.return_value.filter.return_value.first.return_value = mock_usage
-            return mock_query
-
-        mock_db.query.side_effect = mock_query_side_effect
+        mock_monthly_usage.get_for_current_cycle.return_value = mock_usage
 
         result = billing_service.check_limit(account_id, "executions")
 
         assert result is True
 
-    def test_check_limit_exceeds_limit(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.monthly_usage")
+    def test_check_limit_exceeds_limit(
+        self, mock_monthly_usage, mock_subscription, billing_service, mock_db
+    ):
         """Test check_limit returns False when exceeds limit."""
         account_id = uuid.uuid4()
 
         mock_plan = MagicMock(spec=Plan)
         mock_plan.features = {"executions_monthly": 1000}
 
-        mock_subscription = MagicMock(spec=Subscription)
-        mock_subscription.id = uuid.uuid4()
-        mock_subscription.plan = mock_plan
+        mock_subscription_obj = MagicMock(spec=Subscription)
+        mock_subscription_obj.id = uuid.uuid4()
+        mock_subscription_obj.plan = mock_plan
+
+        mock_subscription.get_active_for_account.return_value = mock_subscription_obj
 
         mock_usage = MagicMock(spec=MonthlyUsage)
         mock_usage.usage_counts = {"executions": 1000}
 
-        def mock_query_side_effect(*args):
-            mock_query = MagicMock()
-            if args[0] == Subscription:
-                mock_query.join.return_value.filter.return_value.filter.return_value.first.return_value = mock_subscription
-            elif args[0] == MonthlyUsage:
-                mock_query.filter.return_value.filter.return_value.filter.return_value.first.return_value = mock_usage
-            return mock_query
-
-        mock_db.query.side_effect = mock_query_side_effect
+        mock_monthly_usage.get_for_current_cycle.return_value = mock_usage
 
         result = billing_service.check_limit(account_id, "executions")
 
         assert result is False
 
-    def test_check_limit_unlimited(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.monthly_usage")
+    def test_check_limit_unlimited(
+        self, mock_monthly_usage, mock_subscription, billing_service, mock_db
+    ):
         """Test check_limit returns True for unlimited (-1) limit."""
         account_id = uuid.uuid4()
 
         mock_plan = MagicMock(spec=Plan)
         mock_plan.features = {"executions_monthly": -1}  # Unlimited
 
-        mock_subscription = MagicMock(spec=Subscription)
-        mock_subscription.id = uuid.uuid4()
-        mock_subscription.plan = mock_plan
+        mock_subscription_obj = MagicMock(spec=Subscription)
+        mock_subscription_obj.id = uuid.uuid4()
+        mock_subscription_obj.plan = mock_plan
+
+        mock_subscription.get_active_for_account.return_value = mock_subscription_obj
 
         mock_usage = MagicMock(spec=MonthlyUsage)
         mock_usage.usage_counts = {"executions": 999999}
 
-        def mock_query_side_effect(*args):
-            mock_query = MagicMock()
-            if args[0] == Subscription:
-                mock_query.join.return_value.filter.return_value.filter.return_value.first.return_value = mock_subscription
-            elif args[0] == MonthlyUsage:
-                mock_query.filter.return_value.filter.return_value.filter.return_value.first.return_value = mock_usage
-            return mock_query
-
-        mock_db.query.side_effect = mock_query_side_effect
+        mock_monthly_usage.get_for_current_cycle.return_value = mock_usage
 
         result = billing_service.check_limit(account_id, "executions")
 
         assert result is True
 
-    def test_check_limit_no_usage_record(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.monthly_usage")
+    def test_check_limit_no_usage_record(
+        self, mock_monthly_usage, mock_subscription, billing_service, mock_db
+    ):
         """Test check_limit returns True when no usage record exists."""
         account_id = uuid.uuid4()
 
         mock_plan = MagicMock(spec=Plan)
         mock_plan.features = {"executions_monthly": 1000}
 
-        mock_subscription = MagicMock(spec=Subscription)
-        mock_subscription.id = uuid.uuid4()
-        mock_subscription.plan = mock_plan
+        mock_subscription_obj = MagicMock(spec=Subscription)
+        mock_subscription_obj.id = uuid.uuid4()
+        mock_subscription_obj.plan = mock_plan
 
-        def mock_query_side_effect(*args):
-            mock_query = MagicMock()
-            if args[0] == Subscription:
-                mock_query.join.return_value.filter.return_value.filter.return_value.first.return_value = mock_subscription
-            elif args[0] == MonthlyUsage:
-                mock_query.filter.return_value.filter.return_value.filter.return_value.first.return_value = None
-            return mock_query
+        mock_subscription.get_active_for_account.return_value = mock_subscription_obj
 
-        mock_db.query.side_effect = mock_query_side_effect
+        # No usage record
+        mock_monthly_usage.get_for_current_cycle.return_value = None
 
         result = billing_service.check_limit(account_id, "executions")
 
@@ -339,7 +331,11 @@ class TestCheckLimit:
 class TestHasFeature:
     """Test has_feature method."""
 
-    def test_has_feature_enabled(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.plan")
+    def test_has_feature_enabled(
+        self, mock_plan_crud, mock_subscription_crud, billing_service, mock_db
+    ):
         """Test has_feature returns True when feature is enabled."""
         account_id = uuid.uuid4()
 
@@ -349,13 +345,20 @@ class TestHasFeature:
         mock_subscription = MagicMock(spec=Subscription)
         mock_subscription.plan = mock_plan
 
-        mock_db.query.return_value.join.return_value.filter.return_value.filter.return_value.first.return_value = mock_subscription
+        mock_subscription_crud.get_active_for_account.return_value = mock_subscription
 
         result = billing_service.has_feature(account_id, "mcp_servers")
 
         assert result is True
+        mock_subscription_crud.get_active_for_account.assert_called_once_with(
+            mock_db, account_id=str(account_id)
+        )
 
-    def test_has_feature_disabled(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.plan")
+    def test_has_feature_disabled(
+        self, mock_plan_crud, mock_subscription_crud, billing_service, mock_db
+    ):
         """Test has_feature returns False when feature is disabled."""
         account_id = uuid.uuid4()
 
@@ -365,13 +368,17 @@ class TestHasFeature:
         mock_subscription = MagicMock(spec=Subscription)
         mock_subscription.plan = mock_plan
 
-        mock_db.query.return_value.join.return_value.filter.return_value.filter.return_value.first.return_value = mock_subscription
+        mock_subscription_crud.get_active_for_account.return_value = mock_subscription
 
         result = billing_service.has_feature(account_id, "mcp_servers")
 
         assert result is False
 
-    def test_has_feature_not_in_plan(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.plan")
+    def test_has_feature_not_in_plan(
+        self, mock_plan_crud, mock_subscription_crud, billing_service, mock_db
+    ):
         """Test has_feature returns False when feature not in plan."""
         account_id = uuid.uuid4()
 
@@ -381,50 +388,58 @@ class TestHasFeature:
         mock_subscription = MagicMock(spec=Subscription)
         mock_subscription.plan = mock_plan
 
-        mock_db.query.return_value.join.return_value.filter.return_value.filter.return_value.first.return_value = mock_subscription
+        mock_subscription_crud.get_active_for_account.return_value = mock_subscription
 
         result = billing_service.has_feature(account_id, "advanced_analytics")
 
         assert result is False
 
-    def test_has_feature_no_subscription_uses_free_plan(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.plan")
+    def test_has_feature_no_subscription_uses_free_plan(
+        self, mock_plan_crud, mock_subscription_crud, billing_service, mock_db
+    ):
         """Test has_feature uses free plan when no subscription exists."""
         account_id = uuid.uuid4()
 
         mock_free_plan = MagicMock(spec=Plan)
         mock_free_plan.features = {"basic_features_enabled": True}
 
-        def mock_query_side_effect(*args):
-            mock_query = MagicMock()
-            if args[0] == Subscription:
-                mock_query.join.return_value.filter.return_value.filter.return_value.first.return_value = None
-            elif args[0] == Plan:
-                mock_query.filter.return_value.first.return_value = mock_free_plan
-            return mock_query
+        # No active subscription
+        mock_subscription_crud.get_active_for_account.return_value = None
 
-        mock_db.query.side_effect = mock_query_side_effect
+        # Free plan is found
+        mock_plan_crud.get.return_value = mock_free_plan
 
         result = billing_service.has_feature(account_id, "basic_features")
 
         assert result is True
+        mock_subscription_crud.get_active_for_account.assert_called_once_with(
+            mock_db, account_id=str(account_id)
+        )
+        mock_plan_crud.get.assert_called_once_with(mock_db, id="free")
 
-    def test_has_feature_no_subscription_no_free_plan(self, billing_service, mock_db):
+    @patch("spacebridge.services.billing.subscription")
+    @patch("spacebridge.services.billing.plan")
+    def test_has_feature_no_subscription_no_free_plan(
+        self, mock_plan_crud, mock_subscription_crud, billing_service, mock_db
+    ):
         """Test has_feature returns False when no subscription and no free plan."""
         account_id = uuid.uuid4()
 
-        def mock_query_side_effect(*args):
-            mock_query = MagicMock()
-            if args[0] == Subscription:
-                mock_query.join.return_value.filter.return_value.filter.return_value.first.return_value = None
-            elif args[0] == Plan:
-                mock_query.filter.return_value.first.return_value = None
-            return mock_query
+        # No active subscription
+        mock_subscription_crud.get_active_for_account.return_value = None
 
-        mock_db.query.side_effect = mock_query_side_effect
+        # No free plan found
+        mock_plan_crud.get.return_value = None
 
         result = billing_service.has_feature(account_id, "any_feature")
 
         assert result is False
+        mock_subscription_crud.get_active_for_account.assert_called_once_with(
+            mock_db, account_id=str(account_id)
+        )
+        mock_plan_crud.get.assert_called_once_with(mock_db, id="free")
 
 
 class TestGenerateUniqueUsername:

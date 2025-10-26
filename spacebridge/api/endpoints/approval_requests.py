@@ -5,7 +5,6 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
 
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.services.approval_service import ApprovalService
@@ -54,12 +53,13 @@ def get_approval_request(
 
 
 @router.get("/", response_model=list[ApprovalRequestResponse])
-async def list_approval_requests(
+def list_approval_requests(
     status: Optional[str] = Query(None, description="Filter by status"),
     execution_id: Optional[str] = Query(None, description="Filter by execution ID"),
     limit: int = Query(50, le=100, description="Maximum number of results"),
     skip: int = Query(0, description="Number of results to skip"),
     current_account: Account = Depends(get_current_active_user),
+    db=Depends(get_db_session),
 ) -> list[ApprovalRequest]:
     """List approval requests for the current account.
 
@@ -73,27 +73,15 @@ async def list_approval_requests(
     Returns:
         List of approval requests
     """
-    async with get_async_db_session() as db:
-        # Build query
-        query = select(ApprovalRequest).where(
-            ApprovalRequest.account_id == current_account.id
-        )
-
-        # Apply filters
-        if status:
-            query = query.where(ApprovalRequest.status == status)
-        if execution_id:
-            query = query.where(ApprovalRequest.execution_id == execution_id)
-
-        # Apply pagination
-        query = query.limit(limit).offset(skip)
-
-        # Order by requested_at descending
-        query = query.order_by(ApprovalRequest.requested_at.desc())
-
-        # Execute query
-        result = await db.execute(query)
-        return list(result.scalars().all())
+    # Use CRUD layer to get approval requests with filters
+    return crud_approval_request.get_multi_by_account(
+        db,
+        account_id=current_account.id,
+        execution_id=execution_id,
+        status=status,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.post("/{request_id}/approve", response_model=ApprovalRequestResponse)

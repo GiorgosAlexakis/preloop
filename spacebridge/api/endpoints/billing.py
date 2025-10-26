@@ -16,10 +16,10 @@ from spacebridge.api.auth.jwt import (
     get_current_active_user,
 )
 from spacemodels.models import Account
-from spacemodels.models.plan import Plan as PlanModel, Subscription as SubscriptionModel
 from spacemodels.schemas.plan import Plan, PlanCreate, Subscription
 from spacebridge.services.billing import BillingService
 from spacemodels.db.session import get_db_session
+from spacemodels.crud.plan import plan as crud_plan, subscription as crud_subscription
 
 router = APIRouter()
 
@@ -49,12 +49,7 @@ def list_public_plans(service: BillingService = Depends(get_billing_service)):
     """
     List all available public subscription plans.
     """
-    return (
-        service.db.query(PlanModel)
-        .filter(PlanModel.is_active, PlanModel.is_custom.is_(False))
-        .order_by(PlanModel.created_at.asc())
-        .all()
-    )
+    return crud_plan.get_active_public_plans(service.db)
 
 
 @router.get("/billing/custom-plans", response_model=List[Plan])
@@ -65,14 +60,8 @@ def list_custom_plans(
     """
     List custom subscription plans for the current user's account.
     """
-    return (
-        service.db.query(PlanModel)
-        .filter(
-            PlanModel.is_active,
-            PlanModel.is_custom,
-            PlanModel.account_id == current_user.id,
-        )
-        .all()
+    return crud_plan.get_active_custom_plans_for_account(
+        service.db, account_id=current_user.id
     )
 
 
@@ -84,11 +73,8 @@ def get_subscription(
     """
     Get the current user's subscription details.
     """
-    subscription = (
-        service.db.query(SubscriptionModel)
-        .filter(SubscriptionModel.account_id == current_user.id)
-        .order_by(SubscriptionModel.created_at.desc())
-        .first()
+    subscription = crud_subscription.get_latest_for_account(
+        service.db, account_id=current_user.id
     )
     if not subscription:
         raise HTTPException(status_code=404, detail="Subscription not found")

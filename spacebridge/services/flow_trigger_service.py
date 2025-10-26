@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import crud_flow, crud_flow_execution
-from spacemodels.models import Flow, FlowExecution
+from spacemodels.models import Flow
 from spacemodels.schemas.flow_execution import FlowExecutionCreate
 from .flow_orchestrator import FlowExecutionOrchestrator
 from spacesync.services.event_bus import get_nats_client
@@ -179,10 +179,8 @@ class FlowTriggerService:
         """
         # Get the flow
         flow_id_str = str(flow_id)
-        flow = crud_flow.get(self.db, id=flow_id_str, account_id="")
-        if not flow:
-            # Try without account_id filter for test mode
-            flow = self.db.query(Flow).filter(Flow.id == flow_id_str).first()
+        # Use CRUD layer without account filtering for test mode
+        flow = crud_flow.get(self.db, id=flow_id_str)
 
         if not flow:
             raise ValueError(f"Flow {flow_id} not found")
@@ -215,11 +213,9 @@ class FlowTriggerService:
         orchestrator_db = next(get_db_session())
 
         try:
-            # Get the execution in the new session
-            exec_in_new_session = (
-                orchestrator_db.query(FlowExecution)
-                .filter(FlowExecution.id == execution_id)
-                .first()
+            # Get the execution in the new session using CRUD layer
+            exec_in_new_session = crud_flow_execution.get(
+                orchestrator_db, id=execution_id
             )
 
             if not exec_in_new_session:

@@ -14,6 +14,7 @@ from spacemodels.crud import (
     crud_account,
     crud_ai_model,
     crud_api_key,
+    crud_flow,
     crud_flow_execution,
 )
 from spacemodels.models.flow import Flow
@@ -87,9 +88,9 @@ class FlowExecutionOrchestrator:
         flow_id_str = (
             str(self.flow_id) if isinstance(self.flow_id, uuid.UUID) else self.flow_id
         )
-        # Direct query without account filtering since this is an internal service
+        # Use CRUD layer without account filtering since this is an internal service
         # and we don't have the account_id yet (it's a property of the flow itself)
-        self.flow = self.db.query(Flow).filter(Flow.id == flow_id_str).first()
+        self.flow = crud_flow.get(self.db, id=flow_id_str)
         if not self.flow:
             raise ValueError(f"Flow with id {self.flow_id} not found")
 

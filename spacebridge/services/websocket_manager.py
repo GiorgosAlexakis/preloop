@@ -7,7 +7,6 @@ from typing import Dict
 from fastapi import WebSocket
 from nats.aio.client import Client
 from nats.aio.msg import Msg
-from sqlalchemy import text
 
 from spacesync.services.event_bus import get_task_publisher
 from spacemodels.db.session import get_db_session as get_db
@@ -24,21 +23,14 @@ async def persist_execution_log(execution_id: str, log_data: dict):
         log_data: Log message data to append
     """
     try:
+        from spacemodels.crud import crud_flow_execution
+
         db = next(get_db())
         try:
-            # Use PostgreSQL's JSONB append operator to add log to array
-            # If execution_logs is NULL, initialize it as an empty array first
-            # Convert the dict to JSON string for proper JSONB casting
-            log_json = json.dumps(log_data)
-            db.execute(
-                text("""
-                    UPDATE flow_execution
-                    SET execution_logs = COALESCE(execution_logs, '[]'::jsonb) || CAST(:log_entry AS jsonb)
-                    WHERE id = :execution_id
-                """),
-                {"execution_id": execution_id, "log_entry": log_json},
+            # Use CRUD method to append log
+            crud_flow_execution.append_log(
+                db, execution_id=execution_id, log_data=log_data
             )
-            db.commit()
         finally:
             db.close()
     except Exception as e:

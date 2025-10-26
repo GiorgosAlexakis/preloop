@@ -21,6 +21,14 @@ def db_session_mock():
         mock_scalars.first.return_value = None
         mock_execute.scalars.return_value = mock_scalars
         db_session.execute.return_value = mock_execute
+
+        # Mock the query chain for CRUD methods
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.first.return_value = None
+        mock_query.all.return_value = []
+        db_session.query.return_value = mock_query
+
         mock_get_db.return_value = iter([db_session])
         yield db_session
 
@@ -48,13 +56,13 @@ def test_register_user_success(db_session_mock):
 
 
 def test_register_user_username_exists(db_session_mock):
-    mock_execute = MagicMock()
-    mock_scalars = MagicMock()
-    mock_scalars.first.return_value = Account(
+    # Mock query chain for username check (returns existing user)
+    mock_query = MagicMock()
+    mock_query.filter.return_value = mock_query
+    mock_query.first.return_value = Account(
         username="testuser", email="test@example.com"
     )
-    mock_execute.scalars.return_value = mock_scalars
-    db_session_mock.execute.return_value = mock_execute
+    db_session_mock.query.return_value = mock_query
 
     response = client.post(
         "/auth/register",
@@ -70,35 +78,19 @@ def test_register_user_username_exists(db_session_mock):
 
 
 def test_register_user_email_exists(db_session_mock):
-    # First call to execute is for username, second is for email
-    mock_execute = MagicMock()
-    mock_scalars_user = MagicMock()
-    mock_scalars_user.first.return_value = None
-    mock_scalars_email = MagicMock()
-    mock_scalars_email.first.return_value = Account(
+    # First query for username check (returns None), second for email check (returns account)
+    mock_query_username = MagicMock()
+    mock_query_username.filter.return_value = mock_query_username
+    mock_query_username.first.return_value = None
+
+    mock_query_email = MagicMock()
+    mock_query_email.filter.return_value = mock_query_email
+    mock_query_email.first.return_value = Account(
         username="anotheruser", email="test@example.com"
     )
 
-    # This setup is a bit more complex to handle the two separate checks
-    results = [
-        MagicMock(
-            scalars=MagicMock(
-                return_value=MagicMock(first=MagicMock(return_value=None))
-            )
-        ),
-        MagicMock(
-            scalars=MagicMock(
-                return_value=MagicMock(
-                    first=MagicMock(
-                        return_value=Account(
-                            username="anotheruser", email="test@example.com"
-                        )
-                    )
-                )
-            )
-        ),
-    ]
-    db_session_mock.execute.side_effect = results
+    # Use side_effect to return different mocks for each query call
+    db_session_mock.query.side_effect = [mock_query_username, mock_query_email]
 
     response = client.post(
         "/auth/register",

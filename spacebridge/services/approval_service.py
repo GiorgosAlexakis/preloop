@@ -8,13 +8,13 @@ from typing import Optional, Dict, Any
 from urllib.parse import urljoin
 
 import httpx
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spacemodels.models import ApprovalRequest, ApprovalPolicy
 from spacemodels.schemas.approval_request import (
     ApprovalRequestUpdate,
 )
+from spacemodels.crud.approval_request import get_approval_request_async
 
 
 class ApprovalService:
@@ -92,10 +92,7 @@ class ApprovalService:
         Returns:
             Approval request or None if not found
         """
-        result = await self.db.execute(
-            select(ApprovalRequest).where(ApprovalRequest.id == request_id)
-        )
-        return result.scalar_one_or_none()
+        return await get_approval_request_async(self.db, request_id=request_id)
 
     async def update_approval_request(
         self, request_id: uuid.UUID, update: ApprovalRequestUpdate

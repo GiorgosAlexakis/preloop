@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from spacemodels.models import Project
+from spacemodels.crud import crud_project
 
 from .base import PromptResolver, ResolverContext
 
@@ -46,15 +46,13 @@ class ProjectResolver(PromptResolver):
             project_id = payload.get("project_id")
             project_identifier = payload.get("project_identifier")
 
-        # Query project from database
+        # Query project from database using CRUD layer
         project = None
         if project_id:
-            project = context.db.query(Project).filter(Project.id == project_id).first()
+            project = crud_project.get(context.db, id=project_id)
         elif project_identifier:
-            project = (
-                context.db.query(Project)
-                .filter(Project.identifier == project_identifier)
-                .first()
+            project = crud_project.get_by_identifier(
+                context.db, identifier=project_identifier
             )
 
         if not project:

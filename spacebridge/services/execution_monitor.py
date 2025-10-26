@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from spacebridge.agents import create_agent_executor, AgentStatus
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.flow_execution import FlowExecution
-from spacemodels.models.flow import Flow
+from spacemodels.crud import crud_flow, crud_flow_execution
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +86,10 @@ class ExecutionMonitor:
         """Check for stale executions and update their status."""
         db: Session = next(get_db())
         try:
-            # Find executions that are in active states
+            # Find executions that are in active states using CRUD layer
             active_statuses = ["RUNNING", "PENDING", "INITIALIZING", "STARTING"]
-            stale_executions = (
-                db.query(FlowExecution)
-                .filter(FlowExecution.status.in_(active_statuses))
-                .all()
+            stale_executions = crud_flow_execution.get_by_statuses(
+                db, statuses=active_statuses
             )
 
             if not stale_executions:
@@ -140,8 +138,8 @@ class ExecutionMonitor:
                 execution.end_time = now
                 return
 
-            # Get the flow to determine agent type
-            flow = db.query(Flow).filter(Flow.id == execution.flow_id).first()
+            # Get the flow to determine agent type using CRUD layer
+            flow = crud_flow.get(db, id=execution.flow_id)
             if not flow:
                 logger.error(
                     f"Flow {execution.flow_id} not found for execution {execution.id}"

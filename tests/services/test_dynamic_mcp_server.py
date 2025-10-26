@@ -456,9 +456,12 @@ class TestHelperFunctions:
         mock_account.id = str(uuid4())
 
         mock_db = MagicMock()
-        mock_result = MagicMock()
-        mock_result.first = MagicMock(return_value=MagicMock())  # Has tracker
-        mock_db.execute = MagicMock(return_value=mock_result)
+        # Mock the query chain to return a tracker
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.first.return_value = MagicMock()  # Has tracker
+        mock_db.query.return_value = mock_query
 
         result = has_tracker(mock_account, mock_db)
 
@@ -470,9 +473,12 @@ class TestHelperFunctions:
         mock_account.id = str(uuid4())
 
         mock_db = MagicMock()
-        mock_result = MagicMock()
-        mock_result.first = MagicMock(return_value=None)  # No trackers
-        mock_db.execute = MagicMock(return_value=mock_result)
+        # Mock the query chain to return None
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.first.return_value = None  # No trackers
+        mock_db.query.return_value = mock_query
 
         result = has_tracker(mock_account, mock_db)
 

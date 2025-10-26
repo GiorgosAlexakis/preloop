@@ -94,18 +94,11 @@ class TestWebhooksEndpoint:
         """No teardown needed after each method with the new setup."""
         pass
 
-    @patch(
-        "spacebridge.api.endpoints.webhooks.CRUDOrganization"
-    )  # Keep patch to avoid import errors if CRUDOrganization is used elsewhere, though not directly in this test logic anymore
-    def test_webhook_missing_organization(
-        self, mock_crud_org_unused_param
-    ):  # Renamed param to indicate it's not used
-        """Test webhook returns 404 if organization is not found."""  # Updated docstring
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = None
-        # mock_crud_org.return_value = mock_crud_instance
-        # Instead, mock the direct SQLAlchemy query chain
-        self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = None
+    @patch("spacebridge.api.endpoints.webhooks.crud_organization")
+    def test_webhook_missing_organization(self, mock_crud_org):
+        """Test webhook returns 404 if organization is not found."""
+        # Mock the CRUD method to return None (organization not found)
+        mock_crud_org.get_with_tracker.return_value = None
 
         response = self.test_client.post(
             "/api/v1/private/webhooks/github/123",  # Assuming github for this test case
@@ -115,21 +108,15 @@ class TestWebhooksEndpoint:
             },  # Dummy signature, won't be checked if org not found
         )
 
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier="nonexistent-org"
-        # )
-        self.mock_session.query.assert_called_once()  # Check that a query was attempted
-        assert response.status_code == 404  # Updated status code
-        assert (
-            response.json()["detail"] == "Organization not found"
-        )  # Updated detail message
+        # Verify CRUD method was called
+        mock_crud_org.get_with_tracker.assert_called_once_with(
+            self.mock_session, id="123"
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Organization not found"
 
-    @patch(
-        "spacebridge.api.endpoints.webhooks.CRUDOrganization"
-    )  # Keep patch for consistency
-    def test_webhook_missing_secret(
-        self, mock_crud_org_unused_param, configured_mock_org_fixture
-    ):
+    @patch("spacebridge.api.endpoints.webhooks.crud_organization")
+    def test_webhook_missing_secret(self, mock_crud_org, configured_mock_org_fixture):
         """Test webhook returns 403 if organization has no webhook_secret."""
         current_org_mock = configured_mock_org_fixture
         setup_mock_webhook_secret(current_org_mock, None)  # webhook_secret is None
@@ -137,10 +124,8 @@ class TestWebhooksEndpoint:
         current_org_mock.tracker = MagicMock()
         current_org_mock.tracker.is_active = True
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
-        self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
+        # Mock CRUD method to return the organization
+        mock_crud_org.get_with_tracker.return_value = current_org_mock
 
         response = self.test_client.post(
             f"/api/v1/private/webhooks/github/{current_org_mock.id}",
@@ -149,18 +134,16 @@ class TestWebhooksEndpoint:
                 "X-Hub-Signature-256": "sha256=dummy"
             },  # Signature won't be checked if secret is missing
         )
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        self.mock_session.query.assert_called_once()
+
+        mock_crud_org.get_with_tracker.assert_called_once()
         assert response.status_code == 403
         assert response.json()["detail"] == "Webhook not configured correctly"
 
-    @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
+    @patch("spacebridge.api.endpoints.webhooks.crud_organization")
     def test_github_webhook_missing_signature(
         self,
-        mock_crud_org_unused_param,
-        configured_mock_org_fixture,  # mock_crud_org not used
+        mock_crud_org,
+        configured_mock_org_fixture,
     ):
         """Test GitHub webhook returns 403 if X-Hub-Signature-256 header is missing."""
         current_org_mock = configured_mock_org_fixture
@@ -169,29 +152,22 @@ class TestWebhooksEndpoint:
         current_org_mock.tracker = MagicMock()
         current_org_mock.tracker.is_active = True
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
-        # Instead, mock the direct SQLAlchemy query chain used in the endpoint
-        self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
+        # Mock CRUD method to return the organization
+        mock_crud_org.get_with_tracker.return_value = current_org_mock
 
         response = self.test_client.post(
             f"/api/v1/private/webhooks/github/{current_org_mock.id}",
             json={"event": "test"},
             headers={},  # No signature header
         )
-        # The get_by_identifier mock is no longer relevant for this code path
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        # We should assert that the query was made
-        self.mock_session.query.assert_called_once()
+
+        mock_crud_org.get_with_tracker.assert_called_once()
         assert response.status_code == 403
         assert response.json()["detail"] == "Missing GitHub signature"
 
-    @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
-    def test_github_webhook_invalid_signature_method(  # mock_crud_org not used
-        self, mock_crud_org_unused_param, configured_mock_org_fixture
+    @patch("spacebridge.api.endpoints.webhooks.crud_organization")
+    def test_github_webhook_invalid_signature_method(
+        self, mock_crud_org, configured_mock_org_fixture
     ):
         """Test GitHub webhook returns 403 when signature method is invalid."""
         current_org_mock = configured_mock_org_fixture
@@ -199,10 +175,8 @@ class TestWebhooksEndpoint:
         current_org_mock.tracker = MagicMock()
         current_org_mock.tracker.is_active = True
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
-        self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
+        # Mock CRUD method to return the organization
+        mock_crud_org.get_with_tracker.return_value = current_org_mock
 
         response = self.test_client.post(
             f"/api/v1/private/webhooks/github/{current_org_mock.id}",
@@ -211,16 +185,14 @@ class TestWebhooksEndpoint:
                 "X-Hub-Signature-256": "sha1=invalid-signature-format"
             },  # Invalid method
         )
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        self.mock_session.query.assert_called_once()
+
+        mock_crud_org.get_with_tracker.assert_called_once()
         assert response.status_code == 403
         assert response.json()["detail"] == "Unsupported GitHub signature method"
 
-    @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
-    def test_github_webhook_invalid_signature(  # mock_crud_org not used
-        self, mock_crud_org_unused_param, configured_mock_org_fixture
+    @patch("spacebridge.api.endpoints.webhooks.crud_organization")
+    def test_github_webhook_invalid_signature(
+        self, mock_crud_org, configured_mock_org_fixture
     ):
         """Test GitHub webhook returns 403 when signature is invalid."""
         current_org_mock = configured_mock_org_fixture
@@ -229,10 +201,8 @@ class TestWebhooksEndpoint:
         current_org_mock.tracker = MagicMock()
         current_org_mock.tracker.is_active = True
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
-        self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
+        # Mock CRUD method to return the organization
+        mock_crud_org.get_with_tracker.return_value = current_org_mock
 
         payload_dict = {"event": "test"}
         # TestClient's `json=` param will do `json.dumps(payload_dict, separators=(",", ":")).encode("utf-8")`
@@ -252,10 +222,7 @@ class TestWebhooksEndpoint:
             headers={"X-Hub-Signature-256": f"sha256={invalid_signature}"},
         )
 
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        self.mock_session.query.assert_called_once()
+        mock_crud_org.get_with_tracker.assert_called_once()
         assert response.status_code == 403
         assert response.json()["detail"] == "Invalid GitHub signature"
 
@@ -327,9 +294,9 @@ class TestWebhooksEndpoint:
         self.mock_session.add.assert_called()
         self.mock_session.commit.assert_called()
 
-    @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
-    def test_gitlab_webhook_missing_token(  # mock_crud_org not used
-        self, mock_crud_org_unused_param, configured_mock_org_fixture
+    @patch("spacebridge.api.endpoints.webhooks.crud_organization")
+    def test_gitlab_webhook_missing_token(
+        self, mock_crud_org, configured_mock_org_fixture
     ):
         """Test GitLab webhook returns 403 if X-Gitlab-Token header is missing."""
         current_org_mock = configured_mock_org_fixture
@@ -337,26 +304,22 @@ class TestWebhooksEndpoint:
         current_org_mock.tracker = MagicMock()
         current_org_mock.tracker.is_active = True
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
-        self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
+        # Mock CRUD method to return the organization
+        mock_crud_org.get_with_tracker.return_value = current_org_mock
 
         response = self.test_client.post(
             f"/api/v1/private/webhooks/gitlab/{current_org_mock.id}",
             json={"event": "test"},
             headers={},  # No token header
         )
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        self.mock_session.query.assert_called_once()
+
+        mock_crud_org.get_with_tracker.assert_called_once()
         assert response.status_code == 403
         assert response.json()["detail"] == "Missing GitLab token"
 
-    @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
-    def test_gitlab_webhook_invalid_token(  # mock_crud_org not used
-        self, mock_crud_org_unused_param, configured_mock_org_fixture
+    @patch("spacebridge.api.endpoints.webhooks.crud_organization")
+    def test_gitlab_webhook_invalid_token(
+        self, mock_crud_org, configured_mock_org_fixture
     ):
         """Test GitLab webhook returns 403 when token is invalid."""
         current_org_mock = configured_mock_org_fixture
@@ -366,20 +329,16 @@ class TestWebhooksEndpoint:
         current_org_mock.tracker = MagicMock()
         current_org_mock.tracker.is_active = True
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
-        self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
+        # Mock CRUD method to return the organization
+        mock_crud_org.get_with_tracker.return_value = current_org_mock
 
         response = self.test_client.post(
             f"/api/v1/private/webhooks/gitlab/{current_org_mock.id}",
             json={"event": "test"},
             headers={"X-Gitlab-Token": "invalid-token"},
         )
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        self.mock_session.query.assert_called_once()
+
+        mock_crud_org.get_with_tracker.assert_called_once()
         assert response.status_code == 403
         assert response.json()["detail"] == "Invalid GitLab token"
 
@@ -444,7 +403,7 @@ class TestWebhooksEndpoint:
         self.mock_session.commit.assert_called()
 
     @patch(
-        "spacebridge.api.endpoints.webhooks.CRUDOrganization"
+        "spacebridge.api.endpoints.webhooks.crud_organization"
     )  # Keep patch, though mock_crud_org not directly used
     def test_unsupported_tracker_type(
         self, mock_crud_org_unused_param, configured_mock_org_fixture
@@ -471,10 +430,8 @@ class TestWebhooksEndpoint:
             == f"Unsupported tracker_type: {tracker_name}"  # Updated expected message
         )
 
-    @patch("spacebridge.api.endpoints.webhooks.CRUDOrganization")  # Keep patch
-    def test_invalid_json_payload(
-        self, mock_crud_org_unused_param, configured_mock_org_fixture
-    ):  # mock_crud_org not used
+    @patch("spacebridge.api.endpoints.webhooks.crud_organization")
+    def test_invalid_json_payload(self, mock_crud_org, configured_mock_org_fixture):
         """Test webhook returns 400 when payload is not valid JSON, even with valid GitHub signature."""
         current_org_mock = configured_mock_org_fixture
         secret_to_use = "json-error-secret"
@@ -486,10 +443,8 @@ class TestWebhooksEndpoint:
         # Subscribed events don't matter as much if JSON parsing fails before event type check
         current_org_mock.tracker.subscribed_events = ["some_event"]
 
-        # mock_crud_instance = MagicMock()
-        # mock_crud_instance.get_by_identifier.return_value = current_org_mock
-        # mock_crud_org.return_value = mock_crud_instance
-        self.mock_session.query.return_value.options.return_value.filter.return_value.first.return_value = current_org_mock
+        # Mock CRUD method to return the organization
+        mock_crud_org.get_with_tracker.return_value = current_org_mock
 
         invalid_payload_bytes = b"this is not json {{{{,"
         signature = hmac.new(
@@ -506,10 +461,7 @@ class TestWebhooksEndpoint:
             },
         )
 
-        # mock_crud_instance.get_by_identifier.assert_called_once_with(
-        #     db=self.mock_session, identifier=current_org_mock.identifier
-        # )
-        self.mock_session.query.assert_called_once()
+        mock_crud_org.get_with_tracker.assert_called_once()
         assert response.status_code == 400
         assert "Invalid JSON payload" in response.json()["detail"]
 

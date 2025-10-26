@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from spacemodels.models import Account
+from spacemodels.crud import crud_account
 
 from .base import PromptResolver, ResolverContext
 
@@ -43,8 +43,8 @@ class AccountResolver(PromptResolver):
             self.logger.warning("No account_id in trigger event data")
             return None
 
-        # Query account from database
-        account = context.db.query(Account).filter(Account.id == account_id).first()
+        # Query account from database using CRUD layer
+        account = crud_account.get(context.db, id=account_id)
 
         if not account:
             self.logger.warning(f"Could not find account with id={account_id}")

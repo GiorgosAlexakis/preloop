@@ -18,8 +18,6 @@ from fastapi import (
 )
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 
 from spacebridge.api.auth.jwt import (
@@ -58,11 +56,10 @@ from spacebridge.utils.tokens import (
     create_password_reset_token,
     verify_token,
 )
-from spacemodels.crud import crud_account
+from spacemodels.crud import crud_account, crud_api_key, crud_api_usage
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
 from spacemodels.models.api_key import ApiKey
-from spacemodels.models.api_usage import ApiUsage
 from pydantic import BaseModel
 
 
@@ -101,22 +98,18 @@ async def register(
     session = next(session_generator)
 
     try:
-        # Check if username exists
-        result = session.execute(
-            select(Account).where(Account.username == user_data.username)
+        # Check if username exists using CRUD layer
+        existing_user = crud_account.get_by_username(
+            session, username=user_data.username
         )
-        existing_user = result.scalars().first()
         if existing_user is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username already registered",
             )
 
-        # Check if email exists
-        result = session.execute(
-            select(Account).where(Account.email == user_data.email)
-        )
-        existing_email = result.scalars().first()
+        # Check if email exists using CRUD layer
+        existing_email = crud_account.get_by_email(session, email=user_data.email)
         if existing_email is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -220,9 +213,8 @@ async def verify_email(verification_data: EmailVerificationRequest) -> Dict[str,
         session = next(session_generator)
 
         try:
-            # Find the user
-            result = session.execute(select(Account).where(Account.email == email))
-            user = result.scalars().first()
+            # Find the user using CRUD layer
+            user = crud_account.get_by_email(session, email=email)
 
             if not user:
                 raise HTTPException(
@@ -275,10 +267,8 @@ async def forgot_password(
     session = next(session_generator)
 
     try:
-        result = session.execute(
-            select(Account).where(Account.email == reset_data.email)
-        )
-        user = result.scalars().first()
+        # Find user using CRUD layer
+        user = crud_account.get_by_email(session, email=reset_data.email)
 
         if user:
             # Generate password reset token
@@ -323,8 +313,8 @@ async def reset_password(reset_data: PasswordResetConfirmRequest) -> Dict[str, s
         session = next(session_generator)
 
         try:
-            result = session.execute(select(Account).where(Account.email == email))
-            user = result.scalars().first()
+            # Find user using CRUD layer
+            user = crud_account.get_by_email(session, email=email)
 
             if not user:
                 raise HTTPException(
@@ -446,9 +436,7 @@ async def login_json(request: LoginRequest) -> Dict[str, str]:
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(
-    request: RefreshRequest, db: AsyncSession = Depends(get_db_session)
-) -> Dict[str, str]:
+async def refresh_token(request: RefreshRequest) -> Dict[str, str]:
     """Refresh an access token using a refresh token.
 
     Args:
@@ -460,15 +448,16 @@ async def refresh_token(
     Raises:
         HTTPException: If the refresh token is invalid or expired.
     """
+    # Get synchronous database session
+    session_generator = get_db_session()
+    session = next(session_generator)
+
     try:
         # Decode and validate the refresh token
         token_data = decode_token(request.refresh_token)
 
-        # Verify user exists and is active
-        result = await db.execute(
-            select(Account).where(Account.id == int(token_data.sub))
-        )
-        user = result.scalars().first()
+        # Verify user exists and is active using CRUD layer
+        user = crud_account.get(session, id=int(token_data.sub))
 
         if user is None or not user.is_active:
             raise HTTPException(
@@ -511,6 +500,8 @@ async def refresh_token(
             detail=f"Invalid refresh token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    finally:
+        session.close()
 
 
 @router.get("/users/me", response_model=UserResponse)
@@ -639,12 +630,8 @@ async def list_api_keys(
     session = next(session_generator)
 
     try:
-        result = session.execute(
-            select(ApiKey)
-            .where(ApiKey.created_by == current_user.username)
-            .order_by(ApiKey.created_at.desc())
-        )
-        keys = result.scalars().all()
+        # Get API keys using CRUD layer
+        keys = crud_api_key.get_by_user(session, username=current_user.username)
 
         return [
             ApiKeySummary(
@@ -690,8 +677,8 @@ async def debug_api_keys(
         # Check if specific key was requested
         if api_key:
             logger.info(f"Looking up specific API key: {api_key[:10]}...")
-            result = session.execute(select(ApiKey).where(ApiKey.key == api_key))
-            key = result.scalars().first()
+            # Get specific key using CRUD layer
+            key = crud_api_key.get_by_key(session, key=api_key)
             return (
                 [
                     ApiKeyResponse(
@@ -711,10 +698,8 @@ async def debug_api_keys(
                 else []
             )
 
-        # Get all keys for the specified user
-        query = select(ApiKey).where(ApiKey.created_by == username)
-        result = session.execute(query)
-        keys = result.scalars().all()
+        # Get all keys for the specified user using CRUD layer
+        keys = crud_api_key.get_by_user(session, username=username)
 
         return [
             ApiKeyResponse(
@@ -761,13 +746,10 @@ async def delete_api_key(
     session = next(session_generator)
 
     try:
-        # Get the key
-        result = session.execute(
-            select(ApiKey)
-            .where(ApiKey.id == key_id)
-            .where(ApiKey.created_by == current_user.username)
+        # Get the key using CRUD layer
+        key = crud_api_key.get_by_id_and_user(
+            session, key_id=key_id, username=current_user.username
         )
-        key = result.scalars().first()
 
         if not key:
             raise HTTPException(
@@ -814,17 +796,13 @@ async def get_api_usage(
     session = next(session_generator)
 
     try:
-        # Base query
-        query = select(ApiUsage).where(ApiUsage.username == current_user.username)
-
-        # Apply date filters if provided
-        if start_date:
-            query = query.where(ApiUsage.timestamp >= start_date)
-        if end_date:
-            query = query.where(ApiUsage.timestamp <= end_date)
-
-        result = session.execute(query)
-        usage_entries = result.scalars().all()
+        # Get usage entries using CRUD layer
+        usage_entries = crud_api_usage.get_for_user_filtered(
+            session,
+            username=current_user.username,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         # Calculate statistics
         total_requests = len(usage_entries)
@@ -883,8 +861,8 @@ async def authenticate_user(username: str, password: str) -> Optional[Account]:
     session = next(session_generator)
 
     try:
-        result = session.execute(select(Account).where(Account.username == username))
-        user = result.scalars().first()
+        # Find user using CRUD layer
+        user = crud_account.get_by_username(session, username=username)
 
         if not user:
             return None
@@ -914,19 +892,18 @@ async def complete_onboarding(request: OnboardingRequest) -> Dict[str, str]:
     session_generator = get_db_session()
     session = next(session_generator)
     try:
-        account = session.query(Account).filter(Account.email == request.email).first()
+        # Find account using CRUD layer
+        account = crud_account.get_by_email(session, email=request.email)
         if not account:
             raise HTTPException(status_code=404, detail="User not found.")
 
         if account.hashed_password != "NEEDS_RESET":
             raise HTTPException(status_code=400, detail="Onboarding already completed.")
 
-        # Check if the new username is taken by someone else
+        # Check if the new username is taken by someone else using CRUD layer
         if account.username != request.username:
-            existing_user = (
-                session.query(Account)
-                .filter(Account.username == request.username)
-                .first()
+            existing_user = crud_account.get_by_username(
+                session, username=request.username
             )
             if existing_user:
                 raise HTTPException(

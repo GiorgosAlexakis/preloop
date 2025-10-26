@@ -41,8 +41,10 @@ async def require_approval(
     """
     try:
         from spacemodels.db.session import get_async_db_session
-        from spacemodels.models import ToolConfiguration, ApprovalPolicy
-        from sqlalchemy import select
+        from spacemodels.crud.tool_configuration import (
+            get_tool_config_by_name_and_source_async,
+        )
+        from spacemodels.crud.approval_policy import get_approval_policy_async
 
         logger.info(
             f"Checking approval requirement for {tool_source} tool '{tool_name}' "
@@ -50,15 +52,10 @@ async def require_approval(
         )
 
         async with get_async_db_session() as db:
-            # Check for tool configuration
-            result = await db.execute(
-                select(ToolConfiguration).where(
-                    ToolConfiguration.account_id == account_id,
-                    ToolConfiguration.tool_name == tool_name,
-                    ToolConfiguration.tool_source == tool_source,
-                )
+            # Check for tool configuration using CRUD
+            config = await get_tool_config_by_name_and_source_async(
+                db, account_id=account_id, tool_name=tool_name, tool_source=tool_source
             )
-            config = result.scalar_one_or_none()
 
             # If tool doesn't require approval, execute directly
             if (
@@ -71,13 +68,10 @@ async def require_approval(
                 )
                 return (True, "")
 
-            # Get approval policy
-            policy_result = await db.execute(
-                select(ApprovalPolicy).where(
-                    ApprovalPolicy.id == config.approval_policy_id
-                )
+            # Get approval policy using CRUD
+            policy = await get_approval_policy_async(
+                db, policy_id=config.approval_policy_id
             )
-            policy = policy_result.scalar_one_or_none()
 
             if not policy:
                 logger.error(
@@ -206,15 +200,14 @@ async def require_approval(
 
                 while True:
                     # Check approval status with fresh database session
-                    from spacemodels.models import ApprovalRequest
+                    from spacemodels.crud.approval_request import (
+                        get_approval_request_async,
+                    )
 
                     async with get_async_db_session() as poll_db:
-                        poll_result = await poll_db.execute(
-                            select(ApprovalRequest).where(
-                                ApprovalRequest.id == approval_request.id
-                            )
+                        current_request = await get_approval_request_async(
+                            poll_db, request_id=approval_request.id
                         )
-                        current_request = poll_result.scalar_one_or_none()
 
                     logger.info(
                         f"[Polling] Checked approval status: {current_request.status if current_request else 'NOT_FOUND'} "

@@ -321,11 +321,8 @@ async def {internal_name}({params_str}) -> str:
     try:
         db = next(get_db())
         try:
-            from spacemodels.models.mcp_server import MCPServer
-
-            mcp_server = (
-                db.query(MCPServer).filter(MCPServer.id == server_id).first()
-            )
+            # Use CRUD layer to get MCP server
+            mcp_server = crud_mcp_server.get(db, id=server_id, account_id=account_id)
 
             if not mcp_server:
                 return f"Error: MCP server {{server_id}} not found"

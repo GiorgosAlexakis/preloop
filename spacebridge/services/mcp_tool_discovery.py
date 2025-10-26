@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from spacebridge.services.mcp_client_pool import get_mcp_client_pool
 from spacemodels.models.mcp_server import MCPServer
 from spacemodels.models.mcp_tool import MCPTool
+from spacemodels.crud import crud_mcp_server, crud_mcp_tool, crud_tool_configuration
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,8 @@ async def scan_mcp_server_tools(mcp_server_id: UUID, db: Session) -> List[MCPToo
         ValueError: If server not found
         Exception: If scan fails
     """
-    # Get MCP server from database
-    mcp_server = db.query(MCPServer).filter(MCPServer.id == mcp_server_id).first()
+    # Get MCP server from database using CRUD layer
+    mcp_server = crud_mcp_server.get(db, id=mcp_server_id)
     if not mcp_server:
         raise ValueError(f"MCP server not found: {mcp_server_id}")
 
@@ -55,10 +56,8 @@ async def scan_mcp_server_tools(mcp_server_id: UUID, db: Session) -> List[MCPToo
             f"Discovered {len(discovered_tools)} tools from server {mcp_server.name}"
         )
 
-        # Get existing tools for this server
-        existing_tools = (
-            db.query(MCPTool).filter(MCPTool.mcp_server_id == mcp_server_id).all()
-        )
+        # Get existing tools for this server using CRUD layer
+        existing_tools = crud_mcp_tool.get_by_server(db, server_id=mcp_server_id)
         existing_tool_names = {tool.name for tool in existing_tools}
 
         # Track new and updated tools
@@ -100,10 +99,8 @@ async def scan_mcp_server_tools(mcp_server_id: UUID, db: Session) -> List[MCPToo
             f"{len(new_tools)} new tools, {updated_count} updated tools"
         )
 
-        # Return all tools for this server
-        all_tools = (
-            db.query(MCPTool).filter(MCPTool.mcp_server_id == mcp_server_id).all()
-        )
+        # Return all tools for this server using CRUD layer
+        all_tools = crud_mcp_tool.get_by_server(db, server_id=mcp_server_id)
         return all_tools
 
     except Exception as e:
@@ -128,7 +125,7 @@ async def get_cached_tools_for_server(
     Returns:
         List of cached tools
     """
-    tools = db.query(MCPTool).filter(MCPTool.mcp_server_id == mcp_server_id).all()
+    tools = crud_mcp_tool.get_by_server(db, server_id=mcp_server_id)
     return tools
 
 
@@ -147,23 +144,13 @@ async def get_all_enabled_proxied_tools(
     Returns:
         List of (MCPServer, MCPTool) tuples for enabled tools
     """
-    from spacemodels.models.tool_configuration import ToolConfiguration
 
-    # Get all active MCP servers for this account
-    mcp_servers = (
-        db.query(MCPServer)
-        .filter(MCPServer.account_id == account_id, MCPServer.status == "active")
-        .all()
-    )
+    # Get all active MCP servers for this account using CRUD layer
+    mcp_servers = crud_mcp_server.get_active_by_account(db, account_id=account_id)
 
-    # Get all tool configurations for this account (for filtering)
-    tool_configs = (
-        db.query(ToolConfiguration)
-        .filter(
-            ToolConfiguration.account_id == account_id,
-            ToolConfiguration.tool_source == "mcp",
-        )
-        .all()
+    # Get all tool configurations for this account (for filtering) using CRUD layer
+    tool_configs = crud_tool_configuration.get_by_source(
+        db, account_id=account_id, tool_source="mcp"
     )
 
     # Build a map of (tool_name, server_id) -> is_enabled
@@ -174,7 +161,7 @@ async def get_all_enabled_proxied_tools(
     # Get all tools for these servers and filter by configuration
     proxied_tools = []
     for server in mcp_servers:
-        tools = db.query(MCPTool).filter(MCPTool.mcp_server_id == server.id).all()
+        tools = crud_mcp_tool.get_by_server(db, server_id=server.id)
         for tool in tools:
             # Check if tool has explicit configuration
             config_key = (tool.name, str(server.id))
@@ -206,16 +193,10 @@ async def get_enabled_builtin_tools(
     Returns:
         List of enabled builtin Tool objects
     """
-    from spacemodels.models.tool_configuration import ToolConfiguration
 
-    # Get all tool configurations for builtin tools for this account
-    tool_configs = (
-        db.query(ToolConfiguration)
-        .filter(
-            ToolConfiguration.account_id == account_id,
-            ToolConfiguration.tool_source == "builtin",
-        )
-        .all()
+    # Get all tool configurations for builtin tools for this account using CRUD layer
+    tool_configs = crud_tool_configuration.get_by_source(
+        db, account_id=account_id, tool_source="builtin"
     )
 
     # Build a map of tool_name -> is_enabled

@@ -10,7 +10,7 @@ from spacemodels.db.session import get_db_session
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.schemas.auth import UserResponse
 from spacebridge.schemas.issue_compliance import CompliancePromptMetadata
-from spacesync.spacesync.trackers import create_tracker_client
+from spacesync.trackers import create_tracker_client
 from spacemodels.crud import (
     CRUDOrganization,
     CRUDProject,
@@ -20,8 +20,6 @@ from spacemodels.crud import (
 from spacemodels.models.account import Account
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
-from spacemodels.models.tracker import Tracker
-from spacemodels.models.tracker_scope_rule import TrackerScopeRule
 import yaml
 import os
 
@@ -351,35 +349,19 @@ def get_accessible_projects(
         List of Project objects that the user has access to and that match
         the tracker scope rules.
     """
-    from sqlalchemy.orm import joinedload
-
-    # Build base query for projects belonging to user's active trackers
-    project_query = (
-        db.query(Project)
-        .options(joinedload(Project.organization).joinedload(Organization.tracker))
-        .join(Project.organization)
-        .join(Organization.tracker)
-        .filter(Tracker.account_id == current_user.id)
-        .filter(Tracker.is_active)
-        .filter(Tracker.is_deleted.is_(False))
+    # Use CRUD layer to get projects accessible to user
+    all_projects = crud_project.get_accessible_for_user(
+        db, account_id=current_user.id, project_ids=project_ids
     )
-
-    # Apply project ID filter if provided
-    if project_ids:
-        project_query = project_query.filter(Project.id.in_(project_ids))
-
-    all_projects = project_query.all()
 
     # Apply TrackerScopeRule filtering
     filtered_projects = []
     for project in all_projects:
         tracker = project.organization.tracker
 
-        # Get scope rules for this tracker
-        rules = (
-            db.query(TrackerScopeRule)
-            .filter(TrackerScopeRule.tracker_id == tracker.id)
-            .all()
+        # Use CRUD layer to get scope rules for this tracker
+        rules = crud_tracker_scope_rule.get_by_tracker(
+            db, tracker_id=tracker.id, account_id=current_user.id
         )
 
         # Build rule sets (same logic as scanner/core.py)
