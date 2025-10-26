@@ -41,7 +41,7 @@ helm uninstall spacebridge
 | `replicaCount`      | Number of replicas                                                                                 | `1`             |
 | `image.repository`  | SpaceBridge image repository                                                                       | `gitlab.spacecode.ai:5000/spacecode/spacebridge` |
 | `image.tag`         | SpaceBridge image tag                                                                              | `latest`        |
-| `image.pullPolicy`  | SpaceBridge image pull policy                                                                      | `IfNotPresent`  |
+| `image.pullPolicy`  | SpaceBridge image pull policy                                                                      | `Always`  |
 | `imagePullSecrets`  | Secret names for pulling images                                                                    | `[]`            |
 | `nameOverride`      | String to partially override the name template                                                     | `""`            |
 | `fullnameOverride`  | String to fully override the name template                                                         | `""`            |

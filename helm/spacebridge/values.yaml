@@ -286,12 +286,12 @@ agentExecution:
     simpleLLM:
       repository: "registry.spacecode.ai/spacecode/simple-llm-agent"
       tag: "latest"
-      pullPolicy: "IfNotPresent"
+      pullPolicy: "Always"
     # OpenHands agent (experimental, requires more resources)
     openHands:
       repository: "ghcr.io/all-hands-ai/openhands"
       tag: "latest"
-      pullPolicy: "IfNotPresent"
+      pullPolicy: "Always"
 
   # Agent execution timeout (seconds)
   defaultTimeout: 3600

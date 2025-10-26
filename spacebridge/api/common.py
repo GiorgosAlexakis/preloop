@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from spacemodels.db.session import get_db_session
+from spacebridge.api.auth import get_current_active_user
 from spacebridge.schemas.auth import UserResponse
 from spacebridge.schemas.issue_compliance import CompliancePromptMetadata
 from spacesync.spacesync.trackers import create_tracker_client
@@ -426,7 +427,7 @@ def get_accessible_projects(
 
 
 def get_account_for_user(
-    current_user: UserResponse,
+    current_user: UserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> Account:
     """Get Account model for authenticated user.

@@ -872,12 +872,6 @@ paths:
         \ Current user's account (from dependency)\n    db: Database session\n\nReturns:\n\
         \    List of MCP servers"
       operationId: list_mcp_servers_api_v1_mcp_servers_get
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -888,12 +882,6 @@ paths:
                   $ref: '#/components/schemas/MCPServerResponse'
                 type: array
                 title: Response List Mcp Servers Api V1 Mcp Servers Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
     post:
@@ -910,7 +898,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Body_create_mcp_server_api_v1_mcp_servers_post'
+              $ref: '#/components/schemas/MCPServerCreate'
         required: true
       responses:
         '201':
@@ -947,12 +935,6 @@ paths:
           type: string
           format: uuid
           title: Server Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -991,7 +973,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Body_update_mcp_server_api_v1_mcp_servers__server_id__put'
+              $ref: '#/components/schemas/MCPServerUpdate'
       responses:
         '200':
           description: Successful Response
@@ -1024,12 +1006,6 @@ paths:
           type: string
           format: uuid
           title: Server Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1066,12 +1042,6 @@ paths:
           type: string
           format: uuid
           title: Server Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1109,12 +1079,6 @@ paths:
           type: string
           format: uuid
           title: Server Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1144,12 +1108,6 @@ paths:
         \    db: Database session\n\nReturns:\n    List of tool dictionaries with\
         \ metadata and configuration"
       operationId: list_all_tools_api_v1_tools_get
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -1161,12 +1119,6 @@ paths:
                   type: object
                 type: array
                 title: Response List All Tools Api V1 Tools Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
   /api/v1/tool-configurations:
@@ -1183,7 +1135,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Body_create_tool_configuration_api_v1_tool_configurations_post'
+              $ref: '#/components/schemas/ToolConfigurationCreate'
         required: true
       responses:
         '201':
@@ -1220,12 +1172,6 @@ paths:
           type: string
           format: uuid
           title: Config Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1264,7 +1210,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Body_update_tool_configuration_api_v1_tool_configurations__config_id__put'
+              $ref: '#/components/schemas/ToolConfigurationUpdate'
       responses:
         '200':
           description: Successful Response
@@ -1297,12 +1243,6 @@ paths:
           type: string
           format: uuid
           title: Config Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1329,12 +1269,6 @@ paths:
         Args:\n    account: Current user's account (from dependency)\n    db: Database\
         \ session\n\nReturns:\n    List of approval policies"
       operationId: list_approval_policies_api_v1_approval_policies_get
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -1345,12 +1279,6 @@ paths:
                   $ref: '#/components/schemas/ApprovalPolicyResponse'
                 type: array
                 title: Response List Approval Policies Api V1 Approval Policies Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
     post:
@@ -1366,7 +1294,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Body_create_approval_policy_api_v1_approval_policies_post'
+              $ref: '#/components/schemas/ApprovalPolicyCreate'
         required: true
       responses:
         '201':
@@ -1403,12 +1331,6 @@ paths:
           type: string
           format: uuid
           title: Policy Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -1447,7 +1369,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Body_update_approval_policy_api_v1_approval_policies__policy_id__put'
+              $ref: '#/components/schemas/ApprovalPolicyUpdate'
       responses:
         '200':
           description: Successful Response
@@ -1482,12 +1404,6 @@ paths:
           type: string
           format: uuid
           title: Policy Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserResponse'
       responses:
         '200':
           description: Successful Response
@@ -4985,39 +4901,6 @@ components:
       - webhook_error
       title: ApprovalRequestResponse
       description: Schema for approval request response.
-    Body_create_approval_policy_api_v1_approval_policies_post:
-      properties:
-        policy_data:
-          $ref: '#/components/schemas/ApprovalPolicyCreate'
-        current_user:
-          $ref: '#/components/schemas/UserResponse'
-      type: object
-      required:
-      - policy_data
-      - current_user
-      title: Body_create_approval_policy_api_v1_approval_policies_post
-    Body_create_mcp_server_api_v1_mcp_servers_post:
-      properties:
-        server_data:
-          $ref: '#/components/schemas/MCPServerCreate'
-        current_user:
-          $ref: '#/components/schemas/UserResponse'
-      type: object
-      required:
-      - server_data
-      - current_user
-      title: Body_create_mcp_server_api_v1_mcp_servers_post
-    Body_create_tool_configuration_api_v1_tool_configurations_post:
-      properties:
-        config_data:
-          $ref: '#/components/schemas/ToolConfigurationCreate'
-        current_user:
-          $ref: '#/components/schemas/UserResponse'
-      type: object
-      required:
-      - config_data
-      - current_user
-      title: Body_create_tool_configuration_api_v1_tool_configurations_post
     Body_get_resolution_suggestion_api_v1_ai_suggestion_post:
       properties:
         issue1_id:
@@ -5070,39 +4953,6 @@ components:
       - username
       - password
       title: Body_login_form_api_v1_auth_token_post
-    Body_update_approval_policy_api_v1_approval_policies__policy_id__put:
-      properties:
-        policy_update:
-          $ref: '#/components/schemas/ApprovalPolicyUpdate'
-        current_user:
-          $ref: '#/components/schemas/UserResponse'
-      type: object
-      required:
-      - policy_update
-      - current_user
-      title: Body_update_approval_policy_api_v1_approval_policies__policy_id__put
-    Body_update_mcp_server_api_v1_mcp_servers__server_id__put:
-      properties:
-        server_update:
-          $ref: '#/components/schemas/MCPServerUpdate'
-        current_user:
-          $ref: '#/components/schemas/UserResponse'
-      type: object
-      required:
-      - server_update
-      - current_user
-      title: Body_update_mcp_server_api_v1_mcp_servers__server_id__put
-    Body_update_tool_configuration_api_v1_tool_configurations__config_id__put:
-      properties:
-        config_update:
-          $ref: '#/components/schemas/ToolConfigurationUpdate'
-        current_user:
-          $ref: '#/components/schemas/UserResponse'
-      type: object
-      required:
-      - config_update
-      - current_user
-      title: Body_update_tool_configuration_api_v1_tool_configurations__config_id__put
     CheckoutSessionDetailsResponse:
       properties:
         email:

@@ -176,6 +176,7 @@ class TestListTools:
                         dynamic_mcp.__class__.__bases__[0],
                         "_list_tools",
                         new=AsyncMock(return_value=default_tools),
+                        create=True,  # Allow creating the method if it doesn't exist
                     ):
                         result = await dynamic_mcp._list_tools()
 
@@ -209,6 +210,7 @@ class TestListTools:
                     dynamic_mcp.__class__.__bases__[0],
                     "_list_tools",
                     new=AsyncMock(return_value=default_tools),
+                    create=True,  # Allow creating the method if it doesn't exist
                 ):
                     result = await dynamic_mcp._list_tools()
 
@@ -250,6 +252,7 @@ class TestListTools:
                     dynamic_mcp.__class__.__bases__[0],
                     "_list_tools",
                     new=AsyncMock(return_value=[registered_tool]),
+                    create=True,  # Allow creating the method if it doesn't exist
                 ):
                     # Mock tool registration
                     with patch.object(dynamic_mcp, "tool", return_value=lambda x: x):
@@ -277,6 +280,7 @@ class TestListTools:
                     dynamic_mcp.__class__.__bases__[0],
                     "_list_tools",
                     new=AsyncMock(return_value=[]),
+                    create=True,  # Allow creating the method if it doesn't exist
                 ):
                     # Should not raise, just continue with default tools
                     result = await dynamic_mcp._list_tools()
@@ -324,6 +328,7 @@ class TestMCPCallTool:
                 new=AsyncMock(
                     return_value=[types.TextContent(type="text", text="Result")]
                 ),
+                create=True,  # Allow creating the method if it doesn't exist
             ):
                 result = await dynamic_mcp._mcp_call_tool("builtin_tool", {})
 
@@ -348,6 +353,7 @@ class TestMCPCallTool:
                 new=AsyncMock(
                     return_value=[types.TextContent(type="text", text="Result")]
                 ),
+                create=True,  # Allow creating the method if it doesn't exist
             ) as mock_super:
                 result = await dynamic_mcp._mcp_call_tool("proxied_tool", {})
 

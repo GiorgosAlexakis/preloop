@@ -4,9 +4,10 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.orm import Session
 
+from spacebridge.api.auth import get_user_from_token_if_valid
 from spacebridge.services.websocket_manager import manager
 from spacemodels.db.session import get_db_session as get_db
-from spacemodels.crud import crud_flow_execution
+from spacemodels.crud import crud_flow_execution, crud_flow
 from spacesync.services.event_bus import EventBus
 
 router = APIRouter()
@@ -92,7 +93,49 @@ async def flow_execution_websocket(
         await websocket.close(code=1008)
         return
 
-    # TODO: Add authorization check - verify user has access to this execution's flow
+    # Extract token from query parameters for authentication
+    token = websocket.query_params.get("token")
+    if not token:
+        logger.warning(
+            f"WebSocket connection attempted without token for execution {execution_id}"
+        )
+        await websocket.send_json({"error": "Authentication required - token missing"})
+        await websocket.close(code=1008)
+        return
+
+    # Validate token and get user
+    user = await get_user_from_token_if_valid(token, db)
+    if not user:
+        logger.warning(
+            f"Invalid token for WebSocket connection to execution {execution_id}"
+        )
+        await websocket.send_json({"error": "Invalid or expired authentication token"})
+        await websocket.close(code=1008)
+        return
+
+    # Get the flow associated with this execution
+    flow = crud_flow.get(db, id=execution.flow_id)
+    if not flow:
+        logger.error(f"Flow {execution.flow_id} not found for execution {execution_id}")
+        await websocket.send_json({"error": "Flow not found"})
+        await websocket.close(code=1008)
+        return
+
+    # Verify user has access to this flow
+    if flow.account_id and flow.account_id != user.id:
+        logger.warning(
+            f"User {user.username} (account {user.id}) attempted to access flow {flow.id} "
+            f"(account {flow.account_id}) via WebSocket for execution {execution_id}"
+        )
+        await websocket.send_json(
+            {"error": "Unauthorized - you do not have access to this flow execution"}
+        )
+        await websocket.close(code=1008)
+        return
+
+    logger.info(
+        f"WebSocket authorized for user {user.username} to access execution {execution_id}"
+    )
 
     # Connect to NATS event bus
     event_bus = EventBus()
