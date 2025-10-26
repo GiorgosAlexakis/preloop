@@ -1,7 +1,9 @@
 """CRUD operations for ApprovalRequest model."""
 
 from typing import Optional
+from uuid import UUID
 from sqlalchemy.orm import Session
+from sqlalchemy.future import select
 
 from ..models.approval_request import ApprovalRequest
 from .base import CRUDBase
@@ -71,6 +73,51 @@ class CRUDApprovalRequest(CRUDBase[ApprovalRequest]):
             .all()
         )
 
+    def get_multi_by_account(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        execution_id: Optional[str] = None,
+        status: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[ApprovalRequest]:
+        """Get approval requests for an account with optional filters."""
+        query = db.query(self.model).filter(self.model.account_id == account_id)
+
+        if execution_id:
+            query = query.filter(self.model.execution_id == execution_id)
+
+        if status:
+            query = query.filter(self.model.status == status)
+
+        return (
+            query.order_by(self.model.requested_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
 
 # Create instance
 crud_approval_request = CRUDApprovalRequest(ApprovalRequest)
+
+
+# Async helper functions
+async def get_approval_request_async(
+    db: Session, request_id: UUID
+) -> Optional[ApprovalRequest]:
+    """Async: Retrieve an approval request by its ID.
+
+    Args:
+        db: The async database session.
+        request_id: The ID of the approval request.
+
+    Returns:
+        The approval request object if found, otherwise None.
+    """
+    result = await db.execute(
+        select(ApprovalRequest).where(ApprovalRequest.id == request_id)
+    )
+    return result.scalar_one_or_none()

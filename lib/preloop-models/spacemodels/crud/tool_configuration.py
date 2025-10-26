@@ -3,6 +3,7 @@
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy.future import select
 
 from .. import models, schemas
 from .base import CRUDBase
@@ -55,6 +56,30 @@ class CRUDToolConfiguration(CRUDBase[models.ToolConfiguration]):
             .filter(
                 self.model.tool_identifier == tool_identifier,
                 self.model.account_id == account_id,
+            )
+            .first()
+        )
+
+    def get_by_tool_name_and_source(
+        self, db: Session, account_id: str, tool_name: str, tool_source: str
+    ) -> Optional[models.ToolConfiguration]:
+        """Retrieve a tool configuration by tool name, source, and account.
+
+        Args:
+            db: The database session.
+            account_id: The ID of the account.
+            tool_name: The name of the tool.
+            tool_source: The source of the tool (e.g., "mcp", "builtin").
+
+        Returns:
+            The tool configuration object if found, otherwise None.
+        """
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.tool_name == tool_name,
+                self.model.tool_source == tool_source,
             )
             .first()
         )
@@ -210,6 +235,31 @@ class CRUDToolConfiguration(CRUDBase[models.ToolConfiguration]):
             db.commit()
         return db_config
 
+    def get_by_source(
+        self,
+        db: Session,
+        account_id: str,
+        tool_source: str,
+    ) -> List[models.ToolConfiguration]:
+        """Retrieve tool configurations by account and source.
+
+        Args:
+            db: The database session.
+            account_id: The ID of the account.
+            tool_source: The tool source (e.g., "mcp", "builtin").
+
+        Returns:
+            List of tool configuration objects.
+        """
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.tool_source == tool_source,
+            )
+            .all()
+        )
+
     def count_by_policy(self, db: Session, policy_id: str) -> int:
         """Count tool configurations using a specific approval policy.
 
@@ -225,3 +275,31 @@ class CRUDToolConfiguration(CRUDBase[models.ToolConfiguration]):
             .filter(self.model.approval_policy_id == policy_id)
             .count()
         )
+
+
+# Async helper functions
+async def get_tool_config_by_name_and_source_async(
+    db: Session,
+    account_id: str,
+    tool_name: str,
+    tool_source: str,
+) -> Optional[models.ToolConfiguration]:
+    """Async: Retrieve a tool configuration by tool name, source, and account.
+
+    Args:
+        db: The async database session.
+        account_id: The ID of the account.
+        tool_name: The name of the tool.
+        tool_source: The source of the tool (e.g., "mcp", "builtin").
+
+    Returns:
+        The tool configuration object if found, otherwise None.
+    """
+    result = await db.execute(
+        select(models.ToolConfiguration).where(
+            models.ToolConfiguration.account_id == account_id,
+            models.ToolConfiguration.tool_name == tool_name,
+            models.ToolConfiguration.tool_source == tool_source,
+        )
+    )
+    return result.scalar_one_or_none()

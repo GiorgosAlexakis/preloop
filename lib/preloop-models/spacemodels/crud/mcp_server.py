@@ -16,25 +16,25 @@ class CRUDMCPServer(CRUDBase[models.MCPServer]):
         """Initialize with the MCPServer model."""
         super().__init__(model=models.MCPServer)
 
-    def get(self, db: Session, id: UUID, account_id: str) -> Optional[models.MCPServer]:
+    def get(
+        self, db: Session, id: UUID, account_id: Optional[str] = None
+    ) -> Optional[models.MCPServer]:
         """Retrieve an MCP server by its ID.
 
         Args:
             db: The database session.
             id: The ID of the MCP server to retrieve.
-            account_id: The ID of the account associated with the server.
+            account_id: The ID of the account associated with the server. Optional.
 
         Returns:
             The MCP server object if found, otherwise None.
         """
-        return (
-            db.query(self.model)
-            .filter(
-                self.model.id == id,
-                self.model.account_id == account_id,
-            )
-            .first()
-        )
+        query = db.query(self.model).filter(self.model.id == id)
+
+        if account_id:
+            query = query.filter(self.model.account_id == account_id)
+
+        return query.first()
 
     def get_by_name(
         self, db: Session, account_id: str, name: str

@@ -229,3 +229,37 @@ class CRUDProject(CRUDBase[Project]):
                 .filter(Tracker.account_id == account_id)
             )
         return query.order_by(Project.updated_at.desc()).first()
+
+    def get_accessible_for_user(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        project_ids: Optional[List[str]] = None,
+    ) -> List[Project]:
+        """
+        Get projects accessible to a user based on their account.
+        Eager loads organization and tracker relationships.
+
+        Args:
+            db: Database session
+            account_id: Account ID to filter by
+            project_ids: Optional list of project IDs to filter by
+
+        Returns:
+            List of projects with organization and tracker eager loaded
+        """
+        query = (
+            db.query(Project)
+            .options(joinedload(Project.organization).joinedload(Organization.tracker))
+            .join(Project.organization)
+            .join(Organization.tracker)
+            .filter(Tracker.account_id == account_id)
+            .filter(Tracker.is_active)
+            .filter(Tracker.is_deleted.is_(False))
+        )
+
+        if project_ids:
+            query = query.filter(Project.id.in_(project_ids))
+
+        return query.all()

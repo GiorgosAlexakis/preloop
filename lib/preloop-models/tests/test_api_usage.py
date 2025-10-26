@@ -66,18 +66,24 @@ def test_get_user_usage(db_session, create_account):
 
 def test_get_endpoint_stats(db_session, create_account):
     """Test getting endpoint statistics."""
-    # Create an account
+    # Create an account with a unique identifier
     account = create_account()
 
-    # Define endpoints used in this test
-    test_endpoints = ["/api/v1/issues", "/api/v1/projects"]
+    # Use unique endpoints for this test to avoid conflicts with other test runs
+    import uuid
+
+    unique_suffix = str(uuid.uuid4())[:8]
+    test_endpoints = [
+        f"/api/v1/test_endpoint_stats_issues_{unique_suffix}",
+        f"/api/v1/test_endpoint_stats_projects_{unique_suffix}",
+    ]
 
     # Log requests to different endpoints
     for i in range(3):
         crud_api_usage.log_request(
             db_session,
             username=account.username,
-            endpoint=test_endpoints[0],  # /api/v1/issues
+            endpoint=test_endpoints[0],  # First unique endpoint
             method="GET",
             status_code=200,
             duration=0.1 + i * 0.1,
@@ -87,7 +93,7 @@ def test_get_endpoint_stats(db_session, create_account):
         crud_api_usage.log_request(
             db_session,
             username=account.username,
-            endpoint=test_endpoints[1],  # /api/v1/projects
+            endpoint=test_endpoints[1],  # Second unique endpoint
             method="GET",
             status_code=200,
             duration=0.2 + i * 0.1,
@@ -105,7 +111,7 @@ def test_get_endpoint_stats(db_session, create_account):
     # Sort stats by endpoint name to ensure consistent order for assertions
     stats.sort(key=lambda x: x["endpoint"])
 
-    # First endpoint should be /api/v1/issues
+    # First endpoint (alphabetically)
     assert stats[0]["endpoint"] == test_endpoints[0]
     assert stats[0]["request_count"] == 3
     assert 0.1 <= stats[0]["min_duration"] <= 0.3
@@ -113,10 +119,11 @@ def test_get_endpoint_stats(db_session, create_account):
     assert 0.19 <= stats[0]["avg_duration"] <= 0.21  # (0.1+0.2+0.3)/3 = 0.2
     assert 0.3 <= stats[0]["max_duration"] <= 0.4
 
-    # Second endpoint should be /api/v1/projects
+    # Second endpoint (alphabetically)
     assert stats[1]["endpoint"] == test_endpoints[1]
+    assert stats[1]["request_count"] == 2
     # (0.2+0.3)/2 = 0.25
-    # assert 0.24 <= stats[1]["avg_duration"] <= 0.26
+    assert 0.24 <= stats[1]["avg_duration"] <= 0.26
 
 
 def test_get_user_stats(db_session, create_account):  # Added create_account fixture

@@ -11,7 +11,6 @@ from ..models import (
     AIModel,
     Organization,
     Project,
-    Tracker,
     TrackerScopeRule,
     Webhook,
     IssueRelationship,
@@ -28,7 +27,7 @@ from .flow_execution import CRUDFlowExecution
 from .issue import CRUDIssue
 from .organization import CRUDOrganization  # Removed create_organization import
 from .project import CRUDProject
-from .tracker import CRUDTracker
+from .tracker import CRUDTracker, crud_tracker
 from .tracker_scope_rule import CRUDTrackerScopeRule
 from .ai_model import CRUDAIModel
 from .webhook import CRUDWebhook
@@ -43,9 +42,17 @@ from .mcp_server import CRUDMCPServer
 from .mcp_tool import CRUDMCPTool
 from .approval_policy import CRUDApprovalPolicy
 from .approval_request import CRUDApprovalRequest, crud_approval_request
+from .plan import (
+    CRUDPlan,
+    CRUDSubscription,
+    CRUDMonthlyUsage,
+    plan,
+    subscription,
+    monthly_usage,
+)
 
 crud_account = CRUDAccount(Account)
-crud_tracker = CRUDTracker(Tracker)
+# crud_tracker is already instantiated in tracker.py
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
@@ -90,6 +97,9 @@ __all__ = [
     "CRUDMCPTool",
     "CRUDApprovalPolicy",
     "CRUDApprovalRequest",
+    "CRUDPlan",
+    "CRUDSubscription",
+    "CRUDMonthlyUsage",
     "crud_account",
     "crud_tracker",
     "crud_tracker_scope_rule",
@@ -113,4 +123,7 @@ __all__ = [
     "crud_mcp_tool",
     "crud_approval_policy",
     "crud_approval_request",
+    "plan",
+    "subscription",
+    "monthly_usage",
 ]

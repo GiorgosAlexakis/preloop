@@ -200,6 +200,97 @@ class CRUDIssue(CRUDBase[Issue]):
             query = query.join(Tracker).filter(Tracker.account_id == account_id)
         return query.order_by(Issue.created_at.desc()).offset(skip).limit(limit).all()
 
+    def get_for_trackers(
+        self,
+        db: Session,
+        *,
+        tracker_ids: List[str],
+        account_id: Optional[str] = None,
+    ):
+        """Get issues query for multiple trackers. Returns a query object for further filtering."""
+        query = db.query(Issue).filter(Issue.tracker_id.in_(tracker_ids))
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+        return query
+
+    def get_by_external_id_or_key_in_trackers(
+        self,
+        db: Session,
+        *,
+        external_id: str,
+        key: str,
+        tracker_ids: List[str],
+        project_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+    ) -> Optional[Issue]:
+        """Get issue by external ID or key across multiple trackers."""
+        from sqlalchemy import or_
+
+        query = db.query(Issue).filter(
+            Issue.tracker_id.in_(tracker_ids),
+            or_(
+                Issue.external_id == external_id,
+                Issue.key == key,
+            ),
+        )
+
+        if project_id:
+            query = query.filter(Issue.project_id == project_id)
+
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+
+        return query.first()
+
+    def find_by_flexible_identifier(
+        self,
+        db: Session,
+        *,
+        identifier: str,
+        tracker_ids: List[str],
+        project_id: Optional[str] = None,
+        alternative_keys: Optional[List[str]] = None,
+        account_id: Optional[str] = None,
+    ) -> Optional[Issue]:
+        """
+        Find issue by flexible identifier matching external_id, key, or id.
+
+        Args:
+            identifier: Main identifier to search for
+            tracker_ids: List of tracker IDs to search within
+            project_id: Optional project ID to filter by
+            alternative_keys: Optional list of alternative key formats to try
+            account_id: Optional account ID for authorization
+
+        Returns:
+            First matching issue or None
+        """
+        from sqlalchemy import or_
+
+        # Build list of conditions to check
+        conditions = [
+            Issue.external_id == identifier,
+            Issue.key == identifier,
+            Issue.id == identifier,
+        ]
+
+        # Add alternative key formats if provided
+        if alternative_keys:
+            for alt_key in alternative_keys:
+                conditions.append(Issue.key == alt_key)
+
+        query = db.query(Issue).filter(
+            Issue.tracker_id.in_(tracker_ids), or_(*conditions)
+        )
+
+        if project_id:
+            query = query.filter(Issue.project_id == project_id)
+
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+
+        return query.order_by(Issue.last_updated_external.desc()).first()
+
     def sync_from_external(
         self, db: Session, *, tracker_id: str, external_id: str
     ) -> Optional[Issue]:
@@ -270,3 +361,49 @@ class CRUDIssue(CRUDBase[Issue]):
             db.commit()
             db.refresh(issue)
         return issue
+
+    def get_with_full_hierarchy(
+        self, db: Session, *, id: str, account_id: Optional[str] = None
+    ) -> Optional[Issue]:
+        """Get issue by ID with project, organization, and tracker eagerly loaded."""
+        from sqlalchemy.orm import joinedload
+        from ..models.organization import Organization
+
+        query = (
+            db.query(Issue)
+            .options(
+                joinedload(Issue.project)
+                .joinedload(Project.organization)
+                .joinedload(Organization.tracker)
+            )
+            .filter(Issue.id == id)
+        )
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+        return query.first()
+
+    def get_for_project_with_embeddings(
+        self,
+        db: Session,
+        *,
+        project_id: str,
+        status: Optional[str] = None,
+        limit: int = 100,
+        account_id: Optional[str] = None,
+    ) -> List[Issue]:
+        """Get issues for a project with embeddings eagerly loaded."""
+        from sqlalchemy.orm import selectinload
+
+        query = (
+            db.query(Issue)
+            .options(selectinload(Issue.embeddings))
+            .filter(Issue.project_id == project_id)
+        )
+
+        if status and status != "all":
+            query = query.filter(Issue.status == status)
+
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+
+        return query.limit(limit).all()

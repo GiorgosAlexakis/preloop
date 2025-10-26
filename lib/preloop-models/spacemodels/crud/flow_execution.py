@@ -131,3 +131,37 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
         if account_id:
             query = query.join(Flow).filter(Flow.account_id == account_id)
         return query.offset(skip).limit(limit).all()
+
+    def get_by_statuses(
+        self, db: Session, statuses: List[str], account_id: Optional[str] = None
+    ) -> List[FlowExecution]:
+        """Get flow executions filtered by status list."""
+        query = db.query(FlowExecution).filter(FlowExecution.status.in_(statuses))
+        if account_id:
+            query = query.join(Flow).filter(Flow.account_id == account_id)
+        return query.all()
+
+    def append_log(self, db: Session, execution_id: str, log_data: dict) -> None:
+        """Append a log entry to the execution_logs array.
+
+        Uses PostgreSQL's JSONB append operator to add log to array.
+        If execution_logs is NULL, initializes it as an empty array first.
+
+        Args:
+            db: Database session
+            execution_id: ID of the flow execution
+            log_data: Log message data to append
+        """
+        import json
+        from sqlalchemy import text
+
+        log_json = json.dumps(log_data)
+        db.execute(
+            text("""
+                UPDATE flow_execution
+                SET execution_logs = COALESCE(execution_logs, '[]'::jsonb) || CAST(:log_entry AS jsonb)
+                WHERE id = :execution_id
+            """),
+            {"execution_id": execution_id, "log_entry": log_json},
+        )
+        db.commit()

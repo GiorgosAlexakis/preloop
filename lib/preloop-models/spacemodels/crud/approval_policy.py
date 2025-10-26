@@ -4,6 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+from sqlalchemy.future import select
 
 from .. import models
 from .base import CRUDBase
@@ -111,3 +112,22 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
             db.delete(db_policy)
             db.commit()
         return db_policy
+
+
+# Async helper functions
+async def get_approval_policy_async(
+    db: Session, policy_id: UUID
+) -> Optional[models.ApprovalPolicy]:
+    """Async: Retrieve an approval policy by its ID.
+
+    Args:
+        db: The async database session.
+        policy_id: The ID of the approval policy.
+
+    Returns:
+        The approval policy object if found, otherwise None.
+    """
+    result = await db.execute(
+        select(models.ApprovalPolicy).where(models.ApprovalPolicy.id == policy_id)
+    )
+    return result.scalar_one_or_none()

@@ -16,7 +16,10 @@ class CRUDFlow(CRUDBase[models.Flow]):
         super().__init__(model=models.Flow)
 
     def get(
-        self, db: Session, id: Union[str, UUID], account_id: Union[str, UUID]
+        self,
+        db: Session,
+        id: Union[str, UUID],
+        account_id: Union[str, UUID, None] = None,
     ) -> Optional[models.Flow]:
         """
         Retrieve a flow by its ID.
@@ -24,23 +27,23 @@ class CRUDFlow(CRUDBase[models.Flow]):
         Args:
             db: The database session.
             id: The ID of the flow to retrieve (string or UUID).
-            account_id: The ID of the account associated with the flow (string or UUID).
+            account_id: The ID of the account associated with the flow (string or UUID). Optional.
 
         Returns:
             The flow object if found, otherwise None.
         """
         # Convert to string if UUID
         id_str = str(id) if isinstance(id, UUID) else id
-        account_id_str = str(account_id) if isinstance(account_id, UUID) else account_id
 
-        return (
-            db.query(self.model)
-            .filter(
-                cast(self.model.id, String) == id_str,
-                cast(self.model.account_id, String) == account_id_str,
+        query = db.query(self.model).filter(cast(self.model.id, String) == id_str)
+
+        if account_id:
+            account_id_str = (
+                str(account_id) if isinstance(account_id, UUID) else account_id
             )
-            .first()
-        )
+            query = query.filter(cast(self.model.account_id, String) == account_id_str)
+
+        return query.first()
 
     def get_by_account(
         self,
