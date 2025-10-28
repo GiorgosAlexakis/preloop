@@ -16,6 +16,7 @@ from mcp import types
 from spacebridge.services.dynamic_mcp_server import UserContext, has_tracker
 from spacebridge.services.mcp_client_pool import get_mcp_client_pool
 from spacebridge.services.mcp_tool_discovery import get_all_enabled_proxied_tools
+from spacemodels.crud import crud_mcp_server
 from spacemodels.db.session import get_db_session as get_db
 
 logger = logging.getLogger(__name__)
@@ -370,6 +371,7 @@ async def {internal_name}({params_str}) -> str:
             "param_names": param_names,
             "logger": logger,
             "get_db": get_db,
+            "crud_mcp_server": crud_mcp_server,
             "get_mcp_client_pool": get_mcp_client_pool,
             "Optional": Optional,
             "Context": Context,

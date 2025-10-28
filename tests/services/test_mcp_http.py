@@ -16,7 +16,6 @@ from spacebridge.services.mcp_http import (
     get_mcp_server,
     get_user_context_for_mcp,
     mcp_http_streaming_endpoint,
-    mcp_streamable_handler,
     setup_mcp_routes,
     get_mcp_lifespan_manager,
 )
@@ -688,41 +687,6 @@ class TestMCPHTTPStreamingEndpoint:
 
         assert exc_info.value.status_code == 400
         assert "Unsupported method" in exc_info.value.detail
-
-
-class TestMCPStreamableHandler:
-    """Test mcp_streamable_handler function."""
-
-    async def test_streamable_handler(self, mock_request):
-        """Test mcp_streamable_handler wraps ASGI app."""
-        mock_request.scope = {"type": "http", "method": "POST"}
-        mock_request.receive = AsyncMock()
-
-        mock_handler = AsyncMock()
-
-        async def mock_asgi_app(scope, receive, send):
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 200,
-                    "headers": [[b"content-type", b"application/json"]],
-                }
-            )
-            await send(
-                {
-                    "type": "http.response.body",
-                    "body": b'{"result": "success"}',
-                }
-            )
-
-        with patch(
-            "spacebridge.services.mcp_streamable_http.get_streamable_http_handler",
-            return_value=mock_asgi_app,
-        ):
-            response = await mcp_streamable_handler(mock_request)
-
-        assert response.status_code == 200
-        assert b'{"result": "success"}' in response.body
 
 
 class TestSetupMCPRoutes:

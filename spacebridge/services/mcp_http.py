@@ -468,45 +468,6 @@ async def mcp_http_streaming_endpoint(
         raise HTTPException(status_code=400, detail=f"Unsupported method: {method}")
 
 
-async def mcp_streamable_handler(request: Request):
-    """Handler for MCP StreamableHTTP requests.
-
-    This wraps the StreamableHTTP ASGI app for use as a FastAPI route.
-    """
-    from spacebridge.services.mcp_streamable_http import get_streamable_http_handler
-
-    handler = get_streamable_http_handler()
-
-    # Call the ASGI app with the request scope, receive, and send
-    from starlette.responses import Response as StarletteResponse
-
-    # Create a response that will be populated by the ASGI app
-    response_started = False
-    status_code = 200
-    headers = []
-    body_parts = []
-
-    async def send(message):
-        nonlocal response_started, status_code, headers, body_parts
-        if message["type"] == "http.response.start":
-            response_started = True
-            status_code = message["status"]
-            headers = message.get("headers", [])
-        elif message["type"] == "http.response.body":
-            body_parts.append(message.get("body", b""))
-
-    # Call the ASGI handler
-    await handler(request.scope, request.receive, send)
-
-    # Build the response
-    body = b"".join(body_parts)
-    return StarletteResponse(
-        content=body,
-        status_code=status_code,
-        headers=dict((k.decode(), v.decode()) for k, v in headers),
-    )
-
-
 # Global MCP app and lifespan manager
 _mcp_app = None
 _mcp_lifespan_manager = None
