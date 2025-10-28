@@ -112,9 +112,14 @@ class CRUDProject(CRUDBase[Project]):
         self, db: Session, *, identifier: str, account_id: Optional[str] = None
     ) -> Optional[Project]:
         """
-        Get a project by identifier.
+        Get a project by identifier or slug.
+
+        For trackers like Jira that use both numeric IDs and human-readable keys,
+        this method checks both the identifier field and the slug field.
         """
-        query = db.query(Project).filter(Project.identifier == identifier)
+        query = db.query(Project).filter(
+            (Project.identifier == identifier) | (Project.slug == identifier)
+        )
         if account_id:
             query = (
                 query.join(Project.organization)
@@ -224,3 +229,37 @@ class CRUDProject(CRUDBase[Project]):
                 .filter(Tracker.account_id == account_id)
             )
         return query.order_by(Project.updated_at.desc()).first()
+
+    def get_accessible_for_user(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        project_ids: Optional[List[str]] = None,
+    ) -> List[Project]:
+        """
+        Get projects accessible to a user based on their account.
+        Eager loads organization and tracker relationships.
+
+        Args:
+            db: Database session
+            account_id: Account ID to filter by
+            project_ids: Optional list of project IDs to filter by
+
+        Returns:
+            List of projects with organization and tracker eager loaded
+        """
+        query = (
+            db.query(Project)
+            .options(joinedload(Project.organization).joinedload(Organization.tracker))
+            .join(Project.organization)
+            .join(Organization.tracker)
+            .filter(Tracker.account_id == account_id)
+            .filter(Tracker.is_active)
+            .filter(Tracker.is_deleted.is_(False))
+        )
+
+        if project_ids:
+            query = query.filter(Project.id.in_(project_ids))
+
+        return query.all()

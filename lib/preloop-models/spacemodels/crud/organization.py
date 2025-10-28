@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func  # Import func for lower()
 
 from ..models.organization import Organization
@@ -106,3 +106,40 @@ class CRUDOrganization(CRUDBase[Organization]):
             db.commit()
             db.refresh(organization)
         return organization
+
+    def get_with_tracker(
+        self, db: Session, *, id: str, account_id: Optional[str] = None
+    ) -> Optional[Organization]:
+        """Get organization by ID with tracker eagerly loaded."""
+        query = (
+            db.query(Organization)
+            .options(joinedload(Organization.tracker))
+            .filter(Organization.id == id)
+        )
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+        return query.first()
+
+    def get_for_trackers(
+        self,
+        db: Session,
+        *,
+        tracker_ids: List[str],
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
+    ) -> tuple[List[Organization], int]:
+        """
+        Get organizations for multiple trackers with pagination.
+
+        Returns:
+            Tuple of (organizations list, total count)
+        """
+        query = db.query(Organization).filter(Organization.tracker_id.in_(tracker_ids))
+        if account_id:
+            query = query.join(Tracker).filter(Tracker.account_id == account_id)
+
+        total = query.count()
+        organizations = query.offset(skip).limit(limit).all()
+
+        return organizations, total

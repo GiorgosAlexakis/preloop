@@ -37,7 +37,8 @@ def test_create_flow(db_session: Session, create_account) -> None:
         trigger_event_source="test_source",
         trigger_event_type="test_event",
         prompt_template="Test prompt {{data}}",
-        openhands_agent_config={"agent": "TestAgent"},
+        agent_type="openhands",
+        agent_config={"agent": "TestAgent"},
         account_id=account.id,
     )
     flow = crud_flow.create(
@@ -58,7 +59,8 @@ def test_get_flow(db_session: Session, create_account) -> None:
         trigger_event_source="test_get_source",
         trigger_event_type="test_get_event",
         prompt_template="Test get prompt",
-        openhands_agent_config={"agent": "GetAgent"},
+        agent_type="openhands",
+        agent_config={"agent": "GetAgent"},
         account_id=account.id,
     )
     created_flow = crud_flow.create(
@@ -84,7 +86,8 @@ def test_get_flows_by_account(
         trigger_event_source="org_source1",
         trigger_event_type="org_event1",
         prompt_template="Org prompt1",
-        openhands_agent_config={"agent": "OrgAgent1"},
+        agent_type="openhands",
+        agent_config={"agent": "OrgAgent1"},
         account_id=account.id,
     )
     crud_flow.create(db=db_session, flow_in=flow_in1, account_id=account.id)
@@ -95,7 +98,8 @@ def test_get_flows_by_account(
         trigger_event_source="org_source2",
         trigger_event_type="org_event2",
         prompt_template="Org prompt2",
-        openhands_agent_config={"agent": "OrgAgent2"},
+        agent_type="openhands",
+        agent_config={"agent": "OrgAgent2"},
         account_id=account.id,
     )
     crud_flow.create(db=db_session, flow_in=flow_in2, account_id=account.id)
@@ -114,7 +118,8 @@ def test_get_flows_by_account(
         trigger_event_source="other_org_source",
         trigger_event_type="other_org_event",
         prompt_template="Other org prompt",
-        openhands_agent_config={"agent": "OtherOrgAgent"},
+        agent_type="openhands",
+        agent_config={"agent": "OtherOrgAgent"},
         account_id=other_account.id,
     )
     crud_flow.create(db=db_session, flow_in=other_flow_in, account_id=other_account.id)
@@ -139,7 +144,8 @@ def test_update_flow(db_session: Session, create_account) -> None:
         trigger_event_source="update_source_initial",
         trigger_event_type="update_event_initial",
         prompt_template="Update prompt initial",
-        openhands_agent_config={"agent": "UpdateAgentInitial"},
+        agent_type="openhands",
+        agent_config={"agent": "UpdateAgentInitial"},
         account_id=account.id,
     )
     created_flow = crud_flow.create(
@@ -182,7 +188,8 @@ def test_remove_flow(db_session: Session, create_account) -> None:
         trigger_event_source="remove_source",
         trigger_event_type="remove_event",
         prompt_template="Remove prompt",
-        openhands_agent_config={"agent": "RemoveAgent"},
+        agent_type="openhands",
+        agent_config={"agent": "RemoveAgent"},
         account_id=account.id,
     )
     created_flow = crud_flow.create(
@@ -230,3 +237,35 @@ def test_remove_flow_not_found(db_session: Session) -> None:
         db=db_session, id=str(non_existent_flow_id), account_id=str(uuid4())
     )  # Changed to str
     assert removed_flow is None
+
+
+def test_get_by_trigger_with_account_id(db_session: Session, create_account) -> None:
+    """Test retrieving flows by trigger event with account filter."""
+    account: Account = create_account()
+
+    # Create a flow with specific trigger
+    flow_in = FlowCreate(
+        name=f"Trigger Test Flow {uuid4()}",
+        trigger_event_source="github",
+        trigger_event_type="pull_request",
+        prompt_template="Test prompt",
+        agent_type="openhands",
+        agent_config={"agent": "TestAgent"},
+        account_id=account.id,
+    )
+    created_flow = crud_flow.create(
+        db=db_session, flow_in=flow_in, account_id=account.id
+    )
+
+    # Get flows by trigger with account_id
+    flows = crud_flow.get_by_trigger(
+        db=db_session,
+        event_source="github",
+        event_type="pull_request",
+        account_id=account.id,
+    )
+
+    # Should find our flow
+    assert len(flows) >= 1
+    flow_ids = [f.id for f in flows]
+    assert created_flow.id in flow_ids

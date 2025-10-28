@@ -239,3 +239,28 @@ def test_delete_ai_model(db_session: Session, create_account):
         account_id=account.id,
     )
     assert crud_ai_model.get(db=db_session, id=surviving_model.id) is not None
+
+
+def test_default_model_exists(db_session: Session):
+    """Test checking if a system-wide default model exists."""
+    # Check the method returns a boolean
+    result = crud_ai_model.default_model_exists(db=db_session)
+    assert isinstance(result, bool)
+
+    # Ensure a system-wide default model exists for test coverage
+    from spacemodels.models.ai_model import AIModel
+
+    default_model = AIModel(
+        name="System Default Test",
+        provider_name="openai",
+        model_identifier="gpt-4-test",
+        api_endpoint="https://api.openai.com/v1",
+        api_key="test_key",
+        is_default=True,
+        account_id=None,
+    )
+    db_session.add(default_model)
+    db_session.commit()
+
+    # Verify a default exists
+    assert crud_ai_model.default_model_exists(db=db_session) is True

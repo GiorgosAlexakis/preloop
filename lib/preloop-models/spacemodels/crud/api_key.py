@@ -145,3 +145,32 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         self.update_last_used(db, key_id=key_obj.id)
 
         return key_obj
+
+    def get_by_user(
+        self, db: Session, *, username: str, account_id: Optional[str] = None
+    ) -> List[ApiKey]:
+        """Get all API keys for a user (including inactive)."""
+        query = db.query(ApiKey).filter(ApiKey.created_by == username)
+        if account_id:
+            query = query.join(Account, ApiKey.created_by == Account.username).filter(
+                Account.id == account_id
+            )
+        return query.order_by(ApiKey.created_at.desc()).all()
+
+    def get_by_id_and_user(
+        self,
+        db: Session,
+        *,
+        key_id: Any,
+        username: str,
+        account_id: Optional[str] = None,
+    ) -> Optional[ApiKey]:
+        """Get API key by ID and username."""
+        query = db.query(ApiKey).filter(
+            ApiKey.id == key_id, ApiKey.created_by == username
+        )
+        if account_id:
+            query = query.join(Account, ApiKey.created_by == Account.username).filter(
+                Account.id == account_id
+            )
+        return query.first()

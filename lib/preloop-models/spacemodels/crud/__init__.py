@@ -11,7 +11,6 @@ from ..models import (
     AIModel,
     Organization,
     Project,
-    Tracker,
     TrackerScopeRule,
     Webhook,
     IssueRelationship,
@@ -24,10 +23,11 @@ from .base import CRUDBase
 from .comment import CRUDComment, crud_comment
 from .embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
 from .flow import CRUDFlow  # Import CRUDFlow class
+from .flow_execution import CRUDFlowExecution
 from .issue import CRUDIssue
 from .organization import CRUDOrganization  # Removed create_organization import
 from .project import CRUDProject
-from .tracker import CRUDTracker
+from .tracker import CRUDTracker, crud_tracker
 from .tracker_scope_rule import CRUDTrackerScopeRule
 from .ai_model import CRUDAIModel
 from .webhook import CRUDWebhook
@@ -37,9 +37,22 @@ from .issue_compliance_result import (
 )
 from .issue_relationship import CRUDIssueRelationship
 from .issue_set import CRUDIssueSet
+from .tool_configuration import CRUDToolConfiguration
+from .mcp_server import CRUDMCPServer
+from .mcp_tool import CRUDMCPTool
+from .approval_policy import CRUDApprovalPolicy
+from .approval_request import CRUDApprovalRequest, crud_approval_request
+from .plan import (
+    CRUDPlan,
+    CRUDSubscription,
+    CRUDMonthlyUsage,
+    plan,
+    subscription,
+    monthly_usage,
+)
 
 crud_account = CRUDAccount(Account)
-crud_tracker = CRUDTracker(Tracker)
+# crud_tracker is already instantiated in tracker.py
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
@@ -51,9 +64,14 @@ crud_ai_model = CRUDAIModel(AIModel)
 # crud_comment is already instantiated in its own file
 crud_webhook = CRUDWebhook(Webhook)
 crud_flow = CRUDFlow()  # Instantiate CRUDFlow
+crud_flow_execution = CRUDFlowExecution()  # Instantiate CRUDFlowExecution
 crud_tracker_scope_rule = CRUDTrackerScopeRule(TrackerScopeRule)
 crud_issue_relationship = CRUDIssueRelationship(IssueRelationship)
 crud_issue_set = CRUDIssueSet(IssueSet)
+crud_tool_configuration = CRUDToolConfiguration()  # Instantiate CRUDToolConfiguration
+crud_mcp_server = CRUDMCPServer()  # Instantiate CRUDMCPServer
+crud_mcp_tool = CRUDMCPTool()  # Instantiate CRUDMCPTool
+crud_approval_policy = CRUDApprovalPolicy()  # Instantiate CRUDApprovalPolicy
 
 __all__ = [
     "CRUDBase",
@@ -71,8 +89,17 @@ __all__ = [
     "CRUDComment",
     "CRUDAIModel",
     "CRUDFlow",
+    "CRUDFlowExecution",
     "CRUDIssueComplianceResult",
     "CRUDIssueSet",
+    "CRUDToolConfiguration",
+    "CRUDMCPServer",
+    "CRUDMCPTool",
+    "CRUDApprovalPolicy",
+    "CRUDApprovalRequest",
+    "CRUDPlan",
+    "CRUDSubscription",
+    "CRUDMonthlyUsage",
     "crud_account",
     "crud_tracker",
     "crud_tracker_scope_rule",
@@ -87,7 +114,16 @@ __all__ = [
     "crud_ai_model",
     "crud_webhook",
     "crud_flow",
+    "crud_flow_execution",
     "crud_issue_relationship",
     "issue_compliance_result",
     "crud_issue_set",
+    "crud_tool_configuration",
+    "crud_mcp_server",
+    "crud_mcp_tool",
+    "crud_approval_policy",
+    "crud_approval_request",
+    "plan",
+    "subscription",
+    "monthly_usage",
 ]

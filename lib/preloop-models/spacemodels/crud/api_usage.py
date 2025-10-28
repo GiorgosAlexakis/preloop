@@ -174,3 +174,27 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             }
             for row in result
         ]
+
+    def get_for_user_filtered(
+        self,
+        db: Session,
+        *,
+        username: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        account_id: Optional[str] = None,
+    ) -> List[ApiUsage]:
+        """Get API usage for a user with optional date filters."""
+        query = db.query(ApiUsage).filter(ApiUsage.username == username)
+
+        if start_date:
+            query = query.filter(ApiUsage.timestamp >= start_date)
+        if end_date:
+            query = query.filter(ApiUsage.timestamp <= end_date)
+
+        if account_id:
+            query = query.join(Account, ApiUsage.username == Account.username).filter(
+                Account.id == account_id
+            )
+
+        return query.all()

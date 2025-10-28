@@ -104,3 +104,65 @@ class CRUDTracker(CRUDBase[Tracker]):
             db.commit()
             db.refresh(tracker)
         return tracker
+
+    def get_by_name(
+        self,
+        db: Session,
+        *,
+        name: str,
+        account_id: str,
+        include_deleted: bool = False,
+    ) -> Optional[Tracker]:
+        """Get tracker by name for a specific account."""
+        query = db.query(Tracker).filter(
+            Tracker.name == name, Tracker.account_id == account_id
+        )
+        if not include_deleted:
+            query = query.filter(Tracker.is_deleted.is_(False))
+        return query.first()
+
+    def get_by_id_and_account(
+        self,
+        db: Session,
+        *,
+        id: str,
+        account_id: str,
+        include_deleted: bool = False,
+    ) -> Optional[Tracker]:
+        """Get tracker by ID for a specific account."""
+        query = db.query(Tracker).filter(
+            Tracker.id == str(id), Tracker.account_id == account_id
+        )
+        if not include_deleted:
+            query = query.filter(Tracker.is_deleted.is_(False))
+        return query.first()
+
+    def delete_scope_rules(self, db: Session, *, tracker_id: str) -> None:
+        """Delete all scope rules for a tracker."""
+        from ..models.tracker_scope_rule import TrackerScopeRule
+
+        db.query(TrackerScopeRule).filter(
+            TrackerScopeRule.tracker_id == tracker_id
+        ).delete(synchronize_session=False)
+
+    def has_tracker(self, db: Session, *, account_id: str) -> bool:
+        """Check if an account has at least one tracker.
+
+        Args:
+            db: Database session
+            account_id: Account ID
+
+        Returns:
+            True if account has at least one tracker, False otherwise
+        """
+        return (
+            db.query(Tracker)
+            .filter(Tracker.account_id == str(account_id))
+            .filter(Tracker.is_deleted.is_(False))
+            .limit(1)
+            .first()
+        ) is not None
+
+
+# Create instance
+crud_tracker = CRUDTracker(Tracker)

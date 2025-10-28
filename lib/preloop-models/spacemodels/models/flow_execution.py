@@ -30,9 +30,12 @@ class FlowExecution(Base):
         JSONB, nullable=True
     )  # Structured log of agent actions
     mcp_usage_logs = Column(JSONB, nullable=True)  # Detailed log of MCP tool calls
-    openhands_session_reference = Column(
+    execution_logs = Column(
+        JSONB, nullable=True
+    )  # Full execution logs (array of log messages)
+    agent_session_reference = Column(
         String, nullable=True
-    )  # e.g., OpenHands session ID, K8s job ID
+    )  # e.g., agent session ID, K8s job ID, Docker container ID, process ID
     error_message = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.now(UTC), nullable=False)

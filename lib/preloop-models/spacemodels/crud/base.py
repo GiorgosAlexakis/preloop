@@ -60,11 +60,13 @@ class CRUDBase(Generic[ModelType]):
         self, db: Session, *, db_obj: ModelType, obj_in: Dict[str, Any]
     ) -> ModelType:
         """Update an entity."""
-        # Update model attributes from obj_in
-        obj_data = db_obj.to_dict()
-        for field in obj_data:
-            if field in obj_in:
-                setattr(db_obj, field, obj_in[field])
+        # Get the set of actual table column names to avoid updating relationships
+        table_columns = {column.name for column in db_obj.__table__.columns}
+
+        # Update model attributes from obj_in, but only for actual table columns
+        for field, value in obj_in.items():
+            if field in table_columns:
+                setattr(db_obj, field, value)
 
         db.add(db_obj)
         db.commit()

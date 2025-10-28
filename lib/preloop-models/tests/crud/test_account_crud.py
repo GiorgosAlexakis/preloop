@@ -200,3 +200,36 @@ def test_get_organizations(crud_account, mock_db_session):
 
     # Assert
     assert result == {"org1": "admin", "org2": "member"}
+
+
+def test_get_organizations_not_found(crud_account, mock_db_session):
+    """Test getting organizations when account doesn't exist."""
+    # Arrange
+    account_id = str(uuid4())
+    crud_account.get = MagicMock(return_value=None)
+
+    # Act
+    result = crud_account.get_organizations(mock_db_session, account_id=account_id)
+
+    # Assert
+    assert result == {}
+
+
+def test_update_with_pydantic_model(crud_account, mock_db_session):
+    """Test updating an account with a Pydantic model."""
+    # Arrange
+    db_obj = Account(id=str(uuid4()))
+
+    # Create a mock Pydantic model with model_dump method
+    mock_pydantic_obj = MagicMock()
+    mock_pydantic_obj.model_dump.return_value = {"username": "newusername"}
+
+    # Act
+    with patch("spacemodels.crud.base.CRUDBase.update") as mock_update:
+        crud_account.update(mock_db_session, db_obj=db_obj, obj_in=mock_pydantic_obj)
+
+        # Assert
+        mock_pydantic_obj.model_dump.assert_called_once_with(exclude_unset=True)
+        mock_update.assert_called_once()
+        updated_data = mock_update.call_args[1]["obj_in"]
+        assert "last_updated" in updated_data

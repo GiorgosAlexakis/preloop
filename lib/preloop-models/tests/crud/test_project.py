@@ -241,3 +241,74 @@ def test_get_by_identifier_or_name_across_orgs(crud_project, mock_db_session):
 
     # Assert
     assert result.identifier == identifier
+
+
+def test_get_for_tracker_with_account_id(crud_project, mock_db_session):
+    """Test retrieving projects for a tracker with account filter."""
+    # Arrange
+    tracker_id = str(uuid4())
+    account_id = str(uuid4())
+    mock_projects = [Project(id=str(uuid4())) for _ in range(2)]
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.join.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.offset.return_value = mock_query
+    mock_query.limit.return_value = mock_query
+    mock_query.all.return_value = mock_projects
+
+    # Act
+    result = crud_project.get_for_tracker(
+        mock_db_session, tracker_id=tracker_id, account_id=account_id
+    )
+
+    # Assert
+    assert len(result) == 2
+
+
+def test_get_by_identifier_with_account_id(crud_project, mock_db_session):
+    """Test retrieving a project by identifier with account filter."""
+    # Arrange
+    identifier = "test-123"
+    account_id = str(uuid4())
+    mock_project = Project(id=str(uuid4()), identifier=identifier)
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.join.return_value = mock_query
+    mock_query.first.return_value = mock_project
+
+    # Act
+    result = crud_project.get_by_identifier(
+        mock_db_session, identifier=identifier, account_id=account_id
+    )
+
+    # Assert
+    assert result.identifier == identifier
+    assert mock_query.join.called
+
+
+def test_get_by_slug_or_identifier_with_account_id(crud_project, mock_db_session):
+    """Test retrieving a project by slug/identifier with account filter."""
+    # Arrange
+    slug = "test-slug"
+    account_id = str(uuid4())
+    mock_project = Project(id=str(uuid4()), slug=slug)
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.join.return_value = mock_query
+    mock_query.order_by.return_value = mock_query
+    mock_query.first.return_value = mock_project
+
+    # Act
+    result = crud_project.get_by_slug_or_identifier(
+        mock_db_session, slug_or_identifier=slug, account_id=account_id
+    )
+
+    # Assert
+    assert result.slug == slug
+    assert mock_query.join.called
