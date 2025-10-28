@@ -237,3 +237,35 @@ def test_remove_flow_not_found(db_session: Session) -> None:
         db=db_session, id=str(non_existent_flow_id), account_id=str(uuid4())
     )  # Changed to str
     assert removed_flow is None
+
+
+def test_get_by_trigger_with_account_id(db_session: Session, create_account) -> None:
+    """Test retrieving flows by trigger event with account filter."""
+    account: Account = create_account()
+
+    # Create a flow with specific trigger
+    flow_in = FlowCreate(
+        name=f"Trigger Test Flow {uuid4()}",
+        trigger_event_source="github",
+        trigger_event_type="pull_request",
+        prompt_template="Test prompt",
+        agent_type="openhands",
+        agent_config={"agent": "TestAgent"},
+        account_id=account.id,
+    )
+    created_flow = crud_flow.create(
+        db=db_session, flow_in=flow_in, account_id=account.id
+    )
+
+    # Get flows by trigger with account_id
+    flows = crud_flow.get_by_trigger(
+        db=db_session,
+        event_source="github",
+        event_type="pull_request",
+        account_id=account.id,
+    )
+
+    # Should find our flow
+    assert len(flows) >= 1
+    flow_ids = [f.id for f in flows]
+    assert created_flow.id in flow_ids

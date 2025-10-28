@@ -116,3 +116,50 @@ def test_remove_by_issue_id(crud_issue_duplicate, mock_db_session):
     # Assert
     mock_query.delete.assert_called_once()
     mock_db_session.commit.assert_called_once()
+
+
+def test_get_by_issue_ids_with_account_id(crud_issue_duplicate, mock_db_session):
+    """Test retrieving an issue duplicate by issue IDs with account filter."""
+    # Arrange
+    issue1_id = str(uuid4())
+    issue2_id = str(uuid4())
+    account_id = str(uuid4())
+    mock_duplicate = IssueDuplicate(id=str(uuid4()))
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.join.return_value = mock_query
+    mock_query.first.return_value = mock_duplicate
+
+    # Act
+    result = crud_issue_duplicate.get_by_issue_ids(
+        mock_db_session, issue1_id=issue1_id, issue2_id=issue2_id, account_id=account_id
+    )
+
+    # Assert
+    assert result == mock_duplicate
+    assert mock_query.join.called
+
+
+def test_get_all_for_issue_with_account_id(crud_issue_duplicate, mock_db_session):
+    """Test retrieving all duplicates for an issue with account filter."""
+    # Arrange
+    issue_id = str(uuid4())
+    account_id = str(uuid4())
+    mock_duplicates = [IssueDuplicate(id=str(uuid4())) for _ in range(2)]
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.join.return_value = mock_query
+    mock_query.all.return_value = mock_duplicates
+
+    # Act
+    result = crud_issue_duplicate.get_all_for_issue(
+        mock_db_session, issue_id=issue_id, account_id=account_id
+    )
+
+    # Assert
+    assert len(result) == 2
+    assert mock_query.join.called

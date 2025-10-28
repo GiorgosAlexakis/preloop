@@ -194,3 +194,98 @@ def test_get_user_stats(db_session, create_account):  # Added create_account fix
     # Second user should be user2
     assert stats[1]["username"] == account2.username
     assert stats[1]["request_count"] == 1
+
+
+def test_api_usage_repr(db_session, create_account):
+    """Test the __repr__ method of ApiUsage model."""
+    # Create an account
+    account = create_account()
+
+    # Log a request
+    usage = crud_api_usage.log_request(
+        db_session,
+        username=account.username,
+        endpoint="/api/v1/test",
+        method="POST",
+        status_code=201,
+        duration=0.5,
+    )
+
+    # Test repr
+    repr_str = repr(usage)
+    assert "ApiUsage" in repr_str
+    assert "POST" in repr_str
+    assert "/api/v1/test" in repr_str
+    assert account.username in repr_str
+
+
+def test_get_user_usage_with_account_id(db_session, create_account):
+    """Test getting API usage for a user with account filter."""
+    # Create an account
+    account = create_account()
+
+    # Log a request
+    crud_api_usage.log_request(
+        db_session,
+        username=account.username,
+        endpoint="/api/v1/test",
+        method="GET",
+        status_code=200,
+        duration=0.1,
+    )
+
+    # Get usage with account_id filter
+    usage_records = crud_api_usage.get_user_usage(
+        db_session, username=account.username, days=1, account_id=account.id
+    )
+
+    # Should have 1 record
+    assert len(usage_records) == 1
+
+
+def test_get_endpoint_stats_with_account_id(db_session, create_account):
+    """Test getting endpoint statistics with account filter."""
+    # Create an account
+    account = create_account()
+
+    # Log requests
+    for i in range(2):
+        crud_api_usage.log_request(
+            db_session,
+            username=account.username,
+            endpoint="/api/v1/test_with_account",
+            method="GET",
+            status_code=200,
+            duration=0.1 + i * 0.1,
+        )
+
+    # Get stats with account_id filter
+    stats = crud_api_usage.get_endpoint_stats(db_session, days=1, account_id=account.id)
+
+    # Should have stats (may include other endpoints from other tests)
+    assert len(stats) >= 1
+
+
+def test_get_user_stats_with_account_id(db_session, create_account):
+    """Test getting user statistics with account filter."""
+    # Create an account
+    account = create_account()
+
+    # Log requests
+    for _i in range(2):
+        crud_api_usage.log_request(
+            db_session,
+            username=account.username,
+            endpoint="/api/v1/test",
+            method="GET",
+            status_code=200,
+            duration=0.1,
+        )
+
+    # Get user stats with account_id filter
+    stats = crud_api_usage.get_user_stats(db_session, days=1, account_id=account.id)
+
+    # Should have stats for our user
+    matching_stats = [s for s in stats if s["username"] == account.username]
+    assert len(matching_stats) >= 1
+    assert matching_stats[0]["request_count"] >= 2

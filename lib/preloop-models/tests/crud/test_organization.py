@@ -155,3 +155,86 @@ def test_deactivate(crud_organization, mock_db_session):
     mock_db_session.add.assert_called_once_with(mock_organization)
     mock_db_session.commit.assert_called_once()
     mock_db_session.refresh.assert_called_once_with(mock_organization)
+
+
+def test_get_by_name_with_account_id(crud_organization, mock_db_session):
+    """Test retrieving an organization by name with account filter."""
+    # Arrange
+    name = "Test Organization"
+    tracker_id = str(uuid4())
+    account_id = str(uuid4())
+    mock_organization = Organization(id=str(uuid4()), name=name)
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.join.return_value = mock_query
+    mock_query.first.return_value = mock_organization
+
+    # Act
+    result = crud_organization.get_by_name(
+        mock_db_session, name=name, tracker_id=tracker_id, account_id=account_id
+    )
+
+    # Assert
+    assert result.name == name
+    assert mock_query.join.called
+
+
+def test_count_with_account_id(crud_organization, mock_db_session):
+    """Test counting organizations with account filter."""
+    # Arrange
+    account_id = str(uuid4())
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.join.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.count.return_value = 3
+
+    # Act
+    result = crud_organization.count(mock_db_session, account_id=account_id)
+
+    # Assert
+    assert result == 3
+    assert mock_query.join.called
+
+
+def test_count_with_additional_filters(crud_organization, mock_db_session):
+    """Test counting organizations with additional attribute filters."""
+    # Arrange
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.count.return_value = 2
+
+    # Act
+    result = crud_organization.count(mock_db_session, is_active=True)
+
+    # Assert
+    assert result == 2
+
+
+def test_get_for_tracker_with_account_id(crud_organization, mock_db_session):
+    """Test retrieving organizations for a tracker with account filter."""
+    # Arrange
+    tracker_id = str(uuid4())
+    account_id = str(uuid4())
+    mock_organizations = [Organization(id=str(uuid4())) for _ in range(2)]
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.join.return_value = mock_query
+    mock_query.offset.return_value = mock_query
+    mock_query.limit.return_value = mock_query
+    mock_query.all.return_value = mock_organizations
+
+    # Act
+    result = crud_organization.get_for_tracker(
+        mock_db_session, tracker_id=tracker_id, account_id=account_id
+    )
+
+    # Assert
+    assert len(result) == 2
+    assert mock_query.join.called
