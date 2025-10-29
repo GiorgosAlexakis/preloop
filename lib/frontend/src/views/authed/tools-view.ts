@@ -11,6 +11,7 @@ import {
   updateToolConfiguration,
   getApprovalPolicies,
   createApprovalPolicy,
+  updateApprovalPolicy,
 } from '../../api';
 import '../../components/mcp-server-form';
 import '../../components/mcp-server-card';
@@ -510,6 +511,32 @@ export class ToolsView extends LitElement {
     }
   }
 
+  private async handleUpdatePolicy(event: CustomEvent) {
+    const { policyId, policy } = event.detail;
+
+    // Save scroll position
+    const scrollY = window.scrollY;
+
+    try {
+      // Update the policy on the server
+      const updatedPolicy = await updateApprovalPolicy(policyId, policy);
+
+      // Update local policy list
+      this.approvalPolicies = this.approvalPolicies.map((p) =>
+        p.id === policyId ? updatedPolicy : p
+      );
+
+      // Restore scroll position
+      window.scrollTo(0, scrollY);
+
+      console.log('Updated policy:', updatedPolicy.name);
+    } catch (err: any) {
+      this.error = err.message || 'Failed to update policy';
+      // Reload on error to revert optimistic update
+      await this.loadData();
+    }
+  }
+
   private async handleScanMCPServer(event: CustomEvent) {
     const serverId = event.detail.id;
     try {
@@ -761,6 +788,7 @@ export class ToolsView extends LitElement {
                               @toggle-approval=${this.handleToggleApproval}
                               @policy-selected=${this.handlePolicySelected}
                               @create-policy=${this.handleCreatePolicy}
+                              @update-policy=${this.handleUpdatePolicy}
                             ></tool-card>`
                         )}
                       </div>
