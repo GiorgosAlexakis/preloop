@@ -105,12 +105,15 @@ def test_remove(crud_approval_policy, mock_db_session):
     mock_policy = MagicMock()
     mock_policy.id = policy_id
     mock_policy.account_id = account_id
+    mock_policy.is_default = False
 
     mock_query = MagicMock()
     mock_db_session.query.return_value = mock_query
     mock_query.filter.return_value = mock_query
+    mock_query.order_by.return_value = mock_query
     mock_query.first.return_value = mock_policy
     mock_db_session.delete = MagicMock()
+    mock_db_session.flush = MagicMock()
     mock_db_session.commit = MagicMock()
 
     # Act
@@ -121,6 +124,7 @@ def test_remove(crud_approval_policy, mock_db_session):
     # Assert
     assert result.id == policy_id
     mock_db_session.delete.assert_called_once_with(mock_policy)
+    mock_db_session.flush.assert_called_once()
     mock_db_session.commit.assert_called_once()
 
 
@@ -133,6 +137,7 @@ def test_remove_not_found(crud_approval_policy, mock_db_session):
     mock_query = MagicMock()
     mock_db_session.query.return_value = mock_query
     mock_query.filter.return_value = mock_query
+    mock_query.order_by.return_value = mock_query
     mock_query.first.return_value = None
     mock_db_session.delete = MagicMock()
     mock_db_session.commit = MagicMock()
