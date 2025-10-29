@@ -395,15 +395,29 @@ class TestApprovalPolicyEndpoints:
             return_value=None,
         )
 
-        # Mock db.refresh to set database-generated fields
-        def mock_refresh(obj):
-            obj.id = uuid.uuid4()
-            from datetime import datetime, UTC
+        # Mock the created policy
+        created_policy = MagicMock(spec=ApprovalPolicy)
+        created_policy.id = uuid.uuid4()
+        created_policy.account_id = str(mock_account.id)
+        created_policy.name = policy_data.name
+        created_policy.description = None
+        created_policy.approval_type = policy_data.approval_type
+        created_policy.channel = policy_data.channel
+        created_policy.user = None
+        created_policy.approval_config = None
+        created_policy.timeout_seconds = 300
+        created_policy.require_reason = False
+        created_policy.is_default = True  # First policy becomes default
+        from datetime import datetime, UTC
 
-            obj.created_at = datetime.now(UTC)
-            obj.updated_at = datetime.now(UTC)
+        created_policy.created_at = datetime.now(UTC)
+        created_policy.updated_at = datetime.now(UTC)
 
-        mock_db.refresh.side_effect = mock_refresh
+        # Mock crud_approval_policy.create
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.create",
+            return_value=created_policy,
+        )
 
         result = await tools.create_approval_policy(
             policy_data=policy_data,
@@ -412,8 +426,8 @@ class TestApprovalPolicyEndpoints:
         )
 
         assert isinstance(result, ApprovalPolicyResponse)
-        mock_db.add.assert_called_once()
-        mock_db.commit.assert_called_once()
+        assert result.name == policy_data.name
+        assert result.is_default
 
     async def test_create_approval_policy_duplicate_name(
         self, mock_db, mock_user, mock_account, mocker
@@ -528,6 +542,7 @@ class TestApprovalPolicyEndpoints:
         """Test deleting an approval policy."""
         policy_id = uuid.uuid4()
         policy = MagicMock(spec=ApprovalPolicy)
+        policy.id = policy_id
 
         # Mock policy lookup
         mocker.patch(
@@ -541,6 +556,12 @@ class TestApprovalPolicyEndpoints:
             return_value=2,
         )
 
+        # Mock crud_approval_policy.remove (which handles the actual deletion)
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.remove",
+            return_value=policy,
+        )
+
         result = await tools.delete_approval_policy(
             policy_id=policy_id,
             account=mock_account,
@@ -549,5 +570,3 @@ class TestApprovalPolicyEndpoints:
 
         assert "message" in result
         assert "2 tool(s)" in result["message"]
-        mock_db.delete.assert_called_once_with(policy)
-        mock_db.commit.assert_called_once()

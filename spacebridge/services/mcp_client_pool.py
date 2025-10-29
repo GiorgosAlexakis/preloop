@@ -221,41 +221,65 @@ class MCPClient:
         if not self._connected or not self._session:
             raise RuntimeError("Client not connected. Call connect() first.")
 
-        # Create a new temporary session for each tool call
-        session, streams_context = await self._create_temp_session()
+        # Use AsyncExitStack for proper cleanup ordering
+        async with AsyncExitStack() as stack:
+            # Create client connection
+            auth = None
+            headers = {}
+            if self.auth_type == "bearer" and "token" in self.auth_config:
 
-        # Execute tool call and extract content immediately
-        result = await session.call_tool(name=tool_name, arguments=arguments)
+                class BearerAuth(httpx.Auth):
+                    def __init__(self, token: str):
+                        self.token = token
 
-        # Convert to list and extract all data BEFORE cleanup
-        content_list = []
-        for item in result.content:
-            if hasattr(item, "text"):
-                content_list.append(types.TextContent(type="text", text=item.text))
-            elif hasattr(item, "data"):
-                content_list.append(
-                    types.ImageContent(
-                        type="image",
-                        data=item.data,
-                        mimeType=getattr(item, "mimeType", "image/png"),
+                    def auth_flow(self, request):
+                        request.headers["Authorization"] = f"Bearer {self.token}"
+                        yield request
+
+                auth = BearerAuth(self.auth_config["token"])
+            elif self.auth_type == "api_key" and "api_key" in self.auth_config:
+                key_name = self.auth_config.get("key_name", "X-API-Key")
+                headers[key_name] = self.auth_config["api_key"]
+
+            # Enter streams context and add to stack for cleanup
+            read_stream, write_stream, _ = await stack.enter_async_context(
+                streamablehttp_client(
+                    url=self.url,
+                    headers=headers if not auth else {},
+                    timeout=30.0,
+                    sse_read_timeout=60.0,
+                    auth=auth,
+                )
+            )
+
+            # Create and enter session context, add to stack
+            session = ClientSession(read_stream=read_stream, write_stream=write_stream)
+            await stack.enter_async_context(session)
+            await session.initialize()
+
+            # Execute tool call
+            result = await session.call_tool(name=tool_name, arguments=arguments)
+
+            # Convert to list and extract all data
+            content_list = []
+            for item in result.content:
+                if hasattr(item, "text"):
+                    content_list.append(types.TextContent(type="text", text=item.text))
+                elif hasattr(item, "data"):
+                    content_list.append(
+                        types.ImageContent(
+                            type="image",
+                            data=item.data,
+                            mimeType=getattr(item, "mimeType", "image/png"),
+                        )
                     )
-                )
-            elif hasattr(item, "resource"):
-                content_list.append(
-                    types.EmbeddedResource(type="resource", resource=item.resource)
-                )
+                elif hasattr(item, "resource"):
+                    content_list.append(
+                        types.EmbeddedResource(type="resource", resource=item.resource)
+                    )
 
-        # Now cleanup - suppress all exceptions
-        try:
-            await session.__aexit__(None, None, None)
-        except Exception:
-            pass
-        try:
-            await streams_context.__aexit__(None, None, None)
-        except Exception:
-            pass
-
-        return content_list
+            return content_list
+            # AsyncExitStack will handle cleanup in reverse order automatically
 
 
 class MCPClientPool:

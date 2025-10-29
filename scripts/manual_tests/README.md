@@ -1,84 +1,53 @@
-# Manual Test Scripts
+# Manual MCP Testing Scripts
 
-This directory contains interactive scripts for manual testing and debugging of SpaceBridge MCP functionality. These are NOT part of the automated pytest suite.
+This directory contains manual testing scripts for verifying MCP functionality.
 
-## MCP Connection & Auth Testing
+## Progress Reporting Tests
 
-- **`test_mcp_auth.sh`** - Shell script to test MCP authentication with bearer tokens
-- **`test_mcp_connection.py`** - Test basic MCP server connectivity
-- **`check_client_api.py`** - Inspect FastMCP Client API signatures
-- **`check_tool_config.py`** - Check tool configuration database state
+### Basic Progress Test (FastMCP Docs Example)
 
-## Progress Notification Testing
+Tests progress reporting with a minimal FastMCP server to verify the feature works independently.
 
-### Basic FastMCP Progress (Proof of Concept)
-- **`test_basic_progress_server.py`** - Minimal FastMCP server with progress reporting (from docs)
-- **`test_basic_progress_client.py`** - Minimal client to test basic progress notifications
+**Start the test server:**
+```bash
+python scripts/manual_tests/test_basic_progress_server.py
+```
 
-### SpaceBridge Progress Testing
-- **`test_spacebridge_progress.py`** - Test progress notifications with SpaceBridge's `test_progress` tool
+**Run the client test:**
+```bash
+python scripts/manual_tests/test_basic_progress_client.py
+```
 
-## Approval Streaming Testing
+Expected output: Progress handler should be called for each table backup (5 times total).
 
-- **`test_approval_streaming.py`** - Test approval flow with progress streaming for **builtin tools** (e.g., `estimate_compliance`)
-- **`test_proxied_approval_streaming.py`** - Test approval flow with progress streaming for **proxied external MCP tools** (e.g., `calculate_fibonacci`)
+### SpaceBridge Progress Test
 
-## Usage
-
-### Running Progress Tests
-
-1. Start SpaceBridge server
-2. Set your MCP access token:
-   ```bash
-   export SPACEBRIDGE_TOKEN='your-token-here'
-   ```
-3. Run the test client:
-   ```bash
-   python scripts/manual_tests/test_spacebridge_progress.py
-   ```
-
-### Running Approval Tests
+Tests that progress reporting works with SpaceBridge's stateless HTTP mode.
 
 **Prerequisites:**
-1. Configure an approval policy for the tool being tested (via `/console/tools` UI)
-2. Ensure notification channel is set up (Mattermost/Slack/webhook)
-3. Get your MCP access token from `/console/mcp-servers`
+- SpaceBridge server running on `http://localhost:8001`
+- Valid API key/token
 
-**Test builtin tools:**
+**Run the test:**
 ```bash
-export SPACEBRIDGE_TOKEN='your-token-here'
-python scripts/manual_tests/test_approval_streaming.py
+export SPACEBRIDGE_TOKEN="your-api-key-here"
+python scripts/manual_tests/test_spacebridge_progress.py
 ```
 
-**Test proxied tools:**
-1. Start external MCP server: `python examples/example_mcp_server.py`
-2. Add the server via SpaceBridge UI and scan tools
-3. Configure approval policy for `calculate_fibonacci`
-4. Run test:
-   ```bash
-   python scripts/manual_tests/test_proxied_approval_streaming.py
-   ```
+Expected output: Progress handler should be called during `test_progress` tool execution.
 
-## Expected Output
-
-When progress notifications work correctly, you should see output like:
-```
-🔔 PROGRESS HANDLER CALLED!
-   progress=0.0
-   total=100.0
-   message=Approval request sent to mattermost (@dimo)
-   → 0.0% complete
-
-🔔 PROGRESS HANDLER CALLED!
-   progress=10.0
-   total=100.0
-   message=Waiting for approval from @dimo (270s remaining)
-   → 10.0% complete
-```
+**Note:** If progress updates are not received with `stateless_http=True`, you may need to investigate whether FastMCP's stateless mode supports SSE streaming for progress notifications. The `json_response=None` parameter should enable this, but it may require verification.
 
 ## Troubleshooting
 
-- **No progress notifications**: Ensure `json_response=None` in `dynamic_fastmcp_http.py`
-- **Authentication errors**: Check token validity with `check_tool_config.py`
-- **Approval not triggered**: Verify ToolConfiguration exists with `requires_approval=True`
-- **External tools not visible**: Run scan endpoint for the MCP server
+If progress updates don't work with `stateless_http=True`:
+
+1. Check FastMCP's documentation for stateless HTTP limitations
+2. Verify that SSE (Server-Sent Events) streaming is enabled
+3. Consider whether session state is required for progress notifications
+4. Look for any FastMCP configuration options related to progress in stateless mode
+
+If the issue persists, you may need to:
+- Review FastMCP's implementation of stateless HTTP + progress
+- Check if there's a way to maintain session state only for progress notifications
+- Consider alternative approaches (e.g., polling, webhooks)

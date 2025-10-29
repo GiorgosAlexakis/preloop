@@ -1,4 +1,8 @@
-"""Initialize and configure the DynamicFastMCP server with all default tools."""
+"""Initialize and configure the DynamicFastMCP server with all default tools.
+
+IMPORTANT: Tool descriptions and schemas must match BUILTIN_TOOLS in
+spacebridge/api/endpoints/tools.py to ensure consistency between MCP and REST API.
+"""
 
 import logging
 from typing import Optional
@@ -355,6 +359,80 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
 
         return f"Processed {count} items: {', '.join(items)}"
 
-    logger.info("All 6 default tools + test_progress registered with DynamicFastMCP")
+    # Register Tool 7: request_approval (standalone approval request)
+    # NOTE: Description must match BUILTIN_TOOLS in spacebridge/api/endpoints/tools.py
+    @mcp.tool()
+    async def request_approval(
+        operation: str,
+        caller: str,
+        context: str,
+        reasoning: str,
+        approval_policy: str | None = None,
+        ctx: Optional[Context] = None,
+    ) -> str:
+        """Request approval for an operation before executing it."""
+        # Get user context
+        from spacebridge.services.dynamic_fastmcp_http import get_current_user_context
+        from spacemodels.db.session import get_db_session
+        from spacemodels.crud import crud_approval_policy
+
+        user_context = get_current_user_context()
+
+        if not user_context:
+            return "Error: No user context available"
+
+        account_id = user_context.account_id
+
+        # Get the approval policy
+        policy_id = None
+        db = next(get_db_session())
+        try:
+            if approval_policy:
+                # Look up policy by name
+                policy = crud_approval_policy.get_by_name(
+                    db, account_id=account_id, name=approval_policy
+                )
+                if not policy:
+                    return f"Error: Approval policy '{approval_policy}' not found for your account"
+                policy_id = str(policy.id)
+            else:
+                # No policy specified, use the default policy
+                default_policy = crud_approval_policy.get_default(
+                    db, account_id=account_id
+                )
+                if not default_policy:
+                    return "Error: No default approval policy found for your account. Please create an approval policy first."
+                policy_id = str(default_policy.id)
+        finally:
+            db.close()
+
+        # Build arguments dict for the approval request
+        arguments = {
+            "operation": operation,
+            "caller": caller,
+            "context": context,
+            "reasoning": reasoning,
+        }
+
+        # Request approval using the standard approval helper
+        approved, error = await require_approval(
+            tool_name="request_approval",
+            tool_source="builtin",
+            account_id=account_id,
+            arguments=arguments,
+            policy_id=policy_id if policy_id else None,
+            ctx=ctx,
+        )
+
+        if not approved:
+            return f"Approval denied: {error}"
+
+        return (
+            f"Approval granted for operation: {operation}\n"
+            f"Caller: {caller}\n"
+            f"Policy used: {approval_policy or 'default'}"
+        )
+
+    logger.info("All 7 default tools registered with DynamicFastMCP")
 
     return mcp

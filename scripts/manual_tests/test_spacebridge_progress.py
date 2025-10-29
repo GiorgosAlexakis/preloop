@@ -1,4 +1,7 @@
-"""Test progress reporting with SpaceBridge DynamicFastMCP server."""
+"""Test progress reporting with SpaceBridge MCP server.
+
+This tests that progress updates work correctly with stateless_http=True.
+"""
 
 import asyncio
 import os
@@ -6,10 +9,10 @@ import os
 from fastmcp.client import Client, StreamableHttpTransport
 
 
-async def progress_handler(
+async def my_progress_handler(
     progress: float, total: float | None, message: str | None
 ) -> None:
-    """Progress handler to verify notifications are received."""
+    """Progress handler to verify progress updates are received."""
     print("\n🔔 PROGRESS HANDLER CALLED!", flush=True)
     print(f"   progress={progress}", flush=True)
     print(f"   total={total}", flush=True)
@@ -21,33 +24,27 @@ async def progress_handler(
 
 
 async def main():
-    """Test progress reporting with SpaceBridge."""
+    """Test progress reporting with SpaceBridge server."""
     print("\n" + "=" * 70)
-    print("Testing Progress Reporting with SpaceBridge DynamicFastMCP")
+    print("Testing Progress Reporting with SpaceBridge (stateless_http=True)")
     print("=" * 70)
     print()
 
-    # Get configuration from environment or use defaults
-    server_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000/mcp/v1")
-    bearer_token = os.getenv("SPACEBRIDGE_TOKEN")
-
-    if not bearer_token:
-        print("ERROR: SPACEBRIDGE_TOKEN environment variable not set!")
-        print("Usage: SPACEBRIDGE_TOKEN=your-token python test_spacebridge_progress.py")
+    # Get auth token from environment
+    token = os.getenv("SPACEBRIDGE_TOKEN")
+    if not token:
+        print("❌ Error: SPACEBRIDGE_TOKEN environment variable not set")
+        print("   Please set it with: export SPACEBRIDGE_TOKEN='your-api-key'")
         return
 
-    print(f"Connecting to SpaceBridge: {server_url}")
-    print(f"Using bearer token: {bearer_token[:20]}...")
-    print()
-
-    # Create transport with authentication
+    # Connect to SpaceBridge server
     transport = StreamableHttpTransport(
-        url=server_url,
-        headers={"Authorization": f"Bearer {bearer_token}"},
+        url="http://localhost:8001/mcp/v1",
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     async with Client(transport=transport) as client:
-        print("✓ Connected to SpaceBridge!")
+        print("✓ Connected to SpaceBridge server")
         print()
 
         # List tools
@@ -55,27 +52,32 @@ async def main():
         print(f"Available tools: {[t.name for t in tools]}")
         print()
 
-        # Call test_progress tool with progress handler
+        # Find test_progress tool
+        if not any(t.name == "test_progress" for t in tools):
+            print("❌ Error: test_progress tool not found")
+            print(
+                "   Make sure the SpaceBridge server has test_progress tool registered"
+            )
+            return
+
+        # Call test_progress with progress handler
         print("Calling test_progress with progress handler...")
         print("-" * 70)
 
         result = await client.call_tool(
-            "test_progress", arguments={"count": 5}, progress_handler=progress_handler
+            "test_progress",
+            arguments={"count": 5, "items": ["item1", "item2", "item3"]},
+            progress_handler=my_progress_handler,
         )
 
         print("-" * 70)
-        print(f"\nResult: {result.data}")
+        print(f"\n✓ Result: {result.data}")
         print()
 
     print("=" * 70)
-    print("Test completed!")
+    print("✅ Progress test completed successfully!")
     print("=" * 70)
 
 
 if __name__ == "__main__":
-    # Check if token is set
-    if os.getenv("SPACEBRIDGE_TOKEN"):
-        asyncio.run(main())
-    else:
-        print("⚠️  SPACEBRIDGE_TOKEN not set.")
-        print("Usage: SPACEBRIDGE_TOKEN=your-token python test_spacebridge_progress.py")
+    asyncio.run(main())

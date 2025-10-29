@@ -339,22 +339,37 @@ class TestMCPClientCallTool:
         client._connected = True
         client._session = MagicMock()
 
-        # Mock temp session
-        mock_temp_session = AsyncMock()
+        # Mock the result from session.call_tool
         mock_result = MagicMock()
         mock_text_item = MagicMock()
         mock_text_item.text = "Result text"
         mock_result.content = [mock_text_item]
-        mock_temp_session.call_tool = AsyncMock(return_value=mock_result)
-        mock_temp_session.__aexit__ = AsyncMock()
 
-        mock_streams_context = AsyncMock()
-        mock_streams_context.__aexit__ = AsyncMock()
+        # Mock streamablehttp_client context manager
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+        mock_streams = AsyncMock()
+        mock_streams.__aenter__ = AsyncMock(
+            return_value=(mock_read_stream, mock_write_stream, None)
+        )
+        mock_streams.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(
-            client,
-            "_create_temp_session",
-            return_value=(mock_temp_session, mock_streams_context),
+        # Mock ClientSession
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.initialize = AsyncMock()
+        mock_session.call_tool = AsyncMock(return_value=mock_result)
+
+        with (
+            patch(
+                "spacebridge.services.mcp_client_pool.streamablehttp_client",
+                return_value=mock_streams,
+            ),
+            patch(
+                "spacebridge.services.mcp_client_pool.ClientSession",
+                return_value=mock_session,
+            ),
         ):
             result = await client.call_tool("test_tool", {"arg": "value"})
 
@@ -368,23 +383,39 @@ class TestMCPClientCallTool:
         client._connected = True
         client._session = MagicMock()
 
-        mock_temp_session = AsyncMock()
+        # Mock the result from session.call_tool
         mock_result = MagicMock()
         # Create mock with spec to control hasattr
         mock_image_item = MagicMock(spec=["data", "mimeType"])
         mock_image_item.data = b"image_data"
         mock_image_item.mimeType = "image/png"
         mock_result.content = [mock_image_item]
-        mock_temp_session.call_tool = AsyncMock(return_value=mock_result)
-        mock_temp_session.__aexit__ = AsyncMock()
 
-        mock_streams_context = AsyncMock()
-        mock_streams_context.__aexit__ = AsyncMock()
+        # Mock streamablehttp_client context manager
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+        mock_streams = AsyncMock()
+        mock_streams.__aenter__ = AsyncMock(
+            return_value=(mock_read_stream, mock_write_stream, None)
+        )
+        mock_streams.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(
-            client,
-            "_create_temp_session",
-            return_value=(mock_temp_session, mock_streams_context),
+        # Mock ClientSession
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.initialize = AsyncMock()
+        mock_session.call_tool = AsyncMock(return_value=mock_result)
+
+        with (
+            patch(
+                "spacebridge.services.mcp_client_pool.streamablehttp_client",
+                return_value=mock_streams,
+            ),
+            patch(
+                "spacebridge.services.mcp_client_pool.ClientSession",
+                return_value=mock_session,
+            ),
         ):
             result = await client.call_tool("test_tool", {})
 
@@ -399,7 +430,7 @@ class TestMCPClientCallTool:
         client._connected = True
         client._session = MagicMock()
 
-        mock_temp_session = AsyncMock()
+        # Mock the result from session.call_tool
         mock_result = MagicMock()
         # Mix of text and image content
         mock_text_item = MagicMock()
@@ -407,18 +438,33 @@ class TestMCPClientCallTool:
         mock_image_item = MagicMock(spec=["data", "mimeType"])
         mock_image_item.data = b"image_data"
         mock_image_item.mimeType = "image/png"
-
         mock_result.content = [mock_text_item, mock_image_item]
-        mock_temp_session.call_tool = AsyncMock(return_value=mock_result)
-        mock_temp_session.__aexit__ = AsyncMock()
 
-        mock_streams_context = AsyncMock()
-        mock_streams_context.__aexit__ = AsyncMock()
+        # Mock streamablehttp_client context manager
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+        mock_streams = AsyncMock()
+        mock_streams.__aenter__ = AsyncMock(
+            return_value=(mock_read_stream, mock_write_stream, None)
+        )
+        mock_streams.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(
-            client,
-            "_create_temp_session",
-            return_value=(mock_temp_session, mock_streams_context),
+        # Mock ClientSession
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.initialize = AsyncMock()
+        mock_session.call_tool = AsyncMock(return_value=mock_result)
+
+        with (
+            patch(
+                "spacebridge.services.mcp_client_pool.streamablehttp_client",
+                return_value=mock_streams,
+            ),
+            patch(
+                "spacebridge.services.mcp_client_pool.ClientSession",
+                return_value=mock_session,
+            ),
         ):
             result = await client.call_tool("test_tool", {})
 
@@ -433,33 +479,62 @@ class TestMCPClientCallTool:
         with pytest.raises(RuntimeError, match="not connected"):
             await client.call_tool("test_tool", {})
 
-    async def test_call_tool_cleanup_suppresses_exceptions(self):
-        """Test that cleanup exceptions are suppressed."""
+    async def test_call_tool_cleanup_properly_ordered(self):
+        """Test that AsyncExitStack ensures proper cleanup ordering."""
         client = MCPClient(url="http://localhost:8001/mcp")
         client._connected = True
         client._session = MagicMock()
 
-        mock_temp_session = AsyncMock()
+        # Track cleanup order
+        cleanup_order = []
+
+        # Mock the result from session.call_tool
         mock_result = MagicMock()
         mock_text_item = MagicMock()
         mock_text_item.text = "Result"
         mock_result.content = [mock_text_item]
-        mock_temp_session.call_tool = AsyncMock(return_value=mock_result)
-        # Cleanup raises error
-        mock_temp_session.__aexit__ = AsyncMock(side_effect=Exception("Cleanup error"))
 
-        mock_streams_context = AsyncMock()
-        mock_streams_context.__aexit__ = AsyncMock()
+        # Mock streamablehttp_client context manager
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+        mock_streams = AsyncMock()
+        mock_streams.__aenter__ = AsyncMock(
+            return_value=(mock_read_stream, mock_write_stream, None)
+        )
 
-        with patch.object(
-            client,
-            "_create_temp_session",
-            return_value=(mock_temp_session, mock_streams_context),
+        async def streams_cleanup(*args):
+            cleanup_order.append("streams")
+            return None
+
+        mock_streams.__aexit__ = AsyncMock(side_effect=streams_cleanup)
+
+        # Mock ClientSession
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+
+        async def session_cleanup(*args):
+            cleanup_order.append("session")
+            return None
+
+        mock_session.__aexit__ = AsyncMock(side_effect=session_cleanup)
+        mock_session.initialize = AsyncMock()
+        mock_session.call_tool = AsyncMock(return_value=mock_result)
+
+        with (
+            patch(
+                "spacebridge.services.mcp_client_pool.streamablehttp_client",
+                return_value=mock_streams,
+            ),
+            patch(
+                "spacebridge.services.mcp_client_pool.ClientSession",
+                return_value=mock_session,
+            ),
         ):
-            # Should not raise cleanup exception
             result = await client.call_tool("test_tool", {})
 
         assert len(result) == 1
+        # AsyncExitStack ensures LIFO cleanup: session exits before streams
+        assert cleanup_order == ["session", "streams"]
 
 
 class TestMCPClientPoolInit:

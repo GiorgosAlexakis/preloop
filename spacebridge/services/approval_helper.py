@@ -20,6 +20,7 @@ async def require_approval(
     account_id: str,
     arguments: dict,
     ctx: Optional[Context] = None,
+    policy_id: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Check if tool requires approval and wait for decision with streaming.
 
@@ -33,6 +34,9 @@ async def require_approval(
         account_id: Account ID of the user executing the tool
         arguments: Tool arguments
         ctx: FastMCP Context for streaming progress updates
+        policy_id: Optional approval policy ID. If provided, uses this policy directly
+                  instead of looking up from tool configuration. Useful for standalone
+                  approval requests where no tool configuration exists.
 
     Returns:
         Tuple of (approved: bool, error_message: str)
@@ -52,35 +56,52 @@ async def require_approval(
         )
 
         async with get_async_db_session() as db:
-            # Check for tool configuration using CRUD
-            config = await get_tool_config_by_name_and_source_async(
-                db, account_id=account_id, tool_name=tool_name, tool_source=tool_source
-            )
-
-            # If tool doesn't require approval, execute directly
-            if (
-                not config
-                or not config.requires_approval
-                or not config.approval_policy_id
-            ):
+            # If policy_id is provided directly (for standalone requests), use it
+            if policy_id:
                 logger.info(
-                    f"Tool {tool_name} ({tool_source}) does not require approval"
+                    f"Using explicitly provided policy_id={policy_id} for tool {tool_name}"
                 )
-                return (True, "")
+                policy = await get_approval_policy_async(db, policy_id=policy_id)
 
-            # Get approval policy using CRUD
-            policy = await get_approval_policy_async(
-                db, policy_id=config.approval_policy_id
-            )
+                if not policy:
+                    logger.error(f"Provided approval policy {policy_id} not found")
+                    return (
+                        False,
+                        f"Error: Approval policy with ID '{policy_id}' not found",
+                    )
+            else:
+                # Check for tool configuration using CRUD
+                config = await get_tool_config_by_name_and_source_async(
+                    db,
+                    account_id=account_id,
+                    tool_name=tool_name,
+                    tool_source=tool_source,
+                )
 
-            if not policy:
-                logger.error(
-                    f"Approval policy {config.approval_policy_id} not found for tool {tool_name}"
+                # If tool doesn't require approval, execute directly
+                if (
+                    not config
+                    or not config.requires_approval
+                    or not config.approval_policy_id
+                ):
+                    logger.info(
+                        f"Tool {tool_name} ({tool_source}) does not require approval"
+                    )
+                    return (True, "")
+
+                # Get approval policy from tool configuration
+                policy = await get_approval_policy_async(
+                    db, policy_id=config.approval_policy_id
                 )
-                return (
-                    False,
-                    f"Error: Approval policy not found for tool '{tool_name}'",
-                )
+
+                if not policy:
+                    logger.error(
+                        f"Approval policy {config.approval_policy_id} not found for tool {tool_name}"
+                    )
+                    return (
+                        False,
+                        f"Error: Approval policy not found for tool '{tool_name}'",
+                    )
 
             # Tool requires approval - handle it with streaming
             logger.info(

@@ -1,4 +1,8 @@
-"""Tools router for managing available tools and their configurations."""
+"""Tools router for managing available tools and their configurations.
+
+IMPORTANT: BUILTIN_TOOLS metadata must match the tool implementations in
+spacebridge/services/initialize_mcp.py to ensure consistency between REST API and MCP.
+"""
 
 import logging
 from typing import Dict, List
@@ -16,7 +20,7 @@ from spacemodels.crud import (
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
-from spacemodels.models.tool_configuration import ApprovalPolicy, ToolConfiguration
+from spacemodels.models.tool_configuration import ToolConfiguration
 from spacemodels.schemas.tool_configuration import (
     ApprovalPolicyCreate,
     ApprovalPolicyResponse,
@@ -30,7 +34,39 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Define builtin tools metadata
+# NOTE: These must match the @mcp.tool() decorators in initialize_mcp.py
 BUILTIN_TOOLS = [
+    {
+        "name": "request_approval",
+        "description": "Request approval for an operation before executing it",
+        "source": "builtin",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "operation": {
+                    "type": "string",
+                    "description": "Description of the operation requiring approval",
+                },
+                "caller": {
+                    "type": "string",
+                    "description": "Name of the agent or flow requesting approval",
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Additional context about the situation",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "Explanation of why this operation is needed",
+                },
+                "approval_policy": {
+                    "type": "string",
+                    "description": "Optional name of the approval policy to use",
+                },
+            },
+            "required": ["operation", "caller", "context", "reasoning"],
+        },
+    },
     {
         "name": "get_issue",
         "description": "Get detailed information about an issue by its identifier (URL, key, or ID)",
@@ -508,26 +544,13 @@ async def create_approval_policy(
         )
 
     try:
-        new_policy = ApprovalPolicy(
-            account_id=str(account.id),
-            name=policy_data.name,
-            description=policy_data.description,
-            approval_type=policy_data.approval_type,
-            channel=policy_data.channel,
-            user=policy_data.user,
-            approval_config=policy_data.approval_config,
-            timeout_seconds=policy_data.timeout_seconds or 300,
-            require_reason=policy_data.require_reason
-            if policy_data.require_reason is not None
-            else False,
+        # Use CRUD layer for proper default policy handling
+        new_policy = crud_approval_policy.create(
+            db, obj_in=policy_data, account_id=str(account.id)
         )
 
-        db.add(new_policy)
-        db.commit()
-        db.refresh(new_policy)
-
         logger.info(
-            f"Created approval policy '{policy_data.name}' (user: {account.username})"
+            f"Created approval policy '{policy_data.name}' (user: {account.username}, is_default: {new_policy.is_default})"
         )
 
         return ApprovalPolicyResponse.model_validate(new_policy)
@@ -615,15 +638,16 @@ async def update_approval_policy(
                     detail=f"Approval policy with name '{update_data['name']}' already exists",
                 )
 
-        for field, value in update_data.items():
-            setattr(policy, field, value)
+        # Use CRUD layer for proper default policy handling
+        updated_policy = crud_approval_policy.update(
+            db, db_obj=policy, obj_in=policy_update
+        )
 
-        db.commit()
-        db.refresh(policy)
+        logger.info(
+            f"Updated approval policy {policy_id} for user {account.username} (is_default: {updated_policy.is_default})"
+        )
 
-        logger.info(f"Updated approval policy {policy_id} for user {account.username}")
-
-        return ApprovalPolicyResponse.model_validate(policy)
+        return ApprovalPolicyResponse.model_validate(updated_policy)
 
     except HTTPException:
         db.rollback()
@@ -673,8 +697,16 @@ async def delete_approval_policy(
             db, policy_id=str(policy_id)
         )
 
-        db.delete(policy)
-        db.commit()
+        # Use CRUD layer for proper default policy handling
+        deleted_policy = crud_approval_policy.remove(
+            db, id=policy_id, account_id=str(account.id)
+        )
+
+        if not deleted_policy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Approval policy not found or already deleted",
+            )
 
         logger.info(
             f"Deleted approval policy {policy_id} (was used by {tool_count} tools) "
@@ -685,6 +717,9 @@ async def delete_approval_policy(
             "message": f"Approval policy deleted successfully. {tool_count} tool(s) were using this policy."
         }
 
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Error deleting approval policy {policy_id}: {e}", exc_info=True)
