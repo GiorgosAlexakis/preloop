@@ -5,17 +5,16 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from spacemodels.crud import (
     crud_comment,
     crud_issue,
     crud_issue_embedding,
+    crud_organization,
     crud_project,
 )
-from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.db.session import get_db_session
-from spacemodels.models.organization import Organization  # Added
 from spacemodels.models.tracker import Tracker
 from spacesync.scanner.core import TrackerClient
 
@@ -101,13 +100,8 @@ async def receive_webhook(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported tracker_type: {tracker_type}",
         )
-    # Use the direct Organization model
-    organization_data = (
-        db.query(Organization)
-        .options(joinedload(Organization.tracker))
-        .filter(Organization.id == organization_id)
-        .first()
-    )
+    # Use CRUD layer to get organization with tracker
+    organization_data = crud_organization.get_with_tracker(db, id=organization_id)
     if not organization_data:
         logger.warning(
             f"Organization not found for id={organization_id}, tracker_type={tracker_type}"
@@ -557,9 +551,16 @@ async def receive_webhook(
             )
 
             if existing_issue:
+                logger.info(
+                    f"Updating existing issue {existing_issue.id} - "
+                    f"Current title: '{existing_issue.title}', "
+                    f"Webhook title: '{transformed_issue.get('title')}', "
+                    f"Update fields: {list(transformed_issue.keys())}"
+                )
                 db_issue = crud_issue.update(
                     db, db_obj=existing_issue, obj_in=transformed_issue
                 )
+                logger.info(f"After update, issue title: '{db_issue.title}'")
             else:
                 db_issue = crud_issue.create(db, obj_in=transformed_issue)
 

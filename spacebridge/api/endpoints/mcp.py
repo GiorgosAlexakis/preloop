@@ -57,7 +57,6 @@ from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.issue_compliance_result import IssueComplianceResult
-from spacemodels.models.tracker import Tracker
 from spacebridge.api.auth.jwt import get_user_from_token_if_valid
 from fastmcp.server.dependencies import get_http_request
 
@@ -220,17 +219,9 @@ async def get_issue(
     organization_name = issue_obj.project.organization.name
     project_identifier = issue_obj.project.identifier or issue_obj.project.slug
 
-    compliance_results = (
-        db.query(IssueComplianceResult)
-        .join(Issue, IssueComplianceResult.issue_id == Issue.id)
-        .join(Project, Issue.project_id == Project.id)
-        .join(Organization, Project.organization_id == Organization.id)
-        .join(Tracker, Organization.tracker_id == Tracker.id)
-        .filter(
-            IssueComplianceResult.issue_id == issue_obj.id,
-            Tracker.account_id == current_user.id,
-        )
-        .all()
+    # Get compliance results using CRUD layer
+    compliance_results = crud_issue_compliance_result.get_for_issue(
+        db, issue_id=issue_obj.id, account_id=current_user.id
     )
 
     return GetIssueResponse(
@@ -520,17 +511,9 @@ async def update_issue(
             else str(issue_obj.id)
         )
 
-    compliance_results = (
-        db.query(IssueComplianceResult)
-        .join(Issue, IssueComplianceResult.issue_id == Issue.id)
-        .join(Project, Issue.project_id == Project.id)
-        .join(Organization, Project.organization_id == Organization.id)
-        .join(Tracker, Organization.tracker_id == Tracker.id)
-        .filter(
-            IssueComplianceResult.issue_id == issue_obj.id,
-            Tracker.account_id == current_user.id,
-        )
-        .all()
+    # Get compliance results using CRUD layer
+    compliance_results = crud_issue_compliance_result.get_for_issue(
+        db, issue_id=issue_obj.id, account_id=current_user.id
     )
     project_name = issue_obj.project.name
     organization_name = issue_obj.project.organization.name

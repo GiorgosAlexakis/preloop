@@ -23,23 +23,15 @@ from spacesync.spacesync.trackers import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
 from spacesync.services.event_bus import event_bus_service
 from spacemodels.db.session import get_db_session
-from spacemodels.models.account import Account
 from spacemodels.models.tracker import Tracker, TrackerType, TrackerScopeRule
+from spacemodels.crud import (
+    crud_account,
+    crud_tracker,
+    crud_tracker_scope_rule,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-def get_account(db: Session, current_user: UserResponse) -> Account:
-    """Fetches the account for the current user, raising an exception if not found."""
-    account = (
-        db.query(Account).filter(Account.username == current_user.username).first()
-    )
-    if not account:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
-        )
-    return account
 
 
 @router.post("/trackers/debug")
@@ -148,15 +140,17 @@ async def register_tracker(
 
     # Create a new tracker in the database
     try:
-        # Find current user's account
-        account = get_account(db, current_user)
+        # Find current user's account using CRUD layer
+        account = crud_account.get_by_username(db, username=current_user.username)
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account not found",
+            )
 
-        # Check if a tracker with the same name already exists for this account
-        existing_tracker = (
-            db.query(Tracker)
-            .filter(Tracker.name == name, Tracker.account_id == account.id)
-            .filter(Tracker.is_deleted.is_(False))  # Only check non-deleted trackers
-            .first()
+        # Check if a tracker with the same name already exists for this account using CRUD layer
+        existing_tracker = crud_tracker.get_by_name(
+            db, name=name, account_id=account.id, include_deleted=False
         )
 
         if existing_tracker:
@@ -173,6 +167,17 @@ async def register_tracker(
             f"Creating new tracker: name='{name}', "
             f"type={tracker_type.value}, account_id={account.id}"
         )
+
+        # Validate scope rules before creating the tracker
+        if scope_rules_data:
+            is_valid, error_message = crud_tracker_scope_rule.validate_scope_rules(
+                scope_rules_data
+            )
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid scope rules: {error_message}",
+                )
 
         # Create the tracker with the account reference and project selection fields
         scope_rules = []
@@ -259,14 +264,14 @@ async def list_trackers(
     db: Session = Depends(get_db_session),
 ) -> List[Tracker]:
     """List all non-deleted trackers for the current user."""
-    account = get_account(db, current_user)
+    account = crud_account.get_by_username(db, username=current_user.username)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
+        )
 
-    trackers = (
-        db.query(Tracker)
-        .filter(Tracker.account_id == account.id)
-        .filter(Tracker.is_deleted.is_(False))
-        .all()
-    )
+    # Use CRUD layer to get trackers
+    trackers = crud_tracker.get_for_account(db, account_id=account.id)
     return trackers  # FastAPI handles conversion via response_model
 
 
@@ -277,14 +282,15 @@ async def get_tracker(
     db: Session = Depends(get_db_session),
 ) -> Tracker:
     """Get a non-deleted tracker by ID, ensuring it belongs to the current user."""
-    account = get_account(db, current_user)
+    account = crud_account.get_by_username(db, username=current_user.username)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
+        )
 
-    tracker = (
-        db.query(Tracker)
-        .filter(Tracker.id == str(tracker_id))
-        .filter(Tracker.account_id == account.id)
-        .filter(Tracker.is_deleted.is_(False))
-        .first()
+    # Use CRUD layer to get tracker
+    tracker = crud_tracker.get_by_id_and_account(
+        db, id=str(tracker_id), account_id=account.id, include_deleted=False
     )
 
     if not tracker:
@@ -306,14 +312,15 @@ async def update_tracker(
     db: Session = Depends(get_db_session),
 ) -> Tracker:
     """Update an existing tracker."""
-    account = get_account(db, current_user)
+    account = crud_account.get_by_username(db, username=current_user.username)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
+        )
 
-    tracker = (
-        db.query(Tracker)
-        .filter(Tracker.id == str(tracker_id))
-        .filter(Tracker.account_id == account.id)
-        .filter(Tracker.is_deleted.is_(False))  # Can only update non-deleted trackers
-        .first()
+    # Use CRUD layer to get tracker
+    tracker = crud_tracker.get_by_id_and_account(
+        db, id=str(tracker_id), account_id=account.id, include_deleted=False
     )
 
     if not tracker:
@@ -325,13 +332,22 @@ async def update_tracker(
 
     # Handle scope_rules separately
     if "scope_rules" in update_data:
-        # Delete existing scope rules
-        db.query(TrackerScopeRule).filter(
-            TrackerScopeRule.tracker_id == tracker.id
-        ).delete(synchronize_session=False)
+        # Validate new scope rules before updating
+        new_scope_rules_data = update_data.pop("scope_rules")
+        if new_scope_rules_data is not None:
+            is_valid, error_message = crud_tracker_scope_rule.validate_scope_rules(
+                new_scope_rules_data
+            )
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid scope rules: {error_message}",
+                )
+
+        # Delete existing scope rules using CRUD layer
+        crud_tracker.delete_scope_rules(db, tracker_id=tracker.id)
 
         # Create new scope rules from the payload
-        new_scope_rules_data = update_data.pop("scope_rules")
         if new_scope_rules_data is not None:
             new_scope_rules = []
             for rule_data in new_scope_rules_data:
@@ -394,18 +410,16 @@ async def delete_tracker(
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete a tracker by ID (soft delete by default, hard delete if specified)."""
-    account = get_account(db, current_user)
+    account = crud_account.get_by_username(db, username=current_user.username)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
+        )
 
-    # Find the tracker, including potentially soft-deleted ones if hard_delete is true
-    query = (
-        db.query(Tracker)
-        .filter(Tracker.id == str(tracker_id))
-        .filter(Tracker.account_id == account.id)
+    # Use CRUD layer to get tracker, including potentially soft-deleted ones if hard_delete is true
+    tracker = crud_tracker.get_by_id_and_account(
+        db, id=str(tracker_id), account_id=account.id, include_deleted=hard_delete
     )
-    if not hard_delete:
-        query = query.filter(Tracker.is_deleted.is_(False))
-
-    tracker = query.first()
 
     if not tracker:
         raise HTTPException(
@@ -468,13 +482,16 @@ async def test_connection_and_list_orgs(
     logger.info(
         f"User {current_user.username} testing tracker connection for type {test_data.tracker_type.value}"
     )
-    account = get_account(db, current_user)
+    account = crud_account.get_by_username(db, username=current_user.username)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
+        )
+
     if test_data.tracker_id:
-        tracker = (
-            db.query(Tracker)
-            .filter(Tracker.account_id == account.id)
-            .filter(Tracker.id == test_data.tracker_id)
-            .first()
+        # Use CRUD layer to get tracker
+        tracker = crud_tracker.get_by_id_and_account(
+            db, id=test_data.tracker_id, account_id=account.id, include_deleted=False
         )
         if not tracker:
             raise HTTPException(
@@ -542,17 +559,20 @@ async def list_projects_for_org(
     """
     Lists projects for a specific organization/group within a tracker.
     """
-    account = get_account(db, current_user)
+    account = crud_account.get_by_username(db, username=current_user.username)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
+        )
+
     logger.info(
         f"User {current_user.username} listing projects for org {project_data.organization_identifier} "
         f"in tracker type {project_data.tracker_type.value}"
     )
     if project_data.tracker_id:
-        tracker = (
-            db.query(Tracker)
-            .filter(Tracker.account_id == account.id)
-            .filter(Tracker.id == project_data.tracker_id)
-            .first()
+        # Use CRUD layer to get tracker
+        tracker = crud_tracker.get_by_id_and_account(
+            db, id=project_data.tracker_id, account_id=account.id, include_deleted=False
         )
         if not tracker:
             raise HTTPException(

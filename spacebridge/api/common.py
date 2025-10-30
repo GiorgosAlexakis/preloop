@@ -3,14 +3,18 @@
 import logging
 from typing import Any, Dict, Optional, List
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from spacemodels.db.session import get_db_session
+from spacebridge.api.auth import get_current_active_user
+from spacebridge.schemas.auth import UserResponse
 from spacebridge.schemas.issue_compliance import CompliancePromptMetadata
-from spacesync.spacesync.trackers import create_tracker_client
+from spacesync.trackers import create_tracker_client
 from spacemodels.crud import (
     CRUDOrganization,
     CRUDProject,
+    crud_account,
     crud_tracker_scope_rule,
 )
 from spacemodels.models.account import Account
@@ -319,3 +323,115 @@ def load_duplicates_prompts_config(config_path: str) -> Dict[str, Any]:
         return {}
 
     return config_data.get("duplicates", {})
+
+
+def get_accessible_projects(
+    db: Session,
+    current_user: Account,
+    project_ids: Optional[List[str]] = None,
+) -> List[Project]:
+    """Get the list of accessible projects for the given user and project IDs.
+
+    Applies TrackerScopeRule filtering to ensure only projects that match the
+    tracker's scope configuration are returned. This follows the same logic as
+    spacesync scanner:
+    1. Organization must be in INCLUDE rules
+    2. Project must not be in EXCLUDE rules
+    3. If PROJECT INCLUDE rules exist, project must be in them
+
+    Args:
+        db: Database session
+        current_user: Current authenticated user
+        project_ids: Optional list of project IDs to filter by. If None, returns
+            all accessible projects for the user.
+
+    Returns:
+        List of Project objects that the user has access to and that match
+        the tracker scope rules.
+    """
+    # Use CRUD layer to get projects accessible to user
+    all_projects = crud_project.get_accessible_for_user(
+        db, account_id=current_user.id, project_ids=project_ids
+    )
+
+    # Apply TrackerScopeRule filtering
+    filtered_projects = []
+    for project in all_projects:
+        tracker = project.organization.tracker
+
+        # Use CRUD layer to get scope rules for this tracker
+        rules = crud_tracker_scope_rule.get_by_tracker(
+            db, tracker_id=tracker.id, account_id=current_user.id
+        )
+
+        # Build rule sets (same logic as scanner/core.py)
+        org_inclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "ORGANIZATION" and r.rule_type == "INCLUDE"
+        }
+        project_inclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "PROJECT" and r.rule_type == "INCLUDE"
+        }
+        project_exclusions = {
+            r.identifier
+            for r in rules
+            if r.scope_type == "PROJECT" and r.rule_type == "EXCLUDE"
+        }
+
+        # Check organization inclusion (required)
+        if project.organization.identifier not in org_inclusions:
+            logger.debug(
+                f"Skipping project {project.name} - organization {project.organization.identifier} "
+                f"not in inclusion list for tracker {tracker.id}"
+            )
+            continue
+
+        # Check project exclusion
+        if project.identifier in project_exclusions:
+            logger.debug(
+                f"Skipping project {project.name} ({project.identifier}) - in exclusion list"
+            )
+            continue
+
+        # Check project inclusion (if any inclusion rules exist)
+        if project_inclusions and project.identifier not in project_inclusions:
+            logger.debug(
+                f"Skipping project {project.name} ({project.identifier}) - not in inclusion list"
+            )
+            continue
+
+        filtered_projects.append(project)
+
+    return filtered_projects
+
+
+def get_account_for_user(
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> Account:
+    """Get Account model for authenticated user.
+
+    This consolidated function replaces duplicate get_account() helpers
+    found across multiple endpoint files. It uses the CRUD layer instead
+    of direct database queries.
+
+    Args:
+        current_user: Authenticated user from JWT token
+        db: Database session
+
+    Returns:
+        Account instance for the authenticated user
+
+    Raises:
+        HTTPException: 401 if account not found for user
+    """
+    account = crud_account.get_by_username(db, username=current_user.username)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account not found",
+        )
+    return account

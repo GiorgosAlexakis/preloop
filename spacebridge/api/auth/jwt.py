@@ -9,12 +9,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy.future import select
 
 from spacebridge.schemas.auth import TokenData
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
-from spacemodels.models.api_key import ApiKey
+from spacemodels.crud import crud_api_key, crud_account
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")
@@ -147,10 +146,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
             session = next(session_generator)
 
             try:
-                # Look up the API key
+                # Look up the API key using CRUD
                 logger.info(f"Looking up API key: {token[:10]}...")
-                result = session.execute(select(ApiKey).where(ApiKey.key == token))
-                api_key = result.scalars().first()
+                api_key = crud_api_key.get_by_key(session, key=token)
 
                 if api_key:
                     logger.info(
@@ -166,11 +164,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                             headers={"WWW-Authenticate": "Bearer"},
                         )
 
-                    # Get the user associated with this API key
-                    result = session.execute(
-                        select(Account).where(Account.username == api_key.created_by)
+                    # Get the user associated with this API key using CRUD
+                    user = crud_account.get_by_username(
+                        session, username=api_key.created_by
                     )
-                    user = result.scalars().first()
 
                     if not user:
                         logger.warning(
@@ -246,10 +243,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
             session = next(session_generator)
 
             try:
-                result = session.execute(
-                    select(Account).where(Account.username == username)
-                )
-                user = result.scalars().first()
+                # Get user using CRUD
+                user = crud_account.get_by_username(session, username=username)
 
                 if not user:
                     raise HTTPException(
@@ -293,10 +288,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                 session = next(session_generator)
 
                 try:
-                    # Look up the API key
+                    # Look up the API key using CRUD
                     logger.info(f"Looking up API key: {token[:10]}...")
-                    result = session.execute(select(ApiKey).where(ApiKey.key == token))
-                    api_key = result.scalars().first()
+                    api_key = crud_api_key.get_by_key(session, key=token)
 
                     if not api_key:
                         logger.warning(f"API key not found: {token[:10]}...")
@@ -318,11 +312,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                             headers={"WWW-Authenticate": "Bearer"},
                         )
 
-                    # Get the user associated with this API key
-                    result = session.execute(
-                        select(Account).where(Account.username == api_key.created_by)
+                    # Get the user associated with this API key using CRUD
+                    user = crud_account.get_by_username(
+                        session, username=api_key.created_by
                     )
-                    user = result.scalars().first()
 
                     if not user:
                         raise HTTPException(

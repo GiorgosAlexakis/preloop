@@ -5,7 +5,6 @@ from typing import Optional, List, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 
 from datetime import datetime
 from spacebridge.api.common import get_tracker_client
@@ -44,6 +43,30 @@ crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
 crud_issue = CRUDIssue(Issue)
 crud_tracker = CRUDTracker(Tracker)
+
+
+def extract_label_strings(labels_data) -> List[str]:
+    """
+    Extract label strings from label data which might be objects or strings.
+
+    Args:
+        labels_data: Can be a list of label objects (dicts with 'title'/'name'),
+                    strings, or a mix
+
+    Returns:
+        List of label strings
+    """
+    labels = []
+    if isinstance(labels_data, list):
+        for label in labels_data:
+            if isinstance(label, dict):
+                # Extract title or name from label object
+                labels.append(label.get("title") or label.get("name") or str(label))
+            elif isinstance(label, str):
+                labels.append(label)
+            else:
+                labels.append(str(label))
+    return labels
 
 
 # Define the filter class for issue searching
@@ -109,8 +132,10 @@ async def search_issues(
         if not tracker_ids:
             return []
 
-        # Get Issues linked to the user's trackers
-        issues = db.query(Issue).filter(Issue.tracker_id.in_(tracker_ids))
+        # Get Issues linked to the user's trackers using CRUD layer
+        issues = crud_issue.get_for_trackers(
+            db, tracker_ids=tracker_ids, account_id=current_user.id
+        )
         # Process organization parameters
         org = None
         org_id = None
@@ -390,9 +415,9 @@ async def search_issues(
                             created_at=issue.created_at,
                             updated_at=issue.updated_at,
                             meta_data=metadata_dict,
-                            labels=metadata_dict.get("labels", [])
-                            if isinstance(metadata_dict.get("labels"), list)
-                            else [],
+                            labels=extract_label_strings(
+                                metadata_dict.get("labels", [])
+                            ),
                             assignee=metadata_dict.get("assignee"),
                             score=score,  # Include similarity score
                         )
@@ -530,9 +555,9 @@ async def search_issues(
                             created_at=issue.created_at,
                             updated_at=issue.updated_at,
                             meta_data=metadata_dict,
-                            labels=metadata_dict.get("labels", [])
-                            if isinstance(metadata_dict.get("labels"), list)
-                            else [],
+                            labels=extract_label_strings(
+                                metadata_dict.get("labels", [])
+                            ),
                             assignee=metadata_dict.get("assignee"),
                             score=0.0,  # No score for full-text search
                         )
@@ -879,6 +904,9 @@ async def create_issue(
             )
             # Construct a placeholder or leave empty based on requirements. For now, empty.
 
+        # Extract label strings from label objects
+        labels = extract_label_strings(db_issue.meta_data.get("labels", []))
+
         return IssueResponse(
             id=str(db_issue.id),
             external_id=db_issue.external_id,
@@ -892,7 +920,7 @@ async def create_issue(
             status=db_issue.status,
             priority=db_issue.priority,
             assignee=db_issue.meta_data.get("assignee"),
-            labels=db_issue.meta_data.get("labels", []),
+            labels=labels,
             url=response_url,  # Use the resolved URL
             created_at=db_issue.created_at,
             updated_at=db_issue.updated_at,
@@ -930,36 +958,43 @@ def get_issue(
             raise HTTPException(status_code=404, detail="No trackers found for user")
 
         project_slug = None
+        project_obj = None
         if "#" in issue_id:
             project_slug, issue_external_id = issue_id.split("#")
         else:
             issue_external_id = issue_id
             project_slug = project
-        # Find the issue by external_id
-        issue_query = db.query(Issue).filter(
-            Issue.tracker_id.in_(tracker_ids),
-            or_(
-                Issue.external_id == issue_external_id,
-                Issue.key == issue_external_id,
-                Issue.key == issue_id,
-                Issue.key == f"{organization}/{project}#{issue_id}",
-                Issue.id == issue_id,
-            ),
-        )
-        # Get the project and organization
+
+        # Get the project and organization if project_slug is provided
         if project_slug:
-            project = crud_project.get_by_slug_or_identifier(
+            project_obj = crud_project.get_by_slug_or_identifier(
                 db, slug_or_identifier=project_slug, account_id=current_user.id
             )
-            if not project:
+            if not project_obj:
                 raise HTTPException(status_code=404, detail="Project not found")
             organization = crud_organization.get(
-                db, id=project.organization_id, account_id=current_user.id
+                db, id=project_obj.organization_id, account_id=current_user.id
             )
             if not organization:
                 raise HTTPException(status_code=404, detail="Organization not found")
-            issue_query = issue_query.filter(Issue.project_id == project.id)
-        issue = issue_query.order_by(Issue.last_updated_external.desc()).first()
+
+        # Build alternative key formats to search for
+        alternative_keys = [
+            issue_external_id,
+            issue_id,
+        ]
+        if organization and project:
+            alternative_keys.append(f"{organization}/{project}#{issue_id}")
+
+        # Find the issue using CRUD layer
+        issue = crud_issue.find_by_flexible_identifier(
+            db,
+            identifier=issue_external_id,
+            tracker_ids=tracker_ids,
+            project_id=project_obj.id if project_obj else None,
+            alternative_keys=alternative_keys,
+            account_id=current_user.id,
+        )
 
         if not issue:
             # Maybe it was the internal ID? Try that as a fallback.
@@ -990,7 +1025,11 @@ def get_issue(
 
         # Extract data from JSON fields if available
         meta_data = issue.meta_data or {}
-        labels_list = meta_data.get("labels", []) if isinstance(meta_data, dict) else []
+        labels_list = (
+            extract_label_strings(meta_data.get("labels", []))
+            if isinstance(meta_data, dict)
+            else []
+        )
         assignee = meta_data.get("assignee") if isinstance(meta_data, dict) else None
 
         # Determine the URL
@@ -1140,22 +1179,19 @@ async def update_issue(
                 if project:
                     # Ensure the project's tracker is accessible
                     if project.organization.tracker_id in tracker_ids:
-                        issue = (
-                            db.query(Issue)
-                            .filter(
-                                Issue.project_id == project.id,
-                                or_(
-                                    Issue.external_id == external_id_from_key,
-                                    Issue.key == issue_id,
-                                    Issue.key == f"{project.slug}#{issue_id}",
-                                    Issue.id == issue_id,
-                                ),
-                                Issue.tracker_id.in_(
-                                    tracker_ids
-                                ),  # Redundant check, but safe
-                            )
-                            .order_by(Issue.last_updated_external.desc())
-                            .first()
+                        # Build alternative key formats to search for
+                        alternative_keys = [
+                            issue_id,
+                            f"{project.slug}#{issue_id}",
+                        ]
+                        # Find the issue using CRUD layer
+                        issue = crud_issue.find_by_flexible_identifier(
+                            db,
+                            identifier=external_id_from_key,
+                            tracker_ids=tracker_ids,
+                            project_id=project.id,
+                            alternative_keys=alternative_keys,
+                            account_id=current_user.id,
                         )
                     else:
                         logger.warning(
@@ -1185,17 +1221,15 @@ async def update_issue(
         if not issue:
             logger.debug(f"Attempting lookup by direct external ID: {issue_id}")
 
-            # Search across all accessible trackers for this external ID
-            query = db.query(Issue).filter(
-                or_(Issue.external_id == issue_id, Issue.key == issue_id),
-                Issue.tracker_id.in_(tracker_ids),
+            # Search across all accessible trackers using CRUD layer
+            issue = crud_issue.find_by_flexible_identifier(
+                db,
+                identifier=issue_id,
+                tracker_ids=tracker_ids,
+                project_id=project.id if project else None,
+                alternative_keys=[issue_id],
+                account_id=current_user.id,
             )
-
-            # If project is specified, filter by it
-            if project:
-                query = query.filter(Issue.project_id == project.id)
-
-            issue = query.order_by(Issue.last_updated_external.desc()).first()
 
         if not issue:
             logger.warning(
@@ -1381,7 +1415,11 @@ async def update_issue(
             project_slug = project.slug
 
         meta_data = issue.meta_data or {}
-        labels_list = meta_data.get("labels", []) if isinstance(meta_data, dict) else []
+        labels_list = (
+            extract_label_strings(meta_data.get("labels", []))
+            if isinstance(meta_data, dict)
+            else []
+        )
         assignee = meta_data.get("assignee") if isinstance(meta_data, dict) else None
         external_url = (
             meta_data.get("url") or issue.external_url or f"/issues/{issue.id}"

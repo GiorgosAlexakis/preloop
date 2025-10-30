@@ -7,7 +7,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from spacemodels.models.account import Account
 from spacemodels.crud import (
@@ -18,8 +18,6 @@ from spacemodels.crud import (
 )
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.issue import Issue
-from spacemodels.models.project import Project
-from spacemodels.models.organization import Organization
 from spacebridge.api.auth import get_current_active_user
 import json
 import openai
@@ -271,16 +269,9 @@ async def commit_issue_dependencies(
         if dep.is_committed or dep.comes_from_tracker:
             continue
 
-        # Eagerly load the required relationships to get to the tracker
-        source_issue = (
-            db.query(Issue)
-            .options(
-                joinedload(Issue.project)
-                .joinedload(Project.organization)
-                .joinedload(Organization.tracker)
-            )
-            .filter(Issue.id == dep.source_issue_id)
-            .first()
+        # Eagerly load the required relationships to get to the tracker using CRUD layer
+        source_issue = crud_issue.get_with_full_hierarchy(
+            db, id=dep.source_issue_id, account_id=current_user.id
         )
 
         if (

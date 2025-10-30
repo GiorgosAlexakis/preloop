@@ -8,13 +8,20 @@ SpaceBridge.io drives your product using AI. It ingests issues, comments, docume
 
 ## Key Features
 
-- Continuous ingestion of issues, comments, projects, and organizations from your issue tracker
-- Vector-based similarity search across issue trackers and projects
-- Intelligent detection of duplication and overlap of issues
-- Evaluation of compliance metrics and recommendations for improvement
-- Event Driven Agentic Flows triggered by issue tracker events, with real-time monitoring.
-- A comprehensive Web UI for managing trackers, projects, and flows.
-- MCP server & RESTful API.
+- **Issue Tracker Integration**: Continuous ingestion of issues, comments, projects, and organizations from Jira, GitHub, GitLab, and more
+- **Vector Search**: Intelligent similarity search across issue trackers and projects using embeddings
+- **Duplicate Detection**: Automated detection of duplicate and overlapping issues
+- **Compliance Metrics**: Evaluate issue compliance and receive actionable improvement recommendations
+- **MCP Server**: Standards-based Model Context Protocol (MCP) server with dynamic tool filtering
+  - 6 built-in tools: get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance
+  - JWT authentication with per-user tool visibility
+  - StreamableHTTP transport for Claude Code and other MCP clients
+- **Tool Management**: Configure and manage tool access with granular control
+  - Tool-level configuration and approval policies
+  - Support for external MCP servers and tool proxying
+  - Human-in-the-loop approval workflows for sensitive operations
+- **Agentic Flows**: Event-driven workflows triggered by issue tracker events with real-time monitoring
+- **Web UI**: Comprehensive interface built with Lit, Vite, and Material Web Components
 
 ## Supported Issue Trackers
 
@@ -227,11 +234,44 @@ SpaceBridge provides a RESTful API with the following key endpoints:
 - `DELETE /api/v1/issues/{issue_id}` - Delete issue
 - `POST /api/v1/issues/{issue_id}/comments` - Add comment to issue
 
+### MCP Server Management
+- `GET /api/v1/mcp-servers` - List configured MCP servers
+- `POST /api/v1/mcp-servers` - Add new MCP server
+- `PUT /api/v1/mcp-servers/{id}` - Update MCP server configuration
+- `DELETE /api/v1/mcp-servers/{id}` - Remove MCP server
+- `POST /api/v1/mcp-servers/{id}/scan` - Trigger tool discovery scan
+- `GET /api/v1/mcp-servers/{id}/tools` - List tools available on server
+
+### Tool Configuration
+- `GET /api/v1/tool-configurations` - List tool configurations
+- `POST /api/v1/tool-configurations` - Create tool configuration
+- `PUT /api/v1/tool-configurations/{id}` - Update tool configuration
+- `DELETE /api/v1/tool-configurations/{id}` - Delete tool configuration
+
+### Approval Management
+- `GET /api/v1/approval-policies` - List approval policies
+- `POST /api/v1/approval-policies` - Create approval policy
+- `PUT /api/v1/approval-policies/{id}` - Update approval policy
+- `DELETE /api/v1/approval-policies/{id}` - Delete approval policy
+- `GET /api/v1/approval-requests` - List approval requests
+- `POST /api/v1/public/approval/{id}/respond` - Respond to approval request (public endpoint)
+
+### Flows
+- `GET /api/v1/flows` - List flows
+- `POST /api/v1/flows` - Create flow
+- `GET /api/v1/flows/{id}` - Get flow details
+- `PUT /api/v1/flows/{id}` - Update flow
+- `DELETE /api/v1/flows/{id}` - Delete flow
+- `GET /api/v1/flows/{id}/executions` - List flow executions
+- `GET /api/v1/flows/executions/{id}` - Get execution details
+
 ### Using MCP Tools via API
 
-The SpaceBridge API now includes integrated MCP tool endpoints, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
+The SpaceBridge API now includes integrated MCP tool endpoints with dynamic tool filtering, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
 
 **Authentication:** All MCP endpoints use the same Bearer Token authentication as the rest of the API.
+
+**Dynamic Tool Visibility:** MCP tools are only visible when your account has one or more trackers configured. This ensures tools have the necessary context to operate effectively. If you connect with an account that has no trackers, you will see an empty tool list.
 
 **Connecting with Claude Code:**
 
@@ -245,13 +285,13 @@ You can connect Claude Code directly to your SpaceBridge instance using the `cla
       --transport http \
       --header "Authorization: Bearer YOUR_API_KEY" \
       spacebridge \
-      https://YOUR_SPACEBRIDGE_URL/api/v1/mcp
+      https://YOUR_SPACEBRIDGE_URL/mcp/v1
     ```
 
     - `--transport http`: Specifies that the server uses the HTTP transport.
     - `--header "Authorization: Bearer YOUR_API_KEY"`: Provides the necessary authentication header for all requests.
     - `spacebridge`: This is the name you will use to refer to the server (e.g., `@spacebridge get_issue ...`).
-    - `https://YOUR_SPACEBRIDGE_URL/api/v1/mcp`: This is the base URL for the SpaceBridge MCP endpoints.
+    - `https://YOUR_SPACEBRIDGE_URL/mcp/v1`: This is the base URL for the SpaceBridge MCP endpoints.
 
 **Example Workflow (using `curl`):**
 
@@ -268,6 +308,53 @@ If you are not using an MCP client and want to interact with the tool endpoints 
       "description": "Add a dark mode to the dashboard."
     }'
     ```
+
+### Tool Approval Workflows
+
+SpaceBridge supports human-in-the-loop approval workflows for sensitive tool operations. This feature enables you to require manual approval before certain tools can execute, providing an extra layer of control and security.
+
+**Key Concepts:**
+- **Tool Configuration**: Define which tools are enabled for your account and whether they require approval
+- **Approval Policies**: Create reusable policies that define approval requirements, timeouts, and notification settings
+- **Approval Requests**: When a tool requiring approval is called, an approval request is created and notifications are sent
+- **Webhook Integration**: Connect approval notifications to Slack, Mattermost, or custom webhook endpoints
+
+**Example: Setting up approval for issue creation:**
+
+1. **Create an Approval Policy:**
+   ```bash
+   curl -X POST "https://YOUR_SPACEBRIDGE_URL/api/v1/approval-policies" \
+   -H "Authorization: Bearer YOUR_API_KEY" \
+   -H "Content-Type: application/json" \
+   -d '{
+     "name": "Issue Creation Approval",
+     "description": "Require approval for creating new issues",
+     "approval_mode": "manual",
+     "webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+     "timeout_seconds": 300
+   }'
+   ```
+
+2. **Configure the create_issue tool to require approval:**
+   ```bash
+   curl -X POST "https://YOUR_SPACEBRIDGE_URL/api/v1/tool-configurations" \
+   -H "Authorization: Bearer YOUR_API_KEY" \
+   -H "Content-Type: application/json" \
+   -d '{
+     "tool_type": "default",
+     "tool_name": "create_issue",
+     "enabled": true,
+     "requires_approval": true,
+     "approval_policy_id": "<policy_id_from_step_1>"
+   }'
+   ```
+
+3. **When a tool call requires approval:**
+   - The MCP client initiates the tool call
+   - An approval request is created and a notification is sent to your configured webhook
+   - The request waits for approval (up to the timeout period)
+   - Approvers respond via the public approval endpoint or through integrated systems
+   - If approved, the tool executes; if declined or timed out, an error is returned
 
 ## Testing
 

@@ -86,10 +86,14 @@ def list_organizations(
     if not tracker_ids:
         return {"items": [], "total": 0, "limit": limit, "offset": offset}
 
-    # Get organizations linked to the user's trackers
-    query = db.query(Organization).filter(Organization.tracker_id.in_(tracker_ids))
-    total = query.count()
-    organizations = query.offset(offset).limit(limit).all()
+    # Get organizations linked to the user's trackers using CRUD layer
+    organizations, total = crud_organization.get_for_trackers(
+        db,
+        tracker_ids=tracker_ids,
+        skip=offset,
+        limit=limit,
+        account_id=current_user.id,
+    )
 
     # Convert SQLAlchemy model objects to dictionaries
     org_dicts = []

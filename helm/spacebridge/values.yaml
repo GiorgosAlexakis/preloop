@@ -28,13 +28,16 @@ spacelit:
   pullPolicy: Always
 
 # Image pull secrets
-imagePullSecrets: []
+imagePullSecrets:
+  - name: registry-secret
 
 # Service account configuration
 serviceAccount:
-  create: false
+  # Set to true to create a ServiceAccount for agent execution RBAC
+  create: true
   annotations: {}
-  name: "default"
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
 
 # Pod annotations
 podAnnotations: {}
@@ -208,3 +211,94 @@ seed:
   email: "test@example.com"
   password: ""
   apiKey: ""
+
+# Agent execution configuration
+agentExecution:
+  # Namespace for running agent containers
+  namespace:
+    # If true, creates a separate namespace for agent execution (recommended for production)
+    # If false, agents run in the same namespace as SpaceBridge (easier for testing/PoC)
+    create: false
+    # Name of the namespace for agent execution (only used if create: true)
+    # If create is false, agents run in the same namespace as SpaceBridge
+    name: "agent-executions"
+
+  # RBAC configuration for agent execution
+  rbac:
+    # If true, creates Role and RoleBinding for agent management
+    create: true
+
+  # NetworkPolicy configuration for agent isolation
+  networkPolicy:
+    # If true, creates NetworkPolicy for agent namespace
+    enabled: true
+    # Allow agent pods to call SpaceBridge API for MCP tools
+    allowSpaceBridgeAPI: true
+    # Allow agent pods to call external LLM APIs (Anthropic, OpenAI)
+    allowExternalLLMAPIs: true
+    # CIDR ranges to exclude from external egress (internal cluster networks)
+    # Adjust these based on your cluster's network configuration
+    excludeCIDRs:
+      - "10.0.0.0/8"      # Private network (adjust if your cluster uses this)
+      - "172.16.0.0/12"   # Private network (adjust if your cluster uses this)
+      - "192.168.0.0/16"  # Private network (adjust if your cluster uses this)
+    # Additional egress rules (optional)
+    additionalEgressRules: []
+
+  # ResourceQuota for agent execution namespace
+  resourceQuota:
+    # Maximum number of concurrent Jobs
+    maxJobs: "50"
+    # Maximum number of concurrent Pods
+    maxPods: "100"
+    # Total CPU requests allowed across all pods
+    requestsCpu: "50"
+    # Total memory requests allowed across all pods
+    requestsMemory: "100Gi"
+    # Total CPU limits allowed across all pods
+    limitsCpu: "100"
+    # Total memory limits allowed across all pods
+    limitsMemory: "200Gi"
+
+  # LimitRange for individual agent containers
+  limitRange:
+    container:
+      # Maximum resources per container
+      maxCpu: "2"
+      maxMemory: "4Gi"
+      # Minimum resources per container
+      minCpu: "100m"
+      minMemory: "128Mi"
+      # Default limits if not specified
+      defaultCpu: "1"
+      defaultMemory: "2Gi"
+      # Default requests if not specified
+      defaultRequestCpu: "250m"
+      defaultRequestMemory: "512Mi"
+    pod:
+      # Maximum resources per pod
+      maxCpu: "4"
+      maxMemory: "8Gi"
+
+  # Container images for agent execution
+  images:
+    # Simple LLM agent (recommended for production)
+    simpleLLM:
+      repository: "registry.spacecode.ai/spacecode/simple-llm-agent"
+      tag: "latest"
+      pullPolicy: "Always"
+    # OpenHands agent (experimental, requires more resources)
+    openHands:
+      repository: "ghcr.io/all-hands-ai/openhands"
+      tag: "latest"
+      pullPolicy: "Always"
+
+  # Agent execution timeout (seconds)
+  defaultTimeout: 3600
+
+  # Job cleanup configuration
+  jobCleanup:
+    # TTL for completed Jobs (seconds)
+    ttlSecondsAfterFinished: 3600
+    # TTL for failed Jobs (seconds)
+    ttlSecondsAfterFailed: 7200

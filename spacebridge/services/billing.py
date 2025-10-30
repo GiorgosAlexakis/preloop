@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from spacebridge.config import settings
 from spacemodels.models import Account, Plan, Subscription, MonthlyUsage
 from spacemodels.schemas.plan import PlanCreate, SubscriptionCreate, MonthlyUsageCreate
+from spacemodels.crud import crud_account, plan, subscription, monthly_usage
 
 
 class BillingService:
@@ -44,32 +45,25 @@ class BillingService:
         self, account_id: uuid.UUID, metric: str, quantity: int = 1
     ) -> MonthlyUsage:
         """Records usage for a given metric and account."""
-        # Find the active subscription for the account
-        subscription = (
-            self.db.query(Subscription)
-            .filter(Subscription.account_id == account_id)
-            .filter(Subscription.status == "active")
-            .first()
+        # Find the active subscription for the account using CRUD layer
+        subscription_obj = subscription.get_active_for_account(
+            self.db, account_id=str(account_id)
         )
-        if not subscription:
+        if not subscription_obj:
             # Or handle this case as an error, depending on business logic
             return None
 
-        # Find or create the usage record for the current billing cycle
+        # Find or create the usage record for the current billing cycle using CRUD layer
         today = date.today()
-        usage_record = (
-            self.db.query(MonthlyUsage)
-            .filter(MonthlyUsage.subscription_id == subscription.id)
-            .filter(MonthlyUsage.billing_cycle_start <= today)
-            .filter(MonthlyUsage.billing_cycle_end >= today)
-            .first()
+        usage_record = monthly_usage.get_for_current_cycle(
+            self.db, subscription_id=subscription_obj.id, today=today
         )
 
         if not usage_record:
             usage_data = MonthlyUsageCreate(
-                subscription_id=subscription.id,
-                billing_cycle_start=subscription.current_period_start.date(),
-                billing_cycle_end=subscription.current_period_end.date(),
+                subscription_id=subscription_obj.id,
+                billing_cycle_start=subscription_obj.current_period_start.date(),
+                billing_cycle_end=subscription_obj.current_period_end.date(),
                 usage_counts={metric: quantity},
             )
             usage_record = MonthlyUsage(**usage_data.dict())
@@ -87,31 +81,24 @@ class BillingService:
 
     def check_limit(self, account_id: uuid.UUID, metric: str) -> bool:
         """Checks if an account is within its usage limit for a given metric."""
-        subscription = (
-            self.db.query(Subscription)
-            .join(Plan)
-            .filter(Subscription.account_id == account_id)
-            .filter(Subscription.status == "active")
-            .first()
+        # Get active subscription using CRUD layer
+        subscription_obj = subscription.get_active_for_account(
+            self.db, account_id=str(account_id)
         )
-        if not subscription:
+        if not subscription_obj:
             # No active subscription, check against the 'free' plan
-            free_plan = self.db.query(Plan).filter(Plan.id == "free").first()
+            free_plan = plan.get(self.db, id="free")
             if not free_plan:
                 return False  # No free plan configured
             limit = free_plan.features.get(f"{metric}_monthly")
         else:
-            limit = subscription.plan.features.get(f"{metric}_monthly")
+            limit = subscription_obj.plan.features.get(f"{metric}_monthly")
         if limit is None or limit == -1:  # -1 can represent unlimited
             return True
 
         today = date.today()
-        usage_record = (
-            self.db.query(MonthlyUsage)
-            .filter(MonthlyUsage.subscription_id == subscription.id)
-            .filter(MonthlyUsage.billing_cycle_start <= today)
-            .filter(MonthlyUsage.billing_cycle_end >= today)
-            .first()
+        usage_record = monthly_usage.get_for_current_cycle(
+            self.db, subscription_id=subscription_obj.id, today=today
         )
 
         if not usage_record:
@@ -122,21 +109,18 @@ class BillingService:
 
     def has_feature(self, account_id: uuid.UUID, feature: str) -> bool:
         """Checks if an account's plan has a specific feature enabled."""
-        subscription = (
-            self.db.query(Subscription)
-            .join(Plan)
-            .filter(Subscription.account_id == account_id)
-            .filter(Subscription.status == "active")
-            .first()
+        # Get active subscription using CRUD layer
+        subscription_obj = subscription.get_active_for_account(
+            self.db, account_id=str(account_id)
         )
-        if not subscription:
+        if not subscription_obj:
             # No active subscription, check against the 'free' plan
-            free_plan = self.db.query(Plan).filter(Plan.id == "free").first()
+            free_plan = plan.get(self.db, id="free")
             if not free_plan:
                 return False
             return free_plan.features.get(f"{feature}_enabled", False)
 
-        return subscription.plan.features.get(f"{feature}_enabled", False)
+        return subscription_obj.plan.features.get(f"{feature}_enabled", False)
 
     def create_checkout_session(
         self, plan_id: str, interval: str, account_id: uuid.UUID = None
@@ -147,7 +131,7 @@ class BillingService:
         """
         # This logic is now unified for all upgrade/change paths
         if account_id:
-            account = self.db.query(Account).filter(Account.id == account_id).first()
+            account = crud_account.get(self.db, id=str(account_id))
             if not account:
                 raise ValueError("Account not found")
         else:
@@ -234,7 +218,7 @@ class BillingService:
 
     def create_portal_session(self, account_id: str, return_url: str) -> str:
         """Creates a Stripe Customer Portal session."""
-        account = self.db.query(Account).filter(Account.id == account_id).first()
+        account = crud_account.get(self.db, id=account_id)
         if not account or not account.stripe_customer_id:
             raise ValueError("Stripe customer not found for this account.")
 
@@ -291,10 +275,8 @@ class BillingService:
         stripe_subscription_id = session.subscription.id
 
         # Idempotency Check: If subscription already exists, just return the account
-        existing_subscription = (
-            self.db.query(Subscription)
-            .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
-            .first()
+        existing_subscription = subscription.get_by_stripe_subscription_id(
+            self.db, stripe_subscription_id=stripe_subscription_id
         )
         if existing_subscription:
             return existing_subscription.account
@@ -302,17 +284,9 @@ class BillingService:
         # 1. Identify the user account
         account = None
         if session.client_reference_id:
-            account = (
-                self.db.query(Account)
-                .filter(Account.id == session.client_reference_id)
-                .first()
-            )
+            account = crud_account.get(self.db, id=session.client_reference_id)
         elif session.customer and session.customer.email:
-            account = (
-                self.db.query(Account)
-                .filter(Account.email == session.customer.email)
-                .first()
-            )
+            account = crud_account.get_by_email(self.db, email=session.customer.email)
 
         # 2. Conflict Detection for existing users
         if account and account.get_active_subscription(self.db):
@@ -365,69 +339,63 @@ class BillingService:
     def _handle_invoice_paid(self, invoice) -> None:
         """Handles the invoice.paid event."""
         stripe_subscription_id = invoice.subscription
-        subscription = (
-            self.db.query(Subscription)
-            .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
-            .first()
+        subscription_obj = subscription.get_by_stripe_subscription_id(
+            self.db, stripe_subscription_id=stripe_subscription_id
         )
 
-        if subscription:
+        if subscription_obj:
             # Retrieve the full subscription object from Stripe to get the latest period dates
             stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
-            subscription.current_period_start = datetime.fromtimestamp(
+            subscription_obj.current_period_start = datetime.fromtimestamp(
                 stripe_subscription.items().mapping["items"]["data"][0][
                     "current_period_start"
                 ]
             )
-            subscription.current_period_end = datetime.fromtimestamp(
+            subscription_obj.current_period_end = datetime.fromtimestamp(
                 stripe_subscription.items().mapping["items"]["data"][0][
                     "current_period_end"
                 ]
             )
-            subscription.status = "active"
+            subscription_obj.status = "active"
             self.db.commit()
             print(f"Updated billing period for subscription {stripe_subscription_id}")
 
     def _handle_subscription_updated(self, sub) -> None:
         """Handles the customer.subscription.updated event."""
         stripe_subscription_id = sub.id
-        subscription = (
-            self.db.query(Subscription)
-            .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
-            .first()
+        subscription_obj = subscription.get_by_stripe_subscription_id(
+            self.db, stripe_subscription_id=stripe_subscription_id
         )
 
-        if subscription:
-            subscription.plan_id = sub.plan.product
+        if subscription_obj:
+            subscription_obj.plan_id = sub.plan.product
 
             # Check if the subscription is scheduled for cancellation
             if sub.cancel_at_period_end:
-                subscription.status = "pending_cancellation"
+                subscription_obj.status = "pending_cancellation"
             else:
-                subscription.status = sub.status
+                subscription_obj.status = sub.status
 
-            subscription.current_period_start = datetime.fromtimestamp(
+            subscription_obj.current_period_start = datetime.fromtimestamp(
                 sub.items().mapping["items"]["data"][0]["current_period_start"]
             )
-            subscription.current_period_end = datetime.fromtimestamp(
+            subscription_obj.current_period_end = datetime.fromtimestamp(
                 sub.items().mapping["items"]["data"][0]["current_period_end"]
             )
             self.db.commit()
             print(
-                f"Updated subscription {stripe_subscription_id} to status {subscription.status}"
+                f"Updated subscription {stripe_subscription_id} to status {subscription_obj.status}"
             )
 
     def _handle_subscription_deleted(self, sub) -> None:
         """Handles the customer.subscription.deleted event."""
         stripe_subscription_id = sub.id
-        subscription = (
-            self.db.query(Subscription)
-            .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
-            .first()
+        subscription_obj = subscription.get_by_stripe_subscription_id(
+            self.db, stripe_subscription_id=stripe_subscription_id
         )
 
-        if subscription:
-            subscription.status = "canceled"
+        if subscription_obj:
+            subscription_obj.status = "canceled"
             self.db.commit()
             print(f"Canceled subscription {stripe_subscription_id}")
 
@@ -444,7 +412,7 @@ class BillingService:
             if not email:
                 return None
 
-            account = self.db.query(Account).filter(Account.email == email).first()
+            account = crud_account.get_by_email(self.db, email=email)
             if not account:
                 return None
 
@@ -461,7 +429,7 @@ class BillingService:
             sanitized_prefix = "user"
 
         username = sanitized_prefix
-        while self.db.query(Account).filter(Account.username == username).first():
+        while crud_account.get_by_username(self.db, username=username):
             suffix = uuid.uuid4().hex[:4]
             username = f"{sanitized_prefix}_{suffix}"
         return username
@@ -470,20 +438,17 @@ class BillingService:
         """
         Fetches the latest subscription status from Stripe and updates the local DB.
         """
-        subscription = (
-            self.db.query(Subscription)
-            .filter(Subscription.account_id == account_id)
-            .order_by(Subscription.created_at.desc())
-            .first()
+        subscription_obj = subscription.get_latest_for_account(
+            self.db, account_id=str(account_id)
         )
 
-        if not subscription or not subscription.stripe_subscription_id:
+        if not subscription_obj or not subscription_obj.stripe_subscription_id:
             # No subscription to sync
             return
 
         try:
             stripe_sub = stripe.Subscription.retrieve(
-                subscription.stripe_subscription_id
+                subscription_obj.stripe_subscription_id
             )
             self._handle_subscription_updated(stripe_sub)
         except Exception as e:

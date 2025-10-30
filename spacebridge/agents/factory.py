@@ -1,0 +1,43 @@
+"""Factory for creating agent executors."""
+
+import logging
+from typing import Any, Dict
+
+from .base import AgentExecutor
+from .openhands import OpenHandsAgent
+from .aider import AiderAgent
+from .claude_code import ClaudeCodeAgent
+from .codex import CodexAgent
+
+logger = logging.getLogger(__name__)
+
+
+def create_agent_executor(agent_type: str, config: Dict[str, Any]) -> AgentExecutor:
+    """
+    Create an agent executor based on agent type.
+
+    Args:
+        agent_type: Type of agent (e.g., 'openhands', 'claude-code', 'aider', 'codex')
+        config: Agent-specific configuration
+
+    Returns:
+        AgentExecutor instance for the specified agent type
+
+    Raises:
+        ValueError: If agent_type is not supported
+    """
+    agent_type_lower = agent_type.lower()
+
+    if agent_type_lower == "openhands":
+        return OpenHandsAgent(config)
+    elif agent_type_lower == "claude-code":
+        return ClaudeCodeAgent(config)
+    elif agent_type_lower == "aider":
+        return AiderAgent(config)
+    elif agent_type_lower == "codex":
+        return CodexAgent(config)
+    else:
+        raise ValueError(
+            f"Unsupported agent type: {agent_type}. "
+            f"Supported types: openhands, claude-code, aider, codex"
+        )

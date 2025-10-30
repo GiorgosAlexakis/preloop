@@ -18,7 +18,7 @@ spec:
       containers:
         - name: migration-runner
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
           command: ["/bin/sh", "-c"]
           args: ["cd /app/SpaceModels && alembic upgrade head"]
           env:

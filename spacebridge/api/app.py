@@ -11,14 +11,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
-from typing import Optional, List
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastmcp import FastMCP
 from pyinstrument import Profiler
 from pyinstrument.renderers import SpeedscopeRenderer
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -28,14 +26,18 @@ from spacebridge.api.middleware import UIRoutingMiddleware
 from fastapi.encoders import jsonable_encoder
 from spacebridge.api.auth import auth_router, get_current_active_user
 from spacebridge.api.endpoints import (
+    approval_requests,
     comments,
     health,
     issues,
     issue_compliance,
     issue_dependencies,
+    mcp_servers,
     organizations,
     projects,
+    public_approval,
     search as search_router,
+    tools,
     trackers,
     version,
     embedding as embedding_router,
@@ -45,8 +47,8 @@ from spacebridge.api.endpoints import (
     ai_models,
     billing,
     websockets,
-    mcp as mcp_router,
 )
+from spacebridge.services.mcp_http import setup_mcp_routes
 from spacemodels.sentry import init_sentry
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
@@ -254,9 +256,42 @@ async def lifespan(app: FastAPI):
     app.state.nats_consumer_task = loop.create_task(nats_consumer(manager))
     logger.info("NATS consumer for WebSockets started.")
 
+    # Start the execution monitor for cleaning up stale executions
+    from spacebridge.services.execution_monitor import get_execution_monitor
+
+    execution_monitor = get_execution_monitor()
+    await execution_monitor.start()
+
+    # Start MCP server lifespan
+    from spacebridge.services.mcp_http import get_mcp_lifespan_manager
+
+    mcp_lifespan = get_mcp_lifespan_manager()
+    if mcp_lifespan:
+        await mcp_lifespan.__aenter__()
+        logger.info("MCP server lifespan started")
+    else:
+        logger.warning("No MCP lifespan manager available")
+
     yield
 
     # Shutdown logic
+
+    # Stop MCP server lifespan
+    if mcp_lifespan:
+        try:
+            await mcp_lifespan.__aexit__(None, None, None)
+            logger.info("MCP server lifespan stopped")
+        except Exception as e:
+            logger.error(f"Error stopping MCP lifespan: {e}", exc_info=True)
+
+    # Stop the execution monitor
+    try:
+        execution_monitor = get_execution_monitor()
+        await execution_monitor.stop()
+        logger.info("Execution monitor stopped.")
+    except Exception as e:
+        logger.error(f"Error stopping execution monitor: {e}", exc_info=True)
+
     # Cancel the NATS consumer task
     if hasattr(app.state, "nats_consumer_task"):
         app.state.nats_consumer_task.cancel()
@@ -290,80 +325,6 @@ def create_app() -> FastAPI:
 
     # Define base directory relative to this file's location
     base_dir = Path(__file__).resolve().parent.parent.parent
-    mcp = FastMCP(name="Spacebridge MCP")
-
-    @mcp.tool
-    async def get_issue(issue: str):
-        return await mcp_router.get_issue(issue)
-
-    @mcp.tool
-    async def create_issue(
-        project: str,
-        title: str,
-        description: str,
-        labels: Optional[List[str]] = None,
-        assignee: Optional[str] = None,
-        priority: Optional[str] = None,
-        status: Optional[str] = None,
-    ):
-        return await mcp_router.create_issue(
-            project=project,
-            title=title,
-            description=description,
-            labels=labels,
-            assignee=assignee,
-            priority=priority,
-            status=status,
-        )
-
-    @mcp.tool
-    async def update_issue(
-        issue: str,
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        status: Optional[str] = None,
-        priority: Optional[str] = None,
-        assignee: Optional[str] = None,
-        labels: Optional[List[str]] = None,
-    ):
-        return await mcp_router.update_issue(
-            issue, title, description, status, priority, assignee, labels
-        )
-
-    @mcp.tool
-    async def search(
-        query: str,
-        project: Optional[str] = None,
-        limit: int = 10,
-    ):
-        return await mcp_router.search(
-            query=query,
-            project=project,
-            limit=limit,
-            search_type="similarity",
-        )
-
-    @mcp.tool(
-        description="Estimate compliance for a list of issues provided as URLs or issue keys (slug or identifier).",
-    )
-    async def estimate_compliance(issues: List[str], compliance_metric: str = "DoR"):
-        return await mcp_router.estimate_compliance(issues, compliance_metric)
-
-    @mcp.tool(
-        description="Get suggestions to improve compliance for a list of issues provided as URLs or issue keys (slug or identifier). Use update_issue tool to apply each suggestion.",
-    )
-    async def improve_compliance(issues: List[str], compliance_metric: str = "DoR"):
-        return await mcp_router.improve_compliance(issues, compliance_metric)
-
-    mcp_app = mcp.streamable_http_app(path="/v1")
-
-    # Combine both lifespans
-    @asynccontextmanager
-    async def combined_lifespan(app: FastAPI):
-        # Run both lifespans
-        async with lifespan(app):
-            async with mcp_app.lifespan(app):
-                yield
 
     # Initialize FastAPI app
     app = FastAPI(
@@ -373,13 +334,7 @@ def create_app() -> FastAPI:
         openapi_url="/api/v1/openapi.json",  # Keep OpenAPI schema URL
         docs_url=None,  # Disable the automatic docs at /docs
         redoc_url=None,  # Disable the automatic redoc at /redoc
-        lifespan=combined_lifespan,
-    )
-
-    app.mount(
-        "/mcp",
-        mcp_app,
-        name="mcp",
+        lifespan=lifespan,
     )
 
     # Override the default JSON encoder to handle datetime objects
@@ -527,6 +482,7 @@ def create_app() -> FastAPI:
         # Apply security to all endpoints except auth endpoints, landing page, health checks, and docs
         excluded_prefixes = [
             "/api/v1/auth",
+            "/api/v1/public/approval",
             "/api/v1/billing/plans",
             "/api/v1/billing/create-checkout-session",
             "/",
@@ -535,6 +491,7 @@ def create_app() -> FastAPI:
             "/register",
             "/logout",
             "/api/v1/health",
+            "/approval",
         ]
         for path in openapi_schema["paths"]:
             # Check if path starts with any excluded prefix
@@ -559,14 +516,38 @@ def create_app() -> FastAPI:
 
     app.openapi = custom_openapi
 
+    # Setup MCP routes with DynamicMCPServer (MUST be before SPA mount)
+    setup_mcp_routes(app)
+    logger.info("MCP routes configured with DynamicMCPServer")
     # Add routers
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
+    app.include_router(
+        public_approval.router, prefix="/api/v1", tags=["Public Approval"]
+    )  # No auth required
     app.include_router(health.router, prefix="/api/v1", tags=["Health"])
     app.include_router(version.router, prefix="/api/v1", tags=["Version"])
     app.include_router(
         trackers.router,
         prefix="/api/v1",
         tags=["Trackers"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        mcp_servers.router,
+        prefix="/api/v1",
+        tags=["MCP Servers"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        tools.router,
+        prefix="/api/v1",
+        tags=["Tools"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        approval_requests.router,
+        prefix="/api/v1",
+        tags=["Approval Requests"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
@@ -655,6 +636,13 @@ def create_app() -> FastAPI:
     # WebSocket router
     app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
 
+    # --- Public Approval Page ---
+    @app.get("/approval/{request_id}", include_in_schema=False)
+    async def serve_approval_page(request_id: str):
+        """Serve the public approval page."""
+        approval_html_path = base_dir / "spacebridge" / "templates" / "approval.html"
+        return FileResponse(str(approval_html_path), media_type="text/html")
+
     # --- SPA Static Files (Production) ---
     # In production, serve the built Lit frontend from the root
     # This should be mounted *after* all API routes are defined.
@@ -672,5 +660,4 @@ def create_app() -> FastAPI:
     else:
         logger.info("DEV_MODE is true, SPA is served by the frontend dev server.")
 
-    app.mount("/mcp", mcp_app)
     return app
