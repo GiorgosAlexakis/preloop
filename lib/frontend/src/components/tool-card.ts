@@ -45,6 +45,7 @@ export interface ApprovalPolicy {
   approval_config?: {
     webhook_url?: string;
   };
+  is_default?: boolean;
 }
 
 @customElement('tool-card')
@@ -84,6 +85,12 @@ export class ToolCard extends LitElement {
 
   @state()
   private newPolicyWebhookUrl = '';
+
+  @state()
+  private newPolicyIsDefault = false;
+
+  @state()
+  private editingPolicyId: string | null = null;
 
   static styles = css`
     .tool-card {
@@ -253,6 +260,24 @@ export class ToolCard extends LitElement {
       color: var(--sl-color-neutral-600);
       font-size: var(--sl-font-size-small);
     }
+
+    .default-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sl-spacing-2x-small);
+      padding: 2px 8px;
+      background: var(--sl-color-primary-100);
+      color: var(--sl-color-primary-700);
+      border-radius: 4px;
+      font-size: var(--sl-font-size-x-small);
+      font-weight: var(--sl-font-weight-semibold);
+      margin-left: var(--sl-spacing-x-small);
+    }
+
+    .policy-actions {
+      display: flex;
+      gap: var(--sl-spacing-2x-small);
+    }
   `;
 
   private handleEnabledToggle() {
@@ -357,6 +382,21 @@ export class ToolCard extends LitElement {
     this.resetPolicyForm();
   }
 
+  private handleEditPolicy(policy: ApprovalPolicy) {
+    // Switch to create/edit mode
+    this.isCreatingPolicy = true;
+    this.editingPolicyId = policy.id;
+
+    // Populate form with existing policy data
+    this.newPolicyName = policy.name;
+    this.newPolicyDescription = policy.description || '';
+    this.newPolicyType = policy.approval_type;
+    this.newPolicyChannel = policy.channel || '';
+    this.newPolicyUser = policy.user || '';
+    this.newPolicyWebhookUrl = policy.approval_config?.webhook_url || '';
+    this.newPolicyIsDefault = policy.is_default || false;
+  }
+
   private resetPolicyForm() {
     this.newPolicyName = '';
     this.newPolicyDescription = '';
@@ -364,11 +404,13 @@ export class ToolCard extends LitElement {
     this.newPolicyChannel = '';
     this.newPolicyUser = '';
     this.newPolicyWebhookUrl = '';
+    this.newPolicyIsDefault = false;
+    this.editingPolicyId = null;
   }
 
   private handleConfirmPolicy() {
     if (this.isCreatingPolicy) {
-      // Validate and create new policy
+      // Validate form
       if (!this.newPolicyName.trim()) {
         alert('Policy name is required');
         return;
@@ -378,30 +420,60 @@ export class ToolCard extends LitElement {
         return;
       }
 
-      // Dispatch event to create policy
+      // Build approval config
       const approvalConfig: any = {};
       if (this.newPolicyWebhookUrl) {
         approvalConfig.webhook_url = this.newPolicyWebhookUrl;
       }
 
-      this.dispatchEvent(
-        new CustomEvent('create-policy', {
-          detail: {
-            tool: this.tool,
-            policy: {
-              name: this.newPolicyName,
-              description: this.newPolicyDescription,
-              approval_type: this.newPolicyType,
-              channel: this.newPolicyChannel || null,
-              user: this.newPolicyUser || null,
-              approval_config:
-                Object.keys(approvalConfig).length > 0 ? approvalConfig : null,
+      // Check if we're editing or creating
+      if (this.editingPolicyId) {
+        // Dispatch event to update existing policy
+        this.dispatchEvent(
+          new CustomEvent('update-policy', {
+            detail: {
+              policyId: this.editingPolicyId,
+              policy: {
+                name: this.newPolicyName,
+                description: this.newPolicyDescription,
+                approval_type: this.newPolicyType,
+                channel: this.newPolicyChannel || null,
+                user: this.newPolicyUser || null,
+                approval_config:
+                  Object.keys(approvalConfig).length > 0
+                    ? approvalConfig
+                    : null,
+                is_default: this.newPolicyIsDefault,
+              },
             },
-          },
-          bubbles: true,
-          composed: true,
-        })
-      );
+            bubbles: true,
+            composed: true,
+          })
+        );
+      } else {
+        // Dispatch event to create new policy
+        this.dispatchEvent(
+          new CustomEvent('create-policy', {
+            detail: {
+              tool: this.tool,
+              policy: {
+                name: this.newPolicyName,
+                description: this.newPolicyDescription,
+                approval_type: this.newPolicyType,
+                channel: this.newPolicyChannel || null,
+                user: this.newPolicyUser || null,
+                approval_config:
+                  Object.keys(approvalConfig).length > 0
+                    ? approvalConfig
+                    : null,
+                is_default: this.newPolicyIsDefault,
+              },
+            },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      }
     } else if (this.selectedPolicyId) {
       // Select existing policy
       this.dispatchEvent(
@@ -592,7 +664,15 @@ export class ToolCard extends LitElement {
                                   this.handlePolicyItemClick(policy.id)}
                               >
                                 <div class="policy-info">
-                                  <h5 class="policy-name">${policy.name}</h5>
+                                  <h5 class="policy-name">
+                                    ${policy.name}
+                                    ${policy.is_default
+                                      ? html`<span class="default-badge">
+                                          <sl-icon name="star-fill"></sl-icon>
+                                          Default
+                                        </span>`
+                                      : ''}
+                                  </h5>
                                   <div class="policy-meta">
                                     ${policy.description || 'No description'}
                                     <br />
@@ -608,12 +688,22 @@ export class ToolCard extends LitElement {
                                       : ''}
                                   </div>
                                 </div>
-                                ${this.selectedPolicyId === policy.id
-                                  ? html`<sl-icon
-                                      name="check-circle-fill"
-                                      style="color: var(--sl-color-primary-600);"
-                                    ></sl-icon>`
-                                  : ''}
+                                <div class="policy-actions">
+                                  <sl-icon-button
+                                    name="pencil"
+                                    label="Edit policy"
+                                    @click=${(e: Event) => {
+                                      e.stopPropagation();
+                                      this.handleEditPolicy(policy);
+                                    }}
+                                  ></sl-icon-button>
+                                  ${this.selectedPolicyId === policy.id
+                                    ? html`<sl-icon
+                                        name="check-circle-fill"
+                                        style="color: var(--sl-color-primary-600);"
+                                      ></sl-icon>`
+                                    : ''}
+                                </div>
                               </div>
                             `
                           )}
@@ -642,7 +732,9 @@ export class ToolCard extends LitElement {
                     <h4
                       style="margin: 0; font-size: var(--sl-font-size-medium);"
                     >
-                      Create New Policy
+                      ${this.editingPolicyId
+                        ? 'Edit Policy'
+                        : 'Create New Policy'}
                     </h4>
                     <sl-button
                       size="small"
@@ -715,6 +807,27 @@ export class ToolCard extends LitElement {
                     ></sl-input>
                   </div>
 
+                  <div class="form-field">
+                    <div class="control-row">
+                      <div>
+                        <label class="form-label">Set as Default Policy</label>
+                        <div
+                          style="font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-600); margin-top: var(--sl-spacing-2x-small);"
+                        >
+                          The default policy will be used when no specific
+                          policy is selected
+                        </div>
+                      </div>
+                      <sl-switch
+                        ?checked=${this.newPolicyIsDefault}
+                        @sl-change=${(e: any) => {
+                          e.stopPropagation();
+                          this.newPolicyIsDefault = e.target.checked;
+                        }}
+                      ></sl-switch>
+                    </div>
+                  </div>
+
                   ${this.newPolicyType === 'slack' ||
                   this.newPolicyType === 'mattermost'
                     ? html`
@@ -760,7 +873,11 @@ export class ToolCard extends LitElement {
             ? !this.newPolicyName.trim() || !this.newPolicyWebhookUrl.trim()
             : !this.selectedPolicyId}
         >
-          ${this.isCreatingPolicy ? 'Create & Apply' : 'Apply Policy'}
+          ${this.isCreatingPolicy
+            ? this.editingPolicyId
+              ? 'Update Policy'
+              : 'Create & Apply'
+            : 'Apply Policy'}
         </sl-button>
       </sl-dialog>
     `;
