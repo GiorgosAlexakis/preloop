@@ -224,6 +224,13 @@ class ApprovalPolicy(Base):
         default=False,
         comment="Whether approver must provide a reason",
     )
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        index=True,
+        comment="Whether this is the default policy for the account",
+    )
 
     # Relationships
     account: Mapped["Account"] = relationship("Account")

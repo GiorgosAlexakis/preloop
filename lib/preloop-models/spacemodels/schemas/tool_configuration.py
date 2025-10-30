@@ -105,6 +105,9 @@ class ApprovalPolicyBase(BaseModel):
     require_reason: Optional[bool] = Field(
         False, description="Whether approver must provide a reason"
     )
+    is_default: Optional[bool] = Field(
+        False, description="Whether this is the default policy for the account"
+    )
 
 
 class ApprovalPolicyCreate(ApprovalPolicyBase):
@@ -127,6 +130,7 @@ class ApprovalPolicyResponse(ApprovalPolicyBase):
     account_id: str
     name: str
     approval_type: str
+    is_default: bool
     created_at: datetime
     updated_at: datetime
 
