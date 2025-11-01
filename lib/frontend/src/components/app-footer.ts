@@ -130,7 +130,7 @@ export class AppFooter extends LitElement {
               <li><a href="/login">Sign in</a></li>
               <li><a href="/privacy">Privacy Policy</a></li>
               <li><a href="/terms">Terms of Service</a></li>
-              <li><a href="/whatis-mcp" target="_blank">What is MCP?</a></li>
+              <li><a href="/whatis-mcp">What is MCP?</a></li>
             </ul>
           </nav>
         </div>

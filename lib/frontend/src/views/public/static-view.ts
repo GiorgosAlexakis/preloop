@@ -28,6 +28,42 @@ export class StaticView extends LitElement {
         margin: 0 auto;
         width: 100%;
       }
+
+      /* Ensure slotted content is visible and styled properly */
+      ::slotted(*) {
+        display: block;
+        line-height: 1.6;
+      }
+
+      ::slotted(h1) {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin-bottom: 1rem;
+      }
+
+      ::slotted(h2) {
+        font-size: 2rem;
+        font-weight: bold;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+      }
+
+      ::slotted(h3) {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+      }
+
+      ::slotted(p) {
+        margin-bottom: 1rem;
+      }
+
+      ::slotted(ul),
+      ::slotted(ol) {
+        margin-bottom: 1rem;
+        padding-left: 2rem;
+      }
     `,
   ];
 
@@ -45,8 +81,16 @@ export class StaticView extends LitElement {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const markdown = await response.text();
-      this.content = marked(markdown) as string;
+      const text = await response.text();
+
+      // Check if the file is HTML or markdown based on extension
+      if (this.src.endsWith('.html')) {
+        // HTML file - use as-is
+        this.content = text;
+      } else {
+        // Markdown file - parse with marked
+        this.content = marked(text) as string;
+      }
     } catch (error: any) {
       console.error('Error fetching static content:', error);
       this.error = 'There was an issue fetching the content.';
@@ -54,9 +98,23 @@ export class StaticView extends LitElement {
   }
 
   render() {
-    let content;
+    return html`
+      <app-header></app-header>
+      <main>
+        <div class="text-section">
+          <!-- Slotted skeleton content for SEO - visible without JavaScript -->
+          <slot name="static-content">
+            ${this._renderDynamicContent()}
+          </slot>
+        </div>
+      </main>
+      <app-footer></app-footer>
+    `;
+  }
+
+  private _renderDynamicContent() {
     if (this.error) {
-      content = html`
+      return html`
         <sl-alert variant="danger" open>
           <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
           <strong>Error loading content.</strong><br />
@@ -64,17 +122,9 @@ export class StaticView extends LitElement {
         </sl-alert>
       `;
     } else if (this.content === null) {
-      content = html`<sl-spinner></sl-spinner>`;
+      return html`<sl-spinner></sl-spinner>`;
     } else {
-      content = html`${unsafeHTML(this.content)}`;
+      return html`${unsafeHTML(this.content)}`;
     }
-
-    return html`
-      <app-header></app-header>
-      <main>
-        <div class="text-section">${content}</div>
-      </main>
-      <app-footer></app-footer>
-    `;
   }
 }

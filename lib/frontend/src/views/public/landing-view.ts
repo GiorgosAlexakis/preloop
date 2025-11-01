@@ -24,63 +24,136 @@ export class LandingView extends LitElement {
   @state() private _activeIdeTab: IdeTab = 'claude-code';
   @state() private _showVideo: boolean[] = [false, false, false];
   @state() private _activeSlideIndex = 0;
-  @state() private _featureSlides: FeatureSlide[] = [
-    {
-      title: 'Eliminate Duplicates & Overlap',
-      text: 'Our AI analyzes your issues and detects true duplicates beyond simple keyword matching, reveals where issues and epics intersect, and provides actionable recommendations to merge, deconflict, or link related items - cleaning your backlog with a single click.',
-      videoUrl: 'https://youtu.be/nJXBknwZGDM',
-      placeholderImg: '/images/ui_01.png',
-    },
-    {
-      title: 'Achieve Compliance for Every Issue',
-      text: 'Get Definition of Ready scores for goal clarity and acceptance criteria, risk analysis for potential roadblocks, and AI-driven implementation complexity estimates. Our AI-powered suggestions help improve titles and descriptions, ensuring every ticket is crystal clear and development-ready.',
-      videoUrl: 'https://youtu.be/8bxf_ChYrLo',
-      placeholderImg: '/images/ui_02.png',
-    },
-    {
-      title: 'Discover Unmapped Dependencies',
-      text: "Spacebridge scans your issue tracker for hidden dependencies that haven't been mapped, helping you avoid unexpected blockers and ensure smooth sprint flow. Review AI-detected relationships and update your tracker in one tap through our intuitive interface.",
-      videoUrl: 'https://youtu.be/Fw6JZDK1z7M',
-      placeholderImg: '/images/ui_03.png',
-    },
-  ];
-
-  @state() private _faqs = [
-    {
-      q: 'What is Spacebridge?',
-      a: 'Spacebridge is an AI platform that connects to your existing project management tools like Jira, GitHub, and GitLab. It acts as an intelligent governance layer for your backlog, helping you eliminate duplicate issues, ensure tickets are development-ready, and discover hidden dependencies. By automating backlog curation, you can focus on building better products, faster.',
-    },
-    {
-      q: 'Which issue tracking and project management platforms does Spacebridge support?',
-      a: 'Spacebridge offers native integrations with Jira, GitHub, and GitLab. We are continuously expanding our support for other platforms based on customer needs.',
-    },
-    {
-      q: 'Do I need to migrate my issues to Spacebridge?',
-      a: "No, you don't. Spacebridge seamlessly connects with your existing issue tracker, like Jira, GitHub, or GitLab. It syncs and indexes your issues, merge requests, and comments without requiring you to change your current workflow.",
-    },
-    {
-      q: 'How does AI-Assisted Product Management help my team?',
-      a: "AI-Assisted Product Management helps your team by automating the tedious parts of backlog curation. Spacebridge cleans your backlog by identifying true duplicate issues and thematic overlap, improves compliance with 'Definition of Ready' scores for every ticket, and prevents unexpected blockers by discovering unmapped dependencies. This allows your team to spend less time on administrative tasks and more time on strategic, high-impact work.",
-    },
-    {
-      q: "How does Spacebridge ensure issues are 'development-ready'?",
-      a: "Spacebridge provides a 'Definition of Ready' score for each issue, analyzing goal clarity and acceptance criteria. It also offers risk analysis to identify potential roadblocks and AI-driven estimates for implementation complexity. These insights, combined with AI-powered suggestions for improving titles and descriptions, help ensure every ticket is compliant and ready for development.",
-    },
-    {
-      q: 'How does Spacebridge handle dependencies between issues?',
-      a: 'Spacebridge automatically scans your issue tracker to discover hidden or unmapped dependencies that could cause unexpected blockers. It presents these AI-detected relationships in an intuitive interface, allowing you to review and update your tracker with a single click, ensuring a smoother sprint flow.',
-    },
-    {
-      q: 'Is it secure to connect my development tools to Spacebridge?',
-      a: 'Security is our top priority. Spacebridge uses industry-standard encryption for all data. We connect to your tools via secure, permission-scoped API tokens and OAuth, ensuring our platform only has the minimum access it needs to function.',
-    },
-  ];
+  @state() private _featureSlides: FeatureSlide[] = [];
+  @state() private _faqs: Array<{ q: string; a: string }> = [];
+  @state() private _heroTitle = '';
+  @state() private _heroLead = '';
+  @state() private _ctaPrimary = '';
+  @state() private _ctaSecondary = '';
 
   static styles = [
     css`
       ${unsafeCSS(landingStyles)}
     `,
   ];
+
+  async firstUpdated() {
+    await this._loadContent();
+  }
+
+  private async _loadContent() {
+    try {
+      // First try to load from slotted content (SSR)
+      const children = Array.from(this.children);
+      const hasSlottedContent = children.some(el => el.getAttribute('slot')?.startsWith('hero-'));
+
+      if (hasSlottedContent) {
+        // Load from slotted content (SSR case - first page load)
+        this._loadSlottedContent(children);
+      } else {
+        // Load from JSON file (client-side navigation case)
+        await this._loadFromJSON();
+      }
+    } catch (error) {
+      console.error('[landing-view] Failed to load content:', error);
+      // Fallback: try loading from JSON
+      await this._loadFromJSON();
+    }
+  }
+
+  private _loadSlottedContent(children: Element[]) {
+    // Read hero content from light DOM slots
+    const heroTitle = children.find(el => el.getAttribute('slot') === 'hero-title') as HTMLElement | undefined;
+    const heroLead = children.find(el => el.getAttribute('slot') === 'hero-lead') as HTMLElement | undefined;
+    const ctaPrimary = children.find(el => el.getAttribute('slot') === 'cta-primary') as HTMLElement | undefined;
+    const ctaSecondary = children.find(el => el.getAttribute('slot') === 'cta-secondary') as HTMLElement | undefined;
+
+    if (heroTitle) this._heroTitle = heroTitle.innerHTML || '';
+    if (heroLead) this._heroLead = heroLead.textContent || '';
+    if (ctaPrimary) this._ctaPrimary = ctaPrimary.textContent || '';
+    if (ctaSecondary) this._ctaSecondary = ctaSecondary.textContent || '';
+
+    // Read feature slides from light DOM slots
+    const features: FeatureSlide[] = [];
+
+    for (let i = 0; i < 10; i++) {
+      const featureWrapper = children.find(el => el.getAttribute('slot') === `feature-${i}`) as HTMLElement | undefined;
+
+      if (featureWrapper) {
+        const title = featureWrapper.getAttribute('data-title') || '';
+        const text = featureWrapper.getAttribute('data-text') || '';
+        const videoUrl = featureWrapper.getAttribute('data-video') || '';
+        const placeholderImg = featureWrapper.getAttribute('data-img') || '';
+
+        if (title && text) {
+          features.push({ title, text, videoUrl, placeholderImg });
+        }
+      } else {
+        break;
+      }
+    }
+
+    if (features.length > 0) {
+      this._featureSlides = features;
+      this._showVideo = new Array(features.length).fill(false);
+    }
+
+    // Read FAQs from light DOM slots
+    const faqs: Array<{ q: string; a: string }> = [];
+    for (let i = 0; i < 20; i++) {
+      const faqWrapper = children.find(el => el.getAttribute('slot') === `faq-${i}`) as HTMLElement | undefined;
+
+      if (faqWrapper) {
+        const q = faqWrapper.getAttribute('data-q') || '';
+        const a = faqWrapper.getAttribute('data-a') || '';
+
+        if (q && a) {
+          faqs.push({ q, a });
+        }
+      } else {
+        break;
+      }
+    }
+
+    if (faqs.length > 0) {
+      this._faqs = faqs;
+    }
+
+    // Hide slotted elements (they stay in light DOM for SEO but are hidden)
+    children.forEach(el => {
+      const slot = el.getAttribute('slot');
+      if (slot && (slot.startsWith('hero-') || slot.startsWith('cta-') || slot.startsWith('feature-') || slot.startsWith('faq-'))) {
+        (el as HTMLElement).style.display = 'none';
+      }
+    });
+  }
+
+  private async _loadFromJSON() {
+    const response = await fetch('/landing-content.json');
+    if (!response.ok) {
+      throw new Error(`Failed to load landing content: ${response.statusText}`);
+    }
+
+    const content = await response.json();
+
+    // Load hero content
+    this._heroTitle = content.hero.title;
+    this._heroLead = content.hero.lead;
+    this._ctaPrimary = content.hero.cta_primary;
+    this._ctaSecondary = content.hero.cta_secondary;
+
+    // Load features
+    this._featureSlides = content.features.map((f: any) => ({
+      title: f.title,
+      text: f.text,
+      videoUrl: f.videoUrl,
+      placeholderImg: f.placeholderImg,
+    }));
+    this._showVideo = new Array(this._featureSlides.length).fill(false);
+
+    // Load FAQs
+    this._faqs = content.faqs;
+  }
 
   private _handleIdeTabClick(tabId: IdeTab) {
     this._activeIdeTab = tabId;
@@ -159,20 +232,14 @@ export class LandingView extends LitElement {
           <news-capsule></news-capsule>
           <div class="section-container hero-inner">
             <div class="hero-content">
-              <h1 class="fw-bold">
-                Drive your <span class="gradient-product">Product</span> with
-                <span class="gradient-ai">AI</span>
-              </h1>
-              <p class="lead">
-                Eliminate duplicates, map dependencies, ensure compliance, ship
-                faster.
-              </p>
+              <h1 class="fw-bold">${unsafeHTML(this._heroTitle)}</h1>
+              <p class="lead">${this._heroLead}</p>
               <div class="hero-buttons">
                 <sl-button variant="primary" size="large" href="/register"
-                  >Get Started</sl-button
+                  >${this._ctaPrimary}</sl-button
                 >
                 <sl-button variant="text" size="large" href="/request-demo"
-                  >Request a Demo</sl-button
+                  >${this._ctaSecondary}</sl-button
                 >
               </div>
             </div>
@@ -509,7 +576,7 @@ export class LandingView extends LitElement {
             <h2 class="text-center">Frequently Asked Questions</h2>
             <div class="faq-list">
               ${this._faqs.map(
-                (faq, index) => html`
+                (faq) => html`
                   <details class="faq-item">
                     <summary
                       class="faq-question"

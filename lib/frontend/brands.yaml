@@ -1,0 +1,146 @@
+brands:
+  spacebridge:
+    name: "SpaceBridge"
+    domain: "spacebridge.io"
+
+    company:
+      legal_name: "Spacecode.AI, Inc."
+      address: "166 Geary Street, Suite 1500"
+      city: "San Francisco, CA 94108"
+
+    branding:
+      logo_light: "/images/logo_light.png"
+      logo_dark: "/images/logo_dark.png"
+      favicon: "/images/favicon.png"
+      primary_color: "#58a6ff"
+      gradient_product: "linear-gradient(90deg, hsl(220, 60%, 50%), hsl(260, 65%, 48%))"
+      gradient_ai: "linear-gradient(90deg, hsl(280, 70%, 60%), hsl(320, 75%, 55%))"
+
+    social:
+      twitter: "@spacebridge_io"
+      linkedin: "https://www.linkedin.com/company/spacecode-ai/"
+      instagram: "https://www.instagram.com/spacebridge.io"
+
+    landing:
+      meta:
+        title: "SpaceBridge - Drive your Product with AI"
+        description: "Spacebridge curates your backlog, automates high value, low-risk work, and safeguards critical actions."
+        keywords: "SpaceBridge, MCP, AI, Issue Tracker, Jira, GitLab, Integration, Automation, API"
+        og_image: "/images/diagram.png"
+
+      hero:
+        title: "Drive your <span class=\"gradient-product\">Product</span> with <span class=\"gradient-ai\">AI</span>"
+        lead: "Eliminate duplicates, map dependencies, ensure compliance, ship faster."
+        cta_primary: "Get Started"
+        cta_secondary: "Request a Demo"
+
+      features:
+        - title: "Eliminate Duplicates & Overlap"
+          text: "Our AI analyzes your issues and detects true duplicates beyond simple keyword matching, reveals where issues and epics intersect, and provides actionable recommendations to merge, deconflict, or link related items - cleaning your backlog with a single click."
+          videoUrl: "https://youtu.be/nJXBknwZGDM"
+          placeholderImg: "/images/ui_01.png"
+
+        - title: "Achieve Compliance for Every Issue"
+          text: "Get Definition of Ready scores for goal clarity and acceptance criteria, risk analysis for potential roadblocks, and AI-driven implementation complexity estimates. Our AI-powered suggestions help improve titles and descriptions, ensuring every ticket is crystal clear and development-ready."
+          videoUrl: "https://youtu.be/8bxf_ChYrLo"
+          placeholderImg: "/images/ui_02.png"
+
+        - title: "Discover Unmapped Dependencies"
+          text: "Spacebridge scans your issue tracker for hidden dependencies that haven't been mapped, helping you avoid unexpected blockers and ensure smooth sprint flow. Review AI-detected relationships and update your tracker in one tap through our intuitive interface."
+          videoUrl: "https://youtu.be/Fw6JZDK1z7M"
+          placeholderImg: "/images/ui_03.png"
+
+      faqs:
+        - q: "What is Spacebridge?"
+          a: "Spacebridge is an AI platform that connects to your existing project management tools like Jira, GitHub, and GitLab. It acts as an intelligent governance layer for your backlog, helping you eliminate duplicate issues, ensure tickets are development-ready, and discover hidden dependencies. By automating backlog curation, you can focus on building better products, faster."
+
+        - q: "Which issue tracking and project management platforms does Spacebridge support?"
+          a: "Spacebridge offers native integrations with Jira, GitHub, and GitLab. We are continuously expanding our support for other platforms based on customer needs."
+
+        - q: "Do I need to migrate my issues to Spacebridge?"
+          a: "No, you don't. Spacebridge seamlessly connects with your existing issue tracker, like Jira, GitHub, or GitLab. It syncs and indexes your issues, merge requests, and comments without requiring you to change your current workflow."
+
+        - q: "How does AI-Assisted Product Management help my team?"
+          a: "AI-Assisted Product Management helps your team by automating the tedious parts of backlog curation. Spacebridge cleans your backlog by identifying true duplicate issues and thematic overlap, improves compliance with 'Definition of Ready' scores for every ticket, and prevents unexpected blockers by discovering unmapped dependencies. This allows your team to spend less time on administrative tasks and more time on strategic, high-impact work."
+
+        - q: "How does Spacebridge ensure issues are 'development-ready'?"
+          a: "Spacebridge provides a 'Definition of Ready' score for each issue, analyzing goal clarity and acceptance criteria. It also offers risk analysis to identify potential roadblocks and AI-driven estimates for implementation complexity. These insights, combined with AI-powered suggestions for improving titles and descriptions, help ensure every ticket is compliant and ready for development."
+
+        - q: "How does Spacebridge handle dependencies between issues?"
+          a: "Spacebridge automatically scans your issue tracker to discover hidden or unmapped dependencies that could cause unexpected blockers. It presents these AI-detected relationships in an intuitive interface, allowing you to review and update your tracker with a single click, ensuring a smoother sprint flow."
+
+        - q: "Is it secure to connect my development tools to Spacebridge?"
+          a: "Security is our top priority. Spacebridge uses industry-standard encryption for all data. We connect to your tools via secure, permission-scoped API tokens and OAuth, ensuring our platform only has the minimum access it needs to function."
+
+  preloop:
+    name: "Preloop"
+    domain: "preloop.ai"
+
+    company:
+      legal_name: "Spacecode.AI, Inc."
+      address: "166 Geary Street, Suite 1500"
+      city: "San Francisco, CA 94108"
+
+    branding:
+      logo_light: "/images/preloop/logo_light.png"
+      logo_dark: "/images/preloop/logo_dark.png"
+      favicon: "/images/preloop/favicon.png"
+      primary_color: "#7c3aed"
+      gradient_product: "linear-gradient(90deg, hsl(270, 70%, 55%), hsl(290, 75%, 50%))"
+      gradient_ai: "linear-gradient(90deg, hsl(200, 80%, 55%), hsl(180, 85%, 50%))"
+
+    social:
+      twitter: "@preloop_ai"
+      linkedin: "https://www.linkedin.com/company/preloop-ai/"
+      instagram: "https://www.instagram.com/preloop.ai"
+
+    landing:
+      meta:
+        title: "Preloop - AI-Powered Development Workflow"
+        description: "Automate your development workflow with AI-powered code reviews, dependency tracking, and compliance checks."
+        keywords: "Preloop, AI, Code Review, Development, Automation, DevOps, CI/CD"
+        og_image: "/images/preloop/diagram.png"
+
+      hero:
+        title: "AI-Powered <span class=\"gradient-product\">Development</span> Workflow"
+        lead: "Automate code reviews, dependency tracking, and compliance checks."
+        cta_primary: "Start Free Trial"
+        cta_secondary: "Watch Demo"
+
+      features:
+        - title: "Automated Code Reviews"
+          text: "AI-powered reviews catch issues before they reach production, analyzing code quality, security vulnerabilities, and best practices. Get instant feedback on every pull request with actionable recommendations."
+          videoUrl: "https://youtu.be/example1"
+          placeholderImg: "/images/preloop/ui_01.png"
+
+        - title: "Smart Dependency Management"
+          text: "Track and visualize dependencies across your codebase and infrastructure. Preloop identifies breaking changes, outdated packages, and potential conflicts before they cause issues."
+          videoUrl: "https://youtu.be/example2"
+          placeholderImg: "/images/preloop/ui_02.png"
+
+        - title: "Compliance & Security Checks"
+          text: "Ensure your code meets industry standards and security requirements. Automated scans check for vulnerabilities, license compliance, and regulatory requirements with every commit."
+          videoUrl: "https://youtu.be/example3"
+          placeholderImg: "/images/preloop/ui_03.png"
+
+      faqs:
+        - q: "What is Preloop?"
+          a: "Preloop is an AI-powered platform that automates critical aspects of your development workflow. It provides intelligent code reviews, dependency management, and compliance checks, helping your team ship faster with confidence."
+
+        - q: "Which development platforms does Preloop support?"
+          a: "Preloop integrates with GitHub, GitLab, Bitbucket, and major CI/CD platforms. We support all popular programming languages and frameworks."
+
+        - q: "Do I need to change my existing workflow?"
+          a: "No. Preloop integrates seamlessly with your existing tools and processes. It works alongside your current CI/CD pipeline and version control system without requiring changes to your workflow."
+
+        - q: "How does AI-powered code review work?"
+          a: "Preloop analyzes your code using advanced machine learning models trained on millions of code samples. It checks for bugs, security vulnerabilities, performance issues, and adherence to best practices, providing actionable feedback instantly."
+
+        - q: "Is my code secure with Preloop?"
+          a: "Absolutely. We use enterprise-grade encryption for all data in transit and at rest. Your code is analyzed securely and never used to train models or shared with third parties. We're SOC 2 compliant and offer self-hosted options."
+
+        - q: "How does Preloop handle dependencies?"
+          a: "Preloop automatically scans your project dependencies, checks for security vulnerabilities, outdated packages, and license issues. It provides upgrade recommendations and impact analysis before you make changes."
+
+        - q: "Can Preloop integrate with my CI/CD pipeline?"
+          a: "Yes. Preloop provides native integrations with popular CI/CD platforms including GitHub Actions, GitLab CI, Jenkins, CircleCI, and more. Setup takes just a few minutes."
