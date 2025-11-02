@@ -642,7 +642,7 @@ async def scan_account(
 ) -> Dict[str, Any]:
     """Scan all trackers for a given account."""
     account = crud_account.get(db, id=account_id)
-    logger.info(f"Scanning account {account.id} ({account.username})...")
+    logger.info(f"Scanning account {account.id} ({account.organization_name})...")
     if not account:
         logger.error(f"Account with id {account_id} not found.")
         return {}
