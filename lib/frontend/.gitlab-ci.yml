@@ -2,7 +2,7 @@ image: node:22-alpine
 
 variables:
   CI_REGISTRY_IMAGE_SPACEBRIDGE: $CI_REGISTRY/spacecode/spacelit
-  CI_REGISTRY_IMAGE_PRELOOP: $CI_REGISTRY/spacecode/spacelit-preloop
+  CI_REGISTRY_IMAGE_PRELOOP: $CI_REGISTRY/spacecode/spacelit/preloop
 
 stages:
   - build
