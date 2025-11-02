@@ -72,8 +72,77 @@ brands:
         - q: "Is it secure to connect my development tools to Spacebridge?"
           a: "Security is our top priority. Spacebridge uses industry-standard encryption for all data. We connect to your tools via secure, permission-scoped API tokens and OAuth, ensuring our platform only has the minimum access it needs to function."
 
+      get_started:
+        title: "Turbocharge your AI Workflow with MCP"
+        link_text: "What is MCP?"
+        link_url: "/whatis-mcp"
+        features:
+          - icon: "search"
+            title: "Smart Duplicate Detection"
+            text: "Intelligent similarity search finds and prevents duplicate issues, even when terminology varies."
+          - icon: "journal-plus"
+            title: "Augment your AI context"
+            text: "Seamless issue data access that supercharges your AI tools' effectiveness"
+          - icon: "code-slash"
+            title: "Cursor, Windsurf, Claude Code Ready"
+            text: "Streamlined setup process. Use with any agentic system that supports MCP."
+
+        mcp_setup_title: "Get Started with Spacebridge MCP"
+        mcp_configs:
+          - ide: "claude-code"
+            ide_name: "Claude Code"
+            logo_path: "/images/Claude_AI_logo.png"
+            logo_width: "130"
+            prerequisites:
+              - "SpaceBridge API key (register above)"
+            setup_instructions: "Run the following command in your terminal:"
+            code: |
+              claude mcp add --transport http spacebridge https://spacebridge.io/mcp/v1
+                --header "Authorization: Bearer YOUR_SPACEBRIDGE_API_KEY"
+
+          - ide: "cursor"
+            ide_name: "Cursor"
+            logo_path: "/images/cursor_logo.png"
+            logo_width: "130"
+            prerequisites:
+              - "SpaceBridge API key (register above)"
+            setup_instructions: "Create or edit <code>~/.cursor/mcp.json</code>:"
+            code: |
+              # Create or edit ~/.cursor/mcp.json
+              {
+                "mcpServers": {
+                  "spacebridge": {
+                    "transport": "http",
+                    "url": "https://spacebridge.io/mcp/v1",
+                    "headers": {
+                      "Authorization": "Bearer YOUR_SPACEBRIDGE_API_KEY"
+                    }
+                  }
+                }
+              }
+
+          - ide: "windsurf"
+            ide_name: "Windsurf"
+            logo_path: "/images/windsurf_logo.png"
+            logo_width: "130"
+            prerequisites:
+              - "SpaceBridge API key (register above)"
+            setup_instructions: "Create or edit your MCP configuration file:"
+            code: |
+              {
+                "mcpServers": {
+                  "spacebridge": {
+                      "transport": "http",
+                      "url": "https://spacebridge.io/mcp/v1",
+                      "headers": {
+                          "Authorization": "Bearer YOUR_SPACEBRIDGE_API_KEY"
+                      }
+                  }
+                }
+              }
+
   preloop:
-    name: "Preloop"
+    name: "Preloop AI"
     domain: "preloop.ai"
 
     company:
@@ -96,14 +165,14 @@ brands:
 
     landing:
       meta:
-        title: "Preloop - AI-Powered Development Workflow"
-        description: "Automate your development workflow with AI-powered code reviews, dependency tracking, and compliance checks."
-        keywords: "Preloop, AI, Code Review, Development, Automation, DevOps, CI/CD"
+        title: "Preloop AI - Responsible AI automation"
+        description: "Let agents do the work, humans make the decisions."
+        keywords: "Preloop AI, AI, Human Approval, Code Review, Development, Automation, DevOps, CI/CD"
         og_image: "/images/preloop/diagram.png"
 
       hero:
-        title: "AI-Powered <span class=\"gradient-product\">Development</span> Workflow"
-        lead: "Automate code reviews, dependency tracking, and compliance checks."
+        title: "Responsible AI Automation"
+        lead: "Agents do the work, humans make the decisions."
         cta_primary: "Start Free Trial"
         cta_secondary: "Watch Demo"
 
@@ -144,3 +213,72 @@ brands:
 
         - q: "Can Preloop integrate with my CI/CD pipeline?"
           a: "Yes. Preloop provides native integrations with popular CI/CD platforms including GitHub Actions, GitLab CI, Jenkins, CircleCI, and more. Setup takes just a few minutes."
+
+      get_started:
+        title: "Supercharge your Development with AI"
+        link_text: "Learn More"
+        link_url: "/whatis-mcp"
+        features:
+          - icon: "shield-check"
+            title: "Automated Security Checks"
+            text: "Real-time vulnerability detection and compliance monitoring integrated into your workflow."
+          - icon: "graph-up"
+            title: "Performance Optimization"
+            text: "AI-powered insights to identify bottlenecks and optimize your code for peak performance."
+          - icon: "code-slash"
+            title: "Works with Your IDE"
+            text: "Seamless integration with Cursor, Windsurf, Claude Code and other MCP-compatible tools."
+
+        mcp_setup_title: "Get Started with Preloop MCP"
+        mcp_configs:
+          - ide: "claude-code"
+            ide_name: "Claude Code"
+            logo_path: "/images/Claude_AI_logo.png"
+            logo_width: "130"
+            prerequisites:
+              - "Preloop API key (start your free trial above)"
+            setup_instructions: "Run the following command in your terminal:"
+            code: |
+              claude mcp add --transport http preloop https://preloop.ai/mcp/v1
+                --header "Authorization: Bearer YOUR_PRELOOP_API_KEY"
+
+          - ide: "cursor"
+            ide_name: "Cursor"
+            logo_path: "/images/cursor_logo.png"
+            logo_width: "130"
+            prerequisites:
+              - "Preloop API key (start your free trial above)"
+            setup_instructions: "Create or edit <code>~/.cursor/mcp.json</code>:"
+            code: |
+              # Create or edit ~/.cursor/mcp.json
+              {
+                "mcpServers": {
+                  "preloop": {
+                    "transport": "http",
+                    "url": "https://preloop.ai/mcp/v1",
+                    "headers": {
+                      "Authorization": "Bearer YOUR_PRELOOP_API_KEY"
+                    }
+                  }
+                }
+              }
+
+          - ide: "windsurf"
+            ide_name: "Windsurf"
+            logo_path: "/images/windsurf_logo.png"
+            logo_width: "130"
+            prerequisites:
+              - "Preloop API key (start your free trial above)"
+            setup_instructions: "Create or edit your MCP configuration file:"
+            code: |
+              {
+                "mcpServers": {
+                  "preloop": {
+                      "transport": "http",
+                      "url": "https://preloop.ai/mcp/v1",
+                      "headers": {
+                          "Authorization": "Bearer YOUR_PRELOOP_API_KEY"
+                      }
+                  }
+                }
+              }

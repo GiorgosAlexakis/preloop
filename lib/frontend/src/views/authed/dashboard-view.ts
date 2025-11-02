@@ -10,6 +10,7 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import * as api from '../../api';
 import { AuthedElement } from '../../api';
 import '../../components/similar-issues-widget.ts';
@@ -58,12 +59,11 @@ interface MCPServer {
 }
 
 interface Tool {
-  id: string;
-  tool_name: string;
-  tool_source: string; // 'builtin' or 'mcp'
-  enabled: boolean;
+  name: string;
+  source: string; // 'builtin' or 'mcp'
+  is_enabled: boolean;
   requires_approval: boolean;
-  mcp_server_id?: string;
+  source_id?: string;
 }
 
 interface FlowExecution {
@@ -132,6 +132,22 @@ export class DashboardView extends AuthedElement {
   @state()
   private hasIssues = false;
 
+  @state()
+  private enabledUsersCount = 0;
+
+  @state()
+  private showSetupDialog = false;
+
+  @state()
+  private activeSetupTab: 'claude-code' | 'cursor' | 'windsurf' | 'cline' =
+    'claude-code';
+
+  private _handleSetupTabClick(
+    tabId: 'claude-code' | 'cursor' | 'windsurf' | 'cline'
+  ) {
+    this.activeSetupTab = tabId;
+  }
+
   async connectedCallback() {
     super.connectedCallback();
     this.fetchDashboardData();
@@ -140,6 +156,21 @@ export class DashboardView extends AuthedElement {
   async fetchDashboardData() {
     this.isLoading = true;
     try {
+      // Helper to catch errors and log 403 (Forbidden) silently
+      const catchWith403Handling = <T>(
+        promise: Promise<T>,
+        defaultValue: T
+      ): Promise<T> => {
+        return promise.catch((error) => {
+          // Don't log 403 errors - they're expected when user lacks permission
+          if (error?.message?.includes('403') || error?.status === 403) {
+            return defaultValue;
+          }
+          console.error('Dashboard data fetch error:', error);
+          return defaultValue;
+        });
+      };
+
       // Fetch all dashboard data in parallel
       const [
         trackers,
@@ -152,23 +183,32 @@ export class DashboardView extends AuthedElement {
         flowExecutions,
         complianceMetrics,
         approvalRequests,
+        users,
       ] = await Promise.all([
-        api.getTrackers().catch(() => []),
-        api.getApiUsageStats().catch(() => undefined),
-        (
+        catchWith403Handling(api.getTrackers(), []),
+        catchWith403Handling(api.getApiUsageStats(), undefined),
+        catchWith403Handling(
           this.fetchData('/api/v1/auth/api-usage?timeseries=true') as Promise<
             ApiUsageStat[]
-          >
-        ).catch(() => []),
-        api.getIssueCount().catch(() => ({ total_issues: 0 })),
-        this.fetchData('/api/v1/mcp-servers').catch(() => []),
-        api.getTools().catch(() => []),
-        api.getFlows().catch(() => []),
-        api.getFlowExecutions().catch(() => []),
-        this.fetchComplianceMetrics().catch(() => undefined),
-        this.fetchData('/api/v1/approval-requests?status=pending').catch(
-          () => []
+          >,
+          []
         ),
+        catchWith403Handling(api.getIssueCount(), { total_issues: 0 }),
+        catchWith403Handling(this.fetchData('/api/v1/mcp-servers'), []),
+        catchWith403Handling(api.getTools(), []),
+        catchWith403Handling(api.getFlows(), []),
+        catchWith403Handling(api.getFlowExecutions(), []),
+        catchWith403Handling(this.fetchComplianceMetrics(), undefined),
+        catchWith403Handling(
+          this.fetchData('/api/v1/approval-requests?status=pending'),
+          []
+        ),
+        catchWith403Handling(api.getUsers(), {
+          users: [],
+          total: 0,
+          skip: 0,
+          limit: 0,
+        }),
       ]);
 
       this.trackers = trackers;
@@ -196,6 +236,11 @@ export class DashboardView extends AuthedElement {
 
       this.complianceMetrics = complianceMetrics;
       this.pendingApprovals = approvalRequests || [];
+
+      // Calculate enabled users count
+      this.enabledUsersCount = (users.users || []).filter(
+        (user) => user.is_active
+      ).length;
     } catch (error) {
       console.error('Failed to fetch dashboard data', error);
     } finally {
@@ -205,11 +250,13 @@ export class DashboardView extends AuthedElement {
 
   async fetchComplianceMetrics(): Promise<ComplianceMetrics | undefined> {
     try {
-      // Fetch a sample of issues to calculate compliance
-      const response = await this.fetchData('/api/v1/issues?limit=100');
-      if (!response || !response.results) return undefined;
+      // Fetch a sample of issues using the search endpoint (same as issues-compliance-view.ts)
+      const response = await this.fetchData(
+        '/api/v1/search?search_type=similarity&embedding_type=issue&query=&sort=newest&limit=100&status=opened'
+      );
+      if (!response || !Array.isArray(response)) return undefined;
 
-      const issues = response.results;
+      const issues = response;
       let compliantCount = 0;
 
       // Check each issue for basic compliance (has description, labels, etc.)
@@ -442,6 +489,119 @@ export class DashboardView extends AuthedElement {
         gap: var(--sl-spacing-small);
         margin-top: var(--sl-spacing-medium);
       }
+      .builtin-server-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--sl-spacing-small);
+      }
+      .builtin-server-name {
+        font-size: var(--sl-font-size-medium);
+        font-weight: var(--sl-font-weight-semibold);
+        margin: 0;
+      }
+      .builtin-server-url {
+        font-size: var(--sl-font-size-x-small);
+        color: var(--sl-color-neutral-600);
+        margin: 0 0 var(--sl-spacing-x-small) 0;
+        font-family: monospace;
+        word-break: break-all;
+      }
+      .server-meta {
+        font-size: var(--sl-font-size-x-small);
+        color: var(--sl-color-neutral-700);
+        margin-bottom: var(--sl-spacing-x-small);
+      }
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 0.25rem 0;
+        border-bottom: 1px solid var(--sl-color-neutral-100);
+        font-size: var(--sl-font-size-x-small);
+      }
+      .info-row:last-child {
+        border-bottom: none;
+      }
+      .info-label {
+        font-weight: 600;
+        color: var(--sl-color-neutral-700);
+        padding-top: 0.2rem;
+      }
+      .info-value-container {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.25rem;
+      }
+      .info-value {
+        color: var(--sl-color-neutral-900);
+        font-family: monospace;
+        background: var(--sl-color-neutral-50);
+        padding: 0.2rem 0.4rem;
+        border-radius: 4px;
+        font-size: var(--sl-font-size-x-small);
+      }
+      .info-link {
+        color: var(--sl-color-primary-600);
+        text-decoration: none;
+        font-size: var(--sl-font-size-x-small);
+      }
+      .info-link:hover {
+        text-decoration: underline;
+      }
+      .help-text {
+        color: var(--sl-color-neutral-600);
+        font-size: 0.85rem;
+        line-height: 1.5;
+        margin-top: 0.5rem;
+      }
+      .ide-tabs {
+        display: flex;
+        justify-content: center;
+        gap: var(--sl-spacing-medium);
+        margin: var(--sl-spacing-medium) 0;
+        flex-wrap: wrap;
+      }
+      .ide-logo-container {
+        cursor: pointer;
+        padding: var(--sl-spacing-small);
+        border-radius: var(--sl-border-radius-medium);
+        border: 2px solid transparent;
+        transition: all 0.2s ease;
+        opacity: 0.5;
+      }
+      .ide-logo-container:hover {
+        opacity: 0.8;
+        border-color: var(--sl-color-neutral-300);
+      }
+      .ide-logo-container.active {
+        opacity: 1;
+        border-color: var(--sl-color-primary-600);
+        background-color: var(--sl-color-primary-50);
+      }
+      .ide-logo-container img {
+        display: block;
+        max-height: 40px;
+        width: auto;
+      }
+      .tab-content {
+        margin-top: var(--sl-spacing-medium);
+      }
+      .tab-content h5 {
+        margin-top: var(--sl-spacing-medium);
+        margin-bottom: var(--sl-spacing-small);
+      }
+      .tab-content ul {
+        margin: var(--sl-spacing-small) 0;
+        padding-left: var(--sl-spacing-large);
+      }
+      .tab-content code {
+        background: var(--sl-color-neutral-100);
+        padding: 0.125rem 0.25rem;
+        border-radius: 3px;
+        font-size: var(--sl-font-size-small);
+      }
     `,
   ];
 
@@ -463,10 +623,14 @@ export class DashboardView extends AuthedElement {
         <!-- Main Column -->
         <div class="main-column">
           <!-- MCP Server & Tools Status -->
-          <sl-card>
+          <sl-card style="max-width: 600px;">
             <div slot="header" class="chart-header">
-              <sl-icon name="server"></sl-icon>
-              MCP Server & Tools
+              <img
+                src="/images/mcp.png"
+                alt="MCP"
+                style="width: 20px; height: 20px;"
+              />
+              MCP Server
               <sl-tooltip
                 content="Built-in and external MCP tools for issue management and automation"
               >
@@ -491,11 +655,15 @@ export class DashboardView extends AuthedElement {
                       <sl-icon name="tools"></sl-icon>
                       <span
                         ><strong
-                          >${this.tools.filter(
-                            (t) => t.tool_source === 'builtin'
-                          ).length}</strong
+                          >${this.tools.filter((t) => t.source === 'builtin')
+                            .length}</strong
                         >
-                        built-in tools</span
+                        built-in tools,
+                        <strong
+                          >${this.tools.filter((t) => t.source === 'mcp')
+                            .length}</strong
+                        >
+                        proxied tools</span
                       >
                     </div>
                     <div class="tool-count">
@@ -505,7 +673,8 @@ export class DashboardView extends AuthedElement {
                       ></sl-icon>
                       <span
                         ><strong
-                          >${this.tools.filter((t) => t.enabled).length}</strong
+                          >${this.tools.filter((t) => t.is_enabled)
+                            .length}</strong
                         >
                         enabled</span
                       >
@@ -525,44 +694,30 @@ export class DashboardView extends AuthedElement {
                     </div>
                   </div>
 
-                  <!-- External MCP Servers -->
-                  ${this.mcpServers.length > 0
-                    ? html`
-                        <div style="margin-top: var(--sl-spacing-medium);">
-                          <h4
-                            style="margin: 0 0 var(--sl-spacing-small) 0; font-size: var(--sl-font-size-medium);"
-                          >
-                            External MCP Servers
-                          </h4>
-                          <div class="server-list">
-                            ${this.mcpServers.map(
-                              (server) => html`
-                                <div class="server-item">
-                                  <div class="server-info">
-                                    <span class="server-name"
-                                      >${server.name}</span
-                                    >
-                                    <span class="server-url"
-                                      >${server.url}</span
-                                    >
-                                  </div>
-                                  <sl-tag
-                                    size="small"
-                                    variant="${this.getStatusColor(
-                                      server.status
-                                    )}"
-                                  >
-                                    ${server.status}
-                                  </sl-tag>
-                                </div>
-                              `
-                            )}
-                          </div>
-                        </div>
-                      `
-                    : ''}
+                  <!-- Built-in MCP Server -->
+                  <div style="margin-top: var(--sl-spacing-medium);">
+                    <p class="builtin-server-url">
+                      ${window.location.origin}/mcp/v1
+                    </p>
+                    <div
+                      style="display: flex; align-items: center; gap: var(--sl-spacing-small); flex-wrap: wrap; padding: 0.25rem 0;"
+                    >
+                      <span class="info-label">Authentication:</span>
+                      <code class="info-value">Bearer Token</code>
+                      <a href="/console/settings/api-keys" class="info-link">
+                        Manage Keys →
+                      </a>
+                    </div>
+                  </div>
 
                   <div class="quick-actions">
+                    <sl-button
+                      size="small"
+                      @click=${() => (this.showSetupDialog = true)}
+                    >
+                      <sl-icon slot="prefix" name="info-circle"></sl-icon>
+                      Setup Instructions
+                    </sl-button>
                     <sl-button size="small" href="/console/tools">
                       <sl-icon slot="prefix" name="gear"></sl-icon>
                       Manage Tools
@@ -570,6 +725,180 @@ export class DashboardView extends AuthedElement {
                   </div>
                 `}
           </sl-card>
+
+          <!-- Setup Instructions Dialog -->
+          <sl-dialog
+            label="Setup Instructions"
+            class="setup-dialog"
+            ?open=${this.showSetupDialog}
+            @sl-hide=${() => (this.showSetupDialog = false)}
+            style="--width: 50rem;"
+          >
+            <div class="ide-tabs">
+              <div
+                class="ide-logo-container ${this.activeSetupTab ===
+                'claude-code'
+                  ? 'active'
+                  : ''}"
+                @click=${() => this._handleSetupTabClick('claude-code')}
+              >
+                <img
+                  src="/images/Claude_AI_logo.png"
+                  alt="Claude Code"
+                  width="130"
+                />
+              </div>
+              <div
+                class="ide-logo-container ${this.activeSetupTab === 'cursor'
+                  ? 'active'
+                  : ''}"
+                @click=${() => this._handleSetupTabClick('cursor')}
+              >
+                <img src="/images/cursor_logo.png" alt="Cursor" width="130" />
+              </div>
+              <div
+                class="ide-logo-container ${this.activeSetupTab === 'windsurf'
+                  ? 'active'
+                  : ''}"
+                @click=${() => this._handleSetupTabClick('windsurf')}
+              >
+                <img
+                  src="/images/windsurf_logo.png"
+                  alt="Windsurf"
+                  width="130"
+                />
+              </div>
+              <div
+                class="ide-logo-container ${this.activeSetupTab === 'cline'
+                  ? 'active'
+                  : ''}"
+                @click=${() => this._handleSetupTabClick('cline')}
+              >
+                <img src="/images/cline_logo.png" alt="Cline" width="130" />
+              </div>
+            </div>
+
+            <div class="tab-content">
+              ${this.activeSetupTab === 'claude-code'
+                ? html`
+                    <div>
+                      <h5>Prerequisites</h5>
+                      <ul>
+                        <li>
+                          SpaceBridge API key (create one in Settings → API
+                          Keys)
+                        </li>
+                      </ul>
+                      <h5>Setup</h5>
+                      <p>Run the following command in your terminal:</p>
+                      <pre
+                        style="background: var(--sl-color-neutral-100); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; margin: 0.5rem 0;"
+                      ><code>claude mcp add --transport http spacebridge ${window
+                        .location.origin}/mcp/v1 \\
+  --header "Authorization: Bearer YOUR_API_KEY_HERE"</code></pre>
+                    </div>
+                  `
+                : ''}
+              ${this.activeSetupTab === 'cursor'
+                ? html`
+                    <div>
+                      <h5>Prerequisites</h5>
+                      <ul>
+                        <li>
+                          SpaceBridge API key (create one in Settings → API
+                          Keys)
+                        </li>
+                      </ul>
+                      <h5>Setup</h5>
+                      <p>Create or edit <code>~/.cursor/mcp.json</code>:</p>
+                      <pre
+                        style="background: var(--sl-color-neutral-100); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; margin: 0.5rem 0;"
+                      ><code>{
+  "mcpServers": {
+    "spacebridge": {
+      "transport": "http",
+      "url": "${window.location.origin}/mcp/v1",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}</code></pre>
+                    </div>
+                  `
+                : ''}
+              ${this.activeSetupTab === 'windsurf'
+                ? html`
+                    <div>
+                      <h5>Prerequisites</h5>
+                      <ul>
+                        <li>
+                          SpaceBridge API key (create one in Settings → API
+                          Keys)
+                        </li>
+                      </ul>
+                      <h5>Setup</h5>
+                      <p>Create or edit your MCP configuration file:</p>
+                      <pre
+                        style="background: var(--sl-color-neutral-100); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; margin: 0.5rem 0;"
+                      ><code>{
+  "mcpServers": {
+    "spacebridge": {
+      "transport": "http",
+      "url": "${window.location.origin}/mcp/v1",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}</code></pre>
+                    </div>
+                  `
+                : ''}
+              ${this.activeSetupTab === 'cline'
+                ? html`
+                    <div>
+                      <h5>Prerequisites</h5>
+                      <ul>
+                        <li>
+                          SpaceBridge API key (create one in Settings → API
+                          Keys)
+                        </li>
+                        <li>Cline extension for VS Code</li>
+                      </ul>
+                      <h5>Setup</h5>
+                      <p>Add to your Cline MCP settings:</p>
+                      <pre
+                        style="background: var(--sl-color-neutral-100); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; margin: 0.5rem 0;"
+                      ><code>{
+  "mcpServers": {
+    "spacebridge": {
+      "url": "${window.location.origin}/mcp/v1",
+      "transport": "http-streaming",
+      "auth": {
+        "type": "bearer",
+        "token": "YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}</code></pre>
+                    </div>
+                  `
+                : ''}
+            </div>
+
+            <p class="help-text" style="margin-top: var(--sl-spacing-medium);">
+              The built-in MCP server provides access to all your enabled tools,
+              including tools from external MCP servers.
+            </p>
+            <sl-button
+              slot="footer"
+              variant="primary"
+              @click=${() => (this.showSetupDialog = false)}
+            >
+              Close
+            </sl-button>
+          </sl-dialog>
 
           <!-- Flow Executions - Only show if flows exist -->
           ${this.hasFlows
@@ -828,7 +1157,13 @@ export class DashboardView extends AuthedElement {
               </li>
               <li class="summary-item">
                 <a href="/console/tools">Enabled Tools</a>
-                <strong>${this.tools.filter((t) => t.enabled).length}</strong>
+                <strong
+                  >${this.tools.filter((t) => t.is_enabled).length}</strong
+                >
+              </li>
+              <li class="summary-item">
+                <a href="/console/settings/users">Enabled Users</a>
+                <strong>${this.enabledUsersCount}</strong>
               </li>
               <li class="summary-item">
                 <a href="/console/flows">Active Flows</a>
@@ -842,10 +1177,12 @@ export class DashboardView extends AuthedElement {
                 <a href="/console/settings/api-keys">Total API Requests</a>
                 <strong>${this.apiUsage?.total_requests || 0}</strong>
               </li>
-              <li class="summary-item">
-                <span>Total Issues Processed</span>
-                <strong>${this.totalIssues}</strong>
-              </li>
+              ${this.trackers.length > 0
+                ? html`<li class="summary-item">
+                    <span>Total Issues Processed</span>
+                    <strong>${this.totalIssues}</strong>
+                  </li>`
+                : ''}
             </ul>
           </sl-card>
 

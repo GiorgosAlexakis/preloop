@@ -92,7 +92,7 @@ export class WelcomeView extends LitElement {
 
     return html`
       <div class="container">
-        <h1>Welcome to SpaceBridge!</h1>
+        <h1>Welcome to ${getBrandConfig().name}!</h1>
         <p>
           Your account has been created. Please set your password to continue.
         </p>

@@ -30,6 +30,9 @@ import '../views/authed/settings/profile-view.ts';
 import '../views/authed/settings/security-view.ts';
 import '../views/authed/settings/appearance-view.ts';
 import '../views/authed/settings/subscription-view.ts';
+import '../views/authed/settings/user-management-view.ts';
+import '../views/authed/settings/team-management-view.ts';
+import '../views/authed/settings/invitation-management-view.ts';
 import '../components/settings-tabs.ts';
 import '../views/authed/flows-view.ts';
 import '../views/authed/flow-view.ts';
@@ -93,8 +96,9 @@ export class LitApp extends LitElement {
           if (existingLandingView) {
             // Check if it has loaded content (either visible or hidden slots)
             // Don't check children.length because _loadSlottedContent hides them
-            const hasLoadedContent = (existingLandingView as any)._featureSlides?.length > 0 ||
-                                     (existingLandingView as any)._faqs?.length > 0;
+            const hasLoadedContent =
+              (existingLandingView as any)._featureSlides?.length > 0 ||
+              (existingLandingView as any)._faqs?.length > 0;
 
             if (hasLoadedContent) {
               // Reuse existing component with its state intact
@@ -104,7 +108,7 @@ export class LitApp extends LitElement {
 
           // Fallback: create new landing-view (no SSR content available)
           return commands.component('landing-view');
-        }
+        },
       },
       { path: '/login', component: 'login-view' },
       { path: '/register', component: 'register-view' },
@@ -120,7 +124,11 @@ export class LitApp extends LitElement {
           const existingWrapper = outlet?.querySelector('static-view-wrapper');
           const ssrRoute = this.getAttribute('data-ssr-route');
 
-          if (existingWrapper && ssrRoute === '/whatis-mcp' && !this.hasNavigated) {
+          if (
+            existingWrapper &&
+            ssrRoute === '/whatis-mcp' &&
+            !this.hasNavigated
+          ) {
             // Reuse SSR content on first load only
             this.hasNavigated = true;
             return existingWrapper;
@@ -168,7 +176,11 @@ export class LitApp extends LitElement {
           const existingWrapper = outlet?.querySelector('static-view-wrapper');
           const ssrRoute = this.getAttribute('data-ssr-route');
 
-          if (existingWrapper && ssrRoute === '/privacy' && !this.hasNavigated) {
+          if (
+            existingWrapper &&
+            ssrRoute === '/privacy' &&
+            !this.hasNavigated
+          ) {
             // Reuse SSR content on first load only
             this.hasNavigated = true;
             return existingWrapper;
@@ -223,6 +235,12 @@ export class LitApp extends LitElement {
           { path: 'settings/ai-models', component: 'ai-models-view' },
           { path: 'settings/appearance', component: 'appearance-view' },
           { path: 'settings/subscription', component: 'subscription-view' },
+          { path: 'settings/users', component: 'user-management-view' },
+          { path: 'settings/teams', component: 'team-management-view' },
+          {
+            path: 'settings/invitations',
+            component: 'invitation-management-view',
+          },
           { path: 'pricing', component: 'pricing-view' },
           { path: 'approval/:requestId', component: 'approval-view' },
         ],

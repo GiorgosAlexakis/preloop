@@ -146,3 +146,117 @@ export interface DependencyPair {
 export interface DependencyResponse {
   dependencies: DependencyPair[];
 }
+
+// User Management Types
+export interface User {
+  id: string;
+  account_id: string;
+  username: string;
+  email: string;
+  email_verified: boolean;
+  full_name: string | null;
+  is_active: boolean;
+  user_source: string;
+  oauth_provider: string | null;
+  last_login: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserCreate {
+  username: string;
+  email: string;
+  full_name?: string;
+  password: string;
+  user_source?: string;
+  is_active?: boolean;
+}
+
+export interface UserUpdate {
+  email?: string;
+  full_name?: string;
+  is_active?: boolean;
+}
+
+export interface UserListResponse {
+  users: User[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+// Team Management Types
+export interface Team {
+  id: string;
+  account_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamMember {
+  id: string;
+  team_id: string;
+  user_id: string;
+  role_id: string | null;
+  joined_at: string;
+  user?: User;
+}
+
+export interface TeamCreate {
+  name: string;
+  description?: string;
+}
+
+export interface TeamUpdate {
+  name?: string;
+  description?: string;
+}
+
+export interface TeamListResponse {
+  teams: Team[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+// Invitation Management Types
+export interface UserInvitation {
+  id: string;
+  account_id: string;
+  email: string;
+  invited_by_user_id: string;
+  token: string;
+  status: 'pending' | 'accepted' | 'expired' | 'cancelled';
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvitationCreate {
+  email: string;
+  role_ids?: string[];
+}
+
+export interface InvitationListResponse {
+  invitations: UserInvitation[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+// Role Management Types
+export interface Role {
+  id: string;
+  name: string;
+  description: string | null;
+  is_system_role: boolean;
+  permissions: string[];
+}
+
+export interface RoleListResponse {
+  roles: Role[];
+  total: number;
+}

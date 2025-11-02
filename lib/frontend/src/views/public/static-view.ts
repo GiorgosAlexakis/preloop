@@ -103,9 +103,7 @@ export class StaticView extends LitElement {
       <main>
         <div class="text-section">
           <!-- Slotted skeleton content for SEO - visible without JavaScript -->
-          <slot name="static-content">
-            ${this._renderDynamicContent()}
-          </slot>
+          <slot name="static-content"> ${this._renderDynamicContent()} </slot>
         </div>
       </main>
       <app-footer></app-footer>

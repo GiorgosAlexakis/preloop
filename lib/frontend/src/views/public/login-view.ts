@@ -3,6 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import { post } from '../../api';
 import { formStyles } from '../../styles/form-styles';
+import { getBrandConfig } from '../../brand-config';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '../../components/logo-component';
@@ -83,7 +84,7 @@ export class LoginView extends LitElement {
           </a>
         </div>
         <div class="form-container">
-          <h2>Sign in to Spacebridge</h2>
+          <h2>Sign in to ${getBrandConfig().name}</h2>
           ${this.successMessage
             ? html`<div class="success-message">${this.successMessage}</div>`
             : ''}

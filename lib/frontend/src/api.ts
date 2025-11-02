@@ -1057,6 +1057,15 @@ export async function getMCPServerTools(serverId: string): Promise<any[]> {
   return response.json();
 }
 
+// Tools API - Get all available tools (built-in and external)
+export async function getAllTools(): Promise<any[]> {
+  const response = await fetchWithAuth('/api/v1/tools');
+  if (!response.ok) {
+    throw new Error('Failed to fetch tools');
+  }
+  return response.json();
+}
+
 // Approval Requests API
 export async function getApprovalRequest(requestId: string): Promise<any> {
   const response = await fetchWithAuth(
@@ -1124,6 +1133,354 @@ export async function declineRequest(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Failed to decline request');
+  }
+  return response.json();
+}
+
+// ============================================================================
+// User Management API Functions
+// ============================================================================
+
+export async function getUsers(
+  skip = 0,
+  limit = 100
+): Promise<import('./types').UserListResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/users?skip=${skip}&limit=${limit}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch users');
+  }
+  return response.json();
+}
+
+export async function getUser(userId: string): Promise<import('./types').User> {
+  const response = await fetchWithAuth(`/api/v1/users/${userId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch user');
+  }
+  return response.json();
+}
+
+export async function createUser(
+  userData: import('./types').UserCreate
+): Promise<import('./types').User> {
+  const response = await fetchWithAuth('/api/v1/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userData),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to create user');
+  }
+  return response.json();
+}
+
+export async function updateUser(
+  userId: string,
+  userData: import('./types').UserUpdate
+): Promise<import('./types').User> {
+  const response = await fetchWithAuth(`/api/v1/users/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userData),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update user');
+  }
+  return response.json();
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/users/${userId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to delete user');
+  }
+}
+
+// ============================================================================
+// Team Management API Functions
+// ============================================================================
+
+export async function getTeams(
+  skip = 0,
+  limit = 100
+): Promise<import('./types').TeamListResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/teams?skip=${skip}&limit=${limit}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch teams');
+  }
+  return response.json();
+}
+
+export async function getTeam(teamId: string): Promise<import('./types').Team> {
+  const response = await fetchWithAuth(`/api/v1/teams/${teamId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch team');
+  }
+  return response.json();
+}
+
+export async function createTeam(
+  teamData: import('./types').TeamCreate
+): Promise<import('./types').Team> {
+  const response = await fetchWithAuth('/api/v1/teams', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(teamData),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to create team');
+  }
+  return response.json();
+}
+
+export async function updateTeam(
+  teamId: string,
+  teamData: import('./types').TeamUpdate
+): Promise<import('./types').Team> {
+  const response = await fetchWithAuth(`/api/v1/teams/${teamId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(teamData),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update team');
+  }
+  return response.json();
+}
+
+export async function deleteTeam(teamId: string): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/teams/${teamId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to delete team');
+  }
+}
+
+export async function getTeamMembers(
+  teamId: string
+): Promise<import('./types').TeamMember[]> {
+  const response = await fetchWithAuth(`/api/v1/teams/${teamId}/members`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch team members');
+  }
+  return response.json();
+}
+
+export async function addTeamMember(
+  teamId: string,
+  userId: string,
+  roleId?: string
+): Promise<import('./types').TeamMember> {
+  const response = await fetchWithAuth(`/api/v1/teams/${teamId}/members`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, role_id: roleId }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to add team member');
+  }
+  return response.json();
+}
+
+export async function removeTeamMember(
+  teamId: string,
+  userId: string
+): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/teams/${teamId}/members/${userId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to remove team member');
+  }
+}
+
+export async function getTeamRoles(
+  teamId: string
+): Promise<import('./types').Role[]> {
+  const response = await fetchWithAuth(`/api/v1/teams/${teamId}/roles`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch team roles');
+  }
+  return response.json();
+}
+
+export async function assignTeamRole(
+  teamId: string,
+  roleId: string
+): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/teams/${teamId}/roles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role_id: roleId }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to assign role to team');
+  }
+}
+
+export async function removeTeamRole(
+  teamId: string,
+  roleId: string
+): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/teams/${teamId}/roles/${roleId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to remove role from team');
+  }
+}
+
+// ============================================================================
+// Invitation Management API Functions
+// ============================================================================
+
+export async function getInvitations(
+  skip = 0,
+  limit = 100,
+  status?: 'pending' | 'accepted' | 'expired' | 'cancelled'
+): Promise<import('./types').InvitationListResponse> {
+  let url = `/api/v1/invitations?skip=${skip}&limit=${limit}`;
+  if (status) {
+    url += `&status=${status}`;
+  }
+  const response = await fetchWithAuth(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch invitations');
+  }
+  return response.json();
+}
+
+export async function createInvitation(
+  invitationData: import('./types').InvitationCreate
+): Promise<import('./types').UserInvitation> {
+  const response = await fetchWithAuth('/api/v1/invitations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(invitationData),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to create invitation');
+  }
+  return response.json();
+}
+
+export async function resendInvitation(invitationId: string): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/invitations/${invitationId}/resend`,
+    {
+      method: 'POST',
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to resend invitation');
+  }
+}
+
+export async function cancelInvitation(invitationId: string): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/invitations/${invitationId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to cancel invitation');
+  }
+}
+
+// ============================================================================
+// Role Management API Functions
+// ============================================================================
+
+export async function getRoles(): Promise<import('./types').RoleListResponse> {
+  const response = await fetchWithAuth('/api/v1/roles');
+  if (!response.ok) {
+    throw new Error('Failed to fetch roles');
+  }
+  return response.json();
+}
+
+export async function getUserRoles(
+  userId: string
+): Promise<import('./types').Role[]> {
+  const response = await fetchWithAuth(`/api/v1/users/${userId}/roles`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch user roles');
+  }
+  return response.json();
+}
+
+export async function assignUserRole(
+  userId: string,
+  roleId: string
+): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/users/${userId}/roles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role_id: roleId }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to assign role');
+  }
+}
+
+export async function removeUserRole(
+  userId: string,
+  roleId: string
+): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/users/${userId}/roles/${roleId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to remove role');
+  }
+}
+
+// Features API
+export interface FeaturesResponse {
+  plugins: Array<{
+    name: string;
+    version: string;
+    description: string;
+    is_proprietary: boolean;
+  }>;
+  features: {
+    [key: string]: boolean;
+  };
+}
+
+export async function getFeatures(): Promise<FeaturesResponse> {
+  const response = await fetchPublic('/api/v1/features');
+  if (!response.ok) {
+    throw new Error('Failed to fetch features');
   }
   return response.json();
 }

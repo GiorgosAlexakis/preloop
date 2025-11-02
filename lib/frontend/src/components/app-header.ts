@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import { getAccountDetails } from '../api';
+import { getBrandConfig } from '../brand-config';
 
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
@@ -162,7 +163,7 @@ export class AppHeader extends LitElement {
               : html`<div class="logo">
                   <a href="/">
                     <logo-component
-                      alt="SpaceBridge Logo"
+                      alt="${getBrandConfig().name} Logo"
                       override-theme="dark"
                     ></logo-component>
                   </a>
