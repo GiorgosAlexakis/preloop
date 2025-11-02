@@ -143,6 +143,11 @@ export class FlowView extends LitElement {
       // Load tools and MCP servers for editing
       this.availableTools = await getAllTools();
       this.mcpServers = await getMCPServers();
+
+      // Ensure spacebridge-mcp is always in allowed_mcp_servers
+      if (!this.flow.allowed_mcp_servers?.includes('spacebridge-mcp')) {
+        this.flow.allowed_mcp_servers = ['spacebridge-mcp'];
+      }
     } else if (presetId) {
       // Creating from preset
       this.trackers = await getTrackers();
@@ -153,6 +158,10 @@ export class FlowView extends LitElement {
       const preset = this.presets.find((p) => p.id === presetId);
       if (preset) {
         this.selectPreset(preset);
+        // Ensure spacebridge-mcp is in allowed_mcp_servers
+        if (!this.flow.allowed_mcp_servers?.includes('spacebridge-mcp')) {
+          this.flow.allowed_mcp_servers = ['spacebridge-mcp'];
+        }
       }
     } else {
       // Creating new flow - initialize with spacebridge-mcp by default
@@ -162,9 +171,9 @@ export class FlowView extends LitElement {
       this.availableTools = await getAllTools();
       this.mcpServers = await getMCPServers();
 
-      // Initialize with spacebridge-mcp server
+      // Initialize with spacebridge-mcp server and all enabled tools selected
       this.flow.allowed_mcp_servers = ['spacebridge-mcp'];
-      this.flow.allowed_mcp_tools = [];
+      this.flow.allowed_mcp_tools = this.getDefaultSelectedTools();
     }
   }
 
@@ -500,44 +509,11 @@ export class FlowView extends LitElement {
           </div>
 
           <p style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);">
-            Select which MCP servers and tools the agent can use during flow
-            execution. The built-in SpaceBridge MCP server is included by
-            default.
+            Select which tools the agent can use during flow execution. All
+            enabled tools are selected by default.
           </p>
 
-          <!-- MCP Servers Selection -->
-          <sl-select
-            label="MCP Servers"
-            multiple
-            clearable
-            .value=${this.flow.allowed_mcp_servers || []}
-            @sl-change=${this.handleMCPServersChange}
-            help-text="Select MCP servers to enable. Built-in 'spacebridge-mcp' is recommended."
-          >
-            <sl-option value="spacebridge-mcp"
-              >spacebridge-mcp (Built-in)</sl-option
-            >
-            ${this.mcpServers.map(
-              (server) =>
-                html`<sl-option value=${server.name}>${server.name}</sl-option>`
-            )}
-          </sl-select>
-
-          <!-- Tools Selection -->
-          <div style="margin-top: 1rem;">
-            <label
-              style="display: block; margin-bottom: 0.5rem; font-weight: 600;"
-            >
-              Allowed Tools
-            </label>
-            <div
-              style="color: var(--sl-color-neutral-600); font-size: 0.875rem; margin-bottom: 0.5rem;"
-            >
-              Select specific tools the agent can use. If none selected, all
-              tools from enabled servers are allowed.
-            </div>
-            ${this.renderToolSelection()}
-          </div>
+          ${this.renderToolSelection()}
         </sl-card>
 
         <sl-card>
@@ -673,90 +649,59 @@ export class FlowView extends LitElement {
     alert('Filter modal not yet implemented');
   }
 
-  handleMCPServersChange(e: any) {
-    const selectedServers = e.target.value;
-    this.flow.allowed_mcp_servers = selectedServers;
-
-    // Filter allowed_mcp_tools to only include tools from selected servers
-    if (this.flow.allowed_mcp_tools && this.flow.allowed_mcp_tools.length > 0) {
-      this.flow.allowed_mcp_tools = this.flow.allowed_mcp_tools.filter((tool) =>
-        selectedServers.includes(tool.server_name)
-      );
-    }
-
-    this.requestUpdate();
+  getDefaultSelectedTools(): { server_name: string; tool_name: string }[] {
+    // Select all enabled built-in tools by default
+    return this.availableTools
+      .filter((tool) => tool.source === 'builtin' && tool.is_enabled)
+      .map((tool) => ({
+        server_name: 'spacebridge-mcp',
+        tool_name: tool.name,
+      }));
   }
 
   renderToolSelection() {
-    const selectedServers = this.flow.allowed_mcp_servers || [];
+    // Only show built-in tools from spacebridge-mcp
+    const builtinTools = this.availableTools.filter(
+      (tool) => tool.source === 'builtin'
+    );
 
-    if (selectedServers.length === 0) {
+    if (builtinTools.length === 0) {
       return html`
         <div
           style="padding: 1rem; background: var(--sl-color-neutral-50); border-radius: 4px;"
         >
-          Select at least one MCP server to choose tools.
-        </div>
-      `;
-    }
-
-    // Group available tools by server
-    const toolsByServer: { [key: string]: any[] } = {};
-
-    this.availableTools.forEach((tool) => {
-      const serverName =
-        tool.source === 'builtin' ? 'spacebridge-mcp' : tool.source_name;
-      if (selectedServers.includes(serverName)) {
-        if (!toolsByServer[serverName]) {
-          toolsByServer[serverName] = [];
-        }
-        toolsByServer[serverName].push(tool);
-      }
-    });
-
-    if (Object.keys(toolsByServer).length === 0) {
-      return html`
-        <div
-          style="padding: 1rem; background: var(--sl-color-neutral-50); border-radius: 4px;"
-        >
-          No tools available for selected servers.
+          Loading tools...
         </div>
       `;
     }
 
     return html`
-      <div style="display: flex; flex-direction: column; gap: 1rem;">
-        ${Object.entries(toolsByServer).map(
-          ([serverName, tools]) => html`
-            <div>
-              <div style="font-weight: 600; margin-bottom: 0.5rem;">
-                ${serverName}
-                ${serverName === 'spacebridge-mcp'
-                  ? html`<sl-badge variant="success" size="small"
-                      >Built-in</sl-badge
+      <div>
+        <div
+          style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem;"
+        >
+          ${builtinTools.map(
+            (tool) => html`
+              <sl-checkbox
+                .checked=${this.isToolSelected('spacebridge-mcp', tool.name)}
+                @sl-change=${(e: any) =>
+                  this.handleToolToggle(
+                    'spacebridge-mcp',
+                    tool.name,
+                    e.target.checked
+                  )}
+                ?disabled=${!tool.is_enabled}
+              >
+                ${tool.name}
+                ${!tool.is_enabled
+                  ? html`<sl-badge variant="neutral" size="small"
+                      >Disabled</sl-badge
                     >`
                   : ''}
-              </div>
-              <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                ${tools.map(
-                  (tool) => html`
-                    <sl-checkbox
-                      .checked=${this.isToolSelected(serverName, tool.name)}
-                      @sl-change=${(e: any) =>
-                        this.handleToolToggle(
-                          serverName,
-                          tool.name,
-                          e.target.checked
-                        )}
-                    >
-                      ${tool.name}
-                    </sl-checkbox>
-                  `
-                )}
-              </div>
-            </div>
-          `
-        )}
+              </sl-checkbox>
+            `
+          )}
+        </div>
       </div>
     `;
   }
