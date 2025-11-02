@@ -111,12 +111,12 @@ class TestCommentCRUD:
         create_comment,
         create_issue,
         create_tracker,
-        create_account,
+        create_user,
     ):
         """Test getting multiple comments by author."""
-        # Create accounts for alice and bob
-        alice = create_account(username="alice")
-        bob = create_account(username="bob")
+        # Create users for alice and bob
+        alice = create_user(username="alice")
+        bob = create_user(username="bob")
         print(alice)
         print(bob)
 
@@ -124,9 +124,9 @@ class TestCommentCRUD:
         issue = create_issue(tracker=tracker)
 
         # Create comments by different authors
-        comment1 = create_comment(issue_id=issue.id, author="alice")
-        comment2 = create_comment(issue_id=issue.id, author="alice")
-        comment3 = create_comment(issue_id=issue.id, author="bob")
+        comment1 = create_comment(issue_id=issue.id, author=alice)
+        comment2 = create_comment(issue_id=issue.id, author=alice)
+        comment3 = create_comment(issue_id=issue.id, author=bob)
 
         print(comment1)
         print(comment2)

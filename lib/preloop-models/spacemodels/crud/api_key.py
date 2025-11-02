@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from ..models.api_key import ApiKey
-from ..models.account import Account
+from ..models.user import User
 from .base import CRUDBase
 
 
@@ -24,6 +24,11 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         key_value: Optional[str] = None,
     ) -> ApiKey:
         """Create a new API key with owner."""
+        # Get the user by username
+        user = db.query(User).filter(User.username == owner_username).first()
+        if not user:
+            raise ValueError(f"User with username {owner_username} not found")
+
         obj_in_data = dict(obj_in)
         key_value = key_value or secrets.token_urlsafe(32)
 
@@ -34,7 +39,7 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         db_obj = ApiKey(
             name=obj_in_data.get("name", "API Key"),
             key=key_value,
-            created_by=owner_username,
+            user_id=user.id,
             expires_at=expires_at,
             scopes=obj_in_data.get("scopes", []),
             is_active=True,
@@ -51,8 +56,8 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         """Get API key by key string."""
         query = db.query(ApiKey).filter(ApiKey.key == key)
         if account_id:
-            query = query.join(Account, ApiKey.created_by == Account.username).filter(
-                Account.id == account_id
+            query = query.join(User, ApiKey.user_id == User.id).filter(
+                User.account_id == account_id
             )
         return query.first()
 
@@ -66,13 +71,13 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         account_id: Optional[str] = None,
     ) -> List[ApiKey]:
         """Get active API keys for a user."""
-        query = db.query(ApiKey).filter(
-            ApiKey.created_by == username, ApiKey.is_active.is_(True)
+        query = (
+            db.query(ApiKey)
+            .join(User, ApiKey.user_id == User.id)
+            .filter(User.username == username, ApiKey.is_active.is_(True))
         )
         if account_id:
-            query = query.join(Account, ApiKey.created_by == Account.username).filter(
-                Account.id == account_id
-            )
+            query = query.filter(User.account_id == account_id)
         return query.offset(skip).limit(limit).all()
 
     def update_last_used(self, db: Session, *, key_id: Any) -> Optional[ApiKey]:
@@ -150,11 +155,13 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         self, db: Session, *, username: str, account_id: Optional[str] = None
     ) -> List[ApiKey]:
         """Get all API keys for a user (including inactive)."""
-        query = db.query(ApiKey).filter(ApiKey.created_by == username)
+        query = (
+            db.query(ApiKey)
+            .join(User, ApiKey.user_id == User.id)
+            .filter(User.username == username)
+        )
         if account_id:
-            query = query.join(Account, ApiKey.created_by == Account.username).filter(
-                Account.id == account_id
-            )
+            query = query.filter(User.account_id == account_id)
         return query.order_by(ApiKey.created_at.desc()).all()
 
     def get_by_id_and_user(
@@ -166,11 +173,11 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         account_id: Optional[str] = None,
     ) -> Optional[ApiKey]:
         """Get API key by ID and username."""
-        query = db.query(ApiKey).filter(
-            ApiKey.id == key_id, ApiKey.created_by == username
+        query = (
+            db.query(ApiKey)
+            .join(User, ApiKey.user_id == User.id)
+            .filter(ApiKey.id == key_id, User.username == username)
         )
         if account_id:
-            query = query.join(Account, ApiKey.created_by == Account.username).filter(
-                Account.id == account_id
-            )
+            query = query.filter(User.account_id == account_id)
         return query.first()

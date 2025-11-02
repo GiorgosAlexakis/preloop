@@ -1,7 +1,7 @@
 """CRUD operations for Account model."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 
@@ -35,14 +35,6 @@ class CRUDAccount(CRUDBase[Account]):
 
         return super().update(db=db, db_obj=db_obj, obj_in=update_data)
 
-    def get_by_email(self, db: Session, *, email: str) -> Optional[Account]:
-        """Get account by email."""
-        return db.query(Account).filter(Account.email == email).first()
-
-    def get_by_username(self, db: Session, *, username: str) -> Optional[Account]:
-        """Get account by username."""
-        return db.query(Account).filter(Account.username == username).first()
-
     def get_active(
         self, db: Session, *, skip: int = 0, limit: int = 100
     ) -> List[Account]:
@@ -53,16 +45,6 @@ class CRUDAccount(CRUDBase[Account]):
             .offset(skip)
             .limit(limit)
             .all()
-        )
-
-    def get_by_oauth(
-        self, db: Session, *, provider: str, oauth_id: str
-    ) -> Optional[Account]:
-        """Get account by OAuth provider and ID."""
-        return (
-            db.query(Account)
-            .filter(Account.oauth_provider == provider, Account.oauth_id == oauth_id)
-            .first()
         )
 
     def add_to_organization(

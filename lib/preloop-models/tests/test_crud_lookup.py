@@ -6,20 +6,13 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from spacemodels.crud import crud_organization, crud_project, crud_issue, crud_comment
-from spacemodels.models import Account, Organization, Project, Issue, Tracker
+from spacemodels.models import Organization, Project, Issue, Tracker
 
 
-def test_organization_get_by_name(db_session: Session):
+def test_organization_get_by_name(db_session: Session, create_account):
     """Test the get_by_name function for Organization."""
     # Create test account
-    account = Account(
-        username="test_user",
-        email="test@example.com",
-        hashed_password="hashed_password",
-        is_active=True,
-    )
-    db_session.add(account)
-    db_session.commit()
+    account = create_account()
 
     # Create two trackers
     tracker1 = Tracker(
@@ -88,17 +81,10 @@ def test_organization_get_by_name(db_session: Session):
     assert org is None
 
 
-def test_project_get_by_name(db_session: Session):
+def test_project_get_by_name(db_session: Session, create_account):
     """Test the get_by_name function for Project."""
     # Create test account
-    account = Account(
-        username="test_user_2",
-        email="test2@example.com",
-        hashed_password="hashed_password",
-        is_active=True,
-    )
-    db_session.add(account)
-    db_session.commit()
+    account = create_account()
 
     # Create a tracker
     tracker = Tracker(
@@ -191,17 +177,10 @@ def test_project_get_by_name(db_session: Session):
     assert project is None
 
 
-def test_issue_get_by_title(db_session: Session):
+def test_issue_get_by_title(db_session: Session, create_account):
     """Test the get_by_title function for Issue."""
     # Create test account
-    account = Account(
-        username="test_user_3",
-        email="test3@example.com",
-        hashed_password="hashed_password",
-        is_active=True,
-    )
-    db_session.add(account)
-    db_session.commit()
+    account = create_account()
 
     # Create a tracker
     tracker = Tracker(
@@ -435,7 +414,7 @@ def test_project_get_by_identifier_or_name_across_orgs(
     create_project,
 ):
     """Test get_by_identifier_or_name_across_orgs returns the most recent project."""
-    account = create_account(username="cross_org_user")
+    account = create_account()
     tracker = create_tracker(account=account)
     org1 = create_organization(identifier="cross-org-1", tracker=tracker)
     org2 = create_organization(identifier="cross-org-2", tracker=tracker)
@@ -522,17 +501,10 @@ def test_project_get_by_identifier_or_name_across_orgs(
     assert found is None
 
 
-def test_issue_get_by_key(db_session: Session):
+def test_issue_get_by_key(db_session: Session, create_account):
     """Test the get_by_key function for Issue."""
     # --- Setup ---
-    account = Account(
-        username="test_user_key",
-        email="test_key@example.com",
-        hashed_password="hashed_password",
-        is_active=True,
-    )
-    db_session.add(account)
-    db_session.commit()
+    account = create_account()
 
     tracker = Tracker(
         name="Test Tracker for Issue Keys",
@@ -645,11 +617,11 @@ def test_issue_get_by_key(db_session: Session):
 
 
 def test_get_comment_by_external_id_simple(
-    db_session: Session, create_comment, create_issue, create_account
+    db_session: Session, create_comment, create_issue, create_user
 ) -> None:
     """Test retrieving a comment by external_id with a simpler setup."""
     # Setup: Create an author, an issue, and a comment
-    author = create_account()
+    author = create_user()
     issue1 = create_issue()
     # Create a second, distinct issue to test the issue_id filter
     issue2 = create_issue()
@@ -694,10 +666,10 @@ def test_get_comment_by_external_id_simple(
 
 
 def test_comment_create_with_author(
-    db_session: Session, create_issue, create_account, create_comment
+    db_session: Session, create_issue, create_user, create_comment
 ):
     """Test creating a comment with a specific author."""
-    author = create_account(username="test_author_for_comment")
+    author = create_user(username="test_author_for_comment")
     issue = create_issue(title="Issue for author comment test")
 
     comment = create_comment(
@@ -740,11 +712,11 @@ def test_comment_get_multi_by_issue(db_session: Session, create_issue, create_co
 
 
 def test_comment_get_multi_by_author(
-    db_session: Session, create_issue, create_account, create_comment
+    db_session: Session, create_issue, create_user, create_comment
 ):
     """Test retrieving multiple comments by a specific author."""
-    author1 = create_account(username="author_one_comments")
-    author2 = create_account(username="author_two_comments")
+    author1 = create_user(username="author_one_comments")
+    author2 = create_user(username="author_two_comments")
     issue = create_issue(title="Issue for author-specific comments")
 
     # Create comments by author1

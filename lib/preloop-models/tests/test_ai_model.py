@@ -34,12 +34,8 @@ def test_create_ai_model(db_session: Session, create_account):
 
 def test_get_ai_models_by_account(db_session: Session, create_account):
     """Test retrieving AIModels for a specific account."""
-    account1: Account = create_account(
-        username="user1_ai", email="user1_ai@example.com"
-    )
-    account2: Account = create_account(
-        username="user2_ai", email="user2_ai@example.com"
-    )
+    account1: Account = create_account()
+    account2: Account = create_account()
 
     crud_ai_model.create_with_account(
         db=db_session,
@@ -178,9 +174,7 @@ def test_get_default_ai_model(db_session: Session, create_account):
     assert retrieved_default.model_identifier == "claude-2"
 
     # Test with no account-specific default model - should fall back to system-wide default
-    account2: Account = create_account(
-        username="no_default_user", email="no_default@example.com"
-    )
+    account2: Account = create_account()
     crud_ai_model.create_with_account(
         db=db_session,
         obj_in={

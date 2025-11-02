@@ -109,10 +109,7 @@ def test_get_flows_by_account(
     # We will use the `create_tracker` and `create_account` fixtures from conftest.py
     # to create a new, independent account and tracker.
 
-    other_account = create_account(
-        username=f"other_org_user_{uuid4().hex[:4]}",
-        email=f"other_org_{uuid4().hex[:4]}@example.com",
-    )
+    other_account = create_account()
     other_flow_in = FlowCreate(
         name="Other Org Flow",
         trigger_event_source="other_org_source",

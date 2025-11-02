@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .account import Account
     from .mcp_server import MCPServer
     from .approval_request import ApprovalRequest
+    from .approval_rule import ApprovalRule
 
 
 class ToolConfiguration(Base):
@@ -125,6 +126,11 @@ class ToolConfiguration(Base):
         back_populates="tool_configuration",
         cascade="all, delete-orphan",
     )
+    approval_rules: Mapped[list["ApprovalRule"]] = relationship(
+        "ApprovalRule",
+        back_populates="tool_configuration",
+        cascade="all, delete-orphan",
+    )
 
     # Unique constraint: one configuration per tool+source per account
     __table_args__ = (
@@ -232,6 +238,19 @@ class ApprovalPolicy(Base):
         comment="Whether this is the default policy for the account",
     )
 
+    # Workflow configuration (Phase 2+)
+    workflow_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="simple",
+        comment="Type of approval workflow: 'simple', 'multi_stage', 'consensus'",
+    )
+    workflow_config: Mapped[Optional[Dict]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Configuration for the approval workflow (stages, teams, voting rules)",
+    )
+
     # Relationships
     account: Mapped["Account"] = relationship("Account")
     tool_configurations: Mapped[list["ToolConfiguration"]] = relationship(
@@ -239,6 +258,11 @@ class ApprovalPolicy(Base):
     )
     approval_requests: Mapped[list["ApprovalRequest"]] = relationship(
         "ApprovalRequest",
+        back_populates="approval_policy",
+        cascade="all, delete-orphan",
+    )
+    approval_rules: Mapped[list["ApprovalRule"]] = relationship(
+        "ApprovalRule",
         back_populates="approval_policy",
         cascade="all, delete-orphan",
     )

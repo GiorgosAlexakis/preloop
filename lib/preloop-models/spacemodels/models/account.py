@@ -1,11 +1,13 @@
 """Account model."""
 
+import uuid
 from datetime import datetime
 
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from sqlalchemy import DateTime, func, String  # Added String back
+from sqlalchemy import DateTime, func, String, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -14,8 +16,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
-    from .api_key import ApiKey
-    from .api_usage import ApiUsage
+    from .audit_log import AuditLog
     from .organization import Organization
     from .tracker import Tracker
     from .client_version_log import ClientVersionLog
@@ -25,18 +26,50 @@ if TYPE_CHECKING:
     from .tool_configuration import ToolConfiguration
     from .mcp_server import MCPServer
     from .approval_request import ApprovalRequest
+    from .approval_rule import ApprovalRule
+    from .team import Team
+    from .user import User
+    from .user_invitation import UserInvitation
 
 
 class Account(Base):
-    """Account model for user authentication and authorization."""
+    """Account model for multi-user organizations.
+
+    In the multi-user system, Account represents an organization that contains
+    multiple Users. Resources (flows, tools, trackers, etc.) are owned by the
+    Account and accessible to users with appropriate permissions.
+
+    Attributes:
+        id: Unique identifier for the account.
+        organization_name: Optional display name for the organization.
+        primary_user_id: Reference to the primary user (account owner/creator).
+        email_verified: Whether the account email has been verified.
+        is_active: Whether the account is active.
+        is_superuser: Whether this is a platform admin account.
+        meta_data: Generic metadata field for extensibility.
+        stripe_customer_id: Stripe customer ID for billing.
+        created: When the account was created.
+        last_updated: When the account was last updated.
+    """
 
     __tablename__ = "account"
 
-    # Account details
-    username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    # Organization details
+    organization_name: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="Display name for the organization"
+    )
+
+    primary_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("user.id", ondelete="SET NULL", name="fk_account_primary_user"),
+        nullable=True,
+        comment="The account owner/creator",
+    )
+
+    # Account-level verification and status
     email_verified: Mapped[bool] = mapped_column(default=False)
-    full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    is_superuser: Mapped[bool] = mapped_column(default=False)
 
     # Timestamps
     created: Mapped[datetime] = mapped_column(
@@ -46,15 +79,6 @@ class Account(Base):
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    # Authentication
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=True)
-    is_active: Mapped[bool] = mapped_column(default=True)
-    is_superuser: Mapped[bool] = mapped_column(default=False)
-
-    # OAuth information
-    oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    oauth_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-
     # Generic metadata field for extensibility
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
     stripe_customer_id: Mapped[Optional[str]] = mapped_column(
@@ -62,18 +86,26 @@ class Account(Base):
     )
 
     # Relationships
+    # Multi-user relationships
+    users: Mapped[List["User"]] = relationship(
+        "User",
+        back_populates="account",
+        cascade="all, delete-orphan",
+        foreign_keys="[User.account_id]",
+    )
+    teams: Mapped[List["Team"]] = relationship(
+        "Team", back_populates="account", cascade="all, delete-orphan"
+    )
+    invitations: Mapped[List["UserInvitation"]] = relationship(
+        "UserInvitation", back_populates="account", cascade="all, delete-orphan"
+    )
+
+    # Resource relationships (owned by account)
     trackers: Mapped[List["Tracker"]] = relationship(
         "Tracker", back_populates="account", cascade="all, delete-orphan"
     )
-    # Organizations this account is a member of (but not necessarily the owner)
     ai_models: Mapped[List["AIModel"]] = relationship(
         "AIModel", back_populates="account", cascade="all, delete-orphan"
-    )
-    api_keys: Mapped[List["ApiKey"]] = relationship(
-        "ApiKey", back_populates="creator", cascade="all, delete-orphan"
-    )
-    api_usages: Mapped[List["ApiUsage"]] = relationship(
-        "ApiUsage", back_populates="user", cascade="all, delete-orphan"
     )
     client_version_logs: Mapped[List["ClientVersionLog"]] = relationship(
         "ClientVersionLog", back_populates="account", cascade="all, delete-orphan"
@@ -95,6 +127,12 @@ class Account(Base):
     )
     approval_requests: Mapped[List["ApprovalRequest"]] = relationship(
         "ApprovalRequest", back_populates="account", cascade="all, delete-orphan"
+    )
+    approval_rules: Mapped[List["ApprovalRule"]] = relationship(
+        "ApprovalRule", back_populates="account", cascade="all, delete-orphan"
+    )
+    audit_logs: Mapped[List["AuditLog"]] = relationship(
+        "AuditLog", back_populates="account", cascade="all, delete-orphan"
     )
 
     # Many-to-many relationship helper for organizational roles

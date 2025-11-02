@@ -7,8 +7,8 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models.account import Account
 from ..models.api_usage import ApiUsage
+from ..models.user import User
 from .base import CRUDBase
 
 
@@ -37,34 +37,27 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             status_code: HTTP status code of the response
             duration: Time taken to process the request in seconds
             action_type: Type of action (create_issue, update_issue, etc.)
-            create_user_if_missing: Whether to create a user account if it doesn't exist
+            create_user_if_missing: Whether to create a user account if it doesn't exist (not supported)
 
         Returns:
             Created API usage record, or None if the user doesn't exist and create_user_if_missing is False
         """
+        user_id = None
+
         # Only check for user existence if a username is provided
         if username:
-            user = db.query(Account).filter(Account.username == username).first()
+            user = db.query(User).filter(User.username == username).first()
 
-            if not user:
-                if create_user_if_missing:
-                    # Create a placeholder user account
-                    user = Account(
-                        username=username,
-                        email=f"{username}@example.com",  # Placeholder email
-                        hashed_password="",  # Empty password since this is just for logging
-                        is_active=True,
-                    )
-                    db.add(user)
-                    db.commit()
-                else:
-                    # Set username to None for non-existent users to avoid foreign key constraint
-                    username = None
+            if user:
+                user_id = user.id
+            elif not create_user_if_missing:
+                # Set user_id to None for non-existent users
+                user_id = None
 
         try:
             # Create the API usage record
             db_obj = ApiUsage(
-                username=username,
+                user_id=user_id,
                 endpoint=endpoint,
                 method=method,
                 status_code=status_code,
@@ -92,13 +85,13 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
     ) -> List[ApiUsage]:
         """Get API usage for a specific user within a time period."""
         start_date = datetime.now(timezone.utc) - timedelta(days=days)
-        query = db.query(ApiUsage).filter(
-            ApiUsage.username == username, ApiUsage.timestamp >= start_date
+        query = (
+            db.query(ApiUsage)
+            .join(User, ApiUsage.user_id == User.id)
+            .filter(User.username == username, ApiUsage.timestamp >= start_date)
         )
         if account_id:
-            query = query.join(Account, ApiUsage.username == Account.username).filter(
-                Account.id == account_id
-            )
+            query = query.filter(User.account_id == account_id)
         return query.order_by(ApiUsage.timestamp.desc()).all()
 
     def get_endpoint_stats(
@@ -116,8 +109,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         ).filter(ApiUsage.timestamp >= start_date)
 
         if account_id:
-            query = query.join(Account, ApiUsage.username == Account.username).filter(
-                Account.id == account_id
+            query = query.join(User, ApiUsage.user_id == User.id).filter(
+                User.account_id == account_id
             )
 
         result = (
@@ -148,19 +141,21 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
     ) -> List[Dict[str, Any]]:
         """Get statistics for API users."""
         start_date = datetime.now(timezone.utc) - timedelta(days=days)
-        query = db.query(
-            ApiUsage.username,
-            func.count().label("request_count"),
-            func.avg(ApiUsage.duration).label("avg_duration"),
-        ).filter(ApiUsage.timestamp >= start_date)
+        query = (
+            db.query(
+                User.username,
+                func.count().label("request_count"),
+                func.avg(ApiUsage.duration).label("avg_duration"),
+            )
+            .join(User, ApiUsage.user_id == User.id)
+            .filter(ApiUsage.timestamp >= start_date)
+        )
 
         if account_id:
-            query = query.join(Account, ApiUsage.username == Account.username).filter(
-                Account.id == account_id
-            )
+            query = query.filter(User.account_id == account_id)
 
         result = (
-            query.group_by(ApiUsage.username)
+            query.group_by(User.username)
             .order_by(func.count().desc())
             .limit(limit)
             .all()
@@ -185,7 +180,11 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         account_id: Optional[str] = None,
     ) -> List[ApiUsage]:
         """Get API usage for a user with optional date filters."""
-        query = db.query(ApiUsage).filter(ApiUsage.username == username)
+        query = (
+            db.query(ApiUsage)
+            .join(User, ApiUsage.user_id == User.id)
+            .filter(User.username == username)
+        )
 
         if start_date:
             query = query.filter(ApiUsage.timestamp >= start_date)
@@ -193,8 +192,6 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.timestamp <= end_date)
 
         if account_id:
-            query = query.join(Account, ApiUsage.username == Account.username).filter(
-                Account.id == account_id
-            )
+            query = query.filter(User.account_id == account_id)
 
         return query.all()

@@ -8,23 +8,15 @@ from spacemodels.models import AIModel, Account, IssueSet
 
 
 @pytest.fixture
-def create_test_account(db_session: Session) -> Account:
+def create_test_account(db_session: Session, create_account) -> Account:
     """Fixture to create a test account."""
-    account = Account(username="test_user", email="test@example.com")
-    db_session.add(account)
-    db_session.commit()
-    db_session.refresh(account)
-    return account
+    return create_account()
 
 
 @pytest.fixture
-def create_another_account(db_session: Session) -> Account:
+def create_another_account(db_session: Session, create_account) -> Account:
     """Fixture to create another test account."""
-    account = Account(username="another_user", email="another@example.com")
-    db_session.add(account)
-    db_session.commit()
-    db_session.refresh(account)
-    return account
+    return create_account()
 
 
 @pytest.fixture

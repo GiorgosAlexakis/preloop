@@ -16,7 +16,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from .base import Base
 
 if TYPE_CHECKING:
-    from .account import Account
+    from .user import User
 
 
 class ApiKey(Base):
@@ -29,7 +29,7 @@ class ApiKey(Base):
         created_at: When the key was created.
         expires_at: When the key expires (optional).
         last_used_at: When the key was last used (optional).
-        created_by: The username of the user who created the key.
+        user_id: The ID of the user who created the key.
         scopes: The list of scopes/permissions the key has.
         is_active: Whether the key is active.
     """
@@ -53,14 +53,17 @@ class ApiKey(Base):
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Security fields
-    created_by: Mapped[str] = mapped_column(
-        String(50), ForeignKey("account.username"), nullable=False
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="The user who created this API key",
     )
     scopes: Mapped[List] = mapped_column(JSON, default=list, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Relationships
-    creator: Mapped["Account"] = relationship("Account", back_populates="api_keys")
+    creator: Mapped["User"] = relationship("User", back_populates="api_keys")
 
     def __repr__(self) -> str:
         """Return a string representation of the key.
@@ -68,7 +71,7 @@ class ApiKey(Base):
         Returns:
             String representation of the key.
         """
-        return f"<ApiKey {self.name} created by {self.created_by}>"
+        return f"<ApiKey {self.name} created by user {self.user_id}>"
 
     @property
     def is_expired(self) -> bool:
