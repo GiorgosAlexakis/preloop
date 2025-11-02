@@ -459,15 +459,21 @@ class TestHelperFunctions:
         """Test successfully creating user context."""
         from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
-        # Create mock authenticated user with account
+        # Create mock account
         mock_account = MagicMock()
         mock_account.id = str(uuid4())
-        mock_account.username = "testuser"
+
+        # Create mock user object (what would be in access_token.user)
+        mock_db_user = MagicMock()
+        mock_db_user.id = str(uuid4())
+        mock_db_user.username = "testuser"
+        mock_db_user.account_id = mock_account.id
+        mock_db_user.account = mock_account
 
         # Use spec to make isinstance() work
         mock_user = MagicMock(spec=AuthenticatedUser)
         mock_user.access_token = MagicMock()
-        mock_user.access_token.account = mock_account
+        mock_user.access_token.user = mock_db_user
 
         scope = {"user": mock_user}
 

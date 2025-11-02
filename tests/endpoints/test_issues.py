@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 from spacebridge.api.app import create_app
 from spacemodels.db.session import get_db_session
 from spacemodels.models import (
-    Account,
     Issue,
     Organization,
     Project,
     Tracker,
     TrackerScopeRule,
 )
+from spacemodels.models.user import User
 from spacebridge.api.auth import get_current_active_user
 
 
@@ -31,7 +31,7 @@ def test_app():
 
 
 @pytest.fixture
-def client(test_app: "FastAPI", db_session: Session, test_user: Account):
+def client(test_app: "FastAPI", db_session: Session, test_user: "User"):
     """Create a test client with authenticated user and DB session overrides."""
 
     def override_get_db():
@@ -54,7 +54,7 @@ def test_search_issues_simple(
     mock_get_tracker_client: AsyncMock,
     client: TestClient,
     db_session: Session,
-    test_user: Account,
+    test_user: User,
 ):
     """Test basic issue search."""
     tracker = Tracker(
@@ -63,7 +63,7 @@ def test_search_issues_simple(
         tracker_type="github",
         url="http://test.com",
         api_key="test_key",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
     )
     org = Organization(
         id=str(uuid.uuid4()),
@@ -110,7 +110,7 @@ def test_search_issues_with_project_filter(
     mock_get_tracker_client: AsyncMock,
     client: TestClient,
     db_session: Session,
-    test_user: Account,
+    test_user: User,
 ):
     """Test issue search with a project filter."""
     tracker = Tracker(
@@ -119,7 +119,7 @@ def test_search_issues_with_project_filter(
         tracker_type="github",
         url="http://test2.com",
         api_key="test_key_2",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
     )
     org = Organization(
         id=str(uuid.uuid4()),

@@ -210,6 +210,7 @@ class FlowExecutionOrchestrator:
         import secrets
         from datetime import timedelta
         from spacemodels.models import ApiKey
+        from spacemodels.crud import crud_user
 
         try:
             account = crud_account.get(self.db, id=self.flow.account_id)
@@ -217,6 +218,18 @@ class FlowExecutionOrchestrator:
             if not account:
                 logger.warning(f"Account {self.flow.account_id} not found")
                 return None, None
+
+            # Get the first user from the account to associate with the API key
+            # For flow executions, we use the first available user in the organization
+            users = crud_user.get_by_account(self.db, account_id=self.flow.account_id)
+            if not users:
+                logger.warning(
+                    f"No users found for account {self.flow.account_id}, "
+                    f"cannot create API token"
+                )
+                return None, None
+
+            first_user = users[0]
 
             # Generate a secure random token
             token_key = f"flow_{secrets.token_urlsafe(32)}"
@@ -227,7 +240,7 @@ class FlowExecutionOrchestrator:
             api_key = ApiKey(
                 name=f"Flow Execution {self.execution_log.id if self.execution_log else 'temp'}",
                 key=token_key,
-                created_by=account.username,
+                user_id=first_user.id,
                 expires_at=expires_at,
                 is_active=True,
                 scopes=["mcp:read", "mcp:write"],  # Limited scopes for MCP access

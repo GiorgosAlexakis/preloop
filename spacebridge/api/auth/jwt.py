@@ -2,6 +2,7 @@
 
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta, UTC
 from typing import Any, Dict, Optional
 
@@ -12,8 +13,8 @@ from passlib.context import CryptContext
 
 from spacebridge.schemas.auth import TokenData
 from spacemodels.db.session import get_db_session
-from spacemodels.models.account import Account
-from spacemodels.crud import crud_api_key, crud_account
+from spacemodels.models.user import User
+from spacemodels.crud import crud_api_key
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")
@@ -89,7 +90,7 @@ def decode_token(token: str) -> TokenData:
         token: JWT token.
 
     Returns:
-        Decoded token data.
+        Decoded token data containing user_id in the 'sub' field.
 
     Raises:
         HTTPException: If the token is invalid.
@@ -104,6 +105,7 @@ def decode_token(token: str) -> TokenData:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        # Note: 'sub' now contains user_id (UUID string) instead of username
         scopes = payload.get("scopes", [])
         exp = payload.get("exp")
         refresh = payload.get("refresh", False)
@@ -122,14 +124,14 @@ def decode_token(token: str) -> TokenData:
         )
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     """Get the current user from a JWT token or API key.
 
     Args:
         token: JWT token or API key.
 
     Returns:
-        The current user.
+        The current User object.
 
     Raises:
         HTTPException: If the token is invalid or the user doesn't exist.
@@ -152,7 +154,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
 
                 if api_key:
                     logger.info(
-                        f"API key found: {api_key.name}, created by: {api_key.created_by}"
+                        f"API key found: {api_key.name}, user_id: {api_key.user_id}"
                     )
 
                     # Check if the API key has expired
@@ -164,15 +166,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                             headers={"WWW-Authenticate": "Bearer"},
                         )
 
-                    # Get the user associated with this API key using CRUD
-                    user = crud_account.get_by_username(
-                        session, username=api_key.created_by
+                    # Get the user associated with this API key
+                    user = (
+                        session.query(User).filter(User.id == api_key.user_id).first()
                     )
 
                     if not user:
-                        logger.warning(
-                            f"User not found for API key: {api_key.created_by}"
-                        )
+                        logger.warning(f"User not found for API key: {api_key.user_id}")
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="User associated with API key not found",
@@ -180,9 +180,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                         )
 
                     if not user.is_active:
-                        logger.warning(
-                            f"Inactive user for API key: {api_key.created_by}"
-                        )
+                        logger.warning(f"Inactive user for API key: {api_key.user_id}")
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Inactive user",
@@ -197,7 +195,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                     logger.info(
                         f"API key authentication successful for user: {user.username}"
                     )
-                    return user  # Return the full Account object
+                    return user  # Return the full User object
             finally:
                 session.close()
                 try:
@@ -229,11 +227,21 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        username = getattr(token_data, "sub", "")
-        if not username:
+        user_id_str = getattr(token_data, "sub", "")
+        if not user_id_str:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Parse user_id as UUID
+        try:
+            user_id = uuid.UUID(user_id_str)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user ID in token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -243,8 +251,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
             session = next(session_generator)
 
             try:
-                # Get user using CRUD
-                user = crud_account.get_by_username(session, username=username)
+                # Get user by ID
+                user = session.query(User).filter(User.id == user_id).first()
 
                 if not user:
                     raise HTTPException(
@@ -260,7 +268,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                         headers={"WWW-Authenticate": "Bearer"},
                     )
 
-                return user  # Return the full Account object
+                return user  # Return the full User object
             finally:
                 session.close()
                 try:
@@ -301,7 +309,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                         )
 
                     logger.info(
-                        f"API key found: {api_key.name}, created by: {api_key.created_by}"
+                        f"API key found: {api_key.name}, user_id: {api_key.user_id}"
                     )
 
                     # Check if the API key has expired
@@ -312,9 +320,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                             headers={"WWW-Authenticate": "Bearer"},
                         )
 
-                    # Get the user associated with this API key using CRUD
-                    user = crud_account.get_by_username(
-                        session, username=api_key.created_by
+                    # Get the user associated with this API key
+                    user = (
+                        session.query(User).filter(User.id == api_key.user_id).first()
                     )
 
                     if not user:
@@ -339,7 +347,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
                     logger.info(
                         f"API key authentication successful for user: {user.username}"
                     )
-                    return user  # Return the full Account object
+                    return user  # Return the full User object
                 finally:
                     session.close()
                     try:
@@ -368,15 +376,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Account:
 
 
 async def get_current_active_user(
-    current_user: Account = Depends(get_current_user),
-) -> Account:
+    current_user: User = Depends(get_current_user),
+) -> User:
     """Get the current active user.
 
     Args:
         current_user: The current user.
 
     Returns:
-        The current active user.
+        The current active User object.
 
     Raises:
         HTTPException: If the user is disabled.
@@ -387,7 +395,7 @@ async def get_current_active_user(
 
 async def get_current_active_user_optional(
     token: str = Depends(oauth2_scheme_optional),
-) -> Optional[Account]:
+) -> Optional[User]:
     """
     Get the current active user if a valid token is provided, otherwise return None.
     This dependency will not raise an error if the token is missing or invalid.
@@ -406,9 +414,7 @@ async def get_current_active_user_optional(
         return None
 
 
-async def get_user_from_token_if_valid(
-    token: str, db_session: Any
-) -> Optional[Account]:
+async def get_user_from_token_if_valid(token: str, db_session: Any) -> Optional[User]:
     """
     Manually attempts to retrieve a user from a token string.
     Returns None if the token is invalid, expired, or the user doesn't exist.

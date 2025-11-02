@@ -9,7 +9,8 @@ from spacemodels.crud.flow import CRUDFlow
 from spacemodels.crud.flow_execution import CRUDFlowExecution
 from spacemodels.db.session import get_db_session as get_db
 from spacebridge.api.auth import get_current_active_user
-from spacemodels.models.account import Account
+from spacemodels.models.user import User
+from spacebridge.plugins.proprietary.rbac.permissions import require_permission
 
 router = APIRouter()
 crud_flow = CRUDFlow()
@@ -17,48 +18,54 @@ crud_flow_execution = CRUDFlowExecution()
 
 
 @router.post("/flows", response_model=schemas.FlowResponse)
+@require_permission("create_flows")
 def create_flow(
     *,
     db: Session = Depends(get_db),
     flow_in: schemas.FlowCreate,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Create new flow."""
-    flow = crud_flow.create(db=db, flow_in=flow_in, account_id=current_user.id)
+    flow = crud_flow.create(db=db, flow_in=flow_in, account_id=current_user.account_id)
     return flow
 
 
 @router.get("/flows", response_model=List[schemas.FlowResponse])
+@require_permission("view_flows")
 def read_flows(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Retrieve flows for the account."""
-    flows = crud_flow.get_multi(db, account_id=current_user.id, skip=skip, limit=limit)
+    flows = crud_flow.get_multi(
+        db, account_id=current_user.account_id, skip=skip, limit=limit
+    )
     return flows
 
 
 @router.get("/flows/presets", response_model=List[schemas.FlowResponse])
+@require_permission("view_flows")
 def read_presets(
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Retrieve flow presets for the account."""
     global_presets = crud_flow.get_multi(db, is_preset=True)
     account_presets = crud_flow.get_multi(
-        db, account_id=current_user.id, is_preset=False
+        db, account_id=current_user.account_id, is_preset=False
     )
     return global_presets + account_presets
 
 
 @router.post("/flows/presets/{flow_id}/clone", response_model=schemas.FlowResponse)
+@require_permission("create_flows")
 def clone_preset(
     *,
     db: Session = Depends(get_db),
     flow_id: uuid.UUID,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Clone a flow preset."""
     preset = crud_flow.get(db=db, id=flow_id)
@@ -85,24 +92,25 @@ def clone_preset(
         **preset_dict,
         name=f"Copy of {preset.name}",
         is_preset=False,
-        account_id=current_user.id,
+        account_id=str(current_user.account_id),
     )
     cloned_flow = crud_flow.create(
-        db=db, flow_in=cloned_flow_in, account_id=current_user.id
+        db=db, flow_in=cloned_flow_in, account_id=current_user.account_id
     )
     return cloned_flow
 
 
 @router.get("/flows/executions", response_model=List[schemas.FlowExecutionResponse])
+@require_permission("view_flows")
 def read_flow_executions(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Retrieve flow executions for the account."""
     executions = crud_flow_execution.get_multi(
-        db, account_id=current_user.id, skip=skip, limit=limit
+        db, account_id=current_user.account_id, skip=skip, limit=limit
     )
     return executions
 
@@ -110,15 +118,16 @@ def read_flow_executions(
 @router.get(
     "/flows/executions/{execution_id}", response_model=schemas.FlowExecutionResponse
 )
+@require_permission("view_flows")
 def read_flow_execution(
     *,
     db: Session = Depends(get_db),
     execution_id: uuid.UUID,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get flow execution by ID."""
     execution = crud_flow_execution.get(
-        db=db, id=execution_id, account_id=current_user.id
+        db=db, id=execution_id, account_id=current_user.account_id
     )
     if not execution:
         raise HTTPException(status_code=404, detail="Flow execution not found")
@@ -126,18 +135,19 @@ def read_flow_execution(
 
 
 @router.post("/flows/executions/{execution_id}/command")
+@require_permission("execute_flows")
 async def send_execution_command(
     *,
     db: Session = Depends(get_db),
     execution_id: uuid.UUID,
     command: str,
     payload: dict = None,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Send a command to a running flow execution."""
     # Verify execution exists and user has access
     execution = crud_flow_execution.get(
-        db=db, id=execution_id, account_id=current_user.id
+        db=db, id=execution_id, account_id=current_user.account_id
     )
     if not execution:
         raise HTTPException(status_code=404, detail="Flow execution not found")
@@ -154,15 +164,16 @@ async def send_execution_command(
 
 
 @router.post("/flows/{flow_id}/trigger")
+@require_permission("execute_flows")
 async def trigger_flow_execution(
     *,
     db: Session = Depends(get_db),
     flow_id: uuid.UUID,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Trigger a test execution for a flow."""
     # Verify flow exists and user has access
-    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.id)
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
 
@@ -176,47 +187,50 @@ async def trigger_flow_execution(
 
 
 @router.get("/flows/{flow_id}", response_model=schemas.FlowResponse)
+@require_permission("view_flows")
 def read_flow(
     *,
     db: Session = Depends(get_db),
     flow_id: uuid.UUID,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get flow by ID."""
-    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.id)
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
     return flow
 
 
 @router.put("/flows/{flow_id}", response_model=schemas.FlowResponse)
+@require_permission("edit_flows")
 def update_flow(
     *,
     db: Session = Depends(get_db),
     flow_id: uuid.UUID,
     flow_in: schemas.FlowUpdate,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Update a flow."""
-    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.id)
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
     flow = crud_flow.update(
-        db=db, db_obj=flow, flow_in=flow_in, account_id=current_user.id
+        db=db, db_obj=flow, flow_in=flow_in, account_id=current_user.account_id
     )
     return flow
 
 
 @router.delete("/flows/{flow_id}", response_model=schemas.FlowResponse)
+@require_permission("delete_flows")
 def delete_flow(
     *,
     db: Session = Depends(get_db),
     flow_id: uuid.UUID,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Delete a flow."""
-    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.id)
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
-    crud_flow.remove(db=db, id=flow_id, account_id=current_user.id)
+    crud_flow.remove(db=db, id=flow_id, account_id=current_user.account_id)
     return flow

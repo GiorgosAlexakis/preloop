@@ -11,8 +11,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, FileResponse
@@ -26,9 +27,12 @@ from spacebridge.api.middleware import UIRoutingMiddleware
 from fastapi.encoders import jsonable_encoder
 from spacebridge.api.auth import auth_router, get_current_active_user
 from spacebridge.api.endpoints import (
+    account,
     approval_requests,
     comments,
+    features,
     health,
+    invitations,
     issues,
     issue_compliance,
     issue_dependencies,
@@ -36,9 +40,12 @@ from spacebridge.api.endpoints import (
     organizations,
     projects,
     public_approval,
+    roles,
     search as search_router,
+    teams,
     tools,
     trackers,
+    users,
     version,
     embedding as embedding_router,
     issue_duplicates,
@@ -126,6 +133,8 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
         """
         # Skip tracking for non-api routes
         path = request.url.path
+        logger.info(f"[ApiUsageMiddleware] Processing request: {request.method} {path}")
+
         if (
             not path.startswith("/api/v1")
             or path.startswith("/api/v1/health")
@@ -133,10 +142,17 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
             or path.startswith("/api/v1/billing/create-checkout-session")
             or path.startswith("/api/v1/billing/webhooks")
         ):
+            logger.info(f"[ApiUsageMiddleware] Skipping tracking for {path}")
             return await call_next(request)
 
+        logger.info(
+            f"[ApiUsageMiddleware] Tracking enabled for {path}, calling next middleware"
+        )
         start_time = datetime.now(timezone.utc)
         response = await call_next(request)
+        logger.info(
+            f"[ApiUsageMiddleware] Response received for {path}, status: {response.status_code}"
+        )
         duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
         # Extract tracking information
@@ -154,21 +170,26 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
             elif method == "DELETE":
                 action_type = "delete_issue"
 
-        # Get username from auth token if available
+        # Get user_id from auth token if available
+        user_id = None
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             from spacebridge.api.auth.jwt import decode_token
+            from uuid import UUID
 
             try:
                 token = auth_header.replace("Bearer ", "")
                 token_data = decode_token(token)
-                user = getattr(token_data, "sub", None)
+                # user_id is stored in the "sub" field of the token
+                user_id_str = getattr(token_data, "sub", None)
+                if user_id_str:
+                    user_id = UUID(user_id_str)
             except Exception:
                 # Ignore errors in token decoding
                 pass
 
         # Log usage in database
-        if user and status_code < 500:  # Only log successful API calls
+        if user_id and status_code < 500:  # Only log successful API calls
             try:
                 session_generator = get_db_session()
                 session = next(session_generator)
@@ -176,7 +197,7 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
                 try:
                     # Create usage entry
                     usage_entry = ApiUsage(
-                        username=user,
+                        user_id=user_id,
                         endpoint=path,
                         method=method,
                         status_code=status_code,
@@ -238,71 +259,116 @@ async def lifespan(app: FastAPI):
         logger.error(f"Database setup failed: {e}", exc_info=True)
         raise RuntimeError("Database setup failed") from e
 
-    # Connect to NATS
-    logger.info("Connecting to NATS...")
-    try:
-        await connect_nats()
-        logger.info("NATS connection established.")
-    except Exception as e:
-        logger.error(f"NATS connection failed: {e}", exc_info=True)
-        raise RuntimeError("NATS connection failed") from e
+    # Connect to NATS (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        logger.info("Connecting to NATS...")
+        try:
+            await connect_nats()
+            logger.info("NATS connection established.")
+        except Exception as e:
+            logger.error(f"NATS connection failed: {e}", exc_info=True)
+            raise RuntimeError("NATS connection failed") from e
 
-    # Start the NATS consumer for WebSocket broadcasting
-    from spacebridge.services.websocket_manager import manager, nats_consumer
-    import asyncio
+        # Start the NATS consumer for WebSocket broadcasting
+        from spacebridge.services.websocket_manager import manager, nats_consumer
+        import asyncio
 
-    # Start the NATS consumer as a background task
-    loop = asyncio.get_event_loop()
-    app.state.nats_consumer_task = loop.create_task(nats_consumer(manager))
-    logger.info("NATS consumer for WebSockets started.")
-
-    # Start the execution monitor for cleaning up stale executions
-    from spacebridge.services.execution_monitor import get_execution_monitor
-
-    execution_monitor = get_execution_monitor()
-    await execution_monitor.start()
-
-    # Start MCP server lifespan
-    from spacebridge.services.mcp_http import get_mcp_lifespan_manager
-
-    mcp_lifespan = get_mcp_lifespan_manager()
-    if mcp_lifespan:
-        await mcp_lifespan.__aenter__()
-        logger.info("MCP server lifespan started")
+        # Start the NATS consumer as a background task
+        loop = asyncio.get_event_loop()
+        app.state.nats_consumer_task = loop.create_task(nats_consumer(manager))
+        logger.info("NATS consumer for WebSockets started.")
     else:
-        logger.warning("No MCP lifespan manager available")
+        logger.info("Skipping NATS connection (TESTING mode)")
+
+    # Start the execution monitor for cleaning up stale executions (skip in testing mode)
+    execution_monitor = None
+    if os.getenv("TESTING") != "true":
+        from spacebridge.services.execution_monitor import get_execution_monitor
+
+        execution_monitor = get_execution_monitor()
+        await execution_monitor.start()
+        logger.info("Execution monitor started.")
+    else:
+        logger.info("Skipping execution monitor (TESTING mode)")
+
+    # Start MCP server lifespan (skip in testing mode)
+    mcp_lifespan = None
+    if os.getenv("TESTING") != "true":
+        from spacebridge.services.mcp_http import get_mcp_lifespan_manager
+
+        mcp_lifespan = get_mcp_lifespan_manager()
+        if mcp_lifespan:
+            await mcp_lifespan.__aenter__()
+            logger.info("MCP server lifespan started")
+        else:
+            logger.warning("No MCP lifespan manager available")
+    else:
+        logger.info("Skipping MCP server (TESTING mode)")
+
+    # Initialize plugin system (skip in testing mode)
+    plugin_manager = None
+    if os.getenv("TESTING") != "true":
+        from spacebridge.plugins import get_plugin_manager
+
+        logger.info("Initializing plugin system...")
+        plugin_manager = get_plugin_manager()
+        await plugin_manager.startup_all()
+        logger.info(
+            f"Plugin system initialized. "
+            f"Registered {len(plugin_manager.list_condition_evaluators())} condition evaluators."
+        )
+    else:
+        logger.info("Skipping plugin system (TESTING mode)")
 
     yield
 
     # Shutdown logic
 
-    # Stop MCP server lifespan
-    if mcp_lifespan:
+    # Shutdown plugin system (skip in testing mode)
+    if os.getenv("TESTING") != "true" and plugin_manager:
+        logger.info("Shutting down plugin system...")
+        try:
+            await plugin_manager.shutdown_all()
+            logger.info("Plugin system shut down successfully.")
+        except Exception as e:
+            logger.error(f"Error shutting down plugins: {e}", exc_info=True)
+    else:
+        logger.info("Skipping plugin shutdown (TESTING mode)")
+
+    # Stop MCP server lifespan (skip in testing mode)
+    if os.getenv("TESTING") != "true" and mcp_lifespan:
         try:
             await mcp_lifespan.__aexit__(None, None, None)
             logger.info("MCP server lifespan stopped")
         except Exception as e:
             logger.error(f"Error stopping MCP lifespan: {e}", exc_info=True)
+    else:
+        logger.info("Skipping MCP shutdown (TESTING mode)")
 
-    # Stop the execution monitor
-    try:
-        execution_monitor = get_execution_monitor()
-        await execution_monitor.stop()
-        logger.info("Execution monitor stopped.")
-    except Exception as e:
-        logger.error(f"Error stopping execution monitor: {e}", exc_info=True)
+    # Stop the execution monitor (skip in testing mode)
+    if os.getenv("TESTING") != "true" and execution_monitor:
+        try:
+            await execution_monitor.stop()
+            logger.info("Execution monitor stopped.")
+        except Exception as e:
+            logger.error(f"Error stopping execution monitor: {e}", exc_info=True)
+    else:
+        logger.info("Skipping execution monitor shutdown (TESTING mode)")
 
-    # Cancel the NATS consumer task
-    if hasattr(app.state, "nats_consumer_task"):
-        app.state.nats_consumer_task.cancel()
-        logger.info("NATS consumer for WebSockets stopped.")
+    # Cancel the NATS consumer task (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        if hasattr(app.state, "nats_consumer_task"):
+            app.state.nats_consumer_task.cancel()
+            logger.info("NATS consumer for WebSockets stopped.")
 
-    logger.info("Shutting down NATS connection...")
-    try:
-        await close_nats()
-        logger.info("NATS connection closed.")
-    except Exception as e:
-        logger.error(f"Error closing NATS connection: {e}", exc_info=True)
+        logger.info("Shutting down NATS connection...")
+        try:
+            await close_nats()
+            logger.info("NATS connection closed.")
+        except Exception as e:
+            logger.error(f"Error closing NATS connection: {e}", exc_info=True)
+    else:
+        logger.info("Skipping NATS shutdown (TESTING mode)")
 
     logger.info("Shutting down application...")
     # Restore the original jsonable_encoder
@@ -336,6 +402,24 @@ def create_app() -> FastAPI:
         redoc_url=None,  # Disable the automatic redoc at /redoc
         lifespan=lifespan,
     )
+
+    # Add global exception handler to ensure all errors are logged
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        """Log all exceptions with full traceback."""
+        logger.error(
+            f"Unhandled exception in {request.method} {request.url.path}: {exc}",
+            exc_info=True,
+        )
+        # Re-raise HTTPException as-is
+        if isinstance(exc, HTTPException):
+            return JSONResponse(
+                status_code=exc.status_code, content={"detail": exc.detail}
+            )
+        # Return 500 for all other exceptions
+        return JSONResponse(
+            status_code=500, content={"detail": "Internal server error"}
+        )
 
     # Override the default JSON encoder to handle datetime objects
     class CustomJSONEncoder(json.JSONEncoder):
@@ -385,7 +469,11 @@ def create_app() -> FastAPI:
     app.add_middleware(PyinstrumentMiddleware)
 
     # Add API usage tracking
-    if os.getenv("TESTING") != "true":
+    # Can be disabled with DISABLE_API_USAGE_TRACKING=true for debugging
+    if (
+        os.getenv("TESTING") != "true"
+        and os.getenv("DISABLE_API_USAGE_TRACKING", "false").lower() != "true"
+    ):
         app.add_middleware(ApiUsageMiddleware)
     app.add_middleware(UIRoutingMiddleware)
 
@@ -491,6 +579,7 @@ def create_app() -> FastAPI:
             "/register",
             "/logout",
             "/api/v1/health",
+            "/api/v1/features",
             "/approval",
         ]
         for path in openapi_schema["paths"]:
@@ -522,7 +611,16 @@ def create_app() -> FastAPI:
     # Add routers
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
     app.include_router(
+        account.router,
+        prefix="/api/v1",
+        tags=["Account"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
         public_approval.router, prefix="/api/v1", tags=["Public Approval"]
+    )  # No auth required
+    app.include_router(
+        features.router, prefix="/api/v1", tags=["Features"]
     )  # No auth required
     app.include_router(health.router, prefix="/api/v1", tags=["Health"])
     app.include_router(version.router, prefix="/api/v1", tags=["Version"])
@@ -635,6 +733,33 @@ def create_app() -> FastAPI:
 
     # WebSocket router
     app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
+
+    # User, Team, Role, and Invitation management routers
+    app.include_router(
+        users.router,
+        prefix="/api/v1",
+        tags=["Users"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        teams.router,
+        prefix="/api/v1",
+        tags=["Teams"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        roles.router,
+        prefix="/api/v1",
+        tags=["Roles"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    # Note: invitations router has public endpoints for accepting invitations,
+    # so we don't add auth dependency at router level - auth is on individual endpoints
+    app.include_router(
+        invitations.router,
+        prefix="/api/v1",
+        tags=["Invitations"],
+    )
 
     # --- Public Approval Page ---
     @app.get("/approval/{request_id}", include_in_schema=False)

@@ -166,6 +166,80 @@ def send_password_reset_email(user_email: str, token: str) -> None:
     send_email(user_email, subject, text_body, html_body)
 
 
+def send_invitation_email(
+    user_email: str, token: str, organization_name: str, invited_by: str
+) -> None:
+    """Send an invitation email to join an organization.
+
+    Args:
+        user_email: The invitee's email address.
+        token: The invitation token.
+        organization_name: Name of the organization they're invited to.
+        invited_by: Name/email of the person who sent the invitation.
+    """
+    accept_link = f"{SPACEBRIDGE_URL}/invitations/accept?token={token}"
+
+    subject = f"You've been invited to join {organization_name}"
+
+    text_body = f"""
+Hello!
+
+{invited_by} has invited you to join {organization_name} on SpaceBridge.
+
+To accept this invitation and create your account, please click the link below:
+
+{accept_link}
+
+This invitation will expire in 7 days.
+
+If you didn't expect this invitation, you can safely ignore this email.
+
+Best regards,
+The SpaceBridge Team
+    """.strip()
+
+    html_body = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ background-color: #4A90E2; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }}
+            .content {{ background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }}
+            .button {{ display: inline-block; padding: 12px 24px; background-color: #4A90E2; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
+            .button:hover {{ background-color: #357ABD; }}
+            .footer {{ margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #777; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>You're Invited!</h1>
+            </div>
+            <div class="content">
+                <p>Hello!</p>
+                <p><strong>{invited_by}</strong> has invited you to join <strong>{organization_name}</strong> on SpaceBridge.</p>
+                <p>SpaceBridge helps teams automate and streamline their development workflows with AI-powered agents.</p>
+                <p style="text-align: center;">
+                    <a href="{accept_link}" class="button">Accept Invitation</a>
+                </p>
+                <p style="font-size: 14px; color: #666;">Or copy and paste this link into your browser:</p>
+                <p style="font-size: 12px; word-break: break-all; background-color: #f0f0f0; padding: 10px; border-radius: 3px;">{accept_link}</p>
+                <div class="footer">
+                    <p>This invitation will expire in 7 days.</p>
+                    <p>If you didn't expect this invitation, you can safely ignore this email.</p>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    send_email(user_email, subject, text_body, html_body)
+
+
 def send_tracker_registered_email(
     user_email: str, tracker_name: str, tracker_type: str
 ) -> None:

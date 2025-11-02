@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from spacemodels.crud import crud_account
+from spacemodels.crud import crud_account, crud_user
 
 from .base import PromptResolver, ResolverContext
 
@@ -15,9 +15,9 @@ class AccountResolver(PromptResolver):
     Resolver for account data from the database.
 
     Handles placeholders like:
-    - {{account.email}}
-    - {{account.name}}
-    - {{account.id}}
+    - {{account.email}} - Primary user's email
+    - {{account.name}} - Organization name
+    - {{account.id}} - Account ID
     """
 
     @property
@@ -52,9 +52,17 @@ class AccountResolver(PromptResolver):
 
         # Resolve the requested field
         if path == "email":
-            return account.email
+            # Get email from primary user
+            if account.primary_user_id:
+                primary_user = crud_user.get(
+                    context.db, id=str(account.primary_user_id)
+                )
+                if primary_user:
+                    return primary_user.email
+            self.logger.warning(f"No primary user found for account {account_id}")
+            return None
         elif path == "name":
-            return account.name or ""
+            return account.organization_name or ""
         elif path == "id":
             return str(account.id)
         else:

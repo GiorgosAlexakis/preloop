@@ -5,9 +5,12 @@
 
 # Define __all__ to explicitly list all endpoint modules in this package
 __all__ = [
+    "account",
     "approval_requests",
     "comments",
+    "features",
     "health",
+    "invitations",
     "issues",
     "issue_compliance",
     "issue_dependencies",
@@ -17,8 +20,10 @@ __all__ = [
     "projects",
     "public_approval",
     "search",
+    "teams",
     "tools",
     "trackers",
+    "users",
     "version",
     "webhooks",
     "flows",

@@ -35,6 +35,7 @@ dependencies = [
     "fastmcp>=0.1.0",
     "aiodocker>=0.21.0", # Added for agent container execution
     "kubernetes_asyncio>=30.5.0", # Added for Kubernetes agent execution
+    "cel-python>=0.1.0", # Added for CEL expression evaluation in approval rules
     # Using SpaceModels for database models and operations
     # "spacemodels @ file://${PROJECT_ROOT}/SpaceModels",
     # "spacesync @ file://${PROJECT_ROOT}/spacesync",

@@ -6,12 +6,13 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 import stripe
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from spacebridge.config import settings
 from spacemodels.models import Account, Plan, Subscription, MonthlyUsage
 from spacemodels.schemas.plan import PlanCreate, SubscriptionCreate, MonthlyUsageCreate
-from spacemodels.crud import crud_account, plan, subscription, monthly_usage
+from spacemodels.crud import crud_account, crud_user, plan, subscription, monthly_usage
 
 
 class BillingService:
@@ -176,7 +177,14 @@ class BillingService:
             if account.stripe_customer_id:
                 session_params["customer"] = account.stripe_customer_id
             else:
-                session_params["customer_email"] = account.email
+                # Get email from primary user
+                primary_user = None
+                if account.primary_user_id:
+                    primary_user = crud_user.get(
+                        self.db, id=str(account.primary_user_id)
+                    )
+                if primary_user:
+                    session_params["customer_email"] = primary_user.email
 
             checkout_session = stripe.checkout.Session.create(**session_params)
             return {"url": checkout_session.url, "action": "redirect"}
@@ -286,7 +294,10 @@ class BillingService:
         if session.client_reference_id:
             account = crud_account.get(self.db, id=session.client_reference_id)
         elif session.customer and session.customer.email:
-            account = crud_account.get_by_email(self.db, email=session.customer.email)
+            # Email is now on User model, so we need to find the user first
+            user = crud_user.get_by_email(self.db, email=session.customer.email)
+            if user:
+                account = crud_account.get(self.db, id=str(user.account_id))
 
         # 2. Conflict Detection for existing users
         if account and account.get_active_subscription(self.db):
@@ -294,20 +305,52 @@ class BillingService:
             # TODO: Send admin alert
             return account  # Return account for context, but don't create new sub
 
-        # 3. Create new account if necessary
+        # 3. Create new account and user if necessary
         customer_email = session.customer.email
         if not account and customer_email:
             username = self._generate_unique_username(customer_email)
+            # Create Account (organization) first
             account = Account(
-                username=username,
-                email=customer_email,
-                full_name=session.customer.name,
+                organization_name=f"{username}'s Organization",
                 stripe_customer_id=session.customer.id,
-                hashed_password="NEEDS_RESET",
+                is_active=True,
             )
             self.db.add(account)
             self.db.commit()
             self.db.refresh(account)
+
+            # Create User linked to the account
+            from spacemodels.models.user import User
+
+            user = User(
+                account_id=account.id,
+                username=username,
+                email=customer_email,
+                full_name=session.customer.name,
+                hashed_password="NEEDS_RESET",
+                is_active=True,
+                email_verified=False,
+                user_source="local",
+            )
+            self.db.add(user)
+            self.db.commit()
+            self.db.refresh(user)
+
+            # Set the primary user for the account
+            account.primary_user_id = user.id
+            self.db.commit()
+
+            # Assign Owner role to the first user
+            from spacemodels.crud.role import role as crud_role
+            from spacemodels.crud.user_role import user_role as crud_user_role
+
+            owner_role = crud_role.get_by_name(self.db, name="owner")
+            if owner_role:
+                user_role_data = {
+                    "user_id": user.id,
+                    "role_id": owner_role.id,
+                }
+                crud_user_role.create(self.db, obj_in=user_role_data)
         elif account and not account.stripe_customer_id:
             account.stripe_customer_id = session.customer.id
             self.db.commit()
@@ -412,11 +455,12 @@ class BillingService:
             if not email:
                 return None
 
-            account = crud_account.get_by_email(self.db, email=email)
-            if not account:
+            # Get user by email (email is now on User, not Account)
+            user = crud_user.get_by_email(self.db, email=email)
+            if not user:
                 return None
 
-            return {"email": account.email, "username": account.username}
+            return {"email": user.email, "username": user.username}
         except Exception as e:
             print(f"Error retrieving session details: {e}")
             return None
@@ -429,7 +473,7 @@ class BillingService:
             sanitized_prefix = "user"
 
         username = sanitized_prefix
-        while crud_account.get_by_username(self.db, username=username):
+        while crud_user.get_by_username(self.db, username=username):
             suffix = uuid.uuid4().hex[:4]
             username = f"{sanitized_prefix}_{suffix}"
         return username

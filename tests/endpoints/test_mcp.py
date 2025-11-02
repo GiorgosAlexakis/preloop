@@ -18,23 +18,23 @@ from spacebridge.schemas.mcp import (
     GetIssueResponse,
 )
 from spacemodels.models import (
-    Account,
     Organization,
     Project,
     Issue,
     Tracker,
     EmbeddingModel,
 )
+from spacemodels.models.user import User
 
 
 @pytest.mark.asyncio
-async def test_mcp_get_issue_success(db_session: Session, test_user: Account):
+async def test_mcp_get_issue_success(db_session: Session, test_user: User):
     """
     Tests successful retrieval of an issue via the MCP get_issue tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",
@@ -90,13 +90,13 @@ async def test_mcp_get_issue_success(db_session: Session, test_user: Account):
 
 
 @pytest.mark.asyncio
-async def test_mcp_create_issue_success(db_session: Session, test_user: Account):
+async def test_mcp_create_issue_success(db_session: Session, test_user: User):
     """
     Tests successful creation of an issue via the MCP create_issue tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",
@@ -159,13 +159,13 @@ async def test_mcp_create_issue_success(db_session: Session, test_user: Account)
 
 
 @pytest.mark.asyncio
-async def test_mcp_update_issue_success(db_session: Session, test_user: Account):
+async def test_mcp_update_issue_success(db_session: Session, test_user: User):
     """
     Tests successful update of an issue via the MCP update_issue tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",
@@ -227,7 +227,7 @@ async def test_mcp_update_issue_success(db_session: Session, test_user: Account)
 
 
 @pytest.mark.asyncio
-async def test_mcp_search_success(db_session: Session, test_user: Account):
+async def test_mcp_search_success(db_session: Session, test_user: User):
     """
     Tests the MCP search tool.
     """
@@ -262,13 +262,13 @@ async def test_mcp_search_success(db_session: Session, test_user: Account):
 
 
 @pytest.mark.asyncio
-async def test_mcp_estimate_compliance_success(db_session: Session, test_user: Account):
+async def test_mcp_estimate_compliance_success(db_session: Session, test_user: User):
     """
     Tests the MCP estimate_compliance tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",
@@ -336,13 +336,13 @@ async def test_mcp_estimate_compliance_success(db_session: Session, test_user: A
 
 
 @pytest.mark.asyncio
-async def test_mcp_improve_compliance_success(db_session: Session, test_user: Account):
+async def test_mcp_improve_compliance_success(db_session: Session, test_user: User):
     """
     Tests the MCP improve_compliance tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",

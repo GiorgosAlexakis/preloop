@@ -14,9 +14,10 @@ from spacebridge.schemas.organization import (
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.tracker import CRUDTracker  # Import tracker CRUD
 from spacemodels.db.session import get_db_session as get_db
-from spacemodels.models.account import Account  # Import Account model
+from spacemodels.models.user import User  # Import Account model
 from spacemodels.models.organization import Organization
 from spacemodels.models.tracker import Tracker
+from spacebridge.plugins.proprietary.rbac.permissions import require_permission
 
 # Initialize CRUD operations for Organization
 crud_organization = CRUDOrganization(Organization)
@@ -26,10 +27,11 @@ crud_tracker = CRUDTracker(Tracker)  # Instantiate tracker CRUD
 
 
 @router.post("/organizations", response_model=OrganizationResponse, status_code=201)
+@require_permission("create_organizations")
 def create_organization(
     organization: OrganizationCreate,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Organization:
     """Create a new organization, ensuring it's linked to the current user's tracker."""
     # Check if organization with this identifier already exists
@@ -47,7 +49,7 @@ def create_organization(
     # with your authentication and tracker selection flow.
 
     # Get the first tracker associated with the current user
-    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.account_id)
     if not user_trackers:
         raise HTTPException(
             status_code=400,
@@ -72,15 +74,16 @@ def create_organization(
 
 
 @router.get("/organizations")
+@require_permission("view_organizations")
 def list_organizations(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """List organizations accessible to the current user."""
     # Get trackers for the current user
-    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.account_id)
     tracker_ids = [t.id for t in user_trackers]
 
     if not tracker_ids:
@@ -92,7 +95,7 @@ def list_organizations(
         tracker_ids=tracker_ids,
         skip=offset,
         limit=limit,
-        account_id=current_user.id,
+        account_id=current_user.account_id,
     )
 
     # Convert SQLAlchemy model objects to dictionaries
@@ -117,14 +120,15 @@ def list_organizations(
 
 
 @router.get("/organizations/{organization_id}", response_model=OrganizationResponse)
+@require_permission("view_organizations")
 def get_organization(
     organization_id: str,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Organization:
     """Get an organization by ID, ensuring user has access."""
     organization = crud_organization.get(
-        db, id=organization_id, account_id=current_user.id
+        db, id=organization_id, account_id=current_user.account_id
     )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -135,14 +139,15 @@ def get_organization(
 @router.get(
     "/organizations/by-identifier/{identifier}", response_model=OrganizationResponse
 )
+@require_permission("view_organizations")
 def get_organization_by_identifier(
     identifier: str,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Organization:
     """Get an organization by identifier, ensuring user has access."""
     organization = crud_organization.get_by_identifier(
-        db, identifier=identifier, account_id=current_user.id
+        db, identifier=identifier, account_id=current_user.account_id
     )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -151,15 +156,16 @@ def get_organization_by_identifier(
 
 
 @router.put("/organizations/{organization_id}", response_model=OrganizationResponse)
+@require_permission("edit_organizations")
 def update_organization(
     organization_id: str,
     organization_update: OrganizationUpdate,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Organization:
     """Update an organization, ensuring user has access."""
     organization = crud_organization.get(
-        db, id=organization_id, account_id=current_user.id
+        db, id=organization_id, account_id=current_user.account_id
     )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -174,14 +180,15 @@ def update_organization(
 
 
 @router.delete("/organizations/{organization_id}", status_code=204)
+@require_permission("delete_organizations")
 def delete_organization(
     organization_id: str,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> None:
     """Delete an organization, ensuring user has access."""
     organization = crud_organization.get(
-        db, id=organization_id, account_id=current_user.id
+        db, id=organization_id, account_id=current_user.account_id
     )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")

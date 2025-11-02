@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from spacemodels.models.account import Account
+from spacemodels.models.user import User
 from spacemodels.crud import (
     CRUDIssue,
     crud_ai_model,
@@ -50,7 +50,7 @@ crud_issue = CRUDIssue(Issue)
 def detect_issue_dependencies(
     request: DependencyRequest,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     settings: Settings = Depends(get_settings),
 ):
     """
@@ -71,7 +71,7 @@ def detect_issue_dependencies(
     issues = []
     issue_map = {}
     for issue_id in request.issue_ids:
-        issue = crud_issue.get(db, id=issue_id, account_id=current_user.id)
+        issue = crud_issue.get(db, id=issue_id, account_id=current_user.account_id)
         if not issue:
             raise HTTPException(
                 status_code=404, detail=f"Issue with ID '{issue_id}' not found."
@@ -89,7 +89,7 @@ def detect_issue_dependencies(
             )
     else:
         ai_model = crud_ai_model.get_default_active_model(
-            db, account_id=current_user.id
+            db, account_id=current_user.account_id
         )
         if not ai_model:
             raise HTTPException(
@@ -103,7 +103,7 @@ def detect_issue_dependencies(
         db,
         issue_ids=sorted_issue_ids,
         ai_model_ids=[ai_model.id, None],
-        account_id=current_user.id,
+        account_id=current_user.account_id,
     )
 
     if existing_sets:
@@ -179,7 +179,7 @@ def detect_issue_dependencies(
         )
 
         billing_service.record_usage(
-            account_id=current_user.id, metric="ai_calls", quantity=1
+            account_id=current_user.account_id, metric="ai_calls", quantity=1
         )
 
         response_content = response.choices[0].message.content
@@ -229,7 +229,7 @@ def detect_issue_dependencies(
             name=set_name,
             issue_ids=sorted_issue_ids,
             ai_model_id=ai_model.id,
-            account_id=current_user.id,
+            account_id=current_user.account_id,
         )
 
         return DependencyResponse(dependencies=dependencies_from_ai)
@@ -255,7 +255,7 @@ def detect_issue_dependencies(
 async def commit_issue_dependencies(
     request: CommitDependenciesRequest,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Commits a list of issue dependency pairs. This will create the dependency in the external tracker and mark it as 'committed' in SpaceBridge.
@@ -271,7 +271,7 @@ async def commit_issue_dependencies(
 
         # Eagerly load the required relationships to get to the tracker using CRUD layer
         source_issue = crud_issue.get_with_full_hierarchy(
-            db, id=dep.source_issue_id, account_id=current_user.id
+            db, id=dep.source_issue_id, account_id=current_user.account_id
         )
 
         if (
@@ -363,7 +363,7 @@ async def commit_issue_dependencies(
 def extend_dependency_scan(
     request: ExtendScanRequest,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     settings: Settings = Depends(get_settings),
 ):
     """
@@ -381,7 +381,7 @@ def extend_dependency_scan(
 
     # Fetch the first issue to determine the project context
     initial_issue = crud_issue.get(
-        db, id=request.issue_ids[0], account_id=current_user.id
+        db, id=request.issue_ids[0], account_id=current_user.account_id
     )
     if not initial_issue:
         raise HTTPException(
@@ -393,12 +393,14 @@ def extend_dependency_scan(
     # Note: get_for_project is paginated, we might need a way to get ALL issues.
     # Assuming for now it returns enough issues or we get all of them.
     project_issues = crud_issue.get_for_project(
-        db, project_id=project_id, limit=1000, account_id=current_user.id
+        db, project_id=project_id, limit=1000, account_id=current_user.account_id
     )  # Arbitrary high limit
     project_issue_ids = {str(issue.id) for issue in project_issues}
 
     # Select AI Model (same logic as detect_issue_dependencies)
-    ai_model = crud_ai_model.get_default_active_model(db, account_id=current_user.id)
+    ai_model = crud_ai_model.get_default_active_model(
+        db, account_id=current_user.account_id
+    )
     if not ai_model:
         raise HTTPException(status_code=404, detail="No default AI model configured.")
 
@@ -407,7 +409,7 @@ def extend_dependency_scan(
         db,
         issue_ids=request.issue_ids,
         ai_model_ids=[ai_model.id, None],
-        account_id=current_user.id,
+        account_id=current_user.account_id,
     )
 
     # 3. Union all retrieved sets to get the final set of issues
@@ -471,7 +473,7 @@ def extend_dependency_scan(
             response_format={"type": "json_object"},
         )
         billing_service.record_usage(
-            account_id=current_user.id, metric="ai_calls", quantity=1
+            account_id=current_user.account_id, metric="ai_calls", quantity=1
         )
         response_content = response.choices[0].message.content
         dependencies_from_ai = json.loads(response_content).get("dependencies", [])
@@ -524,7 +526,7 @@ def extend_dependency_scan(
             name=set_name,
             issue_ids=sorted(analysis_issue_ids),
             ai_model_id=ai_model.id,
-            account_id=current_user.id,
+            account_id=current_user.account_id,
         )
 
         # 8. Return the dependencies found

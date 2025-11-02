@@ -74,7 +74,7 @@ class SpaceBridgeBearerAuthBackend(AuthenticationBackend):
 
             # Store user info in AccessToken for later use (avoiding re-validation)
             # Use object.__setattr__() to bypass Pydantic's validation
-            object.__setattr__(access_token, "account", current_user)
+            object.__setattr__(access_token, "user", current_user)
 
             # Return authentication credentials and user
             # This will be stored in scope["auth"] and scope["user"]

@@ -1,0 +1,60 @@
+{{- if and .Values.preloop.enabled .Values.preloop.ingress.enabled -}}
+{{- $fullName := include "spacebridge.fullname" . -}}
+{{- $svcPort := 80 -}}
+{{- if and .Values.preloop.ingress.className (not (semverCompare ">=1.18-0" .Capabilities.KubeVersion.GitVersion)) }}
+  {{- if not (hasKey .Values.preloop.ingress.annotations "kubernetes.io/ingress.class") }}
+  {{- $_ := set .Values.preloop.ingress.annotations "kubernetes.io/ingress.class" .Values.preloop.ingress.className}}
+  {{- end }}
+{{- end }}
+{{- if semverCompare ">=1.19-0" .Capabilities.KubeVersion.GitVersion -}}
+apiVersion: networking.k8s.io/v1
+{{- else if semverCompare ">=1.14-0" .Capabilities.KubeVersion.GitVersion -}}
+apiVersion: networking.k8s.io/v1beta1
+{{- else -}}
+apiVersion: extensions/v1beta1
+{{- end }}
+kind: Ingress
+metadata:
+  name: {{ $fullName }}-preloop
+  labels:
+    {{- include "spacebridge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: spacelit-preloop
+  {{- with .Values.preloop.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if and .Values.preloop.ingress.className (semverCompare ">=1.18-0" .Capabilities.KubeVersion.GitVersion) }}
+  ingressClassName: {{ .Values.preloop.ingress.className }}
+  {{- end }}
+  {{- if .Values.preloop.ingress.tls }}
+  tls:
+    {{- range .Values.preloop.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.preloop.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              {{- if semverCompare ">=1.19-0" $.Capabilities.KubeVersion.GitVersion }}
+              service:
+                name: {{ $fullName }}-spacelit-preloop
+                port:
+                  number: {{ $svcPort }}
+              {{- else }}
+              serviceName: {{ $fullName }}-spacelit-preloop
+              servicePort: {{ $svcPort }}
+              {{- end }}
+          {{- end }}
+    {{- end }}
+{{- end }}

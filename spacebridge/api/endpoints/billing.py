@@ -15,7 +15,7 @@ from spacebridge.api.auth.jwt import (
     get_user_from_token_if_valid,
     get_current_active_user,
 )
-from spacemodels.models import Account
+from spacemodels.models.user import User
 from spacemodels.schemas.plan import Plan, PlanCreate, Subscription
 from spacebridge.services.billing import BillingService
 from spacemodels.db.session import get_db_session
@@ -33,7 +33,7 @@ def get_billing_service(db: Session = Depends(get_db_session)) -> BillingService
 def create_plan(
     plan: PlanCreate,
     service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Create a new subscription plan.
@@ -55,26 +55,26 @@ def list_public_plans(service: BillingService = Depends(get_billing_service)):
 @router.get("/billing/custom-plans", response_model=List[Plan])
 def list_custom_plans(
     service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     List custom subscription plans for the current user's account.
     """
     return crud_plan.get_active_custom_plans_for_account(
-        service.db, account_id=current_user.id
+        service.db, account_id=current_user.account_id
     )
 
 
 @router.get("/billing/subscription", response_model=Subscription)
 def get_subscription(
     service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Get the current user's subscription details.
     """
     subscription = crud_subscription.get_latest_for_account(
-        service.db, account_id=current_user.id
+        service.db, account_id=current_user.account_id
     )
     if not subscription:
         raise HTTPException(status_code=404, detail="Subscription not found")
@@ -98,11 +98,19 @@ def checkout_success(
 
     # For new users, redirect to the welcome page with their details.
     # For existing users, redirect them to the console.
-    if account.hashed_password == "NEEDS_RESET":
+    # Get the primary user for the account
+    from spacemodels.crud import crud_user
+
+    db: Session = next(get_db_session())
+    primary_user = None
+    if account.primary_user_id:
+        primary_user = crud_user.get(db, id=str(account.primary_user_id))
+
+    if primary_user and primary_user.hashed_password == "NEEDS_RESET":
         params = {
-            "username": account.username,
-            "email": account.email,
-            "full_name": account.full_name or "",
+            "username": primary_user.username,
+            "email": primary_user.email,
+            "full_name": primary_user.full_name or "",
         }
         redirect_url = f"/welcome?{urllib.parse.urlencode(params)}"
     else:
@@ -166,7 +174,7 @@ async def create_checkout_session(
         token = authorization.split("Bearer ")[1]
         current_user = await get_user_from_token_if_valid(token, db)
 
-    account_id = current_user.id if current_user else None
+    account_id = current_user.account_id if current_user else None
     result = service.create_checkout_session(
         plan_id=request.plan_id,
         interval=request.interval,
@@ -189,12 +197,12 @@ class CreatePortalSessionResponse(BaseModel):
 def create_portal_session(
     request: CreatePortalSessionRequest,
     service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Create a Stripe Customer Portal session."""
     try:
         url = service.create_portal_session(
-            account_id=current_user.id, return_url=request.return_url
+            account_id=current_user.account_id, return_url=request.return_url
         )
         return CreatePortalSessionResponse(url=url)
     except Exception as e:
@@ -220,11 +228,11 @@ async def stripe_webhooks(
 @router.post("/billing/sync-subscription", status_code=200)
 def sync_subscription(
     service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Synchronizes the user's subscription status from Stripe to the local database."""
     try:
-        service.sync_subscription_status(account_id=current_user.id)
+        service.sync_subscription_status(account_id=current_user.account_id)
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

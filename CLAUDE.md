@@ -14,6 +14,8 @@ Use the Lit.dev framework for frontend code. If you create new web components en
 - **Type check**: `mypy spacebridge tests`
 - **Docker development**: `docker-compose up`
 - **Install pre-commit**: `pre-commit install`
+- **PostgreSQL access**: `docker compose exec postgres psql -U postgres -d spacebridge`
+- **Database migrations**: `alembic upgrade head` (from project root)
 
 ## Git Workflow
 

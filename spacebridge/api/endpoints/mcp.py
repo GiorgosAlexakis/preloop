@@ -211,7 +211,7 @@ async def get_issue(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        issue_obj = _find_issue_by_identifier(db, issue, current_user.id)
+        issue_obj = _find_issue_by_identifier(db, issue, current_user.account_id)
     except IssueNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -221,7 +221,7 @@ async def get_issue(
 
     # Get compliance results using CRUD layer
     compliance_results = crud_issue_compliance_result.get_for_issue(
-        db, issue_id=issue_obj.id, account_id=current_user.id
+        db, issue_id=issue_obj.id, account_id=str(current_user.account_id)
     )
 
     return GetIssueResponse(
@@ -268,7 +268,7 @@ async def create_issue(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     project_obj = crud_project.get_by_slug_or_identifier(
-        db, slug_or_identifier=project, account_id=current_user.id
+        db, slug_or_identifier=project, account_id=str(current_user.account_id)
     )
     if not project_obj:
         raise HTTPException(status_code=404, detail=f"Project '{project}' not found.")
@@ -357,7 +357,7 @@ async def update_issue(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        issue_obj = _find_issue_by_identifier(db, issue, current_user.id)
+        issue_obj = _find_issue_by_identifier(db, issue, current_user.account_id)
     except IssueNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -474,11 +474,11 @@ async def update_issue(
             issue_obj
         )  # Refresh again after potential commit/refresh inside update block
         project = crud_project.get(
-            db, id=issue_obj.project_id, account_id=current_user.id
+            db, id=issue_obj.project_id, account_id=str(current_user.account_id)
         )  # Re-fetch
         organization = (
             crud_organization.get(
-                db, id=project.organization_id, account_id=current_user.id
+                db, id=project.organization_id, account_id=str(current_user.account_id)
             )
             if project
             else None
@@ -513,7 +513,7 @@ async def update_issue(
 
     # Get compliance results using CRUD layer
     compliance_results = crud_issue_compliance_result.get_for_issue(
-        db, issue_id=issue_obj.id, account_id=current_user.id
+        db, issue_id=issue_obj.id, account_id=str(current_user.account_id)
     )
     project_name = issue_obj.project.name
     organization_name = issue_obj.project.organization.name
@@ -559,7 +559,7 @@ async def search(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     project_obj = crud_project.get_by_slug_or_identifier(
-        db, slug_or_identifier=project, account_id=current_user.id
+        db, slug_or_identifier=project, account_id=str(current_user.account_id)
     )
     if project_obj:
         project = project_obj.slug or project_obj.identifier
@@ -681,7 +681,9 @@ async def _process_single_issue_estimate(
     """Process compliance estimation for a single issue."""
     try:
         # Find the issue using our enhanced lookup
-        issue_obj = _find_issue_by_identifier(db, issue_identifier, current_user.id)
+        issue_obj = _find_issue_by_identifier(
+            db, issue_identifier, current_user.account_id
+        )
 
         # Get compliance estimate
         prompt_name = (
@@ -739,7 +741,7 @@ async def _process_single_issue_compliance(
     """Process compliance improvement for a single issue."""
     try:
         # Find the issue using our enhanced lookup
-        issue = _find_issue_by_identifier(db, issue_identifier, current_user.id)
+        issue = _find_issue_by_identifier(db, issue_identifier, current_user.account_id)
 
         # Get compliance suggestion
         suggestion = api_get_compliance_suggestion(

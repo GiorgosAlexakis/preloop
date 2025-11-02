@@ -1,0 +1,19 @@
+{{- if .Values.preloop.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "spacebridge.fullname" . }}-spacelit-preloop
+  labels:
+    {{- include "spacebridge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: spacelit-preloop
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "spacebridge.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: spacelit-preloop
+{{- end }}

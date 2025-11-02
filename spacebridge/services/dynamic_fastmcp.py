@@ -479,29 +479,37 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
         logger.warning("No authenticated user in scope")
         return None
 
-    account = getattr(auth_user.access_token, "account", None)
+    user = getattr(auth_user.access_token, "user", None)
 
-    if not account:
-        logger.warning("No account cached in access token")
+    if not user:
+        logger.warning("No user cached in access token")
         return None
 
     # Check tracker status
     db = next(get_db())
     try:
-        user_has_tracker = has_tracker(account, db)
+        # Get user's account for tracker check
+        account = user.account if hasattr(user, "account") else None
+        if not account:
+            # Fallback: query account if relationship not loaded
+            from spacemodels.crud import crud_account
+
+            account = crud_account.get(db, id=user.account_id)
+
+        user_has_tracker = has_tracker(account, db) if account else False
 
         user_context = UserContext(
-            user_id=str(account.id),
-            account_id=str(account.id),
-            username=account.username,
+            user_id=str(user.id),
+            account_id=str(user.account_id),
+            username=user.username,
             has_tracker=user_has_tracker,
             enabled_default_tools=[],  # Empty = all tools
             enabled_proxied_tools=[],
         )
 
         logger.info(
-            f"Created user context for {account.username}, "
-            f"has_tracker={user_has_tracker}"
+            f"Created user context for {user.username} "
+            f"(account: {user.account_id}), has_tracker={user_has_tracker}"
         )
 
         return user_context

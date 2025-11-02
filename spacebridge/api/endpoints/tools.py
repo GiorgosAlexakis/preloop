@@ -257,7 +257,7 @@ async def list_all_tools(
             )
 
     logger.info(
-        f"Returning {len(tools)} tools for user {account.username} "
+        f"Returning {len(tools)} tools for account {account.id} "
         f"({len(BUILTIN_TOOLS)} builtin, {len(tools) - len(BUILTIN_TOOLS)} external)"
     )
 
@@ -329,7 +329,7 @@ async def create_tool_configuration(
 
         logger.info(
             f"Created tool configuration for {config_data.tool_name} "
-            f"(user: {account.username})"
+            f"(user: {account.id})"
         )
 
         return ToolConfigurationResponse.model_validate(new_config)
@@ -420,9 +420,7 @@ async def update_tool_configuration(
         db.commit()
         db.refresh(config)
 
-        logger.info(
-            f"Updated tool configuration {config_id} for user {account.username}"
-        )
+        logger.info(f"Updated tool configuration {config_id} for user {account.id}")
 
         return ToolConfigurationResponse.model_validate(config)
 
@@ -470,9 +468,7 @@ async def delete_tool_configuration(
         db.delete(config)
         db.commit()
 
-        logger.info(
-            f"Deleted tool configuration {config_id} for user {account.username}"
-        )
+        logger.info(f"Deleted tool configuration {config_id} for user {account.id}")
 
         return {"message": "Tool configuration deleted successfully"}
 
@@ -506,9 +502,7 @@ async def list_approval_policies(
     """
     policies = crud_approval_policy.get_multi_by_account(db, account_id=str(account.id))
 
-    logger.info(
-        f"Returning {len(policies)} approval policies for user {account.username}"
-    )
+    logger.info(f"Returning {len(policies)} approval policies for user {account.id}")
 
     return [ApprovalPolicyResponse.model_validate(p) for p in policies]
 
@@ -550,7 +544,7 @@ async def create_approval_policy(
         )
 
         logger.info(
-            f"Created approval policy '{policy_data.name}' (user: {account.username}, is_default: {new_policy.is_default})"
+            f"Created approval policy '{policy_data.name}' (user: {account.id}, is_default: {new_policy.is_default})"
         )
 
         return ApprovalPolicyResponse.model_validate(new_policy)
@@ -644,7 +638,7 @@ async def update_approval_policy(
         )
 
         logger.info(
-            f"Updated approval policy {policy_id} for user {account.username} (is_default: {updated_policy.is_default})"
+            f"Updated approval policy {policy_id} for user {account.id} (is_default: {updated_policy.is_default})"
         )
 
         return ApprovalPolicyResponse.model_validate(updated_policy)
@@ -710,7 +704,7 @@ async def delete_approval_policy(
 
         logger.info(
             f"Deleted approval policy {policy_id} (was used by {tool_count} tools) "
-            f"for user {account.username}"
+            f"for user {account.id}"
         )
 
         return {

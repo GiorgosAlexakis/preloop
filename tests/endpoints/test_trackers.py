@@ -27,7 +27,7 @@ def test_list_trackers_with_data(client: TestClient, db_session, test_user):
         name="Test Tracker",
         tracker_type="jira",
         url="https://test.jira.com",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         api_key="dummy_key",
     )
     db_session.add(tracker)
@@ -54,7 +54,7 @@ def test_get_tracker_success(client: TestClient, db_session, test_user):
         name="Test Tracker",
         tracker_type="jira",
         url="https://test.jira.com",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         api_key="dummy_key",
     )
     db_session.add(tracker)
@@ -71,7 +71,7 @@ def test_delete_tracker(client: TestClient, db_session, test_user):
         name="Test Tracker",
         tracker_type="jira",
         url="https://test.jira.com",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         api_key="dummy_key",
     )
     db_session.add(tracker)
@@ -192,7 +192,7 @@ async def test_update_tracker_success(
         name="Tracker to Update",
         tracker_type="jira",
         url="https://update.jira.com",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         api_key="update_key",
     )
     db_session.add(tracker)

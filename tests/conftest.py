@@ -16,8 +16,8 @@ from fastapi.testclient import TestClient
 from spacebridge.api.app import create_app
 from spacebridge.api.auth import get_current_active_user
 from spacemodels.db.session import get_db_session as get_db
-from spacemodels.models import Account
-import uuid
+from spacemodels.models.user import User
+from spacemodels.crud import crud_account, crud_user
 from spacemodels.models.base import Base
 
 
@@ -37,6 +37,9 @@ def pytest_configure(config):
     """
     Load environment variables from .env file before tests run.
     """
+    # Set TESTING mode to skip external service connections (NATS, MCP, etc.)
+    os.environ["TESTING"] = "true"
+
     # Construct the path to the .env file relative to the conftest.py file
     # Assuming .env is in the project root, and conftest.py is in tests/
     dotenv_path = os.path.join(os.path.dirname(__file__), "..", ".env")
@@ -58,9 +61,14 @@ def db_engine():
 @pytest.fixture(scope="function")
 def db_session(db_engine) -> Generator[Session, None, None]:
     """Create a database session for each test function, and clean up afterwards."""
+    from scripts.init_system_roles import initialize_system_roles
+
     connection = db_engine.connect()
     transaction = connection.begin()
     session = sessionmaker(autocommit=False, autoflush=False, bind=connection)()
+
+    # Initialize system roles for tests
+    initialize_system_roles(session)
 
     yield session
 
@@ -70,28 +78,144 @@ def db_session(db_engine) -> Generator[Session, None, None]:
 
 
 @pytest.fixture(scope="function")
-def test_user(db_session: Session) -> Account:
-    """Create and persist a test user for authentication."""
-    user = Account(
-        id=str(uuid.uuid4()),
-        email="test@example.com",
-        username="testuser",
-        full_name="Test User",
-        is_active=True,
-        email_verified=True,
-        is_superuser=False,
-        hashed_password="testpassword",
-    )
-    db_session.add(user)
+def test_user(db_session: Session) -> User:
+    """Create and persist a test user for authentication with owner role."""
+    from spacemodels.crud import crud_role, crud_user_role
+
+    # Create account (organization) first
+    account_data = {
+        "organization_name": "Test Organization",
+        "is_active": True,
+    }
+    account = crud_account.create(db_session, obj_in=account_data)
+
+    # Create user linked to the account
+    user_data = {
+        "account_id": account.id,
+        "email": "test@example.com",
+        "username": "testuser",
+        "full_name": "Test User",
+        "is_active": True,
+        "email_verified": True,
+        "hashed_password": "testpassword",
+        "user_source": "local",
+    }
+    user = crud_user.create(db_session, obj_in=user_data)
     db_session.flush()
+
+    # Assign owner role to test user (has all permissions)
+    owner_role = crud_role.get_by_name(db_session, name="owner")
+    if owner_role:
+        crud_user_role.create(
+            db_session,
+            obj_in={"user_id": user.id, "role_id": owner_role.id},
+        )
+        db_session.flush()
+
     db_session.refresh(user)
     return user
 
 
 @pytest.fixture(scope="function")
-def app(
-    db_session: Session, test_user: Account
-) -> Generator[fastapi.FastAPI, None, None]:
+def test_viewer_user(db_session: Session) -> User:
+    """Create a test user with viewer role (read-only permissions)."""
+    from spacemodels.crud import crud_role, crud_user_role
+
+    account_data = {
+        "organization_name": "Test Organization",
+        "is_active": True,
+    }
+    account = crud_account.create(db_session, obj_in=account_data)
+
+    user_data = {
+        "account_id": account.id,
+        "email": "viewer@example.com",
+        "username": "vieweruser",
+        "full_name": "Viewer User",
+        "is_active": True,
+        "email_verified": True,
+        "hashed_password": "testpassword",
+        "user_source": "local",
+    }
+    user = crud_user.create(db_session, obj_in=user_data)
+    db_session.flush()
+
+    # Assign viewer role
+    viewer_role = crud_role.get_by_name(db_session, name="viewer")
+    if viewer_role:
+        crud_user_role.create(
+            db_session,
+            obj_in={"user_id": user.id, "role_id": viewer_role.id},
+        )
+        db_session.flush()
+
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture(scope="function")
+def test_editor_user(db_session: Session) -> User:
+    """Create a test user with editor role (can create and edit)."""
+    from spacemodels.crud import crud_role, crud_user_role
+
+    account_data = {
+        "organization_name": "Test Organization",
+        "is_active": True,
+    }
+    account = crud_account.create(db_session, obj_in=account_data)
+
+    user_data = {
+        "account_id": account.id,
+        "email": "editor@example.com",
+        "username": "editoruser",
+        "full_name": "Editor User",
+        "is_active": True,
+        "email_verified": True,
+        "hashed_password": "testpassword",
+        "user_source": "local",
+    }
+    user = crud_user.create(db_session, obj_in=user_data)
+    db_session.flush()
+
+    # Assign editor role
+    editor_role = crud_role.get_by_name(db_session, name="editor")
+    if editor_role:
+        crud_user_role.create(
+            db_session,
+            obj_in={"user_id": user.id, "role_id": editor_role.id},
+        )
+        db_session.flush()
+
+    db_session.refresh(user)
+    return user
+
+
+def assign_role_to_user(db_session: Session, user: User, role_name: str) -> None:
+    """Helper function to assign a role to a user.
+
+    Args:
+        db_session: Database session
+        user: User to assign role to
+        role_name: Name of the role (e.g., 'owner', 'admin', 'editor', 'viewer')
+    """
+    from spacemodels.crud import crud_role, crud_user_role
+
+    role = crud_role.get_by_name(db_session, name=role_name)
+    if role:
+        # Check if user already has this role
+        existing = crud_user_role.get_by_user_and_role(
+            db_session, user_id=user.id, role_id=role.id
+        )
+        if not existing:
+            crud_user_role.create(
+                db_session,
+                obj_in={"user_id": user.id, "role_id": role.id},
+            )
+            db_session.flush()
+
+
+@pytest.fixture(scope="function")
+def app(db_session: Session, test_user: User) -> Generator[fastapi.FastAPI, None, None]:
     """Create a FastAPI app for testing with dependency overrides."""
 
     def override_get_current_active_user():

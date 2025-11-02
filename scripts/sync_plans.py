@@ -10,6 +10,7 @@ import os
 import sys
 import yaml
 import stripe
+import dotenv
 
 from spacebridge.config import settings
 from spacemodels.models import Plan
@@ -18,6 +19,7 @@ from spacemodels.db.session import get_db_session
 # Add the project root to the Python path to allow for module imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
+dotenv.load_dotenv()
 
 # --- Configuration ---
 STRIPE_API_KEY = settings.stripe_secret_key
