@@ -454,7 +454,8 @@ export async function createAIModel(model: any) {
     body: JSON.stringify(model),
   });
   if (!response.ok) {
-    throw new Error('Failed to create AI model');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to create AI model');
   }
   return response.json();
 }
@@ -466,7 +467,8 @@ export async function updateAIModel(modelId: string, model: any) {
     body: JSON.stringify(model),
   });
   if (!response.ok) {
-    throw new Error('Failed to update AI model');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update AI model');
   }
   return response.json();
 }
@@ -476,7 +478,8 @@ export async function deleteAIModel(modelId: string) {
     method: 'DELETE',
   });
   if (!response.ok) {
-    throw new Error('Failed to delete AI model');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to delete AI model');
   }
 }
 

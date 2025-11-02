@@ -62,6 +62,12 @@ export class AIModelsView extends LitElement {
   @state()
   private isOtherModel = false;
 
+  @state()
+  private formError: string | null = null;
+
+  @state()
+  private isSubmitting = false;
+
   static styles = [
     unsafeCSS(consoleStyles),
     css`
@@ -274,6 +280,15 @@ export class AIModelsView extends LitElement {
         label="${this.isEditing ? 'Edit' : 'Add'} a Model"
         .open=${this.isModalOpen}
       >
+        ${when(
+          this.formError,
+          () => html`
+            <sl-alert variant="danger" open>
+              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+              <strong>Error:</strong> ${this.formError}
+            </sl-alert>
+          `
+        )}
         <div class="form-grid">
           <sl-input
             class="full-width"
@@ -281,11 +296,13 @@ export class AIModelsView extends LitElement {
             .value=${this.currentModel.name || ''}
             @sl-input=${(e: Event) =>
               (this.currentModel.name = (e.target as HTMLInputElement).value)}
+            ?disabled=${this.isSubmitting}
           ></sl-input>
           <sl-select
             label="Provider"
             .value=${this.currentModel.provider_name || ''}
             @sl-change=${this.handleProviderChange}
+            ?disabled=${this.isSubmitting}
           >
             <sl-option value="openai">OpenAI</sl-option>
             <sl-option value="anthropic">Anthropic</sl-option>
@@ -298,6 +315,7 @@ export class AIModelsView extends LitElement {
               ? 'other'
               : this.currentModel.model_identifier || ''}
             @sl-change=${this._handleModelNameChange}
+            ?disabled=${this.isSubmitting}
           >
             ${repeat(
               this.modelSuggestions,
@@ -315,6 +333,7 @@ export class AIModelsView extends LitElement {
                 placeholder="Enter custom model name"
                 .value=${this.currentModel.model_identifier || ''}
                 @sl-input=${this._handleCustomModelInput}
+                ?disabled=${this.isSubmitting}
               ></sl-input>
             `
           )}
@@ -327,6 +346,7 @@ export class AIModelsView extends LitElement {
               (this.currentModel.api_url = (
                 e.target as HTMLInputElement
               ).value)}
+            ?disabled=${this.isSubmitting}
           ></sl-input>
           <sl-input
             class="full-width"
@@ -340,13 +360,21 @@ export class AIModelsView extends LitElement {
             placeholder=${this.isEditing
               ? 'Leave blank to keep existing key'
               : ''}
+            ?disabled=${this.isSubmitting}
           ></sl-input>
         </div>
-        <sl-button slot="footer" @click=${this.closeModal}>Cancel</sl-button>
+        <sl-button
+          slot="footer"
+          @click=${this.closeModal}
+          ?disabled=${this.isSubmitting}
+          >Cancel</sl-button
+        >
         <sl-button
           slot="footer"
           variant="primary"
           @click=${this.handleFormSubmit}
+          ?loading=${this.isSubmitting}
+          ?disabled=${this.isSubmitting}
           >Save</sl-button
         >
       </sl-dialog>
@@ -378,6 +406,8 @@ export class AIModelsView extends LitElement {
     this.currentModel = {};
     this.modelSuggestions = [];
     this.isOtherModel = false;
+    this.formError = null;
+    this.isSubmitting = false;
     this.isModalOpen = true;
   }
 
@@ -390,11 +420,15 @@ export class AIModelsView extends LitElement {
     this.isOtherModel = !this.modelSuggestions.includes(
       this.currentModel.model_identifier || ''
     );
+    this.formError = null;
+    this.isSubmitting = false;
     this.isModalOpen = true;
   }
 
   closeModal() {
     this.isModalOpen = false;
+    this.formError = null;
+    this.isSubmitting = false;
   }
 
   private _handleModelNameChange(e: Event) {
@@ -455,6 +489,10 @@ export class AIModelsView extends LitElement {
 
   async handleFormSubmit(e: Event) {
     e.preventDefault();
+
+    // Clear previous error
+    this.formError = null;
+
     // Basic validation
     if (
       !this.currentModel.name ||
@@ -462,18 +500,31 @@ export class AIModelsView extends LitElement {
       !this.currentModel.model_identifier ||
       !this.currentModel.api_url
     ) {
-      // In a real app, show a user-friendly error.
-      console.error('Validation failed');
+      this.formError = 'Please fill in all required fields';
       return;
     }
 
-    if (this.isEditing) {
-      await updateAIModel(this.currentModel.id!, this.currentModel);
-    } else {
-      await createAIModel(this.currentModel);
+    this.isSubmitting = true;
+
+    try {
+      if (this.isEditing) {
+        await updateAIModel(this.currentModel.id!, this.currentModel);
+      } else {
+        await createAIModel(this.currentModel);
+      }
+      this.closeModal();
+      await this.fetchModels();
+    } catch (error) {
+      // Extract error message from the Error object or response
+      if (error instanceof Error) {
+        this.formError = error.message;
+      } else {
+        this.formError = 'Failed to save model. Please try again.';
+      }
+      console.error('Failed to save model:', error);
+    } finally {
+      this.isSubmitting = false;
     }
-    this.closeModal();
-    await this.fetchModels();
   }
 
   openDeleteConfirm(model: AIModel) {
@@ -487,13 +538,21 @@ export class AIModelsView extends LitElement {
       await this.fetchModels();
     } catch (error) {
       console.error('Failed to set default model:', error);
+      this.error =
+        error instanceof Error ? error.message : 'Failed to set default model';
     }
   }
 
   async deleteModel() {
     if (this.modelToDelete) {
-      await deleteAIModel(this.modelToDelete.id);
-      await this.fetchModels();
+      try {
+        await deleteAIModel(this.modelToDelete.id);
+        await this.fetchModels();
+      } catch (error) {
+        console.error('Failed to delete model:', error);
+        this.error =
+          error instanceof Error ? error.message : 'Failed to delete model';
+      }
     }
     this.isDeleteConfirmOpen = false;
     this.modelToDelete = null;
