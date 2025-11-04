@@ -1,4 +1,4 @@
-from .flow import FlowCreate, FlowResponse, FlowUpdate
+from .flow import FlowCreate, FlowResponse, FlowUpdate, WebhookConfig
 from .flow_execution import (
     FlowExecutionCreate,
     FlowExecutionUpdate,
@@ -54,4 +54,5 @@ __all__ = [
     "MCPToolCreate",
     "MCPToolUpdate",
     "MCPToolResponse",
+    "WebhookConfig",
 ]
