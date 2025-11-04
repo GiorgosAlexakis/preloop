@@ -33,6 +33,7 @@ brands:
         lead: "Eliminate duplicates, map dependencies, ensure compliance, ship faster."
         cta_primary: "Get Started"
         cta_secondary: "Request a Demo"
+        cta_secondary_url: "/request-demo"
 
       features:
         - title: "Eliminate Duplicates & Overlap"
@@ -151,17 +152,17 @@ brands:
       city: "San Francisco, CA 94108"
 
     branding:
-      logo_light: "/images/preloop/logo_light.png"
-      logo_dark: "/images/preloop/logo_dark.png"
-      favicon: "/images/preloop/favicon.png"
+      logo_light: "/images/logos/preloop_logo_light.svg"
+      logo_dark: "/images/logos/preloop_logo_dark.svg"
+      favicon: "/images/logos/preloop/favicon.png"
       primary_color: "#7c3aed"
       gradient_product: "linear-gradient(90deg, hsl(270, 70%, 55%), hsl(290, 75%, 50%))"
       gradient_ai: "linear-gradient(90deg, hsl(200, 80%, 55%), hsl(180, 85%, 50%))"
 
     social:
       twitter: "@preloop_ai"
-      linkedin: "https://www.linkedin.com/company/preloop-ai/"
-      instagram: "https://www.instagram.com/preloop.ai"
+      linkedin: "https://www.linkedin.com/company/spacecode-ai/"
+      instagram: "https://www.instagram.com/spacecode.ai"
 
     landing:
       meta:
@@ -174,22 +175,23 @@ brands:
         title: "Responsible AI Automation"
         lead: "Agents do the work, humans make the decisions."
         cta_primary: "Start Free Trial"
-        cta_secondary: "Watch Demo"
+        cta_secondary: "Request Demo"
+        cta_secondary_url: "https://calendar.app.google/FV95tXZtfGpPk7398"
 
       features:
-        - title: "Automated Code Reviews"
-          text: "AI-powered reviews catch issues before they reach production, analyzing code quality, security vulnerabilities, and best practices. Get instant feedback on every pull request with actionable recommendations."
-          videoUrl: "https://youtu.be/example1"
-          placeholderImg: "/images/preloop/ui_01.png"
+        - title: "Granular approval policies"
+          text: "Preloop AI provides an MCP proxy that puts a human-in-the-loop before your agents take critical action. Execution is paused while appropriate people are notified over any available channel (App, Email, Slack, etc.)."
+          videoUrl: ""
+          placeholderImg: "/images/agent.png"
 
-        - title: "Smart Dependency Management"
-          text: "Track and visualize dependencies across your codebase and infrastructure. Preloop identifies breaking changes, outdated packages, and potential conflicts before they cause issues."
-          videoUrl: "https://youtu.be/example2"
+        - title: "Event driven agentic flows"
+          text: "Automate agentic processes to run in response to events. Select from a library of prebuilt templates or create your own."
+          videoUrl: ""
           placeholderImg: "/images/preloop/ui_02.png"
 
         - title: "Compliance & Security Checks"
-          text: "Ensure your code meets industry standards and security requirements. Automated scans check for vulnerabilities, license compliance, and regulatory requirements with every commit."
-          videoUrl: "https://youtu.be/example3"
+          text: "Ensure your code and processes meet industry standards and security requirements. Discover unmapped dependencies, reduce overlap and ensure Definition of Ready compliance for every open issue."
+          videoUrl: ""
           placeholderImg: "/images/preloop/ui_03.png"
 
       faqs:
@@ -215,19 +217,19 @@ brands:
           a: "Yes. Preloop provides native integrations with popular CI/CD platforms including GitHub Actions, GitLab CI, Jenkins, CircleCI, and more. Setup takes just a few minutes."
 
       get_started:
-        title: "Supercharge your Development with AI"
-        link_text: "Learn More"
-        link_url: "/whatis-mcp"
+        title: "Real-World Scenarios, Made Safe"
+        link_text: ""
+        link_url: ""
         features:
-          - icon: "shield-check"
-            title: "Automated Security Checks"
-            text: "Real-time vulnerability detection and compliance monitoring integrated into your workflow."
           - icon: "graph-up"
-            title: "Performance Optimization"
-            text: "AI-powered insights to identify bottlenecks and optimize your code for peak performance."
+            title: "Transactions over $10k"
+            text: "perform_transaction amount>$10k → CFO approval"
           - icon: "code-slash"
-            title: "Works with Your IDE"
-            text: "Seamless integration with Cursor, Windsurf, Claude Code and other MCP-compatible tools."
+            title: "Quorum & escalation"
+            text: "rollback_deployment → 2 SREs or CTO escalation if no response in 2 mins"
+          - icon: "shield-check"
+            title: "PdM approval for features"
+            text: "create_issue type=Feature → Product Manager approval."
 
         mcp_setup_title: "Get Started with Preloop MCP"
         mcp_configs:

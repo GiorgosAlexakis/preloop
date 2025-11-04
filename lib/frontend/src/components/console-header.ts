@@ -8,6 +8,7 @@ import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import './theme-switcher.ts';
 import * as api from '../api.ts';
+import { Router, Router } from '@vaadin/router';
 
 interface UserDetails {
   username: string;
@@ -97,9 +98,18 @@ export class ConsoleHeader extends LitElement {
                 <div class="user-email">${this._user?.email}</div>
               </div>
               <sl-divider></sl-divider>
-              <div class="theme-switcher-container">
-                <theme-switcher></theme-switcher>
-              </div>
+              <sl-menu-item
+                @click=${() => Router.go('/console/settings/profile')}
+              >
+                <sl-icon name="person-circle" slot="prefix"></sl-icon>
+                Profile
+              </sl-menu-item>
+              <sl-menu-item
+                @click=${() => Router.go('/console/settings/security')}
+              >
+                <sl-icon name="lock" slot="prefix"></sl-icon>
+                Security
+              </sl-menu-item>
               <sl-divider></sl-divider>
               <sl-menu-item @click=${this.signOut}>
                 <sl-icon name="box-arrow-right" slot="prefix"></sl-icon>

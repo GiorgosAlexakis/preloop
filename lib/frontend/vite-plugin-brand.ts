@@ -341,6 +341,7 @@ function generateSlottedContentForRoute(route: string, config: BrandConfig): str
     <p slot="hero-lead">${config.landing.hero.lead}</p>
     <span slot="cta-primary">${config.landing.hero.cta_primary}</span>
     <span slot="cta-secondary">${config.landing.hero.cta_secondary}</span>
+    <span slot="cta-secondary-url">${config.landing.hero.cta_secondary_url}</span>
 
     <!-- Feature slots -->
     ${config.landing.features

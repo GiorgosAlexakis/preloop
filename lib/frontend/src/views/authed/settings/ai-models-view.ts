@@ -7,6 +7,7 @@ import {
   updateAIModel,
   createAIModel,
   deleteAIModel,
+  getAvailableModelsForProvider,
 } from '../../../api';
 import type { AIModel } from '../../../types';
 import type { SlSelect } from '@shoelace-style/shoelace/dist/components/select/select.js';
@@ -67,6 +68,12 @@ export class AIModelsView extends LitElement {
 
   @state()
   private isSubmitting = false;
+
+  @state()
+  private isFetchingModels = false;
+
+  @state()
+  private modelsFetchError: string | null = null;
 
   static styles = [
     unsafeCSS(consoleStyles),
@@ -307,36 +314,10 @@ export class AIModelsView extends LitElement {
             <sl-option value="openai">OpenAI</sl-option>
             <sl-option value="anthropic">Anthropic</sl-option>
             <sl-option value="google">Google</sl-option>
+            <sl-option value="qwen">Qwen</sl-option>
+            <sl-option value="deepseek">DeepSeek</sl-option>
             <sl-option value="custom">Custom</sl-option>
           </sl-select>
-          <sl-select
-            label="Model Name / ID"
-            .value=${this.isOtherModel
-              ? 'other'
-              : this.currentModel.model_identifier || ''}
-            @sl-change=${this._handleModelNameChange}
-            ?disabled=${this.isSubmitting}
-          >
-            ${repeat(
-              this.modelSuggestions,
-              (s) => s,
-              (s) => html`<sl-option value="${s}">${s}</sl-option>`
-            )}
-            <sl-option value="other">Other...</sl-option>
-          </sl-select>
-
-          ${when(
-            this.isOtherModel,
-            () => html`
-              <sl-input
-                label="Custom Model Name / ID"
-                placeholder="Enter custom model name"
-                .value=${this.currentModel.model_identifier || ''}
-                @sl-input=${this._handleCustomModelInput}
-                ?disabled=${this.isSubmitting}
-              ></sl-input>
-            `
-          )}
 
           <sl-input
             class="full-width"
@@ -353,15 +334,76 @@ export class AIModelsView extends LitElement {
             type="password"
             label="API Key"
             .value=${this.currentModel.api_key || ''}
-            @sl-input=${(e: Event) =>
-              (this.currentModel.api_key = (
-                e.target as HTMLInputElement
-              ).value)}
+            @sl-input=${(e: Event) => {
+              this.currentModel.api_key = (e.target as HTMLInputElement).value;
+              this.requestUpdate();
+              console.log(this.currentModel.api_key);
+            }}
             placeholder=${this.isEditing
               ? 'Leave blank to keep existing key'
               : ''}
             ?disabled=${this.isSubmitting}
+            help-text=${this.isEditing
+              ? ''
+              : 'Enter your API key to fetch available models'}
           ></sl-input>
+
+          <div class="full-width">
+            <sl-button
+              @click=${this.fetchModelsForCurrentProvider}
+              ?loading=${this.isFetchingModels}
+              ?disabled=${this.isSubmitting || this.isFetchingModels}
+              style="width: 100%;"
+            >
+              ${this.modelSuggestions.length > 0
+                ? 'Refresh Models'
+                : 'Fetch Available Models'}
+            </sl-button>
+            ${this.modelsFetchError
+              ? html`
+                  <div
+                    style="color: var(--sl-color-danger-600); font-size: 0.875rem; margin-top: 0.5rem;"
+                  >
+                    ${this.modelsFetchError}
+                  </div>
+                `
+              : ''}
+          </div>
+
+          ${this.modelSuggestions.length > 0
+            ? html`
+                <sl-select
+                  class="full-width"
+                  label="Model Name / ID"
+                  .value=${this.isOtherModel
+                    ? 'other'
+                    : this.currentModel.model_identifier || ''}
+                  @sl-change=${this._handleModelNameChange}
+                  ?disabled=${this.isSubmitting}
+                >
+                  ${repeat(
+                    this.modelSuggestions,
+                    (s) => s,
+                    (s) => html`<sl-option value="${s}">${s}</sl-option>`
+                  )}
+                  <sl-option value="other">Other...</sl-option>
+                </sl-select>
+
+                ${when(
+                  this.isOtherModel,
+                  () => html`
+                    <sl-input
+                      class="full-width"
+                      label="Custom Model Name / ID"
+                      placeholder="Enter custom model name"
+                      .value=${this.currentModel.model_identifier || ''}
+                      @sl-input=${this._handleCustomModelInput}
+                      ?disabled=${this.isSubmitting}
+                    ></sl-input>
+                  `
+                )}
+              `
+            : ''}
         </div>
         <sl-button
           slot="footer"
@@ -411,17 +453,17 @@ export class AIModelsView extends LitElement {
     this.isModalOpen = true;
   }
 
-  openEditModal(model: AIModel) {
+  async openEditModal(model: AIModel) {
     this.isEditing = true;
     this.currentModel = { ...model };
-    this.modelSuggestions = this.getModelSuggestionsForProvider(
-      this.currentModel.provider_name || ''
-    );
-    this.isOtherModel = !this.modelSuggestions.includes(
-      this.currentModel.model_identifier || ''
-    );
+
+    // Don't auto-fetch models when editing - user can fetch if needed
+    this.modelSuggestions = [];
+    this.isOtherModel = false;
     this.formError = null;
     this.isSubmitting = false;
+    this.modelsFetchError = null;
+    this.isFetchingModels = false;
     this.isModalOpen = true;
   }
 
@@ -446,34 +488,86 @@ export class AIModelsView extends LitElement {
     this.currentModel.model_identifier = (e.target as SlInput).value;
   }
 
-  private getModelSuggestionsForProvider(provider: string): string[] {
-    switch (provider) {
-      case 'openai':
-        return ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'];
-      case 'anthropic':
-        return [
-          'claude-3-opus-20240229',
-          'claude-3-sonnet-20240229',
-          'claude-3-haiku-20240307',
-        ];
-      case 'google':
-        return [
-          'gemini-1.5-pro-latest',
-          'gemini-1.0-pro',
-          'gemini-1.5-flash-latest',
-        ];
-      default:
-        return [];
+  private async fetchModelSuggestionsForProvider(
+    provider: string
+  ): Promise<string[]> {
+    try {
+      // Fetch available models from the provider
+      const models = await getAvailableModelsForProvider(provider);
+      return models;
+    } catch (error) {
+      console.error(`Failed to fetch models for ${provider}:`, error);
+      // Return fallback list on error
+      switch (provider) {
+        case 'openai':
+          return [
+            'gpt-4o',
+            'gpt-4o-mini',
+            'gpt-4-turbo',
+            'gpt-4',
+            'gpt-3.5-turbo',
+          ];
+        case 'anthropic':
+          return [
+            'claude-3-7-sonnet-20250219',
+            'claude-3-5-sonnet-20241022',
+            'claude-3-5-haiku-20241022',
+            'claude-3-opus-20240229',
+            'claude-3-sonnet-20240229',
+            'claude-3-haiku-20240307',
+          ];
+        case 'google':
+          return [
+            'gemini-2.0-flash-exp',
+            'gemini-1.5-pro-latest',
+            'gemini-1.5-flash-latest',
+            'gemini-1.5-flash-8b-latest',
+            'gemini-1.0-pro',
+          ];
+        case 'qwen':
+          return ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwq-32b-preview'];
+        case 'deepseek':
+          return ['deepseek-chat', 'deepseek-reasoner'];
+        default:
+          return [];
+      }
     }
   }
 
-  handleProviderChange(e: Event) {
+  async fetchModelsForCurrentProvider() {
+    if (!this.currentModel.provider_name) {
+      return;
+    }
+
+    this.isFetchingModels = true;
+    this.modelsFetchError = null;
+
+    try {
+      this.modelSuggestions = await this.fetchModelSuggestionsForProvider(
+        this.currentModel.provider_name
+      );
+      if (this.modelSuggestions.length === 0) {
+        this.modelsFetchError = 'No models available for this provider';
+      }
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+      this.modelsFetchError =
+        error instanceof Error ? error.message : 'Failed to fetch models';
+    } finally {
+      this.isFetchingModels = false;
+      this.requestUpdate();
+    }
+  }
+
+  async handleProviderChange(e: Event) {
     const provider = (e.target as SlSelect).value;
 
     const defaultUrls: { [key: string]: string } = {
       openai: 'https://api.openai.com/v1',
       anthropic: 'https://api.anthropic.com/v1',
       google: 'https://generativelanguage.googleapis.com/v1beta',
+      qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      deepseek: 'https://api.deepseek.com/v1',
     };
 
     this.currentModel = {
@@ -482,8 +576,11 @@ export class AIModelsView extends LitElement {
       api_url: defaultUrls[provider] || '',
       model_identifier: '',
     };
-    this.modelSuggestions = this.getModelSuggestionsForProvider(provider);
+
+    // Reset model suggestions and errors
+    this.modelSuggestions = [];
     this.isOtherModel = false;
+    this.modelsFetchError = null;
     this.requestUpdate();
   }
 

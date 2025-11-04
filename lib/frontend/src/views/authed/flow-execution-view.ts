@@ -530,7 +530,7 @@ export class FlowExecutionView extends LitElement {
 
               <strong>Started:</strong>
               <sl-relative-time
-                date=${this.execution.start_time}
+                date=${new Date(this.execution.start_time).toISOString()}
               ></sl-relative-time>
 
               ${this.execution.end_time
@@ -568,7 +568,7 @@ export class FlowExecutionView extends LitElement {
             <sl-card>
               <div slot="header"><sl-icon name="clock"></sl-icon> Started</div>
               <sl-relative-time
-                date=${new Date(this.execution.start_time)}
+                date=${new Date(this.execution.start_time).toISOString()}
               ></sl-relative-time>
             </sl-card>
             <sl-card>

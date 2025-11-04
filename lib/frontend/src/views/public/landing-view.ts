@@ -31,6 +31,7 @@ export class LandingView extends LitElement {
   @state() private _heroLead = '';
   @state() private _ctaPrimary = '';
   @state() private _ctaSecondary = '';
+  @state() private _ctaSecondaryUrl = '';
   @state() private _getStartedTitle = '';
   @state() private _getStartedLinkText = '';
   @state() private _getStartedLinkUrl = '';
@@ -96,11 +97,16 @@ export class LandingView extends LitElement {
     const ctaSecondary = children.find(
       (el) => el.getAttribute('slot') === 'cta-secondary'
     ) as HTMLElement | undefined;
+    const ctaSecondaryUrl = children.find(
+      (el) => el.getAttribute('slot') === 'cta-secondary-url'
+    ) as HTMLElement | undefined;
 
     if (heroTitle) this._heroTitle = heroTitle.innerHTML || '';
     if (heroLead) this._heroLead = heroLead.textContent || '';
     if (ctaPrimary) this._ctaPrimary = ctaPrimary.textContent || '';
     if (ctaSecondary) this._ctaSecondary = ctaSecondary.textContent || '';
+    if (ctaSecondaryUrl)
+      this._ctaSecondaryUrl = ctaSecondaryUrl.textContent || '';
 
     // Read feature slides from light DOM slots
     const features: FeatureSlide[] = [];
@@ -282,6 +288,7 @@ export class LandingView extends LitElement {
     this._heroLead = content.hero.lead;
     this._ctaPrimary = content.hero.cta_primary;
     this._ctaSecondary = content.hero.cta_secondary;
+    this._ctaSecondaryUrl = content.hero.cta_secondary_url;
 
     // Load features
     this._featureSlides = content.features.map((f: any) => ({
@@ -330,7 +337,9 @@ export class LandingView extends LitElement {
 
   private _playVideo(index: number) {
     const newShowVideo = [...this._showVideo];
-    newShowVideo[index] = true;
+    if (this._featureSlides[index].videoUrl) {
+      newShowVideo[index] = true;
+    }
     this._showVideo = newShowVideo;
   }
 
@@ -380,7 +389,7 @@ export class LandingView extends LitElement {
       <app-header></app-header>
       <main>
         <section class="hero main-section">
-          <news-capsule></news-capsule>
+          <!-- <news-capsule></news-capsule> -->
           <div class="section-container hero-inner">
             <div class="hero-content">
               <h1 class="fw-bold">${unsafeHTML(this._heroTitle)}</h1>
@@ -389,7 +398,13 @@ export class LandingView extends LitElement {
                 <sl-button variant="primary" size="large" href="/register"
                   >${this._ctaPrimary}</sl-button
                 >
-                <sl-button variant="text" size="large" href="/request-demo"
+                <sl-button
+                  variant="text"
+                  size="large"
+                  href=${this._ctaSecondaryUrl}
+                  target=${this._ctaSecondaryUrl.startsWith('http')
+                    ? '_blank'
+                    : '_self'}
                   >${this._ctaSecondary}</sl-button
                 >
               </div>
@@ -412,7 +427,7 @@ export class LandingView extends LitElement {
                       <div class="feature-text-content">
                         <h2>${slide.title}</h2>
                         <p>${slide.text}</p>
-                        ${!this._showVideo[index]
+                        ${!this._showVideo[index] && slide.videoUrl
                           ? html`
                               <sl-button
                                 variant="primary"
@@ -464,18 +479,22 @@ export class LandingView extends LitElement {
                                 ></iframe>
                               </div>
                             `
-                          : html`
-                              <div
-                                class="video-placeholder"
-                                @click=${() => this._playVideo(index)}
-                              >
-                                <img
-                                  src=${slide.placeholderImg}
-                                  alt="Video Preview"
-                                />
-                                <div class="play-button"></div>
-                              </div>
-                            `}
+                          : slide.videoUrl
+                            ? html`
+                                <div
+                                  class="video-placeholder"
+                                  @click=${() => this._playVideo(index)}
+                                >
+                                  <img
+                                    src=${slide.placeholderImg}
+                                    alt="Video Preview"
+                                  />
+                                  <div class="play-button"></div>
+                                </div>
+                              `
+                            : html`<div class="image-placeholder">
+                                <img src=${slide.placeholderImg} />
+                              </div>`}
                       </div>
                     </div>
                   </sl-carousel-item>
@@ -828,11 +847,11 @@ export class LandingView extends LitElement {
                   class="jira-logo tool-logo"
                 />
               </sl-tooltip>
-              <sl-tooltip content="Linear (coming soon)">
+              <sl-tooltip content="Slack">
                 <img
-                  src="images/logos/linear-logo-light.png"
-                  alt="Linear Logo"
-                  class="linear-logo tool-logo"
+                  src="images/logos/slack-logo-light.png"
+                  alt="Slack Logo"
+                  class="slack-logo tool-logo"
                 />
               </sl-tooltip>
             </div>

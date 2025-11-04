@@ -7,6 +7,8 @@ import {
   updateFlow,
   getTrackers,
   getAIModels,
+  createAIModel,
+  getAvailableModelsForProvider,
   getFlowPresets,
   listOrganizations,
   listProjects,
@@ -22,7 +24,36 @@ import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
+import '@shoelace-style/shoelace/dist/components/radio/radio.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '../../components/icon-selector.ts';
+import '../../components/add-tracker-modal.ts';
+import '../../components/add-ai-model-modal.ts';
+
+interface GitCloneRepository {
+  tracker_id: string;
+  project_id?: string;
+  repository_url?: string;
+  clone_path: string;
+  branch?: string;
+}
+
+interface GitCloneConfig {
+  enabled: boolean;
+  repositories?: GitCloneRepository[];
+}
+
+interface CustomCommands {
+  enabled: boolean;
+  commands?: string[];
+}
+
+interface WebhookConfig {
+  webhook_secret: string;
+}
 
 interface Flow {
   id?: string;
@@ -34,10 +65,13 @@ interface Flow {
   trigger_organization_id?: string;
   trigger_project_id?: string;
   trigger_config?: any;
+  webhook_config?: WebhookConfig;
   ai_model_id?: string;
   prompt_template?: string;
   allowed_mcp_servers?: string[];
   allowed_mcp_tools?: { server_name: string; tool_name: string }[];
+  git_clone_config?: GitCloneConfig;
+  custom_commands?: CustomCommands;
   max_iterations?: number;
   max_budget?: number;
   is_preset?: boolean;
@@ -78,6 +112,7 @@ export class FlowView extends LitElement {
   @state()
   private flow: Flow = {
     name: '',
+    agent_type: 'codex',
     allowed_mcp_servers: [],
     allowed_mcp_tools: [],
   };
@@ -115,8 +150,50 @@ export class FlowView extends LitElement {
   @state()
   private recentExecutions: any[] = [];
 
+  @state()
+  private isAdmin = false;
+
+  @state()
+  private triggerType: 'webhook' | 'tracker' = 'webhook';
+
+  @state()
+  private isAddingTracker = false;
+
+  @state()
+  private isPollingOrganizations = false;
+
+  @state()
+  private isPollingProjects = false;
+
+  @state()
+  private isAddingAIModel = false;
+
+  private organizationPollingInterval?: number;
+  private projectPollingInterval?: number;
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Clean up polling intervals
+    if (this.organizationPollingInterval) {
+      clearInterval(this.organizationPollingInterval);
+    }
+    if (this.projectPollingInterval) {
+      clearInterval(this.projectPollingInterval);
+    }
+  }
+
   async connectedCallback() {
     super.connectedCallback();
+
+    // Check if current user is admin
+    try {
+      const { getAccountDetails } = await import('../../api');
+      const currentUser = await getAccountDetails();
+      this.isAdmin = currentUser.is_superuser || false;
+    } catch (error) {
+      console.error('Failed to get current user:', error);
+      this.isAdmin = false;
+    }
 
     const urlParams = new URLSearchParams(window.location.search);
     const presetId = urlParams.get('preset_id');
@@ -127,6 +204,10 @@ export class FlowView extends LitElement {
       this.isNew = false;
       this.showPresets = false;
       this.flow = await getFlow(this.flowId);
+
+      // Set trigger type based on flow
+      this.triggerType =
+        this.flow.trigger_event_source === 'webhook' ? 'webhook' : 'tracker';
 
       // Load recent executions for this flow
       const allExecutions = await import('../../api').then((m) =>
@@ -185,6 +266,17 @@ export class FlowView extends LitElement {
 
     // Edit/Create mode - show form
     return html`
+      ${this.isAddingTracker
+        ? html`<add-tracker-modal
+            @tracker-added=${this.handleTrackerAdded}
+            @close-modal=${this.closeAddTrackerDialog}
+          ></add-tracker-modal>`
+        : ''}
+      <add-ai-model-modal
+        .open=${this.isAddingAIModel}
+        @model-created=${this.handleAIModelCreated}
+        @close-modal=${this.closeAIModelDialog}
+      ></add-ai-model-modal>
       <view-header
         headerText="${this.isNew ? 'Create Flow' : 'Edit Flow'}"
       ></view-header>
@@ -242,10 +334,11 @@ export class FlowView extends LitElement {
               <sl-badge>${this.flow.agent_type}</sl-badge>
 
               <strong>Trigger:</strong>
-              <span
-                >${this.flow.trigger_event_source} -
-                ${this.flow.trigger_event_type}</span
-              >
+              <span>
+                ${this.flow.trigger_event_source === 'webhook'
+                  ? 'Webhook'
+                  : `${this.flow.trigger_event_source} - ${this.flow.trigger_event_type}`}
+              </span>
 
               <strong>Status:</strong>
               <sl-badge
@@ -253,8 +346,150 @@ export class FlowView extends LitElement {
               >
                 ${this.flow.is_enabled ? 'Enabled' : 'Disabled'}
               </sl-badge>
+
+              ${this.flow.git_clone_config?.enabled
+                ? html`
+                    <strong>Git Clone:</strong>
+                    <sl-badge variant="primary">Enabled</sl-badge>
+                  `
+                : ''}
+              ${this.flow.custom_commands?.enabled && this.isAdmin
+                ? html`
+                    <strong>Custom Commands:</strong>
+                    <sl-badge variant="warning">Enabled</sl-badge>
+                  `
+                : ''}
             </div>
           </sl-card>
+
+          ${this.flow.trigger_event_source === 'webhook' &&
+          this.flow.webhook_config
+            ? html`
+                <sl-card style="margin-bottom: 16px;">
+                  <div slot="header">
+                    <sl-icon name="link-45deg"></sl-icon>
+                    Webhook URL
+                  </div>
+                  <div>
+                    <p
+                      style="margin-bottom: 12px; color: var(--sl-color-neutral-600);"
+                    >
+                      Use this URL to trigger the flow from external services.
+                      Keep it secret!
+                    </p>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                      <sl-input
+                        readonly
+                        style="flex: 1;"
+                        value="${window.location
+                          .origin}/api/webhooks/flows/${this.flowId}/${this.flow
+                          .webhook_config.webhook_secret}"
+                      ></sl-input>
+                      <sl-button @click=${() => this.copyWebhookUrl()}>
+                        <sl-icon name="clipboard"></sl-icon>
+                        Copy
+                      </sl-button>
+                    </div>
+                  </div>
+                </sl-card>
+              `
+            : ''}
+          ${this.flow.git_clone_config?.enabled &&
+          (this.flow.git_clone_config.repositories?.length || 0) > 0
+            ? html`
+                <sl-card style="margin-bottom: 16px;">
+                  <div slot="header">
+                    <sl-icon name="git"></sl-icon>
+                    Git Clone Configuration
+                  </div>
+                  ${(this.flow.git_clone_config.repositories || []).map(
+                    (repo, index) => html`
+                      <div
+                        style="border-bottom: ${index <
+                        (this.flow.git_clone_config?.repositories?.length ||
+                          0) -
+                          1
+                          ? '1px solid var(--sl-color-neutral-200)'
+                          : 'none'}; padding-bottom: ${index <
+                        (this.flow.git_clone_config?.repositories?.length ||
+                          0) -
+                          1
+                          ? '12px'
+                          : '0'}; margin-bottom: ${index <
+                        (this.flow.git_clone_config?.repositories?.length ||
+                          0) -
+                          1
+                          ? '12px'
+                          : '0'};"
+                      >
+                        <strong style="display: block; margin-bottom: 8px;">
+                          Repository ${index + 1}
+                        </strong>
+                        <div
+                          style="display: grid; grid-template-columns: 150px 1fr; gap: 8px; padding-left: 1rem;"
+                        >
+                          <strong>Tracker:</strong>
+                          <span
+                            >${this.trackers.find(
+                              (t) => t.id === repo.tracker_id
+                            )?.name || repo.tracker_id}</span
+                          >
+
+                          ${repo.repository_url
+                            ? html`
+                                <strong>Repository:</strong>
+                                <span>${repo.repository_url}</span>
+                              `
+                            : html`
+                                <strong>Repository:</strong>
+                                <span
+                                  style="color: var(--sl-color-neutral-600);"
+                                  >Auto-detect from trigger</span
+                                >
+                              `}
+
+                          <strong>Clone Path:</strong>
+                          <span>${repo.clone_path}</span>
+
+                          ${repo.branch
+                            ? html`
+                                <strong>Branch:</strong>
+                                <span>${repo.branch}</span>
+                              `
+                            : ''}
+                        </div>
+                      </div>
+                    `
+                  )}
+                </sl-card>
+              `
+            : ''}
+          ${this.flow.custom_commands?.enabled && this.isAdmin
+            ? html`
+                <sl-card style="margin-bottom: 16px;">
+                  <div slot="header">
+                    <sl-icon name="terminal"></sl-icon>
+                    Custom Commands
+                    <sl-badge
+                      variant="warning"
+                      size="small"
+                      style="margin-left: 8px;"
+                      >Admin Only</sl-badge
+                    >
+                  </div>
+                  <div>
+                    <strong style="display: block; margin-bottom: 8px;"
+                      >Commands:</strong
+                    >
+                    <pre
+                      style="background: var(--sl-color-neutral-50); padding: 12px; border-radius: 4px; overflow-x: auto;"
+                    >
+${(this.flow.custom_commands.commands || []).join('\n')}</pre
+                    >
+                  </div>
+                </sl-card>
+              `
+            : ''}
 
           <!-- Recent Executions -->
           <sl-card>
@@ -359,6 +594,14 @@ export class FlowView extends LitElement {
     }
   }
 
+  copyWebhookUrl() {
+    if (!this.flow.webhook_config) return;
+    const webhookUrl = `${window.location.origin}/api/webhooks/flows/${this.flowId}/${this.flow.webhook_config.webhook_secret}`;
+    navigator.clipboard.writeText(webhookUrl).then(() => {
+      alert('Webhook URL copied to clipboard!');
+    });
+  }
+
   renderPresets() {
     return html`
       <h2>Select a Preset</h2>
@@ -405,10 +648,6 @@ export class FlowView extends LitElement {
             .value=${this.flow.description || ''}
             @sl-input=${(e: Event) => this.handleInputChange('description', e)}
           ></sl-textarea>
-          <icon-selector
-            .selectedIcon=${this.flow.icon || 'gear'}
-            @icon-change=${(e: any) => (this.flow.icon = e.detail.icon)}
-          ></icon-selector>
         </sl-card>
 
         <sl-card>
@@ -416,67 +655,28 @@ export class FlowView extends LitElement {
             <sl-icon name="calendar-event"></sl-icon>
             Trigger
           </div>
-          <div class="form-grid">
-            <sl-select
-              label="Tracker"
-              .value=${this.flow.trigger_event_source || ''}
-              @sl-change=${this.handleTrackerChange}
+
+          <!-- Trigger Type Selection -->
+          <div style="margin-bottom: 1.5rem;">
+            <label
+              style="display: block; margin-bottom: 0.5rem; font-weight: 500;"
             >
-              ${this.trackers.map(
-                (tracker) =>
-                  html`<sl-option value=${tracker.id}
-                    >${tracker.name}</sl-option
-                  >`
-              )}
-            </sl-select>
-            <sl-select
-              label="Organization"
-              .value=${this.flow.trigger_organization_id || ''}
-              @sl-change=${this.handleOrganizationChange}
-            >
-              ${this.organizations.map(
-                (org) =>
-                  html`<sl-option value=${org.id}>${org.name}</sl-option>`
-              )}
-            </sl-select>
-            <sl-select
-              label="Project"
-              .value=${this.flow.trigger_project_id || ''}
+              Trigger Type
+            </label>
+            <sl-radio-group
+              value=${this.triggerType}
               @sl-change=${(e: any) =>
-                (this.flow.trigger_project_id = e.target.value)}
+                this.handleTriggerTypeChange(e.target.value)}
+              style="display: flex; gap: 1rem;"
             >
-              ${this.projects.map(
-                (proj) =>
-                  html`<sl-option value=${proj.id}>${proj.name}</sl-option>`
-              )}
-            </sl-select>
-            <sl-select
-              label="Event"
-              .value=${this.flow.trigger_event_type || ''}
-              @sl-change=${this.handleEventChange}
-            >
-              ${this.getEventOptions().map(
-                (event) =>
-                  html`<sl-option value=${event.value}
-                    >${event.name}</sl-option
-                  >`
-              )}
-              <sl-option value="other">Other</sl-option>
-            </sl-select>
-            ${this.flow.trigger_event_type === 'other'
-              ? html`
-                  <sl-input
-                    label="Custom Event"
-                    .value=${this.customEventType}
-                    @sl-input=${(e: any) =>
-                      (this.customEventType = e.target.value)}
-                  ></sl-input>
-                `
-              : ''}
-            <sl-button @click=${() => this.openFilterModal()}
-              >Add Filters</sl-button
-            >
+              <sl-radio value="webhook">Webhook</sl-radio>
+              <sl-radio value="tracker">Tracker Event</sl-radio>
+            </sl-radio-group>
           </div>
+
+          ${this.triggerType === 'webhook'
+            ? this.renderWebhookTriggerFields()
+            : this.renderTrackerTriggerFields()}
         </sl-card>
 
         <sl-card>
@@ -484,21 +684,73 @@ export class FlowView extends LitElement {
             <sl-icon name="robot"></sl-icon>
             Agent Configuration
           </div>
+
           <sl-select
-            label="AI Model"
-            .value=${this.flow.ai_model_id || ''}
-            @sl-change=${(e: any) => (this.flow.ai_model_id = e.target.value)}
+            label="Agent Type"
+            .value=${this.flow.agent_type || 'codex'}
+            @sl-change=${(e: any) => {
+              this.flow.agent_type = e.target.value;
+              this.requestUpdate();
+            }}
+            help-text="Choose which AI agent to use for executing this flow"
           >
-            ${this.models.map(
-              (model) =>
-                html`<sl-option value=${model.id}>${model.name}</sl-option>`
-            )}
+            <sl-option value="codex">Codex (Recommended)</sl-option>
+            <sl-option value="claude-code">Claude Code</sl-option>
+            <sl-option value="aider">Aider</sl-option>
+            <sl-option value="openhands">OpenHands</sl-option>
           </sl-select>
+
+          ${this.models.length === 0
+            ? html`
+                <div
+                  style="text-align: center; padding: 2rem; background: var(--sl-color-neutral-50); border-radius: 4px; margin-bottom: 1rem;"
+                >
+                  <p
+                    style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);"
+                  >
+                    No AI models configured yet.
+                  </p>
+                  <sl-button
+                    variant="primary"
+                    @click=${this.openAddAIModelDialog}
+                  >
+                    <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                    Add AI Model
+                  </sl-button>
+                </div>
+              `
+            : html`
+                <div>
+                  <sl-select
+                    label="AI Model"
+                    .value=${this.flow.ai_model_id || ''}
+                    @sl-change=${(e: any) =>
+                      (this.flow.ai_model_id = e.target.value)}
+                  >
+                    ${this.models.map(
+                      (model) =>
+                        html`<sl-option value=${model.id}
+                          >${model.name}</sl-option
+                        >`
+                    )}
+                  </sl-select>
+                  <sl-button
+                    size="small"
+                    variant="text"
+                    @click=${this.openAddAIModelDialog}
+                    style="margin-top: 0.5rem;"
+                  >
+                    <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                    Add New AI Model
+                  </sl-button>
+                </div>
+              `}
           <sl-textarea
             label="Prompt"
             .value=${this.flow.prompt_template || ''}
             @sl-input=${(e: Event) =>
               this.handleInputChange('prompt_template', e)}
+            help-text="The prompt that will be sent to the AI agent. You can use template variables like {{trigger_event.*}}"
           ></sl-textarea>
         </sl-card>
 
@@ -515,6 +767,113 @@ export class FlowView extends LitElement {
 
           ${this.renderToolSelection()}
         </sl-card>
+
+        ${this.getGitTrackers().length > 0
+          ? html`
+              <sl-card>
+                <div slot="header">
+                  <sl-icon name="git"></sl-icon>
+                  Git Clone Configuration
+                </div>
+                <p
+                  style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);"
+                >
+                  Automatically clone repositories before the agent starts.
+                  ${this.getGitTrackers().length === 1
+                    ? 'Your GitHub/GitLab tracker will be used automatically.'
+                    : 'Select which repositories to clone.'}
+                </p>
+                <sl-checkbox
+                  .checked=${this.flow.git_clone_config?.enabled || false}
+                  @sl-change=${(e: any) =>
+                    this.handleGitCloneToggle(e.target.checked)}
+                  >Enable Git Clone</sl-checkbox
+                >
+
+                ${this.flow.git_clone_config?.enabled
+                  ? html`
+                      <div style="margin-top: 1rem;">
+                        ${this.renderGitRepositories()}
+                        <sl-button
+                          size="small"
+                          @click=${this.addGitRepository}
+                          style="margin-top: 0.5rem;"
+                        >
+                          <sl-icon name="plus"></sl-icon>
+                          Add Repository
+                        </sl-button>
+                      </div>
+                    `
+                  : ''}
+              </sl-card>
+            `
+          : ''}
+        ${this.isAdmin
+          ? html`
+              <sl-card>
+                <div slot="header">
+                  <sl-icon name="terminal"></sl-icon>
+                  Custom Commands
+                  <sl-badge
+                    variant="warning"
+                    size="small"
+                    style="margin-left: 8px;"
+                    >Admin Only</sl-badge
+                  >
+                </div>
+                <p
+                  style="margin-bottom: 1rem; color: var(--sl-color-warning-600);"
+                >
+                  <strong>Security Warning:</strong> Custom commands execute
+                  with full container privileges. Only use trusted commands.
+                  This feature is restricted to administrators.
+                </p>
+                <sl-checkbox
+                  .checked=${this.flow.custom_commands?.enabled || false}
+                  @sl-change=${(e: any) => {
+                    if (!this.flow.custom_commands) {
+                      this.flow.custom_commands = {
+                        enabled: false,
+                        commands: [],
+                      };
+                    }
+                    this.flow.custom_commands.enabled = e.target.checked;
+                    this.requestUpdate();
+                  }}
+                  >Enable Custom Commands</sl-checkbox
+                >
+
+                ${this.flow.custom_commands?.enabled
+                  ? html`
+                      <div style="margin-top: 1rem;">
+                        <label
+                          style="display: block; margin-bottom: 0.5rem; font-weight: 500;"
+                        >
+                          Commands (one per line)
+                        </label>
+                        <sl-textarea
+                          placeholder="pip install -r requirements.txt&#10;npm install&#10;./setup.sh"
+                          rows="5"
+                          .value=${(
+                            this.flow.custom_commands.commands || []
+                          ).join('\n')}
+                          @sl-input=${(e: any) => {
+                            if (this.flow.custom_commands) {
+                              const commands = e.target.value
+                                .split('\n')
+                                .map((cmd: string) => cmd.trim())
+                                .filter((cmd: string) => cmd.length > 0);
+                              this.flow.custom_commands.commands = commands;
+                            }
+                          }}
+                          help-text="Commands will execute sequentially before the agent starts. Any command failure will stop execution."
+                        ></sl-textarea>
+                      </div>
+                    `
+                  : ''}
+              </sl-card>
+            `
+          : ''}
 
         <sl-card>
           <div slot="header">
@@ -566,11 +925,41 @@ export class FlowView extends LitElement {
 
   async handleSubmit(e: Event) {
     e.preventDefault();
-    const payload: Partial<Flow> = {};
-    for (const key in this.flow) {
-      const value = this.flow[key as keyof Flow];
+
+    // Build payload with required fields
+    const payload: any = {
+      name: this.flow.name,
+      prompt_template: this.flow.prompt_template || '',
+      agent_type: this.flow.agent_type || 'codex',
+      agent_config: this.flow.agent_config || {},
+      allowed_mcp_servers: this.flow.allowed_mcp_servers || [],
+      allowed_mcp_tools: this.flow.allowed_mcp_tools || [],
+    };
+
+    // Add optional fields if they have values
+    const optionalFields: (keyof Flow)[] = [
+      'description',
+      'icon',
+      'trigger_event_source',
+      'trigger_event_type',
+      'trigger_organization_id',
+      'trigger_project_id',
+      'trigger_config',
+      'webhook_config',
+      'ai_model_id',
+      'agent_type',
+      'git_clone_config',
+      'custom_commands',
+      'max_iterations',
+      'max_budget',
+      'is_preset',
+      'is_enabled',
+    ];
+
+    for (const field of optionalFields) {
+      const value = this.flow[field];
       if (value !== null && value !== undefined && value !== '') {
-        (payload as any)[key] = value;
+        payload[field] = value;
       }
     }
 
@@ -579,25 +968,103 @@ export class FlowView extends LitElement {
       Router.go(`/console/flows/${newFlow.id}`);
     } else {
       await updateFlow(this.flowId!, payload);
-      // Optionally, show a success message
+      // Redirect to flow view after successful update
+      Router.go(`/console/flows/${this.flowId}`);
     }
   }
+  startPollingOrganizations(trackerId: string) {
+    // Stop any existing polling
+    if (this.organizationPollingInterval) {
+      clearInterval(this.organizationPollingInterval);
+    }
+
+    this.isPollingOrganizations = true;
+    this.organizationPollingInterval = window.setInterval(async () => {
+      const allOrganizations = await listOrganizations();
+      const orgs = allOrganizations.filter(
+        (org: any) => org.tracker_id === trackerId
+      );
+
+      if (orgs.length > 0) {
+        this.organizations = orgs;
+        this.isPollingOrganizations = false;
+        if (this.organizationPollingInterval) {
+          clearInterval(this.organizationPollingInterval);
+          this.organizationPollingInterval = undefined;
+        }
+        this.requestUpdate();
+      }
+    }, 2000);
+  }
+
+  startPollingProjects(orgId: string) {
+    // Stop any existing polling
+    if (this.projectPollingInterval) {
+      clearInterval(this.projectPollingInterval);
+    }
+
+    this.isPollingProjects = true;
+    this.projectPollingInterval = window.setInterval(async () => {
+      const allProjects = await listProjects();
+      const projects = allProjects.filter(
+        (proj: any) => proj.organization_id === orgId
+      );
+
+      if (projects.length > 0) {
+        this.projects = projects;
+        this.isPollingProjects = false;
+        if (this.projectPollingInterval) {
+          clearInterval(this.projectPollingInterval);
+          this.projectPollingInterval = undefined;
+        }
+        this.requestUpdate();
+      }
+    }, 2000);
+  }
+
   async handleTrackerChange(e: any) {
     const trackerId = e.target.value;
+
+    // Handle special options
+    if (trackerId === 'add_new') {
+      // Navigate to trackers page - user can then click "Add New Tracker"
+      window.location.href = '/console/trackers';
+      return;
+    }
+
+    // Normal tracker selected
     this.flow.trigger_event_source = trackerId;
+    this.flow.trigger_event_type = undefined; // Reset event type when tracker changes
+    this.flow.trigger_organization_id = undefined;
+    this.flow.trigger_project_id = undefined;
+
     const allOrganizations = await listOrganizations();
     this.organizations = allOrganizations.filter(
       (org: any) => org.tracker_id === trackerId
     );
+
+    // Start polling if no organizations yet
+    if (this.organizations.length === 0) {
+      this.startPollingOrganizations(trackerId);
+    }
+
+    this.requestUpdate();
   }
 
   async handleOrganizationChange(e: any) {
     const orgId = e.target.value;
     this.flow.trigger_organization_id = orgId;
+    this.flow.trigger_project_id = undefined;
+
     const allProjects = await listProjects();
     this.projects = allProjects.filter(
       (proj: any) => proj.organization_id === orgId
     );
+
+    // Start polling if no projects yet
+    if (this.projects.length === 0) {
+      this.startPollingProjects(orgId);
+    }
   }
 
   @state()
@@ -660,12 +1127,7 @@ export class FlowView extends LitElement {
   }
 
   renderToolSelection() {
-    // Only show built-in tools from spacebridge-mcp
-    const builtinTools = this.availableTools.filter(
-      (tool) => tool.source === 'builtin'
-    );
-
-    if (builtinTools.length === 0) {
+    if (this.availableTools.length === 0) {
       return html`
         <div
           style="padding: 1rem; background: var(--sl-color-neutral-50); border-radius: 4px;"
@@ -675,33 +1137,97 @@ export class FlowView extends LitElement {
       `;
     }
 
+    // Group tools by source
+    const builtinTools = this.availableTools.filter(
+      (tool) => tool.source === 'builtin'
+    );
+    const mcpTools = this.availableTools.filter(
+      (tool) => tool.source === 'mcp'
+    );
+
     return html`
       <div>
-        <div
-          style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem;"
-        >
-          ${builtinTools.map(
-            (tool) => html`
-              <sl-checkbox
-                .checked=${this.isToolSelected('spacebridge-mcp', tool.name)}
-                @sl-change=${(e: any) =>
-                  this.handleToolToggle(
-                    'spacebridge-mcp',
-                    tool.name,
-                    e.target.checked
+        ${builtinTools.length > 0
+          ? html`
+              <div style="margin-bottom: 1.5rem;">
+                <h4
+                  style="margin-bottom: 0.75rem; font-size: 0.875rem; color: var(--sl-color-neutral-600); text-transform: uppercase; font-weight: 600;"
+                >
+                  Built-in Tools
+                </h4>
+                <div
+                  style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem;"
+                >
+                  ${builtinTools.map(
+                    (tool) => html`
+                      <sl-checkbox
+                        .checked=${this.isToolSelected(
+                          'spacebridge-mcp',
+                          tool.name
+                        )}
+                        @sl-change=${(e: any) =>
+                          this.handleToolToggle(
+                            'spacebridge-mcp',
+                            tool.name,
+                            e.target.checked
+                          )}
+                        ?disabled=${!tool.is_enabled}
+                      >
+                        ${tool.name}
+                        ${!tool.is_enabled
+                          ? html`<sl-badge variant="neutral" size="small"
+                              >Disabled</sl-badge
+                            >`
+                          : ''}
+                      </sl-checkbox>
+                    `
                   )}
-                ?disabled=${!tool.is_enabled}
-              >
-                ${tool.name}
-                ${!tool.is_enabled
-                  ? html`<sl-badge variant="neutral" size="small"
-                      >Disabled</sl-badge
-                    >`
-                  : ''}
-              </sl-checkbox>
+                </div>
+              </div>
             `
-          )}
-        </div>
+          : ''}
+        ${mcpTools.length > 0
+          ? html`
+              <div>
+                <h4
+                  style="margin-bottom: 0.75rem; font-size: 0.875rem; color: var(--sl-color-neutral-600); text-transform: uppercase; font-weight: 600;"
+                >
+                  MCP Server Tools
+                </h4>
+                <div
+                  style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem;"
+                >
+                  ${mcpTools.map(
+                    (tool) => html`
+                      <sl-checkbox
+                        .checked=${this.isToolSelected(
+                          tool.source_name,
+                          tool.name
+                        )}
+                        @sl-change=${(e: any) =>
+                          this.handleToolToggle(
+                            tool.source_name,
+                            tool.name,
+                            e.target.checked
+                          )}
+                        ?disabled=${!tool.is_enabled}
+                      >
+                        ${tool.name}
+                        <sl-badge variant="primary" size="small"
+                          >${tool.source_name}</sl-badge
+                        >
+                        ${!tool.is_enabled
+                          ? html`<sl-badge variant="neutral" size="small"
+                              >Disabled</sl-badge
+                            >`
+                          : ''}
+                      </sl-checkbox>
+                    `
+                  )}
+                </div>
+              </div>
+            `
+          : ''}
       </div>
     `;
   }
@@ -733,5 +1259,404 @@ export class FlowView extends LitElement {
     }
 
     this.requestUpdate();
+  }
+
+  getGitTrackers() {
+    // Return only GitHub and GitLab trackers
+    return this.trackers.filter(
+      (t) => t.tracker_type === 'github' || t.tracker_type === 'gitlab'
+    );
+  }
+
+  handleGitCloneToggle(enabled: boolean) {
+    if (enabled) {
+      const gitTrackers = this.getGitTrackers();
+
+      // Initialize git clone config
+      this.flow.git_clone_config = {
+        enabled: true,
+        repositories: [],
+      };
+
+      // Auto-add repository based on available trackers
+      if (gitTrackers.length === 1) {
+        // Single tracker - auto-select it
+        this.addGitRepositoryWithTracker(gitTrackers[0].id);
+      } else if (this.flow.trigger_event_source) {
+        // Multiple trackers but trigger is set - use trigger tracker
+        const triggerTracker = gitTrackers.find(
+          (t) => t.id === this.flow.trigger_event_source
+        );
+        if (triggerTracker) {
+          this.addGitRepositoryWithTracker(
+            triggerTracker.id,
+            this.flow.trigger_project_id
+          );
+        }
+      }
+    } else {
+      this.flow.git_clone_config = { enabled: false, repositories: [] };
+    }
+    this.requestUpdate();
+  }
+
+  addGitRepository() {
+    if (!this.flow.git_clone_config) {
+      this.flow.git_clone_config = { enabled: true, repositories: [] };
+    }
+
+    const gitTrackers = this.getGitTrackers();
+    const defaultTracker = gitTrackers[0]?.id || '';
+
+    this.flow.git_clone_config.repositories =
+      this.flow.git_clone_config.repositories || [];
+    const repoCount = this.flow.git_clone_config.repositories.length;
+
+    this.flow.git_clone_config.repositories.push({
+      tracker_id: defaultTracker,
+      clone_path: repoCount === 0 ? 'workspace' : `workspace-${repoCount + 1}`,
+    });
+    this.requestUpdate();
+  }
+
+  addGitRepositoryWithTracker(trackerId: string, projectId?: string) {
+    if (!this.flow.git_clone_config) {
+      this.flow.git_clone_config = { enabled: true, repositories: [] };
+    }
+
+    this.flow.git_clone_config.repositories =
+      this.flow.git_clone_config.repositories || [];
+    const repoCount = this.flow.git_clone_config.repositories.length;
+
+    this.flow.git_clone_config.repositories.push({
+      tracker_id: trackerId,
+      project_id: projectId,
+      clone_path: repoCount === 0 ? 'workspace' : `workspace-${repoCount + 1}`,
+    });
+    this.requestUpdate();
+  }
+
+  removeGitRepository(index: number) {
+    if (this.flow.git_clone_config?.repositories) {
+      this.flow.git_clone_config.repositories.splice(index, 1);
+      this.requestUpdate();
+    }
+  }
+
+  renderGitRepositories() {
+    const repositories = this.flow.git_clone_config?.repositories || [];
+    const gitTrackers = this.getGitTrackers();
+
+    if (repositories.length === 0) {
+      return html`
+        <p style="margin-top: 0.5rem; color: var(--sl-color-neutral-600);">
+          No repositories configured. Click "Add Repository" to get started.
+        </p>
+      `;
+    }
+
+    return html`
+      ${repositories.map(
+        (repo, index) => html`
+          <div
+            style="border: 1px solid var(--sl-color-neutral-200); border-radius: 4px; padding: 1rem; margin-top: 0.5rem;"
+          >
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;"
+            >
+              <strong>Repository ${index + 1}</strong>
+              <sl-button
+                size="small"
+                variant="danger"
+                @click=${() => this.removeGitRepository(index)}
+              >
+                <sl-icon name="trash"></sl-icon>
+              </sl-button>
+            </div>
+
+            ${gitTrackers.length > 1
+              ? html`
+                  <sl-select
+                    label="Tracker"
+                    .value=${repo.tracker_id}
+                    @sl-change=${(e: any) => {
+                      repo.tracker_id = e.target.value;
+                      this.requestUpdate();
+                    }}
+                  >
+                    ${gitTrackers.map(
+                      (tracker) =>
+                        html`<sl-option value=${tracker.id}
+                          >${tracker.name} (${tracker.tracker_type})</sl-option
+                        >`
+                    )}
+                  </sl-select>
+                `
+              : html`
+                  <p style="margin-bottom: 0.5rem;">
+                    <strong>Tracker:</strong> ${gitTrackers[0]?.name}
+                  </p>
+                `}
+
+            <sl-input
+              label="Repository URL (optional)"
+              placeholder="Leave empty to use project from trigger or specify URL"
+              .value=${repo.repository_url || ''}
+              @sl-input=${(e: any) => {
+                repo.repository_url = e.target.value;
+              }}
+              help-text="Example: https://github.com/owner/repo"
+            ></sl-input>
+
+            <sl-input
+              label="Clone Path"
+              .value=${repo.clone_path}
+              @sl-input=${(e: any) => {
+                repo.clone_path = e.target.value;
+              }}
+              help-text="Relative path where repository will be cloned"
+            ></sl-input>
+
+            <sl-input
+              label="Branch (optional)"
+              placeholder="Leave empty for default branch"
+              .value=${repo.branch || ''}
+              @sl-input=${(e: any) => {
+                repo.branch = e.target.value;
+              }}
+            ></sl-input>
+          </div>
+        `
+      )}
+    `;
+  }
+
+  handleTriggerTypeChange(newType: 'webhook' | 'tracker') {
+    this.triggerType = newType;
+
+    if (newType === 'webhook') {
+      // Set webhook trigger
+      this.flow.trigger_event_source = 'webhook';
+      this.flow.trigger_event_type = 'webhook';
+      // Clear tracker-specific fields
+      this.flow.trigger_organization_id = undefined;
+      this.flow.trigger_project_id = undefined;
+    } else {
+      // Clear webhook fields
+      this.flow.trigger_event_source = undefined;
+      this.flow.trigger_event_type = undefined;
+    }
+
+    this.requestUpdate();
+  }
+
+  renderWebhookTriggerFields() {
+    // If editing and webhook config exists, show the URL
+    if (!this.isNew && this.flow.webhook_config) {
+      return html`
+        <div>
+          <p style="margin-bottom: 12px; color: var(--sl-color-neutral-600);">
+            This flow will be triggered when a POST request is sent to the
+            webhook URL below.
+          </p>
+          <div style="margin-bottom: 1rem;">
+            <label
+              style="display: block; margin-bottom: 0.5rem; font-weight: 500;"
+            >
+              Webhook URL
+            </label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <sl-input
+                readonly
+                style="flex: 1;"
+                value="${window.location.origin}/api/webhooks/flows/${this
+                  .flowId}/${this.flow.webhook_config.webhook_secret}"
+              ></sl-input>
+              <sl-button @click=${() => this.copyWebhookUrl()}>
+                <sl-icon name="clipboard"></sl-icon>
+                Copy
+              </sl-button>
+            </div>
+          </div>
+          <div>
+            <label
+              style="display: block; margin-bottom: 0.5rem; font-weight: 500;"
+            >
+              Example Payload
+            </label>
+            <sl-textarea
+              readonly
+              rows="6"
+              value='{
+  "data": "your custom data",
+  "event": "custom_event",
+  "any_key": "any_value"
+}'
+              style="font-family: monospace;"
+            ></sl-textarea>
+            <p
+              style="margin-top: 0.5rem; color: var(--sl-color-neutral-600); font-size: 0.875rem;"
+            >
+              The payload will be available in your prompt template via
+              <code>{{trigger_event.payload.*}}</code>
+            </p>
+          </div>
+        </div>
+      `;
+    }
+
+    // For new flows, show info message
+    return html`
+      <div>
+        <p style="color: var(--sl-color-neutral-600); margin: 0;">
+          <sl-icon name="info-circle"></sl-icon>
+          The webhook URL will be generated after you create the flow. You can
+          then use it to trigger this flow from external services.
+        </p>
+      </div>
+    `;
+  }
+
+  openAddTrackerDialog() {
+    this.isAddingTracker = true;
+  }
+
+  private closeAddTrackerDialog() {
+    this.isAddingTracker = false;
+  }
+
+  private async handleTrackerAdded(event: CustomEvent) {
+    this.isAddingTracker = false;
+    // Reload trackers list
+    this.trackers = await getTrackers();
+
+    // Auto-select the newly added tracker if we're in tracker mode
+    if (this.triggerType === 'tracker' && this.trackers.length > 0) {
+      // The newest tracker should be the last one
+      const newestTracker = this.trackers[this.trackers.length - 1];
+      this.flow.trigger_event_source = newestTracker.id;
+
+      // Load organizations for the new tracker
+      const allOrganizations = await listOrganizations();
+      this.organizations = allOrganizations.filter(
+        (org: any) => org.tracker_id === newestTracker.id
+      );
+
+      // Start polling for orgs if none exist yet
+      if (this.organizations.length === 0) {
+        this.startPollingOrganizations(newestTracker.id);
+      }
+    }
+
+    this.requestUpdate();
+  }
+
+  openAddAIModelDialog() {
+    this.isAddingAIModel = true;
+  }
+
+  closeAIModelDialog() {
+    this.isAddingAIModel = false;
+  }
+
+  async handleAIModelCreated(event: CustomEvent) {
+    const newModel = event.detail.model;
+
+    // Reload models list
+    this.models = await getAIModels();
+
+    // Auto-select the newly created model
+    if (newModel && newModel.id) {
+      this.flow.ai_model_id = newModel.id;
+    }
+
+    this.requestUpdate();
+  }
+
+  renderTrackerTriggerFields() {
+    // If no trackers, show add tracker button
+    if (this.trackers.length === 0) {
+      return html`
+        <div style="text-align: center; padding: 2rem;">
+          <p style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);">
+            You don't have any trackers configured yet.
+          </p>
+          <sl-button variant="primary" @click=${this.openAddTrackerDialog}>
+            <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+            Add New Tracker
+          </sl-button>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="form-grid">
+        <sl-select
+          label="Tracker"
+          .value=${this.flow.trigger_event_source || ''}
+          @sl-change=${this.handleTrackerChange}
+        >
+          ${this.trackers.map(
+            (tracker) =>
+              html`<sl-option value=${tracker.id}>${tracker.name}</sl-option>`
+          )}
+        </sl-select>
+        <sl-select
+          label="Organization"
+          .value=${this.flow.trigger_organization_id || ''}
+          @sl-change=${this.handleOrganizationChange}
+          ?disabled=${this.isPollingOrganizations ||
+          !this.flow.trigger_event_source}
+        >
+          ${this.isPollingOrganizations
+            ? html`<sl-option value="">
+                <sl-spinner style="font-size: 1rem;"></sl-spinner>
+                Loading organizations...
+              </sl-option>`
+            : this.organizations.map(
+                (org) =>
+                  html`<sl-option value=${org.id}>${org.name}</sl-option>`
+              )}
+        </sl-select>
+        <sl-select
+          label="Project"
+          .value=${this.flow.trigger_project_id || ''}
+          @sl-change=${(e: any) =>
+            (this.flow.trigger_project_id = e.target.value)}
+          ?disabled=${this.isPollingProjects ||
+          !this.flow.trigger_organization_id}
+        >
+          ${this.isPollingProjects
+            ? html`<sl-option value="">
+                <sl-spinner style="font-size: 1rem;"></sl-spinner>
+                Loading projects...
+              </sl-option>`
+            : this.projects.map(
+                (proj) =>
+                  html`<sl-option value=${proj.id}>${proj.name}</sl-option>`
+              )}
+        </sl-select>
+        <sl-select
+          label="Event"
+          .value=${this.flow.trigger_event_type || ''}
+          @sl-change=${this.handleEventChange}
+        >
+          ${this.getEventOptions().map(
+            (event) =>
+              html`<sl-option value=${event.value}>${event.name}</sl-option>`
+          )}
+          <sl-option value="other">Other</sl-option>
+        </sl-select>
+        ${this.flow.trigger_event_type === 'other'
+          ? html`
+              <sl-input
+                label="Custom Event"
+                .value=${this.customEventType}
+                @sl-input=${(e: any) => (this.customEventType = e.target.value)}
+              ></sl-input>
+            `
+          : ''}
+      </div>
+    `;
   }
 }

@@ -17,6 +17,7 @@ import '../../components/similar-issues-widget.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/tracker-pill.ts';
 import '../../components/theme-switcher.ts';
+import '../../components/mcp-setup-dialog.ts';
 import {
   DEFAULT_SIMILARITY_THRESHOLD,
   DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
@@ -137,16 +138,6 @@ export class DashboardView extends AuthedElement {
 
   @state()
   private showSetupDialog = false;
-
-  @state()
-  private activeSetupTab: 'claude-code' | 'cursor' | 'windsurf' | 'cline' =
-    'claude-code';
-
-  private _handleSetupTabClick(
-    tabId: 'claude-code' | 'cursor' | 'windsurf' | 'cline'
-  ) {
-    this.activeSetupTab = tabId;
-  }
 
   async connectedCallback() {
     super.connectedCallback();
@@ -556,52 +547,6 @@ export class DashboardView extends AuthedElement {
         line-height: 1.5;
         margin-top: 0.5rem;
       }
-      .ide-tabs {
-        display: flex;
-        justify-content: center;
-        gap: var(--sl-spacing-medium);
-        margin: var(--sl-spacing-medium) 0;
-        flex-wrap: wrap;
-      }
-      .ide-logo-container {
-        cursor: pointer;
-        padding: var(--sl-spacing-small);
-        border-radius: var(--sl-border-radius-medium);
-        border: 2px solid transparent;
-        transition: all 0.2s ease;
-        opacity: 0.5;
-      }
-      .ide-logo-container:hover {
-        opacity: 0.8;
-        border-color: var(--sl-color-neutral-300);
-      }
-      .ide-logo-container.active {
-        opacity: 1;
-        border-color: var(--sl-color-primary-600);
-        background-color: var(--sl-color-primary-50);
-      }
-      .ide-logo-container img {
-        display: block;
-        max-height: 40px;
-        width: auto;
-      }
-      .tab-content {
-        margin-top: var(--sl-spacing-medium);
-      }
-      .tab-content h5 {
-        margin-top: var(--sl-spacing-medium);
-        margin-bottom: var(--sl-spacing-small);
-      }
-      .tab-content ul {
-        margin: var(--sl-spacing-small) 0;
-        padding-left: var(--sl-spacing-large);
-      }
-      .tab-content code {
-        background: var(--sl-color-neutral-100);
-        padding: 0.125rem 0.25rem;
-        border-radius: 3px;
-        font-size: var(--sl-font-size-small);
-      }
     `,
   ];
 
@@ -727,178 +672,10 @@ export class DashboardView extends AuthedElement {
           </sl-card>
 
           <!-- Setup Instructions Dialog -->
-          <sl-dialog
-            label="Setup Instructions"
-            class="setup-dialog"
+          <mcp-setup-dialog
             ?open=${this.showSetupDialog}
-            @sl-hide=${() => (this.showSetupDialog = false)}
-            style="--width: 50rem;"
-          >
-            <div class="ide-tabs">
-              <div
-                class="ide-logo-container ${this.activeSetupTab ===
-                'claude-code'
-                  ? 'active'
-                  : ''}"
-                @click=${() => this._handleSetupTabClick('claude-code')}
-              >
-                <img
-                  src="/images/Claude_AI_logo.png"
-                  alt="Claude Code"
-                  width="130"
-                />
-              </div>
-              <div
-                class="ide-logo-container ${this.activeSetupTab === 'cursor'
-                  ? 'active'
-                  : ''}"
-                @click=${() => this._handleSetupTabClick('cursor')}
-              >
-                <img src="/images/cursor_logo.png" alt="Cursor" width="130" />
-              </div>
-              <div
-                class="ide-logo-container ${this.activeSetupTab === 'windsurf'
-                  ? 'active'
-                  : ''}"
-                @click=${() => this._handleSetupTabClick('windsurf')}
-              >
-                <img
-                  src="/images/windsurf_logo.png"
-                  alt="Windsurf"
-                  width="130"
-                />
-              </div>
-              <div
-                class="ide-logo-container ${this.activeSetupTab === 'cline'
-                  ? 'active'
-                  : ''}"
-                @click=${() => this._handleSetupTabClick('cline')}
-              >
-                <img src="/images/cline_logo.png" alt="Cline" width="130" />
-              </div>
-            </div>
-
-            <div class="tab-content">
-              ${this.activeSetupTab === 'claude-code'
-                ? html`
-                    <div>
-                      <h5>Prerequisites</h5>
-                      <ul>
-                        <li>
-                          SpaceBridge API key (create one in Settings → API
-                          Keys)
-                        </li>
-                      </ul>
-                      <h5>Setup</h5>
-                      <p>Run the following command in your terminal:</p>
-                      <pre
-                        style="background: var(--sl-color-neutral-100); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; margin: 0.5rem 0;"
-                      ><code>claude mcp add --transport http spacebridge ${window
-                        .location.origin}/mcp/v1 \\
-  --header "Authorization: Bearer YOUR_API_KEY_HERE"</code></pre>
-                    </div>
-                  `
-                : ''}
-              ${this.activeSetupTab === 'cursor'
-                ? html`
-                    <div>
-                      <h5>Prerequisites</h5>
-                      <ul>
-                        <li>
-                          SpaceBridge API key (create one in Settings → API
-                          Keys)
-                        </li>
-                      </ul>
-                      <h5>Setup</h5>
-                      <p>Create or edit <code>~/.cursor/mcp.json</code>:</p>
-                      <pre
-                        style="background: var(--sl-color-neutral-100); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; margin: 0.5rem 0;"
-                      ><code>{
-  "mcpServers": {
-    "spacebridge": {
-      "transport": "http",
-      "url": "${window.location.origin}/mcp/v1",
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY_HERE"
-      }
-    }
-  }
-}</code></pre>
-                    </div>
-                  `
-                : ''}
-              ${this.activeSetupTab === 'windsurf'
-                ? html`
-                    <div>
-                      <h5>Prerequisites</h5>
-                      <ul>
-                        <li>
-                          SpaceBridge API key (create one in Settings → API
-                          Keys)
-                        </li>
-                      </ul>
-                      <h5>Setup</h5>
-                      <p>Create or edit your MCP configuration file:</p>
-                      <pre
-                        style="background: var(--sl-color-neutral-100); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; margin: 0.5rem 0;"
-                      ><code>{
-  "mcpServers": {
-    "spacebridge": {
-      "transport": "http",
-      "url": "${window.location.origin}/mcp/v1",
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY_HERE"
-      }
-    }
-  }
-}</code></pre>
-                    </div>
-                  `
-                : ''}
-              ${this.activeSetupTab === 'cline'
-                ? html`
-                    <div>
-                      <h5>Prerequisites</h5>
-                      <ul>
-                        <li>
-                          SpaceBridge API key (create one in Settings → API
-                          Keys)
-                        </li>
-                        <li>Cline extension for VS Code</li>
-                      </ul>
-                      <h5>Setup</h5>
-                      <p>Add to your Cline MCP settings:</p>
-                      <pre
-                        style="background: var(--sl-color-neutral-100); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; margin: 0.5rem 0;"
-                      ><code>{
-  "mcpServers": {
-    "spacebridge": {
-      "url": "${window.location.origin}/mcp/v1",
-      "transport": "http-streaming",
-      "auth": {
-        "type": "bearer",
-        "token": "YOUR_API_KEY_HERE"
-      }
-    }
-  }
-}</code></pre>
-                    </div>
-                  `
-                : ''}
-            </div>
-
-            <p class="help-text" style="margin-top: var(--sl-spacing-medium);">
-              The built-in MCP server provides access to all your enabled tools,
-              including tools from external MCP servers.
-            </p>
-            <sl-button
-              slot="footer"
-              variant="primary"
-              @click=${() => (this.showSetupDialog = false)}
-            >
-              Close
-            </sl-button>
-          </sl-dialog>
+            @close=${() => (this.showSetupDialog = false)}
+          ></mcp-setup-dialog>
 
           <!-- Flow Executions - Only show if flows exist -->
           ${this.hasFlows

@@ -70,7 +70,19 @@ class WebSocketService {
   ) {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const host = window.location.host;
-    const url = `${protocol}://${host}/api/v1/ws/flow-executions/${executionId}`;
+
+    // Get access token from localStorage for authentication
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      console.error('No access token found for WebSocket connection');
+      if (onCloseCallback) {
+        onCloseCallback();
+      }
+      return;
+    }
+
+    // Include token as query parameter
+    const url = `${protocol}://${host}/api/v1/ws/flow-executions/${executionId}?token=${encodeURIComponent(token)}`;
 
     this.connect(
       `execution-${executionId}`,

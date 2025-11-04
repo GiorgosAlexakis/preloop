@@ -143,12 +143,6 @@ export class ConsoleShell extends LitElement {
 
     // Check for trackers
     await this._checkTrackers();
-
-    // Set up periodic check for trackers (every 5 seconds)
-    // This allows the Issues menu to appear dynamically when a tracker is added
-    this._trackerCheckInterval = window.setInterval(() => {
-      this._checkTrackers();
-    }, 5000);
   }
 
   private _trackerCheckInterval?: number;
@@ -261,15 +255,6 @@ export class ConsoleShell extends LitElement {
                 Settings
               </span>
               <sl-menu>
-                <a href="/console/settings/profile">
-                  <sl-menu-item>Profile</sl-menu-item>
-                </a>
-                <a href="/console/settings/security">
-                  <sl-menu-item>Security</sl-menu-item>
-                </a>
-                <a href="/console/settings/subscription">
-                  <sl-menu-item>Subscription</sl-menu-item>
-                </a>
                 ${this.features.user_management
                   ? html`<a href="/console/settings/users">
                       <sl-menu-item>Users</sl-menu-item>
@@ -285,6 +270,9 @@ export class ConsoleShell extends LitElement {
                       <sl-menu-item>Invitations</sl-menu-item>
                     </a>`
                   : ''}
+                <a href="/console/settings/subscription">
+                  <sl-menu-item>Subscription</sl-menu-item>
+                </a>
                 <a href="/console/settings/api-keys">
                   <sl-menu-item>API Keys</sl-menu-item>
                 </a>

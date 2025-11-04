@@ -483,6 +483,23 @@ export async function deleteAIModel(modelId: string) {
   }
 }
 
+export async function getAvailableModelsForProvider(
+  provider: string,
+  apiKey?: string
+): Promise<string[]> {
+  let url = `/api/v1/ai-models/providers/${provider}/available-models`;
+  if (apiKey) {
+    url += `?api_key=${encodeURIComponent(apiKey)}`;
+  }
+  // Use fetch instead of fetchWithAuth since this endpoint doesn't require authentication
+  const response = await fetch(url);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to fetch available models');
+  }
+  return response.json();
+}
+
 // Flows
 export async function getFlows(): Promise<any[]> {
   const response = await fetchWithAuth('/api/v1/flows');

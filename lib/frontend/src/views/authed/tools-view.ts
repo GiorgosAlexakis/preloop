@@ -16,6 +16,7 @@ import {
 import '../../components/mcp-server-form';
 import '../../components/mcp-server-card';
 import '../../components/tool-card';
+import '../../components/mcp-setup-dialog';
 import type { Tool, ApprovalPolicy } from '../../components/tool-card';
 import type { MCPServer } from '../../components/mcp-server-card';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
@@ -629,45 +630,10 @@ export class ToolsView extends LitElement {
         </div>
       </sl-card>
 
-      <sl-dialog
-        label="Setup Instructions"
-        class="setup-dialog"
+      <mcp-setup-dialog
         ?open=${this.showSetupDialog}
-        @sl-hide=${() => (this.showSetupDialog = false)}
-      >
-        <p class="help-text">
-          <strong>Using with Claude Desktop:</strong><br />
-          Add this to your Claude Desktop configuration
-          (~/.claude/claude_desktop_config.json):
-        </p>
-        <pre
-          style="background: var(--sl-color-neutral-100); padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; margin: 0.5rem 0;"
-        >
-{
-  "mcpServers": {
-    "spacebridge": {
-      "url": "${mcpUrl}",
-      "transport": "http-streaming",
-      "auth": {
-        "type": "bearer",
-        "token": "YOUR_API_KEY_HERE"
-      }
-    }
-  }
-}</pre
-        >
-        <p class="help-text">
-          The built-in MCP server provides access to all your enabled tools,
-          including tools from external MCP servers.
-        </p>
-        <sl-button
-          slot="footer"
-          variant="primary"
-          @click=${() => (this.showSetupDialog = false)}
-        >
-          Close
-        </sl-button>
-      </sl-dialog>
+        @close=${() => (this.showSetupDialog = false)}
+      ></mcp-setup-dialog>
     `;
   }
 
