@@ -122,9 +122,9 @@ async def flow_execution_websocket(
         return
 
     # Verify user has access to this flow
-    if flow.account_id and flow.account_id != user.id:
+    if flow.account_id and flow.account_id != user.account_id:
         logger.warning(
-            f"User {user.username} (account {user.id}) attempted to access flow {flow.id} "
+            f"User {user.username} (account {user.account_id}) attempted to access flow {flow.id} "
             f"(account {flow.account_id}) via WebSocket for execution {execution_id}"
         )
         await websocket.send_json(

@@ -3304,6 +3304,62 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-models/providers/{provider}/available-models:
+    get:
+      tags:
+      - AI Models
+      - AI Models
+      summary: Get Available Models for Provider
+      description: 'Fetch available models from the specified AI provider.
+
+
+        For OpenAI, this will fetch the latest available models from their API.
+
+        For Anthropic and Google, this returns a curated list of known models.
+
+
+        Note: This endpoint does not require authentication as it''s just fetching
+
+        publicly available model names. The api_key parameter is optional for
+
+        fetching live data from OpenAI.'
+      operationId: get_provider_available_models_api_v1_ai_models_providers__provider__available_models_get
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      - name: api_key
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Optional API key for fetching models
+          title: Api Key
+        description: Optional API key for fetching models
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                title: Response Get Provider Available Models Api V1 Ai Models Providers  Provider  Available
+                  Models Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/issue-duplicates/confirmed:
     get:
       tags:
@@ -4015,6 +4071,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/webhooks/flows/{flow_id}/{webhook_secret}:
+    post:
+      tags:
+      - Flows
+      summary: Trigger Flow Via Webhook
+      description: 'Trigger a flow via webhook (no authentication required - uses
+        secret token in URL).
+
+
+        This endpoint allows external services to trigger flows without authentication.
+
+        Security is provided by the unguessable webhook_secret in the URL.'
+      operationId: trigger_flow_via_webhook_api_v1_webhooks_flows__flow_id___webhook_secret__post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      - name: webhook_secret
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Webhook Secret
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -6303,6 +6400,22 @@ components:
       required:
       - url
       title: CreatePortalSessionResponse
+    CustomCommands:
+      properties:
+        enabled:
+          type: boolean
+          title: Enabled
+          description: Whether custom commands are enabled
+          default: false
+        commands:
+          items:
+            type: string
+          type: array
+          title: Commands
+          description: List of shell commands to execute before agent starts
+      type: object
+      title: CustomCommands
+      description: Configuration for custom commands (admin-only).
     DependencyPair:
       properties:
         source_issue_id:
@@ -6499,10 +6612,14 @@ components:
           - type: 'null'
           title: Icon
         trigger_event_source:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Trigger Event Source
         trigger_event_type:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Trigger Event Type
         trigger_config:
           anyOf:
@@ -6510,6 +6627,10 @@ components:
             type: object
           - type: 'null'
           title: Trigger Config
+        webhook_config:
+          anyOf:
+          - $ref: '#/components/schemas/WebhookConfig'
+          - type: 'null'
         prompt_template:
           type: string
           title: Prompt Template
@@ -6540,6 +6661,14 @@ components:
           type: array
           title: Allowed Mcp Tools
           default: []
+        git_clone_config:
+          anyOf:
+          - $ref: '#/components/schemas/GitCloneConfig'
+          - type: 'null'
+        custom_commands:
+          anyOf:
+          - $ref: '#/components/schemas/CustomCommands'
+          - type: 'null'
         is_preset:
           anyOf:
           - type: boolean
@@ -6560,8 +6689,6 @@ components:
       type: object
       required:
       - name
-      - trigger_event_source
-      - trigger_event_type
       - prompt_template
       - agent_config
       title: FlowCreate
@@ -6698,6 +6825,10 @@ components:
             type: object
           - type: 'null'
           title: Trigger Config
+        webhook_config:
+          anyOf:
+          - $ref: '#/components/schemas/WebhookConfig'
+          - type: 'null'
         prompt_template:
           anyOf:
           - type: string
@@ -6736,6 +6867,14 @@ components:
             type: array
           - type: 'null'
           title: Allowed Mcp Tools
+        git_clone_config:
+          anyOf:
+          - $ref: '#/components/schemas/GitCloneConfig'
+          - type: 'null'
+        custom_commands:
+          anyOf:
+          - $ref: '#/components/schemas/CustomCommands'
+          - type: 'null'
         is_preset:
           anyOf:
           - type: boolean
@@ -6805,6 +6944,10 @@ components:
             type: object
           - type: 'null'
           title: Trigger Config
+        webhook_config:
+          anyOf:
+          - $ref: '#/components/schemas/WebhookConfig'
+          - type: 'null'
         prompt_template:
           anyOf:
           - type: string
@@ -6843,6 +6986,14 @@ components:
             type: array
           - type: 'null'
           title: Allowed Mcp Tools
+        git_clone_config:
+          anyOf:
+          - $ref: '#/components/schemas/GitCloneConfig'
+          - type: 'null'
+        custom_commands:
+          anyOf:
+          - $ref: '#/components/schemas/CustomCommands'
+          - type: 'null'
         is_preset:
           anyOf:
           - type: boolean
@@ -6862,6 +7013,58 @@ components:
           title: Account Id
       type: object
       title: FlowUpdate
+    GitCloneConfig:
+      properties:
+        enabled:
+          type: boolean
+          title: Enabled
+          description: Whether git clone is enabled
+          default: false
+        repositories:
+          items:
+            $ref: '#/components/schemas/GitCloneRepository'
+          type: array
+          title: Repositories
+          description: List of repositories to clone
+      type: object
+      title: GitCloneConfig
+      description: Configuration for git clone operations before agent execution.
+    GitCloneRepository:
+      properties:
+        tracker_id:
+          type: string
+          title: Tracker Id
+          description: ID of the tracker (GitHub/GitLab) to use
+        project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+          description: Project ID to clone. If None, uses repository_url or trigger
+            event
+        repository_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Repository Url
+          description: Repository URL to clone. If None, resolved from project or
+            trigger
+        clone_path:
+          type: string
+          title: Clone Path
+          description: Relative path where repository should be cloned
+          default: workspace
+        branch:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Branch
+          description: Branch to clone. If None, uses default branch
+      type: object
+      required:
+      - tracker_id
+      title: GitCloneRepository
+      description: Configuration for a single repository to clone.
     HTTPValidationError:
       properties:
         detail:
@@ -9326,6 +9529,17 @@ components:
       - max_client_version
       title: VersionInfo
       description: Schema for returning version information.
+    WebhookConfig:
+      properties:
+        webhook_secret:
+          type: string
+          title: Webhook Secret
+          description: Secure token for authenticating webhook requests (auto-generated)
+      type: object
+      required:
+      - webhook_secret
+      title: WebhookConfig
+      description: Configuration for webhook triggers.
     spacebridge__schemas__auth__UserCreate:
       properties:
         username:

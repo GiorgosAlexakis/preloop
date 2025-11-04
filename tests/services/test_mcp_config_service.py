@@ -25,9 +25,9 @@ class TestGenerateMCPConfig:
         assert "spacebridge-mcp" in config["mcpServers"]
 
         server_config = config["mcpServers"]["spacebridge-mcp"]
-        assert server_config["type"] == "http"
         assert server_config["url"] == "https://app.test.com/mcp/v1"
-        assert server_config["transport"] == "sse"
+        assert server_config["transport"] == "http-streaming"
+        assert "headers" in server_config
         assert "Authorization" in server_config["headers"]
         assert server_config["headers"]["Authorization"] == "Bearer test_token_123"
 

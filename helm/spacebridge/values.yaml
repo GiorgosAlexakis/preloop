@@ -31,7 +31,7 @@ spacelit:
 preloop:
   # Set to true to deploy Preloop brand alongside SpaceBridge
   enabled: false
-  repository: registry.spacecode.ai/spacecode/spacelit-preloop
+  repository: registry.spacecode.ai/spacecode/spacelit/preloop
   tag: "latest"
   pullPolicy: Always
   ingress:

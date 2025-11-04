@@ -141,6 +141,7 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
             or path.startswith("/api/v1/billing/plans")
             or path.startswith("/api/v1/billing/create-checkout-session")
             or path.startswith("/api/v1/billing/webhooks")
+            or path.startswith("/api/v1/ai-models/providers/")
         ):
             logger.info(f"[ApiUsageMiddleware] Skipping tracking for {path}")
             return await call_next(request)
@@ -454,12 +455,21 @@ def create_app() -> FastAPI:
     fastapi.encoders.jsonable_encoder = custom_jsonable_encoder
 
     # Configure CORS
+    # In development/local mode, allow all origins for MCP and agent containers
+    # In production, this should be restricted to specific domains
+    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
+    cors_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+    # Allow all origins in development mode for MCP clients (including containers)
+    if dev_mode or os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true":
+        cors_origins = ["*"]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-        ],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -701,6 +711,12 @@ def create_app() -> FastAPI:
         prefix="/api/v1",
         tags=["AI Models"],
         dependencies=[Depends(get_current_active_user)],
+    )
+    # Public AI models endpoints (no auth required)
+    app.include_router(
+        ai_models.public_router,
+        prefix="/api/v1",
+        tags=["AI Models"],
     )
     app.include_router(
         issue_duplicates.router,

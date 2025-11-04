@@ -1,7 +1,8 @@
 import uuid
+import secrets
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from spacemodels import schemas
@@ -26,6 +27,24 @@ def create_flow(
     current_user: User = Depends(get_current_active_user),
 ):
     """Create new flow."""
+    # Security check: Only superusers can configure custom commands
+    if flow_in.custom_commands and flow_in.custom_commands.enabled:
+        if not current_user.is_superuser:
+            raise HTTPException(
+                status_code=403,
+                detail="Only administrators can configure custom commands for security reasons",
+            )
+
+    # If this is a webhook trigger, auto-generate a secure webhook secret
+    if flow_in.trigger_event_source == "webhook" or (
+        not flow_in.trigger_event_source and not flow_in.trigger_event_type
+    ):
+        # Generate a secure 32-byte URL-safe token
+        webhook_secret = secrets.token_urlsafe(32)
+        flow_in.webhook_config = schemas.WebhookConfig(webhook_secret=webhook_secret)
+        flow_in.trigger_event_source = "webhook"
+        flow_in.trigger_event_type = "webhook"
+
     flow = crud_flow.create(db=db, flow_in=flow_in, account_id=current_user.account_id)
     return flow
 
@@ -214,6 +233,15 @@ def update_flow(
     flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
+
+    # Security check: Only superusers can configure custom commands
+    if flow_in.custom_commands and flow_in.custom_commands.enabled:
+        if not current_user.is_superuser:
+            raise HTTPException(
+                status_code=403,
+                detail="Only administrators can configure custom commands for security reasons",
+            )
+
     flow = crud_flow.update(
         db=db, db_obj=flow, flow_in=flow_in, account_id=current_user.account_id
     )
@@ -234,3 +262,64 @@ def delete_flow(
         raise HTTPException(status_code=404, detail="Flow not found")
     crud_flow.remove(db=db, id=flow_id, account_id=current_user.account_id)
     return flow
+
+
+@router.post("/webhooks/flows/{flow_id}/{webhook_secret}")
+async def trigger_flow_via_webhook(
+    *,
+    db: Session = Depends(get_db),
+    flow_id: uuid.UUID,
+    webhook_secret: str,
+    request: Request,
+):
+    """
+    Trigger a flow via webhook (no authentication required - uses secret token in URL).
+
+    This endpoint allows external services to trigger flows without authentication.
+    Security is provided by the unguessable webhook_secret in the URL.
+    """
+    # Get the flow without account filtering
+    flow = crud_flow.get(db=db, id=flow_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+
+    # Verify this is a webhook trigger
+    if flow.trigger_event_source != "webhook":
+        raise HTTPException(
+            status_code=400, detail="This flow is not configured for webhook triggers"
+        )
+
+    # Verify webhook secret
+    if (
+        not flow.webhook_config
+        or flow.webhook_config.get("webhook_secret") != webhook_secret
+    ):
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
+    # Check if flow is enabled
+    if not flow.is_enabled:
+        raise HTTPException(status_code=400, detail="Flow is disabled")
+
+    # Parse webhook payload
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    # Trigger flow execution with webhook payload
+    from spacebridge.services.flow_trigger_service import FlowTriggerService
+
+    trigger_service = FlowTriggerService(db)
+
+    # Create event data from webhook payload
+    event_data = {
+        "source": "webhook",
+        "type": "webhook",
+        "payload": payload,
+        "account_id": flow.account_id,
+    }
+
+    # Process the event (will trigger flow execution)
+    await trigger_service.process_event(event_data)
+
+    return {"status": "triggered", "flow_id": str(flow_id)}

@@ -173,10 +173,15 @@ class ContainerAgentExecutor(AgentExecutor):
             )
             env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
+        # Create a writable workspace volume for the container
+        # This ensures the agent has write permissions
+        workspace_volume = f"agent-workspace-{execution_id}"
+
         # Container configuration
         container_config = {
             "Image": self.image,
             "Env": [f"{k}={v}" for k, v in env.items()],
+            "User": "10000:10000",  # Explicitly set user and group
             "Labels": {
                 "spacebridge.flow_id": execution_context["flow_id"],
                 "spacebridge.execution_id": execution_id,
@@ -187,6 +192,8 @@ class ContainerAgentExecutor(AgentExecutor):
                 "NetworkMode": os.getenv(
                     "AGENT_NETWORK_MODE", "bridge"
                 ),  # Use bridge by default
+                # Mount workspace volume with proper permissions
+                "Binds": [f"{workspace_volume}:/workspace:rw"],
                 # Resource limits
                 "Memory": int(os.getenv("AGENT_MEMORY_LIMIT", "2g").replace("g", ""))
                 * 1024
@@ -471,10 +478,23 @@ class ContainerAgentExecutor(AgentExecutor):
             logs = await self.get_logs(session_reference, tail=1000)
             output_summary = "\n".join(logs[-50:]) if logs else None
 
+            # Check for error patterns in logs even if exit code is 0
             error_message = None
+            logs_text = "\n".join(logs) if logs else ""
+            has_error_pattern = self._detect_error_in_logs(logs_text)
+
+            # Override status if we detect errors in logs
+            if has_error_pattern and status == AgentStatus.SUCCEEDED:
+                self.logger.warning(
+                    f"Container {session_reference[:12]} exited with code 0 but logs contain errors. "
+                    "Marking as FAILED."
+                )
+                status = AgentStatus.FAILED
+
             if status == AgentStatus.FAILED:
                 error_message = (
                     info["State"].get("Error")
+                    or self._extract_error_from_logs(logs_text)
                     or f"Container exited with code {exit_code}"
                 )
 
@@ -495,6 +515,64 @@ class ContainerAgentExecutor(AgentExecutor):
                 session_reference=session_reference,
                 error_message=str(e),
             )
+
+    def _detect_error_in_logs(self, logs_text: str) -> bool:
+        """
+        Detect if logs contain error patterns that indicate failure.
+
+        Args:
+            logs_text: Full log text
+
+        Returns:
+            True if error patterns detected
+        """
+        error_patterns = [
+            "litellm.BadRequestError",
+            "litellm.AuthenticationError",
+            "litellm.RateLimitError",
+            "OpenAIException",
+            "AnthropicException",
+            "Traceback (most recent call last)",
+            "FATAL ERROR",
+            "CRITICAL:",
+            "ERROR:",  # Be careful with this one - may cause false positives
+        ]
+
+        logs_lower = logs_text.lower()
+        for pattern in error_patterns:
+            if pattern.lower() in logs_lower:
+                return True
+        return False
+
+    def _extract_error_from_logs(self, logs_text: str) -> str:
+        """
+        Extract error message from logs.
+
+        Args:
+            logs_text: Full log text
+
+        Returns:
+            Extracted error message or empty string
+        """
+        lines = logs_text.split("\n")
+        error_lines = []
+
+        # Look for exception or error messages
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            if any(
+                pattern in line_lower
+                for pattern in ["error", "exception", "failed", "fatal"]
+            ):
+                # Include some context around the error
+                start = max(0, i - 2)
+                end = min(len(lines), i + 5)
+                error_lines = lines[start:end]
+                break
+
+        if error_lines:
+            return "\n".join(error_lines)
+        return ""
 
     async def stop(self, session_reference: str) -> None:
         """
@@ -611,14 +689,24 @@ class ContainerAgentExecutor(AgentExecutor):
         Yields:
             Log lines in real-time
         """
+        self.logger.info(
+            f"Starting Docker log stream for container {container_id[:12]}"
+        )
+        line_count = 0
+
         try:
             docker = await self._get_docker_client()
             container = await docker.containers.get(container_id)
+
+            self.logger.info(
+                f"Got container object, starting log follow for {container_id[:12]}"
+            )
 
             # Stream logs with follow=True
             async for line in container.log(
                 stdout=True, stderr=True, follow=True, stream=True
             ):
+                line_count += 1
                 # Handle both bytes and str (aiodocker API can return either)
                 if isinstance(line, bytes):
                     decoded_line = line.decode("utf-8", errors="replace").rstrip()
@@ -626,7 +714,15 @@ class ContainerAgentExecutor(AgentExecutor):
                     decoded_line = line.rstrip()
 
                 if decoded_line:  # Skip empty lines
+                    if line_count <= 5:  # Log first 5 lines for debugging
+                        self.logger.debug(
+                            f"Docker log line #{line_count}: {decoded_line[:100]}"
+                        )
                     yield decoded_line
+
+            self.logger.info(
+                f"Docker log stream ended for {container_id[:12]}, total lines: {line_count}"
+            )
 
         except DockerError as e:
             self.logger.error(
@@ -635,7 +731,8 @@ class ContainerAgentExecutor(AgentExecutor):
             yield f"[ERROR] Failed to stream logs: {e}"
         except Exception as e:
             self.logger.error(
-                f"Unexpected error streaming Docker logs for {container_id}: {e}"
+                f"Unexpected error streaming Docker logs for {container_id}: {e}",
+                exc_info=True,
             )
             yield f"[ERROR] Unexpected error: {e}"
 

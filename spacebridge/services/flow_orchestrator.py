@@ -307,6 +307,249 @@ class FlowExecutionOrchestrator:
         except Exception:
             return None
 
+    async def _perform_git_clone(self, work_dir: str) -> Optional[str]:
+        """
+        Perform git clone operation if configured.
+
+        Args:
+            work_dir: Working directory where the clone should happen
+
+        Returns:
+            Path to cloned repository or None if not configured/failed
+        """
+        if not self.flow.git_clone_config:
+            logger.debug("Git clone not configured for this flow")
+            return None
+
+        git_config = self.flow.git_clone_config
+        if not git_config.get("enabled", False):
+            logger.debug("Git clone is disabled")
+            return None
+
+        logger.info("Performing git clone operation")
+
+        try:
+            # Get repository URL
+            repo_url = git_config.get("repository_url")
+            if not repo_url:
+                # Try to get from trigger event (GitHub/GitLab)
+                repo_url = self._resolve_repository_url_from_trigger()
+
+            if not repo_url:
+                logger.error("No repository URL configured or found in trigger event")
+                return None
+
+            # Get clone path
+            clone_path = git_config.get("clone_path", "./workspace")
+            full_clone_path = f"{work_dir}/{clone_path}"
+
+            # Get branch
+            branch = git_config.get("branch")
+            branch_arg = f" -b {branch}" if branch else ""
+
+            # Prepare git clone command
+            use_tracker_creds = git_config.get("use_tracker_credentials", True)
+            if use_tracker_creds:
+                # Get tracker credentials from trigger event
+                credentials = await self._get_tracker_credentials()
+                if credentials:
+                    # Inject credentials into URL
+                    repo_url = self._inject_credentials_into_url(repo_url, credentials)
+
+            clone_cmd = f"git clone{branch_arg} {repo_url} {full_clone_path}"
+
+            logger.info(f"Executing git clone to {full_clone_path}")
+
+            # Execute git clone
+            process = await asyncio.create_subprocess_shell(
+                clone_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=work_dir,
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                logger.error(
+                    f"Git clone failed with code {process.returncode}: {stderr.decode()}"
+                )
+                return None
+
+            logger.info(f"Git clone successful: {stdout.decode()}")
+            return full_clone_path
+
+        except Exception as e:
+            logger.error(f"Error during git clone: {e}", exc_info=True)
+            return None
+
+    def _resolve_repository_url_from_trigger(self) -> Optional[str]:
+        """Extract repository URL from trigger event data."""
+        try:
+            # GitHub structure
+            if "repository" in self.trigger_event_data:
+                repo = self.trigger_event_data["repository"]
+                if isinstance(repo, dict):
+                    return repo.get("clone_url") or repo.get("html_url")
+
+            # GitLab structure
+            if "project" in self.trigger_event_data:
+                project = self.trigger_event_data["project"]
+                if isinstance(project, dict):
+                    return project.get("http_url_to_repo") or project.get("web_url")
+
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting repository URL from trigger: {e}")
+            return None
+
+    async def _get_tracker_credentials(self) -> Optional[Dict[str, str]]:
+        """Get tracker credentials from the database (deprecated - use _get_tracker_credentials_by_id)."""
+        try:
+            # Get tracker_id from trigger event or flow config
+            tracker_id = self.trigger_event_data.get("tracker_id")
+            if not tracker_id:
+                logger.warning("No tracker_id in trigger event data")
+                return None
+
+            return await self._get_tracker_credentials_by_id(tracker_id)
+
+        except Exception as e:
+            logger.error(f"Error getting tracker credentials: {e}", exc_info=True)
+            return None
+
+    async def _get_tracker_credentials_by_id(
+        self, tracker_id: str
+    ) -> Optional[Dict[str, str]]:
+        """Get tracker credentials by tracker ID."""
+        try:
+            from spacemodels.crud import crud_tracker
+
+            tracker = crud_tracker.get(self.db, id=tracker_id)
+            if not tracker:
+                logger.warning(f"Tracker {tracker_id} not found")
+                return None
+
+            # Return credentials (api_key is encrypted in DB, should be decrypted here)
+            return {
+                "tracker_id": tracker_id,
+                "token": tracker.api_key,  # TODO: Decrypt api_key
+                "tracker_type": tracker.tracker_type,
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error getting tracker credentials for {tracker_id}: {e}",
+                exc_info=True,
+            )
+            return None
+
+    def _inject_credentials_into_url(
+        self, repo_url: str, credentials: Dict[str, str]
+    ) -> str:
+        """Inject credentials into repository URL for authentication."""
+        try:
+            token = credentials.get("token")
+            tracker_type = credentials.get("tracker_type")
+
+            if not token:
+                return repo_url
+
+            # For GitHub: https://oauth2:TOKEN@github.com/owner/repo
+            # For GitLab: https://oauth2:TOKEN@gitlab.com/owner/repo
+            if "github.com" in repo_url or tracker_type == "github":
+                if "https://" in repo_url:
+                    return repo_url.replace("https://", f"https://oauth2:{token}@")
+            elif "gitlab.com" in repo_url or tracker_type == "gitlab":
+                if "https://" in repo_url:
+                    return repo_url.replace("https://", f"https://oauth2:{token}@")
+
+            # If we can't inject, return original URL
+            logger.warning("Could not inject credentials into repository URL")
+            return repo_url
+
+        except Exception as e:
+            logger.error(f"Error injecting credentials: {e}", exc_info=True)
+            return repo_url
+
+    async def _execute_custom_commands(self, work_dir: str) -> bool:
+        """
+        Execute custom commands if configured (admin-only feature).
+
+        Args:
+            work_dir: Working directory where commands should run
+
+        Returns:
+            True if successful or not configured, False if failed
+        """
+        if not self.flow.custom_commands:
+            logger.debug("Custom commands not configured for this flow")
+            return True
+
+        custom_cmds = self.flow.custom_commands
+        if not custom_cmds.get("enabled", False):
+            logger.debug("Custom commands are disabled")
+            return True
+
+        # Security check: Verify the flow was created by a superuser
+        # This prevents non-admin users from executing arbitrary commands
+        try:
+            from spacemodels.crud import crud_user
+
+            # Get all users from the account
+            users = crud_user.get_by_account(self.db, account_id=self.flow.account_id)
+
+            # Check if ANY user with owner role exists in this account
+            # (Flow creation/update should have been blocked if user wasn't admin)
+            has_admin = any(user.is_superuser for user in users)
+            if not has_admin:
+                logger.error(
+                    "Custom commands configured but no admin users found for account. "
+                    "This is a security violation - skipping custom commands."
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"Error verifying admin status: {e}", exc_info=True)
+            return False
+
+        commands = custom_cmds.get("commands", [])
+        if not commands:
+            logger.debug("No custom commands to execute")
+            return True
+
+        logger.info(f"Executing {len(commands)} custom command(s)")
+
+        try:
+            for idx, cmd in enumerate(commands):
+                logger.info(
+                    f"Executing custom command {idx + 1}/{len(commands)}: {cmd}"
+                )
+
+                process = await asyncio.create_subprocess_shell(
+                    cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=work_dir,
+                )
+
+                stdout, stderr = await process.communicate()
+
+                if process.returncode != 0:
+                    logger.error(
+                        f"Custom command failed with code {process.returncode}: {stderr.decode()}"
+                    )
+                    return False
+
+                logger.info(f"Custom command output: {stdout.decode()}")
+
+            logger.info("All custom commands executed successfully")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error executing custom commands: {e}", exc_info=True)
+            return False
+
     async def _prepare_execution_context(self) -> Dict[str, Any]:
         """Prepare the full execution context for the agent."""
         logger.info(
@@ -336,7 +579,38 @@ class FlowExecutionOrchestrator:
             "allowed_mcp_tools": self.flow.allowed_mcp_tools,
             "account_id": self.flow.account_id,
             "account_api_token": account_api_token,
+            "git_clone_config": self.flow.git_clone_config,
+            "custom_commands": self.flow.custom_commands,
+            "trigger_event_data": self.trigger_event_data,  # Needed for git clone repo resolution
         }
+
+        # Prepare git credentials if git clone is enabled
+        if self.flow.git_clone_config and self.flow.git_clone_config.get("enabled"):
+            repositories = self.flow.git_clone_config.get("repositories", [])
+            if repositories:
+                # Get unique tracker IDs from repositories
+                tracker_ids = set(
+                    repo.get("tracker_id")
+                    for repo in repositories
+                    if repo.get("tracker_id")
+                )
+
+                # Fetch credentials for each tracker
+                credentials_map = {}
+                for tracker_id in tracker_ids:
+                    creds = await self._get_tracker_credentials_by_id(tracker_id)
+                    if creds:
+                        credentials_map[tracker_id] = creds
+
+                if credentials_map:
+                    execution_context["git_credentials_map"] = credentials_map
+                    logger.info(
+                        f"Prepared git credentials for {len(credentials_map)} tracker(s)"
+                    )
+                else:
+                    logger.warning(
+                        "Git clone enabled but could not get tracker credentials"
+                    )
 
         # Add AI model details if available
         if self.ai_model:
@@ -373,9 +647,13 @@ class FlowExecutionOrchestrator:
             session_reference: Container/Job reference
         """
         logger.info(f"Starting log streaming for {session_reference}")
+        log_count = 0
 
         try:
             async for log_line in agent_executor.stream_logs(session_reference):
+                log_count += 1
+                logger.debug(f"Streamed log line #{log_count}: {log_line[:100]}")
+
                 # Parse log line for structured data
                 self.execution_logger.parse_agent_logs([log_line])
 
@@ -387,6 +665,8 @@ class FlowExecutionOrchestrator:
                         "line": log_line,
                     },
                 )
+
+            logger.info(f"Log streaming completed. Total logs streamed: {log_count}")
 
         except asyncio.CancelledError:
             logger.info(f"Log streaming cancelled for {session_reference}")

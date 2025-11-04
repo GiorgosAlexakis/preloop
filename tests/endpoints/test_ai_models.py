@@ -39,11 +39,6 @@ async def test_create_ai_model(mock_account: Account, mocker: MockerFixture):
         "spacebridge.api.endpoints.ai_models.crud_ai_model",
         new_callable=MagicMock,
     )
-    mock_billing_service = mocker.patch(
-        "spacebridge.api.endpoints.ai_models.get_billing_service",
-        new_callable=MagicMock,
-    )
-    mock_billing_service.return_value.has_feature.return_value = True
     mock_crud_ai_model.create_with_account.return_value = AIModelRead(
         **ai_model_in.model_dump(), id=uuid.uuid4(), account_id=str(mock_account.id)
     )
@@ -53,7 +48,6 @@ async def test_create_ai_model(mock_account: Account, mocker: MockerFixture):
         db=MagicMock(),
         ai_model_in=ai_model_in,
         current_user=mock_account,
-        billing_service=mock_billing_service,
     )
 
     # Assert
