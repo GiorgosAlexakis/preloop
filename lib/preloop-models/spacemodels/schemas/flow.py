@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class GitCloneRepository(BaseModel):
@@ -23,6 +23,11 @@ class GitCloneRepository(BaseModel):
     branch: Optional[str] = Field(
         default=None, description="Branch to clone. If None, uses default branch"
     )
+
+    @field_serializer("tracker_id", "project_id")
+    def serialize_uuids(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID fields to strings."""
+        return str(value) if value is not None else None
 
 
 class GitCloneConfig(BaseModel):
@@ -121,3 +126,14 @@ class FlowResponse(FlowBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer(
+        "id",
+        "account_id",
+        "ai_model_id",
+        "trigger_organization_id",
+        "trigger_project_id",
+    )
+    def serialize_uuids(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID fields to strings."""
+        return str(value) if value is not None else None

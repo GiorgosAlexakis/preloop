@@ -57,7 +57,7 @@ class MCPServerResponse(MCPServerBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_serializer("id")
-    def serialize_id(self, id: UUID) -> str:
-        """Serialize UUID to string."""
-        return str(id)
+    @field_serializer("id", "account_id")
+    def serialize_uuids(self, value: UUID) -> str:
+        """Serialize UUID fields to strings."""
+        return str(value)
