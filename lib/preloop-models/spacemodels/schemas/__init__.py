@@ -3,6 +3,7 @@ from .flow_execution import (
     FlowExecutionCreate,
     FlowExecutionUpdate,
     FlowExecutionResponse,
+    FlowExecutionCommand,
 )
 from .organization import Organization, OrganizationCreate, OrganizationUpdate
 from .tracker import Tracker, TrackerCreate, TrackerUpdate, TrackerTypeSchema
@@ -33,6 +34,7 @@ __all__ = [
     "FlowExecutionCreate",
     "FlowExecutionUpdate",
     "FlowExecutionResponse",
+    "FlowExecutionCommand",
     "Organization",
     "OrganizationCreate",
     "OrganizationUpdate",

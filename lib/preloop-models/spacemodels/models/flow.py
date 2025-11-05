@@ -17,6 +17,10 @@ class Flow(Base, TimestampMixin):
     # For webhook triggers: source = 'webhook', type = 'webhook'
     trigger_event_source = Column(String, nullable=True)
     trigger_event_type = Column(String, nullable=True)
+    trigger_organization_id = Column(
+        String, nullable=True
+    )  # Organization to scope trigger
+    trigger_project_id = Column(String, nullable=True)  # Project to scope trigger
     trigger_config = Column(JSON, nullable=True)  # Changed from JSONB
     # Webhook-specific configuration
     # Structure: {
@@ -45,10 +49,22 @@ class Flow(Base, TimestampMixin):
     # Git clone configuration for flows that need source code
     # Structure: {
     #     "enabled": bool,
-    #     "repository_url": str (optional - uses project's default if not specified),
-    #     "clone_path": str (relative path where to clone, default: "./workspace"),
-    #     "use_tracker_credentials": bool (default: True),
-    #     "branch": str (optional - default branch if not specified)
+    #     "repositories": [
+    #         {
+    #             "tracker_id": str,
+    #             "project_id": str (optional),
+    #             "repository_url": str (optional - uses project's default if not specified),
+    #             "clone_path": str (relative path where to clone, default: "workspace"),
+    #             "branch": str (optional - branch to clone, for backwards compatibility)
+    #         }
+    #     ],
+    #     "git_user_name": str (default: "Preloop AI"),
+    #     "git_user_email": str (default: "git@preloop.ai"),
+    #     "source_branch": str (branch to checkout, default: "main"),
+    #     "target_branch": str (branch to create for commits, optional - auto-generated if empty),
+    #     "create_pull_request": bool (create PR/MR after commits, default: False),
+    #     "pull_request_title": str (optional - title for PR/MR),
+    #     "pull_request_description": str (optional - description for PR/MR)
     # }
     git_clone_config = Column(JSON, nullable=True, default=None)
 

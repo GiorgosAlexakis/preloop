@@ -33,6 +33,28 @@ class GitCloneConfig(BaseModel):
     repositories: List[GitCloneRepository] = Field(
         default_factory=list, description="List of repositories to clone"
     )
+    git_user_name: Optional[str] = Field(
+        default="Preloop AI", description="Name to use for git commits"
+    )
+    git_user_email: Optional[str] = Field(
+        default="git@preloop.ai", description="Email to use for git commits"
+    )
+    source_branch: Optional[str] = Field(
+        default="main", description="Branch to checkout for base code"
+    )
+    target_branch: Optional[str] = Field(
+        default=None,
+        description="Branch to create for commits (auto-generated if empty)",
+    )
+    create_pull_request: Optional[bool] = Field(
+        default=False, description="Whether to create a Pull Request / Merge Request"
+    )
+    pull_request_title: Optional[str] = Field(
+        default=None, description="Title for the Pull/Merge Request"
+    )
+    pull_request_description: Optional[str] = Field(
+        default=None, description="Description for the Pull/Merge Request"
+    )
 
 
 class CustomCommands(BaseModel):
@@ -61,6 +83,8 @@ class FlowBase(BaseModel):
     icon: Optional[str] = None
     trigger_event_source: Optional[str] = None
     trigger_event_type: Optional[str] = None
+    trigger_organization_id: Optional[str] = None
+    trigger_project_id: Optional[str] = None
     trigger_config: Optional[Dict[str, Any]] = None
     webhook_config: Optional[WebhookConfig] = None
     prompt_template: Optional[str] = None
