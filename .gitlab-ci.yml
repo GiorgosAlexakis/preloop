@@ -88,7 +88,7 @@ pre-commit:
     - pip install -e ".[dev]"
     - mkdir -p ./SpaceLit/dist/assets
     - touch ./SpaceLit/dist/index.html
-    - python ./spacesync/scripts/init_db.py --force
+    - python ./SpaceModels/scripts/init_db.py --force
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.

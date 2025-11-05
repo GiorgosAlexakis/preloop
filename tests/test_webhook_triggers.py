@@ -224,7 +224,7 @@ async def test_trigger_non_webhook_flow_via_webhook(
     # Create a regular tracker-based flow
     flow_data = schemas.FlowCreate(
         name="Tracker Flow",
-        trigger_event_source=test_tracker.id,
+        trigger_event_source=str(test_tracker.id),
         trigger_event_type="issue_created",
         prompt_template="Test",
         agent_type="openhands",

@@ -18,7 +18,6 @@ from spacebridge.api.auth import get_current_active_user
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.user import User
 from spacemodels.crud import crud_account, crud_user
-from spacemodels.models.base import Base
 
 
 @pytest.fixture(autouse=True)
@@ -48,13 +47,19 @@ def pytest_configure(config):
 
 @pytest.fixture(scope="session")
 def db_engine():
-    """Create a new database engine for the test session."""
+    """Create a new database engine for the test session.
+
+    NOTE: This does NOT create tables. The database schema must already exist
+    via Alembic migrations (run `alembic upgrade head` before tests).
+    Tests use transaction rollbacks for isolation.
+    """
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise ValueError("DATABASE_URL environment variable not set")
 
     engine = create_engine(database_url)
-    Base.metadata.create_all(engine)
+    # NOTE: Tables are created via Alembic, not here!
+    # This prevents accidental schema recreation during tests.
     yield engine
 
 
@@ -69,6 +74,8 @@ def db_session(db_engine) -> Generator[Session, None, None]:
 
     # Initialize system roles for tests
     initialize_system_roles(session)
+    # Explicitly flush to ensure roles are visible in this transaction
+    session.flush()
 
     yield session
 

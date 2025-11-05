@@ -220,9 +220,9 @@ async def register_tracker(
             )
 
         # Send NATS event
-        await event_bus_service.publish_task("poll_tracker", new_tracker.id)
+        await event_bus_service.publish_task("poll_tracker", str(new_tracker.id))
 
-        return {"id": new_tracker.id}  # Return the tracker ID
+        return {"id": str(new_tracker.id)}  # Return the tracker ID as string
 
     except IntegrityError as e:
         db.rollback()

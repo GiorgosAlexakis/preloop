@@ -22,9 +22,8 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              python /app/spacesync/scripts/init_db.py --force && \
               cd /app/SpaceModels && \
-              alembic stamp head
+              python scripts/init_db.py --force
           env:
             - name: DATABASE_URL
               value: {{ include "spacebridge.databaseUrl" . }}

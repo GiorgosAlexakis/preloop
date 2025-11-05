@@ -227,6 +227,8 @@ class TestAuthContextWithUser:
 
     def test_user_has_required_attributes(self, test_user: User):
         """Test that User model has all required attributes for auth."""
+        from uuid import UUID
+
         # These are the attributes that endpoints expect
         assert hasattr(test_user, "id"), "User missing id"
         assert hasattr(test_user, "account_id"), "User missing account_id"
@@ -236,7 +238,7 @@ class TestAuthContextWithUser:
         assert hasattr(test_user, "email_verified"), "User missing email_verified"
 
         # Verify types
-        assert isinstance(test_user.account_id, str), "account_id should be str"
+        assert isinstance(test_user.account_id, UUID), "account_id should be UUID"
         assert isinstance(test_user.username, str), "username should be str"
         assert isinstance(test_user.email, str), "email should be str"
 

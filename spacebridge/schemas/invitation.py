@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_serializer
 
 
 class InvitationCreate(BaseModel):
@@ -27,7 +27,7 @@ class InvitationResponse(BaseModel):
     """Response schema for invitation data."""
 
     id: UUID
-    account_id: str
+    account_id: UUID
     email: EmailStr
     token: str
     status: str
@@ -36,6 +36,16 @@ class InvitationResponse(BaseModel):
     created_at: datetime
     accepted_at: Optional[datetime]
     expires_at: datetime
+
+    @field_serializer("id", "account_id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
+
+    @field_serializer("invited_by")
+    def serialize_invited_by(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID to string for JSON response."""
+        return str(value) if value is not None else None
 
     class Config:
         from_attributes = True

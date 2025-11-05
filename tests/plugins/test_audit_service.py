@@ -1,7 +1,6 @@
 """Tests for the audit logging service."""
 
 from unittest.mock import MagicMock
-from uuid import UUID
 
 import pytest
 from fastapi import Request
@@ -330,7 +329,7 @@ class TestAuditService:
         """Test that service handles UUID account IDs correctly."""
         # This tests the Union[UUID, str] handling
 
-        account_uuid = UUID(test_account.id)
+        account_uuid = test_account.id  # Already a UUID object
 
         audit_service.log_permission_check(
             db=db_session,
@@ -342,4 +341,4 @@ class TestAuditService:
 
         logs = crud_audit_log.get_by_account(db_session, account_id=test_account.id)
         assert len(logs) == 1
-        assert logs[0].account_id == test_account.id  # Should be string
+        assert logs[0].account_id == test_account.id  # Should be UUID

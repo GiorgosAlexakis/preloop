@@ -3,7 +3,7 @@
 import uuid
 from typing import Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from spacemodels.models.mixins import TimestampMixin
 
@@ -57,7 +57,14 @@ class AIModelInDBBase(AIModelBase, TimestampMixin):
     """Base schema for AIModel entries as stored in the database."""
 
     id: uuid.UUID = Field(..., description="Primary key")
-    account_id: Optional[str] = Field(None, description="Account this model belongs to")
+    account_id: Optional[uuid.UUID] = Field(
+        None, description="Account this model belongs to"
+    )
+
+    @field_serializer("account_id")
+    def serialize_account_id(self, value: Optional[uuid.UUID]) -> Optional[str]:
+        """Serialize UUID to string for JSON response."""
+        return str(value) if value is not None else None
 
     class Config:
         from_attributes = True

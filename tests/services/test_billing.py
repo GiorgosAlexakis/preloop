@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from spacemodels.models import Account, MonthlyUsage, Plan, Subscription
 from spacemodels.schemas.plan import PlanCreate, SubscriptionCreate
 
@@ -489,3 +490,558 @@ class TestGenerateUniqueUsername:
         result = billing_service._generate_unique_username("user123@example.com")
 
         assert result == "user123"
+
+
+class TestCreateCheckoutSession:
+    """Test create_checkout_session method."""
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.crud_account")
+    def test_create_checkout_session_no_account(
+        self, mock_crud_account, mock_stripe, billing_service, mock_db
+    ):
+        """Test creating checkout session without account (new customer)."""
+        # Mock price lookup
+        mock_price = MagicMock()
+        mock_price.id = "price_123"
+        mock_stripe.Price.list.return_value.data = [mock_price]
+
+        # Mock checkout session creation
+        mock_session = MagicMock()
+        mock_session.url = "https://checkout.stripe.com/session_123"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+
+        result = billing_service.create_checkout_session(
+            plan_id="premium", interval="monthly", account_id=None
+        )
+
+        assert result["url"] == "https://checkout.stripe.com/session_123"
+        assert result["action"] == "redirect"
+        mock_stripe.checkout.Session.create.assert_called_once()
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.crud_account")
+    @patch("spacebridge.services.billing.crud_user")
+    def test_create_checkout_session_existing_account_no_subscription(
+        self, mock_crud_user, mock_crud_account, mock_stripe, billing_service, mock_db
+    ):
+        """Test creating checkout session for existing account without subscription."""
+        account_id = uuid.uuid4()
+        user_email = "test@example.com"
+
+        # Mock account
+        mock_account = MagicMock(spec=Account)
+        mock_account.id = account_id
+        mock_account.stripe_customer_id = None
+        mock_account.primary_user_id = uuid.uuid4()
+        mock_account.get_active_subscription.return_value = None
+
+        mock_crud_account.get.return_value = mock_account
+
+        # Mock user
+        mock_user = MagicMock()
+        mock_user.email = user_email
+        mock_crud_user.get.return_value = mock_user
+
+        # Mock price lookup
+        mock_price = MagicMock()
+        mock_price.id = "price_123"
+        mock_stripe.Price.list.return_value.data = [mock_price]
+
+        # Mock checkout session creation
+        mock_session = MagicMock()
+        mock_session.url = "https://checkout.stripe.com/session_456"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+
+        result = billing_service.create_checkout_session(
+            plan_id="premium", interval="monthly", account_id=account_id
+        )
+
+        assert result["url"] == "https://checkout.stripe.com/session_456"
+        assert result["action"] == "redirect"
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.crud_account")
+    def test_create_checkout_session_with_existing_subscription(
+        self, mock_crud_account, mock_stripe, billing_service, mock_db
+    ):
+        """Test updating subscription for account with existing paid plan."""
+        account_id = uuid.uuid4()
+
+        # Mock account with active subscription
+        mock_subscription = MagicMock(spec=Subscription)
+        mock_subscription.stripe_subscription_id = "sub_existing"
+
+        mock_account = MagicMock(spec=Account)
+        mock_account.id = account_id
+        mock_account.stripe_customer_id = "cus_123"
+        mock_account.get_active_subscription.return_value = mock_subscription
+
+        mock_crud_account.get.return_value = mock_account
+
+        # Mock price lookup
+        mock_price = MagicMock()
+        mock_price.id = "price_new"
+        mock_stripe.Price.list.return_value.data = [mock_price]
+
+        # Mock Stripe subscription retrieval and update
+        mock_item = MagicMock()
+        mock_item.id = "si_old"
+
+        mock_stripe_sub = MagicMock()
+        mock_stripe_sub.__getitem__.side_effect = (
+            lambda k: {"data": [mock_item]} if k == "items" else None
+        )
+        mock_stripe.Subscription.retrieve.return_value = mock_stripe_sub
+
+        mock_updated_sub = MagicMock()
+        mock_updated_sub.plan.product = "new_plan"
+        mock_updated_sub.status = "active"
+        mock_updated_sub.items.return_value.mapping = {
+            "items": {
+                "data": [
+                    {
+                        "current_period_start": 1234567890,
+                        "current_period_end": 1237159890,
+                    }
+                ]
+            }
+        }
+        mock_stripe.Subscription.modify.return_value = mock_updated_sub
+
+        result = billing_service.create_checkout_session(
+            plan_id="enterprise", interval="yearly", account_id=account_id
+        )
+
+        assert result["status"] == "success"
+        assert result["action"] == "refresh"
+        mock_stripe.Subscription.modify.assert_called_once()
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.crud_account")
+    def test_create_checkout_session_price_not_found(
+        self, mock_crud_account, mock_stripe, billing_service, mock_db
+    ):
+        """Test error when price not found in Stripe."""
+        # Mock empty price list
+        mock_stripe.Price.list.return_value.data = []
+
+        with pytest.raises(ValueError, match="Price not found"):
+            billing_service.create_checkout_session(
+                plan_id="nonexistent", interval="monthly"
+            )
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.crud_account")
+    def test_create_checkout_session_account_not_found(
+        self, mock_crud_account, mock_stripe, billing_service, mock_db
+    ):
+        """Test error when account not found."""
+        account_id = uuid.uuid4()
+        mock_crud_account.get.return_value = None
+
+        with pytest.raises(ValueError, match="Account not found"):
+            billing_service.create_checkout_session(
+                plan_id="premium", interval="monthly", account_id=account_id
+            )
+
+
+class TestCreatePortalSession:
+    """Test create_portal_session method."""
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.crud_account")
+    def test_create_portal_session_success(
+        self, mock_crud_account, mock_stripe, billing_service, mock_db
+    ):
+        """Test creating portal session successfully."""
+        account_id = str(uuid.uuid4())
+        return_url = "https://example.com/settings"
+
+        # Mock account with Stripe customer
+        mock_account = MagicMock(spec=Account)
+        mock_account.stripe_customer_id = "cus_123"
+        mock_crud_account.get.return_value = mock_account
+
+        # Mock portal session creation
+        mock_portal_session = MagicMock()
+        mock_portal_session.url = "https://billing.stripe.com/portal_123"
+        mock_stripe.billing_portal.Session.create.return_value = mock_portal_session
+
+        result = billing_service.create_portal_session(account_id, return_url)
+
+        assert result == "https://billing.stripe.com/portal_123"
+        mock_stripe.billing_portal.Session.create.assert_called_once_with(
+            customer="cus_123", return_url=return_url
+        )
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.crud_account")
+    def test_create_portal_session_no_account(
+        self, mock_crud_account, mock_stripe, billing_service, mock_db
+    ):
+        """Test error when account not found."""
+        account_id = str(uuid.uuid4())
+        mock_crud_account.get.return_value = None
+
+        with pytest.raises(ValueError, match="Stripe customer not found"):
+            billing_service.create_portal_session(account_id, "https://example.com")
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.crud_account")
+    def test_create_portal_session_no_stripe_customer(
+        self, mock_crud_account, mock_stripe, billing_service, mock_db
+    ):
+        """Test error when account has no Stripe customer ID."""
+        account_id = str(uuid.uuid4())
+
+        mock_account = MagicMock(spec=Account)
+        mock_account.stripe_customer_id = None
+        mock_crud_account.get.return_value = mock_account
+
+        with pytest.raises(ValueError, match="Stripe customer not found"):
+            billing_service.create_portal_session(account_id, "https://example.com")
+
+
+class TestHandleWebhook:
+    """Test handle_webhook method."""
+
+    @patch("spacebridge.services.billing.stripe")
+    def test_handle_webhook_checkout_completed(
+        self, mock_stripe, billing_service, mock_db
+    ):
+        """Test handling checkout.session.completed webhook."""
+        payload = b'{"type": "checkout.session.completed"}'
+        sig_header = "test_signature"
+
+        # Mock event construction
+        mock_event = MagicMock()
+        mock_event.type = "checkout.session.completed"
+        mock_event.data.object.id = "cs_test_123"
+        mock_stripe.Webhook.construct_event.return_value = mock_event
+
+        # Mock the handler
+        with patch.object(
+            billing_service, "_handle_checkout_session_completed"
+        ) as mock_handler:
+            billing_service.handle_webhook(payload, sig_header)
+            mock_handler.assert_called_once_with("cs_test_123")
+
+    @patch("spacebridge.services.billing.stripe")
+    def test_handle_webhook_invoice_paid(self, mock_stripe, billing_service, mock_db):
+        """Test handling invoice.paid webhook."""
+        payload = b'{"type": "invoice.paid"}'
+        sig_header = "test_signature"
+
+        mock_invoice = MagicMock()
+        mock_event = MagicMock()
+        mock_event.type = "invoice.paid"
+        mock_event.data.object = mock_invoice
+        mock_stripe.Webhook.construct_event.return_value = mock_event
+
+        with patch.object(billing_service, "_handle_invoice_paid") as mock_handler:
+            billing_service.handle_webhook(payload, sig_header)
+            mock_handler.assert_called_once_with(mock_invoice)
+
+    @patch("spacebridge.services.billing.stripe")
+    def test_handle_webhook_subscription_updated(
+        self, mock_stripe, billing_service, mock_db
+    ):
+        """Test handling customer.subscription.updated webhook."""
+        payload = b'{"type": "customer.subscription.updated"}'
+        sig_header = "test_signature"
+
+        mock_sub = MagicMock()
+        mock_event = MagicMock()
+        mock_event.type = "customer.subscription.updated"
+        mock_event.data.object = mock_sub
+        mock_stripe.Webhook.construct_event.return_value = mock_event
+
+        with patch.object(
+            billing_service, "_handle_subscription_updated"
+        ) as mock_handler:
+            billing_service.handle_webhook(payload, sig_header)
+            mock_handler.assert_called_once_with(mock_sub)
+
+    @patch("spacebridge.services.billing.stripe")
+    def test_handle_webhook_subscription_deleted(
+        self, mock_stripe, billing_service, mock_db
+    ):
+        """Test handling customer.subscription.deleted webhook."""
+        payload = b'{"type": "customer.subscription.deleted"}'
+        sig_header = "test_signature"
+
+        mock_sub = MagicMock()
+        mock_event = MagicMock()
+        mock_event.type = "customer.subscription.deleted"
+        mock_event.data.object = mock_sub
+        mock_stripe.Webhook.construct_event.return_value = mock_event
+
+        with patch.object(
+            billing_service, "_handle_subscription_deleted"
+        ) as mock_handler:
+            billing_service.handle_webhook(payload, sig_header)
+            mock_handler.assert_called_once_with(mock_sub)
+
+    @patch("spacebridge.services.billing.stripe")
+    def test_handle_webhook_invalid_payload(
+        self, mock_stripe, billing_service, mock_db
+    ):
+        """Test handling webhook with invalid payload."""
+        payload = b"invalid"
+        sig_header = "test_signature"
+
+        mock_stripe.Webhook.construct_event.side_effect = ValueError("Invalid payload")
+
+        with pytest.raises(HTTPException) as exc_info:
+            billing_service.handle_webhook(payload, sig_header)
+
+        assert exc_info.value.status_code == 400
+        assert "Invalid payload" in str(exc_info.value.detail)
+
+    @patch("spacebridge.services.billing.stripe")
+    def test_handle_webhook_unhandled_event_type(
+        self, mock_stripe, billing_service, mock_db
+    ):
+        """Test handling webhook with unhandled event type."""
+        payload = b'{"type": "test"}'
+        sig_header = "test_signature"
+
+        mock_event = MagicMock()
+        mock_event.type = "unhandled.event.type"
+        mock_stripe.Webhook.construct_event.return_value = mock_event
+
+        # Should not raise an exception, just log
+        billing_service.handle_webhook(payload, sig_header)
+
+
+class TestHandleInvoicePaid:
+    """Test _handle_invoice_paid method."""
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.subscription")
+    def test_handle_invoice_paid_success(
+        self, mock_subscription_crud, mock_stripe, billing_service, mock_db
+    ):
+        """Test handling invoice paid successfully."""
+        # Mock invoice
+        mock_invoice = MagicMock()
+        mock_invoice.subscription = "sub_123"
+
+        # Mock subscription from DB
+        mock_subscription = MagicMock(spec=Subscription)
+        mock_subscription_crud.get_by_stripe_subscription_id.return_value = (
+            mock_subscription
+        )
+
+        # Mock Stripe subscription
+        mock_stripe_sub = MagicMock()
+        mock_stripe_sub.items.return_value.mapping = {
+            "items": {
+                "data": [
+                    {
+                        "current_period_start": 1234567890,
+                        "current_period_end": 1237159890,
+                    }
+                ]
+            }
+        }
+        mock_stripe.Subscription.retrieve.return_value = mock_stripe_sub
+
+        billing_service._handle_invoice_paid(mock_invoice)
+
+        assert mock_subscription.status == "active"
+        assert mock_db.commit.called
+
+
+class TestHandleSubscriptionUpdated:
+    """Test _handle_subscription_updated method."""
+
+    @patch("spacebridge.services.billing.subscription")
+    def test_handle_subscription_updated_success(
+        self, mock_subscription_crud, billing_service, mock_db
+    ):
+        """Test handling subscription update successfully."""
+        # Mock Stripe subscription
+        mock_stripe_sub = MagicMock()
+        mock_stripe_sub.id = "sub_123"
+        mock_stripe_sub.plan.product = "new_plan"
+        mock_stripe_sub.status = "active"
+        mock_stripe_sub.cancel_at_period_end = False
+        mock_stripe_sub.items.return_value.mapping = {
+            "items": {
+                "data": [
+                    {
+                        "current_period_start": 1234567890,
+                        "current_period_end": 1237159890,
+                    }
+                ]
+            }
+        }
+
+        # Mock subscription from DB
+        mock_subscription = MagicMock(spec=Subscription)
+        mock_subscription_crud.get_by_stripe_subscription_id.return_value = (
+            mock_subscription
+        )
+
+        billing_service._handle_subscription_updated(mock_stripe_sub)
+
+        assert mock_subscription.plan_id == "new_plan"
+        assert mock_subscription.status == "active"
+        assert mock_db.commit.called
+
+    @patch("spacebridge.services.billing.subscription")
+    def test_handle_subscription_updated_pending_cancellation(
+        self, mock_subscription_crud, billing_service, mock_db
+    ):
+        """Test handling subscription update with pending cancellation."""
+        # Mock Stripe subscription with cancellation scheduled
+        mock_stripe_sub = MagicMock()
+        mock_stripe_sub.id = "sub_123"
+        mock_stripe_sub.plan.product = "plan"
+        mock_stripe_sub.cancel_at_period_end = True
+        mock_stripe_sub.items.return_value.mapping = {
+            "items": {
+                "data": [
+                    {
+                        "current_period_start": 1234567890,
+                        "current_period_end": 1237159890,
+                    }
+                ]
+            }
+        }
+
+        mock_subscription = MagicMock(spec=Subscription)
+        mock_subscription_crud.get_by_stripe_subscription_id.return_value = (
+            mock_subscription
+        )
+
+        billing_service._handle_subscription_updated(mock_stripe_sub)
+
+        assert mock_subscription.status == "pending_cancellation"
+        assert mock_db.commit.called
+
+
+class TestHandleSubscriptionDeleted:
+    """Test _handle_subscription_deleted method."""
+
+    @patch("spacebridge.services.billing.subscription")
+    def test_handle_subscription_deleted_success(
+        self, mock_subscription_crud, billing_service, mock_db
+    ):
+        """Test handling subscription deletion successfully."""
+        # Mock Stripe subscription
+        mock_stripe_sub = MagicMock()
+        mock_stripe_sub.id = "sub_123"
+
+        # Mock subscription from DB
+        mock_subscription = MagicMock(spec=Subscription)
+        mock_subscription_crud.get_by_stripe_subscription_id.return_value = (
+            mock_subscription
+        )
+
+        billing_service._handle_subscription_deleted(mock_stripe_sub)
+
+        assert mock_subscription.status == "canceled"
+        assert mock_db.commit.called
+
+
+class TestGetUserDetailsFromSession:
+    """Test get_user_details_from_session method."""
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.crud_user")
+    def test_get_user_details_success(
+        self, mock_crud_user, mock_stripe, billing_service, mock_db
+    ):
+        """Test retrieving user details from session successfully."""
+        session_id = "cs_test_123"
+
+        # Mock Stripe session
+        mock_session = MagicMock()
+        mock_session.status = "complete"
+        mock_session.customer.email = "test@example.com"
+        mock_stripe.checkout.Session.retrieve.return_value = mock_session
+
+        # Mock user from DB
+        mock_user = MagicMock()
+        mock_user.email = "test@example.com"
+        mock_user.username = "testuser"
+        mock_crud_user.get_by_email.return_value = mock_user
+
+        result = billing_service.get_user_details_from_session(session_id)
+
+        assert result["email"] == "test@example.com"
+        assert result["username"] == "testuser"
+
+    @patch("spacebridge.services.billing.stripe")
+    def test_get_user_details_incomplete_session(
+        self, mock_stripe, billing_service, mock_db
+    ):
+        """Test retrieving details from incomplete session."""
+        session_id = "cs_test_123"
+
+        mock_session = MagicMock()
+        mock_session.status = "pending"
+        mock_stripe.checkout.Session.retrieve.return_value = mock_session
+
+        result = billing_service.get_user_details_from_session(session_id)
+
+        assert result is None
+
+    @patch("spacebridge.services.billing.stripe")
+    def test_get_user_details_no_email(self, mock_stripe, billing_service, mock_db):
+        """Test retrieving details when session has no email."""
+        session_id = "cs_test_123"
+
+        mock_session = MagicMock()
+        mock_session.status = "complete"
+        mock_session.customer.email = None
+        mock_stripe.checkout.Session.retrieve.return_value = mock_session
+
+        result = billing_service.get_user_details_from_session(session_id)
+
+        assert result is None
+
+
+class TestSyncSubscriptionStatus:
+    """Test sync_subscription_status method."""
+
+    @patch("spacebridge.services.billing.stripe")
+    @patch("spacebridge.services.billing.subscription")
+    def test_sync_subscription_status_success(
+        self, mock_subscription_crud, mock_stripe, billing_service, mock_db
+    ):
+        """Test syncing subscription status successfully."""
+        account_id = uuid.uuid4()
+
+        # Mock subscription from DB
+        mock_subscription = MagicMock(spec=Subscription)
+        mock_subscription.stripe_subscription_id = "sub_123"
+        mock_subscription_crud.get_latest_for_account.return_value = mock_subscription
+
+        # Mock Stripe subscription
+        mock_stripe_sub = MagicMock()
+        mock_stripe.Subscription.retrieve.return_value = mock_stripe_sub
+
+        # Mock the update handler
+        with patch.object(
+            billing_service, "_handle_subscription_updated"
+        ) as mock_handler:
+            billing_service.sync_subscription_status(account_id)
+            mock_handler.assert_called_once_with(mock_stripe_sub)
+
+    @patch("spacebridge.services.billing.subscription")
+    def test_sync_subscription_status_no_subscription(
+        self, mock_subscription_crud, billing_service, mock_db
+    ):
+        """Test syncing when no subscription exists."""
+        account_id = uuid.uuid4()
+        mock_subscription_crud.get_latest_for_account.return_value = None
+
+        # Should not raise an exception
+        billing_service.sync_subscription_status(account_id)
+
+        # Verify no Stripe API calls were made
+        assert not mock_db.commit.called

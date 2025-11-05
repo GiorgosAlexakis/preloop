@@ -52,7 +52,7 @@ spec:
       volumes:
         - name: nginx-config
           configMap:
-            name: {{ include "spacebridge.fullname" . }}-nginx-preloop
+            name: {{ include "spacebridge.fullname" . }}-nginx
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

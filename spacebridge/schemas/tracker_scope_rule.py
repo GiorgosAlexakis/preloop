@@ -1,6 +1,8 @@
 """Pydantic schemas for TrackerScopeRule."""
 
-from pydantic import BaseModel, Field
+from uuid import UUID
+
+from pydantic import BaseModel, Field, field_serializer
 
 from spacemodels.models.tracker_scope_rule import RuleType, ScopeType
 
@@ -29,7 +31,12 @@ class TrackerScopeRuleCreate(TrackerScopeRuleBase):
 class TrackerScopeRuleResponse(TrackerScopeRuleBase):
     """Schema for responding with tracker scope rule details."""
 
-    id: str = Field(..., description="The unique ID of the scope rule.")
+    id: UUID = Field(..., description="The unique ID of the scope rule.")
+
+    @field_serializer("id")
+    def serialize_id(self, value: UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
 
     class Config:
         """Pydantic configuration."""

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class TeamBase(BaseModel):
@@ -55,6 +55,16 @@ class TeamMemberResponse(BaseModel):
     email: str
     full_name: Optional[str]
 
+    @field_serializer("id", "team_id", "user_id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
+
+    @field_serializer("added_by")
+    def serialize_added_by(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID to string for JSON response."""
+        return str(value) if value is not None else None
+
     class Config:
         from_attributes = True
 
@@ -63,12 +73,17 @@ class TeamResponse(BaseModel):
     """Response schema for team data."""
 
     id: UUID
-    account_id: str
+    account_id: UUID
     name: str
     description: Optional[str]
     created_at: datetime
     updated_at: datetime
     roles: Optional[List[dict]] = None
+
+    @field_serializer("id", "account_id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
 
     class Config:
         from_attributes = True

@@ -93,7 +93,7 @@ class TestAuditLogEndpoints:
             status="denied",
         )
 
-        response = audit_client.get("/api/v1/audit-logs?status=denied")
+        response = audit_client.get("/api/v1/audit-logs?status_filter=denied")
         assert response.status_code == 200
         data = response.json()
 

@@ -1,7 +1,8 @@
 """Common utility functions for the SpaceBridge API."""
 
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Union
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -31,7 +32,10 @@ crud_project = CRUDProject(Project)
 
 
 async def get_tracker_client(
-    organization_id: str, project_id: str, db: Session, current_user: User
+    organization_id: Union[str, UUID],
+    project_id: Union[str, UUID],
+    db: Session,
+    current_user: User,
 ):
     """Get the appropriate tracker client for the given organization and project,
     ensuring the current user has access.
@@ -50,13 +54,15 @@ async def get_tracker_client(
             does not have access, or if a tracker client cannot be created.
     """
     # Check if organization_id is a UUID or an identifier
-    if len(organization_id) == 36:  # Simple UUID check
+    if isinstance(organization_id, UUID) or (
+        isinstance(organization_id, str) and len(organization_id) == 36
+    ):
         organization = crud_organization.get(
             db, id=organization_id, account_id=current_user.account_id
         )
     else:
         organization = crud_organization.get_by_identifier(
-            db, identifier=organization_id, account_id=current_user.account_id
+            db, identifier=str(organization_id), account_id=current_user.account_id
         )
 
     if not organization:
@@ -64,7 +70,9 @@ async def get_tracker_client(
 
     # Resolve project
     project: Optional[Project] = None
-    if len(project_id) == 36:  # Check if project_id looks like a UUID (our internal ID)
+    if isinstance(project_id, UUID) or (
+        isinstance(project_id, str) and len(project_id) == 36
+    ):
         project = crud_project.get(
             db, id=project_id, account_id=current_user.account_id
         )

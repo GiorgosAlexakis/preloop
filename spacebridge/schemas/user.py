@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator
 
 
 class UserBase(BaseModel):
@@ -55,7 +55,7 @@ class UserResponse(BaseModel):
     """Response schema for user data."""
 
     id: UUID
-    account_id: str
+    account_id: UUID
     username: str
     email: EmailStr
     email_verified: bool
@@ -69,6 +69,11 @@ class UserResponse(BaseModel):
     roles: Optional[List[dict]] = None
     inherited_roles: Optional[List[dict]] = None
 
+    @field_serializer("id", "account_id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
+
     class Config:
         from_attributes = True
 
@@ -81,6 +86,11 @@ class UserSummary(BaseModel):
     email: EmailStr
     full_name: Optional[str]
     is_active: bool
+
+    @field_serializer("id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
 
     class Config:
         from_attributes = True

@@ -6617,11 +6617,13 @@ components:
         trigger_organization_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Trigger Organization Id
         trigger_project_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Trigger Project Id
         trigger_config:
@@ -6687,6 +6689,7 @@ components:
         account_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Account Id
       type: object
@@ -6847,11 +6850,13 @@ components:
         trigger_organization_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Trigger Organization Id
         trigger_project_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Trigger Project Id
         trigger_config:
@@ -6976,11 +6981,13 @@ components:
         trigger_organization_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Trigger Organization Id
         trigger_project_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Trigger Project Id
         trigger_config:
@@ -7054,6 +7061,7 @@ components:
         account_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Account Id
       type: object
@@ -7124,11 +7132,13 @@ components:
       properties:
         tracker_id:
           type: string
+          format: uuid
           title: Tracker Id
           description: ID of the tracker (GitHub/GitLab) to use
         project_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Project Id
           description: Project ID to clone. If None, uses repository_url or trigger
@@ -7271,7 +7281,6 @@ components:
       properties:
         id:
           type: string
-          format: uuid
           title: Id
         account_id:
           type: string
@@ -7294,7 +7303,6 @@ components:
         invited_by:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
           title: Invited By
         created_at:
@@ -8726,7 +8734,6 @@ components:
       properties:
         id:
           type: string
-          format: uuid
           title: Id
         account_id:
           type: string
@@ -8816,15 +8823,12 @@ components:
       properties:
         id:
           type: string
-          format: uuid
           title: Id
         team_id:
           type: string
-          format: uuid
           title: Team Id
         user_id:
           type: string
-          format: uuid
           title: User Id
         role:
           anyOf:
@@ -8838,7 +8842,6 @@ components:
         added_by:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
           title: Added By
         username:
@@ -8880,7 +8883,6 @@ components:
       properties:
         id:
           type: string
-          format: uuid
           title: Id
         account_id:
           type: string
@@ -9271,10 +9273,12 @@ components:
           description: Stored Jira Webhook ID
         id:
           type: string
+          format: uuid
           title: Id
           description: Tracker unique identifier (UUID)
         account_id:
           type: string
+          format: uuid
           title: Account Id
           description: Account ID owning this tracker
         is_valid:
@@ -9551,7 +9555,6 @@ components:
       properties:
         id:
           type: string
-          format: uuid
           title: Id
         username:
           type: string
@@ -9747,7 +9750,6 @@ components:
       properties:
         id:
           type: string
-          format: uuid
           title: Id
         account_id:
           type: string

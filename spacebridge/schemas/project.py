@@ -1,8 +1,9 @@
 """Project schemas for request and response validation."""
 
 from typing import Dict, Optional
+from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
 
 
 class ProjectBase(BaseModel):
@@ -37,10 +38,15 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(ProjectBase):
     """Response model for project data."""
 
-    id: str = Field(..., description="Project ID")
-    organization_id: str = Field(..., description="Organization ID")
+    id: UUID = Field(..., description="Project ID")
+    organization_id: UUID = Field(..., description="Organization ID")
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
+
+    @field_serializer("id", "organization_id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
 
     model_config = ConfigDict(from_attributes=True)
 

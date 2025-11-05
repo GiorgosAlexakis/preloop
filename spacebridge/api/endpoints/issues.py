@@ -418,7 +418,7 @@ async def search_issues(
                             priority=issue.priority,
                             organization=organization_name,
                             project=project_name,
-                            project_id=issue.project_id,
+                            project_id=str(issue.project_id),
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
@@ -558,7 +558,7 @@ async def search_issues(
                             priority=issue.priority,
                             organization=organization_name,
                             project=project_name,
-                            project_id=issue.project_id,
+                            project_id=str(issue.project_id),
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
