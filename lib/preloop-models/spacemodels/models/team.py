@@ -42,15 +42,8 @@ class Team(Base):
 
     __tablename__ = "team"
 
-    id: Mapped[uuid.UUID] = mapped_column(
+    account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique identifier for the team",
-    )
-
-    account_id: Mapped[str] = mapped_column(
-        String(36),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -68,22 +61,6 @@ class Team(Base):
         Text,
         nullable=True,
         comment="Optional description of the team's purpose",
-    )
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-        comment="When the team was created",
-    )
-
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-        comment="When the team was last modified",
     )
 
     # Relationships
@@ -129,13 +106,6 @@ class TeamMembership(Base):
     """
 
     __tablename__ = "team_membership"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique identifier for the membership",
-    )
 
     team_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

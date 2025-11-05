@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -8,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class GitCloneRepository(BaseModel):
     """Configuration for a single repository to clone."""
 
-    tracker_id: str = Field(description="ID of the tracker (GitHub/GitLab) to use")
-    project_id: Optional[str] = Field(
+    tracker_id: UUID = Field(description="ID of the tracker (GitHub/GitLab) to use")
+    project_id: Optional[UUID] = Field(
         default=None,
         description="Project ID to clone. If None, uses repository_url or trigger event",
     )
@@ -83,12 +82,12 @@ class FlowBase(BaseModel):
     icon: Optional[str] = None
     trigger_event_source: Optional[str] = None
     trigger_event_type: Optional[str] = None
-    trigger_organization_id: Optional[str] = None
-    trigger_project_id: Optional[str] = None
+    trigger_organization_id: Optional[UUID] = None
+    trigger_project_id: Optional[UUID] = None
     trigger_config: Optional[Dict[str, Any]] = None
     webhook_config: Optional[WebhookConfig] = None
     prompt_template: Optional[str] = None
-    ai_model_id: Optional[uuid.UUID] = None
+    ai_model_id: Optional[UUID] = None
     agent_type: Optional[str] = "openhands"
     agent_config: Optional[Dict[str, Any]] = None
     allowed_mcp_servers: Optional[List[str]] = None
@@ -97,7 +96,7 @@ class FlowBase(BaseModel):
     custom_commands: Optional[CustomCommands] = None
     is_preset: Optional[bool] = False
     is_enabled: Optional[bool] = True
-    account_id: Optional[str] = None
+    account_id: Optional[UUID] = None
 
 
 class FlowCreate(FlowBase):
@@ -116,7 +115,7 @@ class FlowUpdate(FlowBase):
 
 
 class FlowResponse(FlowBase):
-    id: uuid.UUID
+    id: UUID
     account_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime

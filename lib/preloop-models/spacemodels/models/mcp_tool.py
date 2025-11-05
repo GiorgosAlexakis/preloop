@@ -8,13 +8,12 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
-from .mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from .mcp_server import MCPServer
 
 
-class MCPTool(Base, TimestampMixin):
+class MCPTool(Base):
     """
     Stores cached tool definitions from external MCP servers.
 
@@ -24,10 +23,6 @@ class MCPTool(Base, TimestampMixin):
     """
 
     __tablename__ = "mcp_tool"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
 
     # Foreign key to MCP server
     mcp_server_id: Mapped[uuid.UUID] = mapped_column(
@@ -41,8 +36,6 @@ class MCPTool(Base, TimestampMixin):
 
     # Discovery tracking
     discovered_at: Mapped[str] = mapped_column(String, nullable=False)
-
-    # Timestamps are handled by TimestampMixin (created_at, updated_at)
 
     # Relationships
     mcp_server: Mapped["MCPServer"] = relationship(back_populates="tools")

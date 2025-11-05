@@ -34,15 +34,8 @@ class ApprovalRequest(Base):
 
     __tablename__ = "approval_request"
 
-    id: Mapped[uuid.UUID] = mapped_column(
+    account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique identifier for the approval request",
-    )
-
-    account_id: Mapped[str] = mapped_column(
-        String(36),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

@@ -36,6 +36,6 @@ pytest:
     - apt-get update && apt-get install -y postgresql-client
     - PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB_NAME -c "CREATE EXTENSION IF NOT EXISTS vector;"
     - python scripts/drop_tables.py --force
-    - python scripts/create_tables.py --force
+    - python scripts/init_db.py --force
   script:
     - pytest -vvv tests/ --cov=spacemodels --cov-report=xml --cov-report=term-missing --timeout=240 --cov-fail-under=82

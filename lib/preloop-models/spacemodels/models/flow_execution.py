@@ -12,7 +12,9 @@ class FlowExecution(Base):
     __tablename__ = "flow_execution"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    flow_id = Column(String(36), ForeignKey("flow.id"), nullable=False, index=True)
+    flow_id = Column(
+        UUID(as_uuid=True), ForeignKey("flow.id"), nullable=False, index=True
+    )
     trigger_event_id = Column(
         String, nullable=True, index=True
     )  # From StandardizedNatsEvent.event_id

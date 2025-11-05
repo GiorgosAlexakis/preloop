@@ -38,13 +38,6 @@ class Permission(Base):
 
     __tablename__ = "permission"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique identifier for the permission",
-    )
-
     name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
@@ -66,13 +59,6 @@ class Permission(Base):
 
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, comment="Whether permission is active"
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-        comment="When the permission was created",
     )
 
     # Relationships
@@ -113,15 +99,8 @@ class Role(Base):
 
     __tablename__ = "role"
 
-    id: Mapped[uuid.UUID] = mapped_column(
+    account_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique identifier for the role",
-    )
-
-    account_id: Mapped[Optional[str]] = mapped_column(
-        String(36),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
@@ -142,21 +121,6 @@ class Role(Base):
         default=False,
         index=True,
         comment="Whether this is a system-defined role",
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-        comment="When the role was created",
-    )
-
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-        comment="When the role was last updated",
     )
 
     # Relationships
@@ -197,13 +161,6 @@ class RolePermission(Base):
     """
 
     __tablename__ = "role_permission"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique identifier",
-    )
 
     role_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -260,13 +217,6 @@ class UserRole(Base):
     """
 
     __tablename__ = "user_role"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique identifier",
-    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -334,13 +284,6 @@ class TeamRole(Base):
     """
 
     __tablename__ = "team_role"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique identifier",
-    )
 
     team_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

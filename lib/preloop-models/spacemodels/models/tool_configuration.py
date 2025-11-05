@@ -42,10 +42,6 @@ class ToolConfiguration(Base):
 
     __tablename__ = "tool_configuration"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-
     # Tool identification
     tool_name: Mapped[str] = mapped_column(
         String(255), nullable=False, index=True, comment="Name of the tool"
@@ -103,8 +99,8 @@ class ToolConfiguration(Base):
     )
 
     # Foreign keys
-    account_id: Mapped[str] = mapped_column(
-        String(36),
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -172,13 +168,9 @@ class ApprovalPolicy(Base):
 
     __tablename__ = "approval_policy"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-
     # Policy identification
-    account_id: Mapped[str] = mapped_column(
-        String(36),
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

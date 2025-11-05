@@ -1,6 +1,5 @@
 """Tests for audit log CRUD operations."""
 
-import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -71,9 +70,9 @@ class TestAuditLogCRUD:
     def test_log_action_with_uuid_account_id(
         self, db_session: Session, test_account, test_user_for_audit
     ):
-        """Test logging an action with UUID account ID (converted to string)."""
-        # Convert string account_id to UUID for testing conversion
-        account_uuid = uuid.UUID(test_account.id)
+        """Test logging an action with UUID account ID."""
+        # test_account.id is already a UUID object
+        account_uuid = test_account.id
 
         log = crud_audit_log.log_action(
             db_session,
@@ -83,7 +82,7 @@ class TestAuditLogCRUD:
             status="success",
         )
 
-        assert log.account_id == test_account.id  # Should be stored as string
+        assert log.account_id == test_account.id  # Should be stored as UUID
         assert log.action == "role_assigned"
 
     def test_log_action_without_user(self, db_session: Session, test_account):

@@ -1,12 +1,12 @@
 """Issue, EmbeddingModel, and IssueEmbedding models."""
 
 import os
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint, func
-
-# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
+from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, DateTime
 
@@ -46,20 +46,20 @@ class Issue(Base):
     key: Mapped[str] = mapped_column(String(512), nullable=True, index=True)
 
     # Foreign keys
-    project_id: Mapped[str] = mapped_column(  # Reverted to str
-        String(36),  # Reverted to String(36)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("project.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    tracker_id: Mapped[str] = mapped_column(  # Reverted to str
-        String(36),  # Reverted to String(36)
+    tracker_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("tracker.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    parent_id: Mapped[Optional[str]] = mapped_column(
-        String(36),
+    parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("issue.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
@@ -128,20 +128,20 @@ class IssueEmbedding(Base):
     # Primary key is inherited from Base
 
     # Foreign keys
-    issue_id: Mapped[str] = mapped_column(  # Reverted to str
-        String(36),  # Reverted to String(36)
+    issue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("issue.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    comment_id: Mapped[Optional[str]] = mapped_column(  # Reverted to Optional[str]
-        String(36),  # Reverted to String(36)
+    comment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("comment.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    embedding_model_id: Mapped[str] = mapped_column(  # Reverted to str
-        String(36),  # Reverted to String(36)
+    embedding_model_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("embeddingmodel.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -157,9 +157,6 @@ class IssueEmbedding(Base):
     meta_data: Mapped[Dict] = mapped_column(JSON, nullable=True, default=dict)
 
     # When this embedding was created
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
-    )
 
     # Relationships
     issue: Mapped["Issue"] = relationship("Issue", back_populates="embeddings")

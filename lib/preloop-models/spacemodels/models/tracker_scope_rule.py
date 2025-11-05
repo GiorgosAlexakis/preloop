@@ -1,8 +1,10 @@
 """Tracker Scope Rule model."""
 
 import enum
+import uuid
 
 from sqlalchemy import ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -27,8 +29,8 @@ class TrackerScopeRule(Base):
 
     __tablename__ = "tracker_scope_rule"
 
-    tracker_id: Mapped[str] = mapped_column(
-        String(36),
+    tracker_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("tracker.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

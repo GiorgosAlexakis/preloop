@@ -682,7 +682,7 @@ def test_comment_create_with_author(
     assert comment is not None
     assert comment.body == "This is a test comment!"
     assert comment.author == author.username
-    assert comment.issue_id == str(issue.id)
+    assert comment.issue_id == issue.id
 
 
 def test_comment_get_multi_by_issue(db_session: Session, create_issue, create_comment):

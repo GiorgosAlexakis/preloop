@@ -8,7 +8,6 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
-from .mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from .account import Account
@@ -16,16 +15,13 @@ if TYPE_CHECKING:
     from .issue_set import IssueSet
 
 
-class AIModel(Base, TimestampMixin):
+class AIModel(Base):
     """
     Stores AI model configurations.
     """
 
     __tablename__ = "ai_model"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -40,8 +36,8 @@ class AIModel(Base, TimestampMixin):
     )  # Stored unencrypted for now
 
     # Ownership and sharing
-    account_id: Mapped[Optional[str]] = mapped_column(
-        String(36), ForeignKey("account.id"), nullable=True, index=True
+    account_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("account.id"), nullable=True, index=True
     )
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
@@ -50,8 +46,6 @@ class AIModel(Base, TimestampMixin):
     meta_data: Mapped[Optional[Dict]] = mapped_column(
         JSONB, nullable=True, default=dict
     )
-
-    # Timestamps are handled by TimestampMixin
 
     # Relationships
     account: Mapped[Optional["Account"]] = relationship(back_populates="ai_models")

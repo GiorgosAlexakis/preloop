@@ -34,9 +34,6 @@ class ApiUsage(Base):
 
     __tablename__ = "api_usage"
 
-    # Override id field to use UUID instead of string
-    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
-
     # Request details
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),

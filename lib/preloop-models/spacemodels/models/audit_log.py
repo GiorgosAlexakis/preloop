@@ -42,9 +42,9 @@ class AuditLog(Base):
 
     __tablename__ = "audit_log"
 
-    # Foreign keys (id is inherited from Base as String(36))
-    account_id: Mapped[str] = mapped_column(
-        String(36),
+    # Foreign keys
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

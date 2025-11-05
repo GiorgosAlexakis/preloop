@@ -3,10 +3,8 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy.exc import SQLAlchemyError
 
 from spacemodels.db.setup import reset_database, setup_database
-from spacemodels.models.base import Base
 
 
 @pytest.fixture
@@ -18,29 +16,31 @@ def mock_engine():
 
 
 @pytest.fixture
-def mock_base_metadata(monkeypatch):
-    """Mock Base.metadata."""
-    metadata_mock = MagicMock()
-    monkeypatch.setattr(Base, "metadata", metadata_mock)
-    return metadata_mock
+def mock_subprocess_run():
+    """Mock subprocess.run for Alembic commands."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        yield mock_run
 
 
-def test_setup_database_success(mock_engine, mock_base_metadata):
-    """Test successful database setup."""
+def test_setup_database_success(mock_engine, mock_subprocess_run):
+    """Test successful database setup using Alembic."""
     with patch("spacemodels.db.setup.get_engine", return_value=mock_engine):
         setup_database()
 
-        # Verify that create_all was called
-        mock_base_metadata.create_all.assert_called_once_with(mock_engine)
+        # Verify that Alembic upgrade was called
+        assert mock_subprocess_run.called
+        call_args = mock_subprocess_run.call_args
+        assert call_args[0][0] == ["alembic", "upgrade", "head"]
 
 
-def test_setup_database_with_pgvector(mock_engine, mock_base_metadata):
+def test_setup_database_with_pgvector(mock_engine, mock_subprocess_run):
     """Test database setup with pgvector extension."""
     with patch("spacemodels.db.setup.get_engine", return_value=mock_engine):
         setup_database(database_url="postgresql://localhost/test")
 
-        # Verify that create_all was called
-        mock_base_metadata.create_all.assert_called_once_with(mock_engine)
+        # Verify that Alembic upgrade was called
+        assert mock_subprocess_run.called
 
         # Verify that the pgvector extension command was executed
         mock_conn = mock_engine.connect.return_value.__enter__.return_value
@@ -48,34 +48,40 @@ def test_setup_database_with_pgvector(mock_engine, mock_base_metadata):
         mock_conn.commit.assert_called_once()
 
 
-def test_setup_database_error(mock_engine, mock_base_metadata):
-    """Test database setup error handling."""
-    mock_base_metadata.create_all.side_effect = SQLAlchemyError("Test error")
+def test_setup_database_error(mock_engine, mock_subprocess_run):
+    """Test database setup error handling when Alembic fails."""
+    mock_subprocess_run.return_value = MagicMock(
+        returncode=1, stdout="", stderr="Alembic error"
+    )
 
     with patch("spacemodels.db.setup.get_engine", return_value=mock_engine):
-        with pytest.raises(SQLAlchemyError):
+        with pytest.raises(RuntimeError, match="Alembic migration failed"):
             setup_database()
 
 
-def test_reset_database_success(mock_engine, mock_base_metadata):
-    """Test successful database reset."""
+def test_reset_database_success(mock_engine, mock_subprocess_run):
+    """Test successful database reset using Alembic."""
     with (
         patch("spacemodels.db.setup.get_engine", return_value=mock_engine),
         patch("spacemodels.db.setup.setup_database") as mock_setup,
     ):
         reset_database()
 
-        # Verify that drop_all was called
-        mock_base_metadata.drop_all.assert_called_once_with(mock_engine)
+        # Verify that Alembic downgrade was called
+        assert mock_subprocess_run.called
+        call_args = mock_subprocess_run.call_args
+        assert call_args[0][0] == ["alembic", "downgrade", "base"]
 
         # Verify that setup_database was called
         mock_setup.assert_called_once_with(None)
 
 
-def test_reset_database_error(mock_engine, mock_base_metadata):
-    """Test database reset error handling."""
-    mock_base_metadata.drop_all.side_effect = SQLAlchemyError("Test error")
+def test_reset_database_error(mock_engine, mock_subprocess_run):
+    """Test database reset error handling when Alembic downgrade fails."""
+    mock_subprocess_run.return_value = MagicMock(
+        returncode=1, stdout="", stderr="Alembic error"
+    )
 
     with patch("spacemodels.db.setup.get_engine", return_value=mock_engine):
-        with pytest.raises(SQLAlchemyError):
+        with pytest.raises(RuntimeError, match="Alembic downgrade failed"):
             reset_database()

@@ -16,10 +16,9 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from .base import Base
-from .mixins import TimestampMixin
 
 
-class Plan(Base, TimestampMixin):
+class Plan(Base):
     """A subscription plan."""
 
     __tablename__ = "plan"
@@ -31,13 +30,15 @@ class Plan(Base, TimestampMixin):
     is_active = Column(Boolean, default=True, nullable=False)
     features = Column(JSONB, nullable=False)
     stripe_product_id = Column(String, nullable=True, unique=True)
-    account_id = Column(String(36), ForeignKey("account.id"), nullable=True, index=True)
+    account_id = Column(
+        UUID(as_uuid=True), ForeignKey("account.id"), nullable=True, index=True
+    )
     is_custom = Column(Boolean, default=False, nullable=False)
 
     subscription = relationship("Subscription", back_populates="plan")
 
 
-class Subscription(Base, TimestampMixin):
+class Subscription(Base):
     """A subscription linking an organization to a plan."""
 
     __tablename__ = "subscription"
@@ -46,7 +47,7 @@ class Subscription(Base, TimestampMixin):
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
     )
     account_id = Column(
-        String(36), ForeignKey("account.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("account.id"), nullable=False, index=True
     )
     plan_id = Column(String, ForeignKey("plan.id"), nullable=False, index=True)
     status = Column(String, nullable=False, default="active")
@@ -61,7 +62,7 @@ class Subscription(Base, TimestampMixin):
     )
 
 
-class MonthlyUsage(Base, TimestampMixin):
+class MonthlyUsage(Base):
     """Aggregated monthly usage for a subscription."""
 
     __tablename__ = "monthly_usage"

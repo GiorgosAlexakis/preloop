@@ -1,7 +1,9 @@
+import uuid
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import DateTime, Integer, String, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -19,13 +21,11 @@ class ClientVersionLog(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    account_id: Mapped[Optional[str]] = (
-        mapped_column(  # Changed type hint to Optional[str]
-            String(36),
-            ForeignKey("account.id"),
-            nullable=True,
-            index=True,  # Changed type to String(36)
-        )
+    account_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("account.id"),
+        nullable=True,
+        index=True,
     )
     organization_identifier: Mapped[Optional[str]] = mapped_column(
         String,

@@ -6,12 +6,11 @@ from datetime import datetime, timezone
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import ForeignKey, func
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, Boolean, DateTime, String
 
 from sqlalchemy.dialects.postgresql import UUID
-
 
 from .base import Base
 
@@ -36,9 +35,6 @@ class ApiKey(Base):
 
     __tablename__ = "api_key"
 
-    # Override id field to use UUID instead of string
-    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
-
     # Key details
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     key: Mapped[str] = mapped_column(
@@ -46,9 +42,6 @@ class ApiKey(Base):
     )
 
     # Timestamp fields
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
-    )
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 

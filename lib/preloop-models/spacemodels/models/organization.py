@@ -1,12 +1,12 @@
 """Organization model."""
 
 # Import at the end to avoid circular imports
+import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import DateTime, ForeignKey, String
-
-# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -61,8 +61,8 @@ class Organization(Base):
     )
 
     # Foreign keys - the tracker determines the owner account
-    tracker_id: Mapped[str] = mapped_column(  # Reverted to str
-        String(36),  # Reverted to String(36)
+    tracker_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("tracker.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

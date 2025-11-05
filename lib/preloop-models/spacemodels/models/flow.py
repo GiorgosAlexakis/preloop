@@ -4,10 +4,9 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from .base import Base
-from .mixins import TimestampMixin
 
 
-class Flow(Base, TimestampMixin):
+class Flow(Base):
     __tablename__ = "flow"
 
     name = Column(String, nullable=False)
@@ -79,7 +78,7 @@ class Flow(Base, TimestampMixin):
     is_preset = Column(Boolean, default=False, nullable=False)
     is_enabled = Column(Boolean, default=True, nullable=False)
     account_id = Column(
-        String(36),
+        UUID(as_uuid=True),
         ForeignKey("account.id"),
         nullable=True,
         index=True,
