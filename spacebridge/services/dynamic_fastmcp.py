@@ -489,11 +489,17 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
     db = next(get_db())
     try:
         # Get user's account for tracker check
-        account = user.account if hasattr(user, "account") else None
-        if not account:
-            # Fallback: query account if relationship not loaded
-            from spacemodels.crud import crud_account
+        # Handle detached instance by catching the error and querying directly
+        from sqlalchemy.orm.exc import DetachedInstanceError
+        from spacemodels.crud import crud_account
 
+        try:
+            account = user.account if hasattr(user, "account") else None
+        except DetachedInstanceError:
+            account = None
+
+        if not account:
+            # Fallback: query account if relationship not loaded or detached
             account = crud_account.get(db, id=user.account_id)
 
         user_has_tracker = has_tracker(account, db) if account else False

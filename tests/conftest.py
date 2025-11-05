@@ -117,6 +117,25 @@ def test_user(db_session: Session) -> User:
 
 
 @pytest.fixture(scope="function")
+def test_tracker(db_session: Session, test_user: User):
+    """Create a test tracker for testing."""
+    from spacemodels.crud import crud_tracker
+    from spacemodels.schemas.tracker import TrackerCreate
+
+    tracker_data = TrackerCreate(
+        name="Test Tracker",
+        tracker_type="github",
+        url="https://github.com/test",
+        api_key="test_key",
+        account_id=test_user.account_id,
+        is_active=True,
+    )
+    tracker = crud_tracker.create(db_session, obj_in=tracker_data.model_dump())
+    db_session.flush()
+    return tracker
+
+
+@pytest.fixture(scope="function")
 def test_viewer_user(db_session: Session) -> User:
     """Create a test user with viewer role (read-only permissions)."""
     from spacemodels.crud import crud_role, crud_user_role

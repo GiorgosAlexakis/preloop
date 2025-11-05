@@ -3929,19 +3929,12 @@ paths:
           type: string
           format: uuid
           title: Execution Id
-      - name: command
-        in: query
-        required: true
-        schema:
-          type: string
-          title: Command
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
-              title: Payload
+              $ref: '#/components/schemas/FlowExecutionCommand'
       responses:
         '200':
           description: Successful Response
@@ -6621,6 +6614,16 @@ components:
           - type: string
           - type: 'null'
           title: Trigger Event Type
+        trigger_organization_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Organization Id
+        trigger_project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Project Id
         trigger_config:
           anyOf:
           - additionalProperties: true
@@ -6692,6 +6695,23 @@ components:
       - prompt_template
       - agent_config
       title: FlowCreate
+    FlowExecutionCommand:
+      properties:
+        command:
+          type: string
+          title: Command
+          description: Command to send (e.g., 'stop', 'pause')
+        payload:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Payload
+          description: Optional payload for the command
+      type: object
+      required:
+      - command
+      title: FlowExecutionCommand
     FlowExecutionResponse:
       properties:
         flow_id:
@@ -6785,6 +6805,11 @@ components:
           type: string
           format: date-time
           title: Updated At
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
       type: object
       required:
       - flow_id
@@ -6819,6 +6844,16 @@ components:
           - type: string
           - type: 'null'
           title: Trigger Event Type
+        trigger_organization_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Organization Id
+        trigger_project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Project Id
         trigger_config:
           anyOf:
           - additionalProperties: true
@@ -6938,6 +6973,16 @@ components:
           - type: string
           - type: 'null'
           title: Trigger Event Type
+        trigger_organization_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Organization Id
+        trigger_project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trigger Project Id
         trigger_config:
           anyOf:
           - additionalProperties: true
@@ -7026,6 +7071,52 @@ components:
           type: array
           title: Repositories
           description: List of repositories to clone
+        git_user_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Git User Name
+          description: Name to use for git commits
+          default: Preloop AI
+        git_user_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Git User Email
+          description: Email to use for git commits
+          default: git@preloop.ai
+        source_branch:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Branch
+          description: Branch to checkout for base code
+          default: main
+        target_branch:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Branch
+          description: Branch to create for commits (auto-generated if empty)
+        create_pull_request:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Create Pull Request
+          description: Whether to create a Pull Request / Merge Request
+          default: false
+        pull_request_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pull Request Title
+          description: Title for the Pull/Merge Request
+        pull_request_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pull Request Description
+          description: Description for the Pull/Merge Request
       type: object
       title: GitCloneConfig
       description: Configuration for git clone operations before agent execution.

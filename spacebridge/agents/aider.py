@@ -101,7 +101,16 @@ class AiderAgent(ContainerAgentExecutor):
         allowed_mcp_tools = execution_context.get("allowed_mcp_tools", [])
         account_api_token = execution_context.get("account_api_token")
 
+        self.logger.info(
+            f"MCP Configuration Check: "
+            f"allowed_mcp_servers={allowed_mcp_servers}, "
+            f"allowed_mcp_tools={allowed_mcp_tools}, "
+            f"account_api_token={'present' if account_api_token else 'missing'}"
+        )
+
         if allowed_mcp_servers or allowed_mcp_tools:
+            self.logger.info("Generating MCP configuration for Aider CE container")
+
             # Generate MCP environment variables
             mcp_env = MCPConfigService.generate_mcp_environment_vars(
                 allowed_mcp_servers, allowed_mcp_tools
@@ -111,6 +120,7 @@ class AiderAgent(ContainerAgentExecutor):
             # Add account API token for SpaceBridge MCP authentication
             if account_api_token:
                 env["SPACEBRIDGE_API_TOKEN"] = account_api_token
+                self.logger.info("Added SPACEBRIDGE_API_TOKEN to environment")
             else:
                 self.logger.warning(
                     "No account API token provided for SpaceBridge MCP access"
@@ -123,6 +133,16 @@ class AiderAgent(ContainerAgentExecutor):
                 account_api_token=account_api_token,
             )
             env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
+            self.logger.info(
+                f"MCP config generated with {len(allowed_mcp_servers)} servers and "
+                f"{len(allowed_mcp_tools)} tools. Config size: {len(env['MCP_CONFIG_JSON'])} chars"
+            )
+            self.logger.debug(f"MCP config content: {mcp_config}")
+        else:
+            self.logger.warning(
+                "No MCP servers or tools configured for this flow execution. "
+                "Aider CE will run without MCP tool access."
+            )
 
         # Build the command to run Aider with the prompt
         prompt = execution_context["prompt"]
@@ -132,17 +152,47 @@ class AiderAgent(ContainerAgentExecutor):
         # Escape prompt for shell (use single quotes to avoid escaping issues)
         escaped_prompt = prompt.replace("'", "'\\''")
 
+        # Prepare initialization commands (git clone, custom commands)
+        init_commands = self._prepare_init_commands(execution_context)
+
+        # Prepare post-execution commands (push, PR/MR creation)
+        post_exec_commands = self._prepare_git_post_execution_commands(
+            execution_context
+        )
+
+        # Build post-execution block if there are commands
+        post_exec_block = ""
+        if post_exec_commands:
+            post_exec_block = f"""
+# Run post-execution commands (push, PR/MR) if aider succeeded
+if [ "$AIDER_EXIT_CODE" -eq "0" ]; then
+    echo "========================================="
+    echo "Running post-execution git operations..."
+    echo "========================================="
+    {post_exec_commands}
+fi
+"""
+
         # Use bash wrapper to capture exit codes properly
         # Aider may not exit with non-zero on errors, so we check for error patterns
         aider_cmd = f"""
 set -e
 set -o pipefail
 
+# Run initialization commands (git clone, custom commands) if any
+{init_commands}
+
 # Ensure workspace is writable (create if doesn't exist)
 if [ ! -d /workspace ]; then
     echo "Creating /workspace directory..."
     mkdir -p /workspace
 fi
+
+# Configure git to trust the workspace directory
+git config --global --add safe.directory /workspace
+
+# Trust all git repositories in workspace (needed for cloned repos)
+git config --global --add safe.directory '*'
 
 # Create .aider directory in workspace if it doesn't exist
 if [ ! -d /workspace/.aider ]; then
@@ -153,6 +203,13 @@ fi
 
 # Set up MCP configuration if provided
 # Aider looks for MCP config at ~/.aider/mcp_settings.json by default
+echo "========================================="
+echo "Checking for MCP configuration..."
+echo "MCP_CONFIG_JSON environment variable length: ${{#MCP_CONFIG_JSON}}"
+echo "SPACEBRIDGE_API_TOKEN set: $([ ! -z \\"$SPACEBRIDGE_API_TOKEN\\" ] && echo 'yes' || echo 'no')"
+echo "SPACEBRIDGE_MCP_URL: ${{SPACEBRIDGE_MCP_URL:-not set}}"
+echo "========================================="
+
 if [ ! -z "$MCP_CONFIG_JSON" ]; then
     echo "========================================="
     echo "Setting up MCP configuration..."
@@ -161,6 +218,14 @@ if [ ! -z "$MCP_CONFIG_JSON" ]; then
     chmod 644 /workspace/.aider/mcp_settings.json
     echo "========================================="
     echo "MCP config written to /workspace/.aider/mcp_settings.json"
+    echo "Content verification:"
+    cat /workspace/.aider/mcp_settings.json
+    echo ""
+    echo "========================================="
+else
+    echo "========================================="
+    echo "WARNING: MCP_CONFIG_JSON is not set!"
+    echo "MCP tools will NOT be available to Aider CE"
     echo "========================================="
 fi
 
@@ -195,6 +260,16 @@ fi
 
 # Run aider-ce with properly formatted model name
 # Aider CE will automatically look for MCP config at /workspace/.aider/mcp_settings.json
+echo "========================================="
+echo "Starting Aider CE..."
+echo "Model: $MODEL_NAME"
+echo "Edit format: {edit_format}"
+echo "MCP config file exists: $([ -f /workspace/.aider/mcp_settings.json ] && echo 'yes' || echo 'no')"
+if [ -f /workspace/.aider/mcp_settings.json ]; then
+    echo "MCP config file size: $(wc -c < /workspace/.aider/mcp_settings.json) bytes"
+fi
+echo "========================================="
+
 OUTPUT=$(aider-ce --model "$MODEL_NAME" --edit-format {edit_format} --yes --no-suggest-shell-commands --message '{escaped_prompt}' 2>&1) || EXIT_CODE=$?
 
 # Print the output
@@ -202,12 +277,14 @@ echo "$OUTPUT"
 
 # Check for error patterns in output
 if echo "$OUTPUT" | grep -qiE "(error|exception|failed|fatal|traceback)"; then
-    echo "[WRAPPER] Detected error in aider output, exiting with code 1"
-    exit 1
+    echo "[WRAPPER] Detected error in aider output, will skip git operations"
+    AIDER_EXIT_CODE=1
+else
+    AIDER_EXIT_CODE=${{EXIT_CODE:-0}}
 fi
-
-# Exit with captured code if any
-exit ${{EXIT_CODE:-0}}
+{post_exec_block}
+# Exit with aider's exit code
+exit $AIDER_EXIT_CODE
 """
 
         # Container configuration

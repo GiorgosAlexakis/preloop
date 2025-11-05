@@ -222,7 +222,12 @@ class TestContainerAgentExecutor:
 
         assert result.status == AgentStatus.FAILED
         assert result.exit_code == 1
-        assert "Container exited with code 1" in result.error_message
+        # Error message can be extracted from logs or from container exit code
+        assert result.error_message is not None
+        assert (
+            "Error: Task failed" in result.error_message
+            or "Container exited with code 1" in result.error_message
+        )
 
     @pytest.mark.asyncio
     async def test_stop_container(self, container_executor, mock_docker):

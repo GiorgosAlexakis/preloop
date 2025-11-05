@@ -177,11 +177,30 @@ class ContainerAgentExecutor(AgentExecutor):
         # This ensures the agent has write permissions
         workspace_volume = f"agent-workspace-{execution_id}"
 
+        # Determine working directory based on git clone configuration
+        working_dir = "/workspace"
+        git_clone_config = execution_context.get("git_clone_config")
+        if git_clone_config:
+            repositories = git_clone_config.get("repositories", [])
+            if repositories:
+                # Use the first repository's clone path as working directory
+                clone_path = repositories[0].get("clone_path", "/workspace")
+                if clone_path.startswith("/"):
+                    # Absolute path
+                    working_dir = clone_path
+                else:
+                    # Relative path - prepend /workspace/
+                    working_dir = f"/workspace/{clone_path}"
+                self.logger.info(
+                    f"Setting container working directory to git repository: {working_dir}"
+                )
+
         # Container configuration
         container_config = {
             "Image": self.image,
             "Env": [f"{k}={v}" for k, v in env.items()],
             "User": "10000:10000",  # Explicitly set user and group
+            "WorkingDir": working_dir,  # Set working directory to git repo if configured
             "Labels": {
                 "spacebridge.flow_id": execution_context["flow_id"],
                 "spacebridge.execution_id": execution_id,
@@ -294,11 +313,30 @@ class ContainerAgentExecutor(AgentExecutor):
         memory_request = os.getenv("AGENT_MEMORY_REQUEST", "512Mi")
         cpu_request = os.getenv("AGENT_CPU_REQUEST", "250m")
 
+        # Determine working directory based on git clone configuration
+        working_dir = "/workspace"
+        git_clone_config = execution_context.get("git_clone_config")
+        if git_clone_config:
+            repositories = git_clone_config.get("repositories", [])
+            if repositories:
+                # Use the first repository's clone path as working directory
+                clone_path = repositories[0].get("clone_path", "/workspace")
+                if clone_path.startswith("/"):
+                    # Absolute path
+                    working_dir = clone_path
+                else:
+                    # Relative path - prepend /workspace/
+                    working_dir = f"/workspace/{clone_path}"
+                self.logger.info(
+                    f"Setting pod working directory to git repository: {working_dir}"
+                )
+
         # Container specification with security context
         container = client.V1Container(
             name="agent",
             image=self.image,
             env=env_vars,
+            working_dir=working_dir,  # Set working directory to git repo if configured
             resources=client.V1ResourceRequirements(
                 limits={"memory": memory_limit, "cpu": cpu_limit},
                 requests={"memory": memory_request, "cpu": cpu_request},
@@ -837,6 +875,685 @@ class ContainerAgentExecutor(AgentExecutor):
                 f"Unexpected error streaming Kubernetes logs for {job_name}: {e}"
             )
             yield f"[ERROR] Unexpected error: {e}"
+
+    def _prepare_init_commands(self, execution_context: Dict[str, Any]) -> str:
+        """
+        Prepare initialization commands (git clone, custom commands).
+
+        Args:
+            execution_context: Execution context
+
+        Returns:
+            Shell command string to run before agent starts, or empty string if none
+        """
+        commands = []
+
+        # Prepare git clone command if repositories are configured
+        # Check for repositories existence rather than just enabled flag
+        git_clone_config = execution_context.get("git_clone_config")
+        if git_clone_config:
+            repositories = git_clone_config.get("repositories", [])
+            # If repositories exist, attempt to clone them
+            if repositories:
+                self.logger.info(
+                    f"Git clone configured with {len(repositories)} repositories"
+                )
+                git_cmd = self._prepare_git_clone_command(execution_context)
+                if git_cmd:
+                    commands.append(git_cmd)
+                    self.logger.info("Git clone commands added to init")
+                else:
+                    self.logger.warning(
+                        "Git clone was configured but no commands were generated"
+                    )
+            else:
+                self.logger.debug("No repositories configured for git clone")
+        else:
+            self.logger.debug("No git_clone_config in execution context")
+
+        # Prepare custom commands if enabled
+        custom_commands = execution_context.get("custom_commands")
+        if custom_commands and custom_commands.get("enabled"):
+            custom_cmds = custom_commands.get("commands", [])
+            for cmd in custom_cmds:
+                # Sanitize command to prevent shell injection
+                # Note: These commands come from admin-only configuration
+                commands.append(cmd)
+
+        # Join all commands with &&
+        if commands:
+            return " && ".join(commands)
+        return ""
+
+    def _prepare_git_clone_command(self, execution_context: Dict[str, Any]) -> str:
+        """
+        Prepare git clone commands for multiple repositories with branch management.
+
+        Args:
+            execution_context: Execution context
+
+        Returns:
+            Git clone commands string (multiple commands joined with &&) or empty string
+        """
+        try:
+            git_config = execution_context.get("git_clone_config", {})
+            repositories = git_config.get("repositories", [])
+
+            if not repositories:
+                self.logger.warning("No repositories configured for git clone")
+                return ""
+
+            # Get git user configuration (defaults)
+            git_user_name = git_config.get("git_user_name", "Preloop AI")
+            git_user_email = git_config.get("git_user_email", "git@preloop.ai")
+            source_branch = git_config.get("source_branch", "main")
+            target_branch = git_config.get("target_branch")
+
+            # Auto-generate target branch if not specified
+            if not target_branch:
+                flow_name = execution_context.get("flow_name", "flow")
+                execution_id = execution_context.get("execution_id", "exec")
+                # Create a branch name like "preloop/fix-bug-abc123"
+                safe_flow_name = flow_name.lower().replace(" ", "-")[:30]
+                target_branch = f"preloop/{safe_flow_name}-{execution_id[:8]}"
+
+            clone_commands = []
+            trigger_data = execution_context.get("trigger_event_data", {})
+
+            # Track if we successfully configured any repositories
+            configured_repos_count = 0
+
+            # Configure git user globally (do this once at the start)
+            git_setup_commands = [
+                "mkdir -p /workspace",
+                f'git config --global user.name "{git_user_name}"',
+                f'git config --global user.email "{git_user_email}"',
+            ]
+
+            for idx, repo_config in enumerate(repositories):
+                # Get repository URL
+                repo_url = repo_config.get("repository_url")
+
+                # If no URL, try to get from project_id (in repo config) or trigger_project_id
+                if not repo_url:
+                    project_id = repo_config.get("project_id")
+
+                    # If no project_id in repo config, use trigger_project_id
+                    if not project_id:
+                        project_id = execution_context.get("trigger_project_id")
+                        if project_id:
+                            self.logger.info(
+                                f"Using trigger project {project_id} for repository #{idx + 1}"
+                            )
+
+                    if project_id:
+                        # Fetch project details from database to construct repository URL
+                        repo_url = self._get_repo_url_from_project(
+                            project_id, execution_context.get("account_id")
+                        )
+                        if repo_url:
+                            self.logger.info(
+                                f"Resolved repository URL from project {project_id}"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"Could not construct repository URL from project {project_id}"
+                            )
+
+                    # Final fallback: try to extract from trigger event data
+                    if not repo_url:
+                        repo_url = self._extract_repo_url_from_trigger(trigger_data)
+                        if repo_url:
+                            self.logger.info(
+                                "Extracted repository URL from trigger event data"
+                            )
+
+                if not repo_url:
+                    self.logger.error(
+                        f"No repository URL found for repo #{idx + 1}. "
+                        f"Please add 'repository_url' field to git_clone_config.repositories, "
+                        f"or select a project in the trigger configuration. "
+                        f"Repo config: {repo_config}, "
+                        f"Trigger project ID: {execution_context.get('trigger_project_id')}"
+                    )
+                    continue
+
+                # For manually specified URLs, inject token from credentials map
+                if repo_url and "@" not in repo_url:
+                    # URL doesn't have credentials, need to inject
+                    tracker_id = repo_config.get("tracker_id")
+                    git_credentials_map = execution_context.get(
+                        "git_credentials_map", {}
+                    )
+                    tracker_creds = git_credentials_map.get(tracker_id)
+
+                    if tracker_creds:
+                        token = tracker_creds.get("token")
+                        tracker_type = tracker_creds.get("tracker_type")
+
+                        if token:
+                            # Inject token into manually specified URL
+                            if "github.com" in repo_url or tracker_type == "github":
+                                repo_url = repo_url.replace(
+                                    "https://", f"https://{token}@"
+                                )
+                            elif "gitlab" in repo_url or tracker_type == "gitlab":
+                                repo_url = repo_url.replace(
+                                    "https://", f"https://gitlab-ci-token:{token}@"
+                                )
+                            self.logger.info(
+                                f"Injected token into manually specified URL (tracker type: {tracker_type})"
+                            )
+
+                # Get clone path - if it starts with /, use as-is (absolute), otherwise make it relative to /workspace
+                clone_path = repo_config.get("clone_path", f"/workspace-{idx + 1}")
+                if clone_path.startswith("/"):
+                    # Absolute path
+                    full_path = clone_path
+                else:
+                    # Relative path - prepend /workspace/
+                    full_path = f"/workspace/{clone_path}"
+
+                # Get branch - prioritize source_branch from config, fall back to repo-specific branch
+                repo_branch = repo_config.get("branch")
+                clone_branch = repo_branch if repo_branch else source_branch
+                branch_arg = f" -b {clone_branch}" if clone_branch else ""
+
+                # Build repository setup commands
+                repo_commands = [
+                    # Clone the repository
+                    f"git clone{branch_arg} {repo_url} {full_path}",
+                    # Navigate to repo
+                    f"cd {full_path}",
+                    # Ensure we're on the source branch
+                    f"git checkout {source_branch} 2>/dev/null || git checkout -b {source_branch}",
+                    # Create and checkout target branch for commits
+                    f"git checkout -b {target_branch}",
+                    # Return to workspace root
+                    "cd /workspace",
+                ]
+
+                clone_commands.extend(repo_commands)
+
+                # Add validation check - FAIL IMMEDIATELY if clone didn't work
+                # This prevents wasting tokens if we can't actually update the repo
+                validation_cmd = f"""
+if [ ! -d "{full_path}" ] || [ ! -d "{full_path}/.git" ]; then
+    echo "========================================="
+    echo "FATAL ERROR: Git clone failed!"
+    echo "Repository directory '{full_path}' does not exist or is not a git repository."
+    echo "Flow execution cannot continue without repository access."
+    echo "========================================="
+    exit 1
+fi
+echo "✓ Repository successfully cloned to {full_path}"
+""".strip()
+                clone_commands.append(validation_cmd)
+
+                configured_repos_count += 1
+                self.logger.info(
+                    f"Prepared git clone for {full_path}: "
+                    f"source={source_branch}, target={target_branch}"
+                )
+
+            # Check if any repositories were successfully configured
+            if configured_repos_count == 0:
+                error_msg = (
+                    f"FATAL: Git clone configured with {len(repositories)} repositories "
+                    f"but could not resolve repository URLs for any of them. "
+                    f"Please ensure 'repository_url' is set in git_clone_config.repositories, "
+                    f"or that the flow is triggered by a webhook with repository information."
+                )
+                self.logger.error(error_msg)
+                # Return a command that will fail immediately with clear error
+                return f'echo "{error_msg}" && exit 1'
+
+            # Store for later use in post-execution (only if we have valid repos)
+            execution_context["_git_target_branch"] = target_branch
+            execution_context["_git_source_branch"] = source_branch
+
+            # Combine setup and clone commands
+            all_commands = git_setup_commands + clone_commands
+            return " && ".join(all_commands)
+
+        except Exception as e:
+            self.logger.error(f"Error preparing git clone command: {e}", exc_info=True)
+            return ""
+
+    def _prepare_git_post_execution_commands(
+        self, execution_context: Dict[str, Any]
+    ) -> str:
+        """
+        Prepare git commands to run after agent execution (push, PR/MR creation).
+
+        Args:
+            execution_context: Execution context
+
+        Returns:
+            Shell command string for post-execution git operations
+        """
+        try:
+            git_config = execution_context.get("git_clone_config", {})
+
+            if not git_config:
+                self.logger.debug("No git_clone_config in execution context")
+                return ""
+
+            # Check for repositories - if they exist, we should have cloned them
+            repositories = git_config.get("repositories", [])
+            if not repositories:
+                self.logger.debug("No repositories in git_clone_config")
+                return ""
+
+            target_branch = execution_context.get("_git_target_branch")
+            source_branch = execution_context.get("_git_source_branch", "main")
+            create_pr = git_config.get("create_pull_request", False)
+
+            self.logger.info(
+                f"Preparing post-execution git commands: "
+                f"target_branch={target_branch}, source_branch={source_branch}, "
+                f"create_pr={create_pr}, repos={len(repositories)}"
+            )
+
+            if not target_branch:
+                return ""
+
+            post_commands = []
+
+            for idx, repo_config in enumerate(repositories):
+                # Get clone path - handle absolute vs relative paths
+                clone_path = repo_config.get("clone_path", f"/workspace-{idx + 1}")
+                if clone_path.startswith("/"):
+                    # Absolute path
+                    full_path = clone_path
+                else:
+                    # Relative path - prepend /workspace/
+                    full_path = f"/workspace/{clone_path}"
+
+                # Get tracker info for PR/MR creation
+                tracker_id = repo_config.get("tracker_id")
+                git_credentials_map = execution_context.get("git_credentials_map", {})
+                tracker_creds = git_credentials_map.get(tracker_id)
+
+                if not tracker_creds:
+                    continue
+
+                tracker_type = tracker_creds.get("tracker_type")
+                token = tracker_creds.get("token")
+
+                # Commands to check for commits and push
+                # Note: Directory is guaranteed to exist because git clone validation would have failed earlier
+                repo_post_commands = [
+                    f"cd {full_path}",
+                    # Check if there are any commits on target branch vs source
+                    f'COMMIT_COUNT=$(git rev-list --count {source_branch}..{target_branch} 2>/dev/null || echo "0")',
+                    'if [ "$COMMIT_COUNT" -gt "0" ]; then',
+                    f'  echo "Found $COMMIT_COUNT commits on {target_branch}, pushing..."',
+                    f"  git push origin {target_branch}",
+                ]
+
+                # Add PR/MR creation if enabled
+                if create_pr and token:
+                    # Get SpaceBridge URL for execution link
+                    import os
+
+                    spacebridge_url = os.getenv(
+                        "SPACEBRIDGE_URL", "http://localhost:8000"
+                    )
+                    execution_id = execution_context.get("execution_id", "")
+                    flow_name = execution_context.get("flow_name", "Automated changes")
+
+                    # Check if user provided custom title/description
+                    custom_pr_title = git_config.get("pull_request_title")
+                    custom_pr_description = git_config.get("pull_request_description")
+
+                    # Only use custom values if they're actually set (not None or empty)
+                    use_custom = custom_pr_title and custom_pr_title.strip()
+
+                    if tracker_type == "github":
+                        # Extract owner/repo from URL
+                        repo_url = self._extract_repo_url_from_trigger(
+                            execution_context.get("trigger_event_data", {})
+                        )
+
+                        # If no URL from trigger, try to get from project configuration
+                        if not repo_url:
+                            project_id = repo_config.get("project_id")
+                            if not project_id:
+                                project_id = execution_context.get("trigger_project_id")
+                            if project_id:
+                                repo_url = self._get_repo_url_from_project(
+                                    project_id, execution_context.get("account_id")
+                                )
+                                if repo_url:
+                                    self.logger.info(
+                                        f"Using repo URL from project {project_id} for PR creation"
+                                    )
+
+                        if repo_url:
+                            # Parse owner/repo from URL like https://github.com/owner/repo
+                            repo_parts = repo_url.rstrip("/").split("/")
+                            if len(repo_parts) >= 2:
+                                owner = repo_parts[-2]
+                                repo = repo_parts[-1].replace(".git", "")
+
+                                # Build PR creation command with dynamic title/description
+                                if use_custom:
+                                    # Use custom title and description
+                                    pr_create_cmd = f"""
+    curl -X POST \\
+      -H "Authorization: token {token}" \\
+      -H "Accept: application/vnd.github.v3+json" \\
+      https://api.github.com/repos/{owner}/{repo}/pulls \\
+      -d "$(cat <<'PREOF'
+{{
+  "title": "{custom_pr_title}",
+  "body": "{custom_pr_description or ""}",
+  "head": "{target_branch}",
+  "base": "{source_branch}"
+}}
+PREOF
+)" \\
+      || echo "Failed to create PR (may already exist)"
+"""
+                                else:
+                                    # Build title and description from commits
+                                    execution_link = f"{spacebridge_url}/console/flows/executions/{execution_id}"
+                                    pr_create_cmd = f"""
+    # Build PR title and description based on commit count
+    if [ "$COMMIT_COUNT" -eq "1" ]; then
+      # Single commit - use commit message
+      PR_TITLE=$(git log -1 --format=%s {source_branch}..{target_branch})
+      COMMIT_BODY=$(git log -1 --format=%b {source_branch}..{target_branch})
+      PR_BODY="Automated changes from Preloop AI flow: [{flow_name}]({execution_link})\\n\\n$COMMIT_BODY"
+    else
+      # Multiple commits - use flow name and list commits
+      PR_TITLE="[Preloop AI] {flow_name}"
+      COMMIT_LIST=$(git log --format="- %s" {source_branch}..{target_branch})
+      PR_BODY="Automated changes from Preloop AI flow: [{flow_name}]({execution_link})\\n\\n**Commits:**\\n$COMMIT_LIST"
+    fi
+
+    # Create PR with dynamic title/body
+    curl -X POST \\
+      -H "Authorization: token {token}" \\
+      -H "Accept: application/vnd.github.v3+json" \\
+      https://api.github.com/repos/{owner}/{repo}/pulls \\
+      -d "$(cat <<PREOF
+{{
+  "title": "$PR_TITLE",
+  "body": "$PR_BODY",
+  "head": "{target_branch}",
+  "base": "{source_branch}"
+}}
+PREOF
+)" \\
+      || echo "Failed to create PR (may already exist)"
+"""
+                                repo_post_commands.append(pr_create_cmd)
+
+                    elif tracker_type == "gitlab":
+                        # Extract project path and GitLab host from URL
+                        repo_url = self._extract_repo_url_from_trigger(
+                            execution_context.get("trigger_event_data", {})
+                        )
+
+                        # If no URL from trigger, try to get from project configuration
+                        if not repo_url:
+                            project_id = repo_config.get("project_id")
+                            if not project_id:
+                                project_id = execution_context.get("trigger_project_id")
+                            if project_id:
+                                repo_url = self._get_repo_url_from_project(
+                                    project_id, execution_context.get("account_id")
+                                )
+                                if repo_url:
+                                    self.logger.info(
+                                        f"Using repo URL from project {project_id} for MR creation"
+                                    )
+
+                        if repo_url:
+                            # Parse GitLab host from URL (e.g., gitlab.spacecode.ai or gitlab.com)
+                            from urllib.parse import urlparse
+
+                            parsed_url = urlparse(repo_url)
+                            gitlab_host = parsed_url.netloc
+                            # Remove credentials if present (e.g., gitlab-ci-token:xxx@host)
+                            if "@" in gitlab_host:
+                                gitlab_host = gitlab_host.split("@")[-1]
+
+                            # Parse project path from URL
+                            repo_path = repo_url.rstrip("/").split("://")[-1]
+                            repo_path = repo_path.split("/", 1)[-1].replace(".git", "")
+                            # Remove credentials from path if present
+                            if "@" in repo_path:
+                                repo_path = repo_path.split("@", 1)[-1]
+
+                            # URL encode the project path
+                            import urllib.parse
+
+                            encoded_path = urllib.parse.quote(repo_path, safe="")
+
+                            self.logger.info(
+                                f"Creating GitLab MR: host={gitlab_host}, path={encoded_path}, create_pr={create_pr}"
+                            )
+
+                            # Build MR creation command with dynamic title/description
+                            if use_custom:
+                                # Use custom title and description
+                                mr_create_cmd = f"""
+    echo "Creating Merge Request on {gitlab_host}..."
+    curl -X POST \\
+      -H "PRIVATE-TOKEN: {token}" \\
+      -H "Content-Type: application/json" \\
+      https://{gitlab_host}/api/v4/projects/{encoded_path}/merge_requests \\
+      -d "$(cat <<'MREOF'
+{{
+  "source_branch": "{target_branch}",
+  "target_branch": "{source_branch}",
+  "title": "{custom_pr_title}",
+  "description": "{custom_pr_description or ""}"
+}}
+MREOF
+)" \\
+      || echo "Failed to create MR (may already exist)"
+"""
+                            else:
+                                # Build title and description from commits
+                                execution_link = f"{spacebridge_url}/console/flows/executions/{execution_id}"
+                                mr_create_cmd = f"""
+    # Build MR title and description based on commit count
+    if [ "$COMMIT_COUNT" -eq "1" ]; then
+      # Single commit - use commit message
+      MR_TITLE=$(git log -1 --format=%s {source_branch}..{target_branch})
+      COMMIT_BODY=$(git log -1 --format=%b {source_branch}..{target_branch})
+      MR_DESCRIPTION="Automated changes from Preloop AI flow: [{flow_name}]({execution_link})\\n\\n$COMMIT_BODY"
+    else
+      # Multiple commits - use flow name and list commits
+      MR_TITLE="[Preloop AI] {flow_name}"
+      COMMIT_LIST=$(git log --format="- %s" {source_branch}..{target_branch})
+      MR_DESCRIPTION="Automated changes from Preloop AI flow: [{flow_name}]({execution_link})\\n\\n**Commits:**\\n$COMMIT_LIST"
+    fi
+
+    echo "Creating Merge Request on {gitlab_host}..."
+    curl -X POST \\
+      -H "PRIVATE-TOKEN: {token}" \\
+      -H "Content-Type: application/json" \\
+      https://{gitlab_host}/api/v4/projects/{encoded_path}/merge_requests \\
+      -d "$(cat <<MREOF
+{{
+  "source_branch": "{target_branch}",
+  "target_branch": "{source_branch}",
+  "title": "$MR_TITLE",
+  "description": "$MR_DESCRIPTION"
+}}
+MREOF
+)" \\
+      || echo "Failed to create MR (may already exist)"
+"""
+                            repo_post_commands.append(mr_create_cmd)
+
+                repo_post_commands.extend(
+                    [
+                        "else",
+                        f'  echo "No commits on {target_branch}, skipping push"',
+                        "fi",
+                        "cd /workspace",
+                    ]
+                )
+
+                post_commands.extend(repo_post_commands)
+
+            if not post_commands:
+                return ""
+
+            # Join commands with newlines instead of && to properly handle if-else-fi blocks
+            return "\n".join(post_commands)
+
+        except Exception as e:
+            self.logger.error(
+                f"Error preparing git post-execution commands: {e}", exc_info=True
+            )
+            return ""
+
+    def _get_repo_url_from_project(
+        self, project_id: str, account_id: str
+    ) -> Optional[str]:
+        """Construct repository URL from project and tracker information.
+
+        Uses the tracker URL, project slug, and authentication token to construct
+        a complete clone URL in the format:
+        - GitLab: https://gitlab-ci-token:{token}@{host}/{slug}.git
+        - GitHub: https://{token}@github.com/{slug}.git
+
+        Args:
+            project_id: Project ID
+            account_id: Account ID
+
+        Returns:
+            Repository clone URL with token injected, or None if not found
+        """
+        try:
+            from spacemodels.crud import crud_project, crud_tracker
+            from spacemodels.db.session import get_db_session
+
+            db = next(get_db_session())
+            try:
+                # Get project from database
+                project = crud_project.get(db, id=project_id, account_id=account_id)
+                if not project:
+                    self.logger.warning(
+                        f"Project {project_id} not found for account {account_id}"
+                    )
+                    return None
+
+                if not project.slug:
+                    self.logger.warning(
+                        f"Project {project_id} has no slug, cannot construct repository URL"
+                    )
+                    return None
+
+                # Get the organization to find the tracker
+                organization = project.organization
+                if not organization:
+                    self.logger.warning(
+                        f"Project {project_id} has no organization, cannot get tracker"
+                    )
+                    return None
+
+                # Get the tracker
+                tracker = crud_tracker.get(
+                    db, id=organization.tracker_id, account_id=account_id
+                )
+                if not tracker:
+                    self.logger.warning(
+                        f"Tracker {organization.tracker_id} not found for account {account_id}"
+                    )
+                    return None
+
+                # Get token from tracker (we always have tokens for GitHub/GitLab)
+                token = tracker.api_key
+                if not token:
+                    self.logger.warning(
+                        f"Tracker {tracker.id} has no API key configured"
+                    )
+                    return None
+
+                # Construct the clone URL based on tracker type
+                tracker_type = tracker.tracker_type.lower()
+                slug = project.slug
+
+                if tracker_type == "gitlab":
+                    # GitLab format: https://gitlab-ci-token:{token}@{host}/{slug}.git
+                    if not tracker.url:
+                        self.logger.warning(
+                            f"GitLab tracker {tracker.id} has no URL configured"
+                        )
+                        return None
+
+                    # Parse the host from tracker URL
+                    # tracker.url might be like "https://gitlab.spacecode.ai" or "https://gitlab.com"
+                    from urllib.parse import urlparse
+
+                    parsed = urlparse(tracker.url)
+                    host = parsed.netloc or parsed.path
+
+                    # Ensure slug ends with .git
+                    if not slug.endswith(".git"):
+                        slug = f"{slug}.git"
+
+                    clone_url = f"https://gitlab-ci-token:{token}@{host}/{slug}"
+                    self.logger.info(
+                        f"Constructed GitLab clone URL for {slug} on {host}"
+                    )
+                    return clone_url
+
+                elif tracker_type == "github":
+                    # GitHub format: https://{token}@github.com/{slug}.git
+                    # Ensure slug ends with .git
+                    if not slug.endswith(".git"):
+                        slug = f"{slug}.git"
+
+                    clone_url = f"https://{token}@github.com/{slug}"
+                    self.logger.info(f"Constructed GitHub clone URL for {slug}")
+                    return clone_url
+
+                else:
+                    self.logger.warning(
+                        f"Tracker type '{tracker_type}' not supported for git clone"
+                    )
+                    return None
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            self.logger.error(
+                f"Error constructing repository URL from project {project_id}: {e}",
+                exc_info=True,
+            )
+            return None
+
+    def _extract_repo_url_from_trigger(self, trigger_data: Dict[str, Any]) -> str:
+        """Extract repository URL from trigger event data."""
+        try:
+            # GitHub structure
+            if "repository" in trigger_data:
+                repo = trigger_data["repository"]
+                if isinstance(repo, dict):
+                    return repo.get("clone_url") or repo.get("html_url") or ""
+
+            # GitLab structure
+            if "project" in trigger_data:
+                project = trigger_data["project"]
+                if isinstance(project, dict):
+                    return (
+                        project.get("http_url_to_repo") or project.get("web_url") or ""
+                    )
+
+            return ""
+        except Exception as e:
+            self.logger.error(f"Error extracting repo URL from trigger: {e}")
+            return ""
 
     async def cleanup(self):
         """Cleanup resources (close Docker client, etc.)."""

@@ -56,6 +56,42 @@ class FlowExecutionOrchestrator:
         self._stop_requested = asyncio.Event()
         self._user_messages: asyncio.Queue = asyncio.Queue()
 
+    @staticmethod
+    async def send_command(
+        execution_id: str, command: str, payload: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Send a command to a running flow execution via NATS.
+
+        Args:
+            execution_id: ID of the flow execution
+            command: Command to send (e.g., 'stop', 'send_message')
+            payload: Optional command payload
+
+        Raises:
+            RuntimeError: If NATS client is not available
+        """
+        # Get NATS client from app state
+        from spacebridge.api.app import app
+
+        nats_client = getattr(app.state, "nats", None)
+        if not nats_client or not nats_client.is_connected:
+            raise RuntimeError("NATS client not available or not connected")
+
+        try:
+            command_subject = f"flow-commands.{execution_id}"
+            command_data = {"command": command, "payload": payload or {}}
+
+            await nats_client.publish(
+                command_subject, json.dumps(command_data).encode()
+            )
+            logger.info(
+                f"Sent command '{command}' to execution {execution_id} via NATS"
+            )
+        except Exception as e:
+            logger.error(f"Failed to send command via NATS: {e}", exc_info=True)
+            raise
+
     async def _publish_update(self, message_type: str, payload: Dict[str, Any]):
         """Publishes a structured message to the NATS stream for real-time updates."""
         if not self.nats_client or not self.nats_client.is_connected:
@@ -571,6 +607,7 @@ class FlowExecutionOrchestrator:
 
         execution_context = {
             "flow_id": str(self.flow_id),
+            "flow_name": self.flow.name,  # Used for generating git branch names
             "execution_id": str(self.execution_log.id),
             "prompt": resolved_prompt,
             "agent_type": self.flow.agent_type,
@@ -581,13 +618,19 @@ class FlowExecutionOrchestrator:
             "account_api_token": account_api_token,
             "git_clone_config": self.flow.git_clone_config,
             "custom_commands": self.flow.custom_commands,
-            "trigger_event_data": self.trigger_event_data,  # Needed for git clone repo resolution
+            "trigger_event_data": self.trigger_event_data,
+            "trigger_project_id": str(self.flow.trigger_project_id)
+            if self.flow.trigger_project_id
+            else None,  # For git clone fallback
         }
 
-        # Prepare git credentials if git clone is enabled
-        if self.flow.git_clone_config and self.flow.git_clone_config.get("enabled"):
+        # Prepare git credentials if repositories are configured
+        if self.flow.git_clone_config:
             repositories = self.flow.git_clone_config.get("repositories", [])
             if repositories:
+                logger.info(
+                    f"Preparing git credentials for {len(repositories)} configured repositories"
+                )
                 # Get unique tracker IDs from repositories
                 tracker_ids = set(
                     repo.get("tracker_id")
@@ -949,16 +992,16 @@ class FlowExecutionOrchestrator:
             # Stage 3: Prepare execution context
             execution_context = await self._prepare_execution_context()
 
-            # Store resolved prompt for debugging/audit
+            # Store resolved prompt for debugging/audit and mark as STARTING
             await self._update_execution_log(
-                status="RUNNING",
+                status="STARTING",
                 resolved_input_prompt=execution_context["prompt"],
             )
 
             # Stage 4: Start agent session
             session_reference = await self._start_agent_session(execution_context)
 
-            # Update with session reference
+            # Agent started successfully - now mark as RUNNING with session reference
             await self._update_execution_log(
                 status="RUNNING",
                 agent_session_reference=session_reference,

@@ -31,8 +31,8 @@ class CodexAgent(ContainerAgentExecutor):
                 - model: OpenAI model to use (default: gpt-4)
                 - custom settings for Codex CLI
         """
-        # Use Node.js base image for Codex CLI
-        image = os.getenv("CODEX_IMAGE", "node:20-slim")
+        # Use official Codex Universal image
+        image = os.getenv("CODEX_IMAGE", "ghcr.io/openai/codex-universal:latest")
 
         super().__init__(
             agent_type="codex",
@@ -97,10 +97,23 @@ class CodexAgent(ContainerAgentExecutor):
         # Prepare Codex-specific environment variables
         env = await self._prepare_environment(execution_context)
 
+        # Add account API token for SpaceBridge MCP authentication (always for Codex)
+        account_api_token = execution_context.get("account_api_token")
+        if account_api_token:
+            env["SPACEBRIDGE_API_TOKEN"] = account_api_token
+        else:
+            self.logger.warning(
+                "No account API token provided for SpaceBridge MCP access"
+            )
+
+        # Set SpaceBridge MCP URL (defaults to host.docker.internal for container access)
+        env["SPACEBRIDGE_MCP_URL"] = os.getenv(
+            "SPACEBRIDGE_MCP_URL", "http://host.docker.internal:8000/mcp/v1"
+        )
+
         # Add MCP configuration using MCP config service
         allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
         allowed_mcp_tools = execution_context.get("allowed_mcp_tools", [])
-        account_api_token = execution_context.get("account_api_token")
 
         if allowed_mcp_servers or allowed_mcp_tools:
             # Generate MCP environment variables
@@ -108,14 +121,6 @@ class CodexAgent(ContainerAgentExecutor):
                 allowed_mcp_servers, allowed_mcp_tools
             )
             env.update(mcp_env)
-
-            # Add account API token for SpaceBridge MCP authentication
-            if account_api_token:
-                env["SPACEBRIDGE_API_TOKEN"] = account_api_token
-            else:
-                self.logger.warning(
-                    "No account API token provided for SpaceBridge MCP access"
-                )
 
             # Generate MCP config file
             mcp_config = MCPConfigService.generate_mcp_config(
@@ -139,40 +144,116 @@ class CodexAgent(ContainerAgentExecutor):
         # Escape prompt for shell
         escaped_prompt = prompt.replace('"', '\\"').replace("'", "\\'")
 
-        # Create a script that installs codex and runs it
+        # Prepare initialization commands (git clone, custom commands)
+        self.logger.info(
+            f"Preparing init commands. git_clone_config present: {('git_clone_config' in execution_context)}, "
+            f"git_clone_config value: {execution_context.get('git_clone_config')}"
+        )
+        init_commands = self._prepare_init_commands(execution_context)
+        self.logger.info(
+            f"Init commands prepared. Length: {len(init_commands) if init_commands else 0}"
+        )
+
+        # Prepare post-execution commands (push, PR/MR creation)
+        post_exec_commands = self._prepare_git_post_execution_commands(
+            execution_context
+        )
+        self.logger.info(
+            f"Post-exec commands prepared. Length: {len(post_exec_commands) if post_exec_commands else 0}"
+        )
+
+        # Build post-execution block if there are commands
+        post_exec_block = ""
+        if post_exec_commands:
+            post_exec_block = f"""
+# Run post-execution commands (push, PR/MR) if codex succeeded
+if [ "$CODEX_EXIT_CODE" -eq "0" ]; then
+    echo "========================================="
+    echo "Running post-execution git operations..."
+    echo "========================================="
+    {post_exec_commands}
+fi
+"""
+
+        # Create a script that runs codex (requires configuration in codex-universal image)
         script = f"""
 set -e
 
-# Install Codex CLI globally
-npm install -g @openai/codex
+# Run initialization commands (git clone, custom commands) if any
+{init_commands}
 
-# Create config directory
-mkdir -p ~/.codex
+# Configure git to trust all directories (needed for cloned repos)
+git config --global --add safe.directory '*'
+
+# Configure Codex CLI in the universal image
+npm install -g @openai/codex
 
 # Debug: Print environment variables
 echo "=== DEBUG: Environment variables ==="
 echo "OPENAI_API_KEY: ${{OPENAI_API_KEY:0:10}}..." || echo "OPENAI_API_KEY: NOT SET"
-echo "Model being configured: {model}"
+echo "Model: {model}"
 echo "==================================="
 
-# Create config file with API key and model
-cat > ~/.codex/config.toml << EOF
-[ai]
-api_key = "$OPENAI_API_KEY"
-model = "{model}"
+# Configure Codex CLI authentication
+mkdir -p ~/.codex
 
-[settings]
-zero_data_retention = true
+# Create auth.json with OpenAI API key
+cat > ~/.codex/auth.json << 'EOF'
+{{
+  "OPENAI_API_KEY": "API_KEY_PLACEHOLDER"
+}}
+EOF
+sed -i "s/API_KEY_PLACEHOLDER/$OPENAI_API_KEY/g" ~/.codex/auth.json
+
+# Create config.toml with model and MCP server configuration
+cat > ~/.codex/config.toml << 'EOF'
+model = "MODEL_PLACEHOLDER"
+
+rmcp_client = true
+
+[mcp_servers.spacebridge]
+url = "MCP_URL_PLACEHOLDER"
+bearer_token_env_var = "SPACEBRIDGE_API_TOKEN"
 EOF
 
-# Debug: Show config file
-echo "=== DEBUG: Config file content ==="
+# Replace placeholders
+sed -i 's/MODEL_PLACEHOLDER/{model}/g' ~/.codex/config.toml
+sed -i "s|MCP_URL_PLACEHOLDER|$SPACEBRIDGE_MCP_URL|g" ~/.codex/config.toml
+
+# Debug: Show config files (with API key masked)
+echo "=== DEBUG: Config files (API key masked) ==="
+echo "auth.json:"
+sed 's/"sk-[^"]*"/"sk-...MASKED..."/' ~/.codex/auth.json
+echo ""
+echo "config.toml:"
 cat ~/.codex/config.toml
 echo "==================================="
 
 # Run codex in non-interactive mode with the prompt
-echo "{escaped_prompt}" | codex exec --model "{model}" --skip-git-repo-check
+echo "{escaped_prompt}" | codex exec --model "{model}" --sandbox workspace-write --yolo
+CODEX_EXIT_CODE=$?
+{post_exec_block}
+# Exit with codex's exit code
+exit $CODEX_EXIT_CODE
 """
+
+        # Determine working directory based on git clone configuration
+        working_dir = "/workspace"
+        git_clone_config = execution_context.get("git_clone_config")
+        if git_clone_config:
+            repositories = git_clone_config.get("repositories", [])
+            if repositories:
+                # Use the first repository's clone path as working directory
+                clone_path = repositories[0].get("clone_path", "/workspace")
+                if clone_path.startswith("/"):
+                    # Absolute path
+                    working_dir = clone_path
+                else:
+                    # Relative path - prepend /workspace/
+                    working_dir = f"/workspace/{clone_path}"
+                self.logger.info(
+                    f"Setting Codex working directory to git repository: {working_dir}"
+                )
 
         self.logger.info(
             f"Container config: model={model}, "
@@ -180,14 +261,14 @@ echo "{escaped_prompt}" | codex exec --model "{model}" --skip-git-repo-check
             f"env_vars={list(env.keys())}"
         )
 
-        cmd = ["bash", "-c", script]
-
         # Container configuration
         container_config = {
             "Image": self.image,
             "Env": [f"{k}={v}" for k, v in env.items()],
-            "Cmd": cmd,
-            "WorkingDir": "/workspace",
+            # Don't override entrypoint - let codex-universal image configure environment
+            # The entrypoint drops into bash, so pass -c and script as arguments to bash
+            "Cmd": ["-c", script],
+            "WorkingDir": working_dir,  # Set to git repo if configured, otherwise /workspace
             "Labels": {
                 "spacebridge.flow_id": execution_context["flow_id"],
                 "spacebridge.execution_id": execution_id,
@@ -254,5 +335,15 @@ echo "{escaped_prompt}" | codex exec --model "{model}" --skip-git-repo-check
 
         # Set home directory for config storage
         env["HOME"] = "/root"
+
+        # Configure language runtimes for codex-universal image
+        # These env vars tell the image which versions to set up
+        env["CODEX_ENV_PYTHON_VERSION"] = os.getenv("CODEX_ENV_PYTHON_VERSION", "3.12")
+        env["CODEX_ENV_NODE_VERSION"] = os.getenv("CODEX_ENV_NODE_VERSION", "20")
+        env["CODEX_ENV_RUST_VERSION"] = os.getenv("CODEX_ENV_RUST_VERSION", "1.87.0")
+        env["CODEX_ENV_GO_VERSION"] = os.getenv("CODEX_ENV_GO_VERSION", "1.23.8")
+        env["CODEX_ENV_SWIFT_VERSION"] = os.getenv("CODEX_ENV_SWIFT_VERSION", "6.2")
+        env["CODEX_ENV_RUBY_VERSION"] = os.getenv("CODEX_ENV_RUBY_VERSION", "3.4.4")
+        env["CODEX_ENV_PHP_VERSION"] = os.getenv("CODEX_ENV_PHP_VERSION", "8.4")
 
         return env

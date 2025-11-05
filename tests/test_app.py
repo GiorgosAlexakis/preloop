@@ -187,17 +187,22 @@ def test_create_app_configuration():
     """
     Tests that the create_app function configures the FastAPI app correctly.
     """
-    app = create_app()
-    assert app.title == "SpaceBridge API"
-    assert app.openapi_url == "/api/v1/openapi.json"
-    assert len(app.user_middleware) > 0  # Check that middleware is configured
+    # Ensure DEV_MODE and ALLOW_ALL_ORIGINS are not set to get specific origins
+    with patch.dict(
+        os.environ, {"DEV_MODE": "false", "ALLOW_ALL_ORIGINS": "false"}, clear=False
+    ):
+        app = create_app()
+        assert app.title == "SpaceBridge API"
+        assert app.openapi_url == "/api/v1/openapi.json"
+        assert len(app.user_middleware) > 0  # Check that middleware is configured
 
-    # Check for CORS middleware
-    cors_middleware = [
-        m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware"
-    ]
-    assert len(cors_middleware) == 1
-    assert "http://localhost:5173" in cors_middleware[0].kwargs["allow_origins"]
+        # Check for CORS middleware
+        cors_middleware = [
+            m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware"
+        ]
+        assert len(cors_middleware) == 1
+        # In non-dev mode, specific origins should be configured
+        assert "http://localhost:5173" in cors_middleware[0].kwargs["allow_origins"]
 
 
 def test_custom_openapi_schema(client):

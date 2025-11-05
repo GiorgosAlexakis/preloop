@@ -131,6 +131,14 @@ def read_flow_executions(
     executions = crud_flow_execution.get_multi(
         db, account_id=current_user.account_id, skip=skip, limit=limit
     )
+
+    # Enrich with flow names
+    for execution in executions:
+        flow = crud_flow.get(
+            db, id=execution.flow_id, account_id=current_user.account_id
+        )
+        execution.flow_name = flow.name if flow else None
+
     return executions
 
 
@@ -159,8 +167,7 @@ async def send_execution_command(
     *,
     db: Session = Depends(get_db),
     execution_id: uuid.UUID,
-    command: str,
-    payload: dict = None,
+    command_data: schemas.FlowExecutionCommand,
     current_user: User = Depends(get_current_active_user),
 ):
     """Send a command to a running flow execution."""
@@ -171,15 +178,46 @@ async def send_execution_command(
     if not execution:
         raise HTTPException(status_code=404, detail="Flow execution not found")
 
-    # Send command via NATS
-    from spacebridge.services.flow_orchestrator import FlowExecutionOrchestrator
+    # For stuck executions, allow manual cleanup by directly updating the status
+    if command_data.command == "stop":
+        # If execution is in a "stuck" state (RUNNING/STARTING but container never started),
+        # or if NATS is unavailable, update the status directly
+        if execution.status in ["RUNNING", "STARTING", "PENDING"]:
+            from datetime import datetime, timezone
 
-    orchestrator = FlowExecutionOrchestrator()
-    await orchestrator.send_command(
-        execution_id=str(execution_id), command=command, payload=payload
-    )
+            update_data = schemas.FlowExecutionUpdate(
+                status="STOPPED",
+                error_message="Manually stopped by user",
+                end_time=datetime.now(timezone.utc),
+            )
+            crud_flow_execution.update(db=db, db_obj=execution, obj_in=update_data)
+            db.commit()
+            return {"status": "stopped"}
 
-    return {"status": "command_sent"}
+    # Try to send command via NATS for running executions
+    try:
+        from spacebridge.services.flow_orchestrator import FlowExecutionOrchestrator
+
+        await FlowExecutionOrchestrator.send_command(
+            execution_id=str(execution_id),
+            command=command_data.command,
+            payload=command_data.payload,
+        )
+        return {"status": "command_sent"}
+    except Exception as e:
+        # If NATS fails but this is a stop command, still mark as stopped
+        if command_data.command == "stop":
+            from datetime import datetime, timezone
+
+            update_data = schemas.FlowExecutionUpdate(
+                status="STOPPED",
+                error_message=f"Stopped by user (NATS unavailable: {str(e)})",
+                end_time=datetime.now(timezone.utc),
+            )
+            crud_flow_execution.update(db=db, db_obj=execution, obj_in=update_data)
+            db.commit()
+            return {"status": "stopped"}
+        raise
 
 
 @router.post("/flows/{flow_id}/trigger")

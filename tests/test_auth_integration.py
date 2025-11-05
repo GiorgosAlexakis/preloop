@@ -34,7 +34,14 @@ class TestRegistrationWithOwnerRole:
 
         # Create app with db override
         app = create_app()
-        app.dependency_overrides[get_db_session] = lambda: db_session
+
+        def override_get_db():
+            try:
+                yield db_session
+            finally:
+                pass
+
+        app.dependency_overrides[get_db_session] = override_get_db
 
         with TestClient(app) as client:
             with (

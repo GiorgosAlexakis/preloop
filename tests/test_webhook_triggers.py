@@ -133,12 +133,20 @@ async def test_trigger_flow_via_webhook_success(db_session: Session, test_user):
         mock_service = AsyncMock()
         mock_trigger_service.return_value = mock_service
 
-        # Create test client
+        # Create test client with proper database override
         from fastapi import FastAPI
         from spacebridge.api.endpoints.flows import router
+        from spacemodels.db.session import get_db_session as get_db
+
+        def override_get_db():
+            try:
+                yield db
+            finally:
+                pass
 
         app = FastAPI()
         app.include_router(router)
+        app.dependency_overrides[get_db] = override_get_db
         client = TestClient(app)
 
         # Trigger the webhook
@@ -162,12 +170,16 @@ async def test_trigger_flow_via_webhook_success(db_session: Session, test_user):
 @pytest.mark.asyncio
 async def test_trigger_flow_via_webhook_invalid_secret(db_session: Session, test_user):
     """Test triggering a webhook with invalid secret."""
+    import secrets
+
     db = db_session
-    # Create a webhook flow
+    # Create a webhook flow with a proper webhook_secret
+    webhook_secret = secrets.token_urlsafe(32)
     flow_data = schemas.FlowCreate(
         name="Webhook Test Flow",
         trigger_event_source="webhook",
         trigger_event_type="webhook",
+        webhook_config=schemas.WebhookConfig(webhook_secret=webhook_secret),
         prompt_template="Test",
         agent_type="openhands",
         agent_config={},
@@ -180,9 +192,17 @@ async def test_trigger_flow_via_webhook_invalid_secret(db_session: Session, test
 
     from fastapi import FastAPI
     from spacebridge.api.endpoints.flows import router
+    from spacemodels.db.session import get_db_session as get_db
+
+    def override_get_db():
+        try:
+            yield db
+        finally:
+            pass
 
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
 
     # Try to trigger with invalid secret
@@ -217,9 +237,17 @@ async def test_trigger_non_webhook_flow_via_webhook(
 
     from fastapi import FastAPI
     from spacebridge.api.endpoints.flows import router
+    from spacemodels.db.session import get_db_session as get_db
+
+    def override_get_db():
+        try:
+            yield db
+        finally:
+            pass
 
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
 
     # Try to trigger via webhook endpoint
@@ -235,12 +263,16 @@ async def test_trigger_non_webhook_flow_via_webhook(
 @pytest.mark.asyncio
 async def test_trigger_disabled_webhook_flow(db_session: Session, test_user):
     """Test that disabled webhook flows cannot be triggered."""
+    import secrets
+
     db = db_session
-    # Create a disabled webhook flow
+    # Create a disabled webhook flow with proper webhook_secret
+    webhook_secret = secrets.token_urlsafe(32)
     flow_data = schemas.FlowCreate(
         name="Disabled Webhook Flow",
         trigger_event_source="webhook",
         trigger_event_type="webhook",
+        webhook_config=schemas.WebhookConfig(webhook_secret=webhook_secret),
         prompt_template="Test",
         agent_type="openhands",
         agent_config={},
@@ -254,9 +286,17 @@ async def test_trigger_disabled_webhook_flow(db_session: Session, test_user):
 
     from fastapi import FastAPI
     from spacebridge.api.endpoints.flows import router
+    from spacemodels.db.session import get_db_session as get_db
+
+    def override_get_db():
+        try:
+            yield db
+        finally:
+            pass
 
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
 
     # Try to trigger disabled flow
