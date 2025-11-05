@@ -8,6 +8,22 @@ describe('RegisterView', () => {
   let fetchStub: any;
 
   beforeEach(async () => {
+    // Set up minimal BRAND_CONFIG for getBrandConfig()
+    (window as any).BRAND_CONFIG = {
+      name: 'Test Brand',
+      domain: 'test.example.com',
+      company: { legal_name: 'Test Co', address: '123 Test', city: 'Test' },
+      branding: {
+        logo_light: '/logo.svg',
+        logo_dark: '/logo-dark.svg',
+        favicon: '/favicon.ico',
+        primary_color: '#000',
+        gradient_product: '',
+        gradient_ai: '',
+      },
+      social: { twitter: '', linkedin: '', instagram: '' },
+    };
+
     element = await fixture(html`<register-view></register-view>`);
     // Stub fetch before each test
     fetchStub = sinon.stub(window, 'fetch');
@@ -16,6 +32,8 @@ describe('RegisterView', () => {
   afterEach(() => {
     // Restore fetch after each test
     fetchStub.restore();
+    // Clean up BRAND_CONFIG
+    delete (window as any).BRAND_CONFIG;
   });
 
   it('should render the registration form', () => {
@@ -34,8 +52,12 @@ describe('RegisterView', () => {
   });
 
   it('should show an error message on failed registration', async () => {
-    // Stub fetch to simulate a failed registration - provide valid JSON even for error responses
-    fetchStub.resolves(new Response(JSON.stringify({}), { status: 400 }));
+    // Stub fetch to simulate a failed registration with error detail
+    fetchStub.resolves(
+      new Response(JSON.stringify({ detail: 'Email already registered' }), {
+        status: 400,
+      })
+    );
 
     // Fill in the form fields
     const usernameInput = element.shadowRoot?.querySelector<any>('#username');
@@ -60,7 +82,7 @@ describe('RegisterView', () => {
 
     const errorMessage = element.shadowRoot?.querySelector('.error-message');
     expect(errorMessage).to.exist;
-    expect(errorMessage?.textContent).to.contain('Failed to create an account');
+    expect(errorMessage?.textContent).to.contain('Email already registered');
     expect(fetchStub).to.have.been.calledOnce;
   });
 
