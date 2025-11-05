@@ -312,7 +312,17 @@ export async function post(url: string, body: any) {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    // Try to extract error detail from response body
+    let errorMessage = `HTTP error! status: ${response.status}`;
+    try {
+      const errorData = await response.json();
+      if (errorData.detail) {
+        errorMessage = errorData.detail;
+      }
+    } catch (e) {
+      // If JSON parsing fails, use the default error message
+    }
+    throw new Error(errorMessage);
   }
   return response.json();
 }

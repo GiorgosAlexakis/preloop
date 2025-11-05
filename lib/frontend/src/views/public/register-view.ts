@@ -32,7 +32,12 @@ export class RegisterView extends LitElement {
       });
       Router.go('/login?registered=true');
     } catch (error) {
-      this.error = 'Failed to create an account';
+      // Extract the error message from the Error object
+      if (error instanceof Error) {
+        this.error = error.message;
+      } else {
+        this.error = 'Failed to create an account';
+      }
       console.error('Create account failed', error);
     }
   }

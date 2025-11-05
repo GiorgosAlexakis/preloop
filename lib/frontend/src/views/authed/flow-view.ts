@@ -35,7 +35,6 @@ import '../../components/add-ai-model-modal.ts';
 
 interface GitCloneRepository {
   tracker_id: string;
-  project_id?: string;
   repository_url?: string;
   clone_path: string;
   branch?: string;
@@ -44,6 +43,13 @@ interface GitCloneRepository {
 interface GitCloneConfig {
   enabled: boolean;
   repositories?: GitCloneRepository[];
+  git_user_name?: string;
+  git_user_email?: string;
+  source_branch?: string;
+  target_branch?: string;
+  create_pull_request?: boolean;
+  pull_request_title?: string;
+  pull_request_description?: string;
 }
 
 interface CustomCommands {
@@ -205,6 +211,11 @@ export class FlowView extends LitElement {
       this.showPresets = false;
       this.flow = await getFlow(this.flowId);
 
+      console.log(
+        'DEBUG: Loaded flow git_clone_config:',
+        this.flow.git_clone_config
+      );
+
       // Set trigger type based on flow
       this.triggerType =
         this.flow.trigger_event_source === 'webhook' ? 'webhook' : 'tracker';
@@ -221,9 +232,41 @@ export class FlowView extends LitElement {
         )
         .slice(0, 10);
 
-      // Load tools and MCP servers for editing
+      // Load all necessary data for editing
+      this.trackers = await getTrackers();
+      this.models = await getAIModels();
       this.availableTools = await getAllTools();
       this.mcpServers = await getMCPServers();
+
+      // Load all organizations and projects for git clone project selection
+      // This needs to happen regardless of trigger type
+      const allOrganizations = await listOrganizations();
+      this.organizations = allOrganizations;
+
+      const allProjects = await listProjects();
+      this.projects = allProjects;
+
+      // Additional trigger-specific setup if this is a tracker-based flow
+      if (this.triggerType === 'tracker' && this.flow.trigger_event_source) {
+        // Start polling if no organizations for this tracker yet
+        const trackerOrgs = allOrganizations.filter(
+          (org: any) => org.tracker_id === this.flow.trigger_event_source
+        );
+        if (trackerOrgs.length === 0 && this.flow.trigger_organization_id) {
+          this.startPollingOrganizations(this.flow.trigger_event_source);
+        }
+
+        // Start polling projects if we have a trigger organization but no projects
+        if (this.flow.trigger_organization_id) {
+          const orgProjects = allProjects.filter(
+            (proj: any) =>
+              proj.organization_id === this.flow.trigger_organization_id
+          );
+          if (orgProjects.length === 0 && this.flow.trigger_project_id) {
+            this.startPollingProjects(this.flow.trigger_organization_id);
+          }
+        }
+      }
 
       // Ensure spacebridge-mcp is always in allowed_mcp_servers
       if (!this.flow.allowed_mcp_servers?.includes('spacebridge-mcp')) {
@@ -793,15 +836,158 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                 ${this.flow.git_clone_config?.enabled
                   ? html`
                       <div style="margin-top: 1rem;">
-                        ${this.renderGitRepositories()}
-                        <sl-button
-                          size="small"
-                          @click=${this.addGitRepository}
-                          style="margin-top: 0.5rem;"
+                        <div class="form-grid">
+                          <sl-input
+                            label="Git User Name"
+                            .value=${this.flow.git_clone_config
+                              ?.git_user_name || 'Preloop AI'}
+                            @sl-input=${(e: any) => {
+                              if (!this.flow.git_clone_config) return;
+                              this.flow = {
+                                ...this.flow,
+                                git_clone_config: {
+                                  ...this.flow.git_clone_config,
+                                  git_user_name: e.target.value,
+                                },
+                              };
+                            }}
+                            help-text="Name to use for git commits"
+                          ></sl-input>
+                          <sl-input
+                            label="Git User Email"
+                            .value=${this.flow.git_clone_config
+                              ?.git_user_email || 'git@preloop.ai'}
+                            @sl-input=${(e: any) => {
+                              if (!this.flow.git_clone_config) return;
+                              this.flow = {
+                                ...this.flow,
+                                git_clone_config: {
+                                  ...this.flow.git_clone_config,
+                                  git_user_email: e.target.value,
+                                },
+                              };
+                            }}
+                            help-text="Email to use for git commits"
+                          ></sl-input>
+                          <sl-input
+                            label="Source Branch"
+                            .value=${this.flow.git_clone_config
+                              ?.source_branch || 'main'}
+                            @sl-input=${(e: any) => {
+                              if (!this.flow.git_clone_config) return;
+                              this.flow = {
+                                ...this.flow,
+                                git_clone_config: {
+                                  ...this.flow.git_clone_config,
+                                  source_branch: e.target.value,
+                                },
+                              };
+                            }}
+                            help-text="Branch to checkout for base code"
+                          ></sl-input>
+                          <sl-input
+                            label="Target Branch (optional)"
+                            .value=${this.flow.git_clone_config
+                              ?.target_branch || ''}
+                            @sl-input=${(e: any) => {
+                              if (!this.flow.git_clone_config) return;
+                              this.flow = {
+                                ...this.flow,
+                                git_clone_config: {
+                                  ...this.flow.git_clone_config,
+                                  target_branch: e.target.value,
+                                },
+                              };
+                            }}
+                            help-text="Branch to create for commits (auto-generated if empty)"
+                          ></sl-input>
+                        </div>
+                        <sl-checkbox
+                          .checked=${this.flow.git_clone_config
+                            ?.create_pull_request || false}
+                          @sl-change=${(e: any) => {
+                            if (!this.flow.git_clone_config) return;
+                            // Create new object reference for proper reactivity
+                            this.flow = {
+                              ...this.flow,
+                              git_clone_config: {
+                                ...this.flow.git_clone_config,
+                                create_pull_request: e.target.checked,
+                              },
+                            };
+                            this.requestUpdate();
+                          }}
+                          style="margin-top: 1rem;"
+                          >${this.getGitTrackers().some(
+                            (t) => t.tracker_type === 'gitlab'
+                          )
+                            ? 'Create Merge Request'
+                            : 'Create Pull Request'}</sl-checkbox
                         >
-                          <sl-icon name="plus"></sl-icon>
-                          Add Repository
-                        </sl-button>
+                        ${this.flow.git_clone_config?.create_pull_request
+                          ? html`
+                              <div style="margin-top: 0.5rem;">
+                                <sl-input
+                                  label="${this.getGitTrackers().some(
+                                    (t) => t.tracker_type === 'gitlab'
+                                  )
+                                    ? 'MR Title (optional)'
+                                    : 'PR Title (optional)'}"
+                                  .value=${this.flow.git_clone_config
+                                    ?.pull_request_title || ''}
+                                  @sl-input=${(e: any) => {
+                                    if (!this.flow.git_clone_config) return;
+                                    this.flow = {
+                                      ...this.flow,
+                                      git_clone_config: {
+                                        ...this.flow.git_clone_config,
+                                        pull_request_title: e.target.value,
+                                      },
+                                    };
+                                  }}
+                                  help-text="Title for the Pull/Merge Request (defaults to flow name)"
+                                ></sl-input>
+                                <sl-textarea
+                                  label="${this.getGitTrackers().some(
+                                    (t) => t.tracker_type === 'gitlab'
+                                  )
+                                    ? 'MR Description (optional)'
+                                    : 'PR Description (optional)'}"
+                                  .value=${this.flow.git_clone_config
+                                    ?.pull_request_description || ''}
+                                  @sl-input=${(e: any) => {
+                                    if (!this.flow.git_clone_config) return;
+                                    this.flow = {
+                                      ...this.flow,
+                                      git_clone_config: {
+                                        ...this.flow.git_clone_config,
+                                        pull_request_description:
+                                          e.target.value,
+                                      },
+                                    };
+                                  }}
+                                  rows="3"
+                                  help-text="Description for the Pull/Merge Request"
+                                ></sl-textarea>
+                              </div>
+                            `
+                          : ''}
+                        <div style="margin-top: 1rem;">
+                          <h4
+                            style="margin-bottom: 0.5rem; font-size: 0.875rem;"
+                          >
+                            Repositories
+                          </h4>
+                          ${this.renderGitRepositories()}
+                          <sl-button
+                            size="small"
+                            @click=${this.addGitRepository}
+                            style="margin-top: 0.5rem;"
+                          >
+                            <sl-icon name="plus"></sl-icon>
+                            Add Repository
+                          </sl-button>
+                        </div>
                       </div>
                     `
                   : ''}
@@ -1006,12 +1192,13 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     this.isPollingProjects = true;
     this.projectPollingInterval = window.setInterval(async () => {
       const allProjects = await listProjects();
-      const projects = allProjects.filter(
+      const orgProjects = allProjects.filter(
         (proj: any) => proj.organization_id === orgId
       );
 
-      if (projects.length > 0) {
-        this.projects = projects;
+      if (orgProjects.length > 0) {
+        // Store all projects for git clone project selection
+        this.projects = allProjects;
         this.isPollingProjects = false;
         if (this.projectPollingInterval) {
           clearInterval(this.projectPollingInterval);
@@ -1056,13 +1243,15 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     this.flow.trigger_organization_id = orgId;
     this.flow.trigger_project_id = undefined;
 
+    // Load all projects (needed for git clone project selection)
     const allProjects = await listProjects();
-    this.projects = allProjects.filter(
+    this.projects = allProjects;
+
+    // Start polling if no projects for this org yet
+    const orgProjects = allProjects.filter(
       (proj: any) => proj.organization_id === orgId
     );
-
-    // Start polling if no projects yet
-    if (this.projects.length === 0) {
+    if (orgProjects.length === 0) {
       this.startPollingProjects(orgId);
     }
   }
@@ -1201,12 +1390,12 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                     (tool) => html`
                       <sl-checkbox
                         .checked=${this.isToolSelected(
-                          tool.source_name,
+                          'spacebridge-mcp',
                           tool.name
                         )}
                         @sl-change=${(e: any) =>
                           this.handleToolToggle(
-                            tool.source_name,
+                            'spacebridge-mcp',
                             tool.name,
                             e.target.checked
                           )}
@@ -1272,10 +1461,17 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     if (enabled) {
       const gitTrackers = this.getGitTrackers();
 
-      // Initialize git clone config
+      // Initialize git clone config with defaults
       this.flow.git_clone_config = {
         enabled: true,
         repositories: [],
+        git_user_name: 'Preloop AI',
+        git_user_email: 'git@preloop.ai',
+        source_branch: 'main',
+        target_branch: '',
+        create_pull_request: false,
+        pull_request_title: '',
+        pull_request_description: '',
       };
 
       // Auto-add repository based on available trackers
@@ -1288,10 +1484,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
           (t) => t.id === this.flow.trigger_event_source
         );
         if (triggerTracker) {
-          this.addGitRepositoryWithTracker(
-            triggerTracker.id,
-            this.flow.trigger_project_id
-          );
+          this.addGitRepositoryWithTracker(triggerTracker.id);
         }
       }
     } else {
@@ -1314,12 +1507,13 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
     this.flow.git_clone_config.repositories.push({
       tracker_id: defaultTracker,
-      clone_path: repoCount === 0 ? 'workspace' : `workspace-${repoCount + 1}`,
+      clone_path:
+        repoCount === 0 ? '/workspace' : `/workspace-${repoCount + 1}`,
     });
     this.requestUpdate();
   }
 
-  addGitRepositoryWithTracker(trackerId: string, projectId?: string) {
+  addGitRepositoryWithTracker(trackerId: string) {
     if (!this.flow.git_clone_config) {
       this.flow.git_clone_config = { enabled: true, repositories: [] };
     }
@@ -1330,8 +1524,8 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
     this.flow.git_clone_config.repositories.push({
       tracker_id: trackerId,
-      project_id: projectId,
-      clone_path: repoCount === 0 ? 'workspace' : `workspace-${repoCount + 1}`,
+      clone_path:
+        repoCount === 0 ? '/workspace' : `/workspace-${repoCount + 1}`,
     });
     this.requestUpdate();
   }
@@ -1400,12 +1594,12 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
             <sl-input
               label="Repository URL (optional)"
-              placeholder="Leave empty to use project from trigger or specify URL"
+              placeholder="Leave empty to use trigger project"
               .value=${repo.repository_url || ''}
               @sl-input=${(e: any) => {
                 repo.repository_url = e.target.value;
               }}
-              help-text="Example: https://github.com/owner/repo"
+              help-text="Manually specify repository URL or leave empty to use the project selected in trigger"
             ></sl-input>
 
             <sl-input
@@ -1414,7 +1608,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
               @sl-input=${(e: any) => {
                 repo.clone_path = e.target.value;
               }}
-              help-text="Relative path where repository will be cloned"
+              help-text="Absolute path (starts with /) or relative to /workspace/"
             ></sl-input>
 
             <sl-input
@@ -1613,10 +1807,15 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                 <sl-spinner style="font-size: 1rem;"></sl-spinner>
                 Loading organizations...
               </sl-option>`
-            : this.organizations.map(
-                (org) =>
-                  html`<sl-option value=${org.id}>${org.name}</sl-option>`
-              )}
+            : this.organizations.length === 0 &&
+                this.flow.trigger_organization_id
+              ? html`<sl-option value=${this.flow.trigger_organization_id}>
+                  ${this.flow.trigger_organization_id} (syncing...)
+                </sl-option>`
+              : this.organizations.map(
+                  (org) =>
+                    html`<sl-option value=${org.id}>${org.name}</sl-option>`
+                )}
         </sl-select>
         <sl-select
           label="Project"
@@ -1631,10 +1830,23 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                 <sl-spinner style="font-size: 1rem;"></sl-spinner>
                 Loading projects...
               </sl-option>`
-            : this.projects.map(
-                (proj) =>
-                  html`<sl-option value=${proj.id}>${proj.name}</sl-option>`
-              )}
+            : (() => {
+                // Filter projects by selected organization for trigger
+                const orgProjects = this.projects.filter(
+                  (proj: any) =>
+                    proj.organization_id === this.flow.trigger_organization_id
+                );
+                return orgProjects.length === 0 && this.flow.trigger_project_id
+                  ? html`<sl-option value=${this.flow.trigger_project_id}>
+                      ${this.flow.trigger_project_id} (syncing...)
+                    </sl-option>`
+                  : orgProjects.map(
+                      (proj: any) =>
+                        html`<sl-option value=${proj.id}
+                          >${proj.name}</sl-option
+                        >`
+                    );
+              })()}
         </sl-select>
         <sl-select
           label="Event"

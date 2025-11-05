@@ -70,7 +70,12 @@ export class LoginView extends LitElement {
         Router.go('/console');
       }
     } catch (error) {
-      this.error = 'Invalid username or password';
+      // Extract the error message from the Error object
+      if (error instanceof Error) {
+        this.error = error.message;
+      } else {
+        this.error = 'Invalid username or password';
+      }
       console.error('Sign in failed', error);
     }
   }

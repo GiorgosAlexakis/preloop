@@ -404,7 +404,6 @@ export class DashboardView extends AuthedElement {
       }
       .execution-item.failed {
         border-left-color: var(--sl-color-danger-600);
-        background: var(--sl-color-danger-50);
       }
       .execution-info {
         display: flex;
