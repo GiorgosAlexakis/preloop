@@ -2,6 +2,7 @@ import unittest
 import pytest
 from unittest.mock import patch, MagicMock
 from jira import JIRAError
+from uuid import uuid4
 
 from spacesync.trackers.jira import JiraTracker
 from spacemodels.models import Webhook
@@ -20,9 +21,10 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         self.mock_jira_class.return_value = self.mock_jira_client
 
         self.mock_db_session = MagicMock()
+        self.test_tracker_id = str(uuid4())
 
         self.tracker = JiraTracker(
-            tracker_id="test-webhook-tracker",
+            tracker_id=self.test_tracker_id,
             api_key="fake_key",
             connection_details={
                 "jira_url": "https://myjira.atlassian.net",
