@@ -390,39 +390,9 @@ export class DashboardView extends AuthedElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
-      .container {
-        padding: var(--sl-spacing-large);
-      }
-      h1 {
-        margin-bottom: var(--sl-spacing-large);
-      }
-      .summary-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-      }
-      .summary-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: var(--sl-spacing-small) 0;
-        border-bottom: 1px solid var(--sl-color-neutral-200);
-      }
-      .summary-item:last-child {
-        border-bottom: none;
-      }
-      .chart-header {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
+      /* Dashboard-specific styles only */
       sl-icon {
         font-size: 1rem;
-      }
-      @media (max-width: 992px) {
-        .overview-layout {
-          grid-template-columns: 1fr;
-        }
       }
       .tracker-pills {
         display: flex;
@@ -431,77 +401,33 @@ export class DashboardView extends AuthedElement {
         flex-wrap: wrap;
         justify-content: flex-end;
       }
-      .server-list {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-small);
-      }
-      .server-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: var(--sl-spacing-small);
-        background: var(--sl-color-neutral-50);
-        border-radius: var(--sl-border-radius-medium);
-      }
-      .server-info {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-2x-small);
-      }
-      .server-name {
-        font-weight: 600;
-      }
-      .server-url {
-        font-size: var(--sl-font-size-small);
-        color: var(--sl-color-neutral-600);
-      }
       .tool-counts {
         display: flex;
-        gap: var(--sl-spacing-small);
+        gap: var(--sl-spacing-large);
         margin-top: var(--sl-spacing-small);
+        justify-content: center;
       }
       .tool-count {
         display: flex;
-        align-items: center;
-        gap: var(--sl-spacing-2x-small);
-        font-size: var(--sl-font-size-small);
-      }
-      .execution-list {
-        display: flex;
         flex-direction: column;
+        align-items: center;
         gap: var(--sl-spacing-small);
-      }
-      .execution-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: var(--sl-spacing-small);
-        background: var(--sl-color-neutral-50);
-        border-radius: var(--sl-border-radius-medium);
-        border-left: 3px solid var(--sl-color-neutral-300);
-      }
-      .execution-item.failed {
-        border-left-color: var(--sl-color-danger-600);
-      }
-      .execution-info {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-2x-small);
-        flex: 1;
-      }
-      .execution-name {
-        font-weight: 600;
-      }
-      .execution-error {
         font-size: var(--sl-font-size-small);
-        color: var(--sl-color-danger-700);
-        font-style: italic;
       }
-      .execution-time {
+      .tool-count sl-icon {
+        font-size: 2.5rem;
+      }
+      .tool-count-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--sl-color-primary-600);
+      }
+      .tool-count-label {
         font-size: var(--sl-font-size-small);
         color: var(--sl-color-neutral-600);
+        text-align: center;
       }
+      /* Compliance-specific styles */
       .compliance-progress {
         margin-top: var(--sl-spacing-medium);
       }
@@ -511,38 +437,7 @@ export class DashboardView extends AuthedElement {
         margin-bottom: var(--sl-spacing-small);
         font-size: var(--sl-font-size-small);
       }
-      .approval-list {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-small);
-      }
-      .approval-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: var(--sl-spacing-small);
-        background: var(--sl-color-warning-50);
-        border-radius: var(--sl-border-radius-medium);
-        border-left: 3px solid var(--sl-color-warning-600);
-      }
-      .approval-info {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-2x-small);
-      }
-      .approval-tool {
-        font-weight: 600;
-      }
-      .empty-state {
-        text-align: center;
-        padding: var(--sl-spacing-large);
-        color: var(--sl-color-neutral-600);
-      }
-      .empty-state sl-icon {
-        font-size: 3rem;
-        color: var(--sl-color-neutral-400);
-        margin-bottom: var(--sl-spacing-small);
-      }
+      /* Stat display styles */
       .stat-value {
         font-size: 2rem;
         font-weight: 700;
@@ -553,77 +448,82 @@ export class DashboardView extends AuthedElement {
         color: var(--sl-color-neutral-600);
         text-transform: uppercase;
       }
-      .quick-actions {
+      /* MCP Server Capsule */
+      .mcp-server-capsule {
         display: flex;
-        gap: var(--sl-spacing-small);
-        margin-top: var(--sl-spacing-medium);
-      }
-      .builtin-server-header {
-        display: flex;
-        justify-content: space-between;
         align-items: center;
-        margin-bottom: var(--sl-spacing-small);
+        gap: var(--sl-spacing-medium);
+        padding: var(--sl-spacing-small) var(--sl-spacing-medium);
+        background: var(--sl-color-neutral-50);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: 100px;
+        margin-top: var(--sl-spacing-2x-large);
+        margin-bottom: var(--sl-spacing-large);
+        margin-left: auto;
+        margin-right: auto;
+        max-width: 600px;
+        transition: all 0.2s ease;
       }
-      .builtin-server-name {
-        font-size: var(--sl-font-size-medium);
-        font-weight: var(--sl-font-weight-semibold);
-        margin: 0;
+      .mcp-server-capsule:hover {
+        background: var(--sl-color-neutral-100);
+        border-color: var(--sl-color-neutral-300);
       }
-      .builtin-server-url {
+      .status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--sl-color-success-600);
+        box-shadow: 0 0 0 2px var(--sl-color-success-100);
+        flex-shrink: 0;
+      }
+      .server-details {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-small);
+        flex: 1;
+        min-width: 0;
+      }
+      .server-endpoint {
+        font-family: monospace;
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-900);
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .server-auth {
         font-size: var(--sl-font-size-x-small);
         color: var(--sl-color-neutral-600);
-        margin: 0 0 var(--sl-spacing-x-small) 0;
-        font-family: monospace;
-        word-break: break-all;
+        padding: 0.125rem 0.5rem;
+        background: var(--sl-color-neutral-0);
+        border-radius: 12px;
+        white-space: nowrap;
+        flex-shrink: 0;
       }
-      .server-meta {
-        font-size: var(--sl-font-size-x-small);
-        color: var(--sl-color-neutral-700);
-        margin-bottom: var(--sl-spacing-x-small);
-      }
-      .info-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        padding: 0.25rem 0;
-        border-bottom: 1px solid var(--sl-color-neutral-100);
-        font-size: var(--sl-font-size-x-small);
-      }
-      .info-row:last-child {
-        border-bottom: none;
-      }
-      .info-label {
-        font-weight: 600;
-        color: var(--sl-color-neutral-700);
-        padding-top: 0.2rem;
-      }
-      .info-value-container {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 0.25rem;
-      }
-      .info-value {
-        color: var(--sl-color-neutral-900);
-        font-family: monospace;
-        background: var(--sl-color-neutral-50);
-        padding: 0.2rem 0.4rem;
-        border-radius: 4px;
-        font-size: var(--sl-font-size-x-small);
-      }
-      .info-link {
+      .capsule-link {
         color: var(--sl-color-primary-600);
         text-decoration: none;
-        font-size: var(--sl-font-size-x-small);
+        font-size: var(--sl-font-size-small);
+        font-weight: 500;
+        white-space: nowrap;
+        flex-shrink: 0;
       }
-      .info-link:hover {
+      .capsule-link:hover {
         text-decoration: underline;
       }
-      .help-text {
-        color: var(--sl-color-neutral-600);
-        font-size: 0.85rem;
-        line-height: 1.5;
-        margin-top: 0.5rem;
+      @media (min-width: 1024px) {
+      .overview-layout {
+          grid-template-columns: 1fr;
+        }
+        .tool-counts {
+          gap: 5rem;
+        }
+      }
+      @media (min-width: 1200px) {
+        .tool-counts {
+          gap: 9rem;
+        }
       }
     `,
   ];
@@ -646,19 +546,32 @@ export class DashboardView extends AuthedElement {
         <!-- Main Column -->
         <div class="main-column">
           <!-- MCP Server & Tools Status -->
-          <sl-card style="max-width: 600px;">
-            <div slot="header" class="chart-header">
-              <img
-                src="/images/mcp.png"
-                alt="MCP"
-                style="width: 20px; height: 20px;"
-              />
-              MCP Server
-              <sl-tooltip
-                content="Built-in and external MCP tools for issue management and automation"
-              >
-                <sl-icon name="question-circle"></sl-icon>
-              </sl-tooltip>
+          <sl-card>
+            <div slot="header" class="card-header-with-action">
+              <div class="chart-header">
+                <img
+                  src="/images/mcp.png"
+                  alt="MCP"
+                  style="width: 20px; height: 20px;"
+                />
+                MCP Server
+                <sl-tooltip
+                  content="Built-in and external MCP tools for issue management and automation"
+                >
+                  <sl-icon name="question-circle"></sl-icon>
+                </sl-tooltip>
+              </div>
+              <div style="display: flex; gap: var(--sl-spacing-small); align-items: center;">
+                <a
+                  href="#"
+                  class="header-action-link"
+                  @click=${(e: Event) => {
+                    e.preventDefault();
+                    this.showSetupDialog = true;
+                  }}
+                >Setup Instructions</a>
+                <a href="/console/tools" class="header-action-link">Manage Tools</a>
+              </div>
             </div>
 
             ${this.mcpServers.length === 0 && this.tools.length === 0
@@ -676,76 +589,46 @@ export class DashboardView extends AuthedElement {
                   <div class="tool-counts">
                     <div class="tool-count">
                       <sl-icon name="tools"></sl-icon>
-                      <span
-                        ><strong
-                          >${this.tools.filter((t) => t.source === 'builtin')
-                            .length}</strong
-                        >
-                        built-in tools,
-                        <strong
-                          >${this.tools.filter((t) => t.source === 'mcp')
-                            .length}</strong
-                        >
-                        proxied tools</span
-                      >
+                      <div class="tool-count-value">
+                        ${this.tools.filter((t) => t.source === 'builtin')
+                          .length}
+                      </div>
+                      <div class="tool-count-label">built-in tools</div>
                     </div>
                     <div class="tool-count">
                       <sl-icon
                         name="check-circle"
                         style="color: var(--sl-color-success-600);"
                       ></sl-icon>
-                      <span
-                        ><strong
-                          >${this.tools.filter((t) => t.is_enabled)
-                            .length}</strong
-                        >
-                        enabled</span
-                      >
+                      <div class="tool-count-value">
+                        ${this.tools.filter((t) => t.is_enabled).length}
+                      </div>
+                      <div class="tool-count-label">enabled</div>
                     </div>
                     <div class="tool-count">
                       <sl-icon
                         name="shield-check"
                         style="color: var(--sl-color-warning-600);"
                       ></sl-icon>
-                      <span
-                        ><strong
-                          >${this.tools.filter((t) => t.requires_approval)
-                            .length}</strong
-                        >
-                        require approval</span
-                      >
+                      <div class="tool-count-value">
+                        ${this.tools.filter((t) => t.requires_approval).length}
+                      </div>
+                      <div class="tool-count-label">require approval</div>
                     </div>
                   </div>
 
                   <!-- Built-in MCP Server -->
-                  <div style="margin-top: var(--sl-spacing-medium);">
-                    <p class="builtin-server-url">
-                      ${window.location.origin}/mcp/v1
-                    </p>
-                    <div
-                      style="display: flex; align-items: center; gap: var(--sl-spacing-small); flex-wrap: wrap; padding: 0.25rem 0;"
-                    >
-                      <span class="info-label">Authentication:</span>
-                      <code class="info-value">Bearer Token</code>
-                      <a href="/console/settings/api-keys" class="info-link">
-                        Manage Keys →
-                      </a>
+                  <div class="mcp-server-capsule">
+                    <div class="status-indicator"></div>
+                    <div class="server-details">
+                      <span class="server-endpoint">${window.location.origin}/mcp/v1</span>
+                      <span class="server-auth">Bearer Token</span>
                     </div>
+                    <a href="/console/settings/api-keys" class="capsule-link">
+                      Manage Keys
+                    </a>
                   </div>
 
-                  <div class="quick-actions">
-                    <sl-button
-                      size="small"
-                      @click=${() => (this.showSetupDialog = true)}
-                    >
-                      <sl-icon slot="prefix" name="info-circle"></sl-icon>
-                      Setup Instructions
-                    </sl-button>
-                    <sl-button size="small" href="/console/tools">
-                      <sl-icon slot="prefix" name="gear"></sl-icon>
-                      Manage Tools
-                    </sl-button>
-                  </div>
                 `}
           </sl-card>
 
@@ -779,24 +662,24 @@ export class DashboardView extends AuthedElement {
                       </div>
                     `
                   : html`
-                      <div class="execution-list">
+                      <div class="item-list">
                         ${this.recentFlowExecutions.slice(0, 5).map(
                           (exec) => html`
                             <div
-                              class="execution-item ${exec.status === 'FAILED'
-                                ? 'failed'
+                              class="item-card ${exec.status === 'FAILED'
+                                ? 'danger'
                                 : ''}"
                             >
-                              <div class="execution-info">
-                                <span class="execution-name"
+                              <div class="item-info">
+                                <span class="item-name"
                                   >${exec.flow_name || 'Unnamed Flow'}</span
                                 >
                                 ${exec.error_message
-                                  ? html`<span class="execution-error"
+                                  ? html`<span class="item-error"
                                       >${exec.error_message}</span
                                     >`
                                   : ''}
-                                <span class="execution-time"
+                                <span class="item-secondary"
                                   >${this.formatDate(exec.start_time)}</span
                                 >
                               </div>
@@ -944,15 +827,15 @@ export class DashboardView extends AuthedElement {
                     >
                   </div>
 
-                  <div class="approval-list">
+                  <div class="item-list">
                     ${this.pendingApprovals.slice(0, 3).map(
                       (approval) => html`
-                        <div class="approval-item">
-                          <div class="approval-info">
-                            <span class="approval-tool"
+                        <div class="item-card warning">
+                          <div class="item-info">
+                            <span class="item-name"
                               >${approval.tool_name}</span
                             >
-                            <span class="execution-time"
+                            <span class="item-secondary"
                               >${this.formatDate(approval.requested_at)}</span
                             >
                           </div>
