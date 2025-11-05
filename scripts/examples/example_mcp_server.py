@@ -18,6 +18,7 @@ import random
 from datetime import datetime
 from typing import Optional
 
+from fastapi import HTTPException, Request
 from fastmcp import Context, FastMCP
 
 logging.basicConfig(level=logging.INFO)
@@ -26,10 +27,45 @@ logger = logging.getLogger(__name__)
 # Get bearer token from environment
 BEARER_TOKEN = os.getenv("BEARER_TOKEN", "test-token-12345")
 
-# Create FastMCP server instance
-# Note: For simplicity, this example doesn't enforce authentication at the FastMCP level.
-# SpaceBridge will handle authentication when it connects to this server.
+# Create FastMCP server instance with authentication
 mcp = FastMCP("Example MCP Server")
+
+
+# Add authentication middleware
+@mcp.app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Verify bearer token authentication for all requests."""
+    # Skip auth for health check and root endpoints
+    if request.url.path in ["/", "/health"]:
+        return await call_next(request)
+
+    # Check for Authorization header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        logger.warning(f"Missing Authorization header for {request.url.path}")
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    # Verify bearer token
+    if not auth_header.startswith("Bearer "):
+        logger.warning(f"Invalid Authorization header format for {request.url.path}")
+        raise HTTPException(
+            status_code=401, detail="Invalid Authorization header format"
+        )
+
+    token = auth_header[7:]  # Remove "Bearer " prefix
+    if token != BEARER_TOKEN:
+        logger.warning(f"Invalid bearer token for {request.url.path}")
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+
+    logger.info(f"Authenticated request to {request.url.path}")
+    return await call_next(request)
+
+
+# Add health check endpoint
+@mcp.app.get("/health")
+async def health_check():
+    """Health check endpoint (no auth required)."""
+    return {"status": "healthy", "server": "Example MCP Server"}
 
 
 @mcp.tool()
@@ -224,8 +260,9 @@ if __name__ == "__main__":
     logger.info("Starting Example MCP Server on http://localhost:8001")
     logger.info("=" * 70)
     logger.info("")
-    logger.info("Note: This is a simple example without authentication.")
-    logger.info("SpaceBridge can still be configured with auth for testing.")
+    logger.info(
+        f"Authentication: Bearer token required (configured: {BEARER_TOKEN[:10]}...)"
+    )
     logger.info("")
     logger.info("Available tools:")
     logger.info("  - get_random_number: Generate a random number")
@@ -246,7 +283,8 @@ if __name__ == "__main__":
     logger.info("     - URL: http://host.docker.internal:8001")
     logger.info("            (or http://localhost:8001 if running locally)")
     logger.info("     - Transport: http-streaming")
-    logger.info("     - Auth Type: none")
+    logger.info("     - Auth Type: bearer")
+    logger.info(f"     - Bearer Token: {BEARER_TOKEN}")
     logger.info("     - Status: active")
     logger.info("  4. Click 'Add' and then 'Scan' to discover tools")
     logger.info("")

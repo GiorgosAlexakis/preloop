@@ -1,0 +1,60 @@
+# Manual RBAC role for agent job management
+# This file can be applied manually with cluster admin privileges if GitLab CI
+# service account lacks permission to create roles with jobs/status permissions.
+#
+# Usage:
+#   kubectl apply -f manual-rbac.yaml
+#
+# This grants the SpaceBridge service account permission to:
+# - Manage Jobs (create, get, list, watch, delete)
+# - Access Job status subresource (get, list)
+# - Read Pod logs and status
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spacebridge-agent-manager
+  namespace: agent-executions
+  labels:
+    app.kubernetes.io/name: spacebridge
+    app.kubernetes.io/component: agent-execution
+rules:
+  # Permissions to manage Jobs for agent execution
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  # EXPLICIT jobs/status permissions - needed for checking job completion
+  - apiGroups: ["batch"]
+    resources: ["jobs/status"]
+    verbs: ["get", "list"]
+  # Permissions to read Pod status and logs
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+  # Permissions to read Pod status
+  - apiGroups: [""]
+    resources: ["pods/status"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spacebridge-agent-manager
+  namespace: agent-executions
+  labels:
+    app.kubernetes.io/name: spacebridge
+    app.kubernetes.io/component: agent-execution
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: spacebridge-agent-manager
+subjects:
+  # Update this to match your SpaceBridge service account
+  # Format: namespace:serviceaccount-name
+  - kind: ServiceAccount
+    name: spacebridge  # Change this to your actual service account name
+    namespace: gitlab-spacecode  # Change this to your actual namespace

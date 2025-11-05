@@ -334,6 +334,7 @@ exit $CODEX_EXIT_CODE
             env["OPENAI_API_KEY"] = execution_context["model_api_key"]
 
         # Set home directory for config storage
+        # Note: This is overridden to /home/agent in Kubernetes mode
         env["HOME"] = "/root"
 
         # Configure language runtimes for codex-universal image

@@ -331,7 +331,9 @@ class ContainerAgentExecutor(AgentExecutor):
                     f"Setting pod working directory to git repository: {working_dir}"
                 )
 
-        # Container specification with security context
+        # Container specification with security context and volume mounts
+        # NOTE: Currently running as root for compatibility with agent images (codex-universal).
+        # TODO: Harden security by running as non-root user in the future.
         container = client.V1Container(
             name="agent",
             image=self.image,
@@ -342,15 +344,18 @@ class ContainerAgentExecutor(AgentExecutor):
                 requests={"memory": memory_request, "cpu": cpu_request},
             ),
             security_context=client.V1SecurityContext(
-                run_as_non_root=True,
-                run_as_user=10000,
-                read_only_root_filesystem=False,  # Some agents need writable filesystem
+                read_only_root_filesystem=False,
                 allow_privilege_escalation=False,
                 capabilities=client.V1Capabilities(drop=["ALL"]),
             ),
+            volume_mounts=[
+                client.V1VolumeMount(
+                    name="workspace", mount_path="/workspace", sub_path=None
+                ),
+            ],
         )
 
-        # Pod template specification
+        # Pod template specification with volumes
         pod_template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(
                 labels={
@@ -363,11 +368,13 @@ class ContainerAgentExecutor(AgentExecutor):
             spec=client.V1PodSpec(
                 restart_policy="Never",
                 containers=[container],
-                security_context=client.V1PodSecurityContext(
-                    run_as_non_root=True,
-                    run_as_user=10000,
-                    fs_group=10000,
-                ),
+                # No pod-level security context - allows running as root
+                volumes=[
+                    client.V1Volume(
+                        name="workspace",
+                        empty_dir=client.V1EmptyDirVolumeSource(),
+                    ),
+                ],
             ),
         )
 
@@ -497,11 +504,14 @@ class ContainerAgentExecutor(AgentExecutor):
         Get the result of a container execution.
 
         Args:
-            session_reference: Container ID
+            session_reference: Container ID or Job name
 
         Returns:
             Execution result
         """
+        if self.use_kubernetes:
+            return await self._get_kubernetes_result(session_reference)
+
         status = await self.get_status(session_reference)
 
         try:
@@ -551,6 +561,78 @@ class ContainerAgentExecutor(AgentExecutor):
             return AgentExecutionResult(
                 status=AgentStatus.FAILED,
                 session_reference=session_reference,
+                error_message=str(e),
+            )
+
+    async def _get_kubernetes_result(self, job_name: str) -> AgentExecutionResult:
+        """
+        Get the result of a Kubernetes Job execution.
+
+        Args:
+            job_name: Name of the Job
+
+        Returns:
+            Execution result
+        """
+        status = await self.get_status(job_name)
+
+        try:
+            await self._init_kubernetes_clients()
+
+            # Get logs
+            logs = await self.get_logs(job_name, tail=1000)
+            output_summary = "\n".join(logs[-50:]) if logs else None
+
+            # Check for error patterns in logs
+            error_message = None
+            logs_text = "\n".join(logs) if logs else ""
+            has_error_pattern = self._detect_error_in_logs(logs_text)
+
+            # Override status if we detect errors in logs
+            if has_error_pattern and status == AgentStatus.SUCCEEDED:
+                self.logger.warning(
+                    f"Job {job_name} succeeded but logs contain errors. "
+                    "Marking as FAILED."
+                )
+                status = AgentStatus.FAILED
+
+            # Try to get exit code from pod
+            exit_code = None
+            try:
+                label_selector = f"job-name={job_name}"
+                pods = await self._k8s_core_api.list_namespaced_pod(
+                    namespace=self.agent_namespace, label_selector=label_selector
+                )
+                if pods.items:
+                    pod = pods.items[0]
+                    if pod.status.container_statuses:
+                        container_status = pod.status.container_statuses[0]
+                        if container_status.state.terminated:
+                            exit_code = container_status.state.terminated.exit_code
+            except Exception as e:
+                self.logger.warning(f"Could not get exit code for Job {job_name}: {e}")
+
+            if status == AgentStatus.FAILED:
+                error_message = (
+                    self._extract_error_from_logs(logs_text)
+                    or f"Job exited with code {exit_code}"
+                    if exit_code is not None
+                    else "Job failed"
+                )
+
+            return AgentExecutionResult(
+                status=status,
+                session_reference=job_name,
+                output_summary=output_summary,
+                error_message=error_message,
+                exit_code=exit_code,
+            )
+
+        except ApiException as e:
+            self.logger.error(f"Failed to get result for Job {job_name}: {e}")
+            return AgentExecutionResult(
+                status=AgentStatus.FAILED,
+                session_reference=job_name,
                 error_message=str(e),
             )
 

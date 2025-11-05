@@ -1,0 +1,43 @@
+replicaCount: 1
+
+image:
+  repository: registry.spacecode.ai/spacecode/example-mcp-server
+  pullPolicy: Always
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 8001
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: example-mcp.preloop.ai
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - secretName: example-mcp-server-tls
+      hosts:
+        - example-mcp.preloop.ai
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+env:
+  - name: BEARER_TOKEN
+    value: "test-token-12345"
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

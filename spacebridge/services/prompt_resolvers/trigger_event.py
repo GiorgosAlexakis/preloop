@@ -29,6 +29,7 @@ class TriggerEventResolver(PromptResolver):
 
         Args:
             path: Path after the prefix (e.g., "payload.issue.title")
+                  If empty, returns the entire trigger event as JSON
             context: Resolver context
 
         Returns:
@@ -37,6 +38,16 @@ class TriggerEventResolver(PromptResolver):
         if not context.trigger_event_data:
             self.logger.warning("No trigger event data available")
             return None
+
+        # If no path specified, return entire event as JSON
+        if not path or path.strip() == "":
+            import json
+
+            try:
+                return json.dumps(context.trigger_event_data, indent=2)
+            except Exception as e:
+                self.logger.error(f"Failed to serialize trigger event data: {e}")
+                return None
 
         # Handle direct event fields
         value = self._safe_get_nested(context.trigger_event_data, path)

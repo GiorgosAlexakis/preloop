@@ -1,8 +1,9 @@
 """Organization schemas for request and response validation."""
 
 from typing import Dict, Optional
+from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
 
 
 class OrganizationBase(BaseModel):
@@ -31,12 +32,17 @@ class OrganizationUpdate(BaseModel):
 class OrganizationResponse(OrganizationBase):
     """Response model for organization data."""
 
-    id: str = Field(..., description="Organization ID")
-    tracker_id: str = Field(..., description="Tracker ID")
+    id: UUID = Field(..., description="Organization ID")
+    tracker_id: UUID = Field(..., description="Tracker ID")
     is_active: bool = Field(True, description="Whether the organization is active")
     created_at: Optional[str] = Field(None, description="Creation timestamp")
     updated_at: Optional[str] = Field(None, description="Last update timestamp")
     meta_data: Dict = Field(default_factory=dict, description="Additional metadata")
+
+    @field_serializer("id", "tracker_id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
 
     model_config = ConfigDict(
         from_attributes=True,  # Modern way of saying orm_mode = True
