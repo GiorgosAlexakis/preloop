@@ -513,7 +513,7 @@ export class DashboardView extends AuthedElement {
         text-decoration: underline;
       }
       @media (min-width: 1024px) {
-      .overview-layout {
+        .overview-layout {
           grid-template-columns: 1fr;
         }
         .tool-counts {
@@ -561,7 +561,9 @@ export class DashboardView extends AuthedElement {
                   <sl-icon name="question-circle"></sl-icon>
                 </sl-tooltip>
               </div>
-              <div style="display: flex; gap: var(--sl-spacing-small); align-items: center;">
+              <div
+                style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+              >
                 <a
                   href="#"
                   class="header-action-link"
@@ -569,8 +571,11 @@ export class DashboardView extends AuthedElement {
                     e.preventDefault();
                     this.showSetupDialog = true;
                   }}
-                >Setup Instructions</a>
-                <a href="/console/tools" class="header-action-link">Manage Tools</a>
+                  >Setup Instructions</a
+                >
+                <a href="/console/tools" class="header-action-link"
+                  >Manage Tools</a
+                >
               </div>
             </div>
 
@@ -621,14 +626,15 @@ export class DashboardView extends AuthedElement {
                   <div class="mcp-server-capsule">
                     <div class="status-indicator"></div>
                     <div class="server-details">
-                      <span class="server-endpoint">${window.location.origin}/mcp/v1</span>
+                      <span class="server-endpoint"
+                        >${window.location.origin}/mcp/v1</span
+                      >
                       <span class="server-auth">Bearer Token</span>
                     </div>
                     <a href="/console/settings/api-keys" class="capsule-link">
                       Manage Keys
                     </a>
                   </div>
-
                 `}
           </sl-card>
 
@@ -832,9 +838,7 @@ export class DashboardView extends AuthedElement {
                       (approval) => html`
                         <div class="item-card warning">
                           <div class="item-info">
-                            <span class="item-name"
-                              >${approval.tool_name}</span
-                            >
+                            <span class="item-name">${approval.tool_name}</span>
                             <span class="item-secondary"
                               >${this.formatDate(approval.requested_at)}</span
                             >
