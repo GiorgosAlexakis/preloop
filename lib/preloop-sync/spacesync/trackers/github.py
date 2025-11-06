@@ -1451,3 +1451,206 @@ class GitHubTracker(BaseTracker):
             return False
         except TrackerResponseError:
             return False
+
+    async def get_pull_request(self, pr_identifier: str) -> Dict[str, Any]:
+        """
+        Get details of a GitHub pull request.
+
+        Args:
+            pr_identifier: PR identifier (number, slug, or URL)
+
+        Returns:
+            Dict with PR details including title, description, state, comments, and changes
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        # Extract PR number from various formats
+        pr_number = pr_identifier
+        if "/" in pr_identifier:
+            # Handle formats like "owner/repo#123" or "owner/repo/pull/123"
+            parts = pr_identifier.split("/")
+            pr_number = parts[-1]
+        if "#" in pr_number:
+            pr_number = pr_number.split("#")[-1]
+
+        try:
+            # Get PR details
+            pr_path = f"/repos/{owner}/{repo}/pulls/{pr_number}"
+            pr_data = await self._request("GET", pr_path)
+
+            # Get PR comments (review comments + issue comments)
+            comments_path = f"/repos/{owner}/{repo}/pulls/{pr_number}/comments"
+            review_comments = await self._request("GET", comments_path)
+
+            issue_comments_path = f"/repos/{owner}/{repo}/issues/{pr_number}/comments"
+            issue_comments = await self._request("GET", issue_comments_path)
+
+            # Combine all comments
+            all_comments = []
+            for comment in review_comments:
+                all_comments.append(
+                    {
+                        "id": str(comment["id"]),
+                        "author": comment["user"]["login"],
+                        "body": comment["body"],
+                        "created_at": comment["created_at"],
+                        "type": "review_comment",
+                        "path": comment.get("path"),
+                        "position": comment.get("position"),
+                    }
+                )
+
+            for comment in issue_comments:
+                all_comments.append(
+                    {
+                        "id": str(comment["id"]),
+                        "author": comment["user"]["login"],
+                        "body": comment["body"],
+                        "created_at": comment["created_at"],
+                        "type": "issue_comment",
+                    }
+                )
+
+            # Get PR files/changes
+            files_path = f"/repos/{owner}/{repo}/pulls/{pr_number}/files"
+            files = await self._request("GET", files_path)
+
+            changes = {
+                "files_changed": len(files),
+                "additions": pr_data.get("additions", 0),
+                "deletions": pr_data.get("deletions", 0),
+                "changed_files": [
+                    {
+                        "filename": f["filename"],
+                        "status": f["status"],
+                        "additions": f["additions"],
+                        "deletions": f["deletions"],
+                        "patch": f.get("patch", ""),
+                    }
+                    for f in files
+                ],
+            }
+
+            return {
+                "id": str(pr_data["id"]),
+                "number": pr_data["number"],
+                "title": pr_data["title"],
+                "description": pr_data.get("body", ""),
+                "state": pr_data["state"],
+                "author": pr_data["user"]["login"],
+                "assignees": [a["login"] for a in pr_data.get("assignees", [])],
+                "reviewers": [
+                    r["login"] for r in pr_data.get("requested_reviewers", [])
+                ],
+                "labels": [l["name"] for l in pr_data.get("labels", [])],
+                "url": pr_data["html_url"],
+                "source_branch": pr_data["head"]["ref"],
+                "target_branch": pr_data["base"]["ref"],
+                "created_at": pr_data["created_at"],
+                "updated_at": pr_data["updated_at"],
+                "merged_at": pr_data.get("merged_at"),
+                "is_draft": pr_data.get("draft", False),
+                "comments": all_comments,
+                "changes": changes,
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting pull request {pr_number}: {e}")
+            raise TrackerResponseError(f"Failed to get pull request: {e}")
+
+    async def update_pull_request(
+        self,
+        pr_identifier: str,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        state: Optional[str] = None,
+        assignees: Optional[List[str]] = None,
+        reviewers: Optional[List[str]] = None,
+        labels: Optional[List[str]] = None,
+        draft: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """
+        Update a GitHub pull request.
+
+        Args:
+            pr_identifier: PR identifier (number, slug, or URL)
+            title: New PR title
+            description: New PR description
+            state: New state ("open" or "closed")
+            assignees: List of assignee usernames
+            reviewers: List of reviewer usernames
+            labels: List of label names
+            draft: Whether to mark as draft
+
+        Returns:
+            Dict with updated PR details
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        # Extract PR number from various formats
+        pr_number = pr_identifier
+        if "/" in pr_identifier:
+            parts = pr_identifier.split("/")
+            pr_number = parts[-1]
+        if "#" in pr_number:
+            pr_number = pr_number.split("#")[-1]
+
+        try:
+            # Build update payload
+            update_data = {}
+            if title is not None:
+                update_data["title"] = title
+            if description is not None:
+                update_data["body"] = description
+            if state is not None:
+                update_data["state"] = state
+            if draft is not None:
+                update_data["draft"] = draft
+
+            # Update PR
+            pr_path = f"/repos/{owner}/{repo}/pulls/{pr_number}"
+            pr_data = await self._request("PATCH", pr_path, data=update_data)
+
+            # Update assignees if provided
+            if assignees is not None:
+                assignees_path = f"/repos/{owner}/{repo}/issues/{pr_number}/assignees"
+                await self._request(
+                    "POST", assignees_path, data={"assignees": assignees}
+                )
+
+            # Update reviewers if provided
+            if reviewers is not None:
+                reviewers_path = (
+                    f"/repos/{owner}/{repo}/pulls/{pr_number}/requested_reviewers"
+                )
+                await self._request(
+                    "POST", reviewers_path, data={"reviewers": reviewers}
+                )
+
+            # Update labels if provided
+            if labels is not None:
+                labels_path = f"/repos/{owner}/{repo}/issues/{pr_number}/labels"
+                await self._request("PUT", labels_path, data={"labels": labels})
+
+            # Return updated PR data
+            return {
+                "id": str(pr_data["id"]),
+                "number": pr_data["number"],
+                "title": pr_data["title"],
+                "description": pr_data.get("body", ""),
+                "state": pr_data["state"],
+                "url": pr_data["html_url"],
+                "is_draft": pr_data.get("draft", False),
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating pull request {pr_number}: {e}")
+            raise TrackerResponseError(f"Failed to update pull request: {e}")
