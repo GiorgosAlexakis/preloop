@@ -131,7 +131,9 @@ export class FlowView extends LitElement {
       }
       .preset-card {
         cursor: pointer;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
       }
       .preset-card:hover {
         transform: translateY(-2px);
@@ -469,7 +471,9 @@ export class FlowView extends LitElement {
       <div class="column-layout">
         <div class="main-column">
           <!-- Actions -->
-          <div style="display: flex; gap: var(--sl-spacing-small); margin-bottom: var(--sl-spacing-large);">
+          <div
+            style="display: flex; gap: var(--sl-spacing-small); margin-bottom: var(--sl-spacing-large);"
+          >
             <sl-button href="/console/flows">
               <sl-icon name="arrow-left"></sl-icon>
               Back to Flows
@@ -563,7 +567,9 @@ export class FlowView extends LitElement {
                       Use this URL to trigger the flow from external services.
                       Keep it secret!
                     </p>
-                    <div style="display: flex; gap: var(--sl-spacing-small); align-items: center;">
+                    <div
+                      style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+                    >
                       <sl-input
                         readonly
                         style="flex: 1;"
@@ -1930,7 +1936,9 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     if (!this.isNew && this.flow.webhook_config) {
       return html`
         <div>
-          <p style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);">
+          <p
+            style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);"
+          >
             This flow will be triggered when a POST request is sent to the
             webhook URL below.
           </p>
@@ -1940,7 +1948,9 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             >
               Webhook URL
             </label>
-            <div style="display: flex; gap: var(--sl-spacing-small); align-items: center;">
+            <div
+              style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+            >
               <sl-input
                 readonly
                 style="flex: 1;"
@@ -2053,7 +2063,9 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     if (this.trackers.length === 0) {
       return html`
         <div style="text-align: center; padding: var(--sl-spacing-2x-large);">
-          <p style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);">
+          <p
+            style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);"
+          >
             You don't have any trackers configured yet.
           </p>
           <sl-button variant="primary" @click=${this.openAddTrackerDialog}>
