@@ -49,7 +49,7 @@ class MCPServerResponse(MCPServerBase):
     """Schema for MCP server response."""
 
     id: UUID
-    account_id: str
+    account_id: UUID
     last_scan_at: Optional[str] = None
     last_error: Optional[str] = None
     created_at: datetime
