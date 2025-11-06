@@ -55,6 +55,7 @@ class ContainerAgentExecutor(AgentExecutor):
         self._docker_client: Optional[aiodocker.Docker] = None
         self._containers: Dict[str, Any] = {}  # Track running containers
         self._k8s_initialized = False
+        self._k8s_api_client: Optional[Any] = None  # Store ApiClient for proper cleanup
         self._k8s_batch_api: Optional[Any] = None
         self._k8s_core_api: Optional[Any] = None
         # Get agent namespace from environment or use default
@@ -82,8 +83,10 @@ class ContainerAgentExecutor(AgentExecutor):
                 await config.load_kube_config()
                 self.logger.info("Loaded Kubernetes config from kubeconfig")
 
-            self._k8s_batch_api = client.BatchV1Api()
-            self._k8s_core_api = client.CoreV1Api()
+            # Create ApiClient for proper resource management
+            self._k8s_api_client = client.ApiClient()
+            self._k8s_batch_api = client.BatchV1Api(self._k8s_api_client)
+            self._k8s_core_api = client.CoreV1Api(self._k8s_api_client)
             self._k8s_initialized = True
 
     async def start(self, execution_context: Dict[str, Any]) -> str:
@@ -380,9 +383,11 @@ class ContainerAgentExecutor(AgentExecutor):
             command=["/bin/sh", "-c"],
             args=[
                 # Use --reflink=auto for CoW copies (much faster on supporting filesystems)
-                # Skip chown/chmod since we run as root and volume is already writable
+                # Then ensure proper permissions for npm and other tools
                 "cp -a --reflink=auto /root/. /root-volume/ && "
-                "echo 'Copied /root to writable volume'"
+                "chown -R 0:0 /root-volume && "
+                "chmod -R u+w /root-volume && "
+                "echo 'Copied /root to writable volume with proper permissions'"
             ],
             volume_mounts=[
                 client.V1VolumeMount(
@@ -1719,7 +1724,14 @@ MREOF
             return ""
 
     async def cleanup(self):
-        """Cleanup resources (close Docker client, etc.)."""
+        """Cleanup resources (close Docker client, Kubernetes client, etc.)."""
         if self._docker_client:
             await self._docker_client.close()
             self._docker_client = None
+
+        if self._k8s_api_client:
+            await self._k8s_api_client.close()
+            self._k8s_api_client = None
+            self._k8s_batch_api = None
+            self._k8s_core_api = None
+            self._k8s_initialized = False

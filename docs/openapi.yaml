@@ -3952,7 +3952,9 @@ paths:
       tags:
       - Flows
       summary: Trigger Flow Execution
-      description: Trigger a test execution for a flow.
+      description: "Trigger a test execution for a flow.\n\nArgs:\n    flow_id: Flow\
+        \ to trigger\n    trigger_event_data: Optional custom trigger event data for\
+        \ testing template variables\n\nReturns:\n    Execution details"
       operationId: trigger_flow_execution_api_v1_flows__flow_id__trigger_post
       security:
       - bearerAuth: []
@@ -3964,6 +3966,15 @@ paths:
           type: string
           format: uuid
           title: Flow Id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - type: object
+                additionalProperties: true
+              - type: 'null'
+              title: Trigger Event Data
       responses:
         '200':
           description: Successful Response

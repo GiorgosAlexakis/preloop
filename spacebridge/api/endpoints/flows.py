@@ -1,6 +1,6 @@
 import uuid
 import secrets
-from typing import List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -227,8 +227,18 @@ async def trigger_flow_execution(
     db: Session = Depends(get_db),
     flow_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
+    trigger_event_data: Optional[Dict[str, Any]] = None,
 ):
-    """Trigger a test execution for a flow."""
+    """
+    Trigger a test execution for a flow.
+
+    Args:
+        flow_id: Flow to trigger
+        trigger_event_data: Optional custom trigger event data for testing template variables
+
+    Returns:
+        Execution details
+    """
     # Verify flow exists and user has access
     flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
@@ -238,7 +248,9 @@ async def trigger_flow_execution(
     from spacebridge.services.flow_trigger_service import FlowTriggerService
 
     trigger_service = FlowTriggerService(db)
-    result = await trigger_service.trigger_flow(flow_id=flow_id, test_mode=True)
+    result = await trigger_service.trigger_flow(
+        flow_id=flow_id, test_mode=True, trigger_event_data=trigger_event_data
+    )
 
     return result
 

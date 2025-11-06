@@ -352,7 +352,9 @@ class TestMonitoringIntegration:
             orchestrator.execution_logger.log_milestone = MagicMock()
 
             # Run monitoring (will complete quickly due to SUCCEEDED status)
-            result = await orchestrator._monitor_agent_execution("session-123")
+            result = await orchestrator._monitor_agent_execution(
+                "session-123", mock_agent_executor
+            )
 
             # Verify log streaming task was created
             assert orchestrator._log_streaming_task is not None
@@ -386,7 +388,9 @@ class TestMonitoringIntegration:
 
             # Start monitoring
             task = asyncio.create_task(
-                orchestrator._monitor_agent_execution("session-123")
+                orchestrator._monitor_agent_execution(
+                    "session-123", mock_agent_executor
+                )
             )
 
             # Give it time to process

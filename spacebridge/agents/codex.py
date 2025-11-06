@@ -34,12 +34,55 @@ class CodexAgent(ContainerAgentExecutor):
         # Use official Codex Universal image
         image = os.getenv("CODEX_IMAGE", "ghcr.io/openai/codex-universal:latest")
 
+        # Auto-detect Kubernetes environment or use explicit env var
+        use_k8s = self._detect_kubernetes_environment()
+
         super().__init__(
             agent_type="codex",
             config=config,
             image=image,
-            use_kubernetes=os.getenv("USE_KUBERNETES", "false").lower() == "true",
+            use_kubernetes=use_k8s,
         )
+
+    def _detect_kubernetes_environment(self) -> bool:
+        """
+        Auto-detect if running in Kubernetes environment.
+
+        Checks for:
+        1. Explicit USE_KUBERNETES environment variable
+        2. Kubernetes service account token (in-cluster detection)
+        3. KUBERNETES_SERVICE_HOST environment variable
+
+        Returns:
+            True if Kubernetes environment detected, False otherwise
+        """
+        # Check explicit environment variable first
+        env_value = os.getenv("USE_KUBERNETES", "").lower()
+        if env_value == "true":
+            logger.info("Kubernetes mode enabled via USE_KUBERNETES=true")
+            return True
+        elif env_value == "false":
+            logger.info("Kubernetes mode disabled via USE_KUBERNETES=false")
+            return False
+
+        # Auto-detect: Check for Kubernetes service account token (in-cluster)
+        k8s_token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        if os.path.exists(k8s_token_path):
+            logger.info(
+                f"Kubernetes environment detected (found service account token at {k8s_token_path})"
+            )
+            return True
+
+        # Auto-detect: Check for Kubernetes service host
+        if os.getenv("KUBERNETES_SERVICE_HOST"):
+            logger.info(
+                "Kubernetes environment detected (KUBERNETES_SERVICE_HOST present)"
+            )
+            return True
+
+        # Default to Docker if no Kubernetes indicators found
+        logger.info("No Kubernetes environment detected, defaulting to Docker mode")
+        return False
 
     async def start(self, execution_context: Dict[str, Any]) -> str:
         """

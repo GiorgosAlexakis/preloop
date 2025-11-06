@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import uuid
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -165,7 +165,10 @@ class FlowTriggerService:
             )
 
     async def trigger_flow(
-        self, flow_id: uuid.UUID, test_mode: bool = False
+        self,
+        flow_id: uuid.UUID,
+        test_mode: bool = False,
+        trigger_event_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Manually trigger a flow execution for testing purposes.
@@ -173,6 +176,7 @@ class FlowTriggerService:
         Args:
             flow_id: The ID of the flow to trigger
             test_mode: Whether this is a test execution
+            trigger_event_data: Optional custom trigger event data for testing
 
         Returns:
             Dict with execution_id and status
@@ -188,10 +192,15 @@ class FlowTriggerService:
         logger.info(f"Triggering test execution for flow '{flow.name}' ({flow.id})")
 
         # Pre-create the execution record so we can return its ID immediately
+        # Merge test_mode flag with custom trigger_event_data if provided
+        trigger_details = {"test_mode": test_mode}
+        if trigger_event_data:
+            trigger_details.update(trigger_event_data)
+
         execution_data = FlowExecutionCreate(
             flow_id=flow_id,
             status="PENDING",
-            trigger_event_details={"test_mode": test_mode},
+            trigger_event_details=trigger_details,
         )
 
         execution = crud_flow_execution.create(self.db, obj_in=execution_data)
@@ -263,8 +272,8 @@ class FlowTriggerService:
                 resolved_input_prompt=execution_context["prompt"],
             )
 
-            # Stage 4: Start agent session
-            session_reference = await orchestrator._start_agent_session(
+            # Stage 4: Start agent session (returns session reference and executor)
+            session_reference, agent_executor = await orchestrator._start_agent_session(
                 execution_context
             )
 
@@ -274,9 +283,9 @@ class FlowTriggerService:
                 agent_session_reference=session_reference,
             )
 
-            # Stage 5: Monitor agent execution
+            # Stage 5: Monitor agent execution (pass the executor to avoid creating duplicate)
             agent_result = await orchestrator._monitor_agent_execution(
-                session_reference
+                session_reference, agent_executor
             )
 
             # Update with final results

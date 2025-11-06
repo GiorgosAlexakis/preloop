@@ -15,12 +15,39 @@ logger = logging.getLogger(__name__)
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)):
     """
     WebSocket endpoint for streaming Flow execution updates.
+    Includes authentication and account-based filtering.
     Includes a heartbeat to keep the connection alive.
+
+    Only broadcasts flow execution updates that belong to the authenticated user's account.
     """
-    connection_id = await manager.connect(websocket)
+    # Extract token from query parameters for authentication
+    await websocket.accept()
+
+    token = websocket.query_params.get("token")
+    if not token:
+        logger.warning("WebSocket connection attempted without token")
+        await websocket.send_json({"error": "Authentication required - token missing"})
+        await websocket.close(code=1008)
+        return
+
+    # Validate token and get user
+    user = await get_user_from_token_if_valid(token, db)
+    if not user:
+        logger.warning("Invalid token for WebSocket connection")
+        await websocket.send_json({"error": "Invalid or expired authentication token"})
+        await websocket.close(code=1008)
+        return
+
+    logger.info(
+        f"WebSocket authenticated for user {user.username} (account {user.account_id})"
+    )
+
+    # Connect with account_id for filtering
+    connection_id = await manager.connect_with_account(websocket, str(user.account_id))
+
     try:
         while True:
             # Wait for a message from the client (e.g., a pong response)

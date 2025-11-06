@@ -93,7 +93,10 @@ class FlowExecutionOrchestrator:
             raise
 
     async def _publish_update(self, message_type: str, payload: Dict[str, Any]):
-        """Publishes a structured message to the NATS stream for real-time updates."""
+        """
+        Publishes a structured message to the NATS stream for real-time updates.
+        Includes account_id for proper filtering to prevent cross-account data leaks.
+        """
         if not self.nats_client or not self.nats_client.is_connected:
             logger.warning("NATS client not available, skipping update publish.")
             return
@@ -106,6 +109,9 @@ class FlowExecutionOrchestrator:
             message = {
                 "execution_id": str(self.execution_log.id),
                 "flow_id": str(self.flow_id),
+                "account_id": str(self.flow.account_id)
+                if self.flow and self.flow.account_id
+                else None,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "type": message_type,
                 "payload": payload,
@@ -786,7 +792,9 @@ class FlowExecutionOrchestrator:
             except Exception as e:
                 logger.error(f"Error unsubscribing from commands: {e}")
 
-    async def _start_agent_session(self, execution_context: Dict[str, Any]) -> str:
+    async def _start_agent_session(
+        self, execution_context: Dict[str, Any]
+    ) -> tuple[str, Any]:
         """
         Launch an agent session via Agent Execution Infrastructure.
 
@@ -794,13 +802,16 @@ class FlowExecutionOrchestrator:
             execution_context: Context for agent execution
 
         Returns:
-            agent_session_reference: Reference to the agent session (container ID, job ID, etc.)
+            Tuple of (agent_session_reference, agent_executor)
+            - agent_session_reference: Reference to the agent session (container ID, job ID, etc.)
+            - agent_executor: The agent executor instance (caller must clean up)
         """
         agent_type = execution_context["agent_type"]
         agent_config = execution_context["agent_config"]
 
         logger.info(f"Starting {agent_type} agent session")
 
+        agent_executor = None
         try:
             # Create agent executor using factory
             agent_executor = create_agent_executor(agent_type, agent_config)
@@ -809,32 +820,38 @@ class FlowExecutionOrchestrator:
             session_reference = await agent_executor.start(execution_context)
 
             logger.info(f"Agent session started: {session_reference}")
-            return session_reference
+            # Return both session reference and executor (caller is responsible for cleanup)
+            return session_reference, agent_executor
 
         except Exception as e:
             logger.error(f"Failed to start {agent_type} agent: {e}", exc_info=True)
+            # Cleanup agent executor on failure
+            if agent_executor:
+                try:
+                    await agent_executor.cleanup()
+                except Exception as cleanup_error:
+                    logger.warning(
+                        f"Error during agent cleanup after failure: {cleanup_error}"
+                    )
             raise
 
-    async def _monitor_agent_execution(self, session_reference: str) -> Dict[str, Any]:
+    async def _monitor_agent_execution(
+        self, session_reference: str, agent_executor: Any
+    ) -> Dict[str, Any]:
         """
         Monitor agent execution until completion with real-time log streaming.
 
         Args:
             session_reference: Reference to the agent session
+            agent_executor: Agent executor instance to use for monitoring
 
         Returns:
             Dict with execution results including status, output, errors
         """
-        agent_type = self.flow.agent_type
-        agent_config = self.flow.agent_config
-
         logger.info(f"Monitoring agent execution {session_reference}")
         self.execution_logger.log_milestone(
             "agent_monitoring_started", {"session_reference": session_reference}
         )
-
-        # Create agent executor to monitor the session
-        agent_executor = create_agent_executor(agent_type, agent_config)
 
         try:
             # Start listening for user commands
@@ -923,6 +940,11 @@ class FlowExecutionOrchestrator:
         finally:
             # Always cleanup monitoring resources
             await self._cleanup_monitoring()
+            # Cleanup agent executor resources (close Kubernetes/Docker clients)
+            try:
+                await agent_executor.cleanup()
+            except Exception as cleanup_error:
+                logger.warning(f"Error during agent cleanup: {cleanup_error}")
 
     def _create_execution_log(self):
         """Create an initial record in FlowExecutions."""
@@ -982,6 +1004,18 @@ class FlowExecutionOrchestrator:
         try:
             # Stage 1: Create execution log
             self._create_execution_log()
+
+            # Publish execution_started event for UI notification
+            # This allows the flow executions list to update automatically
+            await self._publish_update(
+                "execution_started",
+                {
+                    "status": "PENDING",
+                    "flow_id": str(self.flow_id),
+                    "flow_name": self.flow.name if self.flow else None,
+                },
+            )
+
             await self._publish_update("status_update", {"status": "PENDING"})
             logger.info(f"Flow execution started: {self.execution_log.id}")
 
@@ -998,8 +1032,10 @@ class FlowExecutionOrchestrator:
                 resolved_input_prompt=execution_context["prompt"],
             )
 
-            # Stage 4: Start agent session
-            session_reference = await self._start_agent_session(execution_context)
+            # Stage 4: Start agent session (returns both session reference and executor)
+            session_reference, agent_executor = await self._start_agent_session(
+                execution_context
+            )
 
             # Agent started successfully - now mark as RUNNING with session reference
             await self._update_execution_log(
@@ -1008,7 +1044,10 @@ class FlowExecutionOrchestrator:
             )
 
             # Stage 5: Monitor agent execution and collect results
-            agent_result = await self._monitor_agent_execution(session_reference)
+            # Pass the executor so we don't create a duplicate instance
+            agent_result = await self._monitor_agent_execution(
+                session_reference, agent_executor
+            )
 
             # Update execution log with final results including detailed logs
             final_status = agent_result.get("status", "FAILED")
