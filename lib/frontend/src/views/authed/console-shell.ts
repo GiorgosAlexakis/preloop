@@ -80,7 +80,7 @@ export class ConsoleShell extends LitElement {
       }
 
       .logo {
-        text-align: center;
+        margin-left: 2px;
         padding: 1rem;
         background-color: var(--sl-color-neutral-100);
       }

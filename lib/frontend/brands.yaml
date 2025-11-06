@@ -154,7 +154,7 @@ brands:
     branding:
       logo_light: "/images/logos/preloop_logo_light.svg"
       logo_dark: "/images/logos/preloop_logo_dark.svg"
-      favicon: "/images/logos/preloop/favicon.png"
+      favicon: "/assets/preloop_badge.svg"
       primary_color: "#7c3aed"
       gradient_product: "linear-gradient(90deg, hsl(270, 70%, 55%), hsl(290, 75%, 50%))"
       gradient_ai: "linear-gradient(90deg, hsl(200, 80%, 55%), hsl(180, 85%, 50%))"
