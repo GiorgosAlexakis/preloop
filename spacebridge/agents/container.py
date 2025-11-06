@@ -268,15 +268,21 @@ class ContainerAgentExecutor(AgentExecutor):
         job_name = f"agent-{execution_id}".replace("_", "-").lower()
 
         # Prepare environment variables
-        env = {
-            "FLOW_ID": flow_id,
-            "EXECUTION_ID": execution_id,
-            "AGENT_PROMPT": execution_context["prompt"],
-            "AGENT_CONFIG": str(execution_context.get("agent_config", {})),
-        }
+        # Start with agent-specific env if provided (e.g., from CodexAgent)
+        env = execution_context.get("_codex_env", {}).copy()
 
-        # Add AI model credentials if available
-        if "model_api_key" in execution_context:
+        # Add base environment variables
+        env.update(
+            {
+                "FLOW_ID": flow_id,
+                "EXECUTION_ID": execution_id,
+                "AGENT_PROMPT": execution_context["prompt"],
+                "AGENT_CONFIG": str(execution_context.get("agent_config", {})),
+            }
+        )
+
+        # Add AI model credentials if available (only if not already set by agent-specific env)
+        if "model_api_key" in execution_context and "OPENAI_API_KEY" not in env:
             env["AI_MODEL_API_KEY"] = execution_context["model_api_key"]
         if "model_identifier" in execution_context:
             env["AI_MODEL"] = execution_context["model_identifier"]
@@ -331,6 +337,10 @@ class ContainerAgentExecutor(AgentExecutor):
                     f"Setting pod working directory to git repository: {working_dir}"
                 )
 
+        # Check if subclass provided custom command/args (e.g., CodexAgent)
+        command = execution_context.get("_container_command")
+        args = execution_context.get("_container_args")
+
         # Container specification with security context and volume mounts
         # NOTE: Currently running as root for compatibility with agent images (codex-universal).
         # TODO: Harden security by running as non-root user in the future.
@@ -338,12 +348,15 @@ class ContainerAgentExecutor(AgentExecutor):
             name="agent",
             image=self.image,
             env=env_vars,
+            command=command,  # Optional: set by subclasses like CodexAgent
+            args=args,  # Optional: set by subclasses like CodexAgent
             working_dir=working_dir,  # Set working directory to git repo if configured
             resources=client.V1ResourceRequirements(
                 limits={"memory": memory_limit, "cpu": cpu_limit},
                 requests={"memory": memory_request, "cpu": cpu_request},
             ),
             security_context=client.V1SecurityContext(
+                run_as_user=0,  # Run as root (UID 0) for compatibility with codex-universal
                 read_only_root_filesystem=False,
                 allow_privilege_escalation=False,
                 capabilities=client.V1Capabilities(drop=["ALL"]),
@@ -352,7 +365,33 @@ class ContainerAgentExecutor(AgentExecutor):
                 client.V1VolumeMount(
                     name="workspace", mount_path="/workspace", sub_path=None
                 ),
+                client.V1VolumeMount(
+                    name="root-home", mount_path="/root", sub_path=None
+                ),
             ],
+        )
+
+        # Init container to copy /root contents to writable volume
+        # This preserves pre-installed files (nvm, node, npm, etc.) while making /root writable
+        # Uses --reflink=auto for copy-on-write optimization when supported by filesystem
+        init_container = client.V1Container(
+            name="copy-root",
+            image=self.image,
+            command=["/bin/sh", "-c"],
+            args=[
+                # Use --reflink=auto for CoW copies (much faster on supporting filesystems)
+                # Skip chown/chmod since we run as root and volume is already writable
+                "cp -a --reflink=auto /root/. /root-volume/ && "
+                "echo 'Copied /root to writable volume'"
+            ],
+            volume_mounts=[
+                client.V1VolumeMount(
+                    name="root-home", mount_path="/root-volume", sub_path=None
+                ),
+            ],
+            security_context=client.V1SecurityContext(
+                run_as_user=0,  # Run as root
+            ),
         )
 
         # Pod template specification with volumes
@@ -367,11 +406,18 @@ class ContainerAgentExecutor(AgentExecutor):
             ),
             spec=client.V1PodSpec(
                 restart_policy="Never",
+                init_containers=[
+                    init_container
+                ],  # Copy /root before main container starts
                 containers=[container],
                 # No pod-level security context - allows running as root
                 volumes=[
                     client.V1Volume(
                         name="workspace",
+                        empty_dir=client.V1EmptyDirVolumeSource(),
+                    ),
+                    client.V1Volume(
+                        name="root-home",
                         empty_dir=client.V1EmptyDirVolumeSource(),
                     ),
                 ],
@@ -917,24 +963,59 @@ class ContainerAgentExecutor(AgentExecutor):
         await self._init_kubernetes_clients()
 
         try:
-            # List pods for this Job
+            # Wait for pod to be created (may take time after Job creation + init container)
             label_selector = f"job-name={job_name}"
-            pods = await self._k8s_core_api.list_namespaced_pod(
-                namespace=self.agent_namespace, label_selector=label_selector
-            )
+            pod_name = None
 
-            if not pods.items:
-                self.logger.warning(f"No pods found for Job {job_name}")
+            # Retry for up to 60 seconds to find the pod
+            import asyncio
+
+            for attempt in range(60):
+                pods = await self._k8s_core_api.list_namespaced_pod(
+                    namespace=self.agent_namespace, label_selector=label_selector
+                )
+
+                if pods.items:
+                    pod_name = pods.items[0].metadata.name
+                    self.logger.info(f"Found pod {pod_name} for Job {job_name}")
+                    break
+
+                if attempt < 59:
+                    await asyncio.sleep(1)
+
+            if not pod_name:
+                self.logger.warning(
+                    f"No pods found for Job {job_name} after 60 seconds"
+                )
                 yield f"[WARN] No pods found for Job {job_name}"
                 return
 
-            # Get the first pod
-            pod_name = pods.items[0].metadata.name
+            # Wait for main container to start (after init container completes)
+            # Poll pod status until the main container is running or terminated
+            for attempt in range(60):
+                pod = await self._k8s_core_api.read_namespaced_pod(
+                    name=pod_name, namespace=self.agent_namespace
+                )
+
+                # Check if pod has container statuses
+                if pod.status.container_statuses:
+                    container_status = pod.status.container_statuses[0]
+                    # Container is running or terminated - logs are available
+                    if (
+                        container_status.state.running
+                        or container_status.state.terminated
+                    ):
+                        self.logger.info(f"Main container ready for {pod_name}")
+                        break
+
+                if attempt < 59:
+                    await asyncio.sleep(1)
 
             # Stream logs with follow=True
             response = await self._k8s_core_api.read_namespaced_pod_log(
                 name=pod_name,
                 namespace=self.agent_namespace,
+                container="agent",  # Specify the main container (not init container)
                 follow=True,
                 _preload_content=False,  # Required for streaming
             )

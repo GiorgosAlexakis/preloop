@@ -130,112 +130,8 @@ class CodexAgent(ContainerAgentExecutor):
             )
             env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
-        # Build the command to run Codex CLI with the prompt
-        prompt = execution_context["prompt"]
-        # Try codex_model first (set by start()), then model_identifier, then default
-        model = (
-            execution_context.get("codex_model")
-            or execution_context.get("model_identifier")
-            or "gpt-4"
-        )
-
-        self.logger.info(f"Using model for Codex CLI: {model}")
-
-        # Escape prompt for shell
-        escaped_prompt = prompt.replace('"', '\\"').replace("'", "\\'")
-
-        # Prepare initialization commands (git clone, custom commands)
-        self.logger.info(
-            f"Preparing init commands. git_clone_config present: {('git_clone_config' in execution_context)}, "
-            f"git_clone_config value: {execution_context.get('git_clone_config')}"
-        )
-        init_commands = self._prepare_init_commands(execution_context)
-        self.logger.info(
-            f"Init commands prepared. Length: {len(init_commands) if init_commands else 0}"
-        )
-
-        # Prepare post-execution commands (push, PR/MR creation)
-        post_exec_commands = self._prepare_git_post_execution_commands(
-            execution_context
-        )
-        self.logger.info(
-            f"Post-exec commands prepared. Length: {len(post_exec_commands) if post_exec_commands else 0}"
-        )
-
-        # Build post-execution block if there are commands
-        post_exec_block = ""
-        if post_exec_commands:
-            post_exec_block = f"""
-# Run post-execution commands (push, PR/MR) if codex succeeded
-if [ "$CODEX_EXIT_CODE" -eq "0" ]; then
-    echo "========================================="
-    echo "Running post-execution git operations..."
-    echo "========================================="
-    {post_exec_commands}
-fi
-"""
-
-        # Create a script that runs codex (requires configuration in codex-universal image)
-        script = f"""
-set -e
-
-# Run initialization commands (git clone, custom commands) if any
-{init_commands}
-
-# Configure git to trust all directories (needed for cloned repos)
-git config --global --add safe.directory '*'
-
-# Configure Codex CLI in the universal image
-npm install -g @openai/codex
-
-# Debug: Print environment variables
-echo "=== DEBUG: Environment variables ==="
-echo "OPENAI_API_KEY: ${{OPENAI_API_KEY:0:10}}..." || echo "OPENAI_API_KEY: NOT SET"
-echo "Model: {model}"
-echo "==================================="
-
-# Configure Codex CLI authentication
-mkdir -p ~/.codex
-
-# Create auth.json with OpenAI API key
-cat > ~/.codex/auth.json << 'EOF'
-{{
-  "OPENAI_API_KEY": "API_KEY_PLACEHOLDER"
-}}
-EOF
-sed -i "s/API_KEY_PLACEHOLDER/$OPENAI_API_KEY/g" ~/.codex/auth.json
-
-# Create config.toml with model and MCP server configuration
-cat > ~/.codex/config.toml << 'EOF'
-model = "MODEL_PLACEHOLDER"
-
-rmcp_client = true
-
-[mcp_servers.spacebridge]
-url = "MCP_URL_PLACEHOLDER"
-bearer_token_env_var = "SPACEBRIDGE_API_TOKEN"
-EOF
-
-# Replace placeholders
-sed -i 's/MODEL_PLACEHOLDER/{model}/g' ~/.codex/config.toml
-sed -i "s|MCP_URL_PLACEHOLDER|$SPACEBRIDGE_MCP_URL|g" ~/.codex/config.toml
-
-# Debug: Show config files (with API key masked)
-echo "=== DEBUG: Config files (API key masked) ==="
-echo "auth.json:"
-sed 's/"sk-[^"]*"/"sk-...MASKED..."/' ~/.codex/auth.json
-echo ""
-echo "config.toml:"
-cat ~/.codex/config.toml
-echo "==================================="
-
-# Run codex in non-interactive mode with the prompt
-echo "{escaped_prompt}" | codex exec --model "{model}" --sandbox workspace-write --yolo
-CODEX_EXIT_CODE=$?
-{post_exec_block}
-# Exit with codex's exit code
-exit $CODEX_EXIT_CODE
-"""
+        # Build the Codex script using shared method
+        script = self._build_codex_script(execution_context)
 
         # Determine working directory based on git clone configuration
         working_dir = "/workspace"
@@ -254,6 +150,13 @@ exit $CODEX_EXIT_CODE
                 self.logger.info(
                     f"Setting Codex working directory to git repository: {working_dir}"
                 )
+
+        # Extract model for logging
+        model = (
+            execution_context.get("codex_model")
+            or execution_context.get("model_identifier")
+            or "gpt-4"
+        )
 
         self.logger.info(
             f"Container config: model={model}, "
@@ -314,6 +217,174 @@ exit $CODEX_EXIT_CODE
                 f"Failed to start Codex CLI container for execution {execution_id}: {e}"
             )
             raise RuntimeError(f"Failed to start Codex CLI container: {e}")
+
+    def _build_codex_script(self, execution_context: Dict[str, Any]) -> str:
+        """
+        Build the Codex initialization and execution script.
+
+        This script is used by both Docker and Kubernetes modes.
+
+        Args:
+            execution_context: Execution context
+
+        Returns:
+            Shell script to execute
+        """
+        prompt = execution_context["prompt"]
+        model = (
+            execution_context.get("codex_model")
+            or execution_context.get("model_identifier")
+            or "gpt-4"
+        )
+
+        # Escape prompt for shell
+        escaped_prompt = prompt.replace('"', '\\"').replace("'", "\\'")
+
+        # Prepare initialization commands (git clone, custom commands)
+        init_commands = self._prepare_init_commands(execution_context)
+
+        # Prepare post-execution commands (push, PR/MR creation)
+        post_exec_commands = self._prepare_git_post_execution_commands(
+            execution_context
+        )
+
+        # Build post-execution block if there are commands
+        post_exec_block = ""
+        if post_exec_commands:
+            post_exec_block = f"""
+# Run post-execution commands (push, PR/MR) if codex succeeded
+if [ "$CODEX_EXIT_CODE" -eq "0" ]; then
+    echo "========================================="
+    echo "Running post-execution git operations..."
+    echo "========================================="
+    {post_exec_commands}
+fi
+"""
+
+        # Create the full script
+        script = f"""
+set -e
+
+# Run initialization commands (git clone, custom commands) if any
+{init_commands}
+
+# Configure git to trust all directories (needed for cloned repos)
+git config --global --add safe.directory '*'
+
+# Configure Codex CLI in the universal image
+npm install -g @openai/codex
+
+# Verify API key is set
+if [ -z "$OPENAI_API_KEY" ]; then
+    echo "ERROR: OPENAI_API_KEY is not set"
+    exit 1
+fi
+
+# Configure Codex CLI authentication
+mkdir -p ~/.codex
+
+# Create auth.json with OpenAI API key
+# Use unquoted heredoc to allow variable substitution (safer than sed with special chars)
+cat > ~/.codex/auth.json << EOF
+{{
+  "OPENAI_API_KEY": "$OPENAI_API_KEY"
+}}
+EOF
+
+# Create config.toml with model and MCP server configuration
+# Use unquoted heredoc to allow variable substitution
+cat > ~/.codex/config.toml << EOF
+model = "{model}"
+
+rmcp_client = true
+
+[mcp_servers.spacebridge]
+url = "$SPACEBRIDGE_MCP_URL"
+bearer_token_env_var = "SPACEBRIDGE_API_TOKEN"
+EOF
+
+# Debug: Show config files (with API key masked)
+echo "=== Codex Configuration ==="
+echo "Model: {model}"
+echo "MCP Server: $SPACEBRIDGE_MCP_URL"
+echo "=========================="
+
+# Run codex in non-interactive mode with the prompt
+echo "{escaped_prompt}" | codex exec --model "{model}" --sandbox workspace-write --yolo
+CODEX_EXIT_CODE=$?
+{post_exec_block}
+# Exit with codex's exit code
+exit $CODEX_EXIT_CODE
+"""
+        return script
+
+    async def _start_kubernetes_pod(self, execution_context: Dict[str, Any]) -> str:
+        """
+        Override to add Codex-specific command to Kubernetes pod.
+
+        The base class creates the pod but doesn't set command/args, which causes
+        codex-universal to drop into a bash shell. We need to override this to
+        provide the script as command arguments.
+
+        IMPORTANT: We only set args, NOT command. Setting command would override
+        the image's ENTRYPOINT, which sets up PATH and other environment variables.
+        By only setting args, the entrypoint runs first (sets up environment), then
+        passes our args to bash for execution.
+        """
+        # Get the script to execute
+        script = self._build_codex_script(execution_context)
+
+        # Store script in execution context so base class can access it if needed
+        execution_context["_codex_script"] = script
+
+        # Set args for Kubernetes - these will be passed to the image's entrypoint
+        # The entrypoint sets up the environment and then executes: bash "$@"
+        # So our args become: bash -c "script"
+        execution_context["_container_args"] = ["-c", script]
+        # Don't set _container_command - let the image's entrypoint run
+
+        # Prepare Codex-specific environment variables and store in context
+        # The base class will merge these with its default env vars
+        codex_env = await self._prepare_environment(execution_context)
+
+        # Add account API token for SpaceBridge MCP authentication (always for Codex)
+        account_api_token = execution_context.get("account_api_token")
+        if account_api_token:
+            codex_env["SPACEBRIDGE_API_TOKEN"] = account_api_token
+        else:
+            self.logger.warning(
+                "No account API token provided for SpaceBridge MCP access"
+            )
+
+        # Set SpaceBridge MCP URL (for Kubernetes, use the service DNS name or external URL)
+        codex_env["SPACEBRIDGE_MCP_URL"] = os.getenv(
+            "SPACEBRIDGE_MCP_URL_K8S",
+            os.getenv("SPACEBRIDGE_MCP_URL", "http://spacebridge-api:8000/mcp/v1"),
+        )
+
+        # Add MCP configuration using MCP config service
+        allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
+        allowed_mcp_tools = execution_context.get("allowed_mcp_tools", [])
+
+        if allowed_mcp_servers or allowed_mcp_tools:
+            # Generate MCP environment variables
+            mcp_env = MCPConfigService.generate_mcp_environment_vars(
+                allowed_mcp_servers, allowed_mcp_tools
+            )
+            codex_env.update(mcp_env)
+
+            # Generate MCP config file
+            mcp_config = MCPConfigService.generate_mcp_config(
+                allowed_mcp_servers,
+                allowed_mcp_tools,
+                account_api_token=account_api_token,
+            )
+            codex_env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
+
+        execution_context["_codex_env"] = codex_env
+
+        # Call parent implementation which will use the args and env
+        return await super()._start_kubernetes_pod(execution_context)
 
     async def _prepare_environment(
         self, execution_context: Dict[str, Any]

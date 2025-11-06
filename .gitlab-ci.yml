@@ -47,7 +47,7 @@ build:
       --destination $CI_REGISTRY_IMAGE:latest
       --registry-mirror registry.spacecode.ai
       --registry-mirror $CI_REGISTRY
-      --cache=false
+      --cache=true
       --cache-repo $CI_REGISTRY_IMAGE/cache
       --cache-ttl 168h
       --build-arg GITLAB_TOKEN=$GITLAB_TOKEN
