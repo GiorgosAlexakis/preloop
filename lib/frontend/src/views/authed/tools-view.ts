@@ -675,19 +675,15 @@ export class ToolsView extends LitElement {
                 <strong>Error:</strong> ${this.error}
               </sl-alert>`
             : ''}
-          ${this.mcpServers.length > 0
-            ? html`<div class="proxy-notice">
-                <div class="proxy-notice-title">
-                  Preloop & External MCP Servers
-                </div>
-                <div class="proxy-notice-text">
-                  Tools from external MCP servers are proxied through the
-                  SpaceBridge MCP server. Any tool (built-in or external) can be
-                  configured with a human approval policy (Preloop), allowing
-                  you to review and approve tool executions before they run.
-                </div>
-              </div>`
-            : ''}
+          <div class="proxy-notice">
+            <div class="proxy-notice-text">
+              Tools from external MCP servers are proxied through the
+              SpaceBridge MCP server. Any tool (built-in or external) can be
+              "prelooped" with a human approval policy, requiring review and
+              approval by the appropriate users before allowing tool executions
+              to run.
+            </div>
+          </div>
           ${this.loading
             ? html`<div class="loading-indicator">
                 <sl-spinner></sl-spinner>
