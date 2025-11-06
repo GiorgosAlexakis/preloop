@@ -254,6 +254,20 @@ async def main(tasks_allowlist: Optional[List[str]] = None):
     # Get NATS_URL directly from environment variables
     nats_server_url = os.getenv("NATS_URL", "nats://localhost:4222")
 
+    # Initialize the global event_bus_service for publishing flow execution updates
+    # This allows FlowOrchestrator to publish real-time updates to browsers
+    from spacesync.services.event_bus import event_bus_service
+
+    logger.info("Initializing event bus service for flow execution updates...")
+    try:
+        await event_bus_service.connect()
+        logger.info("Event bus service connected successfully")
+    except Exception as e:
+        logger.error(f"Failed to connect event bus service: {e}", exc_info=True)
+        logger.warning(
+            "Flow execution updates will not be published to NATS, but worker will continue"
+        )
+
     queue = "spacesync_worker_queue"
 
     worker = SpaceSyncNatsWorker(
@@ -275,6 +289,8 @@ async def main(tasks_allowlist: Optional[List[str]] = None):
     finally:
         logger.info("NATS Worker shutting down...")
         await worker.stop()
+        # Close the event bus service
+        await event_bus_service.close()
         logger.info("NATS Worker shutdown complete.")
 
 
