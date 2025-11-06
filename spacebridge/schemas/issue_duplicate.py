@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, Dict
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 
 class IssueDuplicate(BaseModel):
@@ -80,10 +80,15 @@ class IssueDuplicateResolutionResponse(BaseModel):
 
 
 class IssueDuplicateProjectStats(BaseModel):
-    project_id: str
+    project_id: UUID
     project_name: str
     total: int
     duplicates: int
+
+    @field_serializer("project_id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID field to string."""
+        return str(value)
 
 
 class IssueDuplicateStats(BaseModel):

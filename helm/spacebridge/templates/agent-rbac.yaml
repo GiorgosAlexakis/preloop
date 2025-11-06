@@ -15,11 +15,11 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["create", "get", "list", "watch", "delete"]
-  # NOTE: jobs/status permissions added inline above via "jobs" resource
-  # The "jobs" resource permission includes status subresource access
-  # - apiGroups: ["batch"]
-  #   resources: ["jobs/status"]
-  #   verbs: ["get", "list"]
+  # EXPLICIT jobs/status permissions - required for checking job completion
+  # Note: These are NOT included with "jobs" resource permissions
+  - apiGroups: ["batch"]
+    resources: ["jobs/status"]
+    verbs: ["get", "list"]
   # Permissions to read Pod status and logs
   - apiGroups: [""]
     resources: ["pods"]

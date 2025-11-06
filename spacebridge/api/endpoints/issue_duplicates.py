@@ -702,7 +702,7 @@ def _find_issue_duplicates_logic(
 
     all_duplicates_pairs.sort(key=lambda x: x.similarity, reverse=True)
     paginated_duplicates = all_duplicates_pairs[skip : skip + limit]
-    return paginated_duplicates, model.id
+    return paginated_duplicates, str(model.id)
 
 
 @router.get("/issue-duplicates", response_model=ProjectDuplicatesResponse)
@@ -811,15 +811,16 @@ def get_projects_duplicate_stats(
     )
 
     stats: Dict[str, IssueDuplicateProjectStats] = {
-        project.id: IssueDuplicateProjectStats(
+        str(project.id): IssueDuplicateProjectStats(
             project_id=project.id, project_name=project.name, total=0, duplicates=0
         )
         for project in accessible_projects
     }
 
     for pid, data in issue_counts.items():
-        if pid in stats:
-            stats[pid].total = data.get("total", 0)
+        pid_str = str(pid)
+        if pid_str in stats:
+            stats[pid_str].total = data.get("total", 0)
 
     # Since a duplicate pair contains two issues, we need to count unique issues involved
     duplicate_issues_per_project = {p.id: set() for p in accessible_projects}
@@ -828,7 +829,8 @@ def get_projects_duplicate_stats(
         duplicate_issues_per_project[pair.issue2.project_id].add(pair.issue2.id)
 
     for pid, issues in duplicate_issues_per_project.items():
-        stats[pid].duplicates = len(issues)
+        pid_str = str(pid)
+        stats[pid_str].duplicates = len(issues)
 
     return IssueDuplicateStats(projects=stats)
 

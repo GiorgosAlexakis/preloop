@@ -6668,7 +6668,7 @@ components:
           default: []
         git_clone_config:
           anyOf:
-          - $ref: '#/components/schemas/GitCloneConfig'
+          - $ref: '#/components/schemas/GitCloneConfig-Input'
           - type: 'null'
         custom_commands:
           anyOf:
@@ -6850,13 +6850,11 @@ components:
         trigger_organization_id:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
           title: Trigger Organization Id
         trigger_project_id:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
           title: Trigger Project Id
         trigger_config:
@@ -6877,7 +6875,6 @@ components:
         ai_model_id:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
           title: Ai Model Id
         agent_type:
@@ -6909,7 +6906,7 @@ components:
           title: Allowed Mcp Tools
         git_clone_config:
           anyOf:
-          - $ref: '#/components/schemas/GitCloneConfig'
+          - $ref: '#/components/schemas/GitCloneConfig-Output'
           - type: 'null'
         custom_commands:
           anyOf:
@@ -6930,12 +6927,12 @@ components:
         account_id:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
           title: Account Id
         id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Id
         created_at:
           type: string
@@ -7040,7 +7037,7 @@ components:
           title: Allowed Mcp Tools
         git_clone_config:
           anyOf:
-          - $ref: '#/components/schemas/GitCloneConfig'
+          - $ref: '#/components/schemas/GitCloneConfig-Input'
           - type: 'null'
         custom_commands:
           anyOf:
@@ -7066,7 +7063,7 @@ components:
           title: Account Id
       type: object
       title: FlowUpdate
-    GitCloneConfig:
+    GitCloneConfig-Input:
       properties:
         enabled:
           type: boolean
@@ -7075,7 +7072,7 @@ components:
           default: false
         repositories:
           items:
-            $ref: '#/components/schemas/GitCloneRepository'
+            $ref: '#/components/schemas/GitCloneRepository-Input'
           type: array
           title: Repositories
           description: List of repositories to clone
@@ -7128,7 +7125,69 @@ components:
       type: object
       title: GitCloneConfig
       description: Configuration for git clone operations before agent execution.
-    GitCloneRepository:
+    GitCloneConfig-Output:
+      properties:
+        enabled:
+          type: boolean
+          title: Enabled
+          description: Whether git clone is enabled
+          default: false
+        repositories:
+          items:
+            $ref: '#/components/schemas/GitCloneRepository-Output'
+          type: array
+          title: Repositories
+          description: List of repositories to clone
+        git_user_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Git User Name
+          description: Name to use for git commits
+          default: Preloop AI
+        git_user_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Git User Email
+          description: Email to use for git commits
+          default: git@preloop.ai
+        source_branch:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Branch
+          description: Branch to checkout for base code
+          default: main
+        target_branch:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Branch
+          description: Branch to create for commits (auto-generated if empty)
+        create_pull_request:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Create Pull Request
+          description: Whether to create a Pull Request / Merge Request
+          default: false
+        pull_request_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pull Request Title
+          description: Title for the Pull/Merge Request
+        pull_request_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pull Request Description
+          description: Description for the Pull/Merge Request
+      type: object
+      title: GitCloneConfig
+      description: Configuration for git clone operations before agent execution.
+    GitCloneRepository-Input:
       properties:
         tracker_id:
           type: string
@@ -7139,6 +7198,44 @@ components:
           anyOf:
           - type: string
             format: uuid
+          - type: 'null'
+          title: Project Id
+          description: Project ID to clone. If None, uses repository_url or trigger
+            event
+        repository_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Repository Url
+          description: Repository URL to clone. If None, resolved from project or
+            trigger
+        clone_path:
+          type: string
+          title: Clone Path
+          description: Relative path where repository should be cloned
+          default: workspace
+        branch:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Branch
+          description: Branch to clone. If None, uses default branch
+      type: object
+      required:
+      - tracker_id
+      title: GitCloneRepository
+      description: Configuration for a single repository to clone.
+    GitCloneRepository-Output:
+      properties:
+        tracker_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tracker Id
+          description: ID of the tracker (GitHub/GitLab) to use
+        project_id:
+          anyOf:
+          - type: string
           - type: 'null'
           title: Project Id
           description: Project ID to clone. If None, uses repository_url or trigger
