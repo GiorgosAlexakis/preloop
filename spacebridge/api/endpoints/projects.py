@@ -18,7 +18,7 @@ from spacebridge.schemas.project import (
     TestConnectionRequest,
     TestConnectionResponse,
 )
-from spacesync.spacesync.trackers import create_tracker_client
+from spacesync.trackers import create_tracker_client
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
 from spacemodels.crud.tracker import CRUDTracker

@@ -13,7 +13,11 @@ from fastmcp import FastMCP
 from fastmcp.tools import Tool
 from mcp import types
 
-from spacebridge.services.dynamic_mcp_server import UserContext, has_tracker
+from spacebridge.services.dynamic_mcp_server import (
+    UserContext,
+    has_tracker,
+    get_tracker_types,
+)
 from spacebridge.services.mcp_client_pool import get_mcp_client_pool
 from spacebridge.services.mcp_tool_discovery import get_all_enabled_proxied_tools
 from spacemodels.crud import crud_mcp_server
@@ -87,9 +91,35 @@ class DynamicFastMCP(FastMCP):
             builtin_tools = [
                 t for t in default_tools if not t.name.startswith("account_")
             ]
-            available_tools.extend(builtin_tools)
+
+            # Further filter based on tracker types
+            filtered_tools = []
+            for tool in builtin_tools:
+                # GitHub-only tools
+                if tool.name in ["get_pull_request", "update_pull_request"]:
+                    if "github" in user_context.tracker_types:
+                        filtered_tools.append(tool)
+                    else:
+                        logger.info(
+                            f"Skipping GitHub-only tool '{tool.name}' (no GitHub tracker)"
+                        )
+                # GitLab-only tools
+                elif tool.name in ["get_merge_request", "update_merge_request"]:
+                    if "gitlab" in user_context.tracker_types:
+                        filtered_tools.append(tool)
+                    else:
+                        logger.info(
+                            f"Skipping GitLab-only tool '{tool.name}' (no GitLab tracker)"
+                        )
+                # All other tools (including add_comment) - available if any tracker exists
+                else:
+                    filtered_tools.append(tool)
+
+            available_tools.extend(filtered_tools)
             logger.info(
-                f"Added {len(builtin_tools)} default tools (filtered {len(default_tools) - len(builtin_tools)} internal names)"
+                f"Added {len(filtered_tools)} default tools after tracker-type filtering "
+                f"(filtered out {len(builtin_tools) - len(filtered_tools)} tracker-specific tools, "
+                f"{len(default_tools) - len(builtin_tools)} internal names)"
             )
 
         # Add proxied tools from external MCP servers (Phase 1B)
@@ -503,6 +533,7 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
             account = crud_account.get(db, id=user.account_id)
 
         user_has_tracker = has_tracker(account, db) if account else False
+        user_tracker_types = get_tracker_types(account, db) if account else []
 
         user_context = UserContext(
             user_id=str(user.id),
@@ -511,11 +542,13 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
             has_tracker=user_has_tracker,
             enabled_default_tools=[],  # Empty = all tools
             enabled_proxied_tools=[],
+            tracker_types=user_tracker_types,
         )
 
         logger.info(
             f"Created user context for {user.username} "
-            f"(account: {user.account_id}), has_tracker={user_has_tracker}"
+            f"(account: {user.account_id}), has_tracker={user_has_tracker}, "
+            f"tracker_types={user_tracker_types}"
         )
 
         return user_context

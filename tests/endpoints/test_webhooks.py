@@ -477,7 +477,12 @@ class TestWebhooksEndpoint:
         mock_crud_issue_embedding,
         configured_mock_org_fixture,
     ):
-        """Test webhook handles database errors gracefully during DB update."""
+        """Test webhook handles database errors gracefully during DB update.
+
+        With the new behavior, if database processing fails but NATS publishing
+        succeeds, the webhook returns 200 with partial_success status to ensure
+        that flows can still be triggered even if database operations fail.
+        """
         current_org_mock = configured_mock_org_fixture
         current_org_mock.identifier = "db-error-org-final"
         secret_to_use = "db-error-secret-final"
@@ -517,7 +522,12 @@ class TestWebhooksEndpoint:
             },
         )
 
-        assert response.status_code == 500
+        # New behavior: DB fails but NATS succeeds -> return 200 with partial_success
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["status"] == "partial_success"
+        assert response_data["nats_published"] is True
+        assert response_data["db_processed"] is False
 
     @pytest.mark.skip(
         reason="Test is failing intermittently and needs to be refactored."

@@ -31,6 +31,7 @@ class UserContext:
         has_tracker: bool = False,
         enabled_default_tools: Optional[List[str]] = None,
         enabled_proxied_tools: Optional[List[str]] = None,
+        tracker_types: Optional[List[str]] = None,
     ):
         self.user_id = user_id
         self.account_id = account_id
@@ -38,6 +39,7 @@ class UserContext:
         self.has_tracker = has_tracker
         self.enabled_default_tools = enabled_default_tools or []
         self.enabled_proxied_tools = enabled_proxied_tools or []
+        self.tracker_types = tracker_types or []
 
 
 class DynamicMCPServer:
@@ -574,6 +576,23 @@ def has_tracker(account: Account, db: Session) -> bool:
     from spacemodels.crud import crud_tracker
 
     return crud_tracker.has_tracker(db, account_id=account.id)
+
+
+def get_tracker_types(account: Account, db: Session) -> List[str]:
+    """Get list of tracker types configured for an account.
+
+    Args:
+        account: Account model instance
+        db: Database session
+
+    Returns:
+        List of tracker type strings (e.g., ['github', 'gitlab'])
+    """
+    from spacemodels.crud import crud_tracker
+
+    trackers = crud_tracker.get_for_account(db, account_id=account.id)
+    # Return unique tracker types
+    return list(set(tracker.tracker_type for tracker in trackers))
 
 
 def register_default_tools(server: DynamicMCPServer):

@@ -166,6 +166,123 @@ BUILTIN_TOOLS = [
             "required": ["issues"],
         },
     },
+    {
+        "name": "add_comment",
+        "description": "Add a comment to an issue, pull request, or merge request",
+        "source": "builtin",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "Issue, PR, or MR identifier (URL, key, or ID)",
+                },
+                "comment": {"type": "string", "description": "Comment text"},
+            },
+            "required": ["target", "comment"],
+        },
+    },
+    {
+        "name": "get_pull_request",
+        "description": "Get details of a GitHub pull request",
+        "source": "builtin",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "pull_request": {
+                    "type": "string",
+                    "description": "PR identifier (URL, slug, or number)",
+                }
+            },
+            "required": ["pull_request"],
+        },
+    },
+    {
+        "name": "get_merge_request",
+        "description": "Get details of a GitLab merge request",
+        "source": "builtin",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "merge_request": {
+                    "type": "string",
+                    "description": "MR identifier (URL, slug, or IID)",
+                }
+            },
+            "required": ["merge_request"],
+        },
+    },
+    {
+        "name": "update_pull_request",
+        "description": "Update a GitHub pull request",
+        "source": "builtin",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "pull_request": {
+                    "type": "string",
+                    "description": "PR identifier (URL, slug, or number)",
+                },
+                "title": {"type": "string", "description": "New PR title"},
+                "description": {"type": "string", "description": "New PR description"},
+                "state": {"type": "string", "description": "New state (open/closed)"},
+                "assignees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Assignee usernames",
+                },
+                "reviewers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Reviewer usernames",
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Label names",
+                },
+                "draft": {"type": "boolean", "description": "Mark as draft"},
+            },
+            "required": ["pull_request"],
+        },
+    },
+    {
+        "name": "update_merge_request",
+        "description": "Update a GitLab merge request",
+        "source": "builtin",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "merge_request": {
+                    "type": "string",
+                    "description": "MR identifier (URL, slug, or IID)",
+                },
+                "title": {"type": "string", "description": "New MR title"},
+                "description": {"type": "string", "description": "New MR description"},
+                "state_event": {
+                    "type": "string",
+                    "description": "State event (close/reopen)",
+                },
+                "assignee_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Assignee user IDs",
+                },
+                "reviewer_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Reviewer user IDs",
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Label names",
+                },
+                "draft": {"type": "boolean", "description": "Mark as draft/WIP"},
+            },
+            "required": ["merge_request"],
+        },
+    },
 ]
 
 

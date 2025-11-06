@@ -130,10 +130,10 @@ test:unit:spacebridge-endpoints-auth:
   variables:
     TEST_PATHS: "tests/endpoints/test_auth.py"
 
-# test:unit:spacebridge-endpoints-billing:
-#   extends: .test:unit:template
-#   variables:
-#     TEST_PATHS: "tests/endpoints/test_billing.py"
+test:unit:spacebridge-endpoints-billing:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_billing.py"
 
 test:unit:spacebridge-endpoints-comments:
   extends: .test:unit:template
@@ -215,10 +215,60 @@ test:unit:spacebridge-endpoints-mcp:
   variables:
     TEST_PATHS: "tests/endpoints/test_mcp.py"
 
+test:unit:spacebridge-endpoints-mcp-servers:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_mcp_servers.py"
+
+test:unit:spacebridge-endpoints-invitations:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_invitations.py"
+
+test:unit:spacebridge-endpoints-teams:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_teams.py"
+
+test:unit:spacebridge-endpoints-users:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_users.py"
+
+test:unit:spacebridge-endpoints-tools:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_tools.py"
+
+test:unit:spacebridge-endpoints-issue-duplicate-stats:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_issue_duplicate_stats.py"
+
 # test:unit:spacebridge-endpoints-websockets:
 #   extends: .test:unit:template
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_websockets.py"
+
+test:unit:spacebridge-plugins:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/plugins"
+
+test:unit:spacebridge-agents:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/agents"
+
+test:unit:spacebridge-api:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/api"
+
+test:unit:spacebridge-scripts:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/scripts"
 
 test:coverage:
   stage: qa
@@ -229,7 +279,7 @@ test:coverage:
     - test:unit:spacebridge-other
     - test:unit:spacebridge-endpoints-ai-models
     - test:unit:spacebridge-endpoints-auth
-    # - test:unit:spacebridge-endpoints-billing
+    - test:unit:spacebridge-endpoints-billing
     - test:unit:spacebridge-endpoints-comments
     - test:unit:spacebridge-endpoints-embedding
     - test:unit:spacebridge-endpoints-features
@@ -246,7 +296,17 @@ test:coverage:
     # - test:unit:spacebridge-endpoints-version
     - test:unit:spacebridge-endpoints-webhooks
     - test:unit:spacebridge-endpoints-mcp
+    - test:unit:spacebridge-endpoints-mcp-servers
+    - test:unit:spacebridge-endpoints-invitations
+    - test:unit:spacebridge-endpoints-teams
+    - test:unit:spacebridge-endpoints-users
+    - test:unit:spacebridge-endpoints-tools
+    - test:unit:spacebridge-endpoints-issue-duplicate-stats
     # - test:unit:spacebridge-endpoints-websockets
+    - test:unit:spacebridge-plugins
+    - test:unit:spacebridge-agents
+    - test:unit:spacebridge-api
+    - test:unit:spacebridge-scripts
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
     - pip install coverage junitparser
@@ -361,6 +421,7 @@ test:coverage:
       --set environment.spacebridgeUrl=https://${TARGET_DOMAIN}
       --set database.cnpg.name=${DATABASE_NAME}
       --set preloop.enabled=${PRELOOP_ENABLED}
+      --set preloop.tag=${SPACELIT_COMMIT_SHA}
       --set preloop.ingress.host=${PRELOOP_DOMAIN}
       --set preloop.ingress.hosts[0].host=${PRELOOP_DOMAIN}
       --set preloop.ingress.hosts[0].paths[0].path=/

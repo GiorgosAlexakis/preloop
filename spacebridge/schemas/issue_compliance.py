@@ -33,6 +33,14 @@ class IssueComplianceResultResponse(IssueComplianceResultBase):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator("id", "issue_id", mode="before")
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> str:
+        """Convert UUID objects to strings for JSON serialization."""
+        if v is None:
+            return ""
+        return str(v)
+
     @field_validator("annotated_description", mode="before")
     @classmethod
     def parse_annotated_description(cls, v: Any) -> Optional[List[dict]]:

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from spacebridge.tools.base import Context
 from spacebridge.schemas.tracker_models import IssueCreate
-from spacesync.spacesync.trackers.factory import create_tracker_client
+from spacesync.trackers.factory import create_tracker_client
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
 from spacemodels.db.session import get_db_session as get_db

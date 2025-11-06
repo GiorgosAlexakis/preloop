@@ -120,4 +120,122 @@ class ImproveComplianceResponse(BaseModel):
     metadata: ProcessingMetadata
 
 
+class AddCommentRequest(BaseModel):
+    """Request body for the add_comment tool."""
+
+    target: str  # Issue, PR, or MR identifier (URL, key, or ID)
+    comment: str
+
+
+class AddCommentResponse(BaseModel):
+    """Response for the add_comment tool."""
+
+    comment_id: str
+    status: str  # e.g., "created"
+    message: str
+    url: Optional[str] = None
+
+
+class GetPullRequestRequest(BaseModel):
+    """Request body for the get_pull_request tool."""
+
+    pull_request: str  # PR identifier (URL, slug, or number)
+
+
+class PullRequestResponse(BaseModel):
+    """Response for the get_pull_request tool."""
+
+    id: str
+    number: int
+    title: str
+    description: Optional[str] = None
+    state: str  # e.g., "open", "closed", "merged"
+    author: Optional[str] = None
+    assignees: List[str] = []
+    reviewers: List[str] = []
+    labels: List[str] = []
+    url: str
+    source_branch: Optional[str] = None
+    target_branch: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    merged_at: Optional[str] = None
+    is_draft: bool = False
+    comments: List[dict] = []
+    changes: Optional[dict] = None  # Diff/changes information
+
+
+class GetMergeRequestRequest(BaseModel):
+    """Request body for the get_merge_request tool."""
+
+    merge_request: str  # MR identifier (URL, slug, or number)
+
+
+class MergeRequestResponse(BaseModel):
+    """Response for the get_merge_request tool."""
+
+    id: str
+    iid: int  # GitLab internal ID
+    title: str
+    description: Optional[str] = None
+    state: str  # e.g., "opened", "closed", "merged"
+    author: Optional[str] = None
+    assignees: List[str] = []
+    reviewers: List[str] = []
+    labels: List[str] = []
+    url: str
+    source_branch: Optional[str] = None
+    target_branch: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    merged_at: Optional[str] = None
+    work_in_progress: bool = False
+    comments: List[dict] = []
+    changes: Optional[dict] = None  # Diff/changes information
+
+
+class UpdatePullRequestRequest(BaseModel):
+    """Request body for the update_pull_request tool."""
+
+    pull_request: str  # PR identifier (URL, slug, or number)
+    title: Optional[str] = None
+    description: Optional[str] = None
+    state: Optional[str] = None  # "open", "closed"
+    assignees: Optional[List[str]] = None
+    reviewers: Optional[List[str]] = None
+    labels: Optional[List[str]] = None
+    draft: Optional[bool] = None
+
+
+class UpdatePullRequestResponse(BaseModel):
+    """Response for the update_pull_request tool."""
+
+    pull_request_id: str
+    status: str  # e.g., "updated"
+    message: str
+    url: Optional[str] = None
+
+
+class UpdateMergeRequestRequest(BaseModel):
+    """Request body for the update_merge_request tool."""
+
+    merge_request: str  # MR identifier (URL, slug, or number)
+    title: Optional[str] = None
+    description: Optional[str] = None
+    state_event: Optional[str] = None  # "close", "reopen"
+    assignee_ids: Optional[List[int]] = None
+    reviewer_ids: Optional[List[int]] = None
+    labels: Optional[List[str]] = None
+    draft: Optional[bool] = None
+
+
+class UpdateMergeRequestResponse(BaseModel):
+    """Response for the update_merge_request tool."""
+
+    merge_request_id: str
+    status: str  # e.g., "updated"
+    message: str
+    url: Optional[str] = None
+
+
 # Schemas for other tools will be added here.

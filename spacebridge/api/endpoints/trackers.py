@@ -19,7 +19,7 @@ from spacebridge.schemas.tracker import (
 from spacebridge.schemas.tracker import (
     ProjectIdentifier,
 )  # Corrected import location
-from spacesync.spacesync.trackers import create_tracker_client
+from spacesync.trackers import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
 from spacesync.services.event_bus import event_bus_service
 from spacemodels.db.session import get_db_session
