@@ -1546,7 +1546,7 @@ class GitHubTracker(BaseTracker):
                 "reviewers": [
                     r["login"] for r in pr_data.get("requested_reviewers", [])
                 ],
-                "labels": [l["name"] for l in pr_data.get("labels", [])],
+                "labels": [label["name"] for label in pr_data.get("labels", [])],
                 "url": pr_data["html_url"],
                 "source_branch": pr_data["head"]["ref"],
                 "target_branch": pr_data["base"]["ref"],
