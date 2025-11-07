@@ -304,9 +304,27 @@ if [ "$CODEX_EXIT_CODE" -eq "0" ]; then
 fi
 """
 
+        # Get execution details for logging
+        execution_id = execution_context.get("execution_id", "unknown")
+        flow_name = execution_context.get("flow_name", "unknown")
+
         # Create the full script
         script = f"""
 set -e
+
+# ============================================================
+# Flow Execution Information
+# ============================================================
+echo "=================================================="
+echo "Flow Execution Started"
+echo "=================================================="
+echo "Execution ID: {execution_id}"
+echo "Flow Name: {flow_name}"
+echo "Agent Type: Codex"
+echo "Model: {model}"
+echo "Start Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+echo "=================================================="
+echo ""
 
 # Run initialization commands (git clone, custom commands) if any
 {init_commands}

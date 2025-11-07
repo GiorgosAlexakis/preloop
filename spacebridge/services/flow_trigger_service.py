@@ -235,7 +235,7 @@ class FlowTriggerService:
             orchestrator = FlowExecutionOrchestrator(
                 orchestrator_db,
                 flow_id=uuid.UUID(flow.id) if isinstance(flow.id, str) else flow.id,
-                trigger_event_data={"test_mode": test_mode},
+                trigger_event_data=trigger_details,
                 nats_client=nats_client,
             )
 
@@ -259,6 +259,16 @@ class FlowTriggerService:
     async def _run_orchestrator_without_creation(self, orchestrator):
         """Run orchestrator starting from stage 2 (skip execution log creation)."""
         try:
+            # Publish execution_started event for UI notification
+            await orchestrator._publish_update(
+                "execution_started",
+                {
+                    "status": "PENDING",
+                    "flow_id": str(orchestrator.flow_id),
+                    "flow_name": orchestrator.flow.name if orchestrator.flow else None,
+                },
+            )
+
             # Stage 2: Retrieve flow and AI model details
             orchestrator._get_flow_details()
             await orchestrator._update_execution_log(status="INITIALIZING")
