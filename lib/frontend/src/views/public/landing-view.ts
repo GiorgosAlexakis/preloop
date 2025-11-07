@@ -431,52 +431,19 @@ export class LandingView extends LitElement {
         </section>
 
         <section class="feature-section main-section" id="features">
-          <div class="section-container text-center">
-            <sl-carousel
-              class="feature-carousel"
-              loop
-              effect="fade"
-              @sl-slide-change=${this._handleSlideChange}
-            >
+          <div class="section-container">
+            <h2 class="text-center">Features</h2>
+            <div class="feature-grid three-col">
               ${this._featureSlides.map(
-                (slide, index) => html`
-                  <sl-carousel-item>
-                    <div class="feature-grid-2-col">
-                      <div class="feature-text-content">
-                        <h2>${slide.title}</h2>
-                        <p>${slide.text}</p>
-                        <div class="carousel-navigation">
-                          <sl-button
-                            variant="text"
-                            class="carousel-nav carousel-nav--prev"
-                            @click=${() => this._carousel.previous()}
-                          >
-                            <sl-icon name="chevron-left"></sl-icon>
-                          </sl-button>
-                          <span class="slide-indicator">
-                            ${this._activeSlideIndex + 1} /
-                            ${this._featureSlides.length}
-                          </span>
-                          <sl-button
-                            variant="text"
-                            class="carousel-nav carousel-nav--next"
-                            @click=${() => this._carousel.next()}
-                          >
-                            <sl-icon name="chevron-right"></sl-icon>
-                          </sl-button>
-                        </div>
-                      </div>
-
-                      <div class="feature-video-content">
-                        <div class="image-placeholder">
-                          <img src=${slide.placeholderImg} alt=${slide.title} />
-                        </div>
-                      </div>
-                    </div>
-                  </sl-carousel-item>
+                (slide) => html`
+                  <div class="feature-box">
+                    <img src=${slide.placeholderImg} alt=${slide.title} />
+                    <h3>${slide.title}</h3>
+                    <p>${slide.text}</p>
+                  </div>
                 `
               )}
-            </sl-carousel>
+            </div>
           </div>
         </section>
 
@@ -494,7 +461,7 @@ export class LandingView extends LitElement {
               >
             </div>
 
-            <div class="feature-grid">
+            <div class="feature-grid three-col">
               ${this._getStartedFeatures.length > 0
                 ? this._getStartedFeatures.map(
                     (feature) => html`

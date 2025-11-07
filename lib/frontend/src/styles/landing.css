@@ -49,10 +49,10 @@ p.lead {
   overflow: hidden;
   background: linear-gradient(
     135deg,
-    hsl(25, 70%, 20%) 0%,
-    hsl(280, 50%, 18%) 33%,
-    hsl(200, 55%, 20%) 66%,
-    hsl(260, 60%, 22%) 100%
+    hsl(25, 70%, 28%) 0%,
+    hsl(280, 50%, 25%) 33%,
+    hsl(200, 55%, 28%) 66%,
+    hsl(260, 60%, 30%) 100%
   );
   background-size: 400% 400%;
   animation: moveGradient 30s ease infinite;
@@ -214,7 +214,6 @@ sl-carousel-item {
 /* How It Works Section */
 .how-it-works-section {
   padding: 6rem 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.05) 100%);
 }
 
 .how-it-works-section h2 {
@@ -253,6 +252,17 @@ sl-carousel-item {
   justify-content: center;
 }
 
+.feature-grid.three-col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3rem;
+  width: 100%;
+}
+
+.feature-grid.three-col .feature-box {
+  padding: 0;
+}
+
 .feature-grid-2-col {
   display: grid;
   grid-template-columns: 1fr 2fr;
@@ -267,6 +277,13 @@ sl-carousel-item {
   padding: 2rem;
   border-radius: 8px;
   text-align: left;
+}
+
+.feature-box img {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
 }
 
 .feature-icon {
@@ -684,6 +701,10 @@ summary.faq-question sl-icon {
   .tool-logo {
     height: 56px;
   }
+
+  .feature-grid.three-col {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 768px) {
@@ -705,6 +726,10 @@ summary.faq-question sl-icon {
   }
 
   .feature-grid-2-col {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-grid.three-col {
     grid-template-columns: 1fr;
   }
 
