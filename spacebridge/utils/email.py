@@ -19,9 +19,10 @@ SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "hello@spacebridge.io")
-SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "SpaceBridge")
-SPACEBRIDGE_URL = os.getenv("SPACEBRIDGE_URL", "https://spacebridge.io")
+SMTP_FROM = os.getenv("SMTP_FROM", "hello@preloop.ai")
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Preloop AI")
+SPACEBRIDGE_URL = os.getenv("SPACEBRIDGE_URL", "https://preloop.ai")
+APP_NAME = os.getenv("APP_NAME", "Preloop AI")
 
 
 class EmailError(Exception):
@@ -98,28 +99,28 @@ def send_verification_email(user_email: str, token: str) -> None:
     """
     verification_link = f"{SPACEBRIDGE_URL}/verify-email?token={token}"
 
-    subject = "Verify your SpaceBridge account"
+    subject = f"Verify your {APP_NAME} account"
     text_body = f"""
-    Welcome to SpaceBridge!
+    Welcome to {APP_NAME}!
 
     Please verify your email address by clicking the link below:
 
     {verification_link}
 
-    If you didn't register for SpaceBridge, please ignore this email.
+    If you didn't register for {APP_NAME}, please ignore this email.
 
     Thank you,
-    The SpaceBridge Team
+    The {APP_NAME} Team
     """
 
     html_body = f"""
     <html>
     <body>
-        <h2>Welcome to SpaceBridge!</h2>
+        <h2>Welcome to {APP_NAME}!</h2>
         <p>Please verify your email address by clicking the link below:</p>
         <p><a href="{verification_link}">Verify your email</a></p>
-        <p>If you didn't register for SpaceBridge, please ignore this email.</p>
-        <p>Thank you,<br>The SpaceBridge Team</p>
+        <p>If you didn't register for {APP_NAME}, please ignore this email.</p>
+        <p>Thank you,<br>The {APP_NAME} Team</p>
     </body>
     </html>
     """
@@ -136,9 +137,9 @@ def send_password_reset_email(user_email: str, token: str) -> None:
     """
     reset_link = f"{SPACEBRIDGE_URL}/reset-password?token={token}"
 
-    subject = "Reset your SpaceBridge password"
+    subject = f"Reset your {APP_NAME} password"
     text_body = f"""
-    You have requested to reset your SpaceBridge password.
+    You have requested to reset your {APP_NAME} password.
 
     Please click the link below to set a new password:
 
@@ -147,18 +148,18 @@ def send_password_reset_email(user_email: str, token: str) -> None:
     If you didn't request a password reset, please ignore this email.
 
     Thank you,
-    The SpaceBridge Team
+    The {APP_NAME} Team
     """
 
     html_body = f"""
     <html>
     <body>
-        <h2>Reset your SpaceBridge password</h2>
-        <p>You have requested to reset your SpaceBridge password.</p>
+        <h2>Reset your {APP_NAME} password</h2>
+        <p>You have requested to reset your {APP_NAME} password.</p>
         <p>Please click the link below to set a new password:</p>
         <p><a href="{reset_link}">Reset your password</a></p>
         <p>If you didn't request a password reset, please ignore this email.</p>
-        <p>Thank you,<br>The SpaceBridge Team</p>
+        <p>Thank you,<br>The {APP_NAME} Team</p>
     </body>
     </html>
     """
@@ -184,7 +185,7 @@ def send_invitation_email(
     text_body = f"""
 Hello!
 
-{invited_by} has invited you to join {organization_name} on SpaceBridge.
+{invited_by} has invited you to join {organization_name} on {APP_NAME}.
 
 To accept this invitation and create your account, please click the link below:
 
@@ -195,7 +196,7 @@ This invitation will expire in 7 days.
 If you didn't expect this invitation, you can safely ignore this email.
 
 Best regards,
-The SpaceBridge Team
+The {APP_NAME} Team
     """.strip()
 
     html_body = f"""
@@ -220,8 +221,8 @@ The SpaceBridge Team
             </div>
             <div class="content">
                 <p>Hello!</p>
-                <p><strong>{invited_by}</strong> has invited you to join <strong>{organization_name}</strong> on SpaceBridge.</p>
-                <p>SpaceBridge helps teams automate and streamline their development workflows with AI-powered agents.</p>
+                <p><strong>{invited_by}</strong> has invited you to join <strong>{organization_name}</strong> on {APP_NAME}.</p>
+                <p>{APP_NAME} helps teams automate and streamline their development workflows with AI-powered agents.</p>
                 <p style="text-align: center;">
                     <a href="{accept_link}" class="button">Accept Invitation</a>
                 </p>
@@ -254,7 +255,7 @@ def send_tracker_registered_email(
 
     subject = f"New {tracker_type.title()} tracker registered: {tracker_name}"
     text_body = f"""
-    You have successfully registered a new tracker in SpaceBridge:
+    You have successfully registered a new tracker in {APP_NAME}:
 
     Name: {tracker_name}
     Type: {tracker_type.title()}
@@ -263,20 +264,20 @@ def send_tracker_registered_email(
     {trackers_link}
 
     Thank you,
-    The SpaceBridge Team
+    The {APP_NAME} Team
     """
 
     html_body = f"""
     <html>
     <body>
         <h2>New tracker registered</h2>
-        <p>You have successfully registered a new tracker in SpaceBridge:</p>
+        <p>You have successfully registered a new tracker in {APP_NAME}:</p>
         <p>
             <strong>Name:</strong> {tracker_name}<br>
             <strong>Type:</strong> {tracker_type.title()}
         </p>
         <p>You can <a href="{trackers_link}">view and manage your trackers here</a>.</p>
-        <p>Thank you,<br>The SpaceBridge Team</p>
+        <p>Thank you,<br>The {APP_NAME} Team</p>
     </body>
     </html>
     """

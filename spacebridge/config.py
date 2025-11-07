@@ -46,7 +46,7 @@ class ServerSettings(BaseModel):
 class Settings(BaseSettings):
     """Application settings."""
 
-    app_name: str = Field("SpaceBridge", description="Application name")
+    app_name: str = Field("Preloop AI", description="Application name")
     version: str = Field(SERVER_VERSION, description="Application version")
     environment: str = Field(
         "development", description="Environment (development, production)"
@@ -133,7 +133,7 @@ class Settings(BaseSettings):
         stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
         return cls(
-            app_name=os.getenv("APP_NAME", "SpaceBridge"),
+            app_name=os.getenv("APP_NAME", "Preloop AI"),
             environment=os.getenv("ENVIRONMENT", "development"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             product_team_email=os.getenv("PRODUCT_TEAM_EMAIL", "product@spacecode.ai"),

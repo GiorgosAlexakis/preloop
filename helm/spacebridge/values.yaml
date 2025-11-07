@@ -125,6 +125,7 @@ affinity: {}
 # Environment configuration
 environment:
   spacebridgeUrl: "https://spacebridge.io"
+  preloopUrl: "https://preloop.ai"
   debug: false
   # Database settings
   databaseUrl: ""
@@ -145,7 +146,7 @@ config:
     username: ""
     password: ""
     from: ""
-    fromName: "SpaceBridge"
+    fromName: "Preloop AI"
 
 # Database configuration
 database:
