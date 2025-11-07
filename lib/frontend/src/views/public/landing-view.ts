@@ -419,7 +419,7 @@ export class LandingView extends LitElement {
               Preloop is an event-driven automation platform with built-in
               human-in-the-loop safety. AI agents respond to events across your
               tools automatically. When agents call sensitive operations,
-              Preloop intercepts the request and routes it for human approval<br>—no
+              Preloop intercepts the request and routes it for human approval<br />—no
               infrastructure changes required.
             </p>
             <img
