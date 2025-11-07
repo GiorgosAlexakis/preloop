@@ -182,17 +182,17 @@ brands:
         - title: "Granular approval policies"
           text: "Preloop AI provides an MCP proxy that puts a human-in-the-loop before your agents take critical action. Execution is paused while appropriate people are notified over any available channel (App, Email, Slack, etc.)."
           videoUrl: ""
-          placeholderImg: "/images/agent.png"
+          placeholderImg: "/images/feature1.jpg"
 
         - title: "Event driven agentic flows"
           text: "Automate agentic processes to run in response to events. Select from a library of prebuilt templates or create your own."
           videoUrl: ""
-          placeholderImg: "/images/preloop/ui_02.png"
+          placeholderImg: "/images/feature2.jpg"
 
         - title: "Compliance & Security Checks"
           text: "Ensure your code and processes meet industry standards and security requirements. Discover unmapped dependencies, reduce overlap and ensure Definition of Ready compliance for every open issue."
           videoUrl: ""
-          placeholderImg: "/images/preloop/ui_03.png"
+          placeholderImg: "/images/feature3.jpg"
 
       faqs:
         - q: "What is Preloop?"
