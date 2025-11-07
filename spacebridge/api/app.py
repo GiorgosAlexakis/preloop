@@ -37,6 +37,7 @@ from spacebridge.api.endpoints import (
     issue_compliance,
     issue_dependencies,
     mcp_servers,
+    notification_preferences,
     organizations,
     projects,
     public_approval,
@@ -656,6 +657,12 @@ def create_app() -> FastAPI:
         approval_requests.router,
         prefix="/api/v1",
         tags=["Approval Requests"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        notification_preferences.router,
+        prefix="/api/v1/notification-preferences",
+        tags=["Notification Preferences"],
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(

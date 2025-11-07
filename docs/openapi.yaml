@@ -492,6 +492,52 @@ paths:
               schema: {}
       security:
       - bearerAuth: []
+  /api/v1/account/details:
+    get:
+      tags:
+      - Account
+      summary: Get Account Details
+      description: "Get current account details.\n\nReturns:\n    Account details\
+        \ including organization name"
+      operationId: get_account_details_api_v1_account_details_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDetailsResponse'
+      security:
+      - bearerAuth: []
+    patch:
+      tags:
+      - Account
+      summary: Update Account Details
+      description: "Update current account details.\n\nArgs:\n    update_data: Account\
+        \ update data\n    account: Current user's account\n    db: Database session\n\
+        \nReturns:\n    Updated account details"
+      operationId: update_account_details_api_v1_account_details_patch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountDetailsUpdate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDetailsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/public/approval/{request_id}:
     get:
       tags:
@@ -1464,6 +1510,158 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tool-configurations/{config_id}/approval-condition:
+    get:
+      tags:
+      - Tools
+      summary: Get Tool Approval Condition
+      description: "Get the approval condition for a tool configuration.\n\nArgs:\n\
+        \    config_id: Tool configuration ID\n    account: Current user's account\
+        \ (from dependency)\n    db: Database session\n\nReturns:\n    Tool approval\
+        \ condition\n\nRaises:\n    HTTPException: If tool configuration not found\
+        \ or condition not found"
+      operationId: get_tool_approval_condition_api_v1_tool_configurations__config_id__approval_condition_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolApprovalConditionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Tools
+      summary: Create Or Update Tool Approval Condition
+      description: "Create or update the approval condition for a tool configuration.\n\
+        \nArgs:\n    config_id: Tool configuration ID\n    condition_in: Condition\
+        \ data\n    account: Current user's account (from dependency)\n    db: Database\
+        \ session\n\nReturns:\n    Created or updated tool approval condition\n\n\
+        Raises:\n    HTTPException: If tool configuration not found or creation fails"
+      operationId: create_or_update_tool_approval_condition_api_v1_tool_configurations__config_id__approval_condition_put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolApprovalConditionCreate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolApprovalConditionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Tools
+      summary: Delete Tool Approval Condition
+      description: "Delete the approval condition for a tool configuration.\n\nArgs:\n\
+        \    config_id: Tool configuration ID\n    account: Current user's account\
+        \ (from dependency)\n    db: Database session\n\nReturns:\n    Success message\n\
+        \nRaises:\n    HTTPException: If tool configuration not found or condition\
+        \ not found"
+      operationId: delete_tool_approval_condition_api_v1_tool_configurations__config_id__approval_condition_delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Delete Tool Approval Condition Api V1 Tool Configurations  Config
+                  Id  Approval Condition Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tool-configurations/{config_id}/approval-condition/test:
+    post:
+      tags:
+      - Tools
+      summary: Test Approval Condition
+      description: "Test a CEL expression against sample arguments.\n\nThis endpoint\
+        \ allows testing approval conditions before saving them.\nIt's a proprietary\
+        \ feature for validating CEL expressions.\n\nArgs:\n    config_id: Tool configuration\
+        \ ID\n    test_request: Test request with expression and sample args\n   \
+        \ account: Current user's account (from dependency)\n    db: Database session\n\
+        \nReturns:\n    Test result with match status and evaluation context\n\nRaises:\n\
+        \    HTTPException: If tool configuration not found or evaluation fails"
+      operationId: test_approval_condition_api_v1_tool_configurations__config_id__approval_condition_test_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConditionTestRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConditionTestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/approval-requests/{request_id}:
     get:
       tags:
@@ -1687,6 +1885,169 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApprovalRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notification-preferences/me:
+    get:
+      tags:
+      - Notification Preferences
+      summary: Get My Notification Preferences
+      description: "Get current user's notification preferences.\n\nReturns:\n   \
+        \ Notification preferences."
+      operationId: get_my_notification_preferences_api_v1_notification_preferences_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesResponse'
+      security:
+      - bearerAuth: []
+    put:
+      tags:
+      - Notification Preferences
+      summary: Update My Notification Preferences
+      description: "Update current user's notification preferences.\n\nArgs:\n   \
+        \ prefs_in: Preferences update data.\n\nReturns:\n    Updated notification\
+        \ preferences."
+      operationId: update_my_notification_preferences_api_v1_notification_preferences_me_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferencesUpdate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/notification-preferences/me/register-device:
+    post:
+      tags:
+      - Notification Preferences
+      summary: Register Mobile Device
+      description: "Register a mobile device for push notifications.\n\nArgs:\n  \
+        \  device_in: Device registration data.\n\nReturns:\n    Updated notification\
+        \ preferences."
+      operationId: register_mobile_device_api_v1_notification_preferences_me_register_device_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileDeviceRegistration'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/notification-preferences/me/device/{token}:
+    delete:
+      tags:
+      - Notification Preferences
+      summary: Unregister Mobile Device
+      description: "Unregister a mobile device.\n\nArgs:\n    token: Device token\
+        \ to remove.\n\nReturns:\n    Updated notification preferences.\n\nRaises:\n\
+        \    HTTPException: If preferences not found."
+      operationId: unregister_mobile_device_api_v1_notification_preferences_me_device__token__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notification-preferences/me/qr-code:
+    get:
+      tags:
+      - Notification Preferences
+      summary: Get Registration Qr Code
+      description: "Generate a QR code for mobile device registration.\n\nReturns:\n\
+        \    QR code data with registration token."
+      operationId: get_registration_qr_code_api_v1_notification_preferences_me_qr_code_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QRCodeResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/notification-preferences/register-via-token:
+    post:
+      tags:
+      - Notification Preferences
+      summary: Register Device Via Token
+      description: "Register a mobile device using a QR code token.\n\nThis endpoint\
+        \ is called by the mobile app after scanning the QR code.\n\nArgs:\n    token:\
+        \ Registration token from QR code.\n    device_in: Device registration data.\n\
+        \nReturns:\n    Updated notification preferences.\n\nRaises:\n    HTTPException:\
+        \ If token is invalid or expired."
+      operationId: register_device_via_token_api_v1_notification_preferences_register_via_token_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: token
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileDeviceRegistration'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesResponse'
         '422':
           description: Validation Error
           content:
@@ -5625,6 +5986,39 @@ components:
       type: object
       title: AIModelUpdate
       description: Schema for updating an existing AIModel entry. All fields are optional.
+    AccountDetailsResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        organization_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization Name
+        created_at:
+          type: string
+          title: Created At
+        updated_at:
+          type: string
+          title: Updated At
+      type: object
+      required:
+      - id
+      - created_at
+      - updated_at
+      title: AccountDetailsResponse
+      description: Account details response.
+    AccountDetailsUpdate:
+      properties:
+        organization_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization Name
+      type: object
+      title: AccountDetailsUpdate
+      description: Account details update request.
     Annotation:
       properties:
         text:
@@ -5874,6 +6268,82 @@ components:
           title: Is Default
           description: Whether this is the default policy for the account
           default: false
+        workflow_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Workflow Type
+          description: 'Type of approval workflow: ''simple'', ''multi_stage'', ''consensus'''
+          default: simple
+        workflow_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Workflow Config
+          description: Workflow configuration
+        approver_user_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Approver User Ids
+          description: List of user IDs who can approve (proprietary)
+        approver_team_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Approver Team Ids
+          description: List of team IDs whose members can approve (proprietary)
+        approvals_required:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Approvals Required
+          description: Number of approvals required (quorum) - proprietary
+          default: 1
+        escalation_user_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Escalation User Ids
+          description: List of user IDs to escalate to on timeout (proprietary)
+        escalation_team_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Escalation Team Ids
+          description: List of team IDs to escalate to on timeout (proprietary)
+        notification_channels:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Notification Channels
+          description: 'Notification channels: email, mobile_push, slack, mattermost,
+            webhook'
+          default:
+          - email
+        channel_configs:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Channel Configs
+          description: Configuration for notification channels (Slack/Mattermost/webhook
+            settings)
       type: object
       required:
       - name
@@ -5929,11 +6399,87 @@ components:
         is_default:
           type: boolean
           title: Is Default
+        workflow_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Workflow Type
+          description: 'Type of approval workflow: ''simple'', ''multi_stage'', ''consensus'''
+          default: simple
+        workflow_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Workflow Config
+          description: Workflow configuration
+        approver_user_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Approver User Ids
+          description: List of user IDs who can approve (proprietary)
+        approver_team_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Approver Team Ids
+          description: List of team IDs whose members can approve (proprietary)
+        approvals_required:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Approvals Required
+          description: Number of approvals required (quorum) - proprietary
+          default: 1
+        escalation_user_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Escalation User Ids
+          description: List of user IDs to escalate to on timeout (proprietary)
+        escalation_team_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Escalation Team Ids
+          description: List of team IDs to escalate to on timeout (proprietary)
+        notification_channels:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Notification Channels
+          description: 'Notification channels: email, mobile_push, slack, mattermost,
+            webhook'
+          default:
+          - email
+        channel_configs:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Channel Configs
+          description: Configuration for notification channels (Slack/Mattermost/webhook
+            settings)
         id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Id
         account_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Account Id
         created_at:
           type: string
@@ -6016,6 +6562,82 @@ components:
           title: Is Default
           description: Whether this is the default policy for the account
           default: false
+        workflow_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Workflow Type
+          description: 'Type of approval workflow: ''simple'', ''multi_stage'', ''consensus'''
+          default: simple
+        workflow_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Workflow Config
+          description: Workflow configuration
+        approver_user_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Approver User Ids
+          description: List of user IDs who can approve (proprietary)
+        approver_team_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Approver Team Ids
+          description: List of team IDs whose members can approve (proprietary)
+        approvals_required:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Approvals Required
+          description: Number of approvals required (quorum) - proprietary
+          default: 1
+        escalation_user_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Escalation User Ids
+          description: List of user IDs to escalate to on timeout (proprietary)
+        escalation_team_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Escalation Team Ids
+          description: List of team IDs to escalate to on timeout (proprietary)
+        notification_channels:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Notification Channels
+          description: 'Notification channels: email, mobile_push, slack, mattermost,
+            webhook'
+          default:
+          - email
+        channel_configs:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Channel Configs
+          description: Configuration for notification channels (Slack/Mattermost/webhook
+            settings)
       type: object
       title: ApprovalPolicyUpdate
       description: Schema for updating approval policy.
@@ -6373,6 +6995,46 @@ components:
       - description
       - changes
       title: ComplianceSuggestionResponse
+    ConditionTestRequest:
+      properties:
+        expression:
+          type: string
+          title: Expression
+          description: CEL expression to test
+        sample_args:
+          additionalProperties: true
+          type: object
+          title: Sample Args
+          description: Sample tool arguments for testing
+      type: object
+      required:
+      - expression
+      - sample_args
+      title: ConditionTestRequest
+      description: Schema for testing a condition expression.
+    ConditionTestResponse:
+      properties:
+        matches:
+          type: boolean
+          title: Matches
+          description: Whether the condition matched
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+          description: Error message if evaluation failed
+        evaluation_context:
+          additionalProperties: true
+          type: object
+          title: Evaluation Context
+          description: Context used for evaluation
+      type: object
+      required:
+      - matches
+      - evaluation_context
+      title: ConditionTestResponse
+      description: Schema for condition test result.
     CreateCheckoutSessionRequest:
       properties:
         plan_id:
@@ -8217,6 +8879,94 @@ components:
       - updated_at
       title: MCPToolResponse
       description: Schema for MCP tool response.
+    MobileDeviceRegistration:
+      properties:
+        platform:
+          type: string
+          title: Platform
+          description: 'Device platform: ''ios'' or ''android'''
+        token:
+          type: string
+          title: Token
+          description: Device push notification token
+      type: object
+      required:
+      - platform
+      - token
+      title: MobileDeviceRegistration
+      description: Schema for registering a mobile device.
+    NotificationPreferencesResponse:
+      properties:
+        preferred_channel:
+          type: string
+          title: Preferred Channel
+          description: 'Preferred notification channel: ''email'' or ''mobile_push'''
+          default: email
+        enable_email:
+          type: boolean
+          title: Enable Email
+          description: Whether email notifications are enabled
+          default: true
+        enable_mobile_push:
+          type: boolean
+          title: Enable Mobile Push
+          description: Whether mobile push notifications are enabled
+          default: false
+        id:
+          type: string
+          format: uuid
+          title: Id
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        mobile_device_tokens:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Mobile Device Tokens
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - user_id
+      - created_at
+      - updated_at
+      title: NotificationPreferencesResponse
+      description: Schema for notification preferences response.
+    NotificationPreferencesUpdate:
+      properties:
+        preferred_channel:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Preferred Channel
+          description: Preferred notification channel
+        enable_email:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enable Email
+          description: Enable email notifications
+        enable_mobile_push:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enable Mobile Push
+          description: Enable mobile push notifications
+      type: object
+      title: NotificationPreferencesUpdate
+      description: Schema for updating notification preferences.
     OnboardingRequest:
       properties:
         email:
@@ -8702,6 +9452,32 @@ components:
       type: object
       title: ProjectUpdate
       description: Model for updating a project.
+    QRCodeResponse:
+      properties:
+        token:
+          type: string
+          title: Token
+          description: Registration token
+        qr_data:
+          type: string
+          title: Qr Data
+          description: QR code data (URL)
+        expires_at:
+          type: string
+          title: Expires At
+          description: Token expiry timestamp
+        expires_in_seconds:
+          type: integer
+          title: Expires In Seconds
+          description: Seconds until expiry
+      type: object
+      required:
+      - token
+      - qr_data
+      - expires_at
+      - expires_in_seconds
+      title: QRCodeResponse
+      description: Schema for QR code registration response.
     RefreshRequest:
       properties:
         refresh_token:
@@ -9108,6 +9884,119 @@ components:
       - expires_in
       title: Token
       description: Token response model.
+    ToolApprovalConditionCreate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+          description: Optional human-readable name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Optional description
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+          description: Whether the condition is enabled
+          default: true
+        condition_type:
+          type: string
+          title: Condition Type
+          description: 'Type of condition evaluator: ''argument'', ''state'', ''risk'''
+          default: argument
+        condition_expression:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Condition Expression
+          description: CEL expression for conditional approval
+        condition_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Condition Config
+          description: Additional configuration
+        tool_configuration_id:
+          type: string
+          format: uuid
+          title: Tool Configuration Id
+          description: Tool configuration ID
+      type: object
+      required:
+      - tool_configuration_id
+      title: ToolApprovalConditionCreate
+      description: Schema for creating a tool approval condition.
+    ToolApprovalConditionResponse:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+          description: Optional human-readable name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Optional description
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+          description: Whether the condition is enabled
+          default: true
+        condition_type:
+          type: string
+          title: Condition Type
+          description: 'Type of condition evaluator: ''argument'', ''state'', ''risk'''
+          default: argument
+        condition_expression:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Condition Expression
+          description: CEL expression for conditional approval
+        condition_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Condition Config
+          description: Additional configuration
+        id:
+          type: string
+          format: uuid
+          title: Id
+        account_id:
+          type: string
+          format: uuid
+          title: Account Id
+        tool_configuration_id:
+          type: string
+          format: uuid
+          title: Tool Configuration Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - account_id
+      - tool_configuration_id
+      - created_at
+      - updated_at
+      title: ToolApprovalConditionResponse
+      description: Schema for tool approval condition response.
     ToolConfigurationCreate:
       properties:
         tool_name:
@@ -9136,20 +10025,14 @@ components:
           title: Is Enabled
           description: Whether the tool is enabled
           default: true
-        requires_approval:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Requires Approval
-          description: Whether the tool requires pre-execution approval (preloop)
-          default: false
         approval_policy_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
           title: Approval Policy Id
-          description: Reference to approval policy (if requires_approval=True)
+          description: Reference to approval policy (approval required if set and
+            condition matches)
         tool_description:
           anyOf:
           - type: string
@@ -9200,9 +10083,6 @@ components:
         is_enabled:
           type: boolean
           title: Is Enabled
-        requires_approval:
-          type: boolean
-          title: Requires Approval
         approval_policy_id:
           anyOf:
           - type: string
@@ -9249,7 +10129,6 @@ components:
       - tool_name
       - tool_source
       - is_enabled
-      - requires_approval
       - id
       - account_id
       - created_at
@@ -9290,20 +10169,14 @@ components:
           title: Is Enabled
           description: Whether the tool is enabled
           default: true
-        requires_approval:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Requires Approval
-          description: Whether the tool requires pre-execution approval (preloop)
-          default: false
         approval_policy_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
           title: Approval Policy Id
-          description: Reference to approval policy (if requires_approval=True)
+          description: Reference to approval policy (approval required if set and
+            condition matches)
         tool_description:
           anyOf:
           - type: string

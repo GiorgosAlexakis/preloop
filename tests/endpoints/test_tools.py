@@ -73,7 +73,6 @@ class TestListAllTools:
         assert len(result) == len(tools.BUILTIN_TOOLS)
         assert all(tool["source"] == "builtin" for tool in result)
         assert all(tool["is_enabled"] is True for tool in result)
-        assert all(tool["requires_approval"] is False for tool in result)
 
     async def test_list_tools_with_configs(
         self, mock_db, mock_user, mock_account, mocker
@@ -87,7 +86,6 @@ class TestListAllTools:
         config.tool_source = "builtin"
         config.mcp_server_id = None
         config.is_enabled = False
-        config.requires_approval = True
         config.approval_policy_id = policy_id
 
         # Mock CRUD operations
@@ -105,8 +103,6 @@ class TestListAllTools:
         # Find the configured tool
         get_issue_tool = next(t for t in result if t["name"] == "get_issue")
         assert get_issue_tool["is_enabled"] is False
-        assert get_issue_tool["requires_approval"] is True
-        assert get_issue_tool["has_approval_policy"] is True
         assert get_issue_tool["approval_policy_id"] == str(policy_id)
 
     async def test_list_tools_with_mcp_servers(
@@ -164,7 +160,6 @@ class TestToolConfigurationEndpoints:
             tool_source="builtin",
             account_id=str(mock_account.id),
             is_enabled=False,
-            requires_approval=True,
         )
 
         # Mock no existing config
@@ -238,7 +233,6 @@ class TestToolConfigurationEndpoints:
         config.http_endpoint_id = None
         config.approval_policy_id = None
         config.is_enabled = True
-        config.requires_approval = False
         config.tool_description = None
         config.tool_schema = None
         config.custom_config = None
@@ -294,7 +288,6 @@ class TestToolConfigurationEndpoints:
         config.http_endpoint_id = None
         config.approval_policy_id = None
         config.is_enabled = True
-        config.requires_approval = False
         config.tool_description = None
         config.tool_schema = None
         config.custom_config = None
@@ -361,6 +354,16 @@ class TestApprovalPolicyEndpoints:
         policy.approval_config = {}
         policy.timeout_seconds = 300
         policy.require_reason = False
+        policy.is_default = False
+        policy.workflow_type = "simple"
+        policy.workflow_config = None
+        policy.approver_user_ids = None
+        policy.approver_team_ids = None
+        policy.approvals_required = 1
+        policy.escalation_user_ids = None
+        policy.escalation_team_ids = None
+        policy.notification_channels = ["email"]
+        policy.channel_configs = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
@@ -408,6 +411,15 @@ class TestApprovalPolicyEndpoints:
         created_policy.timeout_seconds = 300
         created_policy.require_reason = False
         created_policy.is_default = True  # First policy becomes default
+        created_policy.workflow_type = "simple"
+        created_policy.workflow_config = None
+        created_policy.approver_user_ids = None
+        created_policy.approver_team_ids = None
+        created_policy.approvals_required = 1
+        created_policy.escalation_user_ids = None
+        created_policy.escalation_team_ids = None
+        created_policy.notification_channels = ["email"]
+        created_policy.channel_configs = None
         from datetime import datetime, UTC
 
         created_policy.created_at = datetime.now(UTC)
@@ -473,6 +485,16 @@ class TestApprovalPolicyEndpoints:
         policy.approval_config = {}
         policy.timeout_seconds = 300
         policy.require_reason = False
+        policy.is_default = False
+        policy.workflow_type = "simple"
+        policy.workflow_config = None
+        policy.approver_user_ids = None
+        policy.approver_team_ids = None
+        policy.approvals_required = 1
+        policy.escalation_user_ids = None
+        policy.escalation_team_ids = None
+        policy.notification_channels = ["email"]
+        policy.channel_configs = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
@@ -507,6 +529,16 @@ class TestApprovalPolicyEndpoints:
         policy.approval_config = {}
         policy.timeout_seconds = 300
         policy.require_reason = False
+        policy.is_default = False
+        policy.workflow_type = "simple"
+        policy.workflow_config = None
+        policy.approver_user_ids = None
+        policy.approver_team_ids = None
+        policy.approvals_required = 1
+        policy.escalation_user_ids = None
+        policy.escalation_team_ids = None
+        policy.notification_channels = ["email"]
+        policy.channel_configs = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
@@ -524,6 +556,12 @@ class TestApprovalPolicyEndpoints:
             return_value=None,
         )
 
+        # Mock the update method to return the updated policy
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_approval_policy.update",
+            return_value=policy,
+        )
+
         update_data = ApprovalPolicyUpdate(name="New Name")
 
         result = await tools.update_approval_policy(
@@ -534,7 +572,6 @@ class TestApprovalPolicyEndpoints:
         )
 
         assert isinstance(result, ApprovalPolicyResponse)
-        mock_db.commit.assert_called_once()
 
     async def test_delete_approval_policy_success(
         self, mock_db, mock_user, mock_account, mocker

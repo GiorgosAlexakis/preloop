@@ -13,8 +13,8 @@ plans:
       custom_compliance_metrics_enabled: false
   - id: "pro"
     name: "Pro"
-    price_monthly: 20
-    price_annually: 200 # (16.67/mo)
+    price_monthly: 29
+    price_annually: 290
     features:
       api_calls_monthly: 10000
       ai_calls_monthly: 100
@@ -23,8 +23,8 @@ plans:
       custom_compliance_metrics_enabled: false
   - id: "ultra"
     name: "Ultra"
-    price_monthly: 200
-    price_annually: 2000 # (166.67/mo)
+    price_monthly: 299
+    price_annually: 2999
     features:
       api_calls_monthly: -1 # -1 signifies unlimited
       ai_calls_monthly: 1000

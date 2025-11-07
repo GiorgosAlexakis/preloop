@@ -254,6 +254,7 @@ class PluginManager:
                 features["features"]["user_management"] = True
                 features["features"]["team_management"] = True
                 features["features"]["role_management"] = True
+                features["features"]["billing"] = True
             elif plugin.metadata.name == "audit":
                 features["features"]["audit_logs"] = True
 

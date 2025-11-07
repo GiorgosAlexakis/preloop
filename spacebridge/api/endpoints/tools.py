@@ -17,6 +17,7 @@ from spacemodels.crud import (
     crud_mcp_server,
     crud_mcp_tool,
     crud_tool_configuration,
+    tool_approval_condition,
 )
 from spacemodels.db.session import get_db_session
 from spacemodels.models.account import Account
@@ -29,6 +30,13 @@ from spacemodels.schemas.tool_configuration import (
     ToolConfigurationResponse,
     ToolConfigurationUpdate,
 )
+from spacebridge.schemas.tool_approval_condition import (
+    ToolApprovalConditionCreate,
+    ToolApprovalConditionResponse,
+    ConditionTestRequest,
+    ConditionTestResponse,
+)
+from spacebridge.services.tool_approval_evaluator import evaluate_cel_expression
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -334,10 +342,6 @@ async def list_all_tools(
                 "source_name": "Built-in",
                 "schema": builtin_tool["schema"],
                 "is_enabled": config.is_enabled if config else True,
-                "requires_approval": config.requires_approval if config else False,
-                "has_approval_policy": config.approval_policy_id is not None
-                if config
-                else False,
                 "approval_policy_id": str(config.approval_policy_id)
                 if config and config.approval_policy_id
                 else None,
@@ -362,10 +366,6 @@ async def list_all_tools(
                     "source_name": server.name,
                     "schema": mcp_tool.input_schema,
                     "is_enabled": config.is_enabled if config else True,
-                    "requires_approval": config.requires_approval if config else False,
-                    "has_approval_policy": config.approval_policy_id is not None
-                    if config
-                    else False,
                     "approval_policy_id": str(config.approval_policy_id)
                     if config and config.approval_policy_id
                     else None,
@@ -432,9 +432,9 @@ async def create_tool_configuration(
             is_enabled=config_data.is_enabled
             if config_data.is_enabled is not None
             else True,
-            requires_approval=config_data.requires_approval
-            if config_data.requires_approval is not None
-            else False,
+            approval_policy_id=config_data.approval_policy_id
+            if hasattr(config_data, "approval_policy_id")
+            else None,
             tool_description=config_data.tool_description,
             tool_schema=config_data.tool_schema,
             custom_config=config_data.custom_config,
@@ -837,4 +837,272 @@ async def delete_approval_policy(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting approval policy: {str(e)}",
+        )
+
+
+# Tool Approval Condition endpoints
+
+
+@router.get(
+    "/tool-configurations/{config_id}/approval-condition",
+    response_model=ToolApprovalConditionResponse,
+)
+async def get_tool_approval_condition(
+    config_id: UUID,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> ToolApprovalConditionResponse:
+    """Get the approval condition for a tool configuration.
+
+    Args:
+        config_id: Tool configuration ID
+        account: Current user's account (from dependency)
+        db: Database session
+
+    Returns:
+        Tool approval condition
+
+    Raises:
+        HTTPException: If tool configuration not found or condition not found
+    """
+    # Verify tool configuration exists and belongs to account
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
+    )
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tool configuration not found or access denied",
+        )
+
+    # Get approval condition
+    condition = tool_approval_condition.get_by_tool_configuration(
+        db, tool_configuration_id=config_id, account_id=account.id
+    )
+
+    if not condition:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No approval condition found for this tool configuration",
+        )
+
+    return ToolApprovalConditionResponse.model_validate(condition)
+
+
+@router.put(
+    "/tool-configurations/{config_id}/approval-condition",
+    response_model=ToolApprovalConditionResponse,
+)
+async def create_or_update_tool_approval_condition(
+    config_id: UUID,
+    condition_in: ToolApprovalConditionCreate,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> ToolApprovalConditionResponse:
+    """Create or update the approval condition for a tool configuration.
+
+    Args:
+        config_id: Tool configuration ID
+        condition_in: Condition data
+        account: Current user's account (from dependency)
+        db: Database session
+
+    Returns:
+        Created or updated tool approval condition
+
+    Raises:
+        HTTPException: If tool configuration not found or creation fails
+    """
+    # Verify tool configuration exists and belongs to account
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
+    )
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tool configuration not found or access denied",
+        )
+
+    # Validate CEL expression if provided (proprietary feature)
+    if condition_in.condition_expression:
+        try:
+            # Test with empty args to check syntax
+            evaluate_cel_expression(condition_in.condition_expression, {})
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid CEL expression: {str(e)}",
+            )
+
+    try:
+        # Create or update condition
+        condition = tool_approval_condition.create_or_update(
+            db,
+            tool_configuration_id=config_id,
+            account_id=account.id,
+            name=condition_in.name,
+            description=condition_in.description,
+            is_enabled=condition_in.is_enabled,
+            condition_type=condition_in.condition_type,
+            condition_expression=condition_in.condition_expression,
+            condition_config=condition_in.condition_config,
+        )
+
+        db.commit()
+        db.refresh(condition)
+
+        logger.info(
+            f"Created/updated approval condition for tool config {config_id} "
+            f"(account: {account.id})"
+        )
+
+        return ToolApprovalConditionResponse.model_validate(condition)
+
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            f"Error creating/updating approval condition for tool config {config_id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating/updating approval condition: {str(e)}",
+        )
+
+
+@router.delete(
+    "/tool-configurations/{config_id}/approval-condition",
+    status_code=status.HTTP_200_OK,
+)
+async def delete_tool_approval_condition(
+    config_id: UUID,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> Dict[str, str]:
+    """Delete the approval condition for a tool configuration.
+
+    Args:
+        config_id: Tool configuration ID
+        account: Current user's account (from dependency)
+        db: Database session
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If tool configuration not found or condition not found
+    """
+    # Verify tool configuration exists and belongs to account
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
+    )
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tool configuration not found or access denied",
+        )
+
+    # Get and delete approval condition
+    condition = tool_approval_condition.get_by_tool_configuration(
+        db, tool_configuration_id=config_id, account_id=account.id
+    )
+
+    if not condition:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No approval condition found for this tool configuration",
+        )
+
+    try:
+        tool_approval_condition.remove(db, id=condition.id)
+        db.commit()
+
+        logger.info(
+            f"Deleted approval condition for tool config {config_id} "
+            f"(account: {account.id})"
+        )
+
+        return {"message": "Approval condition deleted successfully"}
+
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            f"Error deleting approval condition for tool config {config_id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting approval condition: {str(e)}",
+        )
+
+
+@router.post(
+    "/tool-configurations/{config_id}/approval-condition/test",
+    response_model=ConditionTestResponse,
+)
+async def test_approval_condition(
+    config_id: UUID,
+    test_request: ConditionTestRequest,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> ConditionTestResponse:
+    """Test a CEL expression against sample arguments.
+
+    This endpoint allows testing approval conditions before saving them.
+    It's a proprietary feature for validating CEL expressions.
+
+    Args:
+        config_id: Tool configuration ID
+        test_request: Test request with expression and sample args
+        account: Current user's account (from dependency)
+        db: Database session
+
+    Returns:
+        Test result with match status and evaluation context
+
+    Raises:
+        HTTPException: If tool configuration not found or evaluation fails
+    """
+    # Verify tool configuration exists and belongs to account
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
+    )
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tool configuration not found or access denied",
+        )
+
+    try:
+        # Evaluate CEL expression
+        matches = evaluate_cel_expression(
+            test_request.expression, test_request.sample_args
+        )
+
+        return ConditionTestResponse(
+            matches=matches,
+            error=None,
+            evaluation_context={
+                "expression": test_request.expression,
+                "sample_args": test_request.sample_args,
+                "result": matches,
+            },
+        )
+
+    except Exception as e:
+        logger.warning(
+            f"CEL expression evaluation failed for tool config {config_id}: {e}"
+        )
+
+        return ConditionTestResponse(
+            matches=False,
+            error=str(e),
+            evaluation_context={
+                "expression": test_request.expression,
+                "sample_args": test_request.sample_args,
+            },
         )
