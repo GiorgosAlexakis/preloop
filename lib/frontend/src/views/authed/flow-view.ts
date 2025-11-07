@@ -15,6 +15,7 @@ import {
   getAllTools,
   getMCPServers,
 } from '../../api';
+import { webSocketService } from '../../services/websocket-service';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
@@ -186,6 +187,8 @@ export class FlowView extends LitElement {
     if (this.projectPollingInterval) {
       clearInterval(this.projectPollingInterval);
     }
+    // Disconnect from WebSocket
+    webSocketService.disconnectFromFlowUpdates();
   }
 
   async connectedCallback() {
@@ -272,6 +275,9 @@ export class FlowView extends LitElement {
       if (!this.flow.allowed_mcp_servers?.includes('spacebridge-mcp')) {
         this.flow.allowed_mcp_servers = ['spacebridge-mcp'];
       }
+
+      // Connect to WebSocket for real-time flow execution updates
+      this.connectToFlowUpdates();
     } else if (presetId) {
       // Creating from preset
       this.trackers = await getTrackers();
@@ -299,6 +305,63 @@ export class FlowView extends LitElement {
       this.flow.allowed_mcp_servers = ['spacebridge-mcp'];
       this.flow.allowed_mcp_tools = this.getDefaultSelectedTools();
     }
+  }
+
+  private connectToFlowUpdates() {
+    // Connect to WebSocket for real-time flow execution updates
+    webSocketService.connectToFlowUpdates(
+      (message) => {
+        // Handle incoming WebSocket messages
+        console.log('Received flow update:', message);
+
+        // If this is an execution_started event for our flow, add it to recent executions
+        if (
+          message.type === 'execution_started' &&
+          message.flow_id === this.flowId
+        ) {
+          // Create a new execution object from the update
+          const newExecution = {
+            id: message.execution_id,
+            flow_id: message.flow_id,
+            status: message.payload.status || 'PENDING',
+            start_time: message.timestamp,
+            flow_name: message.payload.flow_name,
+          };
+
+          // Add to the beginning of recent executions
+          this.recentExecutions = [
+            newExecution,
+            ...this.recentExecutions,
+          ].slice(0, 10);
+        }
+
+        // If this is a status update for an execution we're showing, update it
+        if (message.type === 'status_update' && message.execution_id) {
+          const executionIndex = this.recentExecutions.findIndex(
+            (exec: any) => exec.id === message.execution_id
+          );
+          if (executionIndex !== -1) {
+            // Update the execution status
+            const updatedExecution = {
+              ...this.recentExecutions[executionIndex],
+              status: message.payload.status,
+              end_time: message.payload.end_time,
+            };
+            this.recentExecutions = [
+              ...this.recentExecutions.slice(0, executionIndex),
+              updatedExecution,
+              ...this.recentExecutions.slice(executionIndex + 1),
+            ];
+          }
+        }
+      },
+      () => {
+        console.log('WebSocket connected for flow updates');
+      },
+      () => {
+        console.log('WebSocket disconnected for flow updates');
+      }
+    );
   }
 
   render() {
