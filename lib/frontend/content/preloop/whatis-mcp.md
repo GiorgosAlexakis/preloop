@@ -15,7 +15,7 @@ Scalability Issues: By simplifying how new tools and AI models are connected, MC
 ## How Does MCP Work? The Architecture
 MCP functions using a client-server model, specifically adapted for communication between AI systems and software applications:
 
-MCP Servers: These function as adaptable intermediaries, operating in conjunction with a specific application or data service (like GitHub, Slack, a database, or SpaceBridge). An MCP server is responsible for converting instructions, often phrased in natural language by an AI, into precise commands that the target application can execute. Key duties include:
+MCP Servers: These function as adaptable intermediaries, operating in conjunction with a specific application or data service (like GitHub, Slack, a database, or Preloop AI). An MCP server is responsible for converting instructions, often phrased in natural language by an AI, into precise commands that the target application can execute. Key duties include:
 Tool Discovery: Making the application's available actions and capabilities known to AI clients.
 Command Parsing: Translating AI-generated instructions into exact application commands or API calls.
 Response Formatting: Taking the output from the application (such as data or confirmation messages) and structuring it so the AI model can readily process it.
@@ -28,19 +28,19 @@ Tool Usage and Action-Taking: Empowers AI not merely to process data, but to act
 Composable Workflows: Simplifies the creation of sophisticated, multi-step processes by enabling the chaining of capabilities from various MCP-enabled tools.
 Secure and Bi-directional Communication: Aims to ensure that the exchange of data between AI systems and external tools is conducted securely.
 Dynamic Discovery: Allows AI agents to automatically identify accessible MCP servers and the services they provide, without needing pre-configured, hard-coded integrations for each one.
-MCP's Role in SpaceBridge and its Significance for AI Agents
-For SpaceBridge, which itself functions as an MCP server for issue tracking systems, MCP is a cornerstone technology. It enables SpaceBridge to integrate smoothly with a variety of AI agents and development tools. This integration facilitates several key advantages:
+MCP's Role in Preloop AI and its Significance for AI Agents
+For Preloop AI, which itself functions as an MCP server for issue tracking systems, MCP is a cornerstone technology. It enables Preloop AI to integrate smoothly with a variety of AI agents and development tools. This integration facilitates several key advantages:
 
-Unified Issue Tracker Access: AI-driven coding assistants can leverage SpaceBridge to communicate with diverse issue trackers like GitHub, Jira, and GitLab via a single, consistent MCP interface.
-AI-Powered Issue Management: Agents gain the ability to intelligently handle issues—such as creating new tickets, searching to prevent duplicates, updating statuses, and managing assignments—directly as part of their operational flow, utilizing SpaceBridge's specialized functionalities.
-Streamlined Developer Workflows: MCP allows AI to automate various development-related tasks, for example, linking code commits to their corresponding issues or updating an issue’s status based on the progress of development activities, all orchestrated through SpaceBridge.
+Unified Issue Tracker Access: AI-driven coding assistants can leverage Preloop AI to communicate with diverse issue trackers like GitHub, Jira, and GitLab via a single, consistent MCP interface.
+AI-Powered Issue Management: Agents gain the ability to intelligently handle issues—such as creating new tickets, searching to prevent duplicates, updating statuses, and managing assignments—directly as part of their operational flow, utilizing Preloop AI's specialized functionalities.
+Streamlined Developer Workflows: MCP allows AI to automate various development-related tasks, for example, linking code commits to their corresponding issues or updating an issue’s status based on the progress of development activities, all orchestrated through Preloop AI.
 More broadly, MCP serves as an essential integration fabric for AI agents, particularly vital for the "Action" component of their operational cycle. It furnishes the necessary 'plumbing' for these agents to interact effectively with the digital world, thereby making them more versatile, adaptable, and proficient in executing complex, multi-stage tasks across a multitude of different systems.
 
 ## Getting Started with MCP
 The MCP ecosystem is actively growing, driven by open-source collaboration. For developers looking to engage with MCP, several avenues are available:
 
 Familiarize themselves with the official MCP specification and Software Development Kits (SDKs), typically found on platforms like GitHub under the Model Context Protocol project.
-Leverage existing pre-built MCP servers for commonly used tools and systems. For instance, SpaceBridge itself acts as an MCP server for issue trackers, allowing AI agents to connect and manage tasks across platforms like GitHub, Jira, and GitLab through a standardized interface. Developers can explore integrating their AI tools with SpaceBridge's MCP server to enhance issue management capabilities.
+Leverage existing pre-built MCP servers for commonly used tools and systems. For instance, Preloop AI itself acts as an MCP server for issue trackers, allowing AI agents to connect and manage tasks across platforms like GitHub, Jira, and GitLab through a standardized interface. Developers can explore integrating their AI tools with Preloop AI's MCP server to enhance issue management capabilities.
 Integrate MCP servers with compatible AI-powered applications, such as Anthropic's Claude Desktop application, which supports local MCP server connections.
 Consult quickstart guides and documentation, often available on the official MCP website, to guide the development of custom MCP servers for other applications or data sources.
 MCP's advancement as a collaborative, open initiative encourages participation from developers, businesses, and AI pioneers to collectively shape the future of AI systems that possess deep contextual awareness.
@@ -48,5 +48,5 @@ MCP's advancement as a collaborative, open initiative encourages participation f
 <sl-button variant="primary" size="large" href="/register" target="_blank" rel="noopener noreferrer" data-optional="" data-valid="">Sign Up for Preloop AI Now</sl-button>
 
 ## Conclusion
-The Model Context Protocol represents a significant step towards a more interconnected and capable AI landscape. By providing a common language for AI to interact with the digital world, MCP not only simplifies current integration challenges but also unlocks new possibilities for more intelligent, autonomous, and contextually aware AI applications. As the ecosystem around MCP continues to evolve, its impact on how we build and utilize AI-powered tools, including platforms like SpaceBridge, will only continue to grow, paving the way for more seamless and powerful human-AI collaboration.
+The Model Context Protocol represents a significant step towards a more interconnected and capable AI landscape. By providing a common language for AI to interact with the digital world, MCP not only simplifies current integration challenges but also unlocks new possibilities for more intelligent, autonomous, and contextually aware AI applications. As the ecosystem around MCP continues to evolve, its impact on how we build and utilize AI-powered tools, including platforms like Preloop AI, will only continue to grow, paving the way for more seamless and powerful human-AI collaboration.
 
