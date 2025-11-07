@@ -1047,7 +1047,6 @@ export class ToolCard extends LitElement {
                       <sl-option value="slack">Slack</sl-option>
                       <sl-option value="mattermost">Mattermost</sl-option>
                       <sl-option value="webhook">Webhook</sl-option>
-                      <sl-option value="manual">Manual</sl-option>
                     </sl-select>
                   </div>
 
