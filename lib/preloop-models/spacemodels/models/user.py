@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .audit_log import AuditLog
     from .team import TeamMembership
     from .permission import UserRole
+    from .notification_preferences import NotificationPreferences
 
 
 class UserSource(str):
@@ -136,6 +137,14 @@ class User(Base):
     )
     audit_logs: Mapped[List["AuditLog"]] = relationship(
         "AuditLog", back_populates="user", cascade="all, delete-orphan"
+    )
+    notification_preferences: Mapped[Optional["NotificationPreferences"]] = (
+        relationship(
+            "NotificationPreferences",
+            back_populates="user",
+            uselist=False,  # 1:1 relationship
+            cascade="all, delete-orphan",
+        )
     )
 
     def __repr__(self) -> str:

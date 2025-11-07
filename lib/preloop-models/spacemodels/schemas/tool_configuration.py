@@ -1,7 +1,7 @@
 """Pydantic schemas for tool configuration and approval policies."""
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
@@ -24,11 +24,9 @@ class ToolConfigurationBase(BaseModel):
         None, description="Reference to HTTP endpoint (future: if tool_source='http')"
     )
     is_enabled: Optional[bool] = Field(True, description="Whether the tool is enabled")
-    requires_approval: Optional[bool] = Field(
-        False, description="Whether the tool requires pre-execution approval (preloop)"
-    )
     approval_policy_id: Optional[UUID] = Field(
-        None, description="Reference to approval policy (if requires_approval=True)"
+        None,
+        description="Reference to approval policy (approval required if set and condition matches)",
     )
     tool_description: Optional[str] = Field(
         None, description="Description of what the tool does"
@@ -66,7 +64,6 @@ class ToolConfigurationResponse(ToolConfigurationBase):
     http_endpoint_id: Optional[UUID] = None
     approval_policy_id: Optional[UUID] = None
     is_enabled: bool
-    requires_approval: bool
     created_at: datetime
     updated_at: datetime
 
@@ -108,6 +105,37 @@ class ApprovalPolicyBase(BaseModel):
     is_default: Optional[bool] = Field(
         False, description="Whether this is the default policy for the account"
     )
+    workflow_type: Optional[str] = Field(
+        "simple",
+        description="Type of approval workflow: 'simple', 'multi_stage', 'consensus'",
+    )
+    workflow_config: Optional[Dict[str, Any]] = Field(
+        None, description="Workflow configuration"
+    )
+    # Proprietary fields
+    approver_user_ids: Optional[List[UUID]] = Field(
+        None, description="List of user IDs who can approve (proprietary)"
+    )
+    approver_team_ids: Optional[List[UUID]] = Field(
+        None, description="List of team IDs whose members can approve (proprietary)"
+    )
+    approvals_required: Optional[int] = Field(
+        1, description="Number of approvals required (quorum) - proprietary"
+    )
+    escalation_user_ids: Optional[List[UUID]] = Field(
+        None, description="List of user IDs to escalate to on timeout (proprietary)"
+    )
+    escalation_team_ids: Optional[List[UUID]] = Field(
+        None, description="List of team IDs to escalate to on timeout (proprietary)"
+    )
+    notification_channels: Optional[List[str]] = Field(
+        ["email"],
+        description="Notification channels: email, mobile_push, slack, mattermost, webhook",
+    )
+    channel_configs: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Configuration for notification channels (Slack/Mattermost/webhook settings)",
+    )
 
 
 class ApprovalPolicyCreate(ApprovalPolicyBase):
@@ -127,7 +155,7 @@ class ApprovalPolicyResponse(ApprovalPolicyBase):
     """Schema for approval policy response."""
 
     id: UUID
-    account_id: str
+    account_id: UUID
     name: str
     approval_type: str
     is_default: bool
@@ -136,7 +164,19 @@ class ApprovalPolicyResponse(ApprovalPolicyBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_serializer("id")
-    def serialize_uuid(self, value: UUID) -> str:
+    @field_serializer("id", "account_id")
+    def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
         """Serialize UUID to string."""
-        return str(value)
+        return str(value) if value else None
+
+    @field_serializer(
+        "approver_user_ids",
+        "approver_team_ids",
+        "escalation_user_ids",
+        "escalation_team_ids",
+    )
+    def serialize_uuid_list(self, value: Optional[List[UUID]]) -> Optional[List[str]]:
+        """Serialize list of UUIDs to strings."""
+        if value is None:
+            return None
+        return [str(v) for v in value]

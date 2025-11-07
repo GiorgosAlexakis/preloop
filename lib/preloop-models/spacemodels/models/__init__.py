@@ -25,7 +25,8 @@ from .tool_configuration import ToolConfiguration, ApprovalPolicy
 from .mcp_server import MCPServer
 from .mcp_tool import MCPTool
 from .approval_request import ApprovalRequest, ApprovalRequestStatus
-from .approval_rule import ApprovalRule
+from .tool_approval_condition import ToolApprovalCondition
+from .notification_preferences import NotificationPreferences
 from .team import Team, TeamMembership
 from .user import User, UserSource
 from .permission import Permission, Role, RolePermission, UserRole, TeamRole
@@ -64,7 +65,8 @@ __all__ = [
     "MCPTool",
     "ApprovalRequest",
     "ApprovalRequestStatus",
-    "ApprovalRule",
+    "ToolApprovalCondition",
+    "NotificationPreferences",
     "Team",
     "TeamMembership",
     "User",

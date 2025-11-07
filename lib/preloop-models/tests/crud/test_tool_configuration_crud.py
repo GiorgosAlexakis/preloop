@@ -86,7 +86,6 @@ def test_create(crud_tool_config, mock_db_session):
         tool_name="create_issue",
         tool_source="builtin",
         is_enabled=True,
-        requires_approval=False,
     )
     mock_db_session.add = MagicMock()
     mock_db_session.commit = MagicMock()
@@ -111,7 +110,7 @@ def test_update(crud_tool_config, mock_db_session):
     db_obj.id = uuid4()
     db_obj.account_id = str(uuid4())
     db_obj.is_enabled = False
-    config_in = ToolConfigurationUpdate(is_enabled=True, requires_approval=True)
+    config_in = ToolConfigurationUpdate(is_enabled=True)
 
     mock_db_session.add = MagicMock()
     mock_db_session.commit = MagicMock()
@@ -124,7 +123,6 @@ def test_update(crud_tool_config, mock_db_session):
 
     # Assert
     assert result.is_enabled is True
-    assert result.requires_approval is True
     mock_db_session.add.assert_called_once()
     mock_db_session.commit.assert_called_once()
     mock_db_session.refresh.assert_called_once()

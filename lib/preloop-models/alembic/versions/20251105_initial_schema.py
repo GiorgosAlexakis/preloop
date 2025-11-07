@@ -401,6 +401,50 @@ def upgrade() -> None:
             comment="Configuration for the approval workflow (stages, teams, voting rules)",
         ),
         sa.Column(
+            "approver_user_ids",
+            postgresql.ARRAY(sa.UUID()),
+            nullable=True,
+            comment="List of user IDs who can approve (proprietary)",
+        ),
+        sa.Column(
+            "approver_team_ids",
+            postgresql.ARRAY(sa.UUID()),
+            nullable=True,
+            comment="List of team IDs whose members can approve (proprietary)",
+        ),
+        sa.Column(
+            "approvals_required",
+            sa.Integer(),
+            nullable=False,
+            server_default="1",
+            comment="Number of approvals required (quorum) - proprietary",
+        ),
+        sa.Column(
+            "escalation_user_ids",
+            postgresql.ARRAY(sa.UUID()),
+            nullable=True,
+            comment="List of user IDs to escalate to on timeout (proprietary)",
+        ),
+        sa.Column(
+            "escalation_team_ids",
+            postgresql.ARRAY(sa.UUID()),
+            nullable=True,
+            comment="List of team IDs to escalate to on timeout (proprietary)",
+        ),
+        sa.Column(
+            "notification_channels",
+            postgresql.ARRAY(sa.String()),
+            nullable=False,
+            server_default=sa.text("ARRAY['email']::varchar[]"),
+            comment="Notification channels: email, mobile_push, slack, mattermost, webhook",
+        ),
+        sa.Column(
+            "channel_configs",
+            sa.JSON(),
+            nullable=True,
+            comment="Configuration for notification channels (Slack/Mattermost/webhook settings)",
+        ),
+        sa.Column(
             "created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False
         ),
         sa.Column(
@@ -840,6 +884,70 @@ def upgrade() -> None:
         op.f("ix_user_invitation_token"), "user_invitation", ["token"], unique=True
     )
     op.create_table(
+        "notification_preferences",
+        sa.Column(
+            "id",
+            sa.UUID(),
+            nullable=False,
+            comment="Unique identifier for the notification preferences",
+        ),
+        sa.Column(
+            "user_id",
+            sa.UUID(),
+            nullable=False,
+            comment="Reference to the user",
+        ),
+        sa.Column(
+            "preferred_channel",
+            sa.String(length=50),
+            nullable=False,
+            server_default="email",
+            comment="Preferred notification channel: 'email' or 'mobile_push'",
+        ),
+        sa.Column(
+            "mobile_device_tokens",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+            comment="List of mobile device tokens: [{platform: 'ios'|'android', token: '...', registered_at: '...'}]",
+        ),
+        sa.Column(
+            "enable_email",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("true"),
+            comment="Whether email notifications are enabled",
+        ),
+        sa.Column(
+            "enable_mobile_push",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+            comment="Whether mobile push notifications are enabled",
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+            comment="When the preferences were created",
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+            comment="When the preferences were last updated",
+        ),
+        sa.ForeignKeyConstraint(["user_id"], ["user.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_notification_preferences_user_id"),
+        "notification_preferences",
+        ["user_id"],
+        unique=True,
+    )
+    op.create_table(
         "flow",
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
@@ -886,7 +994,7 @@ def upgrade() -> None:
         sa.Column(
             "issue_ids",
             postgresql.JSONB(astext_type=sa.Text()),
-            server_default="[]",
+            server_default=sa.text("'[]'::jsonb"),
             nullable=False,
         ),
         sa.Column("ai_model_id", sa.UUID(), nullable=True),
@@ -1158,16 +1266,10 @@ def upgrade() -> None:
             comment="Whether the tool is enabled",
         ),
         sa.Column(
-            "requires_approval",
-            sa.Boolean(),
-            nullable=False,
-            comment="Whether the tool requires pre-execution approval (preloop)",
-        ),
-        sa.Column(
             "approval_policy_id",
             sa.UUID(),
             nullable=True,
-            comment="Reference to approval policy (if requires_approval=True)",
+            comment="Reference to approval policy (if set, tool requires approval)",
         ),
         sa.Column(
             "tool_description",
@@ -1399,6 +1501,19 @@ def upgrade() -> None:
             comment="Comment from the approver",
         ),
         sa.Column(
+            "approvals_received",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+            comment="Number of approvals received so far (for quorum tracking)",
+        ),
+        sa.Column(
+            "approvals_list",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+            comment="List of approval records: [{user_id, comment, timestamp}]",
+        ),
+        sa.Column(
             "webhook_posted_at",
             sa.DateTime(),
             nullable=True,
@@ -1471,48 +1586,42 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
-        "approval_rule",
+        "tool_approval_conditions",
         sa.Column(
             "id",
             sa.UUID(),
             nullable=False,
-            comment="Unique identifier for the approval rule",
+            comment="Unique identifier for the approval condition",
         ),
         sa.Column(
             "account_id",
             sa.UUID(),
             nullable=False,
-            comment="The account this rule belongs to",
+            comment="The account this condition belongs to",
         ),
         sa.Column(
             "tool_configuration_id",
             sa.UUID(),
             nullable=False,
-            comment="Reference to the tool configuration",
+            comment="Reference to the tool configuration (1:1 relationship)",
         ),
         sa.Column(
             "name",
             sa.String(length=255),
-            nullable=False,
-            comment="Human-readable name for the rule",
+            nullable=True,
+            comment="Optional human-readable name for the condition",
         ),
         sa.Column(
             "description",
             sa.Text(),
             nullable=True,
-            comment="Optional description of what this rule does",
+            comment="Optional description of what this condition does",
         ),
         sa.Column(
             "is_enabled",
             sa.Boolean(),
             nullable=False,
-            comment="Whether the rule is currently active",
-        ),
-        sa.Column(
-            "priority",
-            sa.Integer(),
-            nullable=False,
-            comment="Order of evaluation (lower = higher priority)",
+            comment="Whether the condition is currently active",
         ),
         sa.Column(
             "condition_type",
@@ -1521,73 +1630,59 @@ def upgrade() -> None:
             comment="Type of condition evaluator: 'argument', 'state', 'risk'",
         ),
         sa.Column(
-            "condition_config",
-            sa.JSON(),
-            nullable=False,
-            comment="Configuration for the condition evaluator (e.g., CEL expression)",
+            "condition_expression",
+            sa.Text(),
+            nullable=True,
+            comment="CEL expression for conditional approval (proprietary feature)",
         ),
         sa.Column(
-            "approval_policy_id",
-            sa.UUID(),
-            nullable=False,
-            comment="Reference to approval policy when condition matches",
+            "condition_config",
+            sa.JSON(),
+            nullable=True,
+            comment="Additional configuration for the condition evaluator",
         ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            comment="When the rule was created",
+            comment="When the condition was created",
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            comment="When the rule was last modified",
+            comment="When the condition was last modified",
         ),
         sa.ForeignKeyConstraint(["account_id"], ["account.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["approval_policy_id"], ["approval_policy.id"], ondelete="CASCADE"
-        ),
         sa.ForeignKeyConstraint(
             ["tool_configuration_id"], ["tool_configuration.id"], ondelete="CASCADE"
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("tool_configuration_id", name="uq_tool_config_condition"),
     )
     op.create_index(
-        op.f("ix_approval_rule_account_id"),
-        "approval_rule",
+        op.f("ix_tool_approval_conditions_account_id"),
+        "tool_approval_conditions",
         ["account_id"],
         unique=False,
     )
     op.create_index(
-        op.f("ix_approval_rule_approval_policy_id"),
-        "approval_rule",
-        ["approval_policy_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_approval_rule_condition_type"),
-        "approval_rule",
+        op.f("ix_tool_approval_conditions_condition_type"),
+        "tool_approval_conditions",
         ["condition_type"],
         unique=False,
     )
     op.create_index(
-        op.f("ix_approval_rule_is_enabled"),
-        "approval_rule",
+        op.f("ix_tool_approval_conditions_is_enabled"),
+        "tool_approval_conditions",
         ["is_enabled"],
         unique=False,
     )
     op.create_index(
-        op.f("ix_approval_rule_name"), "approval_rule", ["name"], unique=False
-    )
-    op.create_index(
-        op.f("ix_approval_rule_priority"), "approval_rule", ["priority"], unique=False
-    )
-    op.create_index(
-        op.f("ix_approval_rule_tool_configuration_id"),
-        "approval_rule",
+        op.f("ix_tool_approval_conditions_tool_configuration_id"),
+        "tool_approval_conditions",
         ["tool_configuration_id"],
-        unique=False,
+        unique=True,  # 1:1 relationship
     )
     op.create_table(
         "flow_execution",
@@ -1648,7 +1743,7 @@ def upgrade() -> None:
         sa.Column(
             "usage_counts",
             postgresql.JSONB(astext_type=sa.Text()),
-            server_default="{}",
+            server_default=sa.text("'{}'::jsonb"),
             nullable=False,
         ),
         sa.Column(
@@ -2017,17 +2112,22 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_flow_execution_flow_id"), table_name="flow_execution")
     op.drop_table("flow_execution")
     op.drop_index(
-        op.f("ix_approval_rule_tool_configuration_id"), table_name="approval_rule"
+        op.f("ix_tool_approval_conditions_tool_configuration_id"),
+        table_name="tool_approval_conditions",
     )
-    op.drop_index(op.f("ix_approval_rule_priority"), table_name="approval_rule")
-    op.drop_index(op.f("ix_approval_rule_name"), table_name="approval_rule")
-    op.drop_index(op.f("ix_approval_rule_is_enabled"), table_name="approval_rule")
-    op.drop_index(op.f("ix_approval_rule_condition_type"), table_name="approval_rule")
     op.drop_index(
-        op.f("ix_approval_rule_approval_policy_id"), table_name="approval_rule"
+        op.f("ix_tool_approval_conditions_is_enabled"),
+        table_name="tool_approval_conditions",
     )
-    op.drop_index(op.f("ix_approval_rule_account_id"), table_name="approval_rule")
-    op.drop_table("approval_rule")
+    op.drop_index(
+        op.f("ix_tool_approval_conditions_condition_type"),
+        table_name="tool_approval_conditions",
+    )
+    op.drop_index(
+        op.f("ix_tool_approval_conditions_account_id"),
+        table_name="tool_approval_conditions",
+    )
+    op.drop_table("tool_approval_conditions")
     op.drop_index(
         op.f("ix_approval_request_tool_configuration_id"), table_name="approval_request"
     )
@@ -2096,6 +2196,11 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_flow_id"), table_name="flow")
     op.drop_index(op.f("ix_flow_account_id"), table_name="flow")
     op.drop_table("flow")
+    op.drop_index(
+        op.f("ix_notification_preferences_user_id"),
+        table_name="notification_preferences",
+    )
+    op.drop_table("notification_preferences")
     op.drop_index(op.f("ix_user_invitation_token"), table_name="user_invitation")
     op.drop_index(op.f("ix_user_invitation_status"), table_name="user_invitation")
     op.drop_index(op.f("ix_user_invitation_email"), table_name="user_invitation")

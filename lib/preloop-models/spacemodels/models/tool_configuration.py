@@ -1,10 +1,10 @@
 """Tool configuration model for managing tool settings and approval policies."""
 
 import uuid
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, String, UniqueConstraint, Integer
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Boolean, JSON
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .account import Account
     from .mcp_server import MCPServer
     from .approval_request import ApprovalRequest
-    from .approval_rule import ApprovalRule
+    from .tool_approval_condition import ToolApprovalCondition
 
 
 class ToolConfiguration(Base):
@@ -71,12 +71,6 @@ class ToolConfiguration(Base):
     is_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, comment="Whether the tool is enabled"
     )
-    requires_approval: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        comment="Whether the tool requires pre-execution approval (preloop)",
-    )
 
     # Reference to reusable approval policy
     approval_policy_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -84,7 +78,7 @@ class ToolConfiguration(Base):
         ForeignKey("approval_policy.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Reference to approval policy (if requires_approval=True)",
+        comment="Reference to approval policy (if set, tool requires approval)",
     )
 
     # Metadata
@@ -122,9 +116,10 @@ class ToolConfiguration(Base):
         back_populates="tool_configuration",
         cascade="all, delete-orphan",
     )
-    approval_rules: Mapped[list["ApprovalRule"]] = relationship(
-        "ApprovalRule",
+    approval_condition: Mapped[Optional["ToolApprovalCondition"]] = relationship(
+        "ToolApprovalCondition",
         back_populates="tool_configuration",
+        uselist=False,  # 1:1 relationship
         cascade="all, delete-orphan",
     )
 
@@ -142,8 +137,8 @@ class ToolConfiguration(Base):
     def __repr__(self) -> str:
         """Return string representation of the configuration."""
         status = "enabled" if self.is_enabled else "disabled"
-        preloop = " (preloop)" if self.requires_approval else ""
-        return f"<ToolConfiguration {self.tool_name} [{self.tool_source}] ({status}{preloop}) for account {self.account_id}>"
+        approval = " (approval required)" if self.approval_policy_id else ""
+        return f"<ToolConfiguration {self.tool_name} [{self.tool_source}] ({status}{approval}) for account {self.account_id}>"
 
 
 class ApprovalPolicy(Base):
@@ -243,6 +238,51 @@ class ApprovalPolicy(Base):
         comment="Configuration for the approval workflow (stages, teams, voting rules)",
     )
 
+    # Approvers (proprietary features)
+    approver_user_ids: Mapped[Optional[List[uuid.UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)),
+        nullable=True,
+        comment="List of user IDs who can approve (proprietary)",
+    )
+    approver_team_ids: Mapped[Optional[List[uuid.UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)),
+        nullable=True,
+        comment="List of team IDs whose members can approve (proprietary)",
+    )
+
+    # Quorum configuration (proprietary)
+    approvals_required: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="Number of approvals required (quorum) - proprietary",
+    )
+
+    # Escalation configuration (proprietary)
+    escalation_user_ids: Mapped[Optional[List[uuid.UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)),
+        nullable=True,
+        comment="List of user IDs to escalate to on timeout (proprietary)",
+    )
+    escalation_team_ids: Mapped[Optional[List[uuid.UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)),
+        nullable=True,
+        comment="List of team IDs to escalate to on timeout (proprietary)",
+    )
+
+    # Notification configuration
+    notification_channels: Mapped[List[str]] = mapped_column(
+        ARRAY(String),
+        nullable=False,
+        default=["email"],
+        comment="Notification channels: email, mobile_push, slack, mattermost, webhook",
+    )
+    channel_configs: Mapped[Optional[Dict]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Configuration for notification channels (Slack/Mattermost/webhook settings)",
+    )
+
     # Relationships
     account: Mapped["Account"] = relationship("Account")
     tool_configurations: Mapped[list["ToolConfiguration"]] = relationship(
@@ -250,11 +290,6 @@ class ApprovalPolicy(Base):
     )
     approval_requests: Mapped[list["ApprovalRequest"]] = relationship(
         "ApprovalRequest",
-        back_populates="approval_policy",
-        cascade="all, delete-orphan",
-    )
-    approval_rules: Mapped[list["ApprovalRule"]] = relationship(
-        "ApprovalRule",
         back_populates="approval_policy",
         cascade="all, delete-orphan",
     )

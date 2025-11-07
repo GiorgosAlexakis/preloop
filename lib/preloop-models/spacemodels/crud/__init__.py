@@ -65,6 +65,8 @@ from .permission import (
 )
 from .team import CRUDTeam, crud_team
 from .user_invitation import CRUDUserInvitation, crud_user_invitation
+from . import tool_approval_condition
+from . import notification_preferences
 
 crud_account = CRUDAccount(Account)
 # crud_tracker is already instantiated in tracker.py
@@ -158,4 +160,6 @@ __all__ = [
     "crud_team_role",
     "crud_team",
     "crud_user_invitation",
+    "tool_approval_condition",
+    "notification_preferences",
 ]

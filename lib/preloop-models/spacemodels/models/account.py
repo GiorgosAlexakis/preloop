@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from .tool_configuration import ToolConfiguration
     from .mcp_server import MCPServer
     from .approval_request import ApprovalRequest
-    from .approval_rule import ApprovalRule
+    from .tool_approval_condition import ToolApprovalCondition
     from .team import Team
     from .user import User
     from .user_invitation import UserInvitation
@@ -128,8 +128,8 @@ class Account(Base):
     approval_requests: Mapped[List["ApprovalRequest"]] = relationship(
         "ApprovalRequest", back_populates="account", cascade="all, delete-orphan"
     )
-    approval_rules: Mapped[List["ApprovalRule"]] = relationship(
-        "ApprovalRule", back_populates="account", cascade="all, delete-orphan"
+    tool_approval_conditions: Mapped[List["ToolApprovalCondition"]] = relationship(
+        "ToolApprovalCondition", back_populates="account", cascade="all, delete-orphan"
     )
     audit_logs: Mapped[List["AuditLog"]] = relationship(
         "AuditLog", back_populates="account", cascade="all, delete-orphan"
