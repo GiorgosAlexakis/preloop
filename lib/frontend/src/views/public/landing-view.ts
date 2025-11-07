@@ -808,7 +808,7 @@ export class LandingView extends LitElement {
               </sl-tooltip>
               <sl-tooltip content="Slack">
                 <img
-                  src="images/logos/slack-logo-light.png"
+                  src="images/logos/slack-logo.svg"
                   alt="Slack Logo"
                   class="slack-logo tool-logo"
                 />
@@ -827,11 +827,11 @@ export class LandingView extends LitElement {
                   class="discord-logo tool-logo"
                 />
               </sl-tooltip>
-              <sl-tooltip content="Linear">
+              <sl-tooltip content="Mattermost">
                 <img
-                  src="images/logos/linear-logo.svg"
-                  alt="Linear Logo"
-                  class="linear-logo tool-logo"
+                  src="images/logos/mattermost-logo.svg"
+                  alt="Mattermost Logo"
+                  class="mattermost-logo tool-logo"
                 />
               </sl-tooltip>
             </div>
