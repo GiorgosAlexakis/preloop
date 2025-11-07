@@ -452,10 +452,7 @@ export class LandingView extends LitElement {
 
                       <div class="feature-video-content">
                         <div class="image-placeholder">
-                          <img
-                            src=${slide.placeholderImg}
-                            alt=${slide.title}
-                          />
+                          <img src=${slide.placeholderImg} alt=${slide.title} />
                         </div>
                       </div>
                     </div>
