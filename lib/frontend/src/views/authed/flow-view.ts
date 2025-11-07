@@ -451,7 +451,20 @@ export class FlowView extends LitElement {
               <sl-icon name="pencil"></sl-icon>
               Edit Flow
             </sl-button>
-            <sl-button variant="primary" @click=${this.testRun}>
+            <sl-button
+              variant="${this.flow.is_enabled ? 'default' : 'success'}"
+              @click=${this.toggleFlowEnabled}
+            >
+              <sl-icon
+                name="${this.flow.is_enabled ? 'pause-circle' : 'play-circle'}"
+              ></sl-icon>
+              ${this.flow.is_enabled ? 'Disable' : 'Enable'}
+            </sl-button>
+            <sl-button
+              variant="primary"
+              @click=${this.testRun}
+              ?disabled=${!this.flow.is_enabled}
+            >
               <sl-icon name="play-circle"></sl-icon>
               Test Run
             </sl-button>
@@ -759,6 +772,35 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     } else {
       // No placeholders, trigger immediately
       await this.executeTestRun();
+    }
+  }
+
+  async toggleFlowEnabled() {
+    if (!this.flowId) return;
+
+    try {
+      // Toggle the enabled state
+      const newEnabledState = !this.flow.is_enabled;
+
+      // Update the flow on the backend
+      await updateFlow(this.flowId, {
+        is_enabled: newEnabledState,
+      });
+
+      // Update local state
+      this.flow = {
+        ...this.flow,
+        is_enabled: newEnabledState,
+      };
+
+      // Show feedback
+      const message = newEnabledState
+        ? 'Flow enabled successfully'
+        : 'Flow disabled successfully';
+      console.log(message);
+    } catch (error) {
+      console.error('Failed to toggle flow enabled state:', error);
+      alert('Failed to update flow. Please try again.');
     }
   }
 

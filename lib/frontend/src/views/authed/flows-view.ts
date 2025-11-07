@@ -294,7 +294,10 @@ export class FlowsView extends LitElement {
     const totalCount = flowExecutions.length;
 
     return html`
-      <sl-card class="flow-card">
+      <sl-card
+        class="flow-card"
+        @click=${() => Router.go(`/console/flows/${flow.id}`)}
+      >
         <div slot="header" class="flow-header">
           <div class="flow-title">${flow.name}</div>
           ${activeCount > 0
@@ -321,7 +324,8 @@ export class FlowsView extends LitElement {
         >
           <sl-button
             size="small"
-            href=${router.urlForPath(`/console/flows/${flow.id}`)}
+            href=${router.urlForPath(`/console/flows/${flow.id}?edit=true`)}
+            @click=${(e: Event) => e.stopPropagation()}
           >
             <sl-icon slot="prefix" name="pencil"></sl-icon>
             Edit
@@ -329,7 +333,10 @@ export class FlowsView extends LitElement {
           <sl-button
             size="small"
             variant="primary"
-            @click=${() => this.triggerTestRun(flow.id)}
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              this.triggerTestRun(flow.id);
+            }}
             ?loading=${this.triggeringFlowId === flow.id}
           >
             <sl-icon slot="prefix" name="play-fill"></sl-icon>

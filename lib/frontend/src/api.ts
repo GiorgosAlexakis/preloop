@@ -17,38 +17,54 @@ import type {
   DependencyResponse,
 } from './types';
 
+// Global refresh promise to prevent concurrent refresh requests
+let refreshPromise: Promise<string | null> | null = null;
+
 async function refreshToken(): Promise<string | null> {
-  const refreshToken = localStorage.getItem('refreshToken');
-  if (!refreshToken) {
-    console.error('No refresh token available');
-    return null;
+  // If a refresh is already in progress, wait for it
+  if (refreshPromise) {
+    return refreshPromise;
   }
 
-  try {
-    const response = await fetch(`/api/v1/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
+  // Start a new refresh
+  refreshPromise = (async () => {
+    try {
+      const refreshTokenValue = localStorage.getItem('refreshToken');
+      if (!refreshTokenValue) {
+        console.error('No refresh token available');
+        return null;
+      }
 
-    if (!response.ok) {
-      throw new Error('Failed to refresh token');
+      const response = await fetch(`/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refresh_token: refreshTokenValue }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to refresh token');
+      }
+
+      const data = await response.json();
+      localStorage.setItem('accessToken', data.access_token);
+      localStorage.setItem('refreshToken', data.refresh_token);
+      return data.access_token;
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      // Clear tokens and redirect to login
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      Router.go('/login');
+      return null;
+    } finally {
+      // Clear the refresh promise so future requests can refresh again
+      refreshPromise = null;
     }
+  })();
 
-    const data = await response.json();
-    localStorage.setItem('accessToken', data.access_token);
-    localStorage.setItem('refreshToken', data.refresh_token);
-    return data.access_token;
-  } catch (error) {
-    console.error('Error refreshing token:', error);
-    // Clear tokens and redirect to login
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    Router.go('/login');
-    return null;
-  }
+  return refreshPromise;
 }
 
 export async function fetchWithAuth(
@@ -595,9 +611,7 @@ export async function triggerFlowExecution(
     headers: triggerEventData
       ? { 'Content-Type': 'application/json' }
       : undefined,
-    body: triggerEventData
-      ? JSON.stringify({ trigger_event_data: triggerEventData })
-      : undefined,
+    body: triggerEventData ? JSON.stringify(triggerEventData) : undefined,
   });
   if (!response.ok) {
     throw new Error('Failed to trigger flow execution');
