@@ -586,9 +586,18 @@ export async function getFlowExecution(executionId: string): Promise<any> {
   return response.json();
 }
 
-export async function triggerFlowExecution(flowId: string): Promise<any> {
+export async function triggerFlowExecution(
+  flowId: string,
+  triggerEventData?: Record<string, any>
+): Promise<any> {
   const response = await fetchWithAuth(`/api/v1/flows/${flowId}/trigger`, {
     method: 'POST',
+    headers: triggerEventData
+      ? { 'Content-Type': 'application/json' }
+      : undefined,
+    body: triggerEventData
+      ? JSON.stringify({ trigger_event_data: triggerEventData })
+      : undefined,
   });
   if (!response.ok) {
     throw new Error('Failed to trigger flow execution');

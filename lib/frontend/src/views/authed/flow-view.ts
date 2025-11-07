@@ -175,6 +175,12 @@ export class FlowView extends LitElement {
   @state()
   private isAddingAIModel = false;
 
+  @state()
+  private showTestRunModal = false;
+
+  @state()
+  private testRunPlaceholders: Record<string, string> = {};
+
   private organizationPollingInterval?: number;
   private projectPollingInterval?: number;
 
@@ -398,6 +404,40 @@ export class FlowView extends LitElement {
 
   renderFlowDetails() {
     return html`
+      <!-- Test Run Modal for Trigger Event Placeholders -->
+      <sl-dialog
+        label="Provide Test Values for Trigger Event"
+        .open=${this.showTestRunModal}
+        @sl-request-close=${this.cancelTestRun}
+      >
+        <p style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);">
+          Your flow prompt includes template variables that reference trigger
+          event data. Please provide test values for these placeholders:
+        </p>
+
+        ${Object.keys(this.testRunPlaceholders).map(
+          (placeholder) => html`
+            <sl-input
+              label="${placeholder}"
+              placeholder="Enter test value"
+              .value=${this.testRunPlaceholders[placeholder]}
+              @sl-input=${(e: any) =>
+                this.updatePlaceholderValue(placeholder, e.target.value)}
+              style="margin-bottom: 1rem;"
+            ></sl-input>
+          `
+        )}
+
+        <div slot="footer" style="display: flex; gap: 8px;">
+          <sl-button variant="default" @click=${this.cancelTestRun}>
+            Cancel
+          </sl-button>
+          <sl-button variant="primary" @click=${this.submitTestRun}>
+            Run Test
+          </sl-button>
+        </div>
+      </sl-dialog>
+
       <view-header headerText="${this.flow.name}"></view-header>
       <div class="column-layout">
         <div class="main-column">
@@ -686,11 +726,47 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     return `${seconds}s`;
   }
 
+  private extractTriggerEventPlaceholders(): string[] {
+    if (!this.flow.prompt_template) return [];
+
+    // Extract all {{trigger_event.*}} placeholders
+    const regex = /\{\{(trigger_event\.[^}]+)\}\}/g;
+    const matches = [];
+    let match;
+
+    while ((match = regex.exec(this.flow.prompt_template)) !== null) {
+      matches.push(match[1]); // Get the placeholder without the {{ }}
+    }
+
+    // Return unique placeholders
+    return [...new Set(matches)];
+  }
+
   async testRun() {
+    if (!this.flowId) return;
+
+    // Check if prompt template has trigger_event placeholders
+    const placeholders = this.extractTriggerEventPlaceholders();
+
+    if (placeholders.length > 0) {
+      // Initialize placeholder values with empty strings
+      this.testRunPlaceholders = {};
+      placeholders.forEach((placeholder) => {
+        this.testRunPlaceholders[placeholder] = '';
+      });
+      // Show modal to collect placeholder values
+      this.showTestRunModal = true;
+    } else {
+      // No placeholders, trigger immediately
+      await this.executeTestRun();
+    }
+  }
+
+  private async executeTestRun(triggerEventData?: Record<string, any>) {
     if (!this.flowId) return;
     try {
       const execution = await import('../../api').then((m) =>
-        m.triggerFlowExecution(this.flowId!)
+        m.triggerFlowExecution(this.flowId!, triggerEventData)
       );
       // Navigate to execution view
       window.location.href = `/console/flows/executions/${execution.id}`;
@@ -698,6 +774,51 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
       console.error('Failed to trigger flow execution:', error);
       alert('Failed to trigger flow execution');
     }
+  }
+
+  private async submitTestRun() {
+    // Build nested object from placeholder keys
+    const triggerEventData: Record<string, any> = {};
+
+    Object.entries(this.testRunPlaceholders).forEach(([key, value]) => {
+      // key is like "trigger_event.payload.object_attributes.url"
+      // Remove "trigger_event." prefix
+      const path = key.replace('trigger_event.', '').split('.');
+
+      // Build nested object
+      let current = triggerEventData;
+      for (let i = 0; i < path.length; i++) {
+        const segment = path[i];
+        if (i === path.length - 1) {
+          // Last segment, set the value
+          current[segment] = value;
+        } else {
+          // Create nested object if it doesn't exist
+          if (!current[segment]) {
+            current[segment] = {};
+          }
+          current = current[segment];
+        }
+      }
+    });
+
+    // Close modal
+    this.showTestRunModal = false;
+
+    // Execute test run with custom data
+    await this.executeTestRun(triggerEventData);
+  }
+
+  private cancelTestRun() {
+    this.showTestRunModal = false;
+    this.testRunPlaceholders = {};
+  }
+
+  private updatePlaceholderValue(placeholder: string, value: string) {
+    this.testRunPlaceholders = {
+      ...this.testRunPlaceholders,
+      [placeholder]: value,
+    };
   }
 
   copyWebhookUrl() {
