@@ -222,13 +222,13 @@ brands:
         link_url: ""
         features:
           - icon: "currency-dollar"
-            title: "Financial Controls"
+            title: "Gate High-Value Transactions"
             text: "Automatically pause transactions over $10k for CFO approval—protect your budget without slowing operations."
           - icon: "arrow-up-circle"
-            title: "Smart Escalation"
+            title: "Escalate Critical Deployments"
             text: "Require two SRE sign-offs for rollbacks, or escalate to CTO if no response in 2 minutes."
           - icon: "clipboard-check"
-            title: "Product Alignment"
+            title: "Route Feature Requests"
             text: "Route feature requests to Product Managers for approval—keep your roadmap on track."
 
         mcp_setup_title: "Get Started with Preloop MCP"
