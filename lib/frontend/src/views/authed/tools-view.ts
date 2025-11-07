@@ -365,25 +365,24 @@ export class ToolsView extends LitElement {
           t.source === tool.source &&
           t.source_id === tool.source_id
         ) {
-          return { ...t, requires_approval: enable };
+          // When disabling, clear the approval_policy_id
+          return {
+            ...t,
+            approval_policy_id: enable ? t.approval_policy_id : null,
+          };
         }
         return t;
       });
       this.tools = updatedTools;
 
-      // Update on server in background
+      // Update on server - when disabling, remove approval_policy_id
       if (tool.config_id) {
         await updateToolConfiguration(tool.config_id, {
-          requires_approval: enable,
+          approval_policy_id: enable ? tool.approval_policy_id : null,
         });
-      } else {
-        await createToolConfiguration({
-          tool_name: tool.name,
-          tool_source: tool.source,
-          mcp_server_id: tool.source_id,
-          requires_approval: enable,
-          account_id: '',
-        });
+      } else if (!enable) {
+        // If disabling and no config exists, no need to create one
+        // The tool will just use default (no approval)
       }
 
       // Restore scroll position
@@ -411,8 +410,6 @@ export class ToolsView extends LitElement {
         ) {
           return {
             ...t,
-            requires_approval: true,
-            has_approval_policy: true,
             approval_policy_id: policyId,
           };
         }
@@ -420,10 +417,9 @@ export class ToolsView extends LitElement {
       });
       this.tools = updatedTools;
 
-      // Enable approval and assign policy on server
+      // Assign policy on server
       if (tool.config_id) {
         await updateToolConfiguration(tool.config_id, {
-          requires_approval: true,
           approval_policy_id: policyId,
         });
       } else {
@@ -431,7 +427,6 @@ export class ToolsView extends LitElement {
           tool_name: tool.name,
           tool_source: tool.source,
           mcp_server_id: tool.source_id,
-          requires_approval: true,
           approval_policy_id: policyId,
           account_id: '',
         });
@@ -470,8 +465,6 @@ export class ToolsView extends LitElement {
         ) {
           return {
             ...t,
-            requires_approval: true,
-            has_approval_policy: true,
             approval_policy_id: newPolicy.id,
           };
         }
@@ -479,10 +472,9 @@ export class ToolsView extends LitElement {
       });
       this.tools = updatedTools;
 
-      // Enable approval and assign the new policy on server
+      // Assign the new policy on server
       if (tool.config_id) {
         await updateToolConfiguration(tool.config_id, {
-          requires_approval: true,
           approval_policy_id: newPolicy.id,
         });
       } else {
@@ -490,7 +482,6 @@ export class ToolsView extends LitElement {
           tool_name: tool.name,
           tool_source: tool.source,
           mcp_server_id: tool.source_id,
-          requires_approval: true,
           approval_policy_id: newPolicy.id,
           account_id: '',
         });
@@ -533,6 +524,60 @@ export class ToolsView extends LitElement {
       console.log('Updated policy:', updatedPolicy.name);
     } catch (err: any) {
       this.error = err.message || 'Failed to update policy';
+      // Reload on error to revert optimistic update
+      await this.loadData();
+    }
+  }
+
+  private async handleSaveCondition(event: CustomEvent) {
+    const { tool, condition } = event.detail;
+
+    // Save scroll position
+    const scrollY = window.scrollY;
+
+    try {
+      // Update local state immediately for instant feedback
+      const updatedTools = this.tools.map((t) => {
+        if (
+          t.name === tool.name &&
+          t.source === tool.source &&
+          t.source_id === tool.source_id
+        ) {
+          return {
+            ...t,
+            has_approval_condition: !!condition,
+          };
+        }
+        return t;
+      });
+      this.tools = updatedTools;
+
+      // Save condition on server
+      if (tool.config_id) {
+        await updateToolConfiguration(tool.config_id, {
+          approval_condition: condition,
+        });
+      } else {
+        await createToolConfiguration({
+          tool_name: tool.name,
+          tool_source: tool.source,
+          mcp_server_id: tool.source_id,
+          approval_condition: condition,
+          account_id: '',
+        });
+      }
+
+      // Restore scroll position
+      window.scrollTo(0, scrollY);
+
+      console.log(
+        'Saved condition for tool:',
+        tool.name,
+        'Condition:',
+        condition
+      );
+    } catch (err: any) {
+      this.error = err.message || 'Failed to save condition';
       // Reload on error to revert optimistic update
       await this.loadData();
     }
@@ -751,6 +796,7 @@ export class ToolsView extends LitElement {
                               @policy-selected=${this.handlePolicySelected}
                               @create-policy=${this.handleCreatePolicy}
                               @update-policy=${this.handleUpdatePolicy}
+                              @save-condition=${this.handleSaveCondition}
                             ></tool-card>`
                         )}
                       </div>

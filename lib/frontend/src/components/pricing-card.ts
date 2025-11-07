@@ -23,7 +23,7 @@ export class PricingCard extends LitElement {
     }
     const isMonthly = this.interval === 'month';
     const amount = isMonthly ? plan.price_monthly : plan.price_annually;
-    const unit = isMonthly ? '/mo' : '/yr';
+    const unit = isMonthly ? '/user/month' : '/user/year';
 
     if (amount === null) {
       return html`<div class="price-main">Custom</div>`;
@@ -39,7 +39,8 @@ export class PricingCard extends LitElement {
         : null;
 
     return html`
-      <div class="price-main">$${amount}${unit}</div>
+      <div class="price-main">$${amount}</div>
+      <div class="unit">${unit}</div>
       ${!isMonthly && perMo !== null
         ? html`<div class="price-sub">~$${perMo}/mo billed annually</div>`
         : null}
@@ -166,6 +167,16 @@ export class PricingCard extends LitElement {
       font-weight: 800;
     }
 
+    .unit {
+      font-size: 0.95rem;
+    }
+
+    .plan-name,
+    .price-main,
+    .unit {
+      text-align: center;
+    }
+
     .price-sub {
       color: var(--sl-color-text-secondary);
       font-size: 0.95rem;
@@ -255,9 +266,9 @@ export class PricingCard extends LitElement {
           ? 'sl-theme-dark'
           : ''}"
       >
-        ${this.plan.id === 'ultra'
+        <!-- ${this.plan.id === 'ultra'
           ? html`<div class="badge">Most popular</div>`
-          : null}
+          : null} -->
         ${this.plan.id === 'enterprise'
           ? html`<div class="badge alt">Enterprise</div>`
           : null}

@@ -1537,3 +1537,33 @@ export async function getFeatures(): Promise<FeaturesResponse> {
   }
   return response.json();
 }
+
+// Account Organization API
+export interface AccountOrganization {
+  id: string;
+  organization_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getAccountOrganization(): Promise<AccountOrganization> {
+  const response = await fetchWithAuth('/api/v1/account/details');
+  if (!response.ok) {
+    throw new Error('Failed to fetch account organization');
+  }
+  return response.json();
+}
+
+export async function updateAccountOrganization(
+  details: Partial<AccountOrganization>
+): Promise<AccountOrganization> {
+  const response = await fetchWithAuth('/api/v1/account/details', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(details),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update account organization');
+  }
+  return response.json();
+}

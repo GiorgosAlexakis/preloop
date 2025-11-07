@@ -304,6 +304,13 @@ export class ConsoleHeader extends LitElement {
                 <sl-icon name="lock" slot="prefix"></sl-icon>
                 Security
               </sl-menu-item>
+              <sl-menu-item
+                @click=${() =>
+                  Router.go('/console/settings/notification-preferences')}
+              >
+                <sl-icon name="bell" slot="prefix"></sl-icon>
+                Notification Preferences
+              </sl-menu-item>
               <sl-divider></sl-divider>
               <sl-menu-item @click=${this.signOut}>
                 <sl-icon name="box-arrow-right" slot="prefix"></sl-icon>

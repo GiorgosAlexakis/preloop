@@ -29,10 +29,11 @@ import '../views/authed/settings/ai-models-view.ts';
 import '../views/authed/settings/profile-view.ts';
 import '../views/authed/settings/security-view.ts';
 import '../views/authed/settings/appearance-view.ts';
-import '../views/authed/settings/subscription-view.ts';
+import '../views/authed/settings/account-view.ts';
 import '../views/authed/settings/user-management-view.ts';
 import '../views/authed/settings/team-management-view.ts';
 import '../views/authed/settings/invitation-management-view.ts';
+import '../views/authed/notification-preferences-view.ts';
 import '../components/settings-tabs.ts';
 import '../views/authed/flows-view.ts';
 import '../views/authed/flow-view.ts';
@@ -234,12 +235,16 @@ export class LitApp extends LitElement {
           { path: 'settings/api-keys', component: 'api-keys-view' },
           { path: 'settings/ai-models', component: 'ai-models-view' },
           { path: 'settings/appearance', component: 'appearance-view' },
-          { path: 'settings/subscription', component: 'subscription-view' },
+          { path: 'settings/account', component: 'account-view' },
           { path: 'settings/users', component: 'user-management-view' },
           { path: 'settings/teams', component: 'team-management-view' },
           {
             path: 'settings/invitations',
             component: 'invitation-management-view',
+          },
+          {
+            path: 'settings/notification-preferences',
+            component: 'notification-preferences-view',
           },
           { path: 'pricing', component: 'pricing-view' },
           { path: 'approval/:requestId', component: 'approval-view' },

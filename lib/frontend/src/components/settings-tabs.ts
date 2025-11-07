@@ -22,7 +22,7 @@ export class SettingsTabs extends LitElement {
   private tabs = [
     { path: '/console/settings/profile', label: 'Profile' },
     { path: '/console/settings/security', label: 'Security' },
-    { path: '/console/settings/subscription', label: 'Subscription' },
+    { path: '/console/settings/account', label: 'Account' },
     { path: '/console/settings/users', label: 'Users' },
     { path: '/console/settings/teams', label: 'Teams' },
     { path: '/console/settings/invitations', label: 'Invitations' },

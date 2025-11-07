@@ -215,14 +215,14 @@ export class ConsoleShell extends LitElement {
             ${this._showFlows()
               ? html`<a href="/console/flows">
                   <sl-menu-item>
-                    <sl-icon name="diagram-3" slot="prefix"></sl-icon>
+                    <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
                     Flows
                   </sl-menu-item>
                 </a>`
               : html``}
             <a href="/console/trackers">
               <sl-menu-item>
-                <sl-icon name="database" slot="prefix"></sl-icon>
+                <sl-icon src="/images/git.svg" slot="prefix"></sl-icon>
                 Trackers
               </sl-menu-item>
             </a>
@@ -256,9 +256,12 @@ export class ConsoleShell extends LitElement {
               </span>
               <sl-menu>
                 ${this.features.user_management
-                  ? html`<a href="/console/settings/users">
-                      <sl-menu-item>Users</sl-menu-item>
-                    </a>`
+                  ? html`<a href="/console/settings/account">
+                        <sl-menu-item>Account</sl-menu-item>
+                      </a>
+                      <a href="/console/settings/users">
+                        <sl-menu-item>Users</sl-menu-item>
+                      </a>`
                   : ''}
                 ${this.features.team_management
                   ? html`<a href="/console/settings/teams">
@@ -270,9 +273,6 @@ export class ConsoleShell extends LitElement {
                       <sl-menu-item>Invitations</sl-menu-item>
                     </a>`
                   : ''}
-                <a href="/console/settings/subscription">
-                  <sl-menu-item>Subscription</sl-menu-item>
-                </a>
                 <a href="/console/settings/api-keys">
                   <sl-menu-item>API Keys</sl-menu-item>
                 </a>
