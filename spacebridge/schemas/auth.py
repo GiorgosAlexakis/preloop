@@ -128,7 +128,7 @@ class ApiKeyResponse(BaseModel):
     created_at: datetime
     expires_at: Optional[datetime] = None
     scopes: List[str] = []
-    created_by: str
+    user_id: UUID
     last_used_at: Optional[datetime] = None
 
 

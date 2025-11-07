@@ -318,7 +318,7 @@ class DynamicMCPServer:
                 if config:
                     logger.info(
                         f"Found builtin tool config for '{tool_name}': "
-                        f"requires_approval={config.requires_approval}, "
+                        f"requires_approval={bool(config.approval_policy_id)}, "
                         f"approval_policy_id={config.approval_policy_id}"
                     )
                 else:
@@ -338,7 +338,7 @@ class DynamicMCPServer:
                     if config:
                         logger.info(
                             f"Found MCP tool config for '{tool_name}': "
-                            f"requires_approval={config.requires_approval}, "
+                            f"requires_approval={bool(config.approval_policy_id)}, "
                             f"approval_policy_id={config.approval_policy_id}, "
                             f"mcp_server_id={config.mcp_server_id}"
                         )
@@ -349,7 +349,8 @@ class DynamicMCPServer:
                         )
 
                 # Return whether approval is required
-                requires_approval = config.requires_approval if config else False
+                # A tool requires approval if it has an approval_policy_id set
+                requires_approval = bool(config.approval_policy_id) if config else False
                 logger.info(
                     f"Approval requirement check result for '{tool_name}': {requires_approval}"
                 )

@@ -36,10 +36,10 @@ async def check_approval_config(tool_name: str = "estimate_compliance"):
             print(f"Account ID: {config.account_id}")
             print(f"Tool Name: {config.tool_name}")
             print(f"Tool Source: {config.tool_source}")
-            print(f"Requires Approval: {config.requires_approval}")
+            print(f"Requires Approval: {bool(config.approval_policy_id)}")
             print(f"Approval Policy ID: {config.approval_policy_id}")
 
-            if config.requires_approval and config.approval_policy_id:
+            if config.approval_policy_id:
                 # Get the approval policy
                 policy_result = await db.execute(
                     select(ApprovalPolicy).where(
@@ -59,10 +59,10 @@ async def check_approval_config(tool_name: str = "estimate_compliance"):
                     print(
                         f"\n❌ Approval policy {config.approval_policy_id} not found!"
                     )
-            elif config.requires_approval:
-                print("\n⚠️  Requires approval but no policy configured!")
             else:
-                print("\n❌ Approval not required for this tool")
+                print(
+                    "\n❌ Approval not required for this tool (no approval_policy_id)"
+                )
 
             print(f"\n{'-' * 80}\n")
 

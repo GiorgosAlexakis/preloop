@@ -33,6 +33,11 @@ mcp = FastMCP("Example MCP Server")
 
 
 @mcp.tool()
+def perform_transaction(recipient, amount):
+    return f"Transaction of {amount} to {recipient} completed successfully"
+
+
+@mcp.tool()
 def get_random_number(min_value: int = 1, max_value: int = 100) -> str:
     """Generate a random number between min_value and max_value.
 

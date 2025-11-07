@@ -16,10 +16,21 @@ SpaceBridge.io drives your product using AI. It ingests issues, comments, docume
   - 6 built-in tools: get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance
   - JWT authentication with per-user tool visibility
   - StreamableHTTP transport for Claude Code and other MCP clients
-- **Tool Management**: Configure and manage tool access with granular control
-  - Tool-level configuration and approval policies
+- **Advanced Tool Management**: Configure and manage tool access with granular control
+  - **Conditional Approval Policies**: Use CEL (Common Expression Language) to define conditional rules for tool execution
+  - **Multi-tier Approval System**: Open-core edition with basic approvals; proprietary edition with advanced policies, quorum, escalation, and team-based approvals
   - Support for external MCP servers and tool proxying
   - Human-in-the-loop approval workflows for sensitive operations
+- **Mobile Push Notifications**: Stay informed of approval requests and system events
+  - **QR Code Registration**: Easy mobile device setup via Universal Links (iOS) and App Links (Android)
+  - Firebase Cloud Messaging (FCM) for Android
+  - Apple Push Notification Service (APNS) for iOS
+  - Email notifications with one-click approve/decline
+  - Deep linking support for seamless app-to-web transitions
+- **Multi-User Accounts**: Team-based collaboration with role-based access control (RBAC)
+  - User and team management
+  - Custom roles and permissions
+  - Invitation system with email verification
 - **Agentic Flows**: Event-driven workflows triggered by issue tracker events with real-time monitoring
 - **Web UI**: Comprehensive interface built with Lit, Vite, and Material Web Components
 
@@ -311,15 +322,17 @@ If you are not using an MCP client and want to interact with the tool endpoints 
 
 ### Tool Approval Workflows
 
-SpaceBridge supports human-in-the-loop approval workflows for sensitive tool operations. This feature enables you to require manual approval before certain tools can execute, providing an extra layer of control and security.
+SpaceBridge provides sophisticated approval workflows for tool execution with conditional policies and multi-channel notifications. Control which operations require approval and define conditional rules based on tool arguments, user context, and more.
 
 **Key Concepts:**
-- **Tool Configuration**: Define which tools are enabled for your account and whether they require approval
-- **Approval Policies**: Create reusable policies that define approval requirements, timeouts, and notification settings
-- **Approval Requests**: When a tool requiring approval is called, an approval request is created and notifications are sent
-- **Webhook Integration**: Connect approval notifications to Slack, Mattermost, or custom webhook endpoints
+- **Tool Configuration**: Enable/disable tools and assign approval policies
+- **Approval Policies** (Open-Core + Proprietary): Define approval requirements, approvers, timeouts, and notification channels
+- **Conditional Approval** (Proprietary): Use CEL expressions to require approval only when specific conditions are met
+- **Multi-Channel Notifications**: Email (open-core), mobile push, Slack, Mattermost, webhooks (proprietary)
+- **Team-Based Approvals** (Proprietary): Assign approval rights to teams and require quorum
+- **Escalation** (Proprietary): Automatically escalate to managers when approval times out
 
-**Example: Setting up approval for issue creation:**
+**Example: Conditional approval for high-value operations**
 
 1. **Create an Approval Policy:**
    ```bash
@@ -327,34 +340,75 @@ SpaceBridge supports human-in-the-loop approval workflows for sensitive tool ope
    -H "Authorization: Bearer YOUR_API_KEY" \
    -H "Content-Type: application/json" \
    -d '{
-     "name": "Issue Creation Approval",
-     "description": "Require approval for creating new issues",
-     "approval_mode": "manual",
-     "webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
-     "timeout_seconds": 300
+     "name": "Critical Operations",
+     "description": "Require approval for critical issue operations",
+     "is_default": false,
+     "approver_user_ids": ["user-id-1", "user-id-2"],
+     "approver_team_ids": ["team-id-1"],
+     "approvals_required": 1,
+     "timeout_seconds": 600,
+     "notification_channels": ["email", "mobile_push", "slack"],
+     "channel_configs": {
+       "slack_webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+     }
    }'
    ```
 
-2. **Configure the create_issue tool to require approval:**
+2. **Configure tool with conditional approval:**
    ```bash
    curl -X POST "https://YOUR_SPACEBRIDGE_URL/api/v1/tool-configurations" \
    -H "Authorization: Bearer YOUR_API_KEY" \
    -H "Content-Type: application/json" \
    -d '{
-     "tool_type": "default",
-     "tool_name": "create_issue",
-     "enabled": true,
-     "requires_approval": true,
-     "approval_policy_id": "<policy_id_from_step_1>"
+     "tool_name": "update_issue",
+     "tool_source": "spacebridge_builtin",
+     "is_enabled": true,
+     "approval_policy_id": "<policy_id_from_step_1>",
+     "conditions": [
+       {
+         "condition_type": "argument",
+         "condition_expression": "args.priority == \"critical\" || args.status == \"closed\"",
+         "is_enabled": true
+       }
+     ]
    }'
    ```
 
-3. **When a tool call requires approval:**
-   - The MCP client initiates the tool call
-   - An approval request is created and a notification is sent to your configured webhook
-   - The request waits for approval (up to the timeout period)
-   - Approvers respond via the public approval endpoint or through integrated systems
-   - If approved, the tool executes; if declined or timed out, an error is returned
+   This configuration requires approval only when:
+   - Setting an issue's priority to "critical", OR
+   - Changing an issue's status to "closed"
+
+3. **Mobile Device Registration:**
+   - Users can register mobile devices via QR code from notification preferences
+   - QR codes use Universal Links (iOS) and App Links (Android) for seamless setup
+   - Mobile apps receive push notifications for approval requests
+   - One-tap approve/decline directly from notifications
+
+4. **When a tool call requires approval:**
+   - Tool arguments are evaluated against CEL conditions
+   - If conditions match, an approval request is created
+   - Notifications sent to configured channels (email, mobile push, Slack, etc.)
+   - Request waits for approval (up to timeout, with optional escalation)
+   - If approved, tool executes; if declined/timed out, error is returned
+
+**CEL Expression Examples:**
+```cel
+# Require approval for amounts over $1000
+args.amount > 1000
+
+# Require approval for production environments
+args.environment == "production" || args.environment == "prod"
+
+# Require approval for specific projects
+args.project_id in ["proj-123", "proj-456"]
+
+# Complex conditions
+(args.priority == "critical" && args.assignee == null) || args.delete_data == true
+```
+
+For detailed setup instructions, see:
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and approval flow
+- [DEEP_LINKING_SETUP.md](docs/DEEP_LINKING_SETUP.md) - Mobile push notification setup
 
 ## Testing
 

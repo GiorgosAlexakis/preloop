@@ -36,8 +36,7 @@ def tool_config():
     """Create a mock ToolConfiguration."""
     config = MagicMock()
     config.id = str(uuid4())
-    config.requires_approval = True
-    config.approval_policy_id = str(uuid4())
+    config.approval_policy_id = str(uuid4())  # Tool requires approval if this is set
     return config
 
 
@@ -91,10 +90,10 @@ class TestRequireApprovalNoConfig:
         assert error == ""
 
     async def test_tool_without_requires_approval_returns_true(self, tool_config):
-        """Test that tool without requires_approval flag allows execution."""
+        """Test that tool without approval_policy_id allows execution."""
         mock_db = create_mock_db_session()
-        # Set requires_approval to False
-        tool_config.requires_approval = False
+        # Set approval_policy_id to None (no approval required)
+        tool_config.approval_policy_id = None
 
         mock_db = create_mock_db_session()
         mock_result = MagicMock()
@@ -119,7 +118,7 @@ class TestRequireApprovalNoConfig:
     async def test_tool_without_approval_policy_id_returns_true(self, tool_config):
         """Test that tool without approval_policy_id allows execution."""
         mock_db = create_mock_db_session()
-        tool_config.requires_approval = True
+        # Explicitly set approval_policy_id to None (no approval required)
         tool_config.approval_policy_id = None
 
         mock_db = create_mock_db_session()

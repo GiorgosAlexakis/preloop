@@ -308,7 +308,9 @@ class TestCheckApprovalRequired:
         user_context = UserContext("1", "1", "test", has_tracker=True)
 
         mock_config = MagicMock()
-        mock_config.requires_approval = True
+        mock_config.approval_policy_id = (
+            "some-policy-id"  # Tool requires approval if this is set
+        )
 
         with patch("spacemodels.db.session.get_async_db_session") as mock_get_db:
             mock_db = AsyncMock()

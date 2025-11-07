@@ -79,11 +79,8 @@ async def require_approval(
                 )
 
                 # If tool doesn't require approval, execute directly
-                if (
-                    not config
-                    or not config.requires_approval
-                    or not config.approval_policy_id
-                ):
+                # A tool requires approval if it has an approval_policy_id set
+                if not config or not config.approval_policy_id:
                     logger.info(
                         f"Tool {tool_name} ({tool_source}) does not require approval"
                     )

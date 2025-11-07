@@ -643,7 +643,7 @@ async def create_api_key(
             name=key_data.name,
             key=key_value,
             scopes=key_data.scopes,
-            created_by=current_user.username,
+            user_id=current_user.id,
             expires_at=key_data.expires_at,
         )
 
@@ -658,7 +658,7 @@ async def create_api_key(
             created_at=new_key.created_at,
             expires_at=new_key.expires_at,
             scopes=new_key.scopes,
-            created_by=new_key.created_by,
+            user_id=new_key.user_id,
             last_used_at=new_key.last_used_at,
         )
     except IntegrityError:
@@ -759,7 +759,7 @@ async def debug_api_keys(
                         created_at=key.created_at if key else datetime.now(UTC),
                         expires_at=key.expires_at if key else None,
                         scopes=key.scopes if key else [],
-                        created_by=key.created_by if key else "unknown",
+                        user_id=key.user_id if key else uuid.uuid4(),
                         last_used_at=key.last_used_at if key else None,
                     )
                 ]
@@ -778,7 +778,7 @@ async def debug_api_keys(
                 created_at=key.created_at,
                 expires_at=key.expires_at,
                 scopes=key.scopes,
-                created_by=key.created_by,
+                user_id=key.user_id,
                 last_used_at=key.last_used_at,
             )
             for key in keys

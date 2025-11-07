@@ -73,11 +73,8 @@ def with_approval(tool_func: Callable) -> Callable:
                 )
 
                 # If tool doesn't require approval, execute directly
-                if (
-                    not config
-                    or not config.requires_approval
-                    or not config.approval_policy_id
-                ):
+                # A tool requires approval if it has an approval_policy_id set
+                if not config or not config.approval_policy_id:
                     logger.info(f"Tool {tool_name} does not require approval")
                     return await tool_func(*args, **kwargs)
 
