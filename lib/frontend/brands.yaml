@@ -172,7 +172,7 @@ brands:
         og_image: "/images/preloop/diagram.png"
 
       hero:
-        title: "Responsible AI Automation"
+        title: "Responsible <span class=\"gradient-product\">AI Automation</span>"
         lead: "Agents do the work, humans make the decisions."
         cta_primary: "Start Free Trial"
         cta_secondary: "Request Demo"
@@ -221,15 +221,15 @@ brands:
         link_text: ""
         link_url: ""
         features:
-          - icon: "graph-up"
-            title: "Transactions over $10k"
-            text: "perform_transaction amount>$10k → CFO approval"
-          - icon: "code-slash"
-            title: "Quorum & escalation"
-            text: "rollback_deployment → 2 SREs or CTO escalation if no response in 2 mins"
-          - icon: "shield-check"
-            title: "PdM approval for features"
-            text: "create_issue type=Feature → Product Manager approval."
+          - icon: "currency-dollar"
+            title: "Financial Controls"
+            text: "Automatically pause transactions over $10k for CFO approval—protect your budget without slowing operations."
+          - icon: "arrow-up-circle"
+            title: "Smart Escalation"
+            text: "Require two SRE sign-offs for rollbacks, or escalate to CTO if no response in 2 minutes."
+          - icon: "clipboard-check"
+            title: "Product Alignment"
+            text: "Route feature requests to Product Managers for approval—keep your roadmap on track."
 
         mcp_setup_title: "Get Started with Preloop MCP"
         mcp_configs:

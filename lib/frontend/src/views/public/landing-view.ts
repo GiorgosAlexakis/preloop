@@ -7,6 +7,7 @@ import './../../components/news-capsule';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
 import '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
+import type SlCarousel from '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
 import type SlCarouselItem from '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
@@ -427,21 +428,6 @@ export class LandingView extends LitElement {
                       <div class="feature-text-content">
                         <h2>${slide.title}</h2>
                         <p>${slide.text}</p>
-                        ${!this._showVideo[index] && slide.videoUrl
-                          ? html`
-                              <sl-button
-                                variant="primary"
-                                class="watch-video-btn"
-                                @click=${() => this._playVideo(index)}
-                              >
-                                <sl-icon
-                                  name="play-circle"
-                                  slot="prefix"
-                                ></sl-icon>
-                                Watch Video
-                              </sl-button>
-                            `
-                          : ''}
                         <div class="carousel-navigation">
                           <sl-button
                             variant="text"
@@ -465,36 +451,12 @@ export class LandingView extends LitElement {
                       </div>
 
                       <div class="feature-video-content">
-                        ${this._showVideo[index]
-                          ? html`
-                              <div class="video-wrapper">
-                                <iframe
-                                  width="560"
-                                  height="315"
-                                  src=${`${slide.videoUrl}?autoplay=1`}
-                                  title="YouTube video player"
-                                  frameborder="0"
-                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                  allowfullscreen
-                                ></iframe>
-                              </div>
-                            `
-                          : slide.videoUrl
-                            ? html`
-                                <div
-                                  class="video-placeholder"
-                                  @click=${() => this._playVideo(index)}
-                                >
-                                  <img
-                                    src=${slide.placeholderImg}
-                                    alt="Video Preview"
-                                  />
-                                  <div class="play-button"></div>
-                                </div>
-                              `
-                            : html`<div class="image-placeholder">
-                                <img src=${slide.placeholderImg} />
-                              </div>`}
+                        <div class="image-placeholder">
+                          <img
+                            src=${slide.placeholderImg}
+                            alt=${slide.title}
+                          />
+                        </div>
                       </div>
                     </div>
                   </sl-carousel-item>
@@ -854,6 +816,27 @@ export class LandingView extends LitElement {
                   class="slack-logo tool-logo"
                 />
               </sl-tooltip>
+              <sl-tooltip content="Microsoft Teams">
+                <img
+                  src="images/logos/teams-logo.svg"
+                  alt="Microsoft Teams Logo"
+                  class="teams-logo tool-logo"
+                />
+              </sl-tooltip>
+              <sl-tooltip content="Discord">
+                <img
+                  src="images/logos/discord-logo.svg"
+                  alt="Discord Logo"
+                  class="discord-logo tool-logo"
+                />
+              </sl-tooltip>
+              <sl-tooltip content="Linear">
+                <img
+                  src="images/logos/linear-logo.svg"
+                  alt="Linear Logo"
+                  class="linear-logo tool-logo"
+                />
+              </sl-tooltip>
             </div>
           </div>
         </section>
@@ -884,7 +867,7 @@ export class LandingView extends LitElement {
 
         <section class="final-cta main-section special-cta">
           <div class="section-container">
-            <h2>Stop curating. Start creating.</h2>
+            <h2>Move fast. Stay safe.</h2>
             <div class="hero-buttons">
               <sl-button variant="primary" size="large" href="/register"
                 >Get Started for Free</sl-button
