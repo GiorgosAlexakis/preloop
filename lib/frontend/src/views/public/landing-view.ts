@@ -387,7 +387,7 @@ export class LandingView extends LitElement {
       } else if (urlObj.hostname.includes('youtube.com')) {
         // Format: https://www.youtube.com/watch?v=VIDEO_ID
         videoId = urlObj.searchParams.get('v') || '';
-        
+
         // Already in embed format
         if (urlObj.pathname.includes('/embed/')) {
           return url;
@@ -400,7 +400,7 @@ export class LandingView extends LitElement {
     } catch (e) {
       console.error('Failed to parse YouTube URL:', url, e);
     }
-    
+
     return url;
   }
 
@@ -476,7 +476,6 @@ export class LandingView extends LitElement {
               </section>
             `
           : ''}
-
         ${this._featuresLayout === 'carousel'
           ? html`
               <section class="feature-section main-section" id="features">
