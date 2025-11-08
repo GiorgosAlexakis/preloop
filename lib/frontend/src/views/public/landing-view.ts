@@ -427,9 +427,7 @@ export class LandingView extends LitElement {
           ? html`
               <section class="extended-description-section main-section">
                 <div class="section-container">
-                  <p class="lead text-center">
-                    ${this._extendedDescription}
-                  </p>
+                  <p class="lead text-center">${this._extendedDescription}</p>
                 </div>
               </section>
             `
