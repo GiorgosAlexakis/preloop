@@ -276,6 +276,27 @@ class CRUDToolConfiguration(CRUDBase[models.ToolConfiguration]):
             .count()
         )
 
+    def get_by_mcp_server(
+        self, db: Session, mcp_server_id: str
+    ) -> List[models.ToolConfiguration]:
+        """Get all tool configurations for a specific MCP server.
+
+        Args:
+            db: The database session.
+            mcp_server_id: The ID of the MCP server.
+
+        Returns:
+            List of tool configurations associated with the MCP server.
+        """
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.tool_source == "mcp",
+                self.model.mcp_server_id == mcp_server_id,
+            )
+            .all()
+        )
+
 
 # Async helper functions
 async def get_tool_config_by_name_and_source_async(
