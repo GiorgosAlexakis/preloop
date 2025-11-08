@@ -211,6 +211,19 @@ sl-carousel-item {
   height: auto !important;
 }
 
+/* Extended Description Section */
+.extended-description-section {
+  text-align: center;
+}
+
+.extended-description-section .lead {
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+  font-size: 1.2rem;
+  line-height: 1.8;
+}
+
 /* How It Works Section */
 .how-it-works-section {
   padding: 6rem 0;

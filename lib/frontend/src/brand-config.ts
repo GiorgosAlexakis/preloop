@@ -29,6 +29,7 @@ export interface BrandSocial {
 export interface BrandMeta {
   title: string;
   description: string;
+  extended_description?: string;
   keywords: string;
   og_image: string;
 }
@@ -38,6 +39,7 @@ export interface BrandHero {
   lead: string;
   cta_primary: string;
   cta_secondary: string;
+  cta_secondary_url: string;
 }
 
 export interface BrandFeature {
@@ -52,11 +54,37 @@ export interface BrandFAQ {
   a: string;
 }
 
+export interface BrandGetStartedFeature {
+  icon: string;
+  title: string;
+  text: string;
+}
+
+export interface BrandMCPConfig {
+  ide: string;
+  ide_name: string;
+  logo_path: string;
+  logo_width: string;
+  prerequisites: string[];
+  setup_instructions: string;
+  code: string;
+}
+
+export interface BrandGetStarted {
+  title: string;
+  link_text: string;
+  link_url: string;
+  features: BrandGetStartedFeature[];
+  mcp_setup_title: string;
+  mcp_configs: BrandMCPConfig[];
+}
+
 export interface BrandLanding {
   meta: BrandMeta;
   hero: BrandHero;
   features: BrandFeature[];
   faqs: BrandFAQ[];
+  get_started: BrandGetStarted;
 }
 
 // Runtime config - minimal metadata injected into window.BRAND_CONFIG

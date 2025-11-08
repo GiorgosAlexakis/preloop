@@ -51,6 +51,7 @@ export class LandingView extends LitElement {
     setup_instructions: string;
     code: string;
   }> = [];
+  @state() private _extendedDescription = '';
 
   static styles = [
     css`
@@ -108,6 +109,13 @@ export class LandingView extends LitElement {
     if (ctaSecondary) this._ctaSecondary = ctaSecondary.textContent || '';
     if (ctaSecondaryUrl)
       this._ctaSecondaryUrl = ctaSecondaryUrl.textContent || '';
+
+    // Read extended description from light DOM slot
+    const extendedDescription = children.find(
+      (el) => el.getAttribute('slot') === 'extended-description'
+    ) as HTMLElement | undefined;
+    if (extendedDescription)
+      this._extendedDescription = extendedDescription.textContent || '';
 
     // Read feature slides from light DOM slots
     const features: FeatureSlide[] = [];
@@ -266,6 +274,7 @@ export class LandingView extends LitElement {
         slot &&
         (slot.startsWith('hero-') ||
           slot.startsWith('cta-') ||
+          slot === 'extended-description' ||
           slot.startsWith('feature-') ||
           slot.startsWith('faq-') ||
           slot.startsWith('get-started-') ||
@@ -290,6 +299,7 @@ export class LandingView extends LitElement {
     this._ctaPrimary = content.hero.cta_primary;
     this._ctaSecondary = content.hero.cta_secondary;
     this._ctaSecondaryUrl = content.hero.cta_secondary_url;
+    this._extendedDescription = content.extended_description || '';
 
     // Load features
     this._featureSlides = content.features.map((f: any) => ({
@@ -413,13 +423,17 @@ export class LandingView extends LitElement {
           </div>
         </section>
 
-        <!-- <section class="how-it-works-section main-section">
-          <div class="section-container">
-            <p class="lead text-center">
-                <slot name="extended-description"></slot>
-            </p>
-          </div>
-        </section> -->
+        ${this._extendedDescription
+          ? html`
+              <section class="extended-description-section main-section">
+                <div class="section-container">
+                  <p class="lead text-center">
+                    ${this._extendedDescription}
+                  </p>
+                </div>
+              </section>
+            `
+          : ''}
 
         <section class="feature-section main-section" id="features">
           <div class="section-container">
