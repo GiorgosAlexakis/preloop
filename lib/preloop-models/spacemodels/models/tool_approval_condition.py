@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING, Dict, Optional
 from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import Boolean, JSON, DateTime
-from sqlalchemy.sql import func
+from sqlalchemy.types import Boolean, JSON
 
 from .base import Base
 
@@ -32,7 +31,7 @@ class ToolApprovalCondition(Base):
         - "args.priority == 'critical' || args.priority == 'high'" - Require approval for high priority
 
     Attributes:
-        id: Unique identifier for the condition.
+        id: Unique identifier for the condition (inherited from Base).
         account_id: The account this condition belongs to.
         tool_configuration_id: Reference to the tool configuration (unique, 1:1).
         name: Optional human-readable name for the condition.
@@ -41,8 +40,8 @@ class ToolApprovalCondition(Base):
         condition_type: Type of condition evaluator ('argument', 'state', 'risk').
         condition_expression: CEL expression for conditional approval (proprietary feature).
         condition_config: Additional configuration for the condition evaluator.
-        created_at: When the condition was created.
-        updated_at: When the condition was last modified.
+        created_at: When the condition was created (inherited from Base).
+        updated_at: When the condition was last modified (inherited from Base).
     """
 
     __tablename__ = "tool_approval_conditions"
@@ -107,21 +106,7 @@ class ToolApprovalCondition(Base):
         comment="Additional configuration for the condition evaluator",
     )
 
-    # Timestamps
-    created_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-        comment="When the condition was created",
-    )
-
-    updated_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-        comment="When the condition was last modified",
-    )
+    # Note: created_at and updated_at are inherited from Base class
 
     # Relationships
     account: Mapped["Account"] = relationship(

@@ -1644,12 +1644,14 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
             nullable=False,
             comment="When the condition was created",
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
             nullable=False,
             comment="When the condition was last modified",
         ),

@@ -57,7 +57,7 @@ class ToolConfigurationResponse(ToolConfigurationBase):
     """Schema for tool configuration response."""
 
     id: UUID
-    account_id: str
+    account_id: UUID  # Changed from str to UUID for validation, serializer converts to str for JSON
     tool_name: str
     tool_source: str
     mcp_server_id: Optional[UUID] = None
@@ -69,7 +69,9 @@ class ToolConfigurationResponse(ToolConfigurationBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_serializer("id", "mcp_server_id", "http_endpoint_id", "approval_policy_id")
+    @field_serializer(
+        "id", "account_id", "mcp_server_id", "http_endpoint_id", "approval_policy_id"
+    )
     def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
         """Serialize UUID to string."""
         return str(value) if value else None
