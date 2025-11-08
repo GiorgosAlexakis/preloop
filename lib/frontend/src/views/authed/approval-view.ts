@@ -56,7 +56,7 @@ export class ApprovalView extends AuthedElement {
     :host {
       display: block;
       padding: 2rem;
-      max-width: 900px;
+      max-width: 840px;
       margin: 0 auto;
     }
 
@@ -448,9 +448,7 @@ export class ApprovalView extends AuthedElement {
 
         <div class="content-section">
           <h2>Tool Arguments</h2>
-          <div class="code-block">
-            ${JSON.stringify(this.approvalRequest.tool_args, null, 2)}
-          </div>
+          <div class="code-block">${JSON.stringify(this.approvalRequest.tool_args, null, 2)}</div>
         </div>
 
         ${isResolved

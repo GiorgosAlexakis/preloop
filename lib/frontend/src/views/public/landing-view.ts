@@ -413,22 +413,13 @@ export class LandingView extends LitElement {
           </div>
         </section>
 
-        <section class="how-it-works-section main-section">
+        <!-- <section class="how-it-works-section main-section">
           <div class="section-container">
             <p class="lead text-center">
-              Preloop is an event-driven automation platform with built-in
-              human-in-the-loop safety. AI agents respond to events across your
-              tools automatically. When agents call sensitive operations,
-              Preloop intercepts the request and routes it for human approval<br />—no
-              infrastructure changes required.
+                <slot name="extended-description"></slot>
             </p>
-            <img
-              src="/images/diagram_preloop.png"
-              alt="Preloop Architecture Diagram"
-              class="architecture-diagram"
-            />
           </div>
-        </section>
+        </section> -->
 
         <section class="feature-section main-section" id="features">
           <div class="section-container">
@@ -437,7 +428,6 @@ export class LandingView extends LitElement {
               ${this._featureSlides.map(
                 (slide) => html`
                   <div class="feature-box">
-                    <img src=${slide.placeholderImg} alt=${slide.title} />
                     <h3>${slide.title}</h3>
                     <p>${slide.text}</p>
                   </div>
@@ -462,50 +452,17 @@ export class LandingView extends LitElement {
             </div>
 
             <div class="feature-grid three-col">
-              ${this._getStartedFeatures.length > 0
-                ? this._getStartedFeatures.map(
-                    (feature) => html`
-                      <div class="feature-box">
-                        <div class="feature-icon">
-                          <sl-icon name="${feature.icon}"></sl-icon>
-                        </div>
-                        <h3>${feature.title}</h3>
-                        <p>${feature.text}</p>
-                      </div>
-                    `
-                  )
-                : html`
-                    <div class="feature-box">
-                      <div class="feature-icon">
-                        <sl-icon name="search"></sl-icon>
-                      </div>
-                      <h3>Smart Duplicate Detection</h3>
-                      <p>
-                        Intelligent similarity search finds and prevents
-                        duplicate issues, even when terminology varies.
-                      </p>
+              ${this._getStartedFeatures.map(
+                (feature) => html`
+                  <div class="feature-box">
+                    <div class="feature-icon">
+                      <sl-icon name="${feature.icon}"></sl-icon>
                     </div>
-                    <div class="feature-box">
-                      <div class="feature-icon">
-                        <sl-icon name="journal-plus"></sl-icon>
-                      </div>
-                      <h3>Augment your AI context</h3>
-                      <p>
-                        Seamless issue data access that supercharges your AI
-                        tools' effectiveness
-                      </p>
-                    </div>
-                    <div class="feature-box">
-                      <div class="feature-icon">
-                        <sl-icon name="code-slash"></sl-icon>
-                      </div>
-                      <h3>Cursor, Windsurf, Claude Code Ready</h3>
-                      <p>
-                        Streamlined setup process. Use with any agentic system
-                        that supports MCP.
-                      </p>
-                    </div>
-                  `}
+                    <h3>${feature.title}</h3>
+                    <p>${feature.text}</p>
+                  </div>
+                `
+              )}
             </div>
             <h3>
               ${this._mcpSetupTitle ||

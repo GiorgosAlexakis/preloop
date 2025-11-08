@@ -197,7 +197,7 @@ export class ConsoleShell extends LitElement {
       <div class="console-container">
         <div class="sidebar">
           <div class="logo">
-            <logo-component></logo-component>
+            <a href="/console"><logo-component></logo-component></a>
           </div>
           <sl-menu style="font-size: 16px;">
             <a href="/console">

@@ -25,6 +25,7 @@ brands:
       meta:
         title: "SpaceBridge - Drive your Product with AI"
         description: "Spacebridge curates your backlog, automates high value, low-risk work, and safeguards critical actions."
+        extended_description: ""
         keywords: "SpaceBridge, MCP, AI, Issue Tracker, Jira, GitLab, Integration, Automation, API"
         og_image: "/images/diagram.png"
 
@@ -167,20 +168,21 @@ brands:
     landing:
       meta:
         title: "Preloop AI - Responsible AI automation"
-        description: "Let agents do the work, humans make the decisions."
+        description: "Let agents do the work, humans make the critical decisions."
+        extended_description: "Preloop is an event-driven automation platform with built-in human-in-the-loop safety. AI agents respond to events across your tools automatically. When agents call sensitive operations, Preloop intercepts the request and routes it for human approval—no infrastructure changes required."
         keywords: "Preloop AI, AI, Human Approval, Code Review, Development, Automation, DevOps, CI/CD"
         og_image: "/images/preloop/diagram.png"
 
       hero:
         title: "Responsible <span class=\"gradient-product\">AI Automation</span>"
-        lead: "Automate with AI agents. Approve what matters."
+        lead: "Let agents do the work, humans make the critical decisions."
         cta_primary: "Start Free Trial"
         cta_secondary: "Request Demo"
         cta_secondary_url: "https://calendar.app.google/FV95tXZtfGpPk7398"
 
       features:
         - title: "Granular approval policies"
-          text: "Preloop AI provides an MCP proxy that puts a human-in-the-loop before your agents take critical action. Execution is paused while appropriate people are notified over any available channel (App, Email, Slack, etc.)."
+          text: "Preloop AI provides an MCP proxy that can put humans in the loop before agents take critical action. Execution is paused while appropriate people are notified over any available channel."
           videoUrl: ""
           placeholderImg: "/images/feature1.jpg"
 
@@ -190,7 +192,7 @@ brands:
           placeholderImg: "/images/feature2.jpg"
 
         - title: "Compliance & Security Checks"
-          text: "Ensure your code and processes meet industry standards and security requirements. Discover unmapped dependencies, reduce overlap and ensure Definition of Ready compliance for every open issue."
+          text: "Ensure your code and processes meet industry standards. Discover unmapped dependencies, reduce overlap and boost Definition of Ready compliance on every issue."
           videoUrl: ""
           placeholderImg: "/images/feature3.jpg"
 
@@ -217,19 +219,19 @@ brands:
           a: "Yes. Preloop provides native integrations with popular CI/CD platforms including GitHub Actions, GitLab CI, Jenkins, CircleCI, and more. Setup takes just a few minutes."
 
       get_started:
-        title: "Real-World Scenarios, Made Safe"
+        title: "How to automate responsibly"
         link_text: ""
         link_url: ""
         features:
           - icon: "currency-dollar"
-            title: "Gate High-Value Transactions"
-            text: "Automatically pause transactions over $10k for CFO approval—protect your budget without slowing operations."
+            title: "Gate high-value transactions"
+            text: "Pause transactions over $10k for CFO approval—protect your budget without slowing operations."
           - icon: "arrow-up-circle"
-            title: "Escalate Critical Deployments"
-            text: "Require two SRE sign-offs for rollbacks, or escalate to CTO if no response in 2 minutes."
+            title: "Escalate critical operations"
+            text: "Require two SRE sign-offs for automated rollbacks, or escalate to CTO if no response in 2 minutes."
           - icon: "clipboard-check"
-            title: "Route Feature Requests"
-            text: "Route feature requests to Product Managers for approval—keep your roadmap on track."
+            title: "Keep leaders in the loop"
+            text: "Route feature requests to Product Managers for approval-keep your roadmap on track."
 
         mcp_setup_title: "Get Started with Preloop MCP"
         mcp_configs:
