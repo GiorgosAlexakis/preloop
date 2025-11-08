@@ -581,7 +581,7 @@ def create_app() -> FastAPI:
         # Apply security to all endpoints except auth endpoints, landing page, health checks, and docs
         excluded_prefixes = [
             "/api/v1/auth",
-            "/api/v1/public/approval",
+            "/approval",  # Public approval endpoints (token-based, no login required)
             "/api/v1/billing/plans",
             "/api/v1/billing/create-checkout-session",
             "/",
@@ -628,8 +628,8 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        public_approval.router, prefix="/api/v1", tags=["Public Approval"]
-    )  # No auth required
+        public_approval.router, tags=["Public Approval"]
+    )  # No auth required, mounted at /approval (not /api/v1/approval)
     app.include_router(
         features.router, prefix="/api/v1", tags=["Features"]
     )  # No auth required

@@ -15,7 +15,7 @@ from spacebridge.services.approval_service import ApprovalService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/public/approval", tags=["public-approval"])
+router = APIRouter(prefix="/approval", tags=["public-approval"])
 
 
 class ApprovalDecisionRequest(BaseModel):
