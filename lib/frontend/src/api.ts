@@ -975,6 +975,42 @@ export async function deleteToolConfiguration(configId: string): Promise<void> {
   }
 }
 
+// Tool Approval Condition API
+export async function getToolApprovalCondition(configId: string): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/tool-configurations/${configId}/approval-condition`
+  );
+  if (!response.ok) {
+    // 404 is expected if no condition exists yet
+    if (response.status === 404) {
+      return null;
+    }
+    throw new Error('Failed to fetch tool approval condition');
+  }
+  return response.json();
+}
+
+export async function updateToolApprovalCondition(
+  configId: string,
+  condition: string | null
+): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/tool-configurations/${configId}/condition`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approval_condition: condition }),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || 'Failed to update tool approval condition'
+    );
+  }
+  return response.json();
+}
+
 // Approval Policies API
 export async function getApprovalPolicies(): Promise<any[]> {
   const response = await fetchWithAuth('/api/v1/approval-policies');

@@ -9,6 +9,7 @@ import {
   updateMCPServer,
   createToolConfiguration,
   updateToolConfiguration,
+  updateToolApprovalCondition,
   getApprovalPolicies,
   createApprovalPolicy,
   updateApprovalPolicy,
@@ -536,6 +537,33 @@ export class ToolsView extends LitElement {
     const scrollY = window.scrollY;
 
     try {
+      // Ensure tool configuration exists first
+      let configId = tool.config_id;
+
+      if (!configId) {
+        // Create tool configuration if it doesn't exist
+        const newConfig = await createToolConfiguration({
+          tool_name: tool.name,
+          tool_source: tool.source,
+          mcp_server_id: tool.source_id,
+          account_id: '',
+        });
+        configId = newConfig.id;
+
+        // Update local tool with new config_id
+        const updatedTools = this.tools.map((t) => {
+          if (
+            t.name === tool.name &&
+            t.source === tool.source &&
+            t.source_id === tool.source_id
+          ) {
+            return { ...t, config_id: configId };
+          }
+          return t;
+        });
+        this.tools = updatedTools;
+      }
+
       // Update local state immediately for instant feedback
       const updatedTools = this.tools.map((t) => {
         if (
@@ -552,20 +580,8 @@ export class ToolsView extends LitElement {
       });
       this.tools = updatedTools;
 
-      // Save condition on server
-      if (tool.config_id) {
-        await updateToolConfiguration(tool.config_id, {
-          approval_condition: condition,
-        });
-      } else {
-        await createToolConfiguration({
-          tool_name: tool.name,
-          tool_source: tool.source,
-          mcp_server_id: tool.source_id,
-          approval_condition: condition,
-          account_id: '',
-        });
-      }
+      // Save condition using dedicated endpoint
+      await updateToolApprovalCondition(configId, condition);
 
       // Restore scroll position
       window.scrollTo(0, scrollY);

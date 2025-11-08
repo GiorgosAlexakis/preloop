@@ -1,7 +1,12 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
-import { getUsers, getTeams, getAccountDetails } from '../api';
+import {
+  getUsers,
+  getTeams,
+  getAccountDetails,
+  getToolApprovalCondition,
+} from '../api';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -464,10 +469,54 @@ export class ToolCard extends LitElement {
     }
   }
 
-  private handleConfigureCondition() {
+  private async handleConfigureCondition() {
     // Load existing condition if it exists
-    // TODO: Load from tool configuration once backend supports it
+    if (this.tool.config_id) {
+      try {
+        const condition = await getToolApprovalCondition(this.tool.config_id);
+        if (condition && condition.condition_expression) {
+          // Parse the CEL expression back into form fields
+          this.parseCelExpression(condition.condition_expression);
+        }
+      } catch (error) {
+        console.error('Failed to load approval condition:', error);
+      }
+    }
     this.showConditionConfig = true;
+  }
+
+  private parseCelExpression(expression: string) {
+    // Parse expressions like: args.field_name operator value
+    // Examples: "args.n > 10", "args.status == 'active'"
+    const match = expression.match(/^args\.(\w+)\s*(==|!=|>|>=|<|<=)\s*(.+)$/);
+    if (!match) {
+      console.warn('Unable to parse CEL expression:', expression);
+      return;
+    }
+
+    const [, field, operator, rawValue] = match;
+    this.conditionField = field;
+
+    // Map CEL operators to our form operators
+    const operatorMap: { [key: string]: string } = {
+      '==': 'equals',
+      '!=': 'not_equals',
+      '>': 'greater_than',
+      '>=': 'greater_than_or_equal',
+      '<': 'less_than',
+      '<=': 'less_than_or_equal',
+    };
+    this.conditionOperator = operatorMap[operator] || 'equals';
+
+    // Remove quotes if it's a string value
+    let value = rawValue.trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    this.conditionValue = value;
   }
 
   private handleCloseConditionDialog() {
@@ -1060,7 +1109,7 @@ export class ToolCard extends LitElement {
                               ? 'https://hooks.slack.com/services/...'
                               : this.newPolicyType === 'mattermost'
                                 ? 'https://your-mattermost.com/hooks/...'
-                                : 'https://your-webhook-endpoint.com/approve'}"
+                                : 'https://your-webhook-endpoint.com/approval-request'}"
                             value=${this.newPolicyWebhookUrl}
                             @sl-input=${(e: any) => {
                               e.stopPropagation();
