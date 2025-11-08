@@ -171,7 +171,7 @@
 
         async function loadApproval() {
             try {
-                const response = await fetch(`/api/v1/public/approval/${requestId}?token=${token}`);
+                const response = await fetch(`/approval/${requestId}/data?token=${token}`);
                 if (!response.ok) {
                     throw new Error('Failed to load approval request');
                 }
@@ -221,7 +221,7 @@
 
             try {
                 const response = await fetch(
-                    `/api/v1/public/approval/${requestId}/decide?token=${token}`,
+                    `/approval/${requestId}/decide?token=${token}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },

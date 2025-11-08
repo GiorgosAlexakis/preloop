@@ -32,8 +32,8 @@ mcp = FastMCP("Example MCP Server")
 
 
 @mcp.tool()
-def pay(recipient: str, amount: int, unit: str = "$") -> str:
-    """Pay the recipient the specified amount.
+def pay(recipient: str, amount: int) -> str:
+    """Pay the recipient the specified amount in USD.
 
     Args:
         recipient: The recipient of the payment
@@ -42,7 +42,21 @@ def pay(recipient: str, amount: int, unit: str = "$") -> str:
     Returns:
         A message indicating the success of the payment
     """
-    return f"Payment of {unit}{amount} to {recipient} completed successfully"
+    return f"Payment of ${amount} to {recipient} completed successfully"
+
+
+@mcp.tool()
+def send_money(recipient: str, amount: int) -> str:
+    """Send a payment of the specified amount in USD to the recipient.
+
+    Args:
+        recipient: The recipient of the payment
+        amount: The amount to pay
+
+    Returns:
+        A message indicating the success of the payment
+    """
+    return f"Payment of ${amount} to {recipient} completed successfully"
 
 
 @mcp.tool()

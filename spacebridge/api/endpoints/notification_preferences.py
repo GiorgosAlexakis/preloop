@@ -142,7 +142,7 @@ async def get_registration_qr_code(
     Returns:
         QR code data with registration token.
     """
-    api_url = os.getenv("API_URL", "http://localhost:8000")
+    api_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000")
 
     qr_data = generate_registration_token(
         user_id=current_user.id,

@@ -538,7 +538,7 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /approval/{request_id}:
+  /approval/{request_id}/data:
     get:
       tags:
       - Public Approval
@@ -549,7 +549,7 @@ paths:
         \ from the approval link\n    db: Database session\n\nReturns:\n    Public\
         \ approval request details\n\nRaises:\n    HTTPException: If token is invalid\
         \ or request not found"
-      operationId: get_approval_request_public_approval__request_id__get
+      operationId: get_approval_request_public_approval__request_id__data_get
       parameters:
       - name: request_id
         in: path
