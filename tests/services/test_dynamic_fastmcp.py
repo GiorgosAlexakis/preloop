@@ -289,31 +289,53 @@ class TestListTools:
 
 
 class TestMCPCallTool:
-    """Test _mcp_call_tool method."""
+    """Test _call_tool method (FastMCP 2.13.0+)."""
 
     async def test_call_tool_no_user_context(self, dynamic_mcp):
         """Test calling tool with no user context."""
-        result = await dynamic_mcp._mcp_call_tool("tool1", {})
+        from fastmcp.tools.tool import ToolResult
 
-        assert len(result) == 1
-        assert isinstance(result[0], types.TextContent)
-        assert "No user context available" in result[0].text
+        # Create mock context for FastMCP 2.13.0+
+        mock_context = MagicMock()
+        mock_context.message = MagicMock()
+        mock_context.message.name = "tool1"
+        mock_context.message.arguments = {}
+
+        result = await dynamic_mcp._call_tool(mock_context)
+
+        assert isinstance(result, ToolResult)
+        assert len(result.content) == 1
+        assert "No user context available" in result.content[0].text
 
     async def test_call_tool_unauthorized(self, dynamic_mcp, user_context):
         """Test calling unauthorized tool."""
+        from fastmcp.tools.tool import ToolResult
+
         dynamic_mcp._user_context_provider = lambda: user_context
+
+        mock_context = MagicMock()
+        mock_context.message = MagicMock()
+        mock_context.message.name = "unauthorized_tool"
+        mock_context.message.arguments = {}
 
         # Mock _list_tools to return empty list
         with patch.object(dynamic_mcp, "_list_tools", return_value=[]):
-            result = await dynamic_mcp._mcp_call_tool("unauthorized_tool", {})
+            result = await dynamic_mcp._call_tool(mock_context)
 
-        assert len(result) == 1
-        assert isinstance(result[0], types.TextContent)
-        assert "Access denied" in result[0].text
+        assert isinstance(result, ToolResult)
+        assert len(result.content) == 1
+        assert "Access denied" in result.content[0].text
 
     async def test_call_builtin_tool(self, dynamic_mcp, user_context):
         """Test calling builtin tool."""
+        from fastmcp.tools.tool import ToolResult
+
         dynamic_mcp._user_context_provider = lambda: user_context
+
+        mock_context = MagicMock()
+        mock_context.message = MagicMock()
+        mock_context.message.name = "builtin_tool"
+        mock_context.message.arguments = {}
 
         # Mock _list_tools to include the tool
         available_tools = [
@@ -321,24 +343,32 @@ class TestMCPCallTool:
         ]
 
         with patch.object(dynamic_mcp, "_list_tools", return_value=available_tools):
-            # Mock super()._mcp_call_tool
+            # Mock super()._call_tool for FastMCP 2.13.0+
+            mock_result = ToolResult(
+                content=[types.TextContent(type="text", text="Result")]
+            )
             with patch.object(
                 dynamic_mcp.__class__.__bases__[0],
-                "_mcp_call_tool",
-                new=AsyncMock(
-                    return_value=[types.TextContent(type="text", text="Result")]
-                ),
-                create=True,  # Allow creating the method if it doesn't exist
+                "_call_tool",
+                new=AsyncMock(return_value=mock_result),
+                create=True,
             ):
-                result = await dynamic_mcp._mcp_call_tool("builtin_tool", {})
+                result = await dynamic_mcp._call_tool(mock_context)
 
-        assert len(result) == 1
-        assert result[0].text == "Result"
+        assert isinstance(result, ToolResult)
+        assert result.content[0].text == "Result"
 
     async def test_call_proxied_tool_translates_name(self, dynamic_mcp, user_context):
         """Test calling proxied tool translates name."""
+        from fastmcp.tools.tool import ToolResult
+
         dynamic_mcp._user_context_provider = lambda: user_context
         dynamic_mcp._proxied_tool_servers["proxied_tool"] = "server-id"
+
+        mock_context = MagicMock()
+        mock_context.message = MagicMock()
+        mock_context.message.name = "proxied_tool"
+        mock_context.message.arguments = {}
 
         # Mock _list_tools to include the tool
         available_tools = [
@@ -346,21 +376,23 @@ class TestMCPCallTool:
         ]
 
         with patch.object(dynamic_mcp, "_list_tools", return_value=available_tools):
-            # Mock super()._mcp_call_tool to verify name translation
+            # Mock super()._call_tool to verify name translation
+            mock_result = ToolResult(
+                content=[types.TextContent(type="text", text="Result")]
+            )
             with patch.object(
                 dynamic_mcp.__class__.__bases__[0],
-                "_mcp_call_tool",
-                new=AsyncMock(
-                    return_value=[types.TextContent(type="text", text="Result")]
-                ),
-                create=True,  # Allow creating the method if it doesn't exist
+                "_call_tool",
+                new=AsyncMock(return_value=mock_result),
+                create=True,
             ) as mock_super:
-                result = await dynamic_mcp._mcp_call_tool("proxied_tool", {})
+                result = await dynamic_mcp._call_tool(mock_context)
 
-                # Verify internal name was used
+                # Verify internal name was used (context.message.name was modified)
                 safe_account_id = user_context.account_id.replace("-", "_")
                 expected_internal_name = f"account_{safe_account_id}_proxied_tool"
-                mock_super.assert_called_once_with(expected_internal_name, {})
+                assert mock_context.message.name == expected_internal_name
+                mock_super.assert_called_once_with(mock_context)
 
 
 class TestCreateProxiedToolWrapper:
