@@ -2062,14 +2062,14 @@ paths:
       tags:
       - Notification Preferences
       summary: Register Device Via Token
-      description: "Register a mobile device using a QR code token.\n\nThis endpoint\
-        \ is called by the mobile app after scanning the QR code.\n\nArgs:\n    token:\
+      description: "Register a mobile device using a QR code token and create an API\
+        \ key.\n\nThis endpoint is called by the mobile app after scanning the QR\
+        \ code.\nIt registers the device for push notifications AND creates an API\
+        \ key\nfor the mobile app to authenticate API requests.\n\nArgs:\n    token:\
         \ Registration token from QR code.\n    device_in: Device registration data.\n\
-        \nReturns:\n    Updated notification preferences.\n\nRaises:\n    HTTPException:\
-        \ If token is invalid or expired."
+        \nReturns:\n    Updated notification preferences with API key.\n\nRaises:\n\
+        \    HTTPException: If token is invalid or expired."
       operationId: register_device_via_token_api_v1_notification_preferences_register_via_token_post
-      security:
-      - bearerAuth: []
       parameters:
       - name: token
         in: query
@@ -2089,13 +2089,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NotificationPreferencesResponse'
+                $ref: '#/components/schemas/MobileDeviceRegistrationResponse'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/issue-dependencies/detect:
     post:
       tags:
@@ -8954,12 +8956,45 @@ components:
           type: string
           title: Token
           description: Device push notification token
+        device_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Name
+          description: Optional device name for API key
       type: object
       required:
       - platform
       - token
       title: MobileDeviceRegistration
       description: Schema for registering a mobile device.
+    MobileDeviceRegistrationResponse:
+      properties:
+        preferences:
+          $ref: '#/components/schemas/NotificationPreferencesResponse'
+        api_key:
+          type: string
+          title: Api Key
+          description: API key for mobile app authentication
+        api_key_id:
+          type: string
+          format: uuid
+          title: Api Key Id
+          description: API key ID
+        api_key_expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Api Key Expires At
+          description: API key expiration
+      type: object
+      required:
+      - preferences
+      - api_key
+      - api_key_id
+      title: MobileDeviceRegistrationResponse
+      description: Schema for mobile device registration response with API key.
     NotificationPreferencesResponse:
       properties:
         preferred_channel:

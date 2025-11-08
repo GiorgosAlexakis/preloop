@@ -663,7 +663,8 @@ def create_app() -> FastAPI:
         notification_preferences.router,
         prefix="/api/v1/notification-preferences",
         tags=["Notification Preferences"],
-        dependencies=[Depends(get_current_active_user)],
+        # No router-level auth - individual endpoints handle their own auth
+        # /register-device and /register-via-token are public (token-based)
     )
     app.include_router(
         issue_dependencies.router,

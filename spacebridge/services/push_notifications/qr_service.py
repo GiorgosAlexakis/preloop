@@ -53,6 +53,27 @@ def generate_registration_token(
     }
 
 
+def check_token_validity(token: str) -> bool:
+    """Check if a registration token is valid without consuming it.
+
+    Args:
+        token: Registration token to check.
+
+    Returns:
+        True if valid and not expired, False otherwise.
+    """
+    token_data = _registration_tokens.get(token)
+
+    if not token_data:
+        return False
+
+    # Check if expired
+    if datetime.utcnow() > token_data["expires_at"]:
+        return False
+
+    return True
+
+
 def validate_registration_token(token: str) -> Optional[uuid.UUID]:
     """Validate a registration token and return the user ID.
 
