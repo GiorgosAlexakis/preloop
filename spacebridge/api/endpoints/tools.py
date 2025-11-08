@@ -481,12 +481,32 @@ async def create_tool_configuration(
 
     except IntegrityError as e:
         db.rollback()
-        logger.warning(
-            f"Duplicate tool configuration for {config_data.tool_name}: {str(e)}"
+        logger.info(
+            f"Tool configuration for {config_data.tool_name} already exists, fetching existing config"
         )
+
+        # Fetch the existing configuration
+        existing_config = crud_tool_configuration.get_by_tool_name_and_source(
+            db,
+            account_id=str(account.id),
+            tool_name=config_data.tool_name,
+            tool_source=config_data.tool_source,
+        )
+
+        if existing_config:
+            # Configuration already exists - return it (idempotent behavior)
+            # This handles race conditions where multiple requests try to create the same config
+            logger.info(
+                f"Returning existing tool configuration for {config_data.tool_name} "
+                f"(idempotent behavior for race condition)"
+            )
+            return ToolConfigurationResponse.model_validate(existing_config)
+
+        # If we still can't find it, something went wrong
+        logger.error(f"IntegrityError but config not found for {config_data.tool_name}")
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Configuration for tool '{config_data.tool_name}' with source '{config_data.tool_source}' already exists",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating tool configuration: {str(e)}",
         )
     except Exception as e:
         db.rollback()

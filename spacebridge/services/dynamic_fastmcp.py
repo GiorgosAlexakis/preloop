@@ -70,8 +70,10 @@ class DynamicFastMCP(FastMCP):
         Returns:
             List of tools available to the current user
         """
+        logger.info("!!! _list_tools called - ENTRY POINT !!!")
         # Get current user context
         user_context = self._get_current_user_context()
+        logger.info(f"!!! Got user context: {user_context} !!!")
 
         if not user_context:
             logger.warning("No user context available, returning empty tool list")
