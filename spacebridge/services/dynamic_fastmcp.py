@@ -11,7 +11,6 @@ from typing import Callable, Dict, Optional
 
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
-from mcp import types
 
 from spacebridge.services.dynamic_mcp_server import (
     UserContext,
@@ -58,7 +57,7 @@ class DynamicFastMCP(FastMCP):
         self._user_context_provider = provider
         logger.info("User context provider registered")
 
-    async def _list_tools(self) -> list[Tool]:
+    async def _list_tools(self, context=None) -> list[Tool]:
         """Override FastMCP's _list_tools to filter based on user context.
 
         This method is called by FastMCP's protocol handler to get the list
@@ -66,6 +65,9 @@ class DynamicFastMCP(FastMCP):
         user's context.
 
         Phase 1B: Now includes proxied tools from external MCP servers.
+
+        Args:
+            context: MiddlewareContext (FastMCP 2.13.0+), ignored for now
 
         Returns:
             List of tools available to the current user
@@ -88,7 +90,7 @@ class DynamicFastMCP(FastMCP):
 
         # Add default tools if user has tracker
         if user_context.has_tracker:
-            default_tools = await super()._list_tools()
+            default_tools = await super()._list_tools(context)
             # Filter out internal proxied tool names (they start with "account_")
             builtin_tools = [
                 t for t in default_tools if not t.name.startswith("account_")
@@ -172,7 +174,7 @@ class DynamicFastMCP(FastMCP):
                     self._proxied_tool_servers[mcp_tool.name] = str(mcp_server.id)
 
                 # Now get all registered tools and map back to original names
-                all_registered = await super()._list_tools()
+                all_registered = await super()._list_tools(context)
                 logger.info(
                     f"Total registered tools after dynamic registration: {len(all_registered)}"
                 )
@@ -425,9 +427,7 @@ async def {internal_name}({params_str}) -> str:
 
         return wrapper
 
-    async def _mcp_call_tool(
-        self, name: str, arguments: dict | None
-    ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    async def _call_tool(self, context):
         """Override tool execution for access validation and name translation.
 
         This is called by FastMCP's protocol handler before executing a tool.
@@ -438,33 +438,46 @@ async def {internal_name}({params_str}) -> str:
         for both builtin and proxied tools, allowing streaming progress updates.
 
         Args:
-            name: Tool name (as seen by client)
-            arguments: Tool arguments
+            context: MiddlewareContext[CallToolRequestParams] from FastMCP 2.13.0+
 
         Returns:
-            Tool execution result or access denied error
+            ToolResult from tool execution
         """
+        from fastmcp.tools.tool import ToolResult
+        from mcp.types import TextContent
+
+        # Extract tool name and arguments from context
+        name = context.message.name
+        arguments = context.message.arguments or {}
+
+        logger.info(f"!!! _call_tool called for tool: {name} !!!")
+
         # Get current user context
         user_context = self._get_current_user_context()
 
         if not user_context:
             logger.warning("No user context available for tool call")
-            return [
-                types.TextContent(type="text", text="Error: No user context available")
-            ]
+            return ToolResult(
+                content=[
+                    TextContent(type="text", text="Error: No user context available")
+                ]
+            )
 
         # Check if user has access to this tool
-        available_tools = await self._list_tools()
+        available_tools = await self._list_tools(context=None)
         if not any(tool.name == name for tool in available_tools):
             logger.warning(
                 f"User {user_context.username} attempted to call "
                 f"unauthorized tool: {name}"
             )
-            return [
-                types.TextContent(
-                    type="text", text=f"Access denied: Tool '{name}' is not available"
-                )
-            ]
+            return ToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Access denied: Tool '{name}' is not available",
+                    )
+                ]
+            )
 
         # Translate tool name for proxied tools
         # Client calls "calculate_fibonacci", we translate to "account_123_calculate_fibonacci"
@@ -472,12 +485,15 @@ async def {internal_name}({params_str}) -> str:
             safe_account_id = user_context.account_id.replace("-", "_")
             internal_name = f"account_{safe_account_id}_{name}"
             logger.info(f"Translating proxied tool name: {name} -> {internal_name}")
-            # Call with translated name
-            return await super()._mcp_call_tool(internal_name, arguments)
+            # Modify context with translated name
+            context.message.name = internal_name
 
-        # Builtin tool - call with original name
-        logger.info(f"Calling builtin tool: {name}")
-        return await super()._mcp_call_tool(name, arguments)
+        else:
+            # Builtin tool - call with original name
+            logger.info(f"Calling builtin tool: {name}")
+
+        # Call parent with (possibly modified) context
+        return await super()._call_tool(context)
 
 
 def create_dynamic_mcp_server() -> DynamicFastMCP:
