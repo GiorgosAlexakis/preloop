@@ -82,7 +82,8 @@ async def test_mcp_get_issue_success(db_session: Session, test_user: User):
 
         response = await mcp.get_issue(issue=str(issue.id))
 
-    assert response.id == str(issue.id)
+    # response.id is a UUID object, need to compare with issue.id directly
+    assert response.id == issue.id
     assert response.key == "TP-1"
     assert response.title == "Test Issue"
     assert response.project == "test-proj"

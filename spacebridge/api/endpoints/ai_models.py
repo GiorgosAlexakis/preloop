@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.orm import Session
 
 from spacebridge.api.auth.jwt import get_current_active_user
@@ -134,7 +134,7 @@ def delete_ai_model(
     crud_ai_model.remove(db=db, id=model_id)
 
     # No content returned for HTTP 204
-    return
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @public_router.get(

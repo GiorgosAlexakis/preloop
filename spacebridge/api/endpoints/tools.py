@@ -5,10 +5,11 @@ spacebridge/services/initialize_mcp.py to ensure consistency between REST API an
 """
 
 import logging
-from typing import Dict, List
+from typing import Any, Dict, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from spacebridge.api.common import get_account_for_user
@@ -328,11 +329,31 @@ async def list_all_tools(
         for tc in tool_configs
     }
 
+    # Get all approval conditions to check which tools have them
+    from sqlalchemy import select
+    from spacemodels import models
+
+    result = db.execute(
+        select(models.ToolApprovalCondition).where(
+            models.ToolApprovalCondition.account_id == str(account.id),
+            models.ToolApprovalCondition.is_enabled,
+        )
+    )
+    approval_conditions = result.scalars().all()
+
+    # Create map of config_id -> has condition
+    condition_map = {
+        str(cond.tool_configuration_id): True
+        for cond in approval_conditions
+        if cond.condition_expression
+    }
+
     tools = []
 
     # Add builtin tools
     for builtin_tool in BUILTIN_TOOLS:
         config = config_map.get((builtin_tool["name"], "builtin", None))
+        config_id = str(config.id) if config else None
         tools.append(
             {
                 "name": builtin_tool["name"],
@@ -345,7 +366,10 @@ async def list_all_tools(
                 "approval_policy_id": str(config.approval_policy_id)
                 if config and config.approval_policy_id
                 else None,
-                "config_id": str(config.id) if config else None,
+                "config_id": config_id,
+                "has_approval_condition": condition_map.get(config_id, False)
+                if config_id
+                else False,
             }
         )
 
@@ -357,6 +381,7 @@ async def list_all_tools(
 
         for mcp_tool in mcp_tools:
             config = config_map.get((mcp_tool.name, "mcp", str(server.id)))
+            config_id = str(config.id) if config else None
             tools.append(
                 {
                     "name": mcp_tool.name,
@@ -369,7 +394,10 @@ async def list_all_tools(
                     "approval_policy_id": str(config.approval_policy_id)
                     if config and config.approval_policy_id
                     else None,
-                    "config_id": str(config.id) if config else None,
+                    "config_id": config_id,
+                    "has_approval_condition": condition_map.get(config_id, False)
+                    if config_id
+                    else False,
                 }
             )
 
@@ -451,6 +479,15 @@ async def create_tool_configuration(
 
         return ToolConfigurationResponse.model_validate(new_config)
 
+    except IntegrityError as e:
+        db.rollback()
+        logger.warning(
+            f"Duplicate tool configuration for {config_data.tool_name}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Configuration for tool '{config_data.tool_name}' with source '{config_data.tool_source}' already exists",
+        )
     except Exception as e:
         db.rollback()
         logger.error(f"Error creating tool configuration: {e}", exc_info=True)
@@ -549,6 +586,92 @@ async def update_tool_configuration(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating tool configuration: {str(e)}",
+        )
+
+
+@router.put(
+    "/tool-configurations/{config_id}/condition",
+    response_model=ToolConfigurationResponse,
+)
+async def update_tool_approval_condition(
+    config_id: UUID,
+    condition_data: Dict[str, Any],
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> ToolConfigurationResponse:
+    """Update or create approval condition for a tool configuration.
+
+    Args:
+        config_id: Tool configuration ID
+        condition_data: Condition data with 'approval_condition' field
+        account: Current user's account
+        db: Database session
+
+    Returns:
+        Updated tool configuration
+
+    Raises:
+        HTTPException: If configuration not found or update fails
+    """
+    from spacemodels.crud import tool_approval_condition
+    from spacemodels.models import ToolApprovalCondition
+
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
+    )
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tool configuration not found or access denied",
+        )
+
+    approval_condition_expr = condition_data.get("approval_condition")
+
+    try:
+        # Get existing condition
+        existing_condition = tool_approval_condition.get_by_tool_configuration(
+            db, tool_configuration_id=config_id, account_id=account.id
+        )
+
+        if approval_condition_expr:
+            # Create or update condition
+            if existing_condition:
+                # Update existing condition
+                existing_condition.condition_expression = approval_condition_expr
+                existing_condition.is_enabled = True
+                db.commit()
+                logger.info(f"Updated approval condition for tool config {config_id}")
+            else:
+                # Create new condition
+                new_condition = ToolApprovalCondition(
+                    tool_configuration_id=config_id,
+                    account_id=account.id,
+                    condition_type="argument",  # Default to argument-based
+                    condition_expression=approval_condition_expr,
+                    is_enabled=True,
+                )
+                db.add(new_condition)
+                db.commit()
+                logger.info(f"Created approval condition for tool config {config_id}")
+        else:
+            # Delete condition if expression is empty
+            if existing_condition:
+                db.delete(existing_condition)
+                db.commit()
+                logger.info(f"Deleted approval condition for tool config {config_id}")
+
+        db.refresh(config)
+        return ToolConfigurationResponse.model_validate(config)
+
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            f"Error updating approval condition for {config_id}: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating approval condition: {str(e)}",
         )
 
 

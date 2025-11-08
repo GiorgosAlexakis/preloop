@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from typing import Tuple
+from uuid import uuid4
 from fastapi import HTTPException
 from pytest_mock import MockerFixture
 from unittest.mock import patch
@@ -21,13 +22,13 @@ from spacemodels.models.issue import Issue
 def mock_issues(mocker: MockerFixture) -> Tuple[MagicMock, MagicMock]:
     """Provides mock Issue objects for testing."""
     issue_a = MagicMock(spec=Issue)
-    issue_a.id = "db_id_a"
+    issue_a.id = uuid4()  # Changed from "db_id_a" to proper UUID
     issue_a.key = "PROJ-1"
     issue_a.title = "Original Title A"
     issue_a.description = "Original Description A"
 
     issue_b = MagicMock(spec=Issue)
-    issue_b.id = "db_id_b"
+    issue_b.id = uuid4()  # Changed from "db_id_b" to proper UUID
     issue_b.key = "PROJ-2"
     issue_b.title = "Original Title B"
     issue_b.description = "Original Description B"
@@ -204,8 +205,10 @@ async def test_execute_resolution_deconflict(mock_issues, mocker: MockerFixture)
 async def test_execute_resolution_issue_not_found(mocker: MockerFixture):
     """Tests that a 404 HTTPException is raised if an issue is not found."""
     # Arrange
+    issue1_uuid = uuid4()
+    issue2_uuid = uuid4()
     resolution_request = IssueDuplicateResolutionRequest(
-        issue1_id="a", issue2_id="b", resolution="close_a"
+        issue1_id=issue1_uuid, issue2_id=issue2_uuid, resolution="close_a"
     )
     mock_crud_issue = mocker.patch(
         "spacebridge.api.endpoints.issue_duplicates.crud_issue",
@@ -269,17 +272,21 @@ def test_check_or_create_issue_duplicate_existing(mock_get_by_issue_ids):
     """
     Tests the check_or_create_issue_duplicate function when a duplicate already exists.
     """
+    issue1_uuid = uuid4()
+    issue2_uuid = uuid4()
+    ai_model_uuid = uuid4()
+
     mock_get_by_issue_ids.return_value = MagicMock(
-        issue1_id="1",
-        issue2_id="2",
+        issue1_id=issue1_uuid,
+        issue2_id=issue2_uuid,
         decision="duplicate",
         reason="test",
         suggestion="test",
         resolution="test",
         resolution_reason="test",
-        resulting_issue1_id="1",
-        resulting_issue2_id="2",
-        ai_model_id="a" * 32,
+        resulting_issue1_id=issue1_uuid,
+        resulting_issue2_id=issue2_uuid,
+        ai_model_id=ai_model_uuid,
         ai_model_name="test",
     )
     db_session = MagicMock()
@@ -289,8 +296,8 @@ def test_check_or_create_issue_duplicate_existing(mock_get_by_issue_ids):
 
     result = issue_duplicates.check_or_create_issue_duplicate(
         db=db_session,
-        issue1_id="1",
-        issue2_id="2",
+        issue1_id=str(issue1_uuid),
+        issue2_id=str(issue2_uuid),
         current_user=current_user,
         billing_service=billing_service,
         settings=settings,

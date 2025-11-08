@@ -63,15 +63,17 @@ class TestSendEmail:
     @patch("spacebridge.utils.email.SMTP_USERNAME", "")
     @patch("spacebridge.utils.email.SMTP_PASSWORD", "")
     def test_send_email_no_credentials_does_not_send(self, mock_smtp):
-        """Test that email is not sent when credentials are missing."""
-        send_email(
-            to_email="recipient@example.com",
-            subject="Test Subject",
-            body_text="Test body",
-        )
+        """Test that email raises EmailError when credentials are missing."""
+        with pytest.raises(EmailError) as exc_info:
+            send_email(
+                to_email="recipient@example.com",
+                subject="Test Subject",
+                body_text="Test body",
+            )
 
         # Verify SMTP connection was never attempted
         mock_smtp.assert_not_called()
+        assert "SMTP credentials not configured" in str(exc_info.value)
 
     @patch("spacebridge.utils.email.smtplib.SMTP")
     @patch("spacebridge.utils.email.SMTP_USERNAME", "test@example.com")
@@ -162,13 +164,14 @@ class TestSendVerificationEmail:
         assert "verify-email" in html_body
 
     @patch("spacebridge.utils.email.send_email")
+    @patch("spacebridge.utils.email.APP_NAME", "Preloop AI")
     def test_send_verification_email_includes_welcome_message(self, mock_send_email):
         """Test that verification email includes welcome message."""
         send_verification_email("user@example.com", "token")
 
         call_args = mock_send_email.call_args
         text_body = call_args[0][2]
-        assert "Welcome to SpaceBridge" in text_body
+        assert "Welcome to Preloop AI" in text_body
 
 
 class TestSendPasswordResetEmail:

@@ -33,7 +33,16 @@ mcp = FastMCP("Example MCP Server")
 
 
 @mcp.tool()
-def perform_transaction(recipient, amount):
+def perform_transaction(recipient: str, amount: int) -> str:
+    """Perform a transaction from the user to the recipient.
+
+    Args:
+        recipient: The recipient of the transaction
+        amount: The amount of the transaction
+
+    Returns:
+        A message indicating the success of the transaction
+    """
     return f"Transaction of {amount} to {recipient} completed successfully"
 
 

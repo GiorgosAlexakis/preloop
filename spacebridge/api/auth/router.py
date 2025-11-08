@@ -616,7 +616,9 @@ async def change_current_user_password(
     )
 
 
-@router.post("/api-keys", response_model=ApiKeyResponse)
+@router.post(
+    "/api-keys", response_model=ApiKeyResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_api_key(
     key_data: ApiKeyCreate,
     current_user: UserResponse = Depends(get_current_active_user),

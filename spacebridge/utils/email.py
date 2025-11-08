@@ -76,7 +76,7 @@ def send_email(
             f"Would have sent email to {to_email} with subject '{subject}'"
         )
         logger.debug(f"Email body: {body_text}")
-        return
+        raise EmailError("SMTP credentials not configured")
 
     try:
         # Send the message via SMTP server
@@ -364,5 +364,145 @@ async def send_product_notification_email(
     except Exception as e:
         logger.error(
             f"An unexpected error occurred while sending product notification email: {str(e)}"
+        )
+        raise EmailError(f"An unexpected error occurred: {str(e)}")
+
+
+async def send_approval_request_email(
+    user_email: str,
+    tool_name: str,
+    tool_args: Dict[str, Any],
+    approval_url: str,
+    agent_reasoning: Optional[str] = None,
+) -> None:
+    """Send an approval request email to an approver.
+
+    Args:
+        user_email: The approver's email address.
+        tool_name: The name of the tool requiring approval.
+        tool_args: The arguments passed to the tool.
+        approval_url: The URL to approve or decline the request.
+        agent_reasoning: Optional reasoning from the agent for why it wants to use the tool.
+
+    Raises:
+        EmailError: If email sending fails.
+    """
+    subject = f"Tool Approval Required: {tool_name}"
+
+    # Format tool arguments for display
+    import json
+
+    tool_args_formatted = json.dumps(tool_args, indent=2)
+
+    # Plain text version
+    text_parts = [
+        "Hi,",
+        "",
+        "An AI agent is requesting approval to execute the following tool:",
+        "",
+        f"Tool: {tool_name}",
+    ]
+
+    if agent_reasoning:
+        text_parts.append("")
+        text_parts.append("Agent's Reasoning:")
+        text_parts.append(agent_reasoning)
+
+    text_parts.extend(
+        [
+            "",
+            "Arguments:",
+            tool_args_formatted,
+            "",
+            "To approve or decline this request, please visit:",
+            approval_url,
+            "",
+            "This link will expire in 5 minutes.",
+            "",
+            "Best regards,",
+            f"{APP_NAME} Team",
+        ]
+    )
+
+    body_text = "\n".join(text_parts)
+
+    # HTML version
+    html_parts = [
+        "<!DOCTYPE html>",
+        "<html>",
+        "<head>",
+        '  <meta charset="UTF-8">',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        "  <style>",
+        "    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }",
+        "    .container { max-width: 600px; margin: 0 auto; padding: 20px; }",
+        "    .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }",
+        "    .content { background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 5px 5px; }",
+        "    .tool-name { font-weight: bold; color: #2196F3; font-size: 1.1em; }",
+        "    .reasoning { background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 15px 0; }",
+        "    .arguments { background-color: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; overflow-x: auto; font-family: 'Courier New', monospace; font-size: 13px; }",
+        "    .button { display: inline-block; background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px 5px; }",
+        "    .button-decline { background-color: #f44336; }",
+        "    .footer { text-align: center; margin-top: 20px; font-size: 0.9em; color: #777; }",
+        "    .warning { color: #ff6b6b; font-weight: bold; }",
+        "  </style>",
+        "</head>",
+        "<body>",
+        '  <div class="container">',
+        '    <div class="header">',
+        "      <h2>Tool Approval Required</h2>",
+        "    </div>",
+        '    <div class="content">',
+        "      <p>Hi,</p>",
+        "      <p>An AI agent is requesting approval to execute the following tool:</p>",
+        f'      <p class="tool-name">Tool: {tool_name}</p>',
+    ]
+
+    if agent_reasoning:
+        html_parts.extend(
+            [
+                '      <div class="reasoning">',
+                "        <strong>Agent's Reasoning:</strong>",
+                f"        <p>{agent_reasoning}</p>",
+                "      </div>",
+            ]
+        )
+
+    html_parts.extend(
+        [
+            "      <p><strong>Arguments:</strong></p>",
+            f'      <pre class="arguments">{tool_args_formatted}</pre>',
+            "      <p>Please review and decide:</p>",
+            '      <div style="text-align: center; margin: 20px 0;">',
+            f'        <a href="{approval_url}" class="button">Review Request</a>',
+            "      </div>",
+            '      <p class="warning">⚠️ This link will expire in 5 minutes.</p>',
+            "    </div>",
+            '    <div class="footer">',
+            f"      <p>Sent by {APP_NAME}</p>",
+            "    </div>",
+            "  </div>",
+            "</body>",
+            "</html>",
+        ]
+    )
+
+    body_html = "\n".join(html_parts)
+
+    try:
+        # Run send_email in a separate thread to avoid blocking asyncio event loop
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, send_email, user_email, subject, body_text, body_html
+        )
+        logger.info(
+            f"Approval request email sent to {user_email} for tool '{tool_name}'"
+        )
+    except EmailError as e:
+        logger.error(f"Failed to send approval request email: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(
+            f"An unexpected error occurred while sending approval request email: {str(e)}"
         )
         raise EmailError(f"An unexpected error occurred: {str(e)}")

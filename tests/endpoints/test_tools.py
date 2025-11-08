@@ -219,6 +219,40 @@ class TestToolConfigurationEndpoints:
         assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
         assert "already exists" in exc_info.value.detail
 
+    async def test_create_tool_configuration_race_condition(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test creating tool configuration with race condition (IntegrityError)."""
+        from sqlalchemy.exc import IntegrityError
+
+        config_data = ToolConfigurationCreate(
+            tool_name="get_issue",
+            tool_source="builtin",
+            account_id=str(mock_account.id),
+        )
+
+        # Mock no existing config in the pre-check
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get_multi_by_account",
+            return_value=[],
+        )
+
+        # Mock IntegrityError on commit (race condition)
+        mock_db.commit.side_effect = IntegrityError(
+            "statement", "params", "orig", connection_invalidated=False
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.create_tool_configuration(
+                config_data=config_data,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_409_CONFLICT
+        assert "already exists" in exc_info.value.detail
+        mock_db.rollback.assert_called_once()
+
     async def test_get_tool_configuration_success(
         self, mock_db, mock_user, mock_account, mocker
     ):

@@ -1,6 +1,7 @@
 """Tests for search endpoint."""
 
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -30,20 +31,20 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects
         mock_project = MagicMock()
-        mock_project.id = "proj-1"
+        mock_project.id = uuid4()
         mock_project.name = "Test Project"
         mock_project.identifier = "TP"
         mock_project.slug = "test-project"
-        mock_project.organization_id = "org-1"
+        mock_project.organization_id = uuid4()
         mock_get_accessible.return_value = [mock_project]
 
         # Mock active embedding model
         mock_model = MagicMock()
-        mock_model.id = "model-1"
+        mock_model.id = uuid4()
         mock_crud_embed_model.get_active.return_value = [mock_model]
 
         # Mock embedding generation
@@ -51,8 +52,8 @@ class TestPerformSearch:
 
         # Mock issue result
         mock_issue = MagicMock(spec=sm_models.Issue)
-        mock_issue.id = "issue-1"
-        mock_issue.project_id = "proj-1"
+        mock_issue.id = uuid4()
+        mock_issue.project_id = mock_project.id
         mock_issue.external_id = "EXT-123"
         mock_issue.key = "TP-1"
         mock_issue.title = "Test Issue"
@@ -112,16 +113,16 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects
         mock_project = MagicMock()
-        mock_project.id = "proj-1"
+        mock_project.id = uuid4()
         mock_get_accessible.return_value = [mock_project]
 
         # Mock active embedding model
         mock_model = MagicMock()
-        mock_model.id = "model-1"
+        mock_model.id = uuid4()
         mock_crud_embed_model.get_active.return_value = [mock_model]
 
         # Mock embedding generation
@@ -129,12 +130,12 @@ class TestPerformSearch:
 
         # Mock comment result
         mock_comment = MagicMock(spec=sm_models.Comment)
-        mock_comment.id = "comment-1"
+        mock_comment.id = uuid4()
         mock_comment.body = "Test comment"
         mock_comment.author = "john_doe"
         mock_comment.created_at = "2024-01-01T00:00:00"
         mock_comment.updated_at = "2024-01-02T00:00:00"
-        mock_comment.issue_id = "issue-1"
+        mock_comment.issue_id = uuid4()
         mock_comment.meta_data = {"source": "web"}
 
         mock_crud_issue_embed.similarity_search.return_value = [(mock_comment, 0.85)]
@@ -168,7 +169,7 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects
         mock_get_accessible.return_value = []
@@ -203,14 +204,14 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects
         mock_get_accessible.return_value = []
 
         # Mock active embedding model
         mock_model = MagicMock()
-        mock_model.id = "model-1"
+        mock_model.id = uuid4()
         mock_crud_embed_model.get_active.return_value = [mock_model]
 
         # Mock embedding generation error
@@ -245,22 +246,22 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects with different organizations
         mock_project1 = MagicMock()
-        mock_project1.id = "proj-1"
+        mock_project1.id = uuid4()
         mock_project1.organization_id = "org-1"
 
         mock_project2 = MagicMock()
-        mock_project2.id = "proj-2"
+        mock_project2.id = uuid4()
         mock_project2.organization_id = "org-2"
 
         mock_get_accessible.return_value = [mock_project1, mock_project2]
 
         # Mock active embedding model
         mock_model = MagicMock()
-        mock_model.id = "model-1"
+        mock_model.id = uuid4()
         mock_crud_embed_model.get_active.return_value = [mock_model]
 
         # Mock embedding generation
@@ -281,7 +282,7 @@ class TestPerformSearch:
 
         # Verify similarity_search was called with only proj-1 (org-1)
         call_args = mock_crud_issue_embed.similarity_search.call_args
-        assert call_args[1]["project_ids"] == ["proj-1"]
+        assert call_args[1]["project_ids"] == [mock_project1.id]
 
     @pytest.mark.asyncio
     @patch("spacebridge.api.endpoints.search.get_accessible_projects")
@@ -295,7 +296,7 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects with different organizations
         mock_org1 = MagicMock()
@@ -305,18 +306,18 @@ class TestPerformSearch:
         mock_org2.name = "Org Beta"
 
         mock_project1 = MagicMock()
-        mock_project1.id = "proj-1"
+        mock_project1.id = uuid4()
         mock_project1.organization = mock_org1
 
         mock_project2 = MagicMock()
-        mock_project2.id = "proj-2"
+        mock_project2.id = uuid4()
         mock_project2.organization = mock_org2
 
         mock_get_accessible.return_value = [mock_project1, mock_project2]
 
         # Mock active embedding model
         mock_model = MagicMock()
-        mock_model.id = "model-1"
+        mock_model.id = uuid4()
         mock_crud_embed_model.get_active.return_value = [mock_model]
 
         # Mock embedding generation
@@ -337,7 +338,7 @@ class TestPerformSearch:
 
         # Verify similarity_search was called with only proj-1 (Org Alpha)
         call_args = mock_crud_issue_embed.similarity_search.call_args
-        assert call_args[1]["project_ids"] == ["proj-1"]
+        assert call_args[1]["project_ids"] == [mock_project1.id]
 
     @pytest.mark.asyncio
     @patch("spacebridge.api.endpoints.search.get_accessible_projects")
@@ -351,22 +352,22 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects
         mock_project1 = MagicMock()
-        mock_project1.id = "proj-1"
+        mock_project1.id = uuid4()
         mock_project1.name = "Project Alpha"
 
         mock_project2 = MagicMock()
-        mock_project2.id = "proj-2"
+        mock_project2.id = uuid4()
         mock_project2.name = "Project Beta"
 
         mock_get_accessible.return_value = [mock_project1, mock_project2]
 
         # Mock active embedding model
         mock_model = MagicMock()
-        mock_model.id = "model-1"
+        mock_model.id = uuid4()
         mock_crud_embed_model.get_active.return_value = [mock_model]
 
         # Mock embedding generation
@@ -387,7 +388,7 @@ class TestPerformSearch:
 
         # Verify similarity_search was called with only proj-1 (Project Alpha)
         call_args = mock_crud_issue_embed.similarity_search.call_args
-        assert call_args[1]["project_ids"] == ["proj-1"]
+        assert call_args[1]["project_ids"] == [mock_project1.id]
 
     @pytest.mark.asyncio
     @patch("spacebridge.api.endpoints.search.get_accessible_projects")
@@ -397,7 +398,7 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects
         mock_get_accessible.return_value = []
@@ -425,7 +426,7 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects
         mock_get_accessible.return_value = []
@@ -462,16 +463,16 @@ class TestPerformSearch:
 
         # Mock user
         mock_user = MagicMock(spec=User)
-        mock_user.account_id = "acc-123"
+        mock_user.account_id = uuid4()
 
         # Mock accessible projects
         mock_project = MagicMock()
-        mock_project.id = "proj-1"
+        mock_project.id = uuid4()
         mock_get_accessible.return_value = [mock_project]
 
         # Mock active embedding model
         mock_model = MagicMock()
-        mock_model.id = "model-1"
+        mock_model.id = uuid4()
         mock_crud_embed_model.get_active.return_value = [mock_model]
 
         # Mock embedding generation

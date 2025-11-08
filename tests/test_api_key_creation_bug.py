@@ -32,8 +32,7 @@ def test_api_key_creation_with_user_id(db_session: Session):
     """
     # Create a test account
     test_account = Account(
-        id=str(uuid.uuid4()),
-        email="test_api_key@example.com",
+        organization_name="Test Organization",
         email_verified=True,
         is_active=True,
         is_superuser=False,
@@ -46,7 +45,7 @@ def test_api_key_creation_with_user_id(db_session: Session):
         username=f"testuser_{uuid.uuid4().hex[:8]}",
         email="test_user@example.com",
         hashed_password="hashed_password",
-        account_id=uuid.UUID(test_account.id),
+        account_id=test_account.id,
         is_active=True,
         email_verified=True,
     )
@@ -58,7 +57,7 @@ def test_api_key_creation_with_user_id(db_session: Session):
     try:
         api_key = ApiKey(
             name="Test API Key",
-            key="test_key_1234567890abcdefghijklmnopqrst",
+            key=f"test_key_{uuid.uuid4().hex}",  # Use unique key to avoid duplicates
             user_id=test_user.id,  # This is the correct field
             scopes=["read", "write"],
             is_active=True,
@@ -100,8 +99,7 @@ def test_api_key_creation_fails_with_created_by(db_session: Session):
     """
     # Create a test account
     test_account = Account(
-        id=str(uuid.uuid4()),
-        email="test_api_key2@example.com",
+        organization_name="Test Organization 2",
         email_verified=True,
         is_active=True,
         is_superuser=False,
@@ -114,7 +112,7 @@ def test_api_key_creation_fails_with_created_by(db_session: Session):
         username=f"testuser2_{uuid.uuid4().hex[:8]}",
         email="test_user2@example.com",
         hashed_password="hashed_password",
-        account_id=uuid.UUID(test_account.id),
+        account_id=test_account.id,
         is_active=True,
         email_verified=True,
     )
@@ -126,7 +124,7 @@ def test_api_key_creation_fails_with_created_by(db_session: Session):
     with pytest.raises(TypeError) as exc_info:
         api_key = ApiKey(
             name="Test API Key",
-            key="test_key_1234567890abcdefghijklmnopqrst",
+            key=f"test_key_{uuid.uuid4().hex}",  # Use unique key to avoid duplicates
             created_by=test_user.username,  # This should fail!
             scopes=["read", "write"],
             is_active=True,

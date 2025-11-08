@@ -370,6 +370,7 @@ class TestApiKeyResponse:
     def test_create_api_key_response(self):
         """Test creating ApiKeyResponse with all fields."""
         key_id = uuid4()
+        user_id = uuid4()
         created_at = datetime.now()
         expires_at = datetime.now() + timedelta(days=30)
         last_used_at = datetime.now()
@@ -381,7 +382,7 @@ class TestApiKeyResponse:
             created_at=created_at,
             expires_at=expires_at,
             scopes=["read:issues"],
-            created_by="testuser",
+            user_id=user_id,
             last_used_at=last_used_at,
         )
 
@@ -391,12 +392,13 @@ class TestApiKeyResponse:
         assert response.created_at == created_at
         assert response.expires_at == expires_at
         assert response.scopes == ["read:issues"]
-        assert response.created_by == "testuser"
+        assert response.user_id == user_id
         assert response.last_used_at == last_used_at
 
     def test_create_with_defaults(self):
         """Test creating with optional fields as None."""
         key_id = uuid4()
+        user_id = uuid4()
         created_at = datetime.now()
 
         response = ApiKeyResponse(
@@ -404,7 +406,7 @@ class TestApiKeyResponse:
             name="Test Key",
             key="sk_test_...",
             created_at=created_at,
-            created_by="testuser",
+            user_id=user_id,
         )
 
         assert response.expires_at is None

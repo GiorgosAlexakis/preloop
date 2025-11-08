@@ -315,7 +315,7 @@ paths:
               $ref: '#/components/schemas/ApiKeyCreate'
         required: true
       responses:
-        '200':
+        '201':
           description: Successful Response
           content:
             application/json:
@@ -1343,6 +1343,48 @@ paths:
                   type: string
                 title: Response Delete Tool Configuration Api V1 Tool Configurations  Config
                   Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tool-configurations/{config_id}/condition:
+    put:
+      tags:
+      - Tools
+      summary: Update Tool Approval Condition
+      description: "Update or create approval condition for a tool configuration.\n\
+        \nArgs:\n    config_id: Tool configuration ID\n    condition_data: Condition\
+        \ data with 'approval_condition' field\n    account: Current user's account\n\
+        \    db: Database session\n\nReturns:\n    Updated tool configuration\n\n\
+        Raises:\n    HTTPException: If configuration not found or update fails"
+      operationId: update_tool_approval_condition_api_v1_tool_configurations__config_id__condition_put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Condition Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolConfigurationResponse'
         '422':
           description: Validation Error
           content:
@@ -6705,19 +6747,24 @@ components:
           title: Execution Id
           description: Flow execution ID (if applicable)
         id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Id
         account_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Account Id
         tool_configuration_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Tool Configuration Id
         approval_policy_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Approval Policy Id
         status:
           type: string
@@ -8247,10 +8294,14 @@ components:
     IssueDuplicate:
       properties:
         issue1_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Issue1 Id
         issue2_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Issue2 Id
         decision:
           type: string
@@ -8300,7 +8351,6 @@ components:
         ai_model_id:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
           title: Ai Model Id
         ai_model_name:
@@ -8340,9 +8390,11 @@ components:
       properties:
         issue1_id:
           type: string
+          format: uuid
           title: Issue1 Id
         issue2_id:
           type: string
+          format: uuid
           title: Issue2 Id
         resolution:
           type: string
@@ -8381,10 +8433,14 @@ components:
     IssueDuplicateResolutionResponse:
       properties:
         issue1_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Issue1 Id
         issue2_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Issue2 Id
         resolution:
           type: string
@@ -8410,9 +8466,11 @@ components:
       properties:
         issue1_id:
           type: string
+          format: uuid
           title: Issue1 Id
         issue2_id:
           type: string
+          format: uuid
           title: Issue2 Id
         resolution:
           type: string
@@ -8425,11 +8483,13 @@ components:
         resulting_issue1_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Resulting Issue1 Id
         resulting_issue2_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Resulting Issue2 Id
       type: object
@@ -8524,7 +8584,9 @@ components:
           title: Meta Data
           description: Additional issue metadata
         id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Id
           description: Internal SpaceBridge database ID (UUID)
         external_id:
@@ -8544,7 +8606,9 @@ components:
           title: Project
           description: Project name
         project_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Project Id
           description: Project ID
         project_identifier:
@@ -10115,7 +10179,9 @@ components:
           - type: 'null'
           title: Id
         account_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Account Id
         created_at:
           type: string

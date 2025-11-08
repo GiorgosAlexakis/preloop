@@ -54,29 +54,23 @@ def test_create_api_key_success(db_session_mock, mock_current_user):
 
     This would catch the bug where created_by was used instead of user_id.
     """
-    # Mock authentication
-    with patch("spacebridge.api.auth.router.get_current_active_user") as mock_get_user:
-        mock_get_user.return_value = mock_current_user
+    from spacebridge.api.auth.jwt import get_current_active_user
 
-        # Create a mock API key that will be "created"
-        mock_api_key = MagicMock(spec=ApiKey)
-        mock_api_key.id = uuid.uuid4()
-        mock_api_key.name = "Test API Key"
-        mock_api_key.key = "test_key_1234567890abcdefghijklmnopqrst"
-        mock_api_key.user_id = mock_current_user.id  # This is the critical field
-        mock_api_key.created_at = datetime.now(timezone.utc)
-        mock_api_key.expires_at = None
-        mock_api_key.scopes = []
-        mock_api_key.last_used_at = None
+    # Mock the session.refresh to populate database-generated fields
+    def mock_refresh(obj):
+        # Simulate refresh by setting database-generated fields
+        if not hasattr(obj, "id") or obj.id is None:
+            obj.id = uuid.uuid4()
+        if not hasattr(obj, "created_at") or obj.created_at is None:
+            obj.created_at = datetime.now(timezone.utc)
 
-        # Mock the session.refresh to set up the mock_api_key properly
-        def mock_refresh(obj):
-            # Simulate refresh by ensuring all fields are set
-            pass
+    db_session_mock.refresh = mock_refresh
+    db_session_mock.add = MagicMock()
 
-        db_session_mock.refresh = mock_refresh
-        db_session_mock.add = MagicMock()
+    # Override the authentication dependency
+    app.dependency_overrides[get_current_active_user] = lambda: mock_current_user
 
+    try:
         # Make a request to create an API key
         response = client.post(
             "/auth/api-keys",
@@ -118,13 +112,29 @@ def test_create_api_key_success(db_session_mock, mock_current_user):
         assert not hasattr(added_key, "created_by") or added_key.user_id is not None, (
             "ApiKey should use user_id, not created_by"
         )
+    finally:
+        # Clean up the dependency override
+        app.dependency_overrides.clear()
 
 
 def test_create_api_key_with_expiration(db_session_mock, mock_current_user):
     """Test creating an API key with an expiration date."""
-    with patch("spacebridge.api.auth.router.get_current_active_user") as mock_get_user:
-        mock_get_user.return_value = mock_current_user
+    from spacebridge.api.auth.jwt import get_current_active_user
 
+    # Mock the session.refresh to populate database-generated fields
+    def mock_refresh(obj):
+        # Simulate refresh by setting database-generated fields
+        if not hasattr(obj, "id") or obj.id is None:
+            obj.id = uuid.uuid4()
+        if not hasattr(obj, "created_at") or obj.created_at is None:
+            obj.created_at = datetime.now(timezone.utc)
+
+    db_session_mock.refresh = mock_refresh
+
+    # Override the authentication dependency
+    app.dependency_overrides[get_current_active_user] = lambda: mock_current_user
+
+    try:
         expires_at = datetime(2025, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
 
         response = client.post(
@@ -145,15 +155,20 @@ def test_create_api_key_with_expiration(db_session_mock, mock_current_user):
         assert data["scopes"] == ["read", "write"]
         # expires_at should be present (we're not validating exact format in this test)
         assert "expires_at" in data
+    finally:
+        # Clean up the dependency override
+        app.dependency_overrides.clear()
 
 
 def test_create_api_key_duplicate_name(db_session_mock, mock_current_user):
     """Test that creating an API key with a duplicate name fails appropriately."""
     from sqlalchemy.exc import IntegrityError
+    from spacebridge.api.auth.jwt import get_current_active_user
 
-    with patch("spacebridge.api.auth.router.get_current_active_user") as mock_get_user:
-        mock_get_user.return_value = mock_current_user
+    # Override the authentication dependency
+    app.dependency_overrides[get_current_active_user] = lambda: mock_current_user
 
+    try:
         # Mock the session to raise IntegrityError on commit
         db_session_mock.commit.side_effect = IntegrityError("", "", "")
 
@@ -165,6 +180,9 @@ def test_create_api_key_duplicate_name(db_session_mock, mock_current_user):
         # Should return 400 Bad Request
         assert response.status_code == 400
         assert "already exists" in response.json()["detail"].lower()
+    finally:
+        # Clean up the dependency override
+        app.dependency_overrides.clear()
 
 
 def test_api_key_model_compatibility():
@@ -173,7 +191,6 @@ def test_api_key_model_compatibility():
     This test directly checks that the ApiKey model has the expected fields
     and doesn't have deprecated fields.
     """
-    from spacemodels.models.api_key import ApiKey
     import inspect
 
     # Get the __init__ signature
