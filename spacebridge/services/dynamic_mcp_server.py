@@ -385,7 +385,7 @@ class DynamicMCPServer:
             import os
 
             # Get base URL from environment or default
-            base_url = os.getenv("BASE_URL", "http://localhost:8000")
+            base_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000")
 
             async with get_async_db_session() as db:
                 # Get tool configuration using CRUD

@@ -189,7 +189,7 @@ async def require_approval(
             from spacebridge.services.approval_service import ApprovalService
             from spacemodels.schemas.approval_request import ApprovalRequestUpdate
 
-            base_url = os.getenv("BASE_URL", "http://localhost:8000")
+            base_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000")
             approval_service = ApprovalService(db, base_url)
 
             try:
