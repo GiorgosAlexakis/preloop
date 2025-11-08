@@ -81,6 +81,7 @@ export interface BrandGetStarted {
 
 export interface BrandLanding {
   meta: BrandMeta;
+  features_layout: 'carousel' | 'grid';
   hero: BrandHero;
   features: BrandFeature[];
   faqs: BrandFAQ[];

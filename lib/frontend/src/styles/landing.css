@@ -320,6 +320,25 @@ sl-carousel-item {
   margin-bottom: 0.5rem;
 }
 
+.feature-box .video-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #58a6ff;
+  text-decoration: none;
+  margin-top: 1rem;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.feature-box .video-link:hover {
+  color: #79c0ff;
+}
+
+.feature-box .video-link sl-icon {
+  font-size: 1.2rem;
+}
+
 .feature-text-content {
   display: flex;
   flex-direction: column;

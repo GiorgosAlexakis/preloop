@@ -52,6 +52,7 @@ export class LandingView extends LitElement {
     code: string;
   }> = [];
   @state() private _extendedDescription = '';
+  @state() private _featuresLayout: 'carousel' | 'grid' = 'grid';
 
   static styles = [
     css`
@@ -116,6 +117,17 @@ export class LandingView extends LitElement {
     ) as HTMLElement | undefined;
     if (extendedDescription)
       this._extendedDescription = extendedDescription.textContent || '';
+
+    // Read features layout from light DOM slot
+    const featuresLayout = children.find(
+      (el) => el.getAttribute('slot') === 'features-layout'
+    ) as HTMLElement | undefined;
+    if (featuresLayout) {
+      const layout = featuresLayout.textContent?.trim() as 'carousel' | 'grid';
+      if (layout === 'carousel' || layout === 'grid') {
+        this._featuresLayout = layout;
+      }
+    }
 
     // Read feature slides from light DOM slots
     const features: FeatureSlide[] = [];
@@ -275,6 +287,7 @@ export class LandingView extends LitElement {
         (slot.startsWith('hero-') ||
           slot.startsWith('cta-') ||
           slot === 'extended-description' ||
+          slot === 'features-layout' ||
           slot.startsWith('feature-') ||
           slot.startsWith('faq-') ||
           slot.startsWith('get-started-') ||
@@ -300,6 +313,7 @@ export class LandingView extends LitElement {
     this._ctaSecondary = content.hero.cta_secondary;
     this._ctaSecondaryUrl = content.hero.cta_secondary_url;
     this._extendedDescription = content.extended_description || '';
+    this._featuresLayout = content.features_layout || 'grid';
 
     // Load features
     this._featureSlides = content.features.map((f: any) => ({
@@ -358,6 +372,36 @@ export class LandingView extends LitElement {
     e: CustomEvent<{ index: number; slide: SlCarouselItem }>
   ) {
     this._activeSlideIndex = e.detail.index;
+  }
+
+  private _getYouTubeEmbedUrl(url: string): string {
+    // Convert YouTube URLs to embed format
+    // Handles: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID
+    try {
+      const urlObj = new URL(url);
+      let videoId = '';
+
+      if (urlObj.hostname.includes('youtu.be')) {
+        // Format: https://youtu.be/VIDEO_ID
+        videoId = urlObj.pathname.slice(1);
+      } else if (urlObj.hostname.includes('youtube.com')) {
+        // Format: https://www.youtube.com/watch?v=VIDEO_ID
+        videoId = urlObj.searchParams.get('v') || '';
+        
+        // Already in embed format
+        if (urlObj.pathname.includes('/embed/')) {
+          return url;
+        }
+      }
+
+      if (videoId) {
+        return `https://www.youtube.com/embed/${videoId}`;
+      }
+    } catch (e) {
+      console.error('Failed to parse YouTube URL:', url, e);
+    }
+    
+    return url;
   }
 
   private _handleFaqClick(e: Event) {
@@ -433,21 +477,141 @@ export class LandingView extends LitElement {
             `
           : ''}
 
-        <section class="feature-section main-section" id="features">
-          <div class="section-container">
-            <h2 class="text-center">Features</h2>
-            <div class="feature-grid three-col">
-              ${this._featureSlides.map(
-                (slide) => html`
-                  <div class="feature-box">
-                    <h3>${slide.title}</h3>
-                    <p>${slide.text}</p>
+        ${this._featuresLayout === 'carousel'
+          ? html`
+              <section class="feature-section main-section" id="features">
+                <div class="section-container text-center">
+                  <sl-carousel
+                    class="feature-carousel"
+                    loop
+                    effect="fade"
+                    @sl-slide-change=${this._handleSlideChange}
+                  >
+                    ${this._featureSlides.map(
+                      (slide, index) => html`
+                        <sl-carousel-item>
+                          <div class="feature-grid-2-col">
+                            <div class="feature-text-content">
+                              <h2>${slide.title}</h2>
+                              <p>${slide.text}</p>
+                              ${!this._showVideo[index] && slide.videoUrl
+                                ? html`
+                                    <sl-button
+                                      variant="primary"
+                                      class="watch-video-btn"
+                                      @click=${() => this._playVideo(index)}
+                                    >
+                                      <sl-icon
+                                        name="play-circle"
+                                        slot="prefix"
+                                      ></sl-icon>
+                                      Watch Video
+                                    </sl-button>
+                                  `
+                                : ''}
+                              <div class="carousel-navigation">
+                                <sl-button
+                                  variant="text"
+                                  class="carousel-nav carousel-nav--prev"
+                                  @click=${() => this._carousel.previous()}
+                                >
+                                  <sl-icon name="chevron-left"></sl-icon>
+                                </sl-button>
+                                <span class="slide-indicator">
+                                  ${this._activeSlideIndex + 1} /
+                                  ${this._featureSlides.length}
+                                </span>
+                                <sl-button
+                                  variant="text"
+                                  class="carousel-nav carousel-nav--next"
+                                  @click=${() => this._carousel.next()}
+                                >
+                                  <sl-icon name="chevron-right"></sl-icon>
+                                </sl-button>
+                              </div>
+                            </div>
+
+                            <div class="feature-video-content">
+                              ${this._showVideo[index] && slide.videoUrl
+                                ? html`
+                                    <div class="video-wrapper">
+                                      <iframe
+                                        width="560"
+                                        height="315"
+                                        src=${`${this._getYouTubeEmbedUrl(slide.videoUrl)}?autoplay=1`}
+                                        title="YouTube video player"
+                                        frameborder="0"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                        allowfullscreen
+                                      ></iframe>
+                                    </div>
+                                  `
+                                : html`
+                                    <div
+                                      class="image-placeholder"
+                                      @click=${() =>
+                                        slide.videoUrl
+                                          ? this._playVideo(index)
+                                          : null}
+                                    >
+                                      ${slide.placeholderImg
+                                        ? html`
+                                            <img
+                                              src=${slide.placeholderImg}
+                                              alt=${slide.title}
+                                            />
+                                            ${slide.videoUrl
+                                              ? html`<div
+                                                  class="play-button"
+                                                ></div>`
+                                              : ''}
+                                          `
+                                        : ''}
+                                    </div>
+                                  `}
+                            </div>
+                          </div>
+                        </sl-carousel-item>
+                      `
+                    )}
+                  </sl-carousel>
+                </div>
+              </section>
+            `
+          : html`
+              <section class="feature-section main-section" id="features">
+                <div class="section-container">
+                  <h2 class="text-center">Features</h2>
+                  <div class="feature-grid three-col">
+                    ${this._featureSlides.map(
+                      (slide) => html`
+                        <div class="feature-box">
+                          ${slide.placeholderImg
+                            ? html`<img
+                                src=${slide.placeholderImg}
+                                alt=${slide.title}
+                              />`
+                            : ''}
+                          <h3>${slide.title}</h3>
+                          <p>${slide.text}</p>
+                          ${slide.videoUrl
+                            ? html`<a
+                                href=${slide.videoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="video-link"
+                              >
+                                <sl-icon name="play-circle"></sl-icon> Watch
+                                Video
+                              </a>`
+                            : ''}
+                        </div>
+                      `
+                    )}
                   </div>
-                `
-              )}
-            </div>
-          </div>
-        </section>
+                </div>
+              </section>
+            `}
 
         <section class="feature-section main-section" id="get-started">
           <div class="section-container">

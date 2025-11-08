@@ -29,6 +29,8 @@ brands:
         keywords: "SpaceBridge, MCP, AI, Issue Tracker, Jira, GitLab, Integration, Automation, API"
         og_image: "/images/diagram.png"
 
+      features_layout: "carousel"  # "carousel" or "grid"
+
       hero:
         title: "Drive your <span class=\"gradient-product\">Product</span> with <span class=\"gradient-ai\">AI</span>"
         lead: "Eliminate duplicates, map dependencies, ensure compliance, ship faster."
@@ -173,6 +175,8 @@ brands:
         keywords: "Preloop AI, AI, Human Approval, Code Review, Development, Automation, DevOps, CI/CD"
         og_image: "/images/preloop/diagram.png"
 
+      features_layout: "grid"  # "carousel" or "grid"
+
       hero:
         title: "Responsible <span class=\"gradient-product\">AI Automation</span>"
         lead: "Let agents do the work, humans make the critical decisions."
@@ -184,17 +188,17 @@ brands:
         - title: "Granular approval policies"
           text: "Preloop AI provides an MCP proxy that can put humans in the loop before agents take critical action. Execution is paused while appropriate people are notified over any available channel."
           videoUrl: ""
-          placeholderImg: "/images/feature1.jpg"
+          placeholderImg: ""
 
         - title: "Event driven agentic flows"
           text: "Automate agentic processes to run in response to events. Select from a library of prebuilt templates or create your own."
           videoUrl: ""
-          placeholderImg: "/images/feature2.jpg"
+          placeholderImg: ""
 
         - title: "Compliance & Security Checks"
           text: "Ensure your code and processes meet industry standards. Discover unmapped dependencies, reduce overlap and boost Definition of Ready compliance on every issue."
           videoUrl: ""
-          placeholderImg: "/images/feature3.jpg"
+          placeholderImg: ""
 
       faqs:
         - q: "What is Preloop?"

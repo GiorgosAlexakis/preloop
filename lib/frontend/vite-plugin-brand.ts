@@ -50,6 +50,7 @@ export function brandPlugin(brandName: string): Plugin {
       const landingContent = {
         hero: brandConfig.landing.hero,
         extended_description: brandConfig.landing.meta.extended_description || '',
+        features_layout: brandConfig.landing.features_layout || 'grid',
         features: brandConfig.landing.features,
         faqs: brandConfig.landing.faqs,
         get_started: brandConfig.landing.get_started,
@@ -346,6 +347,9 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
 
     <!-- Extended description slot (only if exists) -->
     ${config.landing.meta.extended_description ? `<p slot="extended-description">${config.landing.meta.extended_description}</p>` : ''}
+
+    <!-- Features layout slot -->
+    <span slot="features-layout">${config.landing.features_layout || 'grid'}</span>
 
     <!-- Feature slots -->
     ${config.landing.features
