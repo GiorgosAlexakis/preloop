@@ -1,6 +1,7 @@
 """Notification preferences model for user notification settings."""
 
 import uuid
+from datetime import datetime, UTC
 from typing import TYPE_CHECKING, List, Dict, Optional
 
 from sqlalchemy import ForeignKey, String
@@ -132,7 +133,7 @@ class NotificationPreferences(Base):
             {
                 "platform": platform,
                 "token": token,
-                "registered_at": func.now().isoformat(),
+                "registered_at": datetime.now(UTC).isoformat(),
             }
         )
 
