@@ -2,14 +2,18 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { router } from '../../router';
 import { getFlowExecutions } from '../../api';
+import { AuthedElement } from '../../api';
 import { webSocketService } from '../../services/websocket-service';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
+import '@shoelace-style/shoelace/dist/components/option/option.js';
 
 interface FlowExecution {
   id: string;
   flow_id: string;
+  flow_name?: string;
   status: string;
   start_time: string;
   end_time?: string;
@@ -17,7 +21,7 @@ interface FlowExecution {
 }
 
 @customElement('flow-executions-view')
-export class FlowExecutionsView extends LitElement {
+export class FlowExecutionsView extends AuthedElement {
   static styles = css`
     :host {
       display: block;
@@ -93,6 +97,15 @@ export class FlowExecutionsView extends LitElement {
   @state()
   private wsConnected = false;
 
+  @state()
+  private statusFilter = 'all';
+
+  @state()
+  private currentPage = 1;
+
+  @state()
+  private pageSize = 20;
+
   async connectedCallback() {
     super.connectedCallback();
     await this.loadExecutions();
@@ -100,7 +113,51 @@ export class FlowExecutionsView extends LitElement {
   }
 
   async loadExecutions() {
-    this.executions = await getFlowExecutions();
+    const allExecutions = await getFlowExecutions();
+    // Sort by start_time descending (most recent first)
+    this.executions = allExecutions.sort(
+      (a, b) =>
+        new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+    );
+  }
+
+  get filteredExecutions(): FlowExecution[] {
+    let filtered = this.executions;
+
+    // Apply status filter
+    if (this.statusFilter !== 'all') {
+      filtered = filtered.filter((exec) => exec.status === this.statusFilter);
+    }
+
+    return filtered;
+  }
+
+  get paginatedExecutions(): FlowExecution[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    const end = start + this.pageSize;
+    return this.filteredExecutions.slice(start, end);
+  }
+
+  get totalPages(): number {
+    return Math.ceil(this.filteredExecutions.length / this.pageSize);
+  }
+
+  handleStatusFilterChange(event: Event) {
+    const select = event.target as any;
+    this.statusFilter = select.value;
+    this.currentPage = 1; // Reset to first page when filter changes
+  }
+
+  nextPage() {
+    if (this.currentPage < this.totalPages) {
+      this.currentPage++;
+    }
+  }
+
+  prevPage() {
+    if (this.currentPage > 1) {
+      this.currentPage--;
+    }
   }
 
   connectWebSocket() {
@@ -137,7 +194,11 @@ export class FlowExecutionsView extends LitElement {
             end_time: message.payload.end_time,
           }),
         };
-        this.executions = updated;
+        // Maintain sort order after update
+        this.executions = updated.sort(
+          (a, b) =>
+            new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+        );
       } else {
         // New execution started, reload the list
         this.loadExecutions();
@@ -161,10 +222,25 @@ export class FlowExecutionsView extends LitElement {
       <div class="column-layout">
         <div class="main-column">
           <div class="header-controls">
-            <sl-button size="small" @click=${this.loadExecutions}>
-              <sl-icon name="arrow-clockwise"></sl-icon>
-              Refresh
-            </sl-button>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <sl-select
+                size="small"
+                value=${this.statusFilter}
+                @sl-change=${this.handleStatusFilterChange}
+                style="width: 150px;"
+              >
+                <sl-option value="all">All Status</sl-option>
+                <sl-option value="PENDING">Pending</sl-option>
+                <sl-option value="RUNNING">Running</sl-option>
+                <sl-option value="SUCCEEDED">Succeeded</sl-option>
+                <sl-option value="FAILED">Failed</sl-option>
+                <sl-option value="CANCELLED">Cancelled</sl-option>
+              </sl-select>
+              <sl-button size="small" @click=${this.loadExecutions}>
+                <sl-icon name="arrow-clockwise"></sl-icon>
+                Refresh
+              </sl-button>
+            </div>
             <div class="connection-status">
               <div
                 class="connection-dot ${this.wsConnected ? '' : 'disconnected'}"
@@ -172,61 +248,114 @@ export class FlowExecutionsView extends LitElement {
               <span>${this.wsConnected ? 'Live Updates' : 'Disconnected'}</span>
             </div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Execution ID</th>
-                <th>Flow ID</th>
-                <th>Status</th>
-                <th>Start Time</th>
-                <th>End Time</th>
-                <th>Actions</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${this.executions.map(
-                (exec) => html`
-                  <tr>
-                    <td>${exec.id.slice(0, 8)}...</td>
-                    <td>${exec.flow_id.slice(0, 8)}...</td>
-                    <td>
-                      <div class="status-cell">
-                        ${exec.status === 'RUNNING' || exec.status === 'PENDING'
-                          ? html`
-                              <div
-                                class="status-indicator ${exec.status.toLowerCase()}"
-                              ></div>
-                            `
-                          : ''}
-                        <sl-badge variant=${this.getStatusVariant(exec.status)}
-                          >${exec.status}</sl-badge
-                        >
-                      </div>
-                    </td>
-                    <td>${new Date(exec.start_time).toLocaleString()}</td>
-                    <td>
-                      ${exec.end_time
-                        ? new Date(exec.end_time).toLocaleString()
-                        : '-'}
-                    </td>
-                    <td>${exec.actions_taken_summary?.length || 0}</td>
-                    <td>
-                      <sl-button
-                        size="small"
-                        href=${router.urlForPath(
-                          `/console/flows/executions/${exec.id}`
-                        )}
+
+          ${this.paginatedExecutions.length === 0
+            ? html`
+                <div
+                  style="text-align: center; padding: 40px; color: var(--sl-color-neutral-600);"
+                >
+                  <sl-icon name="inbox" style="font-size: 3rem;"></sl-icon>
+                  <p>No executions found.</p>
+                </div>
+              `
+            : html`
+                <div
+                  style="margin-bottom: 12px; color: var(--sl-color-neutral-600); font-size: 0.9rem;"
+                >
+                  Showing ${(this.currentPage - 1) * this.pageSize + 1} -
+                  ${Math.min(
+                    this.currentPage * this.pageSize,
+                    this.filteredExecutions.length
+                  )}
+                  of ${this.filteredExecutions.length} executions
+                </div>
+
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Flow Name</th>
+                      <th>Execution ID</th>
+                      <th>Status</th>
+                      <th>Start Time</th>
+                      <th>End Time</th>
+                      <th>Actions</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${this.paginatedExecutions.map(
+                      (exec) => html`
+                        <tr>
+                          <td>${exec.flow_name || 'Unnamed Flow'}</td>
+                          <td>${exec.id.slice(0, 8)}...</td>
+                          <td>
+                            <div class="status-cell">
+                              ${exec.status === 'RUNNING' ||
+                              exec.status === 'PENDING'
+                                ? html`
+                                    <div
+                                      class="status-indicator ${exec.status.toLowerCase()}"
+                                    ></div>
+                                  `
+                                : ''}
+                              <sl-badge
+                                variant=${this.getStatusVariant(exec.status)}
+                                >${exec.status}</sl-badge
+                              >
+                            </div>
+                          </td>
+                          <td>${new Date(exec.start_time).toLocaleString()}</td>
+                          <td>
+                            ${exec.end_time
+                              ? new Date(exec.end_time).toLocaleString()
+                              : '-'}
+                          </td>
+                          <td>${exec.actions_taken_summary?.length || 0}</td>
+                          <td>
+                            <sl-button
+                              size="small"
+                              href=${router.urlForPath(
+                                `/console/flows/executions/${exec.id}`
+                              )}
+                            >
+                              <sl-icon name="eye"></sl-icon>
+                              View
+                            </sl-button>
+                          </td>
+                        </tr>
+                      `
+                    )}
+                  </tbody>
+                </table>
+
+                ${this.totalPages > 1
+                  ? html`
+                      <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 12px; background: var(--sl-color-neutral-50); border-radius: 4px;"
                       >
-                        <sl-icon name="eye"></sl-icon>
-                        View
-                      </sl-button>
-                    </td>
-                  </tr>
-                `
-              )}
-            </tbody>
-          </table>
+                        <sl-button
+                          size="small"
+                          @click=${this.prevPage}
+                          ?disabled=${this.currentPage === 1}
+                        >
+                          <sl-icon name="chevron-left"></sl-icon>
+                          Previous
+                        </sl-button>
+                        <div style="color: var(--sl-color-neutral-700);">
+                          Page ${this.currentPage} of ${this.totalPages}
+                        </div>
+                        <sl-button
+                          size="small"
+                          @click=${this.nextPage}
+                          ?disabled=${this.currentPage === this.totalPages}
+                        >
+                          Next
+                          <sl-icon name="chevron-right"></sl-icon>
+                        </sl-button>
+                      </div>
+                    `
+                  : ''}
+              `}
         </div>
         <div class="side-column"></div>
       </div>

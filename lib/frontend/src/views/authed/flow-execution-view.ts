@@ -213,7 +213,7 @@ export class FlowExecutionView extends LitElement {
   async updated(changedProperties: Map<string, any>) {
     super.updated(changedProperties);
 
-    // When executionId property changes, fetch execution data and connect WebSocket
+    // When executionId property changes, fetch execution data
     if (
       changedProperties.has('executionId') &&
       this.executionId &&
@@ -224,42 +224,74 @@ export class FlowExecutionView extends LitElement {
 
       console.log(`After fetchExecution, logs.length = ${this.logs.length}`);
 
-      // Scroll to bottom after logs are loaded
-      if (this.logs.length > 0 && this.isAutoScroll) {
-        this.scrollToBottom();
+      // Check if execution is still running
+      const isRunning =
+        this.execution &&
+        (this.execution.status === 'RUNNING' ||
+          this.execution.status === 'STARTING' ||
+          this.execution.status === 'INITIALIZING' ||
+          this.execution.status === 'PENDING');
+
+      // If finished, show model_output_summary in logs
+      if (!isRunning && this.execution?.model_output_summary) {
+        this.logs = [
+          ...this.logs,
+          {
+            execution_id: this.executionId,
+            timestamp: this.execution.end_time || new Date().toISOString(),
+            type: 'model_output',
+            payload: { content: this.execution.model_output_summary },
+          },
+        ];
       }
 
-      // Then connect to WebSocket for live updates
-      this.wsConnected = true;
-      webSocketService.connectToExecution(
-        this.executionId,
-        (message: any) => this.handleWebSocketMessage(message),
-        () => {
-          console.log(
-            `Connected to execution WebSocket, logs.length = ${this.logs.length}`
-          );
-          // Only add connection log if this is a live execution (no persisted logs)
-          if (this.logs.length === 0) {
-            console.log('Adding connection log message');
-            this.logs = [
-              {
-                execution_id: this.executionId!,
-                timestamp: new Date().toISOString(),
-                type: 'connected',
-                payload: { message: 'Connected to flow execution stream' },
-              },
-            ];
+      // Scroll to bottom after logs are loaded
+      if (this.logs.length > 0) {
+        setTimeout(() => this.scrollToBottom(), 100);
+      }
+
+      // Only connect to WebSocket if execution is still running
+      if (isRunning) {
+        this.wsConnected = true;
+        this.isAutoScroll = true; // Enable auto-scroll for streaming
+        webSocketService.connectToExecution(
+          this.executionId,
+          (message: any) => this.handleWebSocketMessage(message),
+          () => {
+            console.log(
+              `Connected to execution WebSocket, logs.length = ${this.logs.length}`
+            );
+            // Only add connection log if this is a live execution (no persisted logs)
+            if (this.logs.length === 0) {
+              console.log('Adding connection log message');
+              this.logs = [
+                {
+                  execution_id: this.executionId!,
+                  timestamp: new Date().toISOString(),
+                  type: 'connected',
+                  payload: { message: 'Connected to flow execution stream' },
+                },
+              ];
+            }
+          },
+          () => {
+            console.log('Disconnected from execution WebSocket');
+            this.wsConnected = false;
           }
-        },
-        () => {
-          console.log('Disconnected from execution WebSocket');
-          this.wsConnected = false;
-        }
-      );
+        );
+      } else {
+        console.log(
+          'Execution is finished, not connecting to WebSocket stream'
+        );
+      }
     }
 
-    // Auto-scroll to bottom when new log arrives
-    if (changedProperties.has('logs') && this.isAutoScroll) {
+    // Auto-scroll to bottom when new log arrives (only during streaming)
+    if (
+      changedProperties.has('logs') &&
+      this.isAutoScroll &&
+      this.wsConnected
+    ) {
       this.scrollToBottom();
     }
   }
@@ -316,26 +348,29 @@ export class FlowExecutionView extends LitElement {
   }
 
   scrollToBottom() {
+    // Use requestAnimationFrame to ensure DOM has updated
     requestAnimationFrame(() => {
-      if (this.logContainerRef) {
-        this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
-      }
+      requestAnimationFrame(() => {
+        if (this.logContainerRef) {
+          this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
+        }
+      });
     });
   }
 
   handleScroll() {
-    if (!this.logContainerRef) return;
+    if (!this.logContainerRef || !this.wsConnected) return;
 
     // Check if user scrolled away from bottom
     const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 10; // 10px threshold
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
 
-    // If user manually scrolled away from bottom, disable auto-scroll
+    // Only manage auto-scroll during active streaming
     if (!isAtBottom && this.isAutoScroll) {
+      // User manually scrolled away from bottom
       this.isAutoScroll = false;
-    }
-    // If user manually scrolled back to bottom, enable auto-scroll
-    else if (isAtBottom && !this.isAutoScroll) {
+    } else if (isAtBottom && !this.isAutoScroll) {
+      // User manually scrolled back to bottom
       this.isAutoScroll = true;
     }
   }
@@ -639,22 +674,19 @@ export class FlowExecutionView extends LitElement {
                 <sl-icon name="terminal"></sl-icon>
                 Output
               </span>
-              <div class="controls">
-                <sl-button-group>
-                  <sl-button
-                    size="small"
-                    variant=${this.isAutoScroll ? 'primary' : 'default'}
-                    @click=${() => (this.isAutoScroll = !this.isAutoScroll)}
-                  >
-                    <sl-icon name="arrow-down"></sl-icon>
-                    Auto-scroll
-                  </sl-button>
-                  <sl-button size="small" @click=${this.clearLogs}>
-                    <sl-icon name="trash"></sl-icon>
-                    Clear
-                  </sl-button>
-                  ${isRunning
-                    ? html`
+              ${isRunning
+                ? html`
+                    <div class="controls">
+                      <sl-button-group>
+                        <sl-button
+                          size="small"
+                          variant=${this.isAutoScroll ? 'primary' : 'default'}
+                          @click=${() =>
+                            (this.isAutoScroll = !this.isAutoScroll)}
+                        >
+                          <sl-icon name="arrow-down"></sl-icon>
+                          Auto-scroll
+                        </sl-button>
                         <sl-button
                           size="small"
                           variant="danger"
@@ -663,10 +695,10 @@ export class FlowExecutionView extends LitElement {
                           <sl-icon name="stop-circle"></sl-icon>
                           Stop
                         </sl-button>
-                      `
-                    : ''}
-                </sl-button-group>
-              </div>
+                      </sl-button-group>
+                    </div>
+                  `
+                : ''}
             </div>
 
             <div
@@ -733,19 +765,6 @@ ${this.execution.error_message}</pre
                 </sl-card>
               `
             : ''}
-          ${this.execution.model_output_summary
-            ? html`
-                <sl-card>
-                  <div slot="header">
-                    <sl-icon name="file-text"></sl-icon>
-                    Summary
-                  </div>
-                  <pre style="white-space: pre-wrap; word-wrap: break-word;">
-${this.execution.model_output_summary}</pre
-                  >
-                </sl-card>
-              `
-            : ''}
         </div>
       </div>
     `;
@@ -753,6 +772,23 @@ ${this.execution.model_output_summary}</pre
 
   renderLogEntry(log: FlowExecutionUpdate) {
     const time = new Date(log.timestamp).toLocaleTimeString();
+
+    // For model output (summary), show as a highlighted section
+    if (log.type === 'model_output') {
+      return html`
+        <div class="log-entry log-metadata" style="border-left-color: #b5cea8;">
+          <span class="log-timestamp">${time}</span>
+          <span class="log-type log-type-success">[Summary]</span>
+          <div class="log-content" style="margin-top: 8px;">
+            <pre
+              style="white-space: pre-wrap; word-wrap: break-word; margin: 0; color: #b5cea8;"
+            >
+${log.payload.content}</pre
+            >
+          </div>
+        </div>
+      `;
+    }
 
     // For log lines, show timestamp + content
     if (log.type === 'agent_log_line') {
@@ -880,10 +916,6 @@ ${this.execution.model_output_summary}</pre
       e.preventDefault();
       this.sendCommand();
     }
-  }
-
-  clearLogs() {
-    this.logs = [];
   }
 
   async stopExecution() {

@@ -220,12 +220,12 @@ export class LitApp extends LitElement {
             children: [
               { path: '', component: 'flows-view' },
               { path: 'new', component: 'flow-view' },
-              { path: ':flowId', component: 'flow-view' },
               { path: 'executions', component: 'flow-executions-view' },
               {
                 path: 'executions/:executionId',
                 component: 'flow-execution-view',
               },
+              { path: ':flowId', component: 'flow-view' },
             ],
           },
           { path: '/api-usage', component: 'api-usage-view' },
