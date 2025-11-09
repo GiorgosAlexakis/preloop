@@ -1316,7 +1316,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             `
           : ''}
 
-        <sl-card>
+        <!-- <sl-card>
           <div slot="header">
             <sl-icon name="speedometer"></sl-icon>
             Limits
@@ -1327,7 +1327,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
               type="number"
               .value=${String(this.flow.max_iterations || '')}
               @sl-input=${(e: Event) =>
-                this.handleInputChange('max_iterations', e)}
+          this.handleInputChange('max_iterations', e)}
             ></sl-input>
             <sl-input
               label="Max Budget"
@@ -1336,7 +1336,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
               @sl-input=${(e: Event) => this.handleInputChange('max_budget', e)}
             ></sl-input>
           </div>
-        </sl-card>
+        </sl-card> -->
 
         <div>
           <sl-checkbox
