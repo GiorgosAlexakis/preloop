@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { AuthedElement } from '../../api';
+import { webSocketService } from '../../services/websocket-service';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
@@ -180,6 +181,62 @@ export class ApprovalView extends AuthedElement {
       }
     }
     await this.loadApprovalRequest();
+
+    // Connect to WebSocket for real-time approval updates
+    this.connectWebSocket();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Disconnect from WebSocket when view is destroyed
+    webSocketService.disconnectFromFlowUpdates();
+  }
+
+  private connectWebSocket() {
+    webSocketService.connectToApprovalUpdates(
+      (message: any) => this.handleWebSocketMessage(message),
+      () => {
+        console.log('Connected to approval updates WebSocket');
+      },
+      () => {
+        console.log('Disconnected from approval updates WebSocket');
+      }
+    );
+  }
+
+  private handleWebSocketMessage(message: any) {
+    // Only process updates for the current approval request
+    if (
+      message.approval_request_id === this.requestId &&
+      this.approvalRequest
+    ) {
+      console.log('Received approval update:', message);
+
+      // Update the status
+      this.approvalRequest = {
+        ...this.approvalRequest,
+        status: message.status,
+        resolved_at: message.resolved_at || this.approvalRequest.resolved_at,
+      };
+
+      // Show notification based on event type
+      if (message.type === 'approval_approved') {
+        this.actionResult = {
+          type: 'success',
+          message: 'This request was approved!',
+        };
+      } else if (message.type === 'approval_declined') {
+        this.actionResult = {
+          type: 'error',
+          message: 'This request was declined.',
+        };
+      } else if (message.type === 'approval_expired') {
+        this.actionResult = {
+          type: 'error',
+          message: 'This request has expired.',
+        };
+      }
+    }
   }
 
   private async loadApprovalRequest() {

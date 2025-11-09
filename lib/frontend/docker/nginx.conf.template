@@ -45,7 +45,24 @@ server {
             return 204;
         }
     }
-    
+
+    # MCP server proxy configuration
+    # Use prefix match with ^~ to stop searching and prevent SPA catch-all
+    location ^~ /mcp/ {
+        # Proxy to SpaceBridge backend API
+        set $api_backend "${API_URL}";
+
+        proxy_pass $api_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # MCP-specific headers
+        proxy_set_header Content-Type application/json;
+    }
+
     # Static files with caching
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
         expires 1y;

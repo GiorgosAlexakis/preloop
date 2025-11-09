@@ -11,54 +11,56 @@ interface Plan {
   name: string;
   price_monthly: number | null;
   price_annually: number | null;
-  features: { [key: string]: any };
+  features: string[];
+  badge?: string;
 }
 
 @customElement('public-pricing-view')
 export class PublicPricingView extends LitElement {
-  @state() private _plans: Plan[] = [];
-  @state() private _loading = true;
-  @state() private _error: string | null = null;
   @state() private _interval: 'month' | 'year' = 'month';
 
-  private _featureOrder = [
-    'api_calls_monthly',
-    'ai_calls_monthly',
-    'issues_ingested_monthly',
-    'custom_ai_models_enabled',
-    'custom_compliance_metrics_enabled',
+  // Hardcoded plans - Teams and Enterprise only
+  private _plans: Plan[] = [
+    {
+      id: 'teams',
+      name: 'Teams',
+      price_monthly: 29,
+      price_annually: 290, // ~24/mo when billed annually
+      badge: 'Most Popular',
+      features: [
+        'Unlimited API calls',
+        'Unlimited AI calls',
+        'Unlimited issues',
+        'Unlimited trackers',
+        'Unlimited flows & automation',
+        'Custom AI models',
+        'Custom compliance metrics',
+        '30-day free trial',
+        'No credit card required',
+        'Email support',
+      ],
+    },
+    {
+      id: 'enterprise',
+      name: 'Enterprise',
+      price_monthly: null,
+      price_annually: null,
+      features: [
+        'Everything in Teams, plus:',
+        'Model/provider limits & controls',
+        'Comprehensive audit logs',
+        'SSO, OIDC, SCIM support',
+        'SLA commitments',
+        'Dedicated support channels',
+        'Custom integrations',
+        'On-premise deployment options',
+        'Priority feature requests',
+      ],
+    },
   ];
-
-  private _featureLabels: Record<string, string> = {
-    api_calls_monthly: 'API calls / month',
-    ai_calls_monthly: 'AI calls / month',
-    issues_ingested_monthly: 'Issues ingested / month',
-    custom_ai_models_enabled: 'Custom AI models',
-    custom_compliance_metrics_enabled: 'Custom compliance metrics',
-  };
 
   async connectedCallback() {
     super.connectedCallback();
-    await this._fetchPlans();
-  }
-
-  private async _fetchPlans() {
-    try {
-      this._loading = true;
-      const response = await fetch('/api/v1/billing/plans');
-      const allPlans = await response.json();
-      // Ensure "Free" plan is first
-      this._plans = allPlans.sort((a: Plan, b: Plan) => {
-        if (a.id === 'free') return -1;
-        if (b.id === 'free') return 1;
-        return 0;
-      });
-    } catch (error) {
-      this._error = 'Failed to load pricing plans.';
-      console.error(error);
-    } finally {
-      this._loading = false;
-    }
   }
 
   private _handleSignUpRequest(e: CustomEvent) {
@@ -71,42 +73,11 @@ export class PublicPricingView extends LitElement {
       return;
     }
 
-    if (planId === 'free') {
+    if (planId === 'teams') {
+      // Redirect to register to start 30-day trial
       window.location.href = '/register';
       return;
     }
-
-    // For all paid plans
-    try {
-      const isAuthenticated = !!localStorage.getItem('accessToken');
-      const fetcher = isAuthenticated ? fetchWithAuth : fetchPublic;
-
-      const response = await fetcher(
-        '/api/v1/billing/create-checkout-session',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan_id: planId, interval: this._interval }),
-        }
-      );
-      const data = await response.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        console.error('Checkout URL not found in response:', data);
-      }
-    } catch (error) {
-      console.error('Failed to create checkout session:', error);
-    }
-  }
-
-  private _formatNumber(num: number): string {
-    if (num === -1) return 'Unlimited';
-    if (num < 1000) return num.toString();
-    return new Intl.NumberFormat('en-US', {
-      notation: 'compact',
-      compactDisplay: 'short',
-    }).format(num);
   }
 
   static styles = [
@@ -278,8 +249,6 @@ export class PublicPricingView extends LitElement {
             <pricing-card
               .plan=${plan}
               .interval=${this._interval}
-              .featureOrder=${this._featureOrder}
-              .featureLabels=${this._featureLabels}
               .dark=${true}
             ></pricing-card>
           `
@@ -289,17 +258,20 @@ export class PublicPricingView extends LitElement {
   }
 
   private _renderTable() {
+    const maxFeatures = Math.max(
+      ...this._plans.map((p) => (p.features as string[]).length)
+    );
+
     return html`
       <table class="pricing-table">
         <thead>
           <tr>
-            <th></th>
             ${this._plans.map(
               (plan) =>
-                html`<th class="${plan.id === 'ultra' ? 'popular' : ''}">
+                html`<th class="${plan.id === 'teams' ? 'popular' : ''}">
                   <div class="plan-name">${plan.name}</div>
-                  ${plan.id === 'ultra'
-                    ? html`<div class="badge">Most Popular</div>`
+                  ${plan.badge
+                    ? html`<div class="badge">${plan.badge}</div>`
                     : ''}
                 </th>`
             )}
@@ -308,7 +280,6 @@ export class PublicPricingView extends LitElement {
         <tbody>
           <!-- Price Row -->
           <tr>
-            <td>Price</td>
             ${this._plans.map((plan) => {
               let priceHtml;
               if (plan.id === 'enterprise') {
@@ -322,61 +293,45 @@ export class PublicPricingView extends LitElement {
                   ? plan.price_monthly
                   : plan.price_annually;
 
-                if (amount === 0) {
-                  priceHtml = html`<div class="price">Free</div>`;
-                } else {
-                  const unit = isMonthly ? '/mo' : '/yr';
-                  const perMo = !isMonthly
-                    ? Math.round(plan.price_annually / 12)
-                    : null;
+                const unit = isMonthly ? ' /user/month' : ' /user/year';
+                const perMo = !isMonthly ? Math.round(amount / 12) : null;
 
-                  priceHtml = html`
-                    <div class="price">
-                      $${amount}<span style="font-size: 1rem; font-weight: 400;"
-                        >${unit}</span
-                      >
-                    </div>
-                    ${perMo
-                      ? html`<div class="price-sub">
-                          ~$${perMo}/mo billed annually
-                        </div>`
-                      : ''}
-                  `;
-                }
-              } else {
-                priceHtml = html`<div class="price">Free</div>`;
+                priceHtml = html`
+                  <div class="price">
+                    $${amount}<span style="font-size: 1rem; font-weight: 400;"
+                      >${unit}</span
+                    >
+                  </div>
+                  ${perMo
+                    ? html`<div class="price-sub">
+                        ~$${perMo}/mo billed annually
+                      </div>`
+                    : ''}
+                `;
               }
-              return html`<td class="${plan.id === 'ultra' ? 'popular' : ''}">
+              return html`<td class="${plan.id === 'teams' ? 'popular' : ''}">
                 ${priceHtml}
               </td>`;
             })}
           </tr>
 
           <!-- Features Rows -->
-          ${this._featureOrder.map((featureKey) => {
+          ${Array.from({ length: maxFeatures }).map((_, idx) => {
             return html`
               <tr>
-                <td class="feature-label">
-                  ${this._featureLabels[featureKey]}
-                </td>
                 ${this._plans.map((plan) => {
-                  const feature = plan.features[featureKey];
-                  let value = '';
-                  if (typeof feature === 'boolean') {
-                    value = feature
-                      ? html`<span class="check-mark"
-                          ><sl-icon name="check-lg"></sl-icon
-                        ></span>`
-                      : '—';
-                  } else if (typeof feature === 'number') {
-                    value = this._formatNumber(feature);
-                  } else {
-                    value = '—';
-                  }
+                  const features = plan.features as string[];
+                  const feature = features[idx];
                   return html`<td
-                    class="${plan.id === 'ultra' ? 'popular' : ''}"
+                    class="${plan.id === 'teams' ? 'popular' : ''}"
+                    style="text-align: left; padding-left: 2rem;"
                   >
-                    ${value}
+                    ${feature
+                      ? html`<span class="check-mark"
+                            ><sl-icon name="check-lg"></sl-icon
+                          ></span>
+                          ${feature}`
+                      : ''}
                   </td>`;
                 })}
               </tr>
@@ -385,10 +340,9 @@ export class PublicPricingView extends LitElement {
 
           <!-- Button Row -->
           <tr>
-            <td></td>
             ${this._plans.map(
               (plan) => html`
-                <td class="${plan.id === 'ultra' ? 'popular' : ''}">
+                <td class="${plan.id === 'teams' ? 'popular' : ''}">
                   <sl-button
                     class="pricing-button"
                     style="width: 100%;"
@@ -398,9 +352,7 @@ export class PublicPricingView extends LitElement {
                   >
                     ${plan.id === 'enterprise'
                       ? 'Contact Sales'
-                      : plan.id === 'free'
-                        ? 'Get Free'
-                        : `Get ${plan.name}`}
+                      : 'Start Free Trial'}
                   </sl-button>
                 </td>
               `
@@ -422,7 +374,8 @@ export class PublicPricingView extends LitElement {
                 <span class="gradient-product">Pricing</span>
               </h1>
               <p class="lead">
-                Choose the plan that fits your team and scale as you grow.
+                Start your 30-day free trial today. No credit card required.
+                After your trial, choose the plan that fits your team.
               </p>
             </div>
           </div>
@@ -435,15 +388,7 @@ export class PublicPricingView extends LitElement {
                 (this._interval = e.detail.value)}
             ></billing-toggle>
 
-            ${this._loading
-              ? html`<div class="loading">Loading plans…</div>`
-              : null}
-            ${this._error
-              ? html`<div class="error">${this._error}</div>`
-              : null}
-            ${!this._loading && !this._error
-              ? html` ${this._renderCards()} ${this._renderTable()} `
-              : null}
+            ${this._renderCards()} ${this._renderTable()}
           </div>
         </section>
       </main>

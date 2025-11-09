@@ -126,6 +126,31 @@ class WebSocketService {
     );
   }
 
+  /**
+   * Connect to general WebSocket to receive approval updates
+   * This uses the same WebSocket endpoint as flow updates since
+   * the backend broadcasts both types of events to authenticated users
+   */
+  connectToApprovalUpdates(
+    onMessageCallback: (message: any) => void,
+    onOpenCallback?: () => void,
+    onCloseCallback?: () => void
+  ) {
+    // Approval updates come through the same general WebSocket as flow updates
+    // The backend filters messages by account_id, so we just need to connect
+    // and filter approval-related messages on the client side
+    this.connectToFlowUpdates(
+      (message) => {
+        // Only pass through approval-related messages
+        if (message.type?.startsWith('approval_')) {
+          onMessageCallback(message);
+        }
+      },
+      onOpenCallback,
+      onCloseCallback
+    );
+  }
+
   private startHeartbeat(key: string) {
     const interval = window.setInterval(() => {
       const ws = this.connections.get(key);
