@@ -602,6 +602,25 @@ export async function getFlowExecution(executionId: string): Promise<any> {
   return response.json();
 }
 
+export async function getFlowExecutionMetrics(executionId: string): Promise<{
+  tool_calls: number;
+  api_requests: number;
+  token_usage: {
+    total_tokens: number;
+    input_tokens: number;
+    output_tokens: number;
+  };
+  estimated_cost: number;
+}> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}/metrics`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch execution metrics');
+  }
+  return response.json();
+}
+
 export async function triggerFlowExecution(
   flowId: string,
   triggerEventData?: Record<string, any>

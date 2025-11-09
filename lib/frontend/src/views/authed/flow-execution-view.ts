@@ -1,7 +1,12 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { webSocketService } from '../../services/websocket-service';
-import { getFlowExecution, getFlow, sendCommandToExecution } from '../../api';
+import {
+  getFlowExecution,
+  getFlow,
+  sendCommandToExecution,
+  getFlowExecutionMetrics,
+} from '../../api';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
@@ -360,6 +365,24 @@ export class FlowExecutionView extends LitElement {
         } catch (error) {
           console.error('Failed to fetch flow details:', error);
           // Don't fail the whole page if flow fetch fails
+        }
+      }
+
+      // Fetch execution metrics (for completed executions)
+      if (
+        this.execution &&
+        ['COMPLETED', 'FAILED', 'STOPPED', 'TIMEOUT'].includes(
+          this.execution.status
+        )
+      ) {
+        try {
+          const metrics = await getFlowExecutionMetrics(this.executionId);
+          this.toolCalls = metrics.tool_calls;
+          this.budgetUsed = metrics.estimated_cost;
+          console.log('Loaded execution metrics:', metrics);
+        } catch (error) {
+          console.error('Failed to fetch execution metrics:', error);
+          // Don't fail the whole page if metrics fetch fails
         }
       }
 
