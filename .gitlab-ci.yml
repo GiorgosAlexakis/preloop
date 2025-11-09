@@ -511,6 +511,8 @@ prod:
     DATABASE_NAME: spacebridge-db
     SEED_ENABLED: false
     TARGET_DOMAIN: $PROD_DOMAIN
+    PRELOOP_ENABLED: "true"
+    PRELOOP_DOMAIN: "preloop.ai"
   before_script:
     - set -e
     - export POD_BACKUP_PATH="/run/tmp/db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension

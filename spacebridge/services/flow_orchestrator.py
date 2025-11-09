@@ -703,6 +703,9 @@ class FlowExecutionOrchestrator:
                 log_count += 1
                 logger.debug(f"Streamed log line #{log_count}: {log_line[:100]}")
 
+                # Store the log line for later summary
+                self.execution_logger.log_agent_output(log_line)
+
                 # Parse log line for structured data
                 self.execution_logger.parse_agent_logs([log_line])
 
@@ -1051,9 +1054,22 @@ class FlowExecutionOrchestrator:
 
             # Update execution log with final results including detailed logs
             final_status = agent_result.get("status", "FAILED")
+
+            # Use output_summary from agent result, or fallback to stored logs
+            output_summary = agent_result.get("output_summary")
+            if not output_summary:
+                logger.warning(
+                    "Agent result has no output_summary, using stored logs as fallback"
+                )
+                output_summary = self.execution_logger.get_agent_output_summary()
+                if output_summary:
+                    logger.info(
+                        f"Using stored logs for output_summary ({len(output_summary)} chars)"
+                    )
+
             await self._update_execution_log(
                 status=final_status,
-                model_output_summary=agent_result.get("output_summary"),
+                model_output_summary=output_summary,
                 error_message=agent_result.get("error_message"),
                 actions_taken_summary=agent_result.get("actions_taken"),
                 mcp_usage_logs=agent_result.get("mcp_usage_logs"),

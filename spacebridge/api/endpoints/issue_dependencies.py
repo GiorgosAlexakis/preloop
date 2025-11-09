@@ -23,7 +23,6 @@ import json
 import openai
 
 from spacebridge.config import get_settings, Settings
-from spacebridge.services.billing import BillingService
 from spacebridge.api.common import (
     get_tracker_client,
     load_dependencies_prompts_config,
@@ -64,8 +63,6 @@ def detect_issue_dependencies(
             status_code=400,
             detail="At least two issue IDs are required for dependency analysis.",
         )
-
-    billing_service = BillingService(db)
 
     # 1. Fetch issues from the database
     issues = []
@@ -176,10 +173,6 @@ def detect_issue_dependencies(
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
-        )
-
-        billing_service.record_usage(
-            account_id=current_user.account_id, metric="ai_calls", quantity=1
         )
 
         response_content = response.choices[0].message.content
@@ -377,8 +370,6 @@ def extend_dependency_scan(
             status_code=400, detail="At least one issue ID is required."
         )
 
-    billing_service = BillingService(db)
-
     # Fetch the first issue to determine the project context
     initial_issue = crud_issue.get(
         db, id=request.issue_ids[0], account_id=current_user.account_id
@@ -471,9 +462,6 @@ def extend_dependency_scan(
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
-        )
-        billing_service.record_usage(
-            account_id=current_user.account_id, metric="ai_calls", quantity=1
         )
         response_content = response.choices[0].message.content
         dependencies_from_ai = json.loads(response_content).get("dependencies", [])

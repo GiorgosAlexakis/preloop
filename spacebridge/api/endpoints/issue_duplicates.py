@@ -7,8 +7,6 @@ import os
 import json
 from datetime import datetime, UTC
 
-from spacebridge.services.billing import BillingService
-from spacebridge.api.endpoints.billing import get_billing_service
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate as IssueDuplicateSchema,
     IssueDuplicateSuggestionRequest,
@@ -94,7 +92,6 @@ def check_or_create_issue_duplicate(
     issue1_id: str,
     issue2_id: str,
     current_user: User = Depends(get_current_active_user),
-    billing_service: BillingService = Depends(get_billing_service),
     settings: Settings = Depends(get_settings),
 ) -> Any:
     if issue1_id == issue2_id:
@@ -184,9 +181,6 @@ def check_or_create_issue_duplicate(
             model=default_model.model_identifier,
             messages=messages,
             response_format={"type": "json_object"},
-        )
-        billing_service.record_usage(
-            account_id=current_user.account_id, metric="ai_calls"
         )
         llm_response_text = response.choices[0].message.content.strip()
         logger.info(
@@ -842,7 +836,6 @@ def get_resolution_suggestion(
     issue1_id: str = Body(...),
     issue2_id: str = Body(...),
     resolution: str = Body(...),
-    billing_service: BillingService = Depends(get_billing_service),
     settings: Settings = Depends(get_settings),
 ):
     """Generate a suggestion for resolving a duplicate issue pair."""
@@ -907,9 +900,6 @@ def get_resolution_suggestion(
                 {"role": "user", "content": prompt_text},
             ],
             response_format={"type": "json_object"},
-        )
-        billing_service.record_usage(
-            account_id=current_user.account_id, metric="ai_calls"
         )
         suggestion_data = json.loads(llm_response.choices[0].message.content)
 

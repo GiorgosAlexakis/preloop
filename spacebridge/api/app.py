@@ -806,8 +806,10 @@ def create_app() -> FastAPI:
     # This avoids issues with StaticFiles html=True intercepting API routes.
     # The backend only serves API endpoints and specific HTML pages (like invitation accept).
     dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-    if dev_mode:
-        # In dev mode, mount the SPA for convenience
+    testing_mode = os.getenv("TESTING") == "true"
+
+    if dev_mode and not testing_mode:
+        # In dev mode (but not testing), mount the SPA for convenience
         logger.info(
             "DEV_MODE is true, serving SPA from 'SpaceLit/dist' for development"
         )
@@ -819,6 +821,8 @@ def create_app() -> FastAPI:
             )
         except Exception as e:
             logger.error(f"Failed to mount SPA static files: {e}")
+    elif testing_mode:
+        logger.info("TESTING mode - skipping SPA mount to avoid route conflicts")
     else:
         logger.info("DEV_MODE is false, SPA is served by nginx (not by FastAPI)")
 

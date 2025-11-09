@@ -291,7 +291,6 @@ def test_check_or_create_issue_duplicate_existing(mock_get_by_issue_ids):
     )
     db_session = MagicMock()
     current_user = MagicMock()
-    billing_service = MagicMock()
     settings = MagicMock()
 
     result = issue_duplicates.check_or_create_issue_duplicate(
@@ -299,7 +298,6 @@ def test_check_or_create_issue_duplicate_existing(mock_get_by_issue_ids):
         issue1_id=str(issue1_uuid),
         issue2_id=str(issue2_uuid),
         current_user=current_user,
-        billing_service=billing_service,
         settings=settings,
     )
     assert result is not None

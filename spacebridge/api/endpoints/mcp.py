@@ -31,7 +31,6 @@ from spacebridge.api.endpoints.issue_compliance import (
 )
 from spacebridge.schemas.issue import IssueCreate
 from spacebridge.schemas.tracker_models import IssueUpdate
-from spacebridge.services.billing import BillingService
 from spacebridge.schemas.mcp import (
     GetIssueResponse,
     CreateIssueResponse,
@@ -45,7 +44,6 @@ from spacebridge.schemas.mcp import (
 
 from spacebridge.services.duplicate_detection import DuplicateDetector
 from spacebridge.config import get_settings
-from spacebridge.api.endpoints.billing import get_billing_service
 from spacemodels.crud import (
     CRUDIssue,
     CRUDProject,
@@ -604,7 +602,6 @@ async def estimate_compliance(
     # Authenticate user
     db, current_user = await _get_authenticated_user(get_http_request().headers)
     settings = get_settings()
-    billing_service = get_billing_service(db)
 
     # Process issues with controlled parallelism (max 10 concurrent)
     semaphore = asyncio.Semaphore(10)
@@ -617,7 +614,6 @@ async def estimate_compliance(
                 current_user,
                 compliance_metric,
                 settings=settings,
-                billing_service=billing_service,
             )
 
     # Execute all tasks in parallel
@@ -676,7 +672,6 @@ async def _process_single_issue_estimate(
     current_user,
     compliance_metric: str,
     settings=None,
-    billing_service: BillingService = None,
 ) -> ProcessingResult:
     """Process compliance estimation for a single issue."""
     try:
@@ -736,7 +731,6 @@ async def _process_single_issue_compliance(
     current_user,
     prompt_name: str = "default",
     settings=None,
-    billing_service: BillingService = None,
 ) -> ProcessingResult:
     """Process compliance improvement for a single issue."""
     try:
@@ -812,7 +806,6 @@ async def improve_compliance(
 
     # Authenticate user
     db, current_user = await _get_authenticated_user(get_http_request().headers)
-    billing_service = get_billing_service(db)
     settings = get_settings()
 
     # Process issues with controlled parallelism (max 10 concurrent)
@@ -829,7 +822,6 @@ async def improve_compliance(
                 current_user,
                 prompt_name,
                 settings=settings,
-                billing_service=billing_service,
             )
 
     # Execute all tasks in parallel

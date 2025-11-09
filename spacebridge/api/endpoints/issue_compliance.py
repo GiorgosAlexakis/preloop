@@ -9,8 +9,6 @@ import openai
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from spacebridge.services.billing import BillingService
-from spacebridge.api.endpoints.billing import get_billing_service
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.config import get_settings, Settings
 from spacebridge.schemas.issue import IssueResponse, IssueUpdate
@@ -74,7 +72,6 @@ def _calculate_issue_compliance(
     db: Session,
     current_user: Account,
     settings: Settings,
-    billing_service: BillingService,
 ) -> IssueComplianceResultResponse:
     """Get or calculate the compliance result for a given issue."""
 
@@ -139,9 +136,6 @@ def _calculate_issue_compliance(
             messages=messages,
             response_format={"type": "json_object"},
         )
-        billing_service.record_usage(
-            account_id=current_user.account_id, metric="ai_calls"
-        )
         llm_response_text = response.choices[0].message.content.strip()
 
         response_obj = json.loads(llm_response_text)
@@ -187,7 +181,6 @@ def get_issue_compliance(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     settings: Settings = Depends(get_settings),
-    billing_service: BillingService = Depends(get_billing_service),
 ):
     """Get or calculate the compliance result for a given issue."""
     return _calculate_issue_compliance(
@@ -196,7 +189,6 @@ def get_issue_compliance(
         db=db,
         current_user=current_user,
         settings=settings,
-        billing_service=billing_service,
     )
 
 
@@ -210,7 +202,6 @@ def get_compliance_improvement_suggestion(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     settings: Settings = Depends(get_settings),
-    billing_service: BillingService = Depends(get_billing_service),
 ):
     """Generate a compliance improvement suggestion for a given issue."""
     compliance_result = _calculate_issue_compliance(
@@ -219,7 +210,6 @@ def get_compliance_improvement_suggestion(
         db=db,
         current_user=current_user,
         settings=settings,
-        billing_service=billing_service,
     )
 
     issue = crud_issue.get(db, id=issue_id)
@@ -286,9 +276,6 @@ def get_compliance_improvement_suggestion(
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
-        )
-        billing_service.record_usage(
-            account_id=current_user.account_id, metric="ai_calls"
         )
         suggestion_data = json.loads(llm_response.choices[0].message.content)
         return ComplianceSuggestionResponse(**suggestion_data)

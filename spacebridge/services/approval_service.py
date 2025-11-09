@@ -16,6 +16,7 @@ from spacemodels.schemas.approval_request import (
     ApprovalRequestUpdate,
 )
 from spacemodels.crud.approval_request import get_approval_request_async
+from spacesync.services.event_bus import get_task_publisher
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,49 @@ class ApprovalService:
         """
         self.db = db
         self.base_url = base_url
+
+    async def _broadcast_approval_update(
+        self, approval_request: ApprovalRequest, event_type: str
+    ):
+        """Broadcast approval request update via NATS/WebSocket.
+
+        Args:
+            approval_request: The approval request
+            event_type: Type of event (created, approved, declined, expired)
+        """
+        try:
+            task_publisher = await get_task_publisher()
+            if not task_publisher or not task_publisher.nc:
+                logger.warning("NATS not available for broadcasting approval update")
+                return
+
+            # Prepare update message
+            update_data = {
+                "type": f"approval_{event_type}",
+                "approval_request_id": str(approval_request.id),
+                "account_id": str(approval_request.account_id),
+                "execution_id": approval_request.execution_id,
+                "tool_name": approval_request.tool_name,
+                "status": approval_request.status,
+                "requested_at": approval_request.requested_at.isoformat(),
+                "resolved_at": (
+                    approval_request.resolved_at.isoformat()
+                    if approval_request.resolved_at
+                    else None
+                ),
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+            # Publish to NATS subject for approval updates
+            subject = "approval-updates"
+            await task_publisher.nc.publish(subject, json.dumps(update_data).encode())
+
+            logger.info(
+                f"Broadcasted approval {event_type} for request {approval_request.id}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to broadcast approval update: {e}", exc_info=True)
 
     async def create_approval_request(
         self,
@@ -81,6 +125,9 @@ class ApprovalService:
         self.db.add(approval_request)
         await self.db.commit()
         await self.db.refresh(approval_request)
+
+        # Broadcast creation event
+        await self._broadcast_approval_update(approval_request, "created")
 
         return approval_request
 
@@ -139,7 +186,13 @@ class ApprovalService:
             approver_comment=comment,
             resolved_at=datetime.utcnow(),
         )
-        return await self.update_approval_request(request_id, update)
+        updated_request = await self.update_approval_request(request_id, update)
+
+        # Broadcast approval event
+        if updated_request:
+            await self._broadcast_approval_update(updated_request, "approved")
+
+        return updated_request
 
     async def decline_request(
         self, request_id: uuid.UUID, comment: Optional[str] = None
@@ -158,7 +211,13 @@ class ApprovalService:
             approver_comment=comment,
             resolved_at=datetime.utcnow(),
         )
-        return await self.update_approval_request(request_id, update)
+        updated_request = await self.update_approval_request(request_id, update)
+
+        # Broadcast decline event
+        if updated_request:
+            await self._broadcast_approval_update(updated_request, "declined")
+
+        return updated_request
 
     async def post_webhook_notification(
         self, approval_request: ApprovalRequest, approval_policy: ApprovalPolicy
@@ -552,9 +611,13 @@ class ApprovalService:
                 and datetime.utcnow() > approval_request.expires_at
             ):
                 # Mark as expired
-                await self.update_approval_request(
+                expired_request = await self.update_approval_request(
                     request_id, ApprovalRequestUpdate(status="expired")
                 )
+                # Broadcast expiration event
+                if expired_request:
+                    await self._broadcast_approval_update(expired_request, "expired")
+
                 raise TimeoutError(
                     f"Approval request {request_id} expired without response"
                 )

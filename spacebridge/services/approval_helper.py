@@ -57,6 +57,14 @@ async def require_approval(
         )
 
         async with get_async_db_session() as db:
+            # Always try to look up tool configuration first
+            config = await get_tool_config_by_name_and_source_async(
+                db,
+                account_id=account_id,
+                tool_name=tool_name,
+                tool_source=tool_source,
+            )
+
             # If policy_id is provided directly (for standalone requests), use it
             if policy_id:
                 logger.info(
@@ -70,15 +78,35 @@ async def require_approval(
                         False,
                         f"Error: Approval policy with ID '{policy_id}' not found",
                     )
-            else:
-                # Check for tool configuration using CRUD
-                config = await get_tool_config_by_name_and_source_async(
-                    db,
-                    account_id=account_id,
-                    tool_name=tool_name,
-                    tool_source=tool_source,
-                )
 
+                # If no config exists, this is a standalone approval request
+                # Create a tool config for tracking purposes and persist it
+                if not config:
+                    logger.warning(
+                        f"No tool configuration found for {tool_name} ({tool_source}), "
+                        "creating config for approval tracking"
+                    )
+                    from spacemodels.crud.tool_configuration import (
+                        create_tool_configuration_async,
+                    )
+                    from spacemodels.schemas.tool_configuration import (
+                        ToolConfigurationCreate,
+                    )
+                    import uuid
+
+                    # Create and persist a minimal tool config
+                    config_create = ToolConfigurationCreate(
+                        tool_name=tool_name,
+                        tool_source=tool_source,
+                        approval_policy_id=policy_id,
+                        is_enabled=True,
+                        configuration={},
+                    )
+                    config = await create_tool_configuration_async(
+                        db, obj_in=config_create, account_id=uuid.UUID(account_id)
+                    )
+                    logger.info(f"Created tool configuration {config.id} for approval")
+            else:
                 # Evaluate approval requirement with condition checking
 
                 # Convert async db to sync for the evaluator (it uses sync queries)
