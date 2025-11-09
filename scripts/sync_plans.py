@@ -91,44 +91,47 @@ def process_plan(plan_details: dict, db):
 
             # Step 2: Idempotently update prices in Stripe
             def update_price(interval: str, amount: float):
-                lookup_key = f"{plan_id}_{interval}"
                 new_price_in_cents = int(amount * 100)
 
-                existing_prices = stripe.Price.list(
-                    lookup_keys=[lookup_key], active=True
+                # Query for all active prices for this product with this interval
+                all_prices = stripe.Price.list(
+                    product=product.id, active=True, limit=100
                 ).data
+
+                active_prices_for_interval = [
+                    p
+                    for p in all_prices
+                    if p.recurring and p.recurring.get("interval") == interval
+                ]
 
                 found_matching_price = False
                 prices_to_deactivate = []
 
-                for price in existing_prices:
+                for price in active_prices_for_interval:
                     if price.unit_amount == new_price_in_cents:
                         found_matching_price = True
+                        print(
+                            f"Price for {interval} is already correct: ${amount} ({new_price_in_cents} cents)"
+                        )
                     else:
                         prices_to_deactivate.append(price.id)
 
-                if found_matching_price:
-                    print(f"Price for {lookup_key} is already up to date.")
-                    # Deactivate any other non-matching prices for this key
-                    for price_id in prices_to_deactivate:
-                        stripe.Price.modify(price_id, active=False)
-                        print(
-                            f"Deactivated redundant old price {price_id} for {lookup_key}."
-                        )
-                else:
-                    # No matching price found, so deactivate all old ones and create a new one.
-                    for price_id in prices_to_deactivate:
-                        stripe.Price.modify(price_id, active=False)
-                        print(f"Deactivated old price {price_id} for {lookup_key}.")
+                # Deactivate any prices with wrong amounts
+                for price_id in prices_to_deactivate:
+                    stripe.Price.modify(price_id, active=False)
+                    print(f"Deactivated outdated {interval} price {price_id}.")
 
-                    stripe.Price.create(
+                # Create new price if none exists with correct amount
+                if not found_matching_price:
+                    new_price = stripe.Price.create(
                         product=product.id,
                         unit_amount=new_price_in_cents,
                         currency="usd",
                         recurring={"interval": interval},
-                        lookup_key=lookup_key,
                     )
-                    print(f"Created new {interval} price for {plan_id}.")
+                    print(
+                        f"Created new {interval} price {new_price.id} for ${amount} ({new_price_in_cents} cents)."
+                    )
 
             if plan_details.get("price_monthly") is not None:
                 update_price("month", plan_details["price_monthly"])

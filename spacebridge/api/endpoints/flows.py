@@ -176,7 +176,8 @@ def get_flow_execution_metrics(
         - tool_calls: Number of MCP tool calls made
         - api_requests: Number of API requests made during execution
         - token_usage: Token usage statistics
-        - estimated_cost: Estimated cost based on token usage and model pricing
+        - estimated_cost: Estimated cost based on token usage (0.0 if no pricing)
+        - has_pricing: Whether pricing is configured in AI model metadata
     """
     from spacebridge.services.execution_metrics import ExecutionMetricsService
 
@@ -203,6 +204,7 @@ def get_flow_execution_metrics(
             "api_requests": 0,
             "token_usage": {"total_tokens": 0, "input_tokens": 0, "output_tokens": 0},
             "estimated_cost": 0.0,
+            "has_pricing": False,
         }
 
 

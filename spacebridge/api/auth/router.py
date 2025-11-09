@@ -160,6 +160,14 @@ async def register(
         new_user = crud_user.create(session, obj_in=user_dict)
         logger.info(f"[REGISTER] User created with ID: {new_user.id}")
 
+        # Set this user as the primary user for the account
+        logger.info("[REGISTER] Setting primary_user_id on account")
+        new_account.primary_user_id = new_user.id
+        session.add(new_account)
+        logger.info(
+            f"[REGISTER] Set user {new_user.id} as primary user for account {new_account.id}"
+        )
+
         # Assign Owner role to the first user
         logger.info("[REGISTER] Looking up owner role")
         owner_role = crud_role.get_by_name(session, name="owner")

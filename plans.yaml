@@ -23,8 +23,8 @@ plans:
       custom_compliance_metrics_enabled: false
   - id: "ultra"
     name: "Ultra"
-    price_monthly: 299
-    price_annually: 2999
+    price_monthly: 290
+    price_annually: 2900
     features:
       api_calls_monthly: -1 # -1 signifies unlimited
       ai_calls_monthly: 1000

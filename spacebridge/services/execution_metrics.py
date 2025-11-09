@@ -28,7 +28,8 @@ class ExecutionMetricsService:
             - tool_calls: Number of MCP tool calls
             - api_requests: Number of API requests made
             - token_usage: Token usage from codex logs
-            - estimated_cost: Estimated cost based on token usage
+            - estimated_cost: Estimated cost based on token usage (0.0 if no pricing)
+            - has_pricing: Whether pricing is configured in AI model metadata
         """
         execution = (
             self.db.query(models.FlowExecution)
@@ -49,13 +50,14 @@ class ExecutionMetricsService:
         api_requests = self._count_api_requests(execution)
 
         # Calculate estimated cost
-        estimated_cost = self._calculate_cost(execution, token_usage)
+        estimated_cost, has_pricing = self._calculate_cost(execution, token_usage)
 
         return {
             "tool_calls": tool_calls,
             "api_requests": api_requests,
             "token_usage": token_usage,
             "estimated_cost": estimated_cost,
+            "has_pricing": has_pricing,
         }
 
     def _count_tool_calls(self, execution: models.FlowExecution) -> int:
@@ -190,7 +192,7 @@ class ExecutionMetricsService:
 
     def _calculate_cost(
         self, execution: models.FlowExecution, token_usage: Dict[str, int]
-    ) -> float:
+    ) -> tuple[float, bool]:
         """Calculate estimated cost based on token usage and model pricing.
 
         Args:
@@ -198,13 +200,16 @@ class ExecutionMetricsService:
             token_usage: Dictionary with token counts
 
         Returns:
-            Estimated cost in USD
+            Tuple of (estimated_cost, has_pricing_configured)
+            - estimated_cost: Cost in USD (0.0 if no pricing configured)
+            - has_pricing_configured: True if pricing was found in AI model metadata
         """
         total_cost = 0.0
+        has_pricing = False
         total_tokens = token_usage.get("total_tokens", 0)
 
         if total_tokens == 0:
-            return 0.0
+            return (0.0, False)
 
         # Get the flow and AI model
         flow = (
@@ -214,9 +219,8 @@ class ExecutionMetricsService:
         )
 
         if not flow or not flow.ai_model_id:
-            # Use default pricing if model not found
-            # Default: $0.01 per 1000 tokens (average pricing)
-            return (total_tokens / 1000.0) * 0.01
+            # No pricing available - return 0 cost
+            return (0.0, False)
 
         ai_model = (
             self.db.query(models.AIModel)
@@ -225,7 +229,7 @@ class ExecutionMetricsService:
         )
 
         if not ai_model:
-            return (total_tokens / 1000.0) * 0.01
+            return (0.0, False)
 
         # Check for pricing in meta_data or model_parameters
         pricing = None
@@ -241,6 +245,7 @@ class ExecutionMetricsService:
             pricing = ai_model.model_parameters.get("pricing")
 
         if pricing and isinstance(pricing, dict):
+            has_pricing = True
             # Calculate based on input/output tokens if available
             input_tokens = token_usage.get("input_tokens", 0)
             output_tokens = token_usage.get("output_tokens", 0)
@@ -262,13 +267,15 @@ class ExecutionMetricsService:
                 if price_per_1k:
                     total_cost = (total_tokens / 1000.0) * price_per_1k
 
-        if total_cost == 0:
-            # Fallback to default pricing
-            total_cost = (total_tokens / 1000.0) * 0.01
+        if has_pricing:
+            logger.info(
+                f"Calculated cost for execution {execution.id}: "
+                f"${total_cost:.4f} ({total_tokens} tokens)"
+            )
+        else:
+            logger.info(
+                f"No pricing configured for execution {execution.id} "
+                f"({total_tokens} tokens)"
+            )
 
-        logger.info(
-            f"Calculated cost for execution {execution.id}: "
-            f"${total_cost:.4f} ({total_tokens} tokens)"
-        )
-
-        return round(total_cost, 4)
+        return (round(total_cost, 4), has_pricing)

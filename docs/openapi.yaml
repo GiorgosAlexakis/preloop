@@ -4326,7 +4326,8 @@ paths:
         \nReturns:\n    Dictionary with:\n    - tool_calls: Number of MCP tool calls\
         \ made\n    - api_requests: Number of API requests made during execution\n\
         \    - token_usage: Token usage statistics\n    - estimated_cost: Estimated\
-        \ cost based on token usage and model pricing"
+        \ cost based on token usage (0.0 if no pricing)\n    - has_pricing: Whether\
+        \ pricing is configured in AI model metadata"
       operationId: get_flow_execution_metrics_api_v1_flows_executions__execution_id__metrics_get
       security:
       - bearerAuth: []

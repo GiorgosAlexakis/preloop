@@ -200,12 +200,21 @@ def create_portal_session(
     current_user: User = Depends(get_current_active_user),
 ):
     """Create a Stripe Customer Portal session."""
+    import logging
+    import traceback
+
+    logger = logging.getLogger(__name__)
+
     try:
+        logger.info(f"Creating portal session for account {current_user.account_id}")
         url = service.create_portal_session(
             account_id=current_user.account_id, return_url=request.return_url
         )
+        logger.info("Portal session created successfully")
         return CreatePortalSessionResponse(url=url)
     except Exception as e:
+        logger.error(f"Error creating portal session: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
