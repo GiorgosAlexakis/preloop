@@ -187,6 +187,12 @@ export class FlowExecutionView extends LitElement {
   private budgetUsed = 0;
 
   @state()
+  private totalTokens = 0;
+
+  @state()
+  private hasPricing = false;
+
+  @state()
   private commandInput = '';
 
   @state()
@@ -379,6 +385,8 @@ export class FlowExecutionView extends LitElement {
           const metrics = await getFlowExecutionMetrics(this.executionId);
           this.toolCalls = metrics.tool_calls;
           this.budgetUsed = metrics.estimated_cost;
+          this.totalTokens = metrics.token_usage.total_tokens;
+          this.hasPricing = metrics.has_pricing;
           console.log('Loaded execution metrics:', metrics);
         } catch (error) {
           console.error('Failed to fetch execution metrics:', error);
@@ -602,9 +610,23 @@ export class FlowExecutionView extends LitElement {
             </sl-card>
             <sl-card>
               <div slot="header">
-                <sl-icon name="cash"></sl-icon> Budget Used
+                <sl-icon name="${this.hasPricing ? 'cash' : 'cpu'}"></sl-icon>
+                ${this.hasPricing ? 'Budget' : 'Tokens Used'}
               </div>
-              $${this.budgetUsed.toFixed(2)}
+              ${this.hasPricing
+                ? html`
+                    <div>
+                      <div style="font-size: 1.2em; font-weight: bold;">
+                        $${this.budgetUsed.toFixed(2)}
+                      </div>
+                      <div
+                        style="font-size: 0.85em; color: var(--sl-color-neutral-600); margin-top: 4px;"
+                      >
+                        ${this.totalTokens.toLocaleString()} tokens
+                      </div>
+                    </div>
+                  `
+                : html` ${this.totalTokens.toLocaleString()} `}
             </sl-card>
           </div>
 

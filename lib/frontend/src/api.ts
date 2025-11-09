@@ -611,6 +611,7 @@ export async function getFlowExecutionMetrics(executionId: string): Promise<{
     output_tokens: number;
   };
   estimated_cost: number;
+  has_pricing: boolean;
 }> {
   const response = await fetchWithAuth(
     `/api/v1/flows/executions/${executionId}/metrics`
@@ -1302,12 +1303,12 @@ export async function updateUser(
 }
 
 export async function deleteUser(userId: string): Promise<void> {
-  const response = await fetchWithAuth(`/api/v1/users/${userId}`, {
-    method: 'DELETE',
+  const response = await fetchWithAuth(`/api/v1/users/${userId}/deactivate`, {
+    method: 'POST',
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to delete user');
+    throw new Error(errorData.detail || 'Failed to deactivate user');
   }
 }
 

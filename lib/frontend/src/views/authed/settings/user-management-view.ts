@@ -249,7 +249,11 @@ export class UserManagementView extends LitElement {
   }
 
   async handleDeleteUser(user: User) {
-    if (!confirm(`Are you sure you want to delete user "${user.username}"?`)) {
+    if (
+      !confirm(
+        `Are you sure you want to deactivate user "${user.username}"? This will prevent them from logging in.`
+      )
+    ) {
       return;
     }
 
@@ -258,7 +262,7 @@ export class UserManagementView extends LitElement {
       await this.fetchUsers();
     } catch (error) {
       this.error =
-        error instanceof Error ? error.message : 'Failed to delete user';
+        error instanceof Error ? error.message : 'Failed to deactivate user';
     }
   }
 
