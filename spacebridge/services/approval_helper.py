@@ -370,9 +370,18 @@ async def require_approval(
                                 f"[Polling] Sent progress: {progress_pct}% - {status_message}"
                             )
                         except Exception as e:
-                            logger.error(
-                                f"Failed to send progress update: {e}", exc_info=True
-                            )
+                            # Ignore ClosedResourceError - client may have disconnected
+                            from anyio import ClosedResourceError
+
+                            if isinstance(e, ClosedResourceError):
+                                logger.debug(
+                                    "Client disconnected, skipping progress updates"
+                                )
+                            else:
+                                logger.error(
+                                    f"Failed to send progress update: {e}",
+                                    exc_info=True,
+                                )
 
                     # Wait before next poll
                     await asyncio.sleep(poll_interval)

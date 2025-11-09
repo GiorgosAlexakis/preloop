@@ -231,6 +231,23 @@ async def register_device_via_token(
     db.refresh(prefs)
     db.refresh(new_api_key)
 
+    # Send WebSocket notification to user about device registration
+    from spacebridge.services.websocket_manager import manager
+
+    await manager.broadcast_json(
+        {
+            "type": "device_registered",
+            "user_id": str(user_id),
+            "account_id": str(user.account_id),
+            "platform": device_in.platform,
+            "device_name": device_name,
+            "registered_at": prefs.mobile_device_tokens[-1]["registered_at"]
+            if prefs.mobile_device_tokens
+            else None,
+        },
+        account_id=str(user.account_id),
+    )
+
     return {
         "preferences": prefs,
         "api_key": new_api_key.key,

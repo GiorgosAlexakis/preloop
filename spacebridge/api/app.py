@@ -792,6 +792,15 @@ def create_app() -> FastAPI:
         approval_html_path = base_dir / "spacebridge" / "templates" / "approval.html"
         return FileResponse(str(approval_html_path), media_type="text/html")
 
+    # --- Public Invitation Accept Page ---
+    @app.get("/invitations/accept", include_in_schema=False)
+    async def serve_invitation_accept_page():
+        """Serve the public invitation accept page."""
+        invitation_html_path = (
+            base_dir / "spacebridge" / "templates" / "invitation-accept.html"
+        )
+        return FileResponse(str(invitation_html_path), media_type="text/html")
+
     # --- SPA Static Files (Production) ---
     # In production, serve the built Lit frontend from the root
     # This should be mounted *after* all API routes are defined.

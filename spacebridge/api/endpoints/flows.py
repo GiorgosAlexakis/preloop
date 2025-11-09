@@ -161,6 +161,51 @@ def read_flow_execution(
     return execution
 
 
+@router.get("/flows/executions/{execution_id}/metrics")
+@require_permission("view_flows")
+def get_flow_execution_metrics(
+    *,
+    db: Session = Depends(get_db),
+    execution_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Get execution metrics including tool calls, API usage, and costs.
+
+    Returns:
+        Dictionary with:
+        - tool_calls: Number of MCP tool calls made
+        - api_requests: Number of API requests made during execution
+        - token_usage: Token usage statistics
+        - estimated_cost: Estimated cost based on token usage and model pricing
+    """
+    from spacebridge.services.execution_metrics import ExecutionMetricsService
+
+    # Verify execution exists and user has access
+    execution = crud_flow_execution.get(
+        db=db, id=execution_id, account_id=current_user.account_id
+    )
+    if not execution:
+        raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    # Calculate metrics
+    metrics_service = ExecutionMetricsService(db)
+    try:
+        metrics = metrics_service.get_execution_metrics(str(execution_id))
+        return metrics
+    except Exception as e:
+        # Log error but return zero metrics instead of failing
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to calculate metrics for execution {execution_id}: {e}")
+        return {
+            "tool_calls": 0,
+            "api_requests": 0,
+            "token_usage": {"total_tokens": 0, "input_tokens": 0, "output_tokens": 0},
+            "estimated_cost": 0.0,
+        }
+
+
 @router.post("/flows/executions/{execution_id}/command")
 @require_permission("execute_flows")
 async def send_execution_command(

@@ -4317,6 +4317,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/executions/{execution_id}/metrics:
+    get:
+      tags:
+      - Flows
+      summary: Get Flow Execution Metrics
+      description: "Get execution metrics including tool calls, API usage, and costs.\n\
+        \nReturns:\n    Dictionary with:\n    - tool_calls: Number of MCP tool calls\
+        \ made\n    - api_requests: Number of API requests made during execution\n\
+        \    - token_usage: Token usage statistics\n    - estimated_cost: Estimated\
+        \ cost based on token usage and model pricing"
+      operationId: get_flow_execution_metrics_api_v1_flows_executions__execution_id__metrics_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: execution_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Execution Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Flow Execution Metrics Api V1 Flows Executions  Execution
+                  Id  Metrics Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/flows/executions/{execution_id}/command:
     post:
       tags:
