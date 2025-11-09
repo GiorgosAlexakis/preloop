@@ -802,11 +802,15 @@ def create_app() -> FastAPI:
         return FileResponse(str(invitation_html_path), media_type="text/html")
 
     # --- SPA Static Files (Production) ---
-    # In production, serve the built Lit frontend from the root
-    # This should be mounted *after* all API routes are defined.
+    # NOTE: In production, the SPA is served by nginx, not by the FastAPI app.
+    # This avoids issues with StaticFiles html=True intercepting API routes.
+    # The backend only serves API endpoints and specific HTML pages (like invitation accept).
     dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-    if not dev_mode:
-        logger.info("DEV_MODE is false, serving SPA from 'SpaceLit/dist'")
+    if dev_mode:
+        # In dev mode, mount the SPA for convenience
+        logger.info(
+            "DEV_MODE is true, serving SPA from 'SpaceLit/dist' for development"
+        )
         try:
             app.mount(
                 "/",
@@ -816,6 +820,6 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Failed to mount SPA static files: {e}")
     else:
-        logger.info("DEV_MODE is true, SPA is served by the frontend dev server.")
+        logger.info("DEV_MODE is false, SPA is served by nginx (not by FastAPI)")
 
     return app
