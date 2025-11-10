@@ -10,6 +10,7 @@ import '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js'
 import type SlCarousel from '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
 import type SlCarouselItem from '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+import { getFeatures } from '../../api';
 
 type IdeTab = 'claude-code' | 'cursor' | 'windsurf';
 
@@ -53,6 +54,7 @@ export class LandingView extends LitElement {
   }> = [];
   @state() private _extendedDescription = '';
   @state() private _featuresLayout: 'carousel' | 'grid' = 'grid';
+  @state() private _billingEnabled = false;
 
   static styles = [
     css`
@@ -62,6 +64,56 @@ export class LandingView extends LitElement {
 
   async firstUpdated() {
     await this._loadContent();
+    await this._checkBillingEnabled();
+  }
+
+  private async _checkBillingEnabled() {
+    try {
+      const features = await getFeatures();
+      this._billingEnabled = features.features['billing'] === true;
+    } catch (error) {
+      console.error('Failed to check billing feature:', error);
+      this._billingEnabled = false;
+    }
+  }
+
+  private async _handleSignup(e: Event) {
+    e.preventDefault();
+
+    if (!this._billingEnabled) {
+      // No billing, use regular registration
+      window.location.href = '/register';
+      return;
+    }
+
+    // Billing enabled - redirect to Stripe checkout
+    try {
+      const response = await fetch('/api/v1/billing/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_id: 'teams',
+          interval: 'month',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create checkout session');
+      }
+
+      const result = await response.json();
+
+      if (result.action === 'redirect' && result.url) {
+        window.location.href = result.url;
+      } else {
+        // Fallback to register if no URL
+        window.location.href = '/register';
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      // Fallback to register on error
+      window.location.href = '/register';
+    }
   }
 
   private async _loadContent() {
@@ -450,7 +502,10 @@ export class LandingView extends LitElement {
               <h1 class="fw-bold">${unsafeHTML(this._heroTitle)}</h1>
               <p class="lead">${this._heroLead}</p>
               <div class="hero-buttons">
-                <sl-button variant="primary" size="large" href="/register"
+                <sl-button
+                  variant="primary"
+                  size="large"
+                  @click=${this._handleSignup}
                   >${this._ctaPrimary}</sl-button
                 >
                 <sl-button
@@ -982,7 +1037,10 @@ export class LandingView extends LitElement {
           <div class="section-container">
             <h2>Move fast. Stay safe.</h2>
             <div class="hero-buttons">
-              <sl-button variant="primary" size="large" href="/register"
+              <sl-button
+                variant="primary"
+                size="large"
+                @click=${this._handleSignup}
                 >Get Started for Free</sl-button
               >
               <sl-button variant="text" size="large" href="/request-demo"

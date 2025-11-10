@@ -152,11 +152,17 @@ export class DashboardView extends AuthedElement {
   }
 
   private connectToFlowUpdates() {
-    // Connect to WebSocket for real-time flow execution updates
+    // Connect to WebSocket for real-time flow execution updates and approval updates
     webSocketService.connectToFlowUpdates(
       (message) => {
         // Handle incoming WebSocket messages
-        console.log('Dashboard received flow update:', message);
+        console.log('Dashboard received update:', message);
+
+        // Handle approval-related messages
+        if (message.type?.startsWith('approval_')) {
+          this.handleApprovalMessage(message);
+          return;
+        }
 
         // If this is an execution_started event, add it to recent executions
         if (message.type === 'execution_started') {
@@ -221,6 +227,42 @@ export class DashboardView extends AuthedElement {
         console.log('Dashboard WebSocket disconnected');
       }
     );
+  }
+
+  private handleApprovalMessage(message: any) {
+    console.log('Dashboard received approval update:', message);
+
+    // Handle new approval request
+    if (message.type === 'approval_created') {
+      const newApproval: ApprovalRequest = {
+        id: message.approval_request_id,
+        tool_name: message.tool_name,
+        tool_arguments: message.tool_args || {},
+        status: message.status,
+        requested_at: message.requested_at,
+      };
+
+      // Add to pending approvals if not already there
+      const exists = this.pendingApprovals.some(
+        (approval) => approval.id === newApproval.id
+      );
+      if (!exists) {
+        this.pendingApprovals = [newApproval, ...this.pendingApprovals];
+      }
+    }
+
+    // Handle approval resolution (approved, declined, expired, cancelled)
+    if (
+      message.type === 'approval_approved' ||
+      message.type === 'approval_declined' ||
+      message.type === 'approval_expired' ||
+      message.type === 'approval_cancelled'
+    ) {
+      // Remove from pending approvals
+      this.pendingApprovals = this.pendingApprovals.filter(
+        (approval) => approval.id !== message.approval_request_id
+      );
+    }
   }
 
   async fetchDashboardData() {

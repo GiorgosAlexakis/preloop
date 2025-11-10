@@ -1,6 +1,6 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { fetchWithAuth, fetchPublic } from '../../api';
+import { fetchWithAuth, fetchPublic, getFeatures } from '../../api';
 import landingStyles from '../../styles/landing.css?inline';
 import pricingStyles from '../../styles/pricing-styles.css?inline';
 import '../../components/billing-toggle';
@@ -17,7 +17,8 @@ interface Plan {
 
 @customElement('public-pricing-view')
 export class PublicPricingView extends LitElement {
-  @state() private _interval: 'month' | 'year' = 'month';
+  @state() private _interval: 'month' | 'year' = 'year';
+  @state() private _billingEnabled = false;
 
   // Hardcoded plans - Teams and Enterprise only
   private _plans: Plan[] = [
@@ -26,15 +27,7 @@ export class PublicPricingView extends LitElement {
       name: 'Teams',
       price_monthly: 29,
       price_annually: 290, // ~24/mo when billed annually
-      badge: 'Most Popular',
       features: [
-        'Unlimited API calls',
-        'Unlimited AI calls',
-        'Unlimited issues',
-        'Unlimited trackers',
-        'Unlimited flows & automation',
-        'Custom AI models',
-        'Custom compliance metrics',
         '30-day free trial',
         'No credit card required',
         'Email support',
@@ -46,13 +39,12 @@ export class PublicPricingView extends LitElement {
       price_monthly: null,
       price_annually: null,
       features: [
-        'Everything in Teams, plus:',
         'Model/provider limits & controls',
         'Comprehensive audit logs',
         'SSO, OIDC, SCIM support',
         'SLA commitments',
         'Dedicated support channels',
-        'Custom integrations',
+        'Custom integrations & flow presets',
         'On-premise deployment options',
         'Priority feature requests',
       ],
@@ -61,6 +53,17 @@ export class PublicPricingView extends LitElement {
 
   async connectedCallback() {
     super.connectedCallback();
+    await this._checkBillingEnabled();
+  }
+
+  private async _checkBillingEnabled() {
+    try {
+      const features = await getFeatures();
+      this._billingEnabled = features.features['billing'] === true;
+    } catch (error) {
+      console.error('Failed to check billing feature:', error);
+      this._billingEnabled = false;
+    }
   }
 
   private _handleSignUpRequest(e: CustomEvent) {
@@ -74,9 +77,43 @@ export class PublicPricingView extends LitElement {
     }
 
     if (planId === 'teams') {
-      // Redirect to register to start 30-day trial
-      window.location.href = '/register';
-      return;
+      if (!this._billingEnabled) {
+        // No billing, use regular registration
+        window.location.href = '/register';
+        return;
+      }
+
+      // Billing enabled - redirect to Stripe checkout
+      try {
+        const response = await fetch(
+          '/api/v1/billing/create-checkout-session',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              plan_id: 'teams',
+              interval: this._interval,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to create checkout session');
+        }
+
+        const result = await response.json();
+
+        if (result.action === 'redirect' && result.url) {
+          window.location.href = result.url;
+        } else {
+          // Fallback to register if no URL
+          window.location.href = '/register';
+        }
+      } catch (error) {
+        console.error('Checkout error:', error);
+        // Fallback to register on error
+        window.location.href = '/register';
+      }
     }
   }
 
@@ -95,7 +132,8 @@ export class PublicPricingView extends LitElement {
 
       .pricing-table {
         display: none; /* Hidden by default on mobile */
-        width: 100%;
+        width: 80%;
+        margin: 0 auto;
         table-layout: fixed;
         border-collapse: separate;
         border-spacing: 0;
@@ -118,8 +156,8 @@ export class PublicPricingView extends LitElement {
         border-bottom: none; /* Remove border for the last row */
       }
 
-      .pricing-table th:first-child,
-      .pricing-table td:first-child {
+      .pricing-table th,
+      .pricing-table td {
         width: 25%;
       }
 
@@ -143,6 +181,7 @@ export class PublicPricingView extends LitElement {
       .pricing-table .price {
         font-size: 2.4rem;
         font-weight: 700;
+        text-align: center;
       }
 
       /* Popular column styles */
@@ -229,6 +268,11 @@ export class PublicPricingView extends LitElement {
         color: white;
       }
 
+      .hero-content .lead {
+        margin: 0 auto;
+        text-align: center;
+      }
+
       /* Desktop view */
       @media (min-width: 860px) {
         .plans-grid {
@@ -298,15 +342,9 @@ export class PublicPricingView extends LitElement {
 
                 priceHtml = html`
                   <div class="price">
-                    $${amount}<span style="font-size: 1rem; font-weight: 400;"
-                      >${unit}</span
-                    >
+                    $${amount}
+                    <p style="font-size: 1rem; font-weight: 400;">${unit}</p>
                   </div>
-                  ${perMo
-                    ? html`<div class="price-sub">
-                        ~$${perMo}/mo billed annually
-                      </div>`
-                    : ''}
                 `;
               }
               return html`<td class="${plan.id === 'teams' ? 'popular' : ''}">

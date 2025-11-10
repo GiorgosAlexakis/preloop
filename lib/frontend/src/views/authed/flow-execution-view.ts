@@ -223,6 +223,15 @@ export class FlowExecutionView extends LitElement {
       await this.fetchExecution();
 
       console.log(`After fetchExecution, logs.length = ${this.logs.length}`);
+      console.log(`Execution status: ${this.execution?.status}`);
+      console.log(
+        `Has model_output_summary: ${!!this.execution?.model_output_summary}`
+      );
+      if (this.execution?.model_output_summary) {
+        console.log(
+          `model_output_summary length: ${this.execution.model_output_summary.length} chars`
+        );
+      }
 
       // Check if execution is still running
       const isRunning =
@@ -232,8 +241,13 @@ export class FlowExecutionView extends LitElement {
           this.execution.status === 'INITIALIZING' ||
           this.execution.status === 'PENDING');
 
+      console.log(`isRunning: ${isRunning}`);
+
       // If finished, show model_output_summary in logs
       if (!isRunning && this.execution?.model_output_summary) {
+        console.log(
+          'Adding model_output_summary to logs (execution finished on page load)'
+        );
         this.logs = [
           ...this.logs,
           {
@@ -243,6 +257,11 @@ export class FlowExecutionView extends LitElement {
             payload: { content: this.execution.model_output_summary },
           },
         ];
+        console.log(`Updated logs.length = ${this.logs.length}`);
+      } else {
+        console.log(
+          `Not adding model_output: isRunning=${isRunning}, has_summary=${!!this.execution?.model_output_summary}`
+        );
       }
 
       // Scroll to bottom after logs are loaded
@@ -310,6 +329,8 @@ export class FlowExecutionView extends LitElement {
 
       // Update execution status
       if (message.type === 'status_update' && this.execution) {
+        const previousStatus = this.execution.status;
+
         if (message.payload.status) {
           this.execution.status = message.payload.status;
         }
@@ -321,6 +342,37 @@ export class FlowExecutionView extends LitElement {
         if (message.payload.model_output_summary) {
           this.execution.model_output_summary =
             message.payload.model_output_summary;
+
+          // Check if execution just finished and model_output_summary is provided
+          const wasRunning =
+            previousStatus === 'RUNNING' ||
+            previousStatus === 'STARTING' ||
+            previousStatus === 'INITIALIZING' ||
+            previousStatus === 'PENDING';
+          const isNowFinished =
+            this.execution.status !== 'RUNNING' &&
+            this.execution.status !== 'STARTING' &&
+            this.execution.status !== 'INITIALIZING' &&
+            this.execution.status !== 'PENDING';
+
+          // If execution just finished, add the model output to logs
+          if (wasRunning && isNowFinished) {
+            // Check if we haven't already added it
+            const hasModelOutput = this.logs.some(
+              (log) => log.type === 'model_output'
+            );
+            if (!hasModelOutput) {
+              this.logs = [
+                ...this.logs,
+                {
+                  execution_id: this.executionId!,
+                  timestamp: new Date().toISOString(),
+                  type: 'model_output',
+                  payload: { content: this.execution.model_output_summary },
+                },
+              ];
+            }
+          }
         }
         this.requestUpdate();
       }
