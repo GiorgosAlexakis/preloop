@@ -84,9 +84,16 @@ def process_plan(plan_details: dict, db):
             try:
                 product = stripe.Product.retrieve(plan_id)
                 print(f"Retrieved existing Stripe Product: {product.id}")
-            except stripe.error.InvalidRequestError:
-                product = stripe.Product.create(id=plan_id, name=plan_details["name"])
-                print(f"Created new Stripe Product: {product.id}")
+            except Exception as retrieve_error:
+                # Product doesn't exist, create it
+                if "No such product" in str(retrieve_error):
+                    product = stripe.Product.create(
+                        id=plan_id, name=plan_details["name"]
+                    )
+                    print(f"Created new Stripe Product: {product.id}")
+                else:
+                    # Some other error occurred
+                    raise
             stripe_product_id = product.id
 
             # Step 2: Idempotently update prices in Stripe
@@ -139,7 +146,12 @@ def process_plan(plan_details: dict, db):
                 update_price("year", plan_details["price_annually"])
 
         except Exception as e:
-            print(f"ERROR processing Stripe objects for plan {plan_id}: {e}")
+            import traceback
+
+            print(f"ERROR processing Stripe objects for plan {plan_id}:")
+            print(f"Exception type: {type(e).__name__}")
+            print(f"Exception message: {str(e)}")
+            print(f"Traceback:\n{traceback.format_exc()}")
             return  # Stop processing this plan if Stripe fails
 
     else:
@@ -168,7 +180,12 @@ def process_plan(plan_details: dict, db):
         print(f"Successfully synced plan '{plan_id}' to the database.")
 
     except Exception as e:
-        print(f"ERROR updating database for plan {plan_id}: {e}")
+        import traceback
+
+        print(f"ERROR updating database for plan {plan_id}:")
+        print(f"Exception type: {type(e).__name__}")
+        print(f"Exception message: {str(e)}")
+        print(f"Traceback:\n{traceback.format_exc()}")
         db.rollback()
 
     print(f"--- Finished processing plan: {plan_id} ---")

@@ -40,7 +40,7 @@ async def create_invitation(
     """Create a new user invitation.
 
     Args:
-        invitation_data: Invitation data with email and optional role IDs
+        invitation_data: Invitation data with email, optional role IDs, and optional team IDs
         current_user: Current authenticated user
         db: Database session
 
@@ -79,12 +79,20 @@ async def create_invitation(
         else None
     )
 
+    # Convert team_ids list to comma-separated string
+    team_ids_str = (
+        ",".join(str(team_id) for team_id in invitation_data.team_ids)
+        if invitation_data.team_ids
+        else None
+    )
+
     # Create invitation
     invitation_dict = {
         "account_id": current_user.account_id,
         "email": invitation_data.email,
         "invited_by": current_user.id,
         "role_ids": role_ids_str,
+        "team_ids": team_ids_str,
     }
 
     invitation = crud_user_invitation.create(db=db, obj_in=invitation_dict)
@@ -98,11 +106,43 @@ async def create_invitation(
     # Send invitation email
     account = crud_account.get(db, id=current_user.account_id)
     if account:
+        # Get role names
+        role_names = []
+        if invitation.role_ids:
+            from spacemodels.crud import crud_role
+
+            role_ids = [
+                UUID(rid.strip())
+                for rid in invitation.role_ids.split(",")
+                if rid.strip()
+            ]
+            for role_id in role_ids:
+                role = crud_role.get(db=db, id=role_id)
+                if role:
+                    role_names.append(role.name)
+
+        # Get team names
+        team_names = []
+        if invitation.team_ids:
+            from spacemodels.crud import crud_team
+
+            team_ids = [
+                UUID(tid.strip())
+                for tid in invitation.team_ids.split(",")
+                if tid.strip()
+            ]
+            for team_id in team_ids:
+                team = crud_team.get(db=db, id=team_id)
+                if team:
+                    team_names.append(team.name)
+
         send_invitation_email(
             user_email=invitation.email,
             token=invitation.token,
             organization_name=account.organization_name or "your organization",
             invited_by=current_user.email or current_user.username,
+            role_names=role_names if role_names else None,
+            team_names=team_names if team_names else None,
         )
     else:
         logger.warning(
@@ -305,11 +345,43 @@ async def resend_invitation(
     # Send invitation email
     account = crud_account.get(db, id=current_user.account_id)
     if account:
+        # Get role names
+        role_names = []
+        if invitation.role_ids:
+            from spacemodels.crud import crud_role
+
+            role_ids = [
+                UUID(rid.strip())
+                for rid in invitation.role_ids.split(",")
+                if rid.strip()
+            ]
+            for role_id in role_ids:
+                role = crud_role.get(db=db, id=role_id)
+                if role:
+                    role_names.append(role.name)
+
+        # Get team names
+        team_names = []
+        if invitation.team_ids:
+            from spacemodels.crud import crud_team
+
+            team_ids = [
+                UUID(tid.strip())
+                for tid in invitation.team_ids.split(",")
+                if tid.strip()
+            ]
+            for team_id in team_ids:
+                team = crud_team.get(db=db, id=team_id)
+                if team:
+                    team_names.append(team.name)
+
         send_invitation_email(
             user_email=invitation.email,
             token=invitation.token,
             organization_name=account.organization_name or "your organization",
             invited_by=current_user.email or current_user.username,
+            role_names=role_names if role_names else None,
+            team_names=team_names if team_names else None,
         )
     else:
         logger.warning(
@@ -378,11 +450,41 @@ async def get_invitation_info(
     # Get account info for organization name
     account = crud_account.get(db=db, id=invitation.account_id)
 
+    # Get role names
+    role_names = []
+    if invitation.role_ids:
+        from spacemodels.crud import crud_role
+        from uuid import UUID
+
+        role_ids = [
+            UUID(rid.strip()) for rid in invitation.role_ids.split(",") if rid.strip()
+        ]
+        for role_id in role_ids:
+            role = crud_role.get(db=db, id=role_id)
+            if role:
+                role_names.append(role.name)
+
+    # Get team names
+    team_names = []
+    if invitation.team_ids:
+        from spacemodels.crud import crud_team
+        from uuid import UUID
+
+        team_ids = [
+            UUID(tid.strip()) for tid in invitation.team_ids.split(",") if tid.strip()
+        ]
+        for team_id in team_ids:
+            team = crud_team.get(db=db, id=team_id)
+            if team:
+                team_names.append(team.name)
+
     return InvitationPublicInfo(
         email=invitation.email,
         organization_name=account.organization_name if account else None,
         expires_at=invitation.expires_at,
         is_valid=True,
+        role_names=role_names,
+        team_names=team_names,
     )
 
 
@@ -468,6 +570,22 @@ async def accept_invitation(
                 "granted_by": invitation.invited_by,
             }
             crud_user_role.create(db=db, obj_in=user_role_dict)
+
+    # Assign teams if specified
+    if invitation.team_ids:
+        from spacemodels.crud import crud_team
+
+        team_ids = [
+            UUID(tid.strip()) for tid in invitation.team_ids.split(",") if tid.strip()
+        ]
+        for team_id in team_ids:
+            crud_team.add_member(
+                db=db,
+                team_id=team_id,
+                user_id=user.id,
+                role="member",
+                added_by=invitation.invited_by,
+            )
 
     db.commit()
     db.refresh(user)

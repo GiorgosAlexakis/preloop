@@ -168,7 +168,12 @@ def send_password_reset_email(user_email: str, token: str) -> None:
 
 
 def send_invitation_email(
-    user_email: str, token: str, organization_name: str, invited_by: str
+    user_email: str,
+    token: str,
+    organization_name: str,
+    invited_by: str,
+    role_names: Optional[list[str]] = None,
+    team_names: Optional[list[str]] = None,
 ) -> None:
     """Send an invitation email to join an organization.
 
@@ -177,15 +182,33 @@ def send_invitation_email(
         token: The invitation token.
         organization_name: Name of the organization they're invited to.
         invited_by: Name/email of the person who sent the invitation.
+        role_names: Names of roles that will be assigned (optional).
+        team_names: Names of teams the user will be added to (optional).
     """
     accept_link = f"{SPACEBRIDGE_URL}/invitations/accept?token={token}"
 
     subject = f"You've been invited to join {organization_name}"
 
+    # Build role and team assignment text
+    assignment_text = []
+    if role_names:
+        roles_str = ", ".join(role_names)
+        assignment_text.append(f"Roles: {roles_str}")
+    if team_names:
+        teams_str = ", ".join(team_names)
+        assignment_text.append(f"Teams: {teams_str}")
+
+    assignment_section = ""
+    if assignment_text:
+        assignment_section = "\n\nYou will be assigned the following:\n" + "\n".join(
+            f"• {line}" for line in assignment_text
+        )
+
     text_body = f"""
 Hello!
 
 {invited_by} has invited you to join {organization_name} on {APP_NAME}.
+{assignment_section}
 
 To accept this invitation and create your account, please click the link below:
 
@@ -222,6 +245,7 @@ The {APP_NAME} Team
             <div class="content">
                 <p>Hello!</p>
                 <p><strong>{invited_by}</strong> has invited you to join <strong>{organization_name}</strong> on {APP_NAME}.</p>
+                {"<div style='background-color: #f0f8ff; padding: 15px; border-left: 4px solid #4A90E2; margin: 20px 0;'><p style='margin: 0 0 10px 0;'><strong>You will be assigned:</strong></p><ul style='margin: 0;'>" + "".join(f"<li>{line}</li>" for line in assignment_text) + "</ul></div>" if assignment_text else ""}
                 <p>{APP_NAME} helps teams automate and streamline their development workflows with AI-powered agents.</p>
                 <p style="text-align: center;">
                     <a href="{accept_link}" class="button">Accept Invitation</a>

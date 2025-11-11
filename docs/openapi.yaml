@@ -5657,10 +5657,10 @@ paths:
       - Invitations
       summary: Create Invitation
       description: "Create a new user invitation.\n\nArgs:\n    invitation_data: Invitation\
-        \ data with email and optional role IDs\n    current_user: Current authenticated\
-        \ user\n    db: Database session\n\nReturns:\n    InvitationResponse: Created\
-        \ invitation data\n\nRaises:\n    HTTPException: If user already exists or\
-        \ invitation already pending"
+        \ data with email, optional role IDs, and optional team IDs\n    current_user:\
+        \ Current authenticated user\n    db: Database session\n\nReturns:\n    InvitationResponse:\
+        \ Created invitation data\n\nRaises:\n    HTTPException: If user already exists\
+        \ or invitation already pending"
       operationId: create_invitation_api_v1_invitations_post
       security:
       - bearerAuth: []
@@ -8074,6 +8074,14 @@ components:
             type: array
           - type: 'null'
           title: Role Ids
+        team_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Team Ids
       type: object
       required:
       - email
@@ -8128,6 +8136,20 @@ components:
           - type: string
           - type: 'null'
           title: Error Message
+        role_names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Role Names
+        team_names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Team Names
       type: object
       required:
       - organization_name
@@ -8158,6 +8180,11 @@ components:
           - type: string
           - type: 'null'
           title: Role Ids
+        team_ids:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Team Ids
         invited_by:
           anyOf:
           - type: string
@@ -8185,6 +8212,7 @@ components:
       - token
       - status
       - role_ids
+      - team_ids
       - invited_by
       - created_at
       - accepted_at
