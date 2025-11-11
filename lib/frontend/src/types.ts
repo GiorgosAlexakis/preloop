@@ -238,6 +238,7 @@ export interface UserInvitation {
 export interface InvitationCreate {
   email: string;
   role_ids?: string[];
+  team_ids?: string[];
 }
 
 export interface InvitationListResponse {

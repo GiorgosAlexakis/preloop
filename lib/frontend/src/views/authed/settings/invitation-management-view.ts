@@ -6,8 +6,9 @@ import {
   createInvitation,
   resendInvitation,
   cancelInvitation,
+  getTeams,
 } from '../../../api';
-import type { UserInvitation, InvitationCreate } from '../../../types';
+import type { UserInvitation, InvitationCreate, Team } from '../../../types';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
@@ -19,6 +20,8 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
 import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
+import '@shoelace-style/shoelace/dist/components/option/option.js';
 
 @customElement('invitation-management-view')
 export class InvitationManagementView extends LitElement {
@@ -39,6 +42,12 @@ export class InvitationManagementView extends LitElement {
 
   @state()
   private activeTab: 'pending' | 'accepted' | 'all' = 'pending';
+
+  @state()
+  private teams: Team[] = [];
+
+  @state()
+  private isLoadingTeams = false;
 
   static styles = css`
     :host {
@@ -147,7 +156,20 @@ export class InvitationManagementView extends LitElement {
 
   async connectedCallback() {
     super.connectedCallback();
-    await this.fetchInvitations();
+    await Promise.all([this.fetchInvitations(), this.fetchTeams()]);
+  }
+
+  async fetchTeams() {
+    this.isLoadingTeams = true;
+    try {
+      const response = await getTeams(0, 100);
+      this.teams = response.teams;
+    } catch (error) {
+      console.error('Failed to fetch teams:', error);
+      // Don't set a global error for teams, just log it
+    } finally {
+      this.isLoadingTeams = false;
+    }
   }
 
   async fetchInvitations() {
@@ -297,10 +319,33 @@ export class InvitationManagementView extends LitElement {
             value=${this.newInvitation.email || ''}
             @sl-input=${(e: any) => (this.newInvitation.email = e.target.value)}
           ></sl-input>
+          <sl-select
+            label="Teams (Optional)"
+            placeholder="Select teams to add user to"
+            multiple
+            clearable
+            value=${(this.newInvitation.team_ids || []).join(' ')}
+            @sl-change=${(e: any) => {
+              const selectedValues = e.target.value;
+              this.newInvitation.team_ids =
+                selectedValues.length > 0 ? selectedValues : undefined;
+            }}
+            ?disabled=${this.isLoadingTeams}
+          >
+            ${this.teams.map(
+              (team) => html`
+                <sl-option value=${team.id}>${team.name}</sl-option>
+              `
+            )}
+          </sl-select>
           <sl-alert variant="primary" open>
             <sl-icon slot="icon" name="info-circle"></sl-icon>
             The user will receive an email with a link to accept the invitation
-            and create their account.
+            and create their
+            account${this.newInvitation.team_ids &&
+            this.newInvitation.team_ids.length > 0
+              ? ', and will be automatically added to the selected teams'
+              : ''}.
           </sl-alert>
         </div>
         <sl-button
