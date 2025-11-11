@@ -44,6 +44,7 @@ class UserInvitation(Base):
         token: Secure token for the invitation link.
         status: Current status ('pending', 'accepted', 'expired', 'cancelled').
         role_ids: List of role IDs to assign when invitation is accepted.
+        team_ids: List of team IDs to assign when invitation is accepted.
         created_at: When the invitation was created.
         expires_at: When the invitation expires.
         accepted_at: When the invitation was accepted (if applicable).
@@ -96,6 +97,13 @@ class UserInvitation(Base):
         String(500),
         nullable=True,
         comment="Comma-separated role UUIDs to assign on acceptance",
+    )
+
+    # Team assignment (stored as comma-separated UUIDs for simplicity)
+    team_ids: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Comma-separated team UUIDs to assign on acceptance",
     )
 
     # Timestamps
