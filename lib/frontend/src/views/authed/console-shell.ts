@@ -174,14 +174,6 @@ export class ConsoleShell extends LitElement {
     super.disconnectedCallback();
   }
 
-  private _showFlows() {
-    const hostname = window.location.hostname;
-    if (hostname === 'spacebridge.io') {
-      return false;
-    }
-    return true;
-  }
-
   render() {
     return html`
       <sl-dialog id="upgrade-modal" label="Upgrade Your Plan">
@@ -212,14 +204,12 @@ export class ConsoleShell extends LitElement {
                 Tools
               </sl-menu-item>
             </a>
-            ${this._showFlows()
-              ? html`<a href="/console/flows">
-                  <sl-menu-item>
-                    <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
-                    Flows
-                  </sl-menu-item>
-                </a>`
-              : html``}
+            <a href="/console/flows">
+              <sl-menu-item>
+                <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
+                Flows
+              </sl-menu-item>
+            </a>
             <a href="/console/trackers">
               <sl-menu-item>
                 <sl-icon src="/images/git.svg" slot="prefix"></sl-icon>
