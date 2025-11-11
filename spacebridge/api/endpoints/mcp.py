@@ -902,11 +902,71 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
+    target = target.strip()
+
+    # Try to parse GitHub/GitLab URLs and convert to key format
+    # This helps when the external_url in the database doesn't match exactly
+    parsed_key = None
+    if target.startswith("http"):
+        # GitHub PR URL: https://github.com/owner/repo/pull/123
+        if "github.com" in target and "/pull/" in target:
+            parts = target.split("/")
+            if len(parts) >= 7:
+                owner = parts[3]
+                repo = parts[4]
+                pr_number = parts[6].rstrip("/").split("?")[0].split("#")[0]
+                parsed_key = f"{owner}/{repo}#{pr_number}"
+                logger.info(f"Parsed GitHub PR URL to key: {parsed_key}")
+        # GitHub issue URL: https://github.com/owner/repo/issues/123
+        elif "github.com" in target and "/issues/" in target:
+            parts = target.split("/")
+            if len(parts) >= 7:
+                owner = parts[3]
+                repo = parts[4]
+                issue_number = parts[6].rstrip("/").split("?")[0].split("#")[0]
+                parsed_key = f"{owner}/{repo}#{issue_number}"
+                logger.info(f"Parsed GitHub issue URL to key: {parsed_key}")
+        # GitLab MR URL: https://gitlab.com/owner/repo/-/merge_requests/1
+        elif "gitlab" in target and "merge_requests/" in target:
+            mr_parts = target.split("merge_requests/")
+            mr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
+            # Extract project path from URL
+            url_path = mr_parts[0].split("://")[1].split("/")
+            if len(url_path) >= 3:
+                # Remove gitlab host and get project path (everything between host and /-/)
+                project_path = "/".join(url_path[1:]).rstrip("/-")
+                parsed_key = f"{project_path}#{mr_number}"
+                logger.info(f"Parsed GitLab MR URL to key: {parsed_key}")
+        # GitLab issue URL: https://gitlab.com/owner/repo/-/issues/1
+        elif "gitlab" in target and "/issues/" in target:
+            issue_parts = target.split("/issues/")
+            issue_number = issue_parts[-1].rstrip("/").split("?")[0].split("#")[0]
+            # Extract project path from URL
+            url_path = issue_parts[0].split("://")[1].split("/")
+            if len(url_path) >= 3:
+                # Remove gitlab host and get project path (everything between host and /-/)
+                project_path = "/".join(url_path[1:]).rstrip("/-")
+                parsed_key = f"{project_path}#{issue_number}"
+                logger.info(f"Parsed GitLab issue URL to key: {parsed_key}")
+
+    # Try to find the issue/PR/MR
+    issue_obj = None
     try:
-        # Find the target (issue/PR/MR) using our enhanced lookup
-        # Note: For GitHub/GitLab, PRs and MRs are treated as issues in the API,
-        # so the same lookup and add_comment method should work
-        issue_obj = _find_issue_by_identifier(db, target, current_user.account_id)
+        # First, try with the parsed key if we have one
+        if parsed_key:
+            try:
+                issue_obj = _find_issue_by_identifier(
+                    db, parsed_key, current_user.account_id
+                )
+                logger.info(f"Found issue using parsed key: {parsed_key}")
+            except IssueNotFoundError:
+                logger.info(
+                    f"Could not find issue with parsed key {parsed_key}, trying original target"
+                )
+
+        # If not found with parsed key, try the original target
+        if not issue_obj:
+            issue_obj = _find_issue_by_identifier(db, target, current_user.account_id)
     except IssueNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

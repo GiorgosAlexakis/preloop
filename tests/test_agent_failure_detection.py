@@ -123,6 +123,65 @@ class TestAgentFailureDetection:
         """
         assert self.agent._detect_error_in_logs(logs) is True
 
+    def test_benign_no_commits_message(self):
+        """Test that 'no commits' message doesn't trigger failure."""
+        logs = """
+        Checking for commits...
+        No commits on feature-branch, skipping push
+        Agent finished successfully
+        """
+        assert self.agent._detect_error_in_logs(logs) is False
+
+    def test_benign_nothing_to_commit(self):
+        """Test that 'nothing to commit' message doesn't trigger failure."""
+        logs = """
+        Running git status...
+        On branch main
+        nothing to commit, working tree clean
+        """
+        assert self.agent._detect_error_in_logs(logs) is False
+
+    def test_benign_pr_already_exists(self):
+        """Test that PR/MR creation failure doesn't trigger failure."""
+        logs = """
+        Creating pull request...
+        Failed to create PR (may already exist)
+        Continuing with execution...
+        """
+        assert self.agent._detect_error_in_logs(logs) is False
+
+    def test_benign_up_to_date(self):
+        """Test that 'up to date' git messages don't trigger failure."""
+        logs = """
+        Pushing to origin...
+        Everything up-to-date
+        Push completed
+        """
+        assert self.agent._detect_error_in_logs(logs) is False
+
+    def test_single_error_message_not_critical(self):
+        """Test that a single ERROR: message doesn't trigger failure."""
+        logs = """
+        Starting agent...
+        Processing task...
+        DEBUG: Task processing complete
+        INFO: Results saved
+        """
+        # Add a single error that's not critical
+        logs_with_error = logs + "\nINFO: Operation completed with 0 errors.\n"
+        assert self.agent._detect_error_in_logs(logs_with_error) is False
+
+    def test_multiple_errors_trigger_failure(self):
+        """Test that multiple ERROR: messages trigger failure."""
+        logs = """
+        Starting agent...
+        ERROR: Connection timeout on attempt 1
+        ERROR: Connection timeout on attempt 2
+        ERROR: Connection timeout on attempt 3
+        Failed to complete task
+        """
+        assert self.agent._detect_error_in_logs(logs) is True
+
 
 @pytest.mark.asyncio
 class TestContainerFailureStatus:

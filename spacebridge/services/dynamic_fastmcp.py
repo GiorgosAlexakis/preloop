@@ -212,6 +212,22 @@ class DynamicFastMCP(FastMCP):
             logger.error(f"Error loading proxied tools: {e}", exc_info=True)
             # Continue with just default tools
 
+        # SECURITY: Enforce flow-specific tool restrictions if present
+        # This provides defense-in-depth: even if an agent is compromised,
+        # it cannot call tools outside the flow's allowed list
+        if user_context.allowed_flow_tools is not None:
+            original_count = len(available_tools)
+            available_tools = [
+                tool
+                for tool in available_tools
+                if tool.name in user_context.allowed_flow_tools
+            ]
+            logger.info(
+                f"Flow execution restriction: filtered {original_count} tools down to "
+                f"{len(available_tools)} allowed tools for flow execution "
+                f"{user_context.flow_execution_id}"
+            )
+
         logger.info(
             f"Returning {len(available_tools)} total tools for user {user_context.username}"
         )
@@ -533,6 +549,9 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
         logger.warning("No user cached in access token")
         return None
 
+    # Extract API key if available (for flow execution context)
+    api_key = getattr(auth_user.access_token, "api_key", None)
+
     # Check tracker status
     db = next(get_db())
     try:
@@ -553,6 +572,28 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
         user_has_tracker = has_tracker(account, db) if account else False
         user_tracker_types = get_tracker_types(account, db) if account else []
 
+        # Extract flow execution context from API key if present
+        flow_execution_id = None
+        allowed_flow_tools = None
+        if api_key and api_key.context_data:
+            flow_execution_id = api_key.context_data.get("flow_execution_id")
+            # Combine allowed_mcp_tools with tool names from allowed_mcp_servers
+            allowed_mcp_tools = api_key.context_data.get("allowed_mcp_tools", [])
+            if allowed_mcp_tools:
+                # Extract tool names from the allowed_mcp_tools list
+                # This could be a list of strings or a list of dicts with "name" key
+                allowed_flow_tools = []
+                for tool in allowed_mcp_tools:
+                    if isinstance(tool, str):
+                        allowed_flow_tools.append(tool)
+                    elif isinstance(tool, dict) and "name" in tool:
+                        allowed_flow_tools.append(tool["name"])
+
+                logger.info(
+                    f"Flow execution context: execution_id={flow_execution_id}, "
+                    f"allowed_tools={allowed_flow_tools}"
+                )
+
         user_context = UserContext(
             user_id=str(user.id),
             account_id=str(user.account_id),
@@ -561,12 +602,15 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
             enabled_default_tools=[],  # Empty = all tools
             enabled_proxied_tools=[],
             tracker_types=user_tracker_types,
+            flow_execution_id=flow_execution_id,
+            allowed_flow_tools=allowed_flow_tools,
         )
 
         logger.info(
             f"Created user context for {user.username} "
             f"(account: {user.account_id}), has_tracker={user_has_tracker}, "
-            f"tracker_types={user_tracker_types}"
+            f"tracker_types={user_tracker_types}, "
+            f"flow_execution_id={flow_execution_id}"
         )
 
         return user_context

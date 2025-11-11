@@ -279,6 +279,16 @@ class FlowExecutionOrchestrator:
             # Create API key that expires in 2 hours
             expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
 
+            # Store flow execution context in the token for tool filtering
+            context_data = {
+                "flow_execution_id": str(self.execution_log.id)
+                if self.execution_log
+                else None,
+                "flow_id": str(self.flow_id),
+                "allowed_mcp_tools": self.flow.allowed_mcp_tools or [],
+                "allowed_mcp_servers": self.flow.allowed_mcp_servers or [],
+            }
+
             api_key = ApiKey(
                 name=f"Flow Execution {self.execution_log.id if self.execution_log else 'temp'}",
                 key=token_key,
@@ -286,6 +296,7 @@ class FlowExecutionOrchestrator:
                 expires_at=expires_at,
                 is_active=True,
                 scopes=["mcp:read", "mcp:write"],  # Limited scopes for MCP access
+                context_data=context_data,  # Store flow context for tool restrictions
             )
 
             self.db.add(api_key)
