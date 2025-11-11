@@ -55,6 +55,12 @@ class ApiKey(Base):
     scopes: Mapped[List] = mapped_column(JSON, default=list, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # Additional context data for context-specific restrictions
+    # For flow executions: {"flow_execution_id": "...", "allowed_mcp_tools": [...]}
+    context_data: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True, default=None
+    )
+
     # Relationships
     creator: Mapped["User"] = relationship("User", back_populates="api_keys")
 
