@@ -52,7 +52,7 @@ async def get_version_info(
         try:
             # Manually attempt to get user if token exists
             current_user = await get_current_user(token=token)
-            account_id = current_user.id
+            account_id = current_user.account_id
         except HTTPException:
             # Ignore auth errors (invalid token, inactive user, etc.)
             logger.debug(

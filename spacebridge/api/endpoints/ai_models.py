@@ -76,7 +76,7 @@ def get_ai_model(
     """Retrieve a specific AI Model by its ID."""
     db_model = crud_ai_model.get(db=db, id=model_id)
 
-    if not db_model or db_model.account_id != current_user.id:
+    if not db_model or db_model.account_id != current_user.account_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="AI Model not found"
         )
@@ -99,7 +99,7 @@ def update_ai_model(
     """Update an existing AI Model by its ID."""
     db_model = crud_ai_model.get(db=db, id=model_id)
 
-    if not db_model or db_model.account_id != current_user.id:
+    if not db_model or db_model.account_id != current_user.account_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="AI Model not found"
         )
@@ -126,7 +126,7 @@ def delete_ai_model(
 ):
     """Delete an AI Model by its ID."""
     db_model = crud_ai_model.get(db=db, id=model_id)
-    if not db_model or db_model.account_id != current_user.id:
+    if not db_model or db_model.account_id != current_user.account_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="AI Model not found"
         )

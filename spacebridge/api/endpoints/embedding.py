@@ -57,7 +57,7 @@ def get_raw_embeddings(
 
     raw_data = crud_embedding.get_raw_embeddings(
         db=db,
-        account_id=str(current_user.id),
+        account_id=str(current_user.account_id),
         embedding_model_id=embedding_model_id,
         project_ids=project_id_list,
         project_names=project_name_list,

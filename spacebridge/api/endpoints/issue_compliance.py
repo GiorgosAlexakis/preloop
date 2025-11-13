@@ -222,7 +222,7 @@ def get_compliance_improvement_suggestion(
     if (
         not organization
         or not organization.tracker
-        or organization.tracker.account_id != current_user.id
+        or organization.tracker.account_id != current_user.account_id
     ):
         raise HTTPException(status_code=403, detail="Access denied")
 

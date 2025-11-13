@@ -161,6 +161,107 @@ def read_flow_execution(
     return execution
 
 
+@router.get("/flows/executions/{execution_id}/logs")
+@require_permission("view_flows")
+async def get_flow_execution_logs(
+    *,
+    db: Session = Depends(get_db),
+    execution_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    tail: int = 1000,
+) -> Dict[str, Any]:
+    """Get execution logs from the container (if running) or database (if finished).
+
+    For running executions, fetches logs directly from the Docker/Kubernetes container.
+    For finished executions, returns persisted logs from the database.
+
+    Args:
+        execution_id: ID of the execution
+        tail: Number of recent log lines to retrieve (default: 1000)
+
+    Returns:
+        Dictionary with:
+        - logs: List of log lines
+        - source: Where logs were fetched from ("container" or "database")
+    """
+    from spacebridge.agents.container import ContainerAgentExecutor
+    from spacebridge.agents.codex import CodexAgent
+
+    # Verify execution exists and user has access
+    execution = crud_flow_execution.get(
+        db=db, id=execution_id, account_id=current_user.account_id
+    )
+    if not execution:
+        raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    # Check if execution is running
+    is_running = execution.status in ["RUNNING", "STARTING", "INITIALIZING", "PENDING"]
+
+    if is_running and execution.agent_session_reference:
+        # Fetch logs directly from container
+        try:
+            # Get the flow to determine agent type
+            flow = crud_flow.get(
+                db=db, id=execution.flow_id, account_id=current_user.account_id
+            )
+            if not flow:
+                raise HTTPException(status_code=404, detail="Flow not found")
+
+            # Determine if using Kubernetes or Docker
+            import os
+
+            use_kubernetes = (
+                os.getenv("USE_KUBERNETES_FOR_AGENTS", "false").lower() == "true"
+            )
+
+            # Create agent executor to access logs
+            # Note: We don't need the full agent config, just need the get_logs method
+            if flow.agent_type == "codex":
+                agent = CodexAgent(config={}, use_kubernetes=use_kubernetes)
+            else:
+                agent = ContainerAgentExecutor(
+                    agent_type=flow.agent_type,
+                    config={},
+                    image="dummy-image",  # Not used for get_logs
+                    use_kubernetes=use_kubernetes,
+                )
+
+            # Fetch logs from container
+            container_logs = await agent.get_logs(
+                execution.agent_session_reference, tail=tail
+            )
+
+            # Format logs as execution updates (matching the WebSocket format)
+            formatted_logs = []
+            for log_line in container_logs:
+                formatted_logs.append(
+                    {
+                        "execution_id": str(execution_id),
+                        "timestamp": execution.start_time.isoformat(),  # Use start time as fallback
+                        "type": "agent_log_line",
+                        "payload": {"content": log_line},
+                    }
+                )
+
+            return {"logs": formatted_logs, "source": "container"}
+
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Failed to fetch container logs for execution {execution_id}: {e}"
+            )
+            # Fall back to database logs if container logs fail
+            pass
+
+    # For finished executions or if container logs failed, return database logs
+    if execution.execution_logs and isinstance(execution.execution_logs, list):
+        return {"logs": execution.execution_logs, "source": "database"}
+    else:
+        return {"logs": [], "source": "database"}
+
+
 @router.get("/flows/executions/{execution_id}/metrics")
 @require_permission("view_flows")
 def get_flow_execution_metrics(

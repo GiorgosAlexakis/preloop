@@ -79,7 +79,7 @@ def detect_issue_dependencies(
     # 2. Select AI Model
     if request.model_id:
         ai_model = crud_ai_model.get(db, id=request.model_id)
-        if not ai_model or ai_model.account_id != current_user.id:
+        if not ai_model or ai_model.account_id != current_user.account_id:
             raise HTTPException(
                 status_code=404,
                 detail=f"AI Model with ID '{request.model_id}' not found or access denied.",
