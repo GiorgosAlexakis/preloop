@@ -58,7 +58,10 @@ class FlowExecutionOrchestrator:
 
     @staticmethod
     async def send_command(
-        execution_id: str, command: str, payload: Optional[Dict[str, Any]] = None
+        execution_id: str,
+        command: str,
+        payload: Optional[Dict[str, Any]] = None,
+        nats_client: Optional[Client] = None,
     ):
         """
         Send a command to a running flow execution via NATS.
@@ -67,14 +70,27 @@ class FlowExecutionOrchestrator:
             execution_id: ID of the flow execution
             command: Command to send (e.g., 'stop', 'send_message')
             payload: Optional command payload
+            nats_client: Optional NATS client (if not provided, will try to get from app state)
 
         Raises:
             RuntimeError: If NATS client is not available
         """
-        # Get NATS client from app state
-        from spacebridge.api.app import app
+        # If nats_client not provided, try to get it from app state
+        if not nats_client:
+            try:
+                import inspect
 
-        nats_client = getattr(app.state, "nats", None)
+                # Try to find the app instance in the call stack
+                for frame_info in inspect.stack():
+                    frame_locals = frame_info.frame.f_locals
+                    if "request" in frame_locals:
+                        request = frame_locals["request"]
+                        if hasattr(request, "app") and hasattr(request.app, "state"):
+                            nats_client = getattr(request.app.state, "nats", None)
+                            break
+            except Exception:
+                pass
+
         if not nats_client or not nats_client.is_connected:
             raise RuntimeError("NATS client not available or not connected")
 
