@@ -6,6 +6,7 @@ import {
   getFlow,
   sendCommandToExecution,
   getFlowExecutionMetrics,
+  getFlowExecutionLogs,
 } from '../../api';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
@@ -20,6 +21,7 @@ import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
 interface FlowExecutionUpdate {
   execution_id: string;
@@ -209,6 +211,16 @@ export class FlowExecutionView extends LitElement {
 
   private logContainerRef?: HTMLElement;
   private wsConnected = false;
+  private autoScrollInterval?: number;
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Clean up auto-scroll interval when component is removed
+    if (this.autoScrollInterval) {
+      clearInterval(this.autoScrollInterval);
+      this.autoScrollInterval = undefined;
+    }
+  }
 
   async updated(changedProperties: Map<string, any>) {
     super.updated(changedProperties);
@@ -273,6 +285,7 @@ export class FlowExecutionView extends LitElement {
       if (isRunning) {
         this.wsConnected = true;
         this.isAutoScroll = true; // Enable auto-scroll for streaming
+        this.startAutoScrollChecker(); // Start periodic scroll checker
         webSocketService.connectToExecution(
           this.executionId,
           (message: any) => this.handleWebSocketMessage(message),
@@ -296,6 +309,7 @@ export class FlowExecutionView extends LitElement {
           () => {
             console.log('Disconnected from execution WebSocket');
             this.wsConnected = false;
+            this.stopAutoScrollChecker();
           }
         );
       } else {
@@ -303,15 +317,6 @@ export class FlowExecutionView extends LitElement {
           'Execution is finished, not connecting to WebSocket stream'
         );
       }
-    }
-
-    // Auto-scroll to bottom when new log arrives (only during streaming)
-    if (
-      changedProperties.has('logs') &&
-      this.isAutoScroll &&
-      this.wsConnected
-    ) {
-      this.scrollToBottom();
     }
   }
 
@@ -399,31 +404,57 @@ export class FlowExecutionView extends LitElement {
     }
   }
 
-  scrollToBottom() {
-    // Use requestAnimationFrame to ensure DOM has updated
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (this.logContainerRef) {
+  startAutoScrollChecker() {
+    // Clear any existing interval
+    this.stopAutoScrollChecker();
+
+    // Check scroll position every 200ms and force scroll if auto-scroll is enabled
+    this.autoScrollInterval = window.setInterval(() => {
+      if (this.isAutoScroll && this.logContainerRef) {
+        const { scrollTop, scrollHeight, clientHeight } =
+          this.logContainerRef;
+        const isAtBottom = scrollHeight - scrollTop - clientHeight < 10;
+
+        // If not at bottom, force scroll
+        if (!isAtBottom) {
           this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
         }
-      });
-    });
+      }
+    }, 200);
+  }
+
+  stopAutoScrollChecker() {
+    if (this.autoScrollInterval) {
+      clearInterval(this.autoScrollInterval);
+      this.autoScrollInterval = undefined;
+    }
+  }
+
+  scrollToBottom() {
+    if (this.logContainerRef) {
+      this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
+    }
   }
 
   handleScroll() {
-    if (!this.logContainerRef || !this.wsConnected) return;
+    if (!this.logContainerRef) return;
 
     // Check if user scrolled away from bottom
     const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
     const isAtBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
 
-    // Only manage auto-scroll during active streaming
+    // Disable auto-scroll when user manually scrolls away from bottom
     if (!isAtBottom && this.isAutoScroll) {
-      // User manually scrolled away from bottom
+      console.log('User scrolled away from bottom, disabling auto-scroll');
       this.isAutoScroll = false;
     } else if (isAtBottom && !this.isAutoScroll) {
-      // User manually scrolled back to bottom
+      // Re-enable auto-scroll when user scrolls back to bottom
+      console.log('User scrolled to bottom, enabling auto-scroll');
       this.isAutoScroll = true;
+      // Restart the checker if execution is still running
+      if (this.wsConnected) {
+        this.startAutoScrollChecker();
+      }
     }
   }
 
@@ -437,18 +468,33 @@ export class FlowExecutionView extends LitElement {
       // Fetch execution details
       this.execution = await getFlowExecution(this.executionId);
 
-      // Load persisted logs if available
-      if (
-        this.execution &&
-        this.execution.execution_logs &&
-        Array.isArray(this.execution.execution_logs)
-      ) {
-        console.log(
-          `Loaded ${this.execution.execution_logs.length} persisted logs from database`
-        );
-        this.logs = this.execution.execution_logs;
-      } else {
-        console.log('No persisted logs found in execution');
+      // Fetch logs from container (if running) or database (if finished)
+      // This ensures we get all historical logs, even for running executions
+      try {
+        const logsResponse = await getFlowExecutionLogs(this.executionId);
+        if (logsResponse.logs && Array.isArray(logsResponse.logs)) {
+          console.log(
+            `Loaded ${logsResponse.logs.length} logs from ${logsResponse.source}`
+          );
+          this.logs = logsResponse.logs;
+        } else {
+          console.log('No logs found in response');
+        }
+      } catch (error) {
+        console.error('Failed to fetch logs:', error);
+        // Fallback to execution_logs from database if available
+        if (
+          this.execution &&
+          this.execution.execution_logs &&
+          Array.isArray(this.execution.execution_logs)
+        ) {
+          console.log(
+            `Using fallback: Loaded ${this.execution.execution_logs.length} persisted logs from database`
+          );
+          this.logs = this.execution.execution_logs;
+        } else {
+          console.log('No fallback logs available');
+        }
       }
 
       // Fetch flow details
@@ -647,9 +693,13 @@ export class FlowExecutionView extends LitElement {
               </div>
 
               <strong>Started:</strong>
-              <sl-relative-time
-                date=${new Date(this.execution.start_time).toISOString()}
-              ></sl-relative-time>
+              <sl-tooltip
+                content=${this.formatUTCDateTime(this.execution.start_time)}
+              >
+                <sl-relative-time
+                  date=${this.execution.start_time}
+                ></sl-relative-time>
+              </sl-tooltip>
 
               ${this.execution.end_time
                 ? html`
@@ -685,9 +735,13 @@ export class FlowExecutionView extends LitElement {
             </sl-card>
             <sl-card>
               <div slot="header"><sl-icon name="clock"></sl-icon> Started</div>
-              <sl-relative-time
-                date=${new Date(this.execution.start_time).toISOString()}
-              ></sl-relative-time>
+              <sl-tooltip
+                content=${this.formatUTCDateTime(this.execution.start_time)}
+              >
+                <sl-relative-time
+                  date=${this.execution.start_time}
+                ></sl-relative-time>
+              </sl-tooltip>
             </sl-card>
             <sl-card>
               <div slot="header">
@@ -971,8 +1025,46 @@ ${log.payload.content}</pre
   }
 
   async stopExecution() {
-    if (this.executionId) {
+    if (!this.executionId) return;
+
+    try {
+      // Send stop command to backend (which stops the container directly)
       await sendCommandToExecution(this.executionId, 'stop');
+
+      // Wait a moment for the container to stop
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Refresh execution details to get updated status
+      this.execution = await getFlowExecution(this.executionId);
+
+      // Fetch final logs from the stopped container
+      try {
+        const logsResponse = await getFlowExecutionLogs(this.executionId);
+        if (logsResponse.logs && Array.isArray(logsResponse.logs)) {
+          this.logs = logsResponse.logs;
+          console.log(
+            `Loaded ${logsResponse.logs.length} logs after stop from ${logsResponse.source}`
+          );
+        }
+      } catch (error) {
+        console.error('Failed to fetch logs after stop:', error);
+      }
+
+      // Disconnect from WebSocket since execution is now stopped
+      if (this.wsConnected) {
+        webSocketService.disconnectFromExecution(this.executionId);
+        this.wsConnected = false;
+      }
+
+      // Stop auto-scroll checker
+      this.stopAutoScrollChecker();
+      this.isAutoScroll = false;
+
+      // Force UI update
+      this.requestUpdate();
+    } catch (error) {
+      console.error('Failed to stop execution:', error);
+      // TODO: Show error notification to user
     }
   }
 
@@ -1000,5 +1092,20 @@ ${log.payload.content}</pre
     if (hours > 0) return `${hours}h ${minutes % 60}m`;
     if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
     return `${seconds}s`;
+  }
+
+  formatUTCDateTime(dateTimeString: string): string {
+    // Parse the datetime string and format it as UTC
+    const date = new Date(dateTimeString);
+
+    // Format as: "YYYY-MM-DD HH:MM:SS UTC"
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} UTC`;
   }
 }

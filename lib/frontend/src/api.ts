@@ -622,6 +622,22 @@ export async function getFlowExecutionMetrics(executionId: string): Promise<{
   return response.json();
 }
 
+export async function getFlowExecutionLogs(
+  executionId: string,
+  tail: number = 1000
+): Promise<{
+  logs: any[];
+  source: 'container' | 'database';
+}> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}/logs?tail=${tail}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch execution logs');
+  }
+  return response.json();
+}
+
 export async function triggerFlowExecution(
   flowId: string,
   triggerEventData?: Record<string, any>
