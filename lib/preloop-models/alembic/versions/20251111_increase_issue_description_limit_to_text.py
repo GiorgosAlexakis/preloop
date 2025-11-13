@@ -10,6 +10,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -30,6 +31,14 @@ def upgrade() -> None:
         existing_nullable=True,
     )
 
+    # Upgrade schema - add context_data column to api_key table.
+    op.add_column(
+        "api_key",
+        sa.Column(
+            "context_data", postgresql.JSON(astext_type=sa.Text()), nullable=True
+        ),
+    )
+
 
 def downgrade() -> None:
     """Downgrade schema - change issue.description from TEXT back to VARCHAR(5000)."""
@@ -41,3 +50,5 @@ def downgrade() -> None:
         existing_type=sa.Text(),
         existing_nullable=True,
     )
+    # Downgrade schema - remove context_data column from api_key table.
+    op.drop_column("api_key", "context_data")
