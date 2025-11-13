@@ -1,5 +1,5 @@
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Any
 
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
@@ -97,6 +97,18 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
         """Initialize with the FlowExecution model."""
         super().__init__(model=FlowExecution)
 
+    def get(
+        self, db: Session, id: Any, *, account_id: Optional[str] = None
+    ) -> Optional[FlowExecution]:
+        """Get flow execution by ID.
+
+        Overrides base get to properly filter by account_id through Flow relationship.
+        """
+        query = db.query(FlowExecution).filter(FlowExecution.id == id)
+        if account_id:
+            query = query.join(Flow).filter(Flow.account_id == account_id)
+        return query.first()
+
     def create(self, db: Session, obj_in: FlowExecutionCreate) -> FlowExecution:
         """Create a new flow execution (synchronous)."""
         db_obj = FlowExecution(**obj_in.model_dump())
@@ -130,6 +142,35 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
         )
         if account_id:
             query = query.join(Flow).filter(Flow.account_id == account_id)
+        return query.offset(skip).limit(limit).all()
+
+    def get_multi(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        account_id: Optional[str] = None,
+        **filters,
+    ) -> List[FlowExecution]:
+        """Get multiple flow executions with optional filtering.
+
+        Overrides base get_multi to properly filter by account_id through Flow relationship.
+        """
+        query = db.query(FlowExecution)
+
+        # Filter by account_id through the Flow relationship
+        if account_id:
+            query = query.join(Flow).filter(Flow.account_id == account_id)
+
+        # Apply any additional filters
+        for key, value in filters.items():
+            if hasattr(FlowExecution, key):
+                query = query.filter(getattr(FlowExecution, key) == value)
+
+        # Order by start_time descending (most recent first)
+        query = query.order_by(FlowExecution.start_time.desc())
+
         return query.offset(skip).limit(limit).all()
 
     def get_by_statuses(
