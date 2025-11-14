@@ -143,6 +143,7 @@ def extract_filter_fields(
     Returns a dictionary with standardized fields that can be used in trigger_config:
     - author: Username of the person who created the issue/PR
     - assignee: Username of the assigned person (or list of usernames)
+    - reviewer: Username of requested reviewer (or list of usernames) for PRs/MRs
     - labels: List of label names
     - milestone: Milestone name
     - priority: Priority level (for Jira)
@@ -194,6 +195,11 @@ def extract_filter_fields(
 
         # Merge Request specific fields
         if "merge_request" in payload.get("object_kind", ""):
+            # Reviewers (for merge requests)
+            reviewers = payload.get("reviewers", [])
+            if reviewers:
+                filter_fields["reviewer"] = [r.get("username") for r in reviewers]
+
             # Check if MR is merged
             filter_fields["merged"] = (
                 obj_attrs.get("merge_status") == "merged"
@@ -256,6 +262,13 @@ def extract_filter_fields(
             assignees = pr.get("assignees", [])
             if assignees:
                 filter_fields["assignee"] = [a.get("login") for a in assignees]
+
+            # Reviewers (requested reviewers for pull requests)
+            requested_reviewers = pr.get("requested_reviewers", [])
+            if requested_reviewers:
+                filter_fields["reviewer"] = [
+                    r.get("login") for r in requested_reviewers
+                ]
 
             # Labels
             labels = pr.get("labels", [])
