@@ -411,8 +411,7 @@ export class FlowExecutionView extends LitElement {
     // Check scroll position every 200ms and force scroll if auto-scroll is enabled
     this.autoScrollInterval = window.setInterval(() => {
       if (this.isAutoScroll && this.logContainerRef) {
-        const { scrollTop, scrollHeight, clientHeight } =
-          this.logContainerRef;
+        const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
         const isAtBottom = scrollHeight - scrollTop - clientHeight < 10;
 
         // If not at bottom, force scroll

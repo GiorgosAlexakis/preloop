@@ -2264,6 +2264,31 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                   help-text="Filter by assignee (matches if any assignee matches)"
                 ></sl-input>
 
+                <!-- Reviewer filter (PR/MR only) -->
+                ${isMREvent
+                  ? html`
+                      <sl-input
+                        label="${tracker.tracker_type === 'gitlab'
+                          ? 'Reviewer (username)'
+                          : 'Requested Reviewer (username)'}"
+                        placeholder="e.g., jane_smith"
+                        .value=${this.flow.trigger_config?.reviewer || ''}
+                        @sl-input=${(e: any) => {
+                          if (!this.flow.trigger_config)
+                            this.flow.trigger_config = {};
+                          const value = e.target.value.trim();
+                          if (value) {
+                            this.flow.trigger_config.reviewer = value;
+                          } else {
+                            delete this.flow.trigger_config.reviewer;
+                          }
+                          this.requestUpdate();
+                        }}
+                        help-text="Filter by reviewer (matches if any reviewer matches)"
+                      ></sl-input>
+                    `
+                  : ''}
+
                 <!-- Labels filter -->
                 <sl-input
                   label="Labels (comma-separated)"
