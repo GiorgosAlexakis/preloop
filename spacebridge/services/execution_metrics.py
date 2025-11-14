@@ -114,13 +114,25 @@ class ExecutionMetricsService:
                 if isinstance(log, dict):
                     # Check payload for log messages
                     if "payload" in log and isinstance(log["payload"], dict):
-                        message = log["payload"].get("message", "")
-                        logs_text += str(message) + "\n"
+                        payload = log["payload"]
+
+                        # Check for content (used by agent_log_line type)
+                        if "content" in payload:
+                            logs_text += str(payload["content"]) + "\n"
+
+                        # Check for message (used by other log types)
+                        if "message" in payload:
+                            logs_text += str(payload["message"]) + "\n"
+
+                        # Also check line (alternative format)
+                        if "line" in payload:
+                            logs_text += str(payload["line"]) + "\n"
+
                         # Also check stdout/stderr
-                        if "stdout" in log["payload"]:
-                            logs_text += str(log["payload"]["stdout"]) + "\n"
-                        if "stderr" in log["payload"]:
-                            logs_text += str(log["payload"]["stderr"]) + "\n"
+                        if "stdout" in payload:
+                            logs_text += str(payload["stdout"]) + "\n"
+                        if "stderr" in payload:
+                            logs_text += str(payload["stderr"]) + "\n"
 
         # Find all token usage mentions
         matches = re.findall(pattern, logs_text, re.IGNORECASE | re.MULTILINE)
