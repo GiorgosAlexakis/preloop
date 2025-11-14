@@ -581,13 +581,16 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
             allowed_mcp_tools = api_key.context_data.get("allowed_mcp_tools", [])
             if allowed_mcp_tools:
                 # Extract tool names from the allowed_mcp_tools list
-                # This could be a list of strings or a list of dicts with "name" key
+                # This could be a list of strings or a list of dicts with "name" or "tool_name" key
                 allowed_flow_tools = []
                 for tool in allowed_mcp_tools:
                     if isinstance(tool, str):
                         allowed_flow_tools.append(tool)
-                    elif isinstance(tool, dict) and "name" in tool:
-                        allowed_flow_tools.append(tool["name"])
+                    elif isinstance(tool, dict):
+                        # Support both "tool_name" (from DB schema) and "name" (legacy)
+                        tool_name = tool.get("tool_name") or tool.get("name")
+                        if tool_name:
+                            allowed_flow_tools.append(tool_name)
 
                 logger.info(
                     f"Flow execution context: execution_id={flow_execution_id}, "
