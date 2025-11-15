@@ -906,12 +906,38 @@ class FlowExecutionOrchestrator:
                     await agent_executor.stop(session_reference)
                     await self._publish_update("user_stopped", {"elapsed": elapsed})
                     break
-                status = await agent_executor.get_status(session_reference)
 
-                # Publish status update
-                await self._publish_update(
-                    "agent_status", {"status": status.value, "elapsed": elapsed}
-                )
+                # Get status with error handling
+                try:
+                    status = await agent_executor.get_status(session_reference)
+                    logger.debug(f"Agent status at {elapsed}s: {status.value}")
+                except Exception as status_error:
+                    logger.error(
+                        f"Error getting agent status at {elapsed}s: {status_error}",
+                        exc_info=True,
+                    )
+                    # Retry once after a short delay
+                    await asyncio.sleep(2)
+                    try:
+                        status = await agent_executor.get_status(session_reference)
+                        logger.info(f"Status check recovered: {status.value}")
+                    except Exception as retry_error:
+                        logger.error(
+                            f"Status check retry failed: {retry_error}",
+                            exc_info=True,
+                        )
+                        # Continue polling - don't fail the whole execution
+                        await asyncio.sleep(poll_interval)
+                        elapsed += poll_interval
+                        continue
+
+                # Publish status update (best effort - don't fail if NATS is down)
+                try:
+                    await self._publish_update(
+                        "agent_status", {"status": status.value, "elapsed": elapsed}
+                    )
+                except Exception as publish_error:
+                    logger.warning(f"Failed to publish status update: {publish_error}")
 
                 if status in (
                     AgentStatus.SUCCEEDED,
@@ -919,6 +945,9 @@ class FlowExecutionOrchestrator:
                     AgentStatus.STOPPED,
                 ):
                     # Agent finished, get final result
+                    logger.info(
+                        f"Agent finished with status {status.value} at {elapsed}s"
+                    )
                     result = await agent_executor.get_result(session_reference)
 
                     self.execution_logger.log_milestone(

@@ -92,18 +92,18 @@ async def require_approval(
                     from spacemodels.schemas.tool_configuration import (
                         ToolConfigurationCreate,
                     )
-                    import uuid
 
                     # Create and persist a minimal tool config
                     config_create = ToolConfigurationCreate(
                         tool_name=tool_name,
                         tool_source=tool_source,
+                        account_id=account_id,
                         approval_policy_id=policy_id,
                         is_enabled=True,
-                        configuration={},
+                        custom_config={},
                     )
                     config = await create_tool_configuration_async(
-                        db, obj_in=config_create, account_id=uuid.UUID(account_id)
+                        db, obj_in=config_create, account_id=account_id
                     )
                     logger.info(f"Created tool configuration {config.id} for approval")
             else:
