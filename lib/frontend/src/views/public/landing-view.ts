@@ -958,35 +958,35 @@ export class LandingView extends LitElement {
             <div class="tool-logos">
               <sl-tooltip content="GitHub">
                 <img
-                  src="images/logos/github-mark-white.svg"
+                  src="/images/logos/github-mark-white.svg"
                   alt="GitHub Logo"
                   class="github-logo tool-logo"
                 />
               </sl-tooltip>
               <sl-tooltip content="GitLab">
                 <img
-                  src="images/logos/gitlab-logo-700-rgb.svg"
+                  src="/images/logos/gitlab-logo-700-rgb.svg"
                   alt="GitLab Logo"
                   class="gitlab-logo tool-logo"
                 />
               </sl-tooltip>
               <sl-tooltip content="Jira">
                 <img
-                  src="images/logos/jira.webp"
+                  src="/images/logos/jira.webp"
                   alt="Jira Logo"
                   class="jira-logo tool-logo"
                 />
               </sl-tooltip>
               <sl-tooltip content="Slack">
                 <img
-                  src="images/logos/slack-logo.svg"
+                  src="/images/logos/slack-logo.svg"
                   alt="Slack Logo"
                   class="slack-logo tool-logo"
                 />
               </sl-tooltip>
               <sl-tooltip content="Microsoft Teams">
                 <img
-                  src="images/logos/teams-logo.svg"
+                  src="/images/logos/teams-logo.svg"
                   alt="Microsoft Teams Logo"
                   class="teams-logo tool-logo"
                 />

@@ -1045,6 +1045,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
               `}
           <sl-textarea
             label="Prompt"
+            resize="auto"
             .value=${this.flow.prompt_template || ''}
             @sl-input=${(e: Event) =>
               this.handleInputChange('prompt_template', e)}
