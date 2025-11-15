@@ -408,6 +408,10 @@ export class FlowExecutionView extends LitElement {
     // Clear any existing interval
     this.stopAutoScrollChecker();
 
+    this.logContainerRef = this.shadowRoot?.querySelector(
+      '.log-container'
+    ) as HTMLElement;
+    this.logContainerRef.addEventListener('scroll', () => this.handleScroll());
     // Check scroll position every 200ms and force scroll if auto-scroll is enabled
     this.autoScrollInterval = window.setInterval(() => {
       if (this.isAutoScroll && this.logContainerRef) {
@@ -416,7 +420,22 @@ export class FlowExecutionView extends LitElement {
 
         // If not at bottom, force scroll
         if (!isAtBottom) {
+          console.log(
+            'Forcing scroll to bottom for container',
+            this.logContainerRef
+          );
           this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
+        } else {
+          console.log(
+            'Already at bottom for container',
+            this.logContainerRef,
+            'scrollTop',
+            scrollTop,
+            'scrollHeight',
+            scrollHeight,
+            'clientHeight',
+            clientHeight
+          );
         }
       }
     }, 200);
@@ -806,17 +825,7 @@ export class FlowExecutionView extends LitElement {
                 : ''}
             </div>
 
-            <div
-              class="log-container"
-              ${(el: Element) => {
-                this.logContainerRef = el as HTMLElement;
-                if (this.logContainerRef) {
-                  this.logContainerRef.addEventListener('scroll', () =>
-                    this.handleScroll()
-                  );
-                }
-              }}
-            >
+            <div class="log-container">
               ${this.logs.length === 0
                 ? html`
                     <div class="empty-logs">
