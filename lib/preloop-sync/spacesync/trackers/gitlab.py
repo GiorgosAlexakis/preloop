@@ -491,10 +491,10 @@ class GitLabTracker(BaseTracker):
         return self._parse_gitlab_issue(issue)
 
     async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
-        """Add a comment to a GitLab issue.
+        """Add a comment to a GitLab issue or merge request.
 
         Args:
-            issue_id: Issue IID or ID.
+            issue_id: Issue IID or MR IID.
             comment: Comment text.
 
         Returns:
@@ -504,21 +504,37 @@ class GitLabTracker(BaseTracker):
         if not project_id:
             raise TrackerResponseError("Project ID not found in connection details")
 
-        # Extract issue IID from various formats
-        issue_iid = issue_id
+        # Extract IID from various formats
+        iid = issue_id
         if "#" in issue_id:
-            issue_iid = issue_id.split("#")[-1]
-        if "/" in issue_iid:
-            issue_iid = issue_iid.split("/")[-1]
+            iid = issue_id.split("#")[-1]
+        if "/" in iid:
+            iid = iid.split("/")[-1]
 
         project = await self._make_request(self.gl.projects.get, project_id)
-        issue = await self._make_request(project.issues.get, issue_iid)
+
+        # Try to get as merge request first, fall back to issue
+        resource = None
+        resource_type = "issue"
+        try:
+            resource = await self._make_request(project.mergerequests.get, iid)
+            resource_type = "merge_request"
+        except Exception:
+            # Not a merge request, try as issue
+            try:
+                resource = await self._make_request(project.issues.get, iid)
+                resource_type = "issue"
+            except Exception as e:
+                raise TrackerResponseError(
+                    f"Could not find issue or merge request with IID {iid}: {e}"
+                )
 
         # Create the comment (note)
         note_dict = {"body": comment}
-        note = await self._make_request(issue.notes.create, note_dict)
+        note = await self._make_request(resource.notes.create, note_dict)
 
         # Parse and return the comment
+        url_fragment = "issues" if resource_type == "issue" else "merge_requests"
         return IssueComment(
             id=str(note.id),
             body=note.body,
@@ -530,7 +546,7 @@ class GitLabTracker(BaseTracker):
                 email=None,
                 avatar_url=note.author.get("avatar_url"),
             ),
-            url=f"{project.web_url}/-/issues/{issue_iid}#note_{note.id}",
+            url=f"{project.web_url}/-/{url_fragment}/{iid}#note_{note.id}",
         )
 
     async def add_relation(
