@@ -293,6 +293,30 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Skipping execution monitor (TESTING mode)")
 
+    # Recover orphaned flow executions (skip in testing mode)
+    recovery_service = None
+    if os.getenv("TESTING") != "true":
+        from spacebridge.services.execution_recovery import get_recovery_service
+
+        recovery_service = get_recovery_service()
+        logger.info("Checking for orphaned flow executions to recover...")
+        try:
+            # Get a database session for recovery
+            db = next(get_db_session())
+            try:
+                recovered_count = await recovery_service.recover_orphaned_executions(db)
+                if recovered_count > 0:
+                    logger.info(f"Recovered {recovered_count} orphaned execution(s)")
+                else:
+                    logger.info("No orphaned executions found")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error recovering orphaned executions: {e}", exc_info=True)
+            # Don't fail startup - continue anyway
+    else:
+        logger.info("Skipping execution recovery (TESTING mode)")
+
     # Start MCP server lifespan (skip in testing mode)
     mcp_lifespan = None
     if os.getenv("TESTING") != "true":
@@ -325,6 +349,20 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown logic
+
+    # Wait for in-flight flow executions to complete (skip in testing mode)
+    if os.getenv("TESTING") != "true" and recovery_service:
+        logger.info("Waiting for in-flight flow executions to complete...")
+        try:
+            # Wait up to 5 minutes for recovery tasks to complete
+            await recovery_service.wait_for_completion(timeout=300)
+            logger.info("All in-flight executions completed or timed out.")
+        except Exception as e:
+            logger.error(
+                f"Error waiting for executions to complete: {e}", exc_info=True
+            )
+    else:
+        logger.info("Skipping execution wait (TESTING mode)")
 
     # Shutdown plugin system (skip in testing mode)
     if os.getenv("TESTING") != "true" and plugin_manager:
