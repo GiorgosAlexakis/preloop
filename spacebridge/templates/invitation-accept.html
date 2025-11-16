@@ -286,10 +286,21 @@
                 alert.variant = 'danger';
                 alert.closable = true;
                 alert.duration = 5000;
-                alert.innerHTML = `
-                    <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-                    <strong>Error:</strong> ${error.message}
-                `;
+
+                // Create structured content to prevent XSS
+                const icon = document.createElement('sl-icon');
+                icon.setAttribute('slot', 'icon');
+                icon.setAttribute('name', 'exclamation-octagon');
+
+                const strong = document.createElement('strong');
+                strong.textContent = 'Error: ';
+
+                const messageText = document.createTextNode(error.message);
+
+                alert.appendChild(icon);
+                alert.appendChild(strong);
+                alert.appendChild(messageText);
+
                 document.querySelector('.container').prepend(alert);
                 alert.toast();
                 button.loading = false;

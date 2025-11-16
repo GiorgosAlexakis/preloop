@@ -146,10 +146,9 @@ class ExecutionRecoveryService:
                     os.getenv("USE_KUBERNETES_FOR_AGENTS", "false").lower() == "true"
                 )
 
+                # CodexAgent auto-detects Kubernetes environment, no need to pass use_kubernetes
                 if flow.agent_type == "codex":
-                    agent_executor = CodexAgent(
-                        config={}, use_kubernetes=use_kubernetes
-                    )
+                    agent_executor = CodexAgent(config={})
                 else:
                     agent_executor = ContainerAgentExecutor(
                         agent_type=flow.agent_type,

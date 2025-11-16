@@ -849,6 +849,14 @@ class TestFlowExecutionOrchestrator:
         mock_executor.start = AsyncMock(return_value="session-123")
         mock_executor.get_status = AsyncMock(side_effect=Exception("Monitoring error"))
         mock_executor.stop = AsyncMock()
+        mock_executor.cleanup = AsyncMock()
+
+        # Mock stream_logs to return empty async iterator
+        async def empty_logs(session_ref):
+            if False:  # Never executes, but makes this an async generator
+                yield
+
+        mock_executor.stream_logs = empty_logs
 
         with patch(
             "spacebridge.services.flow_orchestrator.create_agent_executor",

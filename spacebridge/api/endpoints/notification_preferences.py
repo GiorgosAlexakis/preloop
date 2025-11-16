@@ -137,6 +137,7 @@ async def unregister_mobile_device(
 
 @router.get("/me/qr-code", response_model=QRCodeResponse)
 async def get_registration_qr_code(
+    db: Session = Depends(get_db_session),
     current_user: models.User = Depends(get_current_active_user),
 ) -> dict:
     """Generate a QR code for mobile device registration.
@@ -147,6 +148,7 @@ async def get_registration_qr_code(
     api_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000")
 
     qr_data = generate_registration_token(
+        db=db,
         user_id=current_user.id,
         api_url=api_url,
         expiry_minutes=15,
@@ -184,7 +186,7 @@ async def register_device_via_token(
     from spacemodels.crud import crud_user
 
     # Validate token
-    user_id = validate_registration_token(token)
+    user_id = validate_registration_token(db, token)
 
     if not user_id:
         raise HTTPException(
@@ -257,7 +259,9 @@ async def register_device_via_token(
 
 
 @router.get("/register-device", response_class=HTMLResponse, include_in_schema=False)
-async def register_device_landing_page(request: Request, token: str) -> str:
+async def register_device_landing_page(
+    request: Request, token: str, db: Session = Depends(get_db_session)
+) -> str:
     """Landing page for device registration deep link.
 
     This endpoint serves as the universal link target for QR code scanning.
@@ -293,7 +297,7 @@ async def register_device_landing_page(request: Request, token: str) -> str:
 
     # Check if token is valid (just for messaging - don't consume it yet)
     # The app will consume it when it registers
-    is_valid_token = check_token_validity(token)
+    is_valid_token = check_token_validity(db, token)
 
     if not is_valid_token:
         # Token expired or invalid

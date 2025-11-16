@@ -425,7 +425,9 @@ class FlowExecutionOrchestrator:
                     # Inject credentials into URL
                     repo_url = self._inject_credentials_into_url(repo_url, credentials)
 
-            clone_cmd = f"git clone{branch_arg} {repo_url} {full_clone_path}"
+            clone_cmd = (
+                f"git clone --recursive{branch_arg} {repo_url} {full_clone_path}"
+            )
 
             logger.info(f"Executing git clone to {full_clone_path}")
 
@@ -724,6 +726,11 @@ class FlowExecutionOrchestrator:
         """
         logger.info(f"Starting log streaming for {session_reference}")
         log_count = 0
+        total_tokens = 0
+        tool_calls_count = 0
+
+        # Track previous line for token parsing (tokens used pattern spans 2 lines)
+        previous_line = ""
 
         try:
             async for log_line in agent_executor.stream_logs(session_reference):
@@ -733,10 +740,48 @@ class FlowExecutionOrchestrator:
                 # Store the log line for later summary
                 self.execution_logger.log_agent_output(log_line)
 
-                # Parse log line for structured data
+                # Parse log line for structured data (includes tool call detection)
                 self.execution_logger.parse_agent_logs([log_line])
 
-                # Publish to NATS
+                # Check for token usage pattern: "tokens used" followed by number on next line
+                if "tokens used" in previous_line.lower():
+                    # Try to extract token count from current line
+                    import re
+
+                    # Pattern: number with optional commas (e.g., "1,234" or "1234")
+                    token_match = re.search(r"(\d{1,3}(?:,\d{3})*)", log_line.strip())
+                    if token_match:
+                        tokens = int(token_match.group(1).replace(",", ""))
+                        total_tokens += tokens
+                        logger.info(
+                            f"Detected token usage: {tokens} tokens (total: {total_tokens})"
+                        )
+
+                        # Emit token usage update
+                        await self._publish_update(
+                            "token_usage_update",
+                            {
+                                "total_tokens": total_tokens,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            },
+                        )
+
+                # Check if this log line indicates a tool call was detected
+                previous_tool_calls_count = len(self.execution_logger.mcp_usage_logs)
+                if previous_tool_calls_count > tool_calls_count:
+                    tool_calls_count = previous_tool_calls_count
+                    logger.info(f"Tool call detected (total: {tool_calls_count})")
+
+                    # Emit tool call count update
+                    await self._publish_update(
+                        "tool_calls_update",
+                        {
+                            "tool_calls": tool_calls_count,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+
+                # Publish log line to NATS
                 await self._publish_update(
                     "agent_log_line",
                     {
@@ -745,7 +790,12 @@ class FlowExecutionOrchestrator:
                     },
                 )
 
-            logger.info(f"Log streaming completed. Total logs streamed: {log_count}")
+                # Update previous line for next iteration
+                previous_line = log_line
+
+            logger.info(
+                f"Log streaming completed. Total logs streamed: {log_count}, tokens: {total_tokens}, tool calls: {tool_calls_count}"
+            )
 
         except asyncio.CancelledError:
             logger.info(f"Log streaming cancelled for {session_reference}")
@@ -896,6 +946,10 @@ class FlowExecutionOrchestrator:
             max_wait_time = 3600  # 1 hour max execution time
             poll_interval = 5  # Check status every 5 seconds
             elapsed = 0
+            consecutive_failures = 0
+            max_consecutive_failures = (
+                3  # Fail after 3 consecutive status check failures
+            )
 
             while elapsed < max_wait_time:
                 # Check if user requested stop
@@ -911,6 +965,7 @@ class FlowExecutionOrchestrator:
                 try:
                     status = await agent_executor.get_status(session_reference)
                     logger.debug(f"Agent status at {elapsed}s: {status.value}")
+                    consecutive_failures = 0  # Reset failure counter on success
                 except Exception as status_error:
                     logger.error(
                         f"Error getting agent status at {elapsed}s: {status_error}",
@@ -921,12 +976,31 @@ class FlowExecutionOrchestrator:
                     try:
                         status = await agent_executor.get_status(session_reference)
                         logger.info(f"Status check recovered: {status.value}")
+                        consecutive_failures = 0  # Reset on successful retry
                     except Exception as retry_error:
                         logger.error(
                             f"Status check retry failed: {retry_error}",
                             exc_info=True,
                         )
-                        # Continue polling - don't fail the whole execution
+                        consecutive_failures += 1
+
+                        # Fail execution if too many consecutive failures
+                        if consecutive_failures >= max_consecutive_failures:
+                            logger.error(
+                                f"Agent monitoring failed after {consecutive_failures} consecutive failures"
+                            )
+                            self.execution_logger.log_milestone(
+                                "agent_monitoring_failed",
+                                {"consecutive_failures": consecutive_failures},
+                            )
+                            return {
+                                "status": "FAILED",
+                                "error_message": f"Monitoring error: {str(retry_error)}",
+                                "actions_taken": self.execution_logger.get_actions_taken(),
+                                "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
+                            }
+
+                        # Continue polling for transient errors
                         await asyncio.sleep(poll_interval)
                         elapsed += poll_interval
                         continue

@@ -690,7 +690,6 @@ async def _process_single_issue_estimate(
             db=db,
             current_user=current_user,
             settings=settings,
-            billing_service=billing_service,
         )
 
         return ProcessingResult(
@@ -744,7 +743,6 @@ async def _process_single_issue_compliance(
             db=db,
             current_user=current_user,
             settings=settings,
-            billing_service=billing_service,
         )
 
         # Create suggested update

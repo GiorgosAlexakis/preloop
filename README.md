@@ -264,8 +264,13 @@ SpaceBridge provides a RESTful API with the following key endpoints:
 - `POST /api/v1/approval-policies` - Create approval policy
 - `PUT /api/v1/approval-policies/{id}` - Update approval policy
 - `DELETE /api/v1/approval-policies/{id}` - Delete approval policy
-- `GET /api/v1/approval-requests` - List approval requests
-- `POST /api/v1/public/approval/{id}/respond` - Respond to approval request (public endpoint)
+- `GET /api/v1/approval-requests` - List approval requests (authenticated)
+- `GET /api/v1/approval-requests/{request_id}` - Get approval request details (authenticated)
+- `POST /api/v1/approval-requests/{request_id}/approve` - Approve request (authenticated)
+- `POST /api/v1/approval-requests/{request_id}/decline` - Decline request (authenticated)
+- `POST /api/v1/approval-requests/{request_id}/decide` - Approve or decline request (authenticated)
+- `GET /approval/{request_id}/data?token={token}` - Get approval request details (public, token-based)
+- `POST /approval/{request_id}/decide?token={token}` - Approve or decline approval request (public, token-based)
 
 ### Flows
 - `GET /api/v1/flows` - List flows

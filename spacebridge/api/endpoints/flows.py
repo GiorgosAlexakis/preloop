@@ -216,8 +216,9 @@ async def get_flow_execution_logs(
 
             # Create agent executor to access logs
             # Note: We don't need the full agent config, just need the get_logs method
+            # CodexAgent auto-detects Kubernetes environment, no need to pass use_kubernetes
             if flow.agent_type == "codex":
-                agent = CodexAgent(config={}, use_kubernetes=use_kubernetes)
+                agent = CodexAgent(config={})
             else:
                 agent = ContainerAgentExecutor(
                     agent_type=flow.agent_type,
@@ -234,10 +235,16 @@ async def get_flow_execution_logs(
             # Format logs as execution updates (matching the WebSocket format)
             formatted_logs = []
             for log_line in container_logs:
+                # Use start_time if available, otherwise use current time
+                timestamp = (
+                    execution.start_time.isoformat()
+                    if execution.start_time
+                    else execution.created_at.isoformat()
+                )
                 formatted_logs.append(
                     {
                         "execution_id": str(execution_id),
-                        "timestamp": execution.start_time.isoformat(),  # Use start time as fallback
+                        "timestamp": timestamp,
                         "type": "agent_log_line",
                         "payload": {"content": log_line},
                     }
@@ -319,10 +326,13 @@ async def send_execution_command(
     current_user: User = Depends(get_current_active_user),
 ):
     """Send a command to a running flow execution."""
+    import logging
     from datetime import datetime, timezone
     from spacebridge.agents.container import ContainerAgentExecutor
     from spacebridge.agents.codex import CodexAgent
     import os
+
+    logger = logging.getLogger(__name__)
 
     # Verify execution exists and user has access
     execution = crud_flow_execution.get(
@@ -352,8 +362,9 @@ async def send_execution_command(
                     )
 
                     # Create agent executor to fetch logs and stop the container
+                    # CodexAgent auto-detects Kubernetes environment, no need to pass use_kubernetes
                     if flow.agent_type == "codex":
-                        agent = CodexAgent(config={}, use_kubernetes=use_kubernetes)
+                        agent = CodexAgent(config={})
                     else:
                         agent = ContainerAgentExecutor(
                             agent_type=flow.agent_type,

@@ -133,8 +133,9 @@ class FlowTriggerService:
             )
 
             if not matching_flows:
-                logger.debug(
-                    f"No flows found matching source='{event_source}', type='{event_type}'"
+                logger.warning(
+                    f"No flows found matching source='{event_source}', type='{event_type}', account_id={account_id}. "
+                    f"Check that flows are configured with the correct tracker ID as trigger_event_source."
                 )
                 return
 

@@ -62,18 +62,25 @@ class TestSendEmail:
     @patch("spacebridge.utils.email.smtplib.SMTP")
     @patch("spacebridge.utils.email.SMTP_USERNAME", "")
     @patch("spacebridge.utils.email.SMTP_PASSWORD", "")
-    def test_send_email_no_credentials_does_not_send(self, mock_smtp):
-        """Test that email raises EmailError when credentials are missing."""
-        with pytest.raises(EmailError) as exc_info:
-            send_email(
-                to_email="recipient@example.com",
-                subject="Test Subject",
-                body_text="Test body",
-            )
+    def test_send_email_no_credentials_does_not_send(self, mock_smtp, caplog):
+        """Test that email logs warning and returns gracefully when credentials are missing."""
+
+        # Call should succeed without raising
+        send_email(
+            to_email="recipient@example.com",
+            subject="Test Subject",
+            body_text="Test body",
+        )
 
         # Verify SMTP connection was never attempted
         mock_smtp.assert_not_called()
-        assert "SMTP credentials not configured" in str(exc_info.value)
+
+        # Verify warning was logged
+        assert any(
+            "SMTP credentials not configured" in record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        )
 
     @patch("spacebridge.utils.email.smtplib.SMTP")
     @patch("spacebridge.utils.email.SMTP_USERNAME", "test@example.com")
@@ -493,39 +500,52 @@ class TestSendProductNotificationEmail:
     @patch("spacebridge.utils.email.send_email")
     @patch("spacebridge.utils.email.settings")
     async def test_send_product_notification_email_raises_on_error(
-        self, mock_settings, mock_send_email
+        self, mock_settings, mock_send_email, caplog
     ):
-        """Test that EmailError is raised when send_email fails."""
+        """Test that EmailError is logged but not raised when send_email fails."""
         mock_settings.product_team_email = "team@example.com"
         mock_send_email.side_effect = EmailError("SMTP failed")
 
         user_data = {"username": "testuser"}
 
-        with pytest.raises(EmailError) as exc_info:
-            await send_product_notification_email(
-                user_data=user_data, tracker_data=None, source_ip="192.168.1.1"
-            )
+        # Should not raise - errors are logged but not raised to avoid breaking flows
+        await send_product_notification_email(
+            user_data=user_data, tracker_data=None, source_ip="192.168.1.1"
+        )
 
-        assert "SMTP failed" in str(exc_info.value)
+        # Verify warning was logged
+        assert any(
+            "Failed to send product notification email" in record.message
+            and "SMTP failed" in record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        )
 
     @pytest.mark.asyncio
     @patch("spacebridge.utils.email.send_email")
     @patch("spacebridge.utils.email.settings")
     async def test_send_product_notification_email_wraps_unexpected_errors(
-        self, mock_settings, mock_send_email
+        self, mock_settings, mock_send_email, caplog
     ):
-        """Test that unexpected errors are wrapped in EmailError."""
+        """Test that unexpected errors are logged but not raised."""
         mock_settings.product_team_email = "team@example.com"
         mock_send_email.side_effect = RuntimeError("Unexpected error")
 
         user_data = {"username": "testuser"}
 
-        with pytest.raises(EmailError) as exc_info:
-            await send_product_notification_email(
-                user_data=user_data, tracker_data=None, source_ip="192.168.1.1"
-            )
+        # Should not raise - errors are logged but not raised to avoid breaking flows
+        await send_product_notification_email(
+            user_data=user_data, tracker_data=None, source_ip="192.168.1.1"
+        )
 
-        assert "An unexpected error occurred" in str(exc_info.value)
+        # Verify error was logged
+        assert any(
+            "An unexpected error occurred while sending product notification email"
+            in record.message
+            and "Unexpected error" in record.message
+            for record in caplog.records
+            if record.levelname == "ERROR"
+        )
 
 
 class TestEmailError:

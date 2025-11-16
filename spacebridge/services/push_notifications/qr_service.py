@@ -1,18 +1,18 @@
 """QR code service for mobile device registration."""
 
-import secrets
 import uuid
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import timezone
+
+from sqlalchemy.orm import Session
+from spacemodels.crud import crud_registration_token
 
 logger = logging.getLogger(__name__)
 
-# In-memory token store (TODO: move to Redis for production)
-_registration_tokens: Dict[str, Dict[str, Any]] = {}
-
 
 def generate_registration_token(
+    db: Session,
     user_id: uuid.UUID,
     api_url: str,
     expiry_minutes: int = 15,
@@ -20,6 +20,7 @@ def generate_registration_token(
     """Generate a registration token and QR code data.
 
     Args:
+        db: Database session
         user_id: User ID for the registration.
         api_url: Base API URL for the mobile app to connect to.
         expiry_minutes: Token expiry time in minutes.
@@ -27,103 +28,84 @@ def generate_registration_token(
     Returns:
         Dict with token, qr_data, and expiry.
     """
-    # Generate secure random token
-    token = secrets.token_urlsafe(32)
-
-    # Calculate expiry
-    expires_at = datetime.utcnow() + timedelta(minutes=expiry_minutes)
-
-    # Store token
-    _registration_tokens[token] = {
-        "user_id": str(user_id),
-        "expires_at": expires_at,
-        "created_at": datetime.utcnow(),
-    }
+    # Create token in database
+    token_obj = crud_registration_token.create_token(
+        db, user_id=user_id, expiry_minutes=expiry_minutes
+    )
 
     # Build QR code data (URL that mobile app will scan)
     # Format: HTTPS URL for Universal Links (iOS) and App Links (Android)
     # This will open the app if installed, or show web page with app store links
-    qr_data = f"{api_url}/api/v1/notification-preferences/register-device?token={token}"
+    qr_data = f"{api_url}/api/v1/notification-preferences/register-device?token={token_obj.token}"
+
+    # Ensure expires_at is timezone-aware for isoformat
+    expires_at_aware = (
+        token_obj.expires_at
+        if token_obj.expires_at.tzinfo
+        else token_obj.expires_at.replace(tzinfo=timezone.utc)
+    )
 
     return {
-        "token": token,
+        "token": token_obj.token,
         "qr_data": qr_data,
-        "expires_at": expires_at.isoformat(),
+        "expires_at": expires_at_aware.isoformat(),
         "expires_in_seconds": expiry_minutes * 60,
     }
 
 
-def check_token_validity(token: str) -> bool:
+def check_token_validity(db: Session, token: str) -> bool:
     """Check if a registration token is valid without consuming it.
 
     Args:
+        db: Database session
         token: Registration token to check.
 
     Returns:
         True if valid and not expired, False otherwise.
     """
-    token_data = _registration_tokens.get(token)
+    token_obj = crud_registration_token.get_by_token(db, token=token)
 
-    if not token_data:
+    if not token_obj:
         return False
 
-    # Check if expired
-    if datetime.utcnow() > token_data["expires_at"]:
-        return False
-
-    return True
+    # Check if valid (not consumed and not expired)
+    return token_obj.is_valid
 
 
-def validate_registration_token(token: str) -> Optional[uuid.UUID]:
+def validate_registration_token(db: Session, token: str) -> Optional[uuid.UUID]:
     """Validate a registration token and return the user ID.
 
     Args:
+        db: Database session
         token: Registration token to validate.
 
     Returns:
         User ID if valid, None if invalid or expired.
     """
-    token_data = _registration_tokens.get(token)
+    # Validate and consume the token (one-time use)
+    token_obj = crud_registration_token.validate_and_consume(db, token=token)
 
-    if not token_data:
-        logger.warning(f"Invalid registration token: {token[:8]}...")
+    if not token_obj:
+        logger.warning(f"Invalid or expired registration token: {token[:8]}...")
         return None
 
-    # Check if expired
-    if datetime.utcnow() > token_data["expires_at"]:
-        logger.warning(f"Expired registration token: {token[:8]}...")
-        # Clean up expired token
-        del _registration_tokens[token]
-        return None
+    logger.info(f"Validated registration token for user {token_obj.user_id}")
 
-    # Token is valid
-    user_id = uuid.UUID(token_data["user_id"])
-
-    # Remove token after successful validation (one-time use)
-    del _registration_tokens[token]
-
-    logger.info(f"Validated registration token for user {user_id}")
-
-    return user_id
+    return token_obj.user_id
 
 
-def cleanup_expired_tokens() -> int:
+def cleanup_expired_tokens(db: Session) -> int:
     """Clean up expired registration tokens.
+
+    Args:
+        db: Database session
 
     Returns:
         Number of tokens cleaned up.
     """
-    now = datetime.utcnow()
-    expired_tokens = [
-        token
-        for token, data in _registration_tokens.items()
-        if now > data["expires_at"]
-    ]
+    deleted_count = crud_registration_token.cleanup_expired(db)
 
-    for token in expired_tokens:
-        del _registration_tokens[token]
+    if deleted_count > 0:
+        logger.info(f"Cleaned up {deleted_count} expired registration tokens")
 
-    if expired_tokens:
-        logger.info(f"Cleaned up {len(expired_tokens)} expired registration tokens")
-
-    return len(expired_tokens)
+    return deleted_count
