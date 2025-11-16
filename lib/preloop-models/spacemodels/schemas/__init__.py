@@ -26,6 +26,10 @@ from .mcp_tool import (
     MCPToolUpdate,
     MCPToolResponse,
 )
+from .registration_token import (
+    RegistrationTokenCreate,
+    RegistrationTokenResponse,
+)
 
 __all__ = [
     "FlowCreate",
@@ -56,5 +60,7 @@ __all__ = [
     "MCPToolCreate",
     "MCPToolUpdate",
     "MCPToolResponse",
+    "RegistrationTokenCreate",
+    "RegistrationTokenResponse",
     "WebhookConfig",
 ]
