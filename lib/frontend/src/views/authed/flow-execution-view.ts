@@ -392,6 +392,16 @@ export class FlowExecutionView extends LitElement {
         this.toolCalls++;
       }
 
+      // Handle real-time tool calls update
+      if (message.type === 'tool_calls_update') {
+        this.toolCalls = message.payload.tool_calls || 0;
+      }
+
+      // Handle real-time token usage update
+      if (message.type === 'token_usage_update') {
+        this.tokensUsed = message.payload.total_tokens || 0;
+      }
+
       // Track budget usage
       if (message.type === 'budget_update') {
         this.budgetUsed = message.payload.budget_used || 0;
@@ -1103,8 +1113,18 @@ ${log.payload.content}</pre
   }
 
   formatUTCDateTime(dateTimeString: string): string {
-    // Parse the datetime string and format it as UTC
-    const date = new Date(dateTimeString);
+    // Ensure the datetime string is treated as UTC
+    // If it doesn't have timezone info, append 'Z' to indicate UTC
+    let utcDateString = dateTimeString;
+    if (
+      !dateTimeString.endsWith('Z') &&
+      !dateTimeString.includes('+') &&
+      !dateTimeString.includes('-', 10)
+    ) {
+      utcDateString = dateTimeString.replace(' ', 'T') + 'Z';
+    }
+
+    const date = new Date(utcDateString);
 
     // Format as: "YYYY-MM-DD HH:MM:SS UTC"
     const year = date.getUTCFullYear();
