@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class ApprovalRequestBase(BaseModel):
@@ -45,7 +45,7 @@ class ApprovalRequestResponse(ApprovalRequestBase):
     """Schema for approval request response."""
 
     id: UUID
-    account_id: str
+    account_id: UUID  # Changed from str to UUID for validation, serializer converts to str for JSON
     tool_configuration_id: UUID
     approval_policy_id: UUID
     status: str
@@ -56,10 +56,12 @@ class ApprovalRequestResponse(ApprovalRequestBase):
     webhook_posted_at: Optional[datetime]
     webhook_error: Optional[str]
 
-    class Config:
-        """Pydantic config."""
+    model_config = ConfigDict(from_attributes=True)
 
-        from_attributes = True
+    @field_serializer("id", "account_id", "tool_configuration_id", "approval_policy_id")
+    def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID to string."""
+        return str(value) if value else None
 
 
 class ApprovalDecision(BaseModel):

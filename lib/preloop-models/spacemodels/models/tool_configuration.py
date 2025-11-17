@@ -1,10 +1,10 @@
 """Tool configuration model for managing tool settings and approval policies."""
 
 import uuid
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, String, UniqueConstraint, Integer
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Boolean, JSON
 
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .account import Account
     from .mcp_server import MCPServer
     from .approval_request import ApprovalRequest
+    from .tool_approval_condition import ToolApprovalCondition
 
 
 class ToolConfiguration(Base):
@@ -40,10 +41,6 @@ class ToolConfiguration(Base):
     """
 
     __tablename__ = "tool_configuration"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
 
     # Tool identification
     tool_name: Mapped[str] = mapped_column(
@@ -74,12 +71,6 @@ class ToolConfiguration(Base):
     is_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, comment="Whether the tool is enabled"
     )
-    requires_approval: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        comment="Whether the tool requires pre-execution approval (preloop)",
-    )
 
     # Reference to reusable approval policy
     approval_policy_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -87,7 +78,7 @@ class ToolConfiguration(Base):
         ForeignKey("approval_policy.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Reference to approval policy (if requires_approval=True)",
+        comment="Reference to approval policy (if set, tool requires approval)",
     )
 
     # Metadata
@@ -102,8 +93,8 @@ class ToolConfiguration(Base):
     )
 
     # Foreign keys
-    account_id: Mapped[str] = mapped_column(
-        String(36),
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -125,6 +116,12 @@ class ToolConfiguration(Base):
         back_populates="tool_configuration",
         cascade="all, delete-orphan",
     )
+    approval_condition: Mapped[Optional["ToolApprovalCondition"]] = relationship(
+        "ToolApprovalCondition",
+        back_populates="tool_configuration",
+        uselist=False,  # 1:1 relationship
+        cascade="all, delete-orphan",
+    )
 
     # Unique constraint: one configuration per tool+source per account
     __table_args__ = (
@@ -140,8 +137,8 @@ class ToolConfiguration(Base):
     def __repr__(self) -> str:
         """Return string representation of the configuration."""
         status = "enabled" if self.is_enabled else "disabled"
-        preloop = " (preloop)" if self.requires_approval else ""
-        return f"<ToolConfiguration {self.tool_name} [{self.tool_source}] ({status}{preloop}) for account {self.account_id}>"
+        approval = " (approval required)" if self.approval_policy_id else ""
+        return f"<ToolConfiguration {self.tool_name} [{self.tool_source}] ({status}{approval}) for account {self.account_id}>"
 
 
 class ApprovalPolicy(Base):
@@ -166,13 +163,9 @@ class ApprovalPolicy(Base):
 
     __tablename__ = "approval_policy"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-
     # Policy identification
-    account_id: Mapped[str] = mapped_column(
-        String(36),
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -230,6 +223,64 @@ class ApprovalPolicy(Base):
         default=False,
         index=True,
         comment="Whether this is the default policy for the account",
+    )
+
+    # Workflow configuration (Phase 2+)
+    workflow_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="simple",
+        comment="Type of approval workflow: 'simple', 'multi_stage', 'consensus'",
+    )
+    workflow_config: Mapped[Optional[Dict]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Configuration for the approval workflow (stages, teams, voting rules)",
+    )
+
+    # Approvers (proprietary features)
+    approver_user_ids: Mapped[Optional[List[uuid.UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)),
+        nullable=True,
+        comment="List of user IDs who can approve (proprietary)",
+    )
+    approver_team_ids: Mapped[Optional[List[uuid.UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)),
+        nullable=True,
+        comment="List of team IDs whose members can approve (proprietary)",
+    )
+
+    # Quorum configuration (proprietary)
+    approvals_required: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="Number of approvals required (quorum) - proprietary",
+    )
+
+    # Escalation configuration (proprietary)
+    escalation_user_ids: Mapped[Optional[List[uuid.UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)),
+        nullable=True,
+        comment="List of user IDs to escalate to on timeout (proprietary)",
+    )
+    escalation_team_ids: Mapped[Optional[List[uuid.UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)),
+        nullable=True,
+        comment="List of team IDs to escalate to on timeout (proprietary)",
+    )
+
+    # Notification configuration
+    notification_channels: Mapped[List[str]] = mapped_column(
+        ARRAY(String),
+        nullable=False,
+        default=["email"],
+        comment="Notification channels: email, mobile_push, slack, mattermost, webhook",
+    )
+    channel_configs: Mapped[Optional[Dict]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Configuration for notification channels (Slack/Mattermost/webhook settings)",
     )
 
     # Relationships

@@ -1,5 +1,7 @@
 """Tests for Comment CRUD operations."""
 
+from uuid import uuid4
+
 from sqlalchemy.orm import Session
 
 from spacemodels.crud.comment import crud_comment
@@ -49,9 +51,12 @@ class TestCommentCRUD:
         )
         assert found.id == comment.id
 
-        # Get with wrong issue_id
+        # Get with wrong issue_id (use a valid UUID format that doesn't exist)
+        import uuid
+
+        non_existent_uuid = uuid.uuid4()
         found = crud_comment.get_by_external_id(
-            db_session, external_id="ext-123", issue_id="wrong-id"
+            db_session, external_id="ext-123", issue_id=non_existent_uuid
         )
         assert found is None
 
@@ -61,9 +66,10 @@ class TestCommentCRUD:
         )
         assert found.id == comment.id
 
-        # Get with wrong account_id
+        # Get with wrong account_id (use a valid UUID that doesn't exist)
+        wrong_account_uuid = uuid4()
         found = crud_comment.get_by_external_id(
-            db_session, external_id="ext-123", account_id="wrong-account"
+            db_session, external_id="ext-123", account_id=wrong_account_uuid
         )
         assert found is None
 
@@ -99,9 +105,10 @@ class TestCommentCRUD:
         )
         assert len(comments) == 3
 
-        # Test with wrong account
+        # Test with wrong account (use a valid UUID that doesn't exist)
+        wrong_account_uuid = uuid4()
         comments = crud_comment.get_multi_by_issue(
-            db_session, issue_id=issue.id, account_id="wrong-account"
+            db_session, issue_id=issue.id, account_id=wrong_account_uuid
         )
         assert len(comments) == 0
 
@@ -111,12 +118,12 @@ class TestCommentCRUD:
         create_comment,
         create_issue,
         create_tracker,
-        create_account,
+        create_user,
     ):
         """Test getting multiple comments by author."""
-        # Create accounts for alice and bob
-        alice = create_account(username="alice")
-        bob = create_account(username="bob")
+        # Create users for alice and bob
+        alice = create_user(username="alice")
+        bob = create_user(username="bob")
         print(alice)
         print(bob)
 
@@ -124,9 +131,9 @@ class TestCommentCRUD:
         issue = create_issue(tracker=tracker)
 
         # Create comments by different authors
-        comment1 = create_comment(issue_id=issue.id, author="alice")
-        comment2 = create_comment(issue_id=issue.id, author="alice")
-        comment3 = create_comment(issue_id=issue.id, author="bob")
+        comment1 = create_comment(issue_id=issue.id, author=alice)
+        comment2 = create_comment(issue_id=issue.id, author=alice)
+        comment3 = create_comment(issue_id=issue.id, author=bob)
 
         print(comment1)
         print(comment2)
@@ -152,8 +159,9 @@ class TestCommentCRUD:
         )
         assert len(comments) == 2
 
-        # Test with wrong account
+        # Test with wrong account (use a valid UUID that doesn't exist)
+        wrong_account_uuid = uuid4()
         comments = crud_comment.get_multi_by_author(
-            db_session, author="alice", account_id="wrong-account"
+            db_session, author="alice", account_id=wrong_account_uuid
         )
         assert len(comments) == 0

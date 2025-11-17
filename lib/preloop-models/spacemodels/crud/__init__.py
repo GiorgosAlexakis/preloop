@@ -5,6 +5,7 @@ from ..models import (
     Account,
     ApiKey,
     ApiUsage,
+    AuditLog,
     EmbeddingModel,
     Issue,
     IssueEmbedding,
@@ -19,6 +20,7 @@ from ..models import (
 from .account import CRUDAccount
 from .api_key import CRUDApiKey
 from .api_usage import CRUDApiUsage
+from .audit_log import CRUDAuditLog
 from .base import CRUDBase
 from .comment import CRUDComment, crud_comment
 from .embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
@@ -50,6 +52,22 @@ from .plan import (
     subscription,
     monthly_usage,
 )
+from .user import CRUDUser, crud_user
+from .permission import (
+    CRUDPermission,
+    CRUDRole,
+    CRUDUserRole,
+    CRUDTeamRole,
+    crud_permission,
+    crud_role,
+    crud_user_role,
+    crud_team_role,
+)
+from .team import CRUDTeam, crud_team
+from .user_invitation import CRUDUserInvitation, crud_user_invitation
+from .registration_token import CRUDRegistrationToken, crud_registration_token
+from . import tool_approval_condition
+from . import notification_preferences
 
 crud_account = CRUDAccount(Account)
 # crud_tracker is already instantiated in tracker.py
@@ -60,6 +78,7 @@ crud_embedding_model = CRUDEmbeddingModel(EmbeddingModel)
 crud_issue_embedding = CRUDIssueEmbedding(IssueEmbedding)
 crud_api_key = CRUDApiKey(ApiKey)
 crud_api_usage = CRUDApiUsage(ApiUsage)
+crud_audit_log = CRUDAuditLog(AuditLog)
 crud_ai_model = CRUDAIModel(AIModel)
 # crud_comment is already instantiated in its own file
 crud_webhook = CRUDWebhook(Webhook)
@@ -86,6 +105,7 @@ __all__ = [
     "CRUDIssueEmbedding",
     "CRUDApiKey",
     "CRUDApiUsage",
+    "CRUDAuditLog",
     "CRUDComment",
     "CRUDAIModel",
     "CRUDFlow",
@@ -100,6 +120,14 @@ __all__ = [
     "CRUDPlan",
     "CRUDSubscription",
     "CRUDMonthlyUsage",
+    "CRUDUser",
+    "CRUDPermission",
+    "CRUDRole",
+    "CRUDUserRole",
+    "CRUDTeamRole",
+    "CRUDTeam",
+    "CRUDUserInvitation",
+    "CRUDRegistrationToken",
     "crud_account",
     "crud_tracker",
     "crud_tracker_scope_rule",
@@ -110,6 +138,7 @@ __all__ = [
     "crud_issue_embedding",
     "crud_api_key",
     "crud_api_usage",
+    "crud_audit_log",
     "crud_comment",
     "crud_ai_model",
     "crud_webhook",
@@ -126,4 +155,14 @@ __all__ = [
     "plan",
     "subscription",
     "monthly_usage",
+    "crud_user",
+    "crud_permission",
+    "crud_role",
+    "crud_user_role",
+    "crud_team_role",
+    "crud_team",
+    "crud_user_invitation",
+    "crud_registration_token",
+    "tool_approval_condition",
+    "notification_preferences",
 ]

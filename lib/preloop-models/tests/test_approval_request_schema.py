@@ -156,7 +156,7 @@ class TestApprovalRequestResponse:
     def test_create_response(self):
         """Test creating ApprovalRequestResponse."""
         request_id = uuid4()
-        account_id = str(uuid4())
+        account_id = uuid4()  # Changed from str(uuid4()) to uuid4()
         tool_config_id = uuid4()
         policy_id = uuid4()
         requested_at = datetime.now()
@@ -187,7 +187,7 @@ class TestApprovalRequestResponse:
     def test_response_with_all_fields(self):
         """Test creating response with all optional fields."""
         request_id = uuid4()
-        account_id = str(uuid4())
+        account_id = uuid4()  # Changed from str(uuid4()) to uuid4()
         tool_config_id = uuid4()
         policy_id = uuid4()
         requested_at = datetime.now()
@@ -226,6 +226,41 @@ class TestApprovalRequestResponse:
         """Test that from_attributes is enabled in Config."""
         # This allows creating schema from ORM objects
         assert ApprovalRequestResponse.model_config.get("from_attributes") is True
+
+    def test_uuid_serialization_to_dict(self):
+        """Test that UUIDs are serialized to strings when converting to dict."""
+        request_id = uuid4()
+        account_id = uuid4()
+        tool_config_id = uuid4()
+        policy_id = uuid4()
+        requested_at = datetime.now()
+
+        response = ApprovalRequestResponse(
+            id=request_id,
+            account_id=account_id,
+            tool_configuration_id=tool_config_id,
+            approval_policy_id=policy_id,
+            tool_name="test_tool",
+            status="pending",
+            requested_at=requested_at,
+            resolved_at=None,
+            expires_at=None,
+            approver_comment=None,
+            webhook_posted_at=None,
+            webhook_error=None,
+        )
+
+        # Convert to dict - UUIDs should be serialized as strings
+        response_dict = response.model_dump()
+
+        assert isinstance(response_dict["id"], str)
+        assert response_dict["id"] == str(request_id)
+        assert isinstance(response_dict["account_id"], str)
+        assert response_dict["account_id"] == str(account_id)
+        assert isinstance(response_dict["tool_configuration_id"], str)
+        assert response_dict["tool_configuration_id"] == str(tool_config_id)
+        assert isinstance(response_dict["approval_policy_id"], str)
+        assert response_dict["approval_policy_id"] == str(policy_id)
 
 
 class TestApprovalDecision:

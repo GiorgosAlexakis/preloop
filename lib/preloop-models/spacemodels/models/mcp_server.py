@@ -8,7 +8,6 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
-from .mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from .account import Account
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
     from .tool_configuration import ToolConfiguration
 
 
-class MCPServer(Base, TimestampMixin):
+class MCPServer(Base):
     """
     Stores user-configured external MCP servers.
 
@@ -27,13 +26,9 @@ class MCPServer(Base, TimestampMixin):
 
     __tablename__ = "mcp_server"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-
     # Ownership
-    account_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("account.id"), nullable=False, index=True
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("account.id"), nullable=False, index=True
     )
 
     # Server configuration
@@ -57,8 +52,6 @@ class MCPServer(Base, TimestampMixin):
     )  # "active", "error", "disabled"
     last_scan_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    # Timestamps are handled by TimestampMixin (created_at, updated_at)
 
     # Relationships
     account: Mapped["Account"] = relationship(back_populates="mcp_servers")

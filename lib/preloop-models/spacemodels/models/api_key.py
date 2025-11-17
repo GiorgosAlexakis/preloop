@@ -6,17 +6,16 @@ from datetime import datetime, timezone
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import ForeignKey, func
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, Boolean, DateTime, String
 
 from sqlalchemy.dialects.postgresql import UUID
 
-
 from .base import Base
 
 if TYPE_CHECKING:
-    from .account import Account
+    from .user import User
 
 
 class ApiKey(Base):
@@ -29,15 +28,12 @@ class ApiKey(Base):
         created_at: When the key was created.
         expires_at: When the key expires (optional).
         last_used_at: When the key was last used (optional).
-        created_by: The username of the user who created the key.
+        user_id: The ID of the user who created the key.
         scopes: The list of scopes/permissions the key has.
         is_active: Whether the key is active.
     """
 
     __tablename__ = "api_key"
-
-    # Override id field to use UUID instead of string
-    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
 
     # Key details
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -46,21 +42,27 @@ class ApiKey(Base):
     )
 
     # Timestamp fields
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
-    )
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Security fields
-    created_by: Mapped[str] = mapped_column(
-        String(50), ForeignKey("account.username"), nullable=False
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="The user who created this API key",
     )
     scopes: Mapped[List] = mapped_column(JSON, default=list, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # Additional context data for context-specific restrictions
+    # For flow executions: {"flow_execution_id": "...", "allowed_mcp_tools": [...]}
+    context_data: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True, default=None
+    )
+
     # Relationships
-    creator: Mapped["Account"] = relationship("Account", back_populates="api_keys")
+    creator: Mapped["User"] = relationship("User", back_populates="api_keys")
 
     def __repr__(self) -> str:
         """Return a string representation of the key.
@@ -68,7 +70,7 @@ class ApiKey(Base):
         Returns:
             String representation of the key.
         """
-        return f"<ApiKey {self.name} created by {self.created_by}>"
+        return f"<ApiKey {self.name} created by user {self.user_id}>"
 
     @property
     def is_expired(self) -> bool:

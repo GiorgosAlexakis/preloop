@@ -1,8 +1,10 @@
 """Webhook model."""
 
+import uuid
 from typing import TYPE_CHECKING, List
 
 from sqlalchemy import ForeignKey, String, JSON
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -24,15 +26,15 @@ class Webhook(Base):
     events: Mapped[List[str]] = mapped_column(JSON, nullable=False)
 
     # Foreign keys
-    project_id: Mapped[str] = mapped_column(
-        String(36),
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("project.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
 
-    organization_id: Mapped[str] = mapped_column(
-        String(36),
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("organization.id", ondelete="CASCADE"),
         nullable=True,
         index=True,

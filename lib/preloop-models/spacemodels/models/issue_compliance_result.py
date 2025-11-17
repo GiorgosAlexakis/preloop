@@ -1,7 +1,9 @@
 """IssueComplianceResult model."""
 
+import uuid
 from typing import Optional, List
 from sqlalchemy import Float, ForeignKey, String, JSON
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -20,8 +22,8 @@ class IssueComplianceResult(Base):
         JSON, nullable=True
     )
 
-    issue_id: Mapped[str] = mapped_column(
-        String(36),
+    issue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("issue.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

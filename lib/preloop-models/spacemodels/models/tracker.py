@@ -1,14 +1,14 @@
 """Tracker model and related types."""
 
 import enum
+import uuid
 from datetime import datetime
 
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, String, func
-
-# from sqlalchemy.dialects.postgresql import UUID  # Removed UUID import
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import JSON, DateTime
 
@@ -108,8 +108,8 @@ class Tracker(Base):
     )
 
     # Foreign keys
-    account_id: Mapped[str] = mapped_column(  # Reverted to str
-        String(36),  # Reverted to String(36)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

@@ -1,5 +1,7 @@
 """Tests for IssueComplianceResult CRUD operations."""
 
+from uuid import uuid4
+
 from sqlalchemy.orm import Session
 
 from spacemodels.crud.issue_compliance_result import issue_compliance_result
@@ -46,12 +48,13 @@ class TestIssueComplianceResultCRUD:
         assert found is not None
         assert found.id == result.id
 
-        # Get with wrong account
+        # Get with wrong account (use a valid UUID that doesn't exist)
+        wrong_account_uuid = uuid4()
         found = issue_compliance_result.get_by_issue_id_and_prompt_id(
             db_session,
             issue_id=issue.id,
             prompt_id="dor_check",
-            account_id="wrong-account",
+            account_id=wrong_account_uuid,
         )
         assert found is None
 

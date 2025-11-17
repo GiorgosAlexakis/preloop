@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from .base import Base
 
 if TYPE_CHECKING:
-    from .account import Account
+    from .user import User
 
 
 class ApiUsage(Base):
@@ -23,7 +23,7 @@ class ApiUsage(Base):
 
     Attributes:
         id: The unique identifier for the usage record.
-        username: The username of the user making the request (nullable for anonymous requests).
+        user_id: The ID of the user making the request (nullable for anonymous requests).
         endpoint: The API endpoint being accessed.
         method: The HTTP method used (GET, POST, etc.).
         status_code: The HTTP status code of the response.
@@ -34,13 +34,10 @@ class ApiUsage(Base):
 
     __tablename__ = "api_usage"
 
-    # Override id field to use UUID instead of string
-    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
-
     # Request details
-    username: Mapped[str] = mapped_column(
-        String(50),
-        ForeignKey("account.username", ondelete="SET NULL"),
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("user.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -54,7 +51,7 @@ class ApiUsage(Base):
     )
 
     # Relationships
-    user: Mapped["Account"] = relationship("Account", back_populates="api_usages")
+    user: Mapped[Optional["User"]] = relationship("User", back_populates="api_usages")
 
     def __repr__(self) -> str:
         """Return a string representation of the usage record.
@@ -62,4 +59,4 @@ class ApiUsage(Base):
         Returns:
             String representation of the usage record.
         """
-        return f"<ApiUsage {self.method} {self.endpoint} by {self.username} at {self.timestamp}>"
+        return f"<ApiUsage {self.method} {self.endpoint} by user {self.user_id} at {self.timestamp}>"

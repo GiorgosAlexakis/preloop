@@ -49,7 +49,7 @@ class MCPServerResponse(MCPServerBase):
     """Schema for MCP server response."""
 
     id: UUID
-    account_id: str
+    account_id: UUID
     last_scan_at: Optional[str] = None
     last_error: Optional[str] = None
     created_at: datetime
@@ -57,7 +57,7 @@ class MCPServerResponse(MCPServerBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_serializer("id")
-    def serialize_id(self, id: UUID) -> str:
-        """Serialize UUID to string."""
-        return str(id)
+    @field_serializer("id", "account_id")
+    def serialize_uuids(self, value: UUID) -> str:
+        """Serialize UUID fields to strings."""
+        return str(value)

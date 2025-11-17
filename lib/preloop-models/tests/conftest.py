@@ -6,8 +6,6 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from spacemodels.models.base import Base
-
 
 @pytest.fixture(scope="session")
 def db_engine():
@@ -28,15 +26,16 @@ def db_engine():
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         connection.commit()
 
-    # Create all tables
-    Base.metadata.create_all(bind=engine)
+    # NOTE: We do NOT drop and recreate tables here!
+    # This would affect the production database if DATABASE_URL is set incorrectly.
+    # Tests use transaction rollbacks for isolation, so existing tables are fine.
+    # If you need to reset the schema, do it manually outside of tests.
 
     yield engine
 
-    # Table dropping (`Base.metadata.drop_all`) removed.
-    # Tests now rely on transaction rollbacks in the `db_session` fixture
-    # for data cleanup and expect the schema to exist or be created
-    # by `Base.metadata.create_all` without being dropped afterwards.
+    # NOTE: DO NOT drop tables in teardown!
+    # Tests use transactions that are rolled back, so no cleanup needed.
+    # Dropping tables would affect the actual database if DATABASE_URL is set incorrectly.
 
 
 @pytest.fixture(scope="function")
@@ -60,27 +59,58 @@ def db_session(db_engine):
 
 @pytest.fixture
 def create_account(db_session):
-    """Create a test account."""
+    """Create a test account (organization).
+
+    Note: In the multi-user architecture, Account represents an organization.
+    To create a user, use create_user() fixture instead.
+    """
     import uuid
 
     from spacemodels.crud import crud_account
 
-    def _create_account(username=None, email=None, **kwargs):
-        # Generate unique username and email if not provided
+    def _create_account(organization_name=None, **kwargs):
+        # Generate unique organization name if not provided
         unique_id = str(uuid.uuid4())[:8]
-        username = username or f"testuser_{unique_id}"
-        email = email or f"test_{unique_id}@example.com"
+        organization_name = organization_name or f"Test Organization {unique_id}"
 
         account_data = {
-            "username": username,
-            "email": email,
-            "hashed_password": "hashed_password",
+            "organization_name": organization_name,
             "is_active": True,
             **kwargs,
         }
         return crud_account.create(db_session, obj_in=account_data)
 
     return _create_account
+
+
+@pytest.fixture
+def create_user(db_session, create_account):
+    """Create a test user within an account."""
+    import uuid
+
+    from spacemodels.crud import crud_user
+
+    def _create_user(username=None, email=None, account=None, **kwargs):
+        # Create account if not provided
+        if account is None:
+            account = create_account()
+
+        # Generate unique username and email if not provided
+        unique_id = str(uuid.uuid4())[:8]
+        username = username or f"testuser_{unique_id}"
+        email = email or f"test_{unique_id}@example.com"
+
+        user_data = {
+            "username": username,
+            "email": email,
+            "account_id": account.id,
+            "hashed_password": "hashed_password",
+            "is_active": True,
+            **kwargs,
+        }
+        return crud_user.create(db_session, obj_in=user_data)
+
+    return _create_user
 
 
 @pytest.fixture
@@ -200,15 +230,15 @@ def create_issue(db_session, create_project, create_tracker):
 
 
 @pytest.fixture
-def create_comment(db_session, create_issue, create_account):
+def create_comment(db_session, create_issue, create_user):
     """Create a test comment.
     Handles 'issue_id' or 'issue' object passed in kwargs,
     or creates a default issue.
-    Handles 'author' (as username string or Account object) passed in kwargs,
-    or creates a default author.
+    Handles 'author' (as username string or User object) passed in kwargs,
+    or creates a default author user.
     """
     from spacemodels.crud import crud_comment
-    from spacemodels.models import Account, Issue
+    from spacemodels.models import User, Issue
 
     def _create_comment(body="Test comment body", type="issue", **kwargs):
         current_issue: "Issue"
@@ -226,19 +256,17 @@ def create_comment(db_session, create_issue, create_account):
             author_arg = kwargs.pop("author")
             if isinstance(author_arg, str):  # Username provided
                 author_obj = (
-                    db_session.query(Account)
-                    .filter(Account.username == author_arg)
-                    .first()
+                    db_session.query(User).filter(User.username == author_arg).first()
                 )
                 if not author_obj:
                     raise ValueError(
                         f"Test setup error: author with username '{author_arg}' not found."
                     )
-            elif isinstance(author_arg, Account):  # Account object provided
+            elif isinstance(author_arg, User):  # User object provided
                 author_obj = author_arg
 
         if not author_obj:
-            author_obj = create_account()
+            author_obj = create_user()
 
         comment_data = {
             "body": body,

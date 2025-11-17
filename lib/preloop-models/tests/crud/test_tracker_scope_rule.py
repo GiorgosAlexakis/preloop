@@ -1,5 +1,7 @@
 """Tests for TrackerScopeRule CRUD operations and validation."""
 
+from uuid import uuid4
+
 from sqlalchemy.orm import Session
 
 from spacemodels.crud.tracker_scope_rule import crud_tracker_scope_rule
@@ -229,9 +231,10 @@ class TestTrackerScopeRuleCRUD:
         )
         assert len(rules) == 1
 
-        # Retrieve with wrong account ID
+        # Retrieve with wrong account ID (use a valid UUID that doesn't exist)
+        wrong_account_uuid = uuid4()
         rules = crud_tracker_scope_rule.get_by_tracker(
-            db_session, tracker_id=test_tracker.id, account_id="wrong-account-id"
+            db_session, tracker_id=test_tracker.id, account_id=wrong_account_uuid
         )
         assert len(rules) == 0
 

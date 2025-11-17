@@ -3,6 +3,7 @@
 from .account import Account
 from .api_key import ApiKey
 from .api_usage import ApiUsage
+from .audit_log import AuditLog
 from .base import Base
 from .comment import Comment
 from .issue import EmbeddingModel, Issue, IssueEmbedding
@@ -24,6 +25,13 @@ from .tool_configuration import ToolConfiguration, ApprovalPolicy
 from .mcp_server import MCPServer
 from .mcp_tool import MCPTool
 from .approval_request import ApprovalRequest, ApprovalRequestStatus
+from .tool_approval_condition import ToolApprovalCondition
+from .notification_preferences import NotificationPreferences
+from .registration_token import RegistrationToken
+from .team import Team, TeamMembership
+from .user import User, UserSource
+from .permission import Permission, Role, RolePermission, UserRole, TeamRole
+from .user_invitation import UserInvitation, UserInvitationStatus
 
 __all__ = [
     "Base",
@@ -38,6 +46,7 @@ __all__ = [
     "IssueDuplicate",
     "ApiKey",
     "ApiUsage",
+    "AuditLog",
     "ClientVersionLog",
     "Comment",
     "AIModel",
@@ -57,4 +66,18 @@ __all__ = [
     "MCPTool",
     "ApprovalRequest",
     "ApprovalRequestStatus",
+    "ToolApprovalCondition",
+    "NotificationPreferences",
+    "RegistrationToken",
+    "Team",
+    "TeamMembership",
+    "User",
+    "UserSource",
+    "Permission",
+    "Role",
+    "RolePermission",
+    "UserRole",
+    "TeamRole",
+    "UserInvitation",
+    "UserInvitationStatus",
 ]

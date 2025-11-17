@@ -74,6 +74,9 @@ class FlowExecutionResponse(FlowExecutionBase):
     created_at: datetime
     updated_at: datetime
 
+    # Include flow name for display purposes
+    flow_name: Optional[str] = None
+
     # Example of how to include related data if needed
     # flow: Optional[FlowResponse] = None # Assuming a FlowResponse Pydantic schema exists
 
@@ -81,3 +84,11 @@ class FlowExecutionResponse(FlowExecutionBase):
 # Schema for FlowExecution as stored in DB (identical to Response for now)
 class FlowExecutionInDB(FlowExecutionResponse):
     pass
+
+
+# Pydantic model for sending commands to a flow execution
+class FlowExecutionCommand(BaseModel):
+    command: str = Field(..., description="Command to send (e.g., 'stop', 'pause')")
+    payload: Optional[Dict[str, Any]] = Field(
+        None, description="Optional payload for the command"
+    )

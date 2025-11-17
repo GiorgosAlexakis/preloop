@@ -1,6 +1,8 @@
 """IssueRelationship model."""
 
+import uuid
 from sqlalchemy import Float, ForeignKey, String, Text, Boolean
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional
 
@@ -14,13 +16,13 @@ class IssueRelationship(Base):
 
     __tablename__ = "issue_relationship"
 
-    source_issue_id: Mapped[str] = mapped_column(
-        String(36),
+    source_issue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("issue.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    target_issue_id: Mapped[str] = mapped_column(
-        String(36),
+    target_issue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("issue.id", ondelete="CASCADE"),
         primary_key=True,
     )

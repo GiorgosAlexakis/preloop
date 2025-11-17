@@ -276,6 +276,27 @@ class CRUDToolConfiguration(CRUDBase[models.ToolConfiguration]):
             .count()
         )
 
+    def get_by_mcp_server(
+        self, db: Session, mcp_server_id: str
+    ) -> List[models.ToolConfiguration]:
+        """Get all tool configurations for a specific MCP server.
+
+        Args:
+            db: The database session.
+            mcp_server_id: The ID of the MCP server.
+
+        Returns:
+            List of tool configurations associated with the MCP server.
+        """
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.tool_source == "mcp",
+                self.model.mcp_server_id == mcp_server_id,
+            )
+            .all()
+        )
+
 
 # Async helper functions
 async def get_tool_config_by_name_and_source_async(
@@ -303,3 +324,30 @@ async def get_tool_config_by_name_and_source_async(
         )
     )
     return result.scalar_one_or_none()
+
+
+async def create_tool_configuration_async(
+    db: Session,
+    *,
+    obj_in: schemas.ToolConfigurationCreate,
+    account_id: str,
+) -> models.ToolConfiguration:
+    """Async: Create a new tool configuration.
+
+    Args:
+        db: The async database session.
+        obj_in: The data for the new tool configuration.
+        account_id: The ID of the account.
+
+    Returns:
+        The created tool configuration object.
+    """
+    # Convert Pydantic model to dict and add account_id
+    config_data = obj_in.model_dump()
+    config_data["account_id"] = account_id
+
+    db_config = models.ToolConfiguration(**config_data)
+    db.add(db_config)
+    await db.commit()
+    await db.refresh(db_config)
+    return db_config
