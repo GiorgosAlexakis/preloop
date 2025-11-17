@@ -52,9 +52,7 @@ def mock_project():
 @patch("spacesync.scanner.core.crud_issue")
 @patch("spacesync.scanner.core.crud_comment")
 @patch("spacesync.scanner.core.crud_issue_embedding")
-@patch("spacesync.scanner.core.BillingService")
 async def test_scan_issues_handles_string_casting_and_identifier(
-    mock_billing_service,
     mock_crud_embedding,
     mock_crud_comment,
     mock_crud_issue,

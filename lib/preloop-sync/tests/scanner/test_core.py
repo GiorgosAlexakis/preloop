@@ -256,9 +256,7 @@ async def test_tracker_client_scan_projects(
 @patch("spacesync.scanner.core.crud_issue")
 @patch("spacesync.scanner.core.crud_comment")
 @patch("spacesync.scanner.core.crud_issue_embedding")
-@patch("spacesync.scanner.core.BillingService")
 async def test_tracker_client_scan_issues_new_issue(
-    mock_billing_service,
     mock_crud_embedding,
     mock_crud_comment,
     mock_crud_issue,
@@ -304,9 +302,7 @@ async def test_tracker_client_scan_issues_new_issue(
 @patch("spacesync.scanner.core.crud_issue")
 @patch("spacesync.scanner.core.crud_comment")
 @patch("spacesync.scanner.core.crud_issue_embedding")
-@patch("spacesync.scanner.core.BillingService")
 async def test_tracker_client_scan_issues_updated_issue(
-    mock_billing_service,
     mock_crud_embedding,
     mock_crud_comment,
     mock_crud_issue,
@@ -727,9 +723,7 @@ async def test_scan_all_accounts_no_active_accounts(
 @patch("spacesync.scanner.core.crud_issue")
 @patch("spacesync.scanner.core.crud_comment")
 @patch("spacesync.scanner.core.crud_issue_embedding")
-@patch("spacesync.scanner.core.BillingService")
 async def test_scan_issues_with_new_comment(
-    mock_billing_service,
     mock_crud_embedding,
     mock_crud_comment,
     mock_crud_issue,
