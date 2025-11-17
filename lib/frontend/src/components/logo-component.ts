@@ -1,11 +1,12 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Theme } from '../theme';
+import { getBrandConfig } from '../brand-config';
 
 @customElement('logo-component')
 export class LogoComponent extends LitElement {
   @property({ type: String })
-  alt = 'SpaceBridge.io';
+  alt = getBrandConfig().name;
 
   @property({ type: String, attribute: 'override-theme' })
   themeOverride?: Theme;
@@ -66,10 +67,11 @@ export class LogoComponent extends LitElement {
   }
 
   render() {
+    const brandConfig = getBrandConfig();
     const logoSrc =
       this.theme === 'dark'
-        ? '/images/logo_dark.png'
-        : '/images/logo_light.png';
+        ? brandConfig.branding.logo_dark
+        : brandConfig.branding.logo_light;
     return html`<img src="${logoSrc}" alt=${this.alt} />`;
   }
 }

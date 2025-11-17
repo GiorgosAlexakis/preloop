@@ -129,6 +129,25 @@ export class FlowsView extends LitElement {
       padding: 48px 16px;
       color: var(--sl-color-neutral-500);
     }
+    .proxy-notice {
+      background: var(--sl-color-primary-50);
+      border-left: 3px solid var(--sl-color-primary-600);
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      border-radius: 4px;
+    }
+
+    .proxy-notice-title {
+      font-weight: 600;
+      color: var(--sl-color-primary-900);
+      margin-bottom: 0.5rem;
+    }
+
+    .proxy-notice-text {
+      color: var(--sl-color-primary-800);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
   `;
 
   @state()
@@ -201,26 +220,17 @@ export class FlowsView extends LitElement {
           </sl-button>
         </div>
       </view-header>
-
-      ${this.isAlertVisible
-        ? html`
-            <sl-alert
-              open
-              closable
-              variant="success"
-              @sl-after-hide=${this.handleAlertDismiss}
-              style="display: block; margin: 0 auto; max-width: 600px; margin-bottom: 24px;"
-            >
-              <sl-icon slot="icon" name="info-circle"></sl-icon>
-              <span style="font-size: 1.3rem;">
-                <strong>Welcome to Event-Driven Agentic Flows!</strong>
-                <br />Automate your workflows by creating intelligent agents
-                that respond to events in your issue tracker. Get started by
-                exploring the presets below, or create a new flow from scratch.
-              </span>
-            </sl-alert>
-          `
-        : ''}
+      <div class="column-layout">
+        <div class="main-column">
+          <div class="proxy-notice">
+            <div class="proxy-notice-text">
+              Automate your workflows by creating intelligent agents that
+              respond to issue tracker events or external webhooks. Get started
+              by exploring the presets below, or create a new flow from scratch.
+            </div>
+          </div>
+        </div>
+      </div>
       ${activeExecutions.length > 0
         ? html`
             <div class="active-executions">
@@ -284,7 +294,10 @@ export class FlowsView extends LitElement {
     const totalCount = flowExecutions.length;
 
     return html`
-      <sl-card class="flow-card">
+      <sl-card
+        class="flow-card"
+        @click=${() => Router.go(`/console/flows/${flow.id}`)}
+      >
         <div slot="header" class="flow-header">
           <div class="flow-title">${flow.name}</div>
           ${activeCount > 0
@@ -311,7 +324,8 @@ export class FlowsView extends LitElement {
         >
           <sl-button
             size="small"
-            href=${router.urlForPath(`/console/flows/${flow.id}`)}
+            href=${router.urlForPath(`/console/flows/${flow.id}?edit=true`)}
+            @click=${(e: Event) => e.stopPropagation()}
           >
             <sl-icon slot="prefix" name="pencil"></sl-icon>
             Edit
@@ -319,7 +333,10 @@ export class FlowsView extends LitElement {
           <sl-button
             size="small"
             variant="primary"
-            @click=${() => this.triggerTestRun(flow.id)}
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              this.triggerTestRun(flow.id);
+            }}
             ?loading=${this.triggeringFlowId === flow.id}
           >
             <sl-icon slot="prefix" name="play-fill"></sl-icon>

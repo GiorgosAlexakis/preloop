@@ -127,10 +127,10 @@ export class WhatIsMcpView extends LitElement {
                 <strong>MCP Servers:</strong> These function as adaptable
                 intermediaries, operating in conjunction with a specific
                 application or data service (like GitHub, Slack, a database, or
-                SpaceBridge). An MCP server is responsible for converting
-                instructions, often phrased in natural language by an AI, into
-                precise commands that the target application can execute. Key
-                duties include:
+                ${getBrandConfig().name}). An MCP server is responsible for
+                converting instructions, often phrased in natural language by an
+                AI, into precise commands that the target application can
+                execute. Key duties include:
                 <ul>
                   <li>
                     <strong>Tool Discovery:</strong> Making the application's
@@ -200,35 +200,37 @@ export class WhatIsMcpView extends LitElement {
             </ul>
 
             <h3>
-              MCP's Role in SpaceBridge and its Significance for AI Agents
+              MCP's Role in ${getBrandConfig().name} and its Significance for AI
+              Agents
             </h3>
             <p>
-              For SpaceBridge, which itself functions as an MCP server for issue
-              tracking systems, MCP is a cornerstone technology. It enables
-              SpaceBridge to integrate smoothly with a variety of AI agents and
-              development tools. This integration facilitates several key
-              advantages:
+              For ${getBrandConfig().name}, which itself functions as an MCP
+              server for issue tracking systems, MCP is a cornerstone
+              technology. It enables ${getBrandConfig().name} to integrate
+              smoothly with a variety of AI agents and development tools. This
+              integration facilitates several key advantages:
             </p>
             <ul>
               <li>
                 <strong>Unified Issue Tracker Access:</strong> AI-driven coding
-                assistants can leverage SpaceBridge to communicate with diverse
-                issue trackers like GitHub, Jira, and GitLab via a single,
-                consistent MCP interface.
+                assistants can leverage ${getBrandConfig().name} to communicate
+                with diverse issue trackers like GitHub, Jira, and GitLab via a
+                single, consistent MCP interface.
               </li>
               <li>
                 <strong>AI-Powered Issue Management:</strong> Agents gain the
                 ability to intelligently handle issues—such as creating new
                 tickets, searching to prevent duplicates, updating statuses, and
                 managing assignments—directly as part of their operational flow,
-                utilizing SpaceBridge's specialized functionalities.
+                utilizing ${getBrandConfig().name}'s specialized
+                functionalities.
               </li>
               <li>
                 <strong>Streamlined Developer Workflows:</strong> MCP allows AI
                 to automate various development-related tasks, for example,
                 linking code commits to their corresponding issues or updating
                 an issue’s status based on the progress of development
-                activities, all orchestrated through SpaceBridge.
+                activities, all orchestrated through ${getBrandConfig().name}.
               </li>
             </ul>
             <p>
@@ -257,13 +259,13 @@ export class WhatIsMcpView extends LitElement {
                 Leverage existing pre-built MCP servers for commonly used tools
                 and systems. For instance,
                 <strong
-                  >SpaceBridge itself acts as an MCP server for issue
-                  trackers</strong
+                  >${getBrandConfig().name} itself acts as an MCP server for
+                  issue trackers</strong
                 >, allowing AI agents to connect and manage tasks across
                 platforms like GitHub, Jira, and GitLab through a standardized
                 interface. Developers can explore integrating their AI tools
-                with SpaceBridge's MCP server to enhance issue management
-                capabilities.
+                with ${getBrandConfig().name}'s MCP server to enhance issue
+                management capabilities.
               </li>
               <li>
                 Integrate MCP servers with compatible AI-powered applications,
@@ -290,7 +292,7 @@ export class WhatIsMcpView extends LitElement {
                 href="/register"
                 target="_blank"
                 rel="noopener noreferrer"
-                >Sign Up for SpaceBridge Now</sl-button
+                >Sign Up Now</sl-button
               >
             </div>
 
@@ -303,9 +305,9 @@ export class WhatIsMcpView extends LitElement {
               new possibilities for more intelligent, autonomous, and
               contextually aware AI applications. As the ecosystem around MCP
               continues to evolve, its impact on how we build and utilize
-              AI-powered tools, including platforms like SpaceBridge, will only
-              continue to grow, paving the way for more seamless and powerful
-              human-AI collaboration.
+              AI-powered tools, including platforms like
+              ${getBrandConfig().name}, will only continue to grow, paving the
+              way for more seamless and powerful human-AI collaboration.
             </p>
 
             <div class="text-center mt-5">

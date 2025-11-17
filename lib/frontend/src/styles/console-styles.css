@@ -12,7 +12,7 @@ a:hover {
     align-items: start;
 }
 
-@media (min-width: 1720px) {
+@media (min-width: 992px) {
     .column-layout {
         grid-template-columns: 2fr 1fr;
     }
@@ -135,14 +135,7 @@ sl-dialog.large::part(panel) {
   padding: var(--sl-spacing-2x-large);
 }
 
-.side-column {
-    display: none;
-  }
-
 @media (min-width: 1720px) {
-    .side-column {
-      display: flex;
-    }
     .inline-detail-row {
       display: none;
     }

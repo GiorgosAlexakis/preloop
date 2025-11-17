@@ -30,7 +30,12 @@ export class ForgotPasswordView extends LitElement {
         'If an account with that email exists, a password reset link has been sent.';
       this.error = '';
     } catch (error) {
-      this.error = 'An unexpected error occurred. Please try again.';
+      // Extract the error message from the Error object
+      if (error instanceof Error) {
+        this.error = error.message;
+      } else {
+        this.error = 'An unexpected error occurred. Please try again.';
+      }
       console.error('Forgot password failed', error);
     }
   }

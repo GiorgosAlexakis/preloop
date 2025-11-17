@@ -1,13 +1,14 @@
 image: node:22-alpine
 
 variables:
-  CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/spacelit
+  CI_REGISTRY_IMAGE_SPACEBRIDGE: $CI_REGISTRY/spacecode/spacelit
+  CI_REGISTRY_IMAGE_PRELOOP: $CI_REGISTRY/spacecode/spacelit/preloop
 
 stages:
   - build
   - test
 
-build:
+build:spacebridge:
   stage: build
   image:
     name: gcr.io/kaniko-project/executor:debug
@@ -18,9 +19,28 @@ build:
     - /kaniko/executor
       --context $CI_PROJECT_DIR
       --dockerfile $CI_PROJECT_DIR/Dockerfile
-      --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
-      --destination $CI_REGISTRY_IMAGE:latest
-      --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+      --build-arg BRAND=spacebridge
+      --destination $CI_REGISTRY_IMAGE_SPACEBRIDGE:$CI_COMMIT_SHA
+      --destination $CI_REGISTRY_IMAGE_SPACEBRIDGE:latest
+      --destination $CI_REGISTRY_IMAGE_SPACEBRIDGE:$CI_COMMIT_REF_NAME
+      --registry-mirror registry.spacecode.ai
+      --registry-mirror $CI_REGISTRY
+
+build:preloop:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64 -w 0)\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR
+      --dockerfile $CI_PROJECT_DIR/Dockerfile
+      --build-arg BRAND=preloop
+      --destination $CI_REGISTRY_IMAGE_PRELOOP:$CI_COMMIT_SHA
+      --destination $CI_REGISTRY_IMAGE_PRELOOP:latest
+      --destination $CI_REGISTRY_IMAGE_PRELOOP:$CI_COMMIT_REF_NAME
       --registry-mirror registry.spacecode.ai
       --registry-mirror $CI_REGISTRY    
 
@@ -35,7 +55,7 @@ format-check:
 unit-tests:
   stage: test
   needs: []
-  image: mcr.microsoft.com/playwright:v1.53.1-noble
+  image: mcr.microsoft.com/playwright:v1.56.1-noble
   before_script:
     - npm install
   script:

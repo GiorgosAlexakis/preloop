@@ -8,6 +8,22 @@ describe('LoginView', () => {
   let fetchStub: any;
 
   beforeEach(async () => {
+    // Set up minimal BRAND_CONFIG for getBrandConfig()
+    (window as any).BRAND_CONFIG = {
+      name: 'Test Brand',
+      domain: 'test.example.com',
+      company: { legal_name: 'Test Co', address: '123 Test', city: 'Test' },
+      branding: {
+        logo_light: '/logo.svg',
+        logo_dark: '/logo-dark.svg',
+        favicon: '/favicon.ico',
+        primary_color: '#000',
+        gradient_product: '',
+        gradient_ai: '',
+      },
+      social: { twitter: '', linkedin: '', instagram: '' },
+    };
+
     element = await fixture(html`<login-view></login-view>`);
     // Clear localStorage before each test
     localStorage.clear();
@@ -18,6 +34,8 @@ describe('LoginView', () => {
   afterEach(() => {
     // Restore fetch after each test
     fetchStub.restore();
+    // Clean up BRAND_CONFIG
+    delete (window as any).BRAND_CONFIG;
   });
 
   it('should render the login form', () => {
@@ -34,8 +52,12 @@ describe('LoginView', () => {
   });
 
   it('should show an error message on failed login', async () => {
-    // Stub fetch to simulate a failed login
-    fetchStub.resolves(new Response(JSON.stringify({}), { status: 401 }));
+    // Stub fetch to simulate a failed login with error detail
+    fetchStub.resolves(
+      new Response(JSON.stringify({ detail: 'Invalid credentials' }), {
+        status: 401,
+      })
+    );
 
     // Fill in the form fields
     const usernameInput = element.shadowRoot?.querySelector<any>('#username');
@@ -58,9 +80,7 @@ describe('LoginView', () => {
 
     const errorMessage = element.shadowRoot?.querySelector('.error-message');
     expect(errorMessage).to.exist;
-    expect(errorMessage?.textContent).to.contain(
-      'Invalid username or password'
-    );
+    expect(errorMessage?.textContent).to.contain('Invalid credentials');
     expect(fetchStub).to.have.been.calledOnce;
   });
 
