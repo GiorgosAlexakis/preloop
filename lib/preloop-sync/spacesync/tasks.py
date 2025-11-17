@@ -39,6 +39,25 @@ def notify_admins(subject: str, message: str, message_html: str = None):
     send_email(admin_email, subject, message, message_html)
 
 
+def serialize_uuids(obj):
+    """
+    Recursively convert UUID objects to strings in a dictionary or list.
+    This ensures UUIDs can be serialized to JSON for JSONB fields.
+    """
+    from uuid import UUID
+
+    if isinstance(obj, UUID):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {key: serialize_uuids(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_uuids(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(serialize_uuids(item) for item in obj)
+    else:
+        return obj
+
+
 async def process_webhook_event(
     tracker_id: int, event_type: str, payload: dict, **kwargs
 ):
@@ -58,13 +77,38 @@ async def process_webhook_event(
             return
 
         from spacebridge.services.flow_trigger_service import FlowTriggerService
+        from spacesync.event_normalizer import (
+            normalize_event_type,
+            extract_filter_fields,
+        )
+
+        # Normalize the event type from tracker-specific to standard format
+        normalized_event_type = normalize_event_type(
+            tracker.tracker_type, event_type, payload
+        )
+
+        # Extract filter fields for conditional triggering
+        filter_fields = extract_filter_fields(tracker.tracker_type, event_type, payload)
+
+        logger.info(
+            f"Normalized event type: '{event_type}' -> '{normalized_event_type}'"
+        )
+        logger.debug(f"Extracted filter fields: {filter_fields}")
+
+        # Serialize UUIDs in payload and kwargs to strings for JSON storage
+        serialized_payload = serialize_uuids(payload)
+        serialized_kwargs = serialize_uuids(kwargs)
+
+        # Merge filter fields into payload for trigger_config matching
+        # FlowTriggerService checks payload against trigger_config
+        enriched_payload = {**serialized_payload, **filter_fields}
 
         event_data = {
-            "source": tracker.tracker_type,
-            "type": event_type,
-            "payload": payload,
-            "account_id": tracker.account_id,
-            **kwargs,
+            "source": str(tracker.id),
+            "type": normalized_event_type,
+            "payload": enriched_payload,
+            "account_id": str(tracker.account_id),
+            **serialized_kwargs,
         }
 
         trigger_service = FlowTriggerService(db)
@@ -94,7 +138,7 @@ async def cleanup_tracker_webhooks(tracker_id: str):
         from spacemodels.models.webhook import Webhook
         from spacemodels.models.organization import Organization
         from spacemodels.models.project import Project
-        from spacesync.spacesync.trackers import create_tracker_client
+        from spacesync.trackers import create_tracker_client
 
         # Get the deleted tracker (include deleted ones)
         tracker = db.query(Tracker).filter(Tracker.id == tracker_id).first()

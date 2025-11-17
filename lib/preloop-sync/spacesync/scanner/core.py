@@ -577,7 +577,11 @@ async def scan_tracker(
     verbose: bool = False,
 ) -> Dict[str, Any]:
     """Scan a single tracker."""
-    logger.info(f"Scanning tracker {tracker.id} ({tracker.tracker_type})")
+    # Store tracker info before any operations that might fail
+    tracker_id = tracker.id
+    tracker_type = tracker.tracker_type
+
+    logger.info(f"Scanning tracker {tracker_id} ({tracker_type})")
     stats = {
         "organizations": {
             "total": 0,
@@ -592,7 +596,7 @@ async def scan_tracker(
         "errors": 0,
     }
     if tracker.is_deleted:
-        logger.info(f"Tracker {tracker.id} is deleted, skipping scan.")
+        logger.info(f"Tracker {tracker_id} is deleted, skipping scan.")
         return stats
     try:
         client = TrackerClient(tracker)
@@ -625,11 +629,13 @@ async def scan_tracker(
                 if not isinstance(stats[key], dict):
                     stats[key] += org_stats.get(key, 0)
     except Exception as e:
-        logger.error(f"Failed to scan tracker {tracker.id}: {e}", exc_info=True)
+        # Rollback the session to clear any pending transactions
+        db.rollback()
+        logger.error(f"Failed to scan tracker {tracker_id}: {e}", exc_info=True)
         stats["errors"] += 1
 
     if verbose:
-        logger.info(f"Stats for tracker {tracker.id}: {stats}")
+        logger.info(f"Stats for tracker {tracker_id}: {stats}")
     return stats
 
 
@@ -642,7 +648,7 @@ async def scan_account(
 ) -> Dict[str, Any]:
     """Scan all trackers for a given account."""
     account = crud_account.get(db, id=account_id)
-    logger.info(f"Scanning account {account.id} ({account.username})...")
+    logger.info(f"Scanning account {account.id} ({account.organization_name})...")
     if not account:
         logger.error(f"Account with id {account_id} not found.")
         return {}

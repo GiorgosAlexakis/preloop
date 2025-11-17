@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import logging
 
 from sqlalchemy.orm import Session
-from spacemodels.models.issue import DESCRIPTION_MAX_LENGTH
 from spacemodels.models.project import Project
 from spacemodels.models.organization import Organization
 from spacemodels.models.webhook import Webhook
@@ -168,16 +167,6 @@ class BaseTracker(ABC):
             created_at = created_at.isoformat()
 
         description = issue_data.get("description", "")
-        original_length = len(description) if description else 0
-
-        if description and len(description) > DESCRIPTION_MAX_LENGTH:
-            description = (
-                description[: DESCRIPTION_MAX_LENGTH - 25] + "... [content truncated]"
-            )
-            logger.info(
-                f"Truncated issue description from {original_length} to {len(description)} characters. "
-                f"Set ISSUE_DESCRIPTION_MAX_LENGTH env var to increase (current: {DESCRIPTION_MAX_LENGTH})"
-            )
 
         issue_url = issue_data.get("url", "")
 

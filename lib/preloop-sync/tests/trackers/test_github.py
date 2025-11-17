@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 from unittest import IsolatedAsyncioTestCase
 import httpx
+from uuid import uuid4
 from spacesync.exceptions import (
     TrackerAuthenticationError,
     TrackerConnectionError,
@@ -246,7 +247,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
 
         mock_requests_get.side_effect = [mock_user_response, mock_orgs_response]
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         orgs = await tracker.get_organizations()
 
         self.assertEqual(len(orgs), 2)
@@ -273,7 +274,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
         ]
         mock_requests_get.return_value = mock_repos_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         projects = await tracker.get_projects("octocat")
 
         self.assertEqual(len(projects), 1)
@@ -299,7 +300,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
         ]
         mock_requests_get.return_value = mock_repos_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         projects = await tracker.get_projects("personal")
 
         self.assertEqual(len(projects), 1)
@@ -314,7 +315,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
     async def test_get_issues_repo_details_error(self, mock_requests_get):
         mock_requests_get.side_effect = TrackerResponseError("Failed to fetch")
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         issues = await tracker.get_issues("octocat", "12345")
 
         self.assertEqual(len(issues), 0)
@@ -335,7 +336,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
 
         mock_requests_get.side_effect = side_effect
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         issues = await tracker.get_issues("octocat", "12345")
 
         self.assertEqual(len(issues), 0)
@@ -354,7 +355,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
         ]
         mock_requests_get.return_value = mock_issues_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         issues = await tracker.get_issues("octocat", "octocat/Hello-World")
 
         self.assertEqual(len(issues), 0)
@@ -390,7 +391,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
 
         mock_requests_get.side_effect = side_effect
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         issues = await tracker.get_issues("octocat", "octocat/Hello-World")
 
         self.assertEqual(len(issues), 1)
@@ -405,7 +406,7 @@ class TestGitHubTrackerRequestErrors(unittest.IsolatedAsyncioTestCase):
         mock_response.status_code = 401
         mock_requests_get.return_value = mock_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         with self.assertRaises(TrackerAuthenticationError):
             await tracker._make_request("user")
 
@@ -415,7 +416,7 @@ class TestGitHubTrackerRequestErrors(unittest.IsolatedAsyncioTestCase):
             "Connection failed", request=MagicMock()
         )
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         with self.assertRaises(TrackerConnectionError):
             await tracker._make_request("user")
 
@@ -426,7 +427,7 @@ class TestGitHubTrackerRequestErrors(unittest.IsolatedAsyncioTestCase):
         mock_response.text = "Internal Server Error"
         mock_requests_get.return_value = mock_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         with self.assertRaises(TrackerResponseError):
             await tracker._make_request("user")
 
@@ -439,7 +440,7 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
         mock_response.status_code = 204
         mock_requests_delete.return_value = mock_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         self.assertTrue(await tracker._make_request_delete("hooks/1"))
 
     @patch("spacesync.trackers.github.httpx.AsyncClient.delete")
@@ -448,7 +449,7 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
         mock_response.status_code = 404
         mock_requests_delete.return_value = mock_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         self.assertTrue(await tracker._make_request_delete("hooks/1"))
 
     @patch("spacesync.trackers.github.httpx.AsyncClient.delete")
@@ -457,7 +458,7 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
         mock_response.status_code = 401
         mock_requests_delete.return_value = mock_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         with self.assertRaises(TrackerAuthenticationError):
             await tracker._make_request_delete("hooks/1")
 
@@ -467,7 +468,7 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
             "Connection failed", request=MagicMock()
         )
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         with self.assertRaises(TrackerConnectionError):
             await tracker._make_request_delete("hooks/1")
 
@@ -478,7 +479,7 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
         mock_response.text = "Internal Server Error"
         mock_requests_delete.return_value = mock_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         with self.assertRaises(TrackerResponseError):
             await tracker._make_request_delete("hooks/1")
 
@@ -499,7 +500,7 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
             }
         ]
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         webhooks = await tracker.get_webhooks("octocat")
 
         self.assertEqual(len(webhooks), 1)
@@ -520,7 +521,7 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         }
         mock_requests_post.return_value = mock_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         db_mock = MagicMock()
         organization_mock = MagicMock()
         organization_mock.identifier = "octocat"
@@ -540,7 +541,7 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_response.status_code = 204
         mock_requests_delete.return_value = mock_response
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         db_mock = MagicMock()
         webhook_mock = MagicMock()
         webhook_mock.id = "webhook-db-id"
@@ -562,7 +563,7 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
             {"config": {"url": "https://example.com/webhook"}}
         ]
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         project_mock = MagicMock()
         project_mock.slug = "octocat/Hello-World"
         is_registered = await tracker.is_webhook_registered_for_project(
@@ -578,7 +579,7 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
             {"config": {"url": "https://example.com/other-webhook"}}
         ]
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         project_mock = MagicMock()
         project_mock.slug = "octocat/Hello-World"
         is_registered = await tracker.is_webhook_registered_for_project(
@@ -606,7 +607,7 @@ class TestGitHubTrackerPagination(unittest.IsolatedAsyncioTestCase):
 
         mock_requests_get.side_effect = [mock_response_1, mock_response_2]
 
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         results = await tracker._make_request("user/repos")
 
         self.assertEqual(len(results), 2)
@@ -627,7 +628,7 @@ class TestGitHubTrackerUnregisterAllWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_crud_project_get_for_organization,
     ):
         # Arrange
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         db_mock = MagicMock()
 
         mock_org = MagicMock()
@@ -662,7 +663,7 @@ class TestGitHubTrackerUnregisterAllWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_crud_project_get_for_organization,
     ):
         # Arrange
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         db_mock = MagicMock()
 
         mock_org = MagicMock()
@@ -693,7 +694,7 @@ class TestGitHubTrackerUnregisterAllWebhooks(unittest.IsolatedAsyncioTestCase):
         self, mock_crud_organization_get_multi, mock_crud_project_get_for_organization
     ):
         # Arrange
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         db_mock = MagicMock()
 
         mock_org = MagicMock()
@@ -729,7 +730,7 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
         This test has a webhook pointing to spacebridge_url that's not in DB, so it should be deleted.
         """
         # Arrange
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         mock_make_request.side_effect = [
             {"login": "user", "html_url": ""},
             [{"login": "org1", "url": "...", "id": "org1", "name": "org1"}],
@@ -755,7 +756,7 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
         A webhook pointing to spacebridge_url that's not in DB should be deleted.
         """
         # Arrange
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         repo_meta = {
             "full_name": "org1/repo1",
             "id": "123",
@@ -798,7 +799,7 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
         even though it's not in our DB, because it doesn't point to our SpaceBridge.
         """
         # Arrange
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
         mock_make_request.side_effect = [
             {"login": "user", "html_url": ""},
             [{"login": "org1", "url": "...", "id": "org1", "name": "org1"}],
@@ -845,7 +846,7 @@ class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
         }
 
         connection_details = {"owner": "testowner", "repo": "testrepo"}
-        tracker = GitHubTracker("tracker-1", "api-key", connection_details)
+        tracker = GitHubTracker(str(uuid4()), "api-key", connection_details)
 
         # Mock the _make_request method directly
         from unittest.mock import AsyncMock
@@ -884,7 +885,7 @@ class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
         }
 
         connection_details = {"owner": "testowner", "repo": "testrepo"}
-        tracker = GitHubTracker("tracker-1", "api-key", connection_details)
+        tracker = GitHubTracker(str(uuid4()), "api-key", connection_details)
 
         # Mock the _make_request method directly
         from unittest.mock import AsyncMock
@@ -900,7 +901,7 @@ class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
     async def test_get_issue_missing_connection_details(self):
         """Test error when connection details are missing."""
         # Arrange
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
 
         # Act & Assert
         with self.assertRaises(TrackerResponseError) as context:
@@ -941,7 +942,7 @@ class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
         ]
 
         connection_details = {"owner": "testowner", "repo": "testrepo"}
-        tracker = GitHubTracker("tracker-1", "api-key", connection_details)
+        tracker = GitHubTracker(str(uuid4()), "api-key", connection_details)
 
         # Mock the _make_request method directly
         from unittest.mock import AsyncMock
@@ -974,7 +975,7 @@ class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
     async def test_get_comments_missing_connection_details(self):
         """Test error when connection details are missing."""
         # Arrange
-        tracker = GitHubTracker("tracker-1", "api-key", {})
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
 
         # Act & Assert
         with self.assertRaises(TrackerResponseError) as context:
@@ -988,7 +989,7 @@ class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
         """Test handling of API errors when fetching comments."""
         # Arrange
         connection_details = {"owner": "testowner", "repo": "testrepo"}
-        tracker = GitHubTracker("tracker-1", "api-key", connection_details)
+        tracker = GitHubTracker(str(uuid4()), "api-key", connection_details)
 
         # Mock the _make_request method to raise an exception
         from unittest.mock import AsyncMock

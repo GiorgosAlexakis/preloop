@@ -491,10 +491,10 @@ class GitLabTracker(BaseTracker):
         return self._parse_gitlab_issue(issue)
 
     async def add_comment(self, issue_id: str, comment: str) -> IssueComment:
-        """Add a comment to a GitLab issue.
+        """Add a comment to a GitLab issue or merge request.
 
         Args:
-            issue_id: Issue IID or ID.
+            issue_id: Issue IID or MR IID.
             comment: Comment text.
 
         Returns:
@@ -504,21 +504,37 @@ class GitLabTracker(BaseTracker):
         if not project_id:
             raise TrackerResponseError("Project ID not found in connection details")
 
-        # Extract issue IID from various formats
-        issue_iid = issue_id
+        # Extract IID from various formats
+        iid = issue_id
         if "#" in issue_id:
-            issue_iid = issue_id.split("#")[-1]
-        if "/" in issue_iid:
-            issue_iid = issue_iid.split("/")[-1]
+            iid = issue_id.split("#")[-1]
+        if "/" in iid:
+            iid = iid.split("/")[-1]
 
         project = await self._make_request(self.gl.projects.get, project_id)
-        issue = await self._make_request(project.issues.get, issue_iid)
+
+        # Try to get as merge request first, fall back to issue
+        resource = None
+        resource_type = "issue"
+        try:
+            resource = await self._make_request(project.mergerequests.get, iid)
+            resource_type = "merge_request"
+        except Exception:
+            # Not a merge request, try as issue
+            try:
+                resource = await self._make_request(project.issues.get, iid)
+                resource_type = "issue"
+            except Exception as e:
+                raise TrackerResponseError(
+                    f"Could not find issue or merge request with IID {iid}: {e}"
+                )
 
         # Create the comment (note)
         note_dict = {"body": comment}
-        note = await self._make_request(issue.notes.create, note_dict)
+        note = await self._make_request(resource.notes.create, note_dict)
 
         # Parse and return the comment
+        url_fragment = "issues" if resource_type == "issue" else "merge_requests"
         return IssueComment(
             id=str(note.id),
             body=note.body,
@@ -530,7 +546,7 @@ class GitLabTracker(BaseTracker):
                 email=None,
                 avatar_url=note.author.get("avatar_url"),
             ),
-            url=f"{project.web_url}/-/issues/{issue_iid}#note_{note.id}",
+            url=f"{project.web_url}/-/{url_fragment}/{iid}#note_{note.id}",
         )
 
     async def add_relation(
@@ -1377,3 +1393,204 @@ class GitLabTracker(BaseTracker):
             logger.error(f"Failed to fetch notes for issue {issue_id}: {e}")
 
         return comments_data
+
+    async def get_merge_request(self, mr_identifier: str) -> Dict[str, Any]:
+        """
+        Get details of a GitLab merge request.
+
+        Args:
+            mr_identifier: MR identifier (IID, slug, or URL)
+
+        Returns:
+            Dict with MR details including title, description, state, comments, and changes
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        # Extract MR IID from various formats
+        mr_iid = mr_identifier
+        if "merge_requests" in mr_identifier:
+            # Handle URLs like "https://gitlab.com/owner/repo/-/merge_requests/1"
+            parts = mr_identifier.split("merge_requests/")
+            mr_iid = parts[-1].rstrip("/")
+        elif "/" in mr_iid:
+            # Handle formats like "owner/repo#1"
+            parts = mr_iid.split("/")
+            mr_iid = parts[-1]
+        if "#" in mr_iid:
+            mr_iid = mr_iid.split("#")[-1]
+
+        try:
+            # Get project and MR
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Get MR notes (comments)
+            notes = await self._make_request(
+                mr.notes.list, all=True, sort="asc", order_by="created_at"
+            )
+
+            all_comments = []
+            for note in notes:
+                if note.system:  # Skip system notes
+                    continue
+
+                all_comments.append(
+                    {
+                        "id": str(note.id),
+                        "author": note.author.get("username")
+                        if hasattr(note, "author") and isinstance(note.author, dict)
+                        else None,
+                        "body": note.body or "",
+                        "created_at": note.created_at,
+                        "type": "note",
+                    }
+                )
+
+            # Get MR changes/diffs
+            mr_changes = await self._make_request(mr.changes)
+
+            changes = {
+                "files_changed": len(mr_changes.changes)
+                if hasattr(mr_changes, "changes")
+                else 0,
+                "additions": getattr(mr, "diff_stats", {}).get("additions", 0),
+                "deletions": getattr(mr, "diff_stats", {}).get("deletions", 0),
+                "changed_files": [
+                    {
+                        "old_path": change.get("old_path", ""),
+                        "new_path": change.get("new_path", ""),
+                        "new_file": change.get("new_file", False),
+                        "renamed_file": change.get("renamed_file", False),
+                        "deleted_file": change.get("deleted_file", False),
+                        "diff": change.get("diff", ""),
+                    }
+                    for change in (
+                        mr_changes.changes if hasattr(mr_changes, "changes") else []
+                    )
+                ],
+            }
+
+            return {
+                "id": str(mr.id),
+                "iid": mr.iid,
+                "title": mr.title,
+                "description": mr.description or "",
+                "state": mr.state,
+                "author": mr.author.get("username")
+                if hasattr(mr, "author") and isinstance(mr.author, dict)
+                else None,
+                "assignees": [
+                    a.get("username")
+                    for a in (mr.assignees if hasattr(mr, "assignees") else [])
+                ],
+                "reviewers": [
+                    r.get("username")
+                    for r in (mr.reviewers if hasattr(mr, "reviewers") else [])
+                ],
+                "labels": mr.labels if hasattr(mr, "labels") else [],
+                "url": mr.web_url,
+                "source_branch": mr.source_branch,
+                "target_branch": mr.target_branch,
+                "created_at": mr.created_at,
+                "updated_at": mr.updated_at,
+                "merged_at": mr.merged_at if hasattr(mr, "merged_at") else None,
+                "work_in_progress": mr.work_in_progress
+                if hasattr(mr, "work_in_progress")
+                else False,
+                "comments": all_comments,
+                "changes": changes,
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting merge request {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to get merge request: {e}")
+
+    async def update_merge_request(
+        self,
+        mr_identifier: str,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        state_event: Optional[str] = None,
+        assignee_ids: Optional[List[int]] = None,
+        reviewer_ids: Optional[List[int]] = None,
+        labels: Optional[List[str]] = None,
+        draft: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """
+        Update a GitLab merge request.
+
+        Args:
+            mr_identifier: MR identifier (IID, slug, or URL)
+            title: New MR title
+            description: New MR description
+            state_event: State event ("close", "reopen")
+            assignee_ids: List of assignee user IDs
+            reviewer_ids: List of reviewer user IDs
+            labels: List of label names
+            draft: Whether to mark as draft (work in progress)
+
+        Returns:
+            Dict with updated MR details
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        # Extract MR IID from various formats
+        mr_iid = mr_identifier
+        if "merge_requests" in mr_identifier:
+            parts = mr_identifier.split("merge_requests/")
+            mr_iid = parts[-1].rstrip("/")
+        elif "/" in mr_iid:
+            parts = mr_iid.split("/")
+            mr_iid = parts[-1]
+        if "#" in mr_iid:
+            mr_iid = mr_iid.split("#")[-1]
+
+        try:
+            # Get project and MR
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Build update payload
+            update_data = {}
+            if title is not None:
+                update_data["title"] = title
+            if description is not None:
+                update_data["description"] = description
+            if state_event is not None:
+                update_data["state_event"] = state_event
+            if assignee_ids is not None:
+                update_data["assignee_ids"] = assignee_ids
+            if reviewer_ids is not None:
+                update_data["reviewer_ids"] = reviewer_ids
+            if labels is not None:
+                update_data["labels"] = ",".join(labels)
+            if draft is not None:
+                # In GitLab, draft is controlled by work_in_progress
+                update_data["wip"] = draft
+
+            # Update MR
+            for key, value in update_data.items():
+                setattr(mr, key, value)
+
+            await self._make_request(mr.save)
+
+            # Return updated MR data
+            return {
+                "id": str(mr.id),
+                "iid": mr.iid,
+                "title": mr.title,
+                "description": mr.description or "",
+                "state": mr.state,
+                "url": mr.web_url,
+                "work_in_progress": mr.work_in_progress
+                if hasattr(mr, "work_in_progress")
+                else False,
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating merge request {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to update merge request: {e}")
