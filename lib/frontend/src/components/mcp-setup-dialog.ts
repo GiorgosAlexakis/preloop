@@ -160,20 +160,14 @@ export class MCPSetupDialog extends LitElement {
                   </ul>
                   <h5>Setup</h5>
                   <p>
-                    Add to your Claude Code MCP settings
-                    (<code>~/.config/claude-code/mcp_settings.json</code>):
+                    Run this command in your terminal to add SpaceBridge to
+                    Claude Code:
                   </p>
-                  <pre><code>{
-  "mcpServers": {
-    "spacebridge": {
-      "url": "${mcpUrl}",
-      "transport": "http-streaming",
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY_HERE"
-      }
-    }
-  }
-}</code></pre>
+                  <pre><code>claude mcp add --transport http preloop ${mcpUrl} --header "Authorization: Bearer YOUR_API_KEY_HERE"</code></pre>
+                  <p style="margin-top: 1rem;">
+                    Replace <code>YOUR_API_KEY_HERE</code> with your actual
+                    SpaceBridge API key.
+                  </p>
                 </div>
               `
             : ''}
