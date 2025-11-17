@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { AuthedElement } from '../../api';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
@@ -52,6 +52,8 @@ export class ApprovalView extends AuthedElement {
   @state()
   private actionResult: { type: 'success' | 'error'; message: string } | null =
     null;
+
+  private unsubscribe?: () => void;
 
   static styles = css`
     :host {
@@ -189,19 +191,21 @@ export class ApprovalView extends AuthedElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     // Disconnect from WebSocket when view is destroyed
-    webSocketService.disconnectFromFlowUpdates();
+    this.unsubscribe?.();
   }
 
   private connectWebSocket() {
-    webSocketService.connectToApprovalUpdates(
+    this.unsubscribe = unifiedWebSocketManager.subscribe(
+      'approvals',
       (message: any) => this.handleWebSocketMessage(message),
-      () => {
-        console.log('Connected to approval updates WebSocket');
-      },
-      () => {
-        console.log('Disconnected from approval updates WebSocket');
-      }
+      // Filter to only receive messages for this approval request
+      (message: any) => message.request_id === this.requestId
     );
+
+    // Track connection state
+    unifiedWebSocketManager.onStateChange((state) => {
+      console.log(`Approval view WebSocket state: ${state}`);
+    });
   }
 
   private handleWebSocketMessage(message: any) {
@@ -379,6 +383,18 @@ export class ApprovalView extends AuthedElement {
     }
   }
 
+  private formatToolArgs(args: Record<string, any>): string {
+    // Convert args to JSON string with proper formatting
+    const jsonStr = JSON.stringify(args, null, 2);
+
+    // Replace escaped newlines with actual newlines for better readability
+    // This handles strings that contain \n, \r\n, etc.
+    return jsonStr
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t');
+  }
+
   render() {
     if (this.loading) {
       return html`
@@ -506,7 +522,7 @@ export class ApprovalView extends AuthedElement {
         <div class="content-section">
           <h2>Tool Arguments</h2>
           <div class="code-block">
-            ${JSON.stringify(this.approvalRequest.tool_args, null, 2)}
+            ${this.formatToolArgs(this.approvalRequest.tool_args)}
           </div>
         </div>
 

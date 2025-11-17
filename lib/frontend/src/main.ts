@@ -22,6 +22,9 @@ Sentry.init({
 
 import './components/lit-app.ts';
 import { Theme, DEFAULT_THEME } from './theme';
+import { unifiedWebSocketManager } from './services/unified-websocket-manager';
+import { activityTracker } from './services/activity-tracker';
+import { router } from './router';
 
 function applyTheme(theme: Theme) {
   const darkTheme = 'sl-theme-dark';
@@ -58,3 +61,45 @@ window
       applyTheme('system');
     }
   });
+
+// Initialize unified WebSocket connection
+// This establishes a persistent connection that survives page navigation
+unifiedWebSocketManager.connect();
+
+// Initialize activity tracking
+activityTracker.initializeAutoTracking();
+
+// Track page views on route changes
+// Vaadin Router fires 'vaadin-router-location-changed' event on navigation
+let lastTrackedPath: string | null = null;
+
+function trackCurrentPage() {
+  const currentPath = window.location.pathname;
+
+  // Only track if path actually changed
+  if (currentPath !== lastTrackedPath) {
+    lastTrackedPath = currentPath;
+    activityTracker.trackPageView(currentPath);
+    console.debug('Tracked page view:', currentPath);
+  }
+}
+
+// Track initial page
+trackCurrentPage();
+
+// Listen for route changes
+window.addEventListener('vaadin-router-location-changed', () => {
+  trackCurrentPage();
+});
+
+// Also track on popstate (browser back/forward buttons)
+window.addEventListener('popstate', () => {
+  trackCurrentPage();
+});
+
+// Log connection state changes (for debugging)
+if (env === 'development') {
+  unifiedWebSocketManager.onStateChange((state) => {
+    console.log(`WebSocket state: ${state}`);
+  });
+}

@@ -13,7 +13,7 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import * as api from '../../api';
 import { AuthedElement } from '../../api';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import '../../components/similar-issues-widget.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/tracker-pill.ts';
@@ -140,6 +140,8 @@ export class DashboardView extends AuthedElement {
   @state()
   private showSetupDialog = false;
 
+  private unsubscribe?: () => void;
+
   async connectedCallback() {
     super.connectedCallback();
     this.fetchDashboardData();
@@ -148,85 +150,98 @@ export class DashboardView extends AuthedElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    webSocketService.disconnectFromFlowUpdates();
+    this.unsubscribe?.();
   }
 
   private connectToFlowUpdates() {
     // Connect to WebSocket for real-time flow execution updates and approval updates
-    webSocketService.connectToFlowUpdates(
-      (message) => {
-        // Handle incoming WebSocket messages
-        console.log('Dashboard received update:', message);
+    const handleMessage = (message: any) => {
+      // Handle incoming WebSocket messages
+      console.log('Dashboard received update:', message);
 
-        // Handle approval-related messages
-        if (message.type?.startsWith('approval_')) {
-          this.handleApprovalMessage(message);
-          return;
-        }
+      // Handle approval-related messages
+      if (message.type?.startsWith('approval_')) {
+        this.handleApprovalMessage(message);
+        return;
+      }
 
-        // If this is an execution_started event, add it to recent executions
-        if (message.type === 'execution_started') {
-          const newExecution = {
-            id: message.execution_id,
-            flow_id: message.flow_id,
-            status: message.payload.status || 'PENDING',
-            start_time: message.timestamp,
-            end_time: null,
-            flow_name: message.payload.flow_name,
-            error_message: null,
+      // If this is an execution_started event, add it to recent executions
+      if (message.type === 'execution_started') {
+        const newExecution = {
+          id: message.execution_id,
+          flow_id: message.flow_id,
+          status: message.payload.status || 'PENDING',
+          start_time: message.timestamp,
+          end_time: null,
+          flow_name: message.payload.flow_name,
+          error_message: null,
+        };
+
+        // Add to the beginning of recent executions and keep only top 5
+        this.recentFlowExecutions = [
+          newExecution,
+          ...this.recentFlowExecutions,
+        ].slice(0, 5);
+
+        // Dispatch custom event for global notification
+        window.dispatchEvent(
+          new CustomEvent('flow-execution-update', {
+            detail: { execution: newExecution, type: 'started' },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      }
+
+      // If this is a status update, update the execution
+      if (message.type === 'status_update' && message.execution_id) {
+        const executionIndex = this.recentFlowExecutions.findIndex(
+          (exec) => exec.id === message.execution_id
+        );
+        if (executionIndex !== -1) {
+          const updatedExecution = {
+            ...this.recentFlowExecutions[executionIndex],
+            status: message.payload.status,
+            end_time: message.payload.end_time || null,
           };
-
-          // Add to the beginning of recent executions and keep only top 5
           this.recentFlowExecutions = [
-            newExecution,
-            ...this.recentFlowExecutions,
-          ].slice(0, 5);
+            ...this.recentFlowExecutions.slice(0, executionIndex),
+            updatedExecution,
+            ...this.recentFlowExecutions.slice(executionIndex + 1),
+          ];
 
           // Dispatch custom event for global notification
           window.dispatchEvent(
             new CustomEvent('flow-execution-update', {
-              detail: { execution: newExecution, type: 'started' },
+              detail: { execution: updatedExecution, type: 'updated' },
               bubbles: true,
               composed: true,
             })
           );
         }
-
-        // If this is a status update, update the execution
-        if (message.type === 'status_update' && message.execution_id) {
-          const executionIndex = this.recentFlowExecutions.findIndex(
-            (exec) => exec.id === message.execution_id
-          );
-          if (executionIndex !== -1) {
-            const updatedExecution = {
-              ...this.recentFlowExecutions[executionIndex],
-              status: message.payload.status,
-              end_time: message.payload.end_time || null,
-            };
-            this.recentFlowExecutions = [
-              ...this.recentFlowExecutions.slice(0, executionIndex),
-              updatedExecution,
-              ...this.recentFlowExecutions.slice(executionIndex + 1),
-            ];
-
-            // Dispatch custom event for global notification
-            window.dispatchEvent(
-              new CustomEvent('flow-execution-update', {
-                detail: { execution: updatedExecution, type: 'updated' },
-                bubbles: true,
-                composed: true,
-              })
-            );
-          }
-        }
-      },
-      () => {
-        console.log('Dashboard WebSocket connected');
-      },
-      () => {
-        console.log('Dashboard WebSocket disconnected');
       }
+    };
+
+    // Subscribe to both flow_executions and approvals topics
+    const unsubscribeFlow = unifiedWebSocketManager.subscribe(
+      'flow_executions',
+      handleMessage
     );
+    const unsubscribeApprovals = unifiedWebSocketManager.subscribe(
+      'approvals',
+      handleMessage
+    );
+
+    // Combine both unsubscribe functions
+    this.unsubscribe = () => {
+      unsubscribeFlow();
+      unsubscribeApprovals();
+    };
+
+    // Track connection state
+    unifiedWebSocketManager.onStateChange((state) => {
+      console.log(`Dashboard WebSocket state: ${state}`);
+    });
   }
 
   private handleApprovalMessage(message: any) {

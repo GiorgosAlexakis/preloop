@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { router } from '../router';
+import { activityTracker } from '../services/activity-tracker';
 import '../views/public/landing-view.ts';
 import './static-view-wrapper.ts';
 import '../views/public/login-view.ts';
@@ -42,6 +43,7 @@ import '../views/authed/flow-execution-view.ts';
 import '../views/authed/approval-view.ts';
 import './app-header.ts';
 import './app-footer.ts';
+import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
 
 @customElement('lit-app')
 export class LitApp extends LitElement {
@@ -60,8 +62,13 @@ export class LitApp extends LitElement {
   `;
 
   firstUpdated() {
-    this.connectWebSocket();
     this.setupEventListeners();
+
+    // Defer WebSocket connection until after initial render
+    // This ensures the landing page loads quickly without waiting for WebSocket
+    requestAnimationFrame(() => {
+      this.connectWebSocket();
+    });
 
     const outlet = this.renderRoot.querySelector('main');
     const ssrRoute = this.getAttribute('data-ssr-route');
@@ -81,6 +88,10 @@ export class LitApp extends LitElement {
 
     // Always initialize router
     router.setOutlet(outlet);
+
+    // Note: Page view tracking is handled in main.ts to avoid duplication
+    // and ensure all navigation methods are tracked
+
     router.setRoutes([
       {
         path: '/',
@@ -258,10 +269,11 @@ export class LitApp extends LitElement {
   }
 
   connectWebSocket() {
-    // Connect to general flow updates WebSocket
-    // This is handled by webSocketService.connectToFlowUpdates()
-    // which is called from flow-executions-view
-    // No need to connect here globally
+    // Connect unified WebSocket manager when app initializes
+    // This establishes a single persistent connection that all views can subscribe to
+    unifiedWebSocketManager.connect().catch((error) => {
+      console.error('Failed to connect unified WebSocket:', error);
+    });
   }
 
   setupEventListeners() {

@@ -15,7 +15,7 @@ import {
   getAllTools,
   getMCPServers,
 } from '../../api';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
@@ -212,6 +212,7 @@ export class FlowView extends LitElement {
 
   private organizationPollingInterval?: number;
   private projectPollingInterval?: number;
+  private unsubscribe?: () => void;
 
   disconnectedCallback() {
     super.disconnectedCallback();
@@ -223,7 +224,7 @@ export class FlowView extends LitElement {
       clearInterval(this.projectPollingInterval);
     }
     // Disconnect from WebSocket
-    webSocketService.disconnectFromFlowUpdates();
+    this.unsubscribe?.();
   }
 
   async connectedCallback() {
@@ -344,7 +345,8 @@ export class FlowView extends LitElement {
 
   private connectToFlowUpdates() {
     // Connect to WebSocket for real-time flow execution updates
-    webSocketService.connectToFlowUpdates(
+    this.unsubscribe = unifiedWebSocketManager.subscribe(
+      'flow_executions',
       (message) => {
         // Handle incoming WebSocket messages
         console.log('Received flow update:', message);
@@ -389,14 +391,13 @@ export class FlowView extends LitElement {
             ];
           }
         }
-      },
-      () => {
-        console.log('WebSocket connected for flow updates');
-      },
-      () => {
-        console.log('WebSocket disconnected for flow updates');
       }
     );
+
+    // Track connection state
+    unifiedWebSocketManager.onStateChange((state) => {
+      console.log(`Flow view WebSocket state: ${state}`);
+    });
   }
 
   render() {

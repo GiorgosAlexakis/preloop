@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import {
   getFlowExecution,
   getFlow,
@@ -212,6 +212,7 @@ export class FlowExecutionView extends LitElement {
   private logContainerRef?: HTMLElement;
   private wsConnected = false;
   private autoScrollInterval?: number;
+  private unsubscribe?: () => void;
 
   disconnectedCallback() {
     super.disconnectedCallback();
@@ -220,6 +221,8 @@ export class FlowExecutionView extends LitElement {
       clearInterval(this.autoScrollInterval);
       this.autoScrollInterval = undefined;
     }
+    // Unsubscribe from WebSocket
+    this.unsubscribe?.();
   }
 
   async updated(changedProperties: Map<string, any>) {
@@ -286,32 +289,42 @@ export class FlowExecutionView extends LitElement {
         this.wsConnected = true;
         this.isAutoScroll = true; // Enable auto-scroll for streaming
         this.startAutoScrollChecker(); // Start periodic scroll checker
-        webSocketService.connectToExecution(
-          this.executionId,
+
+        // Subscribe to flow execution updates for this specific execution
+        this.unsubscribe = unifiedWebSocketManager.subscribe(
+          'flow_executions',
           (message: any) => this.handleWebSocketMessage(message),
-          () => {
-            console.log(
-              `Connected to execution WebSocket, logs.length = ${this.logs.length}`
-            );
-            // Only add connection log if this is a live execution (no persisted logs)
-            if (this.logs.length === 0) {
-              console.log('Adding connection log message');
-              this.logs = [
-                {
-                  execution_id: this.executionId!,
-                  timestamp: new Date().toISOString(),
-                  type: 'connected',
-                  payload: { message: 'Connected to flow execution stream' },
-                },
-              ];
-            }
-          },
-          () => {
-            console.log('Disconnected from execution WebSocket');
-            this.wsConnected = false;
+          // Filter to only receive messages for this execution
+          (message: any) => message.execution_id === this.executionId
+        );
+
+        // Track connection state
+        unifiedWebSocketManager.onStateChange((state) => {
+          const wasConnected = this.wsConnected;
+          this.wsConnected = state === 'connected';
+
+          // Add connection log if this is initial connection
+          if (
+            state === 'connected' &&
+            !wasConnected &&
+            this.logs.length === 0
+          ) {
+            console.log('Adding connection log message');
+            this.logs = [
+              {
+                execution_id: this.executionId!,
+                timestamp: new Date().toISOString(),
+                type: 'connected',
+                payload: { message: 'Connected to flow execution stream' },
+              },
+            ];
+          }
+
+          // Stop auto-scroll when disconnected
+          if (state !== 'connected') {
             this.stopAutoScrollChecker();
           }
-        );
+        });
       } else {
         console.log(
           'Execution is finished, not connecting to WebSocket stream'
@@ -399,7 +412,7 @@ export class FlowExecutionView extends LitElement {
 
       // Handle real-time token usage update
       if (message.type === 'token_usage_update') {
-        this.tokensUsed = message.payload.total_tokens || 0;
+        this.totalTokens = message.payload.total_tokens || 0;
       }
 
       // Track budget usage
@@ -426,26 +439,11 @@ export class FlowExecutionView extends LitElement {
     this.autoScrollInterval = window.setInterval(() => {
       if (this.isAutoScroll && this.logContainerRef) {
         const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
-        const isAtBottom = scrollHeight - scrollTop - clientHeight < 10;
+        const isAtBottom = scrollHeight - scrollTop - clientHeight < 1;
 
         // If not at bottom, force scroll
         if (!isAtBottom) {
-          console.log(
-            'Forcing scroll to bottom for container',
-            this.logContainerRef
-          );
           this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
-        } else {
-          console.log(
-            'Already at bottom for container',
-            this.logContainerRef,
-            'scrollTop',
-            scrollTop,
-            'scrollHeight',
-            scrollHeight,
-            'clientHeight',
-            clientHeight
-          );
         }
       }
     }, 200);
@@ -604,13 +602,6 @@ export class FlowExecutionView extends LitElement {
     }
 
     return 'lightning';
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this.executionId) {
-      webSocketService.disconnectFromExecution(this.executionId);
-    }
   }
 
   render() {
@@ -916,7 +907,8 @@ ${log.payload.content}</pre
 
     // For log lines, show timestamp + content
     if (log.type === 'agent_log_line') {
-      const content = log.payload.line || log.payload.message || '';
+      const content =
+        log.payload.line || log.payload.message || log.payload.content || '';
       const stream = log.payload.stream || 'stdout';
       const streamClass = stream === 'stderr' ? 'log-stderr' : '';
 
@@ -1013,7 +1005,11 @@ ${log.payload.content}</pre
       }
 
       // Send command via WebSocket
-      webSocketService.sendToExecution(this.executionId, commandData);
+      unifiedWebSocketManager.send({
+        type: 'command',
+        execution_id: this.executionId,
+        ...commandData,
+      });
 
       // Add command to logs for user feedback
       this.logs = [
@@ -1066,12 +1062,6 @@ ${log.payload.content}</pre
         }
       } catch (error) {
         console.error('Failed to fetch logs after stop:', error);
-      }
-
-      // Disconnect from WebSocket since execution is now stopped
-      if (this.wsConnected) {
-        webSocketService.disconnectFromExecution(this.executionId);
-        this.wsConnected = false;
       }
 
       // Stop auto-scroll checker

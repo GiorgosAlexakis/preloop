@@ -6,7 +6,7 @@ import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import { router } from '../../router';
 import { Router } from '@vaadin/router';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import {
   getFlows,
   getFlowPresets,
@@ -169,6 +169,8 @@ export class FlowsView extends LitElement {
   @state()
   private triggeringFlowId: string | null = null;
 
+  private unsubscribe?: () => void;
+
   async connectedCallback() {
     super.connectedCallback();
     await this.loadData();
@@ -181,7 +183,7 @@ export class FlowsView extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     // Clean up WebSocket connection
-    webSocketService.disconnectFromFlowUpdates();
+    this.unsubscribe?.();
   }
 
   async loadData() {
@@ -202,15 +204,15 @@ export class FlowsView extends LitElement {
   }
 
   private connectWebSocket() {
-    webSocketService.connectToFlowUpdates(
-      (message: any) => this.handleWebSocketMessage(message),
-      () => {
-        console.log('Connected to flow updates WebSocket');
-      },
-      () => {
-        console.log('Disconnected from flow updates WebSocket');
-      }
+    this.unsubscribe = unifiedWebSocketManager.subscribe(
+      'flow_executions',
+      (message: any) => this.handleWebSocketMessage(message)
     );
+
+    // Track connection state
+    unifiedWebSocketManager.onStateChange((state) => {
+      console.log(`Flows view WebSocket state: ${state}`);
+    });
   }
 
   private handleWebSocketMessage(message: any) {

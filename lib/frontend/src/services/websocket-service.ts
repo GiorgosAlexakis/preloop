@@ -1,3 +1,31 @@
+/**
+ * @deprecated This service is deprecated and should not be used for new code.
+ * Use `unifiedWebSocketManager` from `./unified-websocket-manager.ts` instead.
+ *
+ * This service maintained multiple WebSocket connections which caused:
+ * - Connection overhead and resource waste
+ * - Inconsistent behavior across views
+ * - Difficulty tracking user activity
+ *
+ * The unified WebSocket manager provides:
+ * - Single persistent connection with auto-reconnect
+ * - Pub/sub pattern for message routing
+ * - Activity tracking for authenticated and anonymous users
+ * - Better connection state management
+ *
+ * Migration example:
+ * ```typescript
+ * // Old:
+ * import { webSocketService } from './services/websocket-service';
+ * webSocketService.connectToFlowUpdates(callback, onOpen, onClose);
+ * webSocketService.disconnectFromFlowUpdates();
+ *
+ * // New:
+ * import { unifiedWebSocketManager } from './services/unified-websocket-manager';
+ * const unsubscribe = unifiedWebSocketManager.subscribe('flow_executions', callback);
+ * unsubscribe(); // Clean up when done
+ * ```
+ */
 class WebSocketService {
   private connections: Map<string, WebSocket> = new Map();
   private heartbeatIntervals: Map<string, number> = new Map();
