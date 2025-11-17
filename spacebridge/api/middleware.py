@@ -12,11 +12,12 @@ class UIRoutingMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ):
-        # Allow API calls, static assets, docs, and approval pages to pass through
+        # Allow API calls, static assets, docs, approval pages, and invitation pages to pass through
         if (
             request.url.path.startswith("/api")
             or request.url.path.startswith("/mcp")
             or request.url.path.startswith("/approval")
+            or request.url.path.startswith("/invitations")
             or request.url.path.startswith("/assets")
             or request.url.path.startswith("/docs")
             or request.url.path.startswith("/openapi.json")

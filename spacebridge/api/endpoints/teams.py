@@ -4,7 +4,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from spacebridge.api.auth.jwt import get_current_active_user
@@ -288,6 +288,8 @@ async def delete_team(
 
     logger.info(f"Team {team_id} deleted by user {current_user.username}")
 
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 
 @router.post("/teams/{team_id}/members", status_code=status.HTTP_201_CREATED)
 @require_permission("manage_teams")
@@ -418,6 +420,8 @@ async def remove_team_member(
         )
 
     db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     logger.info(
         f"User {user_id} removed from team {team_id} by {current_user.username}"

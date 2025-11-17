@@ -504,6 +504,7 @@ class TestCreateCheckoutSession:
         # Mock price lookup
         mock_price = MagicMock()
         mock_price.id = "price_123"
+        mock_price.recurring = {"interval": "month"}
         mock_stripe.Price.list.return_value.data = [mock_price]
 
         # Mock checkout session creation
@@ -512,7 +513,7 @@ class TestCreateCheckoutSession:
         mock_stripe.checkout.Session.create.return_value = mock_session
 
         result = billing_service.create_checkout_session(
-            plan_id="premium", interval="monthly", account_id=None
+            plan_id="premium", interval="month", account_id=None
         )
 
         assert result["url"] == "https://checkout.stripe.com/session_123"
@@ -546,6 +547,7 @@ class TestCreateCheckoutSession:
         # Mock price lookup
         mock_price = MagicMock()
         mock_price.id = "price_123"
+        mock_price.recurring = {"interval": "month"}
         mock_stripe.Price.list.return_value.data = [mock_price]
 
         # Mock checkout session creation
@@ -554,7 +556,7 @@ class TestCreateCheckoutSession:
         mock_stripe.checkout.Session.create.return_value = mock_session
 
         result = billing_service.create_checkout_session(
-            plan_id="premium", interval="monthly", account_id=account_id
+            plan_id="premium", interval="month", account_id=account_id
         )
 
         assert result["url"] == "https://checkout.stripe.com/session_456"
@@ -582,6 +584,7 @@ class TestCreateCheckoutSession:
         # Mock price lookup
         mock_price = MagicMock()
         mock_price.id = "price_new"
+        mock_price.recurring = {"interval": "year"}
         mock_stripe.Price.list.return_value.data = [mock_price]
 
         # Mock Stripe subscription retrieval and update
@@ -610,7 +613,7 @@ class TestCreateCheckoutSession:
         mock_stripe.Subscription.modify.return_value = mock_updated_sub
 
         result = billing_service.create_checkout_session(
-            plan_id="enterprise", interval="yearly", account_id=account_id
+            plan_id="enterprise", interval="year", account_id=account_id
         )
 
         assert result["status"] == "success"
@@ -626,9 +629,9 @@ class TestCreateCheckoutSession:
         # Mock empty price list
         mock_stripe.Price.list.return_value.data = []
 
-        with pytest.raises(ValueError, match="Price not found"):
+        with pytest.raises(ValueError, match="No active price found"):
             billing_service.create_checkout_session(
-                plan_id="nonexistent", interval="monthly"
+                plan_id="nonexistent", interval="month"
             )
 
     @patch("spacebridge.services.billing.stripe")
@@ -642,7 +645,7 @@ class TestCreateCheckoutSession:
 
         with pytest.raises(ValueError, match="Account not found"):
             billing_service.create_checkout_session(
-                plan_id="premium", interval="monthly", account_id=account_id
+                plan_id="premium", interval="month", account_id=account_id
             )
 
 
@@ -684,23 +687,54 @@ class TestCreatePortalSession:
         account_id = str(uuid.uuid4())
         mock_crud_account.get.return_value = None
 
-        with pytest.raises(ValueError, match="Stripe customer not found"):
+        with pytest.raises(ValueError, match="Account not found"):
             billing_service.create_portal_session(account_id, "https://example.com")
 
+    @patch("spacebridge.services.billing.crud_user")
     @patch("spacebridge.services.billing.stripe")
     @patch("spacebridge.services.billing.crud_account")
     def test_create_portal_session_no_stripe_customer(
-        self, mock_crud_account, mock_stripe, billing_service, mock_db
+        self, mock_crud_account, mock_stripe, mock_crud_user, billing_service, mock_db
     ):
-        """Test error when account has no Stripe customer ID."""
+        """Test lazy creation of Stripe customer when account has no Stripe customer ID."""
         account_id = str(uuid.uuid4())
+        primary_user_id = uuid.uuid4()
+        return_url = "https://example.com"
 
+        # Mock account without Stripe customer
         mock_account = MagicMock(spec=Account)
+        mock_account.id = uuid.UUID(account_id)
         mock_account.stripe_customer_id = None
+        mock_account.primary_user_id = primary_user_id
         mock_crud_account.get.return_value = mock_account
 
-        with pytest.raises(ValueError, match="Stripe customer not found"):
-            billing_service.create_portal_session(account_id, "https://example.com")
+        # Mock primary user
+        mock_user = MagicMock()
+        mock_user.email = "user@example.com"
+        mock_user.username = "testuser"
+        mock_user.full_name = "Test User"
+        mock_user.id = primary_user_id
+        mock_crud_user.get.return_value = mock_user
+
+        # Mock Stripe customer creation
+        mock_stripe_customer = MagicMock()
+        mock_stripe_customer.id = "cus_new123"
+        mock_stripe.Customer.create.return_value = mock_stripe_customer
+
+        # Mock portal session creation
+        mock_portal_session = MagicMock()
+        mock_portal_session.url = "https://billing.stripe.com/portal_456"
+        mock_stripe.billing_portal.Session.create.return_value = mock_portal_session
+
+        result = billing_service.create_portal_session(account_id, return_url)
+
+        # Verify Stripe customer was created
+        mock_stripe.Customer.create.assert_called_once()
+        # Verify portal session was created
+        assert result == "https://billing.stripe.com/portal_456"
+        mock_stripe.billing_portal.Session.create.assert_called_once_with(
+            customer="cus_new123", return_url=return_url
+        )
 
 
 class TestHandleWebhook:

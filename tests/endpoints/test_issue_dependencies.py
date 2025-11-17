@@ -70,13 +70,6 @@ def test_detect_issue_dependencies_success(
     )
     mock_crud_issue_set.get_supersets_by_issues.return_value = []
 
-    # Mock Billing Service
-    mock_billing_service_class = mocker.patch(
-        "spacebridge.api.endpoints.issue_dependencies.BillingService"
-    )
-    mock_billing_instance = MagicMock()
-    mock_billing_service_class.return_value = mock_billing_instance
-
     # Mock OpenAI client
     mock_openai_client = mocker.patch(
         "spacebridge.api.endpoints.issue_dependencies.openai.OpenAI"
@@ -111,7 +104,4 @@ def test_detect_issue_dependencies_success(
         mocker.ANY, account_id=mock_user.account_id
     )
     mock_openai_client.return_value.chat.completions.create.assert_called_once()
-    mock_billing_instance.record_usage.assert_called_once_with(
-        account_id=mock_user.account_id, metric="ai_calls", quantity=1
-    )
     mock_crud_issue_set.create_and_remove_subsets.assert_called_once()

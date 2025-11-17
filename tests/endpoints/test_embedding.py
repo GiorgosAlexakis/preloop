@@ -17,6 +17,7 @@ class TestGetRawEmbeddings:
         # Mock user
         mock_user = MagicMock(spec=User)
         mock_user.id = "user-123"
+        mock_user.account_id = "account-456"
 
         # Mock CRUD instance
         mock_crud = MagicMock()
@@ -55,7 +56,7 @@ class TestGetRawEmbeddings:
         # Verify CRUD was called correctly
         mock_crud.get_raw_embeddings.assert_called_once_with(
             db=mock_db_session,
-            account_id="user-123",
+            account_id="account-456",
             embedding_model_id=None,
             project_ids=None,
             project_names=None,

@@ -1,36 +1,46 @@
 # This file is the source of truth for subscription plans.
 # Use `scripts/sync_plans.py` to sync these with the database and Stripe.
 plans:
-  - id: "free"
-    name: "Free"
-    price_monthly: 0
-    price_annually: 0
-    features:
-      api_calls_monthly: 1000
-      ai_calls_monthly: 10
-      issues_ingested_monthly: 100
-      custom_ai_models_enabled: false
-      custom_compliance_metrics_enabled: false
-  - id: "pro"
-    name: "Pro"
+  # - id: "free"
+  #   name: "Free"
+  #   price_monthly: 0
+  #   price_annually: 0
+  #   features:
+  #     api_calls_monthly: 1000
+  #     ai_calls_monthly: 10
+  #     issues_ingested_monthly: 100
+  #     custom_ai_models_enabled: false
+  #     custom_compliance_metrics_enabled: false
+  # - id: "pro"
+  #   name: "Pro"
+  #   price_monthly: 29
+  #   price_annually: 290
+  #   features:
+  #     api_calls_monthly: 10000
+  #     ai_calls_monthly: 100
+  #     issues_ingested_monthly: 1000
+  #     custom_ai_models_enabled: false
+  #     custom_compliance_metrics_enabled: false
+  # - id: "ultra"
+  #   name: "Ultra"
+  #   price_monthly: 290
+  #   price_annually: 2900
+  #   features:
+  #     api_calls_monthly: -1 # -1 signifies unlimited
+  #     ai_calls_monthly: 1000
+  #     issues_ingested_monthly: 10000
+  #     custom_ai_models_enabled: true
+  #     custom_compliance_metrics_enabled: false
+  - id: "teams"
+    name: "Teams"
     price_monthly: 29
     price_annually: 290
     features:
-      api_calls_monthly: 10000
-      ai_calls_monthly: 100
-      issues_ingested_monthly: 1000
-      custom_ai_models_enabled: false
-      custom_compliance_metrics_enabled: false
-  - id: "ultra"
-    name: "Ultra"
-    price_monthly: 299
-    price_annually: 2999
-    features:
-      api_calls_monthly: -1 # -1 signifies unlimited
-      ai_calls_monthly: 1000
-      issues_ingested_monthly: 10000
+      api_calls_monthly: -1
+      ai_calls_monthly: -1
+      issues_ingested_monthly: -1
       custom_ai_models_enabled: true
-      custom_compliance_metrics_enabled: false
+      custom_compliance_metrics_enabled: true
   - id: "enterprise"
     name: "Enterprise"
     price_monthly: null # Custom pricing

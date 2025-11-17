@@ -1,11 +1,13 @@
 """Issue schemas for request and response validation."""
 
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 from pydantic import (
     BaseModel,
     Field,
     model_validator,
     field_validator,
+    field_serializer,
     ValidationInfo,
     ConfigDict,
 )
@@ -106,12 +108,12 @@ class IssueUpdate(BaseModel):
 class IssueResponse(IssueBase):
     """Response model for issue data."""
 
-    id: str = Field(..., description="Internal SpaceBridge database ID (UUID)")
+    id: UUID = Field(..., description="Internal SpaceBridge database ID (UUID)")
     external_id: str = Field(..., description="Issue ID in the original tracker")
     key: str = Field(..., description="Human-readable issue key (e.g., PROJ-123)")
     organization: str = Field(..., description="Organization name")
     project: str = Field(..., description="Project name")
-    project_id: str = Field(..., description="Project ID")
+    project_id: UUID = Field(..., description="Project ID")
     project_identifier: Optional[str] = Field(
         None, description="Project identifier/slug for API calls"
     )
@@ -139,6 +141,11 @@ class IssueResponse(IssueBase):
         raise TypeError(
             f"Field '{info.field_name}' must be a datetime object or a string, got {type(v).__name__}"
         )
+
+    @field_serializer("id", "project_id")
+    def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID to string."""
+        return str(value) if value else None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -205,4 +205,5 @@ async def test_update_tracker_success(
     response_json = response.json()
     assert response_json["name"] == "Updated Tracker Name"
 
-    mock_publish_task.assert_called_once_with("poll_tracker", tracker.id)
+    # UUID is converted to string for JSON serialization
+    mock_publish_task.assert_called_once_with("poll_tracker", str(tracker.id))

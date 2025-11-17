@@ -429,6 +429,7 @@ test:coverage:
       --set preloop.ingress.tls[0].hosts[0]=${PRELOOP_DOMAIN}
       --set preloop.ingress.tls[0].hosts[1]=www.${PRELOOP_DOMAIN}
       --set preloop.ingress.tls[0].secretName=preloop-${ENV_NAME}-tls
+      --set preloop.url=https://${PRELOOP_DOMAIN}
       --set environment.preloopUrl=https://${PRELOOP_DOMAIN}
 
     - echo "Helm deployment finished."
@@ -448,6 +449,8 @@ test:
     SEED_ENABLED: "true"
     ENV_NAME: "$CI_COMMIT_REF_NAME"
     TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.test.spacebridge.io"
+    PRELOOP_ENABLED: "false"
+    PRELOOP_DOMAIN: ""
     STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_TEST
     STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_TEST
   environment:
@@ -490,6 +493,8 @@ staging:
     DATABASE_NAME: spacebridge-db
     SEED_ENABLED: false
     TARGET_DOMAIN: $STAGING_DOMAIN
+    PRELOOP_ENABLED: "true"
+    PRELOOP_DOMAIN: "staging.preloop.ai"
 
 prod:
   extends: .deploy:template
@@ -506,6 +511,8 @@ prod:
     DATABASE_NAME: spacebridge-db
     SEED_ENABLED: false
     TARGET_DOMAIN: $PROD_DOMAIN
+    PRELOOP_ENABLED: "true"
+    PRELOOP_DOMAIN: "preloop.ai"
   before_script:
     - set -e
     - export POD_BACKUP_PATH="/run/tmp/db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension

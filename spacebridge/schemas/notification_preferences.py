@@ -51,6 +51,9 @@ class MobileDeviceRegistration(BaseModel):
 
     platform: str = Field(..., description="Device platform: 'ios' or 'android'")
     token: str = Field(..., description="Device push notification token")
+    device_name: Optional[str] = Field(
+        None, description="Optional device name for API key"
+    )
 
 
 class QRCodeResponse(BaseModel):
@@ -60,3 +63,14 @@ class QRCodeResponse(BaseModel):
     qr_data: str = Field(..., description="QR code data (URL)")
     expires_at: str = Field(..., description="Token expiry timestamp")
     expires_in_seconds: int = Field(..., description="Seconds until expiry")
+
+
+class MobileDeviceRegistrationResponse(BaseModel):
+    """Schema for mobile device registration response with API key."""
+
+    preferences: NotificationPreferencesResponse
+    api_key: str = Field(..., description="API key for mobile app authentication")
+    api_key_id: uuid.UUID = Field(..., description="API key ID")
+    api_key_expires_at: Optional[datetime] = Field(
+        None, description="API key expiration"
+    )

@@ -293,6 +293,30 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Skipping execution monitor (TESTING mode)")
 
+    # Recover orphaned flow executions (skip in testing mode)
+    recovery_service = None
+    if os.getenv("TESTING") != "true":
+        from spacebridge.services.execution_recovery import get_recovery_service
+
+        recovery_service = get_recovery_service()
+        logger.info("Checking for orphaned flow executions to recover...")
+        try:
+            # Get a database session for recovery
+            db = next(get_db_session())
+            try:
+                recovered_count = await recovery_service.recover_orphaned_executions(db)
+                if recovered_count > 0:
+                    logger.info(f"Recovered {recovered_count} orphaned execution(s)")
+                else:
+                    logger.info("No orphaned executions found")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error recovering orphaned executions: {e}", exc_info=True)
+            # Don't fail startup - continue anyway
+    else:
+        logger.info("Skipping execution recovery (TESTING mode)")
+
     # Start MCP server lifespan (skip in testing mode)
     mcp_lifespan = None
     if os.getenv("TESTING") != "true":
@@ -325,6 +349,20 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown logic
+
+    # Wait for in-flight flow executions to complete (skip in testing mode)
+    if os.getenv("TESTING") != "true" and recovery_service:
+        logger.info("Waiting for in-flight flow executions to complete...")
+        try:
+            # Wait up to 5 minutes for recovery tasks to complete
+            await recovery_service.wait_for_completion(timeout=300)
+            logger.info("All in-flight executions completed or timed out.")
+        except Exception as e:
+            logger.error(
+                f"Error waiting for executions to complete: {e}", exc_info=True
+            )
+    else:
+        logger.info("Skipping execution wait (TESTING mode)")
 
     # Shutdown plugin system (skip in testing mode)
     if os.getenv("TESTING") != "true" and plugin_manager:
@@ -581,7 +619,7 @@ def create_app() -> FastAPI:
         # Apply security to all endpoints except auth endpoints, landing page, health checks, and docs
         excluded_prefixes = [
             "/api/v1/auth",
-            "/api/v1/public/approval",
+            "/approval",  # Public approval endpoints (token-based, no login required)
             "/api/v1/billing/plans",
             "/api/v1/billing/create-checkout-session",
             "/",
@@ -628,8 +666,8 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        public_approval.router, prefix="/api/v1", tags=["Public Approval"]
-    )  # No auth required
+        public_approval.router, tags=["Public Approval"]
+    )  # No auth required, mounted at /approval (not /api/v1/approval)
     app.include_router(
         features.router, prefix="/api/v1", tags=["Features"]
     )  # No auth required
@@ -663,7 +701,8 @@ def create_app() -> FastAPI:
         notification_preferences.router,
         prefix="/api/v1/notification-preferences",
         tags=["Notification Preferences"],
-        dependencies=[Depends(get_current_active_user)],
+        # No router-level auth - individual endpoints handle their own auth
+        # /register-device and /register-via-token are public (token-based)
     )
     app.include_router(
         issue_dependencies.router,
@@ -791,12 +830,27 @@ def create_app() -> FastAPI:
         approval_html_path = base_dir / "spacebridge" / "templates" / "approval.html"
         return FileResponse(str(approval_html_path), media_type="text/html")
 
+    # --- Public Invitation Accept Page ---
+    @app.get("/invitations/accept", include_in_schema=False)
+    async def serve_invitation_accept_page():
+        """Serve the public invitation accept page."""
+        invitation_html_path = (
+            base_dir / "spacebridge" / "templates" / "invitation-accept.html"
+        )
+        return FileResponse(str(invitation_html_path), media_type="text/html")
+
     # --- SPA Static Files (Production) ---
-    # In production, serve the built Lit frontend from the root
-    # This should be mounted *after* all API routes are defined.
+    # NOTE: In production, the SPA is served by nginx, not by the FastAPI app.
+    # This avoids issues with StaticFiles html=True intercepting API routes.
+    # The backend only serves API endpoints and specific HTML pages (like invitation accept).
     dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-    if not dev_mode:
-        logger.info("DEV_MODE is false, serving SPA from 'SpaceLit/dist'")
+    testing_mode = os.getenv("TESTING") == "true"
+
+    if dev_mode and not testing_mode:
+        # In dev mode (but not testing), mount the SPA for convenience
+        logger.info(
+            "DEV_MODE is true, serving SPA from 'SpaceLit/dist' for development"
+        )
         try:
             app.mount(
                 "/",
@@ -805,7 +859,9 @@ def create_app() -> FastAPI:
             )
         except Exception as e:
             logger.error(f"Failed to mount SPA static files: {e}")
+    elif testing_mode:
+        logger.info("TESTING mode - skipping SPA mount to avoid route conflicts")
     else:
-        logger.info("DEV_MODE is true, SPA is served by the frontend dev server.")
+        logger.info("DEV_MODE is false, SPA is served by nginx (not by FastAPI)")
 
     return app

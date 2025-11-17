@@ -12,6 +12,7 @@ class InvitationCreate(BaseModel):
 
     email: EmailStr
     role_ids: Optional[List[UUID]] = Field(default_factory=list)
+    team_ids: Optional[List[UUID]] = Field(default_factory=list)
 
 
 class InvitationAccept(BaseModel):
@@ -32,6 +33,7 @@ class InvitationResponse(BaseModel):
     token: str
     status: str
     role_ids: Optional[str]  # Comma-separated UUIDs
+    team_ids: Optional[str]  # Comma-separated UUIDs
     invited_by: Optional[UUID]
     created_at: datetime
     accepted_at: Optional[datetime]
@@ -68,3 +70,5 @@ class InvitationPublicInfo(BaseModel):
     expires_at: datetime
     is_valid: bool
     error_message: Optional[str] = None
+    role_names: Optional[List[str]] = Field(default_factory=list)
+    team_names: Optional[List[str]] = Field(default_factory=list)

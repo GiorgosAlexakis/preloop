@@ -161,6 +161,161 @@ def read_flow_execution(
     return execution
 
 
+@router.get("/flows/executions/{execution_id}/logs")
+@require_permission("view_flows")
+async def get_flow_execution_logs(
+    *,
+    db: Session = Depends(get_db),
+    execution_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    tail: int = 1000,
+) -> Dict[str, Any]:
+    """Get execution logs from the container (if running) or database (if finished).
+
+    For running executions, fetches logs directly from the Docker/Kubernetes container.
+    For finished executions, returns persisted logs from the database.
+
+    Args:
+        execution_id: ID of the execution
+        tail: Number of recent log lines to retrieve (default: 1000)
+
+    Returns:
+        Dictionary with:
+        - logs: List of log lines
+        - source: Where logs were fetched from ("container" or "database")
+    """
+    from spacebridge.agents.container import ContainerAgentExecutor
+    from spacebridge.agents.codex import CodexAgent
+
+    # Verify execution exists and user has access
+    execution = crud_flow_execution.get(
+        db=db, id=execution_id, account_id=current_user.account_id
+    )
+    if not execution:
+        raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    # Check if execution is running
+    is_running = execution.status in ["RUNNING", "STARTING", "INITIALIZING", "PENDING"]
+
+    if is_running and execution.agent_session_reference:
+        # Fetch logs directly from container
+        try:
+            # Get the flow to determine agent type
+            flow = crud_flow.get(
+                db=db, id=execution.flow_id, account_id=current_user.account_id
+            )
+            if not flow:
+                raise HTTPException(status_code=404, detail="Flow not found")
+
+            # Determine if using Kubernetes or Docker
+            import os
+
+            use_kubernetes = (
+                os.getenv("USE_KUBERNETES_FOR_AGENTS", "false").lower() == "true"
+            )
+
+            # Create agent executor to access logs
+            # Note: We don't need the full agent config, just need the get_logs method
+            # CodexAgent auto-detects Kubernetes environment, no need to pass use_kubernetes
+            if flow.agent_type == "codex":
+                agent = CodexAgent(config={})
+            else:
+                agent = ContainerAgentExecutor(
+                    agent_type=flow.agent_type,
+                    config={},
+                    image="dummy-image",  # Not used for get_logs
+                    use_kubernetes=use_kubernetes,
+                )
+
+            # Fetch logs from container
+            container_logs = await agent.get_logs(
+                execution.agent_session_reference, tail=tail
+            )
+
+            # Format logs as execution updates (matching the WebSocket format)
+            formatted_logs = []
+            for log_line in container_logs:
+                # Use start_time if available, otherwise use current time
+                timestamp = (
+                    execution.start_time.isoformat()
+                    if execution.start_time
+                    else execution.created_at.isoformat()
+                )
+                formatted_logs.append(
+                    {
+                        "execution_id": str(execution_id),
+                        "timestamp": timestamp,
+                        "type": "agent_log_line",
+                        "payload": {"content": log_line},
+                    }
+                )
+
+            return {"logs": formatted_logs, "source": "container"}
+
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Failed to fetch container logs for execution {execution_id}: {e}"
+            )
+            # Fall back to database logs if container logs fail
+            pass
+
+    # For finished executions or if container logs failed, return database logs
+    if execution.execution_logs and isinstance(execution.execution_logs, list):
+        return {"logs": execution.execution_logs, "source": "database"}
+    else:
+        return {"logs": [], "source": "database"}
+
+
+@router.get("/flows/executions/{execution_id}/metrics")
+@require_permission("view_flows")
+def get_flow_execution_metrics(
+    *,
+    db: Session = Depends(get_db),
+    execution_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Get execution metrics including tool calls, API usage, and costs.
+
+    Returns:
+        Dictionary with:
+        - tool_calls: Number of MCP tool calls made
+        - api_requests: Number of API requests made during execution
+        - token_usage: Token usage statistics
+        - estimated_cost: Estimated cost based on token usage (0.0 if no pricing)
+        - has_pricing: Whether pricing is configured in AI model metadata
+    """
+    from spacebridge.services.execution_metrics import ExecutionMetricsService
+
+    # Verify execution exists and user has access
+    execution = crud_flow_execution.get(
+        db=db, id=execution_id, account_id=current_user.account_id
+    )
+    if not execution:
+        raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    # Calculate metrics
+    metrics_service = ExecutionMetricsService(db)
+    try:
+        metrics = metrics_service.get_execution_metrics(str(execution_id))
+        return metrics
+    except Exception as e:
+        # Log error but return zero metrics instead of failing
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to calculate metrics for execution {execution_id}: {e}")
+        return {
+            "tool_calls": 0,
+            "api_requests": 0,
+            "token_usage": {"total_tokens": 0, "input_tokens": 0, "output_tokens": 0},
+            "estimated_cost": 0.0,
+            "has_pricing": False,
+        }
+
+
 @router.post("/flows/executions/{execution_id}/command")
 @require_permission("execute_flows")
 async def send_execution_command(
@@ -171,6 +326,14 @@ async def send_execution_command(
     current_user: User = Depends(get_current_active_user),
 ):
     """Send a command to a running flow execution."""
+    import logging
+    from datetime import datetime, timezone
+    from spacebridge.agents.container import ContainerAgentExecutor
+    from spacebridge.agents.codex import CodexAgent
+    import os
+
+    logger = logging.getLogger(__name__)
+
     # Verify execution exists and user has access
     execution = crud_flow_execution.get(
         db=db, id=execution_id, account_id=current_user.account_id
@@ -178,23 +341,114 @@ async def send_execution_command(
     if not execution:
         raise HTTPException(status_code=404, detail="Flow execution not found")
 
-    # For stuck executions, allow manual cleanup by directly updating the status
+    # Handle stop command - stop container directly
     if command_data.command == "stop":
-        # If execution is in a "stuck" state (RUNNING/STARTING but container never started),
-        # or if NATS is unavailable, update the status directly
-        if execution.status in ["RUNNING", "STARTING", "PENDING"]:
-            from datetime import datetime, timezone
+        # Stop the container if it's running
+        if execution.agent_session_reference and execution.status in [
+            "RUNNING",
+            "STARTING",
+            "INITIALIZING",
+            "PENDING",
+        ]:
+            try:
+                # Get the flow to determine agent type
+                flow = crud_flow.get(
+                    db=db, id=execution.flow_id, account_id=current_user.account_id
+                )
+                if flow:
+                    use_kubernetes = (
+                        os.getenv("USE_KUBERNETES_FOR_AGENTS", "false").lower()
+                        == "true"
+                    )
 
-            update_data = schemas.FlowExecutionUpdate(
-                status="STOPPED",
-                error_message="Manually stopped by user",
-                end_time=datetime.now(timezone.utc),
+                    # Create agent executor to fetch logs and stop the container
+                    # CodexAgent auto-detects Kubernetes environment, no need to pass use_kubernetes
+                    if flow.agent_type == "codex":
+                        agent = CodexAgent(config={})
+                    else:
+                        agent = ContainerAgentExecutor(
+                            agent_type=flow.agent_type,
+                            config={},
+                            image="dummy-image",
+                            use_kubernetes=use_kubernetes,
+                        )
+
+                    # Fetch final logs before stopping the container
+                    try:
+                        container_logs = await agent.get_logs(
+                            execution.agent_session_reference, tail=5000
+                        )
+
+                        # Format and persist logs to database
+                        if container_logs:
+                            formatted_logs = []
+                            for log_line in container_logs:
+                                formatted_logs.append(
+                                    {
+                                        "execution_id": str(execution_id),
+                                        "timestamp": datetime.now(
+                                            timezone.utc
+                                        ).isoformat(),
+                                        "type": "agent_log_line",
+                                        "payload": {"content": log_line},
+                                    }
+                                )
+
+                            # Store logs in execution record
+                            update_data = schemas.FlowExecutionUpdate(
+                                execution_logs=formatted_logs
+                            )
+                            crud_flow_execution.update(
+                                db=db, db_obj=execution, obj_in=update_data
+                            )
+                            db.commit()
+                            logger.info(
+                                f"Persisted {len(formatted_logs)} log lines to database for execution {execution_id}"
+                            )
+                    except Exception as log_error:
+                        logger.error(
+                            f"Failed to fetch and persist logs before stopping: {log_error}"
+                        )
+                        # Continue with stop even if log fetching fails
+
+                    # Stop the container
+                    await agent.stop(execution.agent_session_reference)
+                    logger.info(
+                        f"Stopped container {execution.agent_session_reference} for execution {execution_id}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Failed to stop container for execution {execution_id}: {e}"
+                )
+                # Continue with status update even if container stop fails
+
+        # Update execution status
+        update_data = schemas.FlowExecutionUpdate(
+            status="STOPPED",
+            error_message="Manually stopped by user",
+            end_time=datetime.now(timezone.utc),
+        )
+        crud_flow_execution.update(db=db, db_obj=execution, obj_in=update_data)
+        db.commit()
+
+        # Try to send stop command via NATS (best effort - don't fail if this doesn't work)
+        try:
+            from spacebridge.services.flow_orchestrator import (
+                FlowExecutionOrchestrator,
             )
-            crud_flow_execution.update(db=db, db_obj=execution, obj_in=update_data)
-            db.commit()
-            return {"status": "stopped"}
 
-    # Try to send command via NATS for running executions
+            await FlowExecutionOrchestrator.send_command(
+                execution_id=str(execution_id),
+                command=command_data.command,
+                payload=command_data.payload,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send stop command via NATS: {e}")
+            # Not a critical error - container is already stopped
+
+        return {"status": "stopped"}
+
+    # For other commands, try to send via NATS
     try:
         from spacebridge.services.flow_orchestrator import FlowExecutionOrchestrator
 
@@ -205,19 +459,8 @@ async def send_execution_command(
         )
         return {"status": "command_sent"}
     except Exception as e:
-        # If NATS fails but this is a stop command, still mark as stopped
-        if command_data.command == "stop":
-            from datetime import datetime, timezone
-
-            update_data = schemas.FlowExecutionUpdate(
-                status="STOPPED",
-                error_message=f"Stopped by user (NATS unavailable: {str(e)})",
-                end_time=datetime.now(timezone.utc),
-            )
-            crud_flow_execution.update(db=db, db_obj=execution, obj_in=update_data)
-            db.commit()
-            return {"status": "stopped"}
-        raise
+        logger.error(f"Failed to send command via NATS: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send command: {str(e)}")
 
 
 @router.post("/flows/{flow_id}/trigger")

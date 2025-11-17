@@ -479,4 +479,62 @@ exit $CODEX_EXIT_CODE
         env["CODEX_ENV_RUBY_VERSION"] = os.getenv("CODEX_ENV_RUBY_VERSION", "3.4.4")
         env["CODEX_ENV_PHP_VERSION"] = os.getenv("CODEX_ENV_PHP_VERSION", "8.4")
 
+        # Configure MCP tool timeout based on approval policies
+        # Base timeout is 300 seconds (5 minutes)
+        mcp_timeout = 300
+
+        # Check if there are approval policies that may require longer timeouts
+        account_id = execution_context.get("account_id")
+        if account_id:
+            try:
+                # Query all tool configurations and approval policies for this account
+                from spacemodels.db.session import get_db_context
+                from spacemodels.crud import tool_configuration as tool_config_crud
+                from spacemodels.crud import approval_policy as approval_policy_crud
+
+                with get_db_context() as db:
+                    max_approval_timeout = 0
+                    has_escalation = False
+
+                    # Get all tool configurations for this account
+                    tool_configs = tool_config_crud.get_multi_by_account(
+                        db, account_id=account_id, limit=1000
+                    )
+
+                    # Check each tool configuration for approval policies
+                    for config in tool_configs:
+                        if config.approval_policy_id:
+                            # Get approval policy
+                            policy = approval_policy_crud.get(
+                                db, id=config.approval_policy_id
+                            )
+                            if policy and policy.timeout_seconds:
+                                max_approval_timeout = max(
+                                    max_approval_timeout, policy.timeout_seconds
+                                )
+                                # Check for escalation
+                                if policy.escalation_policy:
+                                    has_escalation = True
+
+                    # Set MCP timeout based on approval policies
+                    if max_approval_timeout > 0:
+                        # Use twice the approval timeout if there's escalation
+                        if has_escalation:
+                            mcp_timeout = max_approval_timeout * 2
+                        else:
+                            mcp_timeout = max_approval_timeout
+
+                        self.logger.info(
+                            f"Set MCP_TOOL_TIMEOUT to {mcp_timeout}s based on approval policies "
+                            f"(max_approval_timeout={max_approval_timeout}, has_escalation={has_escalation})"
+                        )
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to query approval policies for MCP timeout calculation: {e}. "
+                    f"Using default timeout of {mcp_timeout}s"
+                )
+
+        env["MCP_TOOL_TIMEOUT"] = str(mcp_timeout)
+        self.logger.info(f"MCP_TOOL_TIMEOUT set to {mcp_timeout}s")
+
         return env

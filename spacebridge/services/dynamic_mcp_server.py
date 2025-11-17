@@ -32,6 +32,8 @@ class UserContext:
         enabled_default_tools: Optional[List[str]] = None,
         enabled_proxied_tools: Optional[List[str]] = None,
         tracker_types: Optional[List[str]] = None,
+        flow_execution_id: Optional[str] = None,
+        allowed_flow_tools: Optional[List[str]] = None,
     ):
         self.user_id = user_id
         self.account_id = account_id
@@ -40,6 +42,9 @@ class UserContext:
         self.enabled_default_tools = enabled_default_tools or []
         self.enabled_proxied_tools = enabled_proxied_tools or []
         self.tracker_types = tracker_types or []
+        # Flow execution context for tool restrictions
+        self.flow_execution_id = flow_execution_id
+        self.allowed_flow_tools = allowed_flow_tools
 
 
 class DynamicMCPServer:
@@ -318,7 +323,7 @@ class DynamicMCPServer:
                 if config:
                     logger.info(
                         f"Found builtin tool config for '{tool_name}': "
-                        f"requires_approval={config.requires_approval}, "
+                        f"requires_approval={bool(config.approval_policy_id)}, "
                         f"approval_policy_id={config.approval_policy_id}"
                     )
                 else:
@@ -338,7 +343,7 @@ class DynamicMCPServer:
                     if config:
                         logger.info(
                             f"Found MCP tool config for '{tool_name}': "
-                            f"requires_approval={config.requires_approval}, "
+                            f"requires_approval={bool(config.approval_policy_id)}, "
                             f"approval_policy_id={config.approval_policy_id}, "
                             f"mcp_server_id={config.mcp_server_id}"
                         )
@@ -349,7 +354,8 @@ class DynamicMCPServer:
                         )
 
                 # Return whether approval is required
-                requires_approval = config.requires_approval if config else False
+                # A tool requires approval if it has an approval_policy_id set
+                requires_approval = bool(config.approval_policy_id) if config else False
                 logger.info(
                     f"Approval requirement check result for '{tool_name}': {requires_approval}"
                 )
@@ -384,7 +390,7 @@ class DynamicMCPServer:
             import os
 
             # Get base URL from environment or default
-            base_url = os.getenv("BASE_URL", "http://localhost:8000")
+            base_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000")
 
             async with get_async_db_session() as db:
                 # Get tool configuration using CRUD

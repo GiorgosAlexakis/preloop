@@ -585,10 +585,17 @@ class ContainerAgentExecutor(AgentExecutor):
             # Override status if we detect errors in logs
             if has_error_pattern and status == AgentStatus.SUCCEEDED:
                 self.logger.warning(
-                    f"Container {session_reference[:12]} exited with code 0 but logs contain errors. "
+                    f"Container {session_reference[:12]} exited with code 0 but logs contain critical errors. "
                     "Marking as FAILED."
                 )
                 status = AgentStatus.FAILED
+            elif not has_error_pattern and status == AgentStatus.SUCCEEDED:
+                # Log when we successfully ignore benign error patterns
+                if "error" in logs_text.lower() or "no commits" in logs_text.lower():
+                    self.logger.info(
+                        f"Container {session_reference[:12]} exited with code 0. "
+                        "Logs contain benign messages (e.g., 'no commits'), not marking as failed."
+                    )
 
             if status == AgentStatus.FAILED:
                 error_message = (
@@ -642,10 +649,17 @@ class ContainerAgentExecutor(AgentExecutor):
             # Override status if we detect errors in logs
             if has_error_pattern and status == AgentStatus.SUCCEEDED:
                 self.logger.warning(
-                    f"Job {job_name} succeeded but logs contain errors. "
+                    f"Job {job_name} succeeded but logs contain critical errors. "
                     "Marking as FAILED."
                 )
                 status = AgentStatus.FAILED
+            elif not has_error_pattern and status == AgentStatus.SUCCEEDED:
+                # Log when we successfully ignore benign error patterns
+                if "error" in logs_text.lower() or "no commits" in logs_text.lower():
+                    self.logger.info(
+                        f"Job {job_name} succeeded. "
+                        "Logs contain benign messages (e.g., 'no commits'), not marking as failed."
+                    )
 
             # Try to get exit code from pod
             exit_code = None
@@ -697,7 +711,30 @@ class ContainerAgentExecutor(AgentExecutor):
         Returns:
             True if error patterns detected
         """
-        error_patterns = [
+        # Benign patterns that should NOT trigger failure detection
+        # These are informational messages that contain "error" but don't indicate failure
+        benign_patterns = [
+            "no commits",
+            "skipping push",
+            "nothing to commit",
+            "no changes",
+            "up to date",
+            "up-to-date",
+            "already up to date",
+            "everything up-to-date",
+            "failed to create pr (may already exist)",  # PR/MR creation failure is not critical
+            "failed to create mr (may already exist)",
+        ]
+
+        logs_lower = logs_text.lower()
+
+        # Check for benign patterns first - if found, don't mark as error
+        for benign_pattern in benign_patterns:
+            if benign_pattern in logs_lower:
+                return False
+
+        # Critical error patterns that always indicate failure
+        critical_error_patterns = [
             "litellm.BadRequestError",
             "litellm.AuthenticationError",
             "litellm.RateLimitError",
@@ -706,13 +743,20 @@ class ContainerAgentExecutor(AgentExecutor):
             "Traceback (most recent call last)",
             "FATAL ERROR",
             "CRITICAL:",
-            "ERROR:",  # Be careful with this one - may cause false positives
         ]
 
-        logs_lower = logs_text.lower()
-        for pattern in error_patterns:
+        for pattern in critical_error_patterns:
             if pattern.lower() in logs_lower:
                 return True
+
+        # Check for "ERROR:" but only if it's not a benign git-related message
+        # and if it appears multiple times (suggesting a real error, not just logging)
+        if "error:" in logs_lower:
+            # Count occurrences to filter out single informational errors
+            error_count = logs_lower.count("error:")
+            if error_count >= 3:  # Multiple errors suggest real failure
+                return True
+
         return False
 
     def _extract_error_from_logs(self, logs_text: str) -> str:

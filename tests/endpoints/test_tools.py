@@ -219,6 +219,64 @@ class TestToolConfigurationEndpoints:
         assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
         assert "already exists" in exc_info.value.detail
 
+    async def test_create_tool_configuration_race_condition(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test creating tool configuration with race condition (IntegrityError).
+
+        The endpoint should be idempotent - if a race condition causes IntegrityError,
+        it should fetch and return the existing config instead of failing.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        config_data = ToolConfigurationCreate(
+            tool_name="get_issue",
+            tool_source="builtin",
+            account_id=str(mock_account.id),
+        )
+
+        # Mock no existing config in the pre-check
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get_multi_by_account",
+            return_value=[],
+        )
+
+        # Create mock existing config that will be returned after IntegrityError
+        mock_existing_config = MagicMock()
+        mock_existing_config.id = uuid.uuid4()
+        mock_existing_config.account_id = mock_account.id
+        mock_existing_config.tool_name = "get_issue"
+        mock_existing_config.tool_source = "builtin"
+        mock_existing_config.is_enabled = True
+        mock_existing_config.mcp_server_id = None
+        mock_existing_config.http_endpoint_id = None
+        mock_existing_config.approval_policy_id = None
+        mock_existing_config.tool_description = None
+        mock_existing_config.tool_schema = None
+        mock_existing_config.custom_config = None
+
+        # Mock IntegrityError on commit (race condition)
+        mock_db.commit.side_effect = IntegrityError(
+            "statement", "params", "orig", connection_invalidated=False
+        )
+
+        # Mock the fetch of existing config after IntegrityError
+        mocker.patch(
+            "spacebridge.api.endpoints.tools.crud_tool_configuration.get_by_tool_name_and_source",
+            return_value=mock_existing_config,
+        )
+
+        # Should succeed and return existing config (idempotent)
+        result = await tools.create_tool_configuration(
+            config_data=config_data,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        # Verify idempotent behavior - should return existing config
+        assert result.tool_name == "get_issue"
+        mock_db.rollback.assert_called_once()
+
     async def test_get_tool_configuration_success(
         self, mock_db, mock_user, mock_account, mocker
     ):

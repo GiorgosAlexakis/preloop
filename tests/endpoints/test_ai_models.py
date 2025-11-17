@@ -89,7 +89,7 @@ async def test_get_ai_model(mock_account: Account, mocker: MockerFixture):
         new_callable=MagicMock,
     )
     mock_db_model = MagicMock()
-    mock_db_model.account_id = mock_account.id
+    mock_db_model.account_id = mock_account.account_id
     mock_crud_ai_model.get.return_value = mock_db_model
 
     # Act
@@ -112,7 +112,7 @@ async def test_update_ai_model(mock_account: Account, mocker: MockerFixture):
         "spacebridge.api.endpoints.ai_models.crud_ai_model",
         new_callable=MagicMock,
     )
-    mock_ai_model = MagicMock(account_id=mock_account.id)
+    mock_ai_model = MagicMock(account_id=mock_account.account_id)
     mock_crud_ai_model.get.return_value = mock_ai_model
     mock_crud_ai_model.update.return_value = AIModelRead(
         id=model_id,
@@ -121,7 +121,7 @@ async def test_update_ai_model(mock_account: Account, mocker: MockerFixture):
         provider_name="openai",
         model_identifier="gpt-4",
         api_key="test_key",
-        account_id=str(mock_account.id),
+        account_id=str(mock_account.account_id),
     )
 
     # Act
@@ -151,7 +151,7 @@ async def test_delete_ai_model(mock_account: Account, mocker: MockerFixture):
         "spacebridge.api.endpoints.ai_models.crud_ai_model",
         new_callable=MagicMock,
     )
-    mock_ai_model = MagicMock(account_id=mock_account.id)
+    mock_ai_model = MagicMock(account_id=mock_account.account_id)
     mock_crud_ai_model.get.return_value = mock_ai_model
 
     # Act

@@ -171,8 +171,15 @@ async def nats_consumer(manager: "WebSocketManager"):
 
     try:
         # Subscribe to a wildcard subject to receive all flow updates
-        sub = await nats_client.subscribe("flow-updates.*", cb=message_handler)
+        flow_sub = await nats_client.subscribe("flow-updates.*", cb=message_handler)
         logger.info("Subscribed to NATS subject 'flow-updates.*'")
+
+        # Subscribe to approval updates
+        approval_sub = await nats_client.subscribe(
+            "approval-updates", cb=message_handler
+        )
+        logger.info("Subscribed to NATS subject 'approval-updates'")
+
         # Keep the consumer running
         while True:
             await asyncio.sleep(1)

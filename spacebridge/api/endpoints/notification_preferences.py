@@ -15,11 +15,13 @@ from spacebridge.schemas.notification_preferences import (
     NotificationPreferencesUpdate,
     NotificationPreferencesResponse,
     MobileDeviceRegistration,
+    MobileDeviceRegistrationResponse,
     QRCodeResponse,
 )
 from spacebridge.services.push_notifications import (
     generate_registration_token,
     validate_registration_token,
+    check_token_validity,
 )
 
 router = APIRouter()
@@ -135,6 +137,7 @@ async def unregister_mobile_device(
 
 @router.get("/me/qr-code", response_model=QRCodeResponse)
 async def get_registration_qr_code(
+    db: Session = Depends(get_db_session),
     current_user: models.User = Depends(get_current_active_user),
 ) -> dict:
     """Generate a QR code for mobile device registration.
@@ -142,9 +145,10 @@ async def get_registration_qr_code(
     Returns:
         QR code data with registration token.
     """
-    api_url = os.getenv("API_URL", "http://localhost:8000")
+    api_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000")
 
     qr_data = generate_registration_token(
+        db=db,
         user_id=current_user.id,
         api_url=api_url,
         expiry_minutes=15,
@@ -153,28 +157,36 @@ async def get_registration_qr_code(
     return qr_data
 
 
-@router.post("/register-via-token", response_model=NotificationPreferencesResponse)
+@router.post("/register-via-token", response_model=MobileDeviceRegistrationResponse)
 async def register_device_via_token(
     token: str,
     device_in: MobileDeviceRegistration,
     db: Session = Depends(get_db_session),
-) -> models.NotificationPreferences:
-    """Register a mobile device using a QR code token.
+) -> dict:
+    """Register a mobile device using a QR code token and create an API key.
 
     This endpoint is called by the mobile app after scanning the QR code.
+    It registers the device for push notifications AND creates an API key
+    for the mobile app to authenticate API requests.
 
     Args:
         token: Registration token from QR code.
         device_in: Device registration data.
 
     Returns:
-        Updated notification preferences.
+        Updated notification preferences with API key.
 
     Raises:
         HTTPException: If token is invalid or expired.
     """
+    import secrets
+    import string
+    from datetime import timedelta
+    from spacemodels.models.api_key import ApiKey
+    from spacemodels.crud import crud_user
+
     # Validate token
-    user_id = validate_registration_token(token)
+    user_id = validate_registration_token(db, token)
 
     if not user_id:
         raise HTTPException(
@@ -182,19 +194,74 @@ async def register_device_via_token(
             detail="Invalid or expired registration token",
         )
 
+    # Get user
+    user = crud_user.get(db, id=user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
     # Register device
     prefs = notification_preferences.add_device_token(
         db, user_id, device_in.platform, device_in.token
     )
 
+    # Generate API key for mobile app
+    alphabet = string.ascii_letters + string.digits
+    api_key_value = "".join(secrets.choice(alphabet) for _ in range(40))
+
+    # Create device name
+    device_name = device_in.device_name or f"{device_in.platform.title()} Device"
+
+    # Set expiration to 1 year
+    from datetime import datetime, UTC
+
+    expires_at = datetime.now(UTC) + timedelta(days=365)
+
+    # Create API key
+    new_api_key = ApiKey(
+        name=device_name,
+        key=api_key_value,
+        scopes=[],  # Full access for mobile app
+        user_id=user_id,
+        expires_at=expires_at,
+    )
+
+    db.add(new_api_key)
     db.commit()
     db.refresh(prefs)
+    db.refresh(new_api_key)
 
-    return prefs
+    # Send WebSocket notification to user about device registration
+    from spacebridge.services.websocket_manager import manager
+
+    await manager.broadcast_json(
+        {
+            "type": "device_registered",
+            "user_id": str(user_id),
+            "account_id": str(user.account_id),
+            "platform": device_in.platform,
+            "device_name": device_name,
+            "registered_at": prefs.mobile_device_tokens[-1]["registered_at"]
+            if prefs.mobile_device_tokens
+            else None,
+        },
+        account_id=str(user.account_id),
+    )
+
+    return {
+        "preferences": prefs,
+        "api_key": new_api_key.key,
+        "api_key_id": new_api_key.id,
+        "api_key_expires_at": new_api_key.expires_at,
+    }
 
 
 @router.get("/register-device", response_class=HTMLResponse, include_in_schema=False)
-async def register_device_landing_page(request: Request, token: str) -> str:
+async def register_device_landing_page(
+    request: Request, token: str, db: Session = Depends(get_db_session)
+) -> str:
     """Landing page for device registration deep link.
 
     This endpoint serves as the universal link target for QR code scanning.
@@ -230,11 +297,7 @@ async def register_device_landing_page(request: Request, token: str) -> str:
 
     # Check if token is valid (just for messaging - don't consume it yet)
     # The app will consume it when it registers
-    from spacebridge.services.push_notifications import _registration_tokens
-    from datetime import datetime
-
-    token_data = _registration_tokens.get(token)
-    is_valid_token = token_data and datetime.utcnow() <= token_data["expires_at"]
+    is_valid_token = check_token_validity(db, token)
 
     if not is_valid_token:
         # Token expired or invalid

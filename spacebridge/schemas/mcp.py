@@ -2,8 +2,9 @@
 Pydantic schemas for the MCP API endpoints.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
+from uuid import UUID
 
 from spacebridge.schemas.issue import IssueResponse
 from spacebridge.schemas.issue_compliance import IssueComplianceResultResponse
@@ -42,6 +43,12 @@ class CreateIssueResponse(BaseModel):
     message: str
     url: Optional[str] = None
 
+    @field_validator("issue_id", mode="before")
+    @classmethod
+    def validate_issue_id(cls, value: UUID | str) -> str:
+        """Convert UUID to string for validation."""
+        return str(value) if isinstance(value, UUID) else value
+
 
 class UpdateIssueRequest(BaseModel):
     """Request body for the update_issue tool."""
@@ -62,6 +69,12 @@ class UpdateIssueResponse(BaseModel):
     status: str  # e.g., "updated", "failed"
     message: str
     url: Optional[str] = None
+
+    @field_validator("issue_id", mode="before")
+    @classmethod
+    def validate_issue_id(cls, value: UUID | str) -> str:
+        """Convert UUID to string for validation."""
+        return str(value) if isinstance(value, UUID) else value
 
 
 class SearchRequest(BaseModel):
@@ -104,7 +117,14 @@ class SuggestedUpdate(BaseModel):
     """A suggested tool call to update an issue."""
 
     tool_name: str = "update_issue"
+    issue_identifier: str
     arguments: UpdateIssueRequest
+
+    @field_validator("issue_identifier", mode="before")
+    @classmethod
+    def validate_issue_identifier(cls, value: UUID | str) -> str:
+        """Convert UUID to string for validation."""
+        return str(value) if isinstance(value, UUID) else value
 
 
 class ImproveComplianceRequest(BaseModel):
@@ -134,6 +154,12 @@ class AddCommentResponse(BaseModel):
     status: str  # e.g., "created"
     message: str
     url: Optional[str] = None
+
+    @field_validator("comment_id", mode="before")
+    @classmethod
+    def validate_comment_id(cls, value: UUID | str) -> str:
+        """Convert UUID to string for validation."""
+        return str(value) if isinstance(value, UUID) else value
 
 
 class GetPullRequestRequest(BaseModel):
@@ -215,6 +241,12 @@ class UpdatePullRequestResponse(BaseModel):
     message: str
     url: Optional[str] = None
 
+    @field_validator("pull_request_id", mode="before")
+    @classmethod
+    def validate_pull_request_id(cls, value: UUID | str) -> str:
+        """Convert UUID to string for validation."""
+        return str(value) if isinstance(value, UUID) else value
+
 
 class UpdateMergeRequestRequest(BaseModel):
     """Request body for the update_merge_request tool."""
@@ -236,6 +268,12 @@ class UpdateMergeRequestResponse(BaseModel):
     status: str  # e.g., "updated"
     message: str
     url: Optional[str] = None
+
+    @field_validator("merge_request_id", mode="before")
+    @classmethod
+    def validate_merge_request_id(cls, value: UUID | str) -> str:
+        """Convert UUID to string for validation."""
+        return str(value) if isinstance(value, UUID) else value
 
 
 # Schemas for other tools will be added here.

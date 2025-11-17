@@ -107,7 +107,7 @@ async def approve_request(
         HTTPException: If request not found or unauthorized
     """
     # Get base URL from request
-    base_url = os.getenv("BASE_URL", str(request.base_url).rstrip("/"))
+    base_url = os.getenv("SPACEBRIDGE_URL", str(request.base_url).rstrip("/"))
 
     async with get_async_db_session() as db:
         approval_service = ApprovalService(db, base_url)
@@ -160,7 +160,7 @@ async def decline_request(
         HTTPException: If request not found or unauthorized
     """
     # Get base URL from request
-    base_url = os.getenv("BASE_URL", str(request.base_url).rstrip("/"))
+    base_url = os.getenv("SPACEBRIDGE_URL", str(request.base_url).rstrip("/"))
 
     async with get_async_db_session() as db:
         approval_service = ApprovalService(db, base_url)
@@ -216,7 +216,7 @@ async def decide_request(
         HTTPException: If request not found or unauthorized
     """
     # Get base URL from request
-    base_url = os.getenv("BASE_URL", str(request.base_url).rstrip("/"))
+    base_url = os.getenv("SPACEBRIDGE_URL", str(request.base_url).rstrip("/"))
 
     async with get_async_db_session() as db:
         approval_service = ApprovalService(db, base_url)

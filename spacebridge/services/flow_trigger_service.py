@@ -42,33 +42,58 @@ class FlowTriggerService:
         # {"branch": "main"} - for commit events
         # {"labels": ["bug", "critical"]} - for issue events
         # {"status": "opened"} - for PR events
+        # {"assignee": "username"} - for assignee filter
+        # {"reviewer": "username"} - for reviewer filter
 
         payload = event_data.get("payload", {})
 
         for key, expected_value in flow.trigger_config.items():
             actual_value = payload.get(key)
 
+            # Handle None/missing values
+            if actual_value is None:
+                logger.debug(
+                    f"Flow {flow.id} trigger_config mismatch: "
+                    f"{key} not present in payload"
+                )
+                return False
+
             if isinstance(expected_value, list):
-                # For list conditions, check if any value matches
-                if not actual_value or not any(
-                    item in actual_value
-                    if isinstance(actual_value, list)
-                    else item == actual_value
-                    for item in expected_value
-                ):
-                    logger.debug(
-                        f"Flow {flow.id} trigger_config mismatch: "
-                        f"{key}={actual_value} not in {expected_value}"
-                    )
-                    return False
+                # Expected value is a list - check if any expected value matches actual value(s)
+                if isinstance(actual_value, list):
+                    # Both are lists - check if any expected value is in actual values
+                    if not any(item in actual_value for item in expected_value):
+                        logger.debug(
+                            f"Flow {flow.id} trigger_config mismatch: "
+                            f"none of {expected_value} found in {actual_value}"
+                        )
+                        return False
+                else:
+                    # Expected is list, actual is single value - check if actual is in expected
+                    if actual_value not in expected_value:
+                        logger.debug(
+                            f"Flow {flow.id} trigger_config mismatch: "
+                            f"{key}={actual_value} not in {expected_value}"
+                        )
+                        return False
             else:
-                # For single value conditions, exact match required
-                if actual_value != expected_value:
-                    logger.debug(
-                        f"Flow {flow.id} trigger_config mismatch: "
-                        f"{key}={actual_value} != {expected_value}"
-                    )
-                    return False
+                # Expected value is a single value
+                if isinstance(actual_value, list):
+                    # Actual is a list - check if expected value is in the list
+                    if expected_value not in actual_value:
+                        logger.debug(
+                            f"Flow {flow.id} trigger_config mismatch: "
+                            f"{key}: '{expected_value}' not in {actual_value}"
+                        )
+                        return False
+                else:
+                    # Both are single values - exact match required
+                    if actual_value != expected_value:
+                        logger.debug(
+                            f"Flow {flow.id} trigger_config mismatch: "
+                            f"{key}={actual_value} != {expected_value}"
+                        )
+                        return False
 
         return True
 
@@ -108,8 +133,9 @@ class FlowTriggerService:
             )
 
             if not matching_flows:
-                logger.debug(
-                    f"No flows found matching source='{event_source}', type='{event_type}'"
+                logger.warning(
+                    f"No flows found matching source='{event_source}', type='{event_type}', account_id={account_id}. "
+                    f"Check that flows are configured with the correct tracker ID as trigger_event_source."
                 )
                 return
 

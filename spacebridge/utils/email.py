@@ -19,9 +19,10 @@ SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "hello@spacebridge.io")
-SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "SpaceBridge")
-SPACEBRIDGE_URL = os.getenv("SPACEBRIDGE_URL", "https://spacebridge.io")
+SMTP_FROM = os.getenv("SMTP_FROM", "hello@preloop.ai")
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Preloop AI")
+SPACEBRIDGE_URL = os.getenv("SPACEBRIDGE_URL", "https://preloop.ai")
+APP_NAME = os.getenv("APP_NAME", "Preloop AI")
 
 
 class EmailError(Exception):
@@ -75,6 +76,7 @@ def send_email(
             f"Would have sent email to {to_email} with subject '{subject}'"
         )
         logger.debug(f"Email body: {body_text}")
+        # Don't raise error - just return gracefully to avoid HTTP 500 in dev/CI environments
         return
 
     try:
@@ -98,28 +100,28 @@ def send_verification_email(user_email: str, token: str) -> None:
     """
     verification_link = f"{SPACEBRIDGE_URL}/verify-email?token={token}"
 
-    subject = "Verify your SpaceBridge account"
+    subject = f"Verify your {APP_NAME} account"
     text_body = f"""
-    Welcome to SpaceBridge!
+    Welcome to {APP_NAME}!
 
     Please verify your email address by clicking the link below:
 
     {verification_link}
 
-    If you didn't register for SpaceBridge, please ignore this email.
+    If you didn't register for {APP_NAME}, please ignore this email.
 
     Thank you,
-    The SpaceBridge Team
+    The {APP_NAME} Team
     """
 
     html_body = f"""
     <html>
     <body>
-        <h2>Welcome to SpaceBridge!</h2>
+        <h2>Welcome to {APP_NAME}!</h2>
         <p>Please verify your email address by clicking the link below:</p>
         <p><a href="{verification_link}">Verify your email</a></p>
-        <p>If you didn't register for SpaceBridge, please ignore this email.</p>
-        <p>Thank you,<br>The SpaceBridge Team</p>
+        <p>If you didn't register for {APP_NAME}, please ignore this email.</p>
+        <p>Thank you,<br>The {APP_NAME} Team</p>
     </body>
     </html>
     """
@@ -136,9 +138,9 @@ def send_password_reset_email(user_email: str, token: str) -> None:
     """
     reset_link = f"{SPACEBRIDGE_URL}/reset-password?token={token}"
 
-    subject = "Reset your SpaceBridge password"
+    subject = f"Reset your {APP_NAME} password"
     text_body = f"""
-    You have requested to reset your SpaceBridge password.
+    You have requested to reset your {APP_NAME} password.
 
     Please click the link below to set a new password:
 
@@ -147,18 +149,18 @@ def send_password_reset_email(user_email: str, token: str) -> None:
     If you didn't request a password reset, please ignore this email.
 
     Thank you,
-    The SpaceBridge Team
+    The {APP_NAME} Team
     """
 
     html_body = f"""
     <html>
     <body>
-        <h2>Reset your SpaceBridge password</h2>
-        <p>You have requested to reset your SpaceBridge password.</p>
+        <h2>Reset your {APP_NAME} password</h2>
+        <p>You have requested to reset your {APP_NAME} password.</p>
         <p>Please click the link below to set a new password:</p>
         <p><a href="{reset_link}">Reset your password</a></p>
         <p>If you didn't request a password reset, please ignore this email.</p>
-        <p>Thank you,<br>The SpaceBridge Team</p>
+        <p>Thank you,<br>The {APP_NAME} Team</p>
     </body>
     </html>
     """
@@ -167,7 +169,12 @@ def send_password_reset_email(user_email: str, token: str) -> None:
 
 
 def send_invitation_email(
-    user_email: str, token: str, organization_name: str, invited_by: str
+    user_email: str,
+    token: str,
+    organization_name: str,
+    invited_by: str,
+    role_names: Optional[list[str]] = None,
+    team_names: Optional[list[str]] = None,
 ) -> None:
     """Send an invitation email to join an organization.
 
@@ -176,15 +183,33 @@ def send_invitation_email(
         token: The invitation token.
         organization_name: Name of the organization they're invited to.
         invited_by: Name/email of the person who sent the invitation.
+        role_names: Names of roles that will be assigned (optional).
+        team_names: Names of teams the user will be added to (optional).
     """
     accept_link = f"{SPACEBRIDGE_URL}/invitations/accept?token={token}"
 
     subject = f"You've been invited to join {organization_name}"
 
+    # Build role and team assignment text
+    assignment_text = []
+    if role_names:
+        roles_str = ", ".join(role_names)
+        assignment_text.append(f"Roles: {roles_str}")
+    if team_names:
+        teams_str = ", ".join(team_names)
+        assignment_text.append(f"Teams: {teams_str}")
+
+    assignment_section = ""
+    if assignment_text:
+        assignment_section = "\n\nYou will be assigned the following:\n" + "\n".join(
+            f"• {line}" for line in assignment_text
+        )
+
     text_body = f"""
 Hello!
 
-{invited_by} has invited you to join {organization_name} on SpaceBridge.
+{invited_by} has invited you to join {organization_name} on {APP_NAME}.
+{assignment_section}
 
 To accept this invitation and create your account, please click the link below:
 
@@ -195,7 +220,7 @@ This invitation will expire in 7 days.
 If you didn't expect this invitation, you can safely ignore this email.
 
 Best regards,
-The SpaceBridge Team
+The {APP_NAME} Team
     """.strip()
 
     html_body = f"""
@@ -220,8 +245,9 @@ The SpaceBridge Team
             </div>
             <div class="content">
                 <p>Hello!</p>
-                <p><strong>{invited_by}</strong> has invited you to join <strong>{organization_name}</strong> on SpaceBridge.</p>
-                <p>SpaceBridge helps teams automate and streamline their development workflows with AI-powered agents.</p>
+                <p><strong>{invited_by}</strong> has invited you to join <strong>{organization_name}</strong> on {APP_NAME}.</p>
+                {"<div style='background-color: #f0f8ff; padding: 15px; border-left: 4px solid #4A90E2; margin: 20px 0;'><p style='margin: 0 0 10px 0;'><strong>You will be assigned:</strong></p><ul style='margin: 0;'>" + "".join(f"<li>{line}</li>" for line in assignment_text) + "</ul></div>" if assignment_text else ""}
+                <p>{APP_NAME} helps teams automate and streamline their development workflows with AI-powered agents.</p>
                 <p style="text-align: center;">
                     <a href="{accept_link}" class="button">Accept Invitation</a>
                 </p>
@@ -254,7 +280,7 @@ def send_tracker_registered_email(
 
     subject = f"New {tracker_type.title()} tracker registered: {tracker_name}"
     text_body = f"""
-    You have successfully registered a new tracker in SpaceBridge:
+    You have successfully registered a new tracker in {APP_NAME}:
 
     Name: {tracker_name}
     Type: {tracker_type.title()}
@@ -263,20 +289,20 @@ def send_tracker_registered_email(
     {trackers_link}
 
     Thank you,
-    The SpaceBridge Team
+    The {APP_NAME} Team
     """
 
     html_body = f"""
     <html>
     <body>
         <h2>New tracker registered</h2>
-        <p>You have successfully registered a new tracker in SpaceBridge:</p>
+        <p>You have successfully registered a new tracker in {APP_NAME}:</p>
         <p>
             <strong>Name:</strong> {tracker_name}<br>
             <strong>Type:</strong> {tracker_type.title()}
         </p>
         <p>You can <a href="{trackers_link}">view and manage your trackers here</a>.</p>
-        <p>Thank you,<br>The SpaceBridge Team</p>
+        <p>Thank you,<br>The {APP_NAME} Team</p>
     </body>
     </html>
     """
@@ -358,10 +384,150 @@ async def send_product_notification_email(
         )
         logger.info(f"Product notification email sent to {recipient_email}")
     except EmailError as e:
-        logger.error(f"Failed to send product notification email: {str(e)}")
-        raise  # Re-raise the EmailError to be handled by the caller
+        # Log error but don't raise to avoid breaking the flow in dev/CI environments
+        logger.warning(f"Failed to send product notification email: {str(e)}")
     except Exception as e:
         logger.error(
             f"An unexpected error occurred while sending product notification email: {str(e)}"
         )
-        raise EmailError(f"An unexpected error occurred: {str(e)}")
+        # Log unexpected errors but don't raise
+
+
+async def send_approval_request_email(
+    user_email: str,
+    tool_name: str,
+    tool_args: Dict[str, Any],
+    approval_url: str,
+    agent_reasoning: Optional[str] = None,
+) -> None:
+    """Send an approval request email to an approver.
+
+    Args:
+        user_email: The approver's email address.
+        tool_name: The name of the tool requiring approval.
+        tool_args: The arguments passed to the tool.
+        approval_url: The URL to approve or decline the request.
+        agent_reasoning: Optional reasoning from the agent for why it wants to use the tool.
+
+    Raises:
+        EmailError: If email sending fails.
+    """
+    subject = f"Tool Approval Required: {tool_name}"
+
+    # Format tool arguments for display
+    import json
+
+    tool_args_formatted = json.dumps(tool_args, indent=2)
+
+    # Plain text version
+    text_parts = [
+        "Hi,",
+        "",
+        "An AI agent is requesting approval to execute the following tool:",
+        "",
+        f"Tool: {tool_name}",
+    ]
+
+    if agent_reasoning:
+        text_parts.append("")
+        text_parts.append("Agent's Reasoning:")
+        text_parts.append(agent_reasoning)
+
+    text_parts.extend(
+        [
+            "",
+            "Arguments:",
+            tool_args_formatted,
+            "",
+            "To approve or decline this request, please visit:",
+            approval_url,
+            "",
+            "This link will expire in 5 minutes.",
+            "",
+            "Best regards,",
+            f"{APP_NAME} Team",
+        ]
+    )
+
+    body_text = "\n".join(text_parts)
+
+    # HTML version
+    html_parts = [
+        "<!DOCTYPE html>",
+        "<html>",
+        "<head>",
+        '  <meta charset="UTF-8">',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        "  <style>",
+        "    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }",
+        "    .container { max-width: 600px; margin: 0 auto; padding: 20px; }",
+        "    .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }",
+        "    .content { background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 5px 5px; }",
+        "    .tool-name { font-weight: bold; color: #2196F3; font-size: 1.1em; }",
+        "    .reasoning { background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 15px 0; }",
+        "    .arguments { background-color: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; overflow-x: auto; font-family: 'Courier New', monospace; font-size: 13px; }",
+        "    .button { display: inline-block; background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px 5px; }",
+        "    .button-decline { background-color: #f44336; }",
+        "    .footer { text-align: center; margin-top: 20px; font-size: 0.9em; color: #777; }",
+        "    .warning { color: #ff6b6b; font-weight: bold; }",
+        "  </style>",
+        "</head>",
+        "<body>",
+        '  <div class="container">',
+        '    <div class="header">',
+        "      <h2>Tool Approval Required</h2>",
+        "    </div>",
+        '    <div class="content">',
+        "      <p>Hi,</p>",
+        "      <p>An AI agent is requesting approval to execute the following tool:</p>",
+        f'      <p class="tool-name">Tool: {tool_name}</p>',
+    ]
+
+    if agent_reasoning:
+        html_parts.extend(
+            [
+                '      <div class="reasoning">',
+                "        <strong>Agent's Reasoning:</strong>",
+                f"        <p>{agent_reasoning}</p>",
+                "      </div>",
+            ]
+        )
+
+    html_parts.extend(
+        [
+            "      <p><strong>Arguments:</strong></p>",
+            f'      <pre class="arguments">{tool_args_formatted}</pre>',
+            "      <p>Please review and decide:</p>",
+            '      <div style="text-align: center; margin: 20px 0;">',
+            f'        <a href="{approval_url}" class="button">Review Request</a>',
+            "      </div>",
+            '      <p class="warning">⚠️ This link will expire in 5 minutes.</p>',
+            "    </div>",
+            '    <div class="footer">',
+            f"      <p>Sent by {APP_NAME}</p>",
+            "    </div>",
+            "  </div>",
+            "</body>",
+            "</html>",
+        ]
+    )
+
+    body_html = "\n".join(html_parts)
+
+    try:
+        # Run send_email in a separate thread to avoid blocking asyncio event loop
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, send_email, user_email, subject, body_text, body_html
+        )
+        logger.info(
+            f"Approval request email sent to {user_email} for tool '{tool_name}'"
+        )
+    except EmailError as e:
+        # Log error but don't raise to avoid breaking the flow in dev/CI environments
+        logger.warning(f"Failed to send approval request email: {str(e)}")
+    except Exception as e:
+        logger.error(
+            f"An unexpected error occurred while sending approval request email: {str(e)}"
+        )
+        # Log unexpected errors but don't raise

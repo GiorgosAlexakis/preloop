@@ -4,7 +4,7 @@ import logging
 from typing import Annotated, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from spacebridge.api.auth.jwt import get_current_active_user
@@ -152,6 +152,8 @@ async def change_password(
     db.commit()
 
     logger.info(f"Password changed for user {current_user.username}")
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -447,6 +449,8 @@ async def deactivate_user(
     db.commit()
 
     logger.info(f"User {user_id} deactivated by {current_user.username}")
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/users/search/{username}", response_model=List[UserSummary])

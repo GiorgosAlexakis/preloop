@@ -283,11 +283,27 @@ async def delete_mcp_server(
         )
 
     try:
+        # Delete associated tool configurations first (CASCADE should handle this,
+        # but we do it explicitly for better logging and to avoid orphaned configs)
+        from spacemodels.crud import crud_tool_configuration
+
+        tool_configs = crud_tool_configuration.get_by_mcp_server(
+            db, mcp_server_id=server_id
+        )
+        if tool_configs:
+            logger.info(
+                f"Deleting {len(tool_configs)} tool configurations for MCP server {server_id}"
+            )
+            for config in tool_configs:
+                db.delete(config)
+
+        # Delete the MCP server
         db.delete(server)
         db.commit()
 
         logger.info(
-            f"Deleted MCP server {server_id} for account {current_user.account_id}"
+            f"Deleted MCP server {server_id} and {len(tool_configs) if tool_configs else 0} "
+            f"tool configurations for account {current_user.account_id}"
         )
 
         return {"message": "MCP server deleted successfully"}

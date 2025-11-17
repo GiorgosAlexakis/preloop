@@ -36,7 +36,7 @@ class TestCreatePlan:
         db_session.commit()
 
         with patch(
-            "spacebridge.services.billing.BillingService.create_plan"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.create_plan"
         ) as mock_create:
             mock_plan = MagicMock()
             mock_plan.id = str(uuid.uuid4())
@@ -208,7 +208,7 @@ class TestCheckoutSuccess:
     def test_checkout_success_new_user(self, client: TestClient, db_session: Session):
         """Test checkout success redirects appropriately."""
         with patch(
-            "spacebridge.services.billing.BillingService._handle_checkout_session_completed"
+            "spacebridge.plugins.proprietary.billing.service.BillingService._handle_checkout_session_completed"
         ) as mock_handle:
             # Create a test account with a primary user that needs password reset
             account = crud_account.create(
@@ -253,7 +253,7 @@ class TestCheckoutSuccess:
     ):
         """Test checkout success redirects existing users to console."""
         with patch(
-            "spacebridge.services.billing.BillingService._handle_checkout_session_completed"
+            "spacebridge.plugins.proprietary.billing.service.BillingService._handle_checkout_session_completed"
         ) as mock_handle:
             # Create a test account with existing user (has real password)
             account = crud_account.create(
@@ -292,7 +292,7 @@ class TestCheckoutSuccess:
     def test_checkout_success_session_not_found(self, client: TestClient):
         """Test checkout success with invalid session."""
         with patch(
-            "spacebridge.services.billing.BillingService._handle_checkout_session_completed"
+            "spacebridge.plugins.proprietary.billing.service.BillingService._handle_checkout_session_completed"
         ) as mock_handle:
             mock_handle.return_value = None
 
@@ -309,7 +309,7 @@ class TestGetCheckoutSessionDetails:
     def test_get_checkout_session_details_success(self, client: TestClient):
         """Test getting checkout session details."""
         with patch(
-            "spacebridge.services.billing.BillingService.get_user_details_from_session"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.get_user_details_from_session"
         ) as mock_get_details:
             mock_get_details.return_value = {
                 "email": "test@example.com",
@@ -328,7 +328,7 @@ class TestGetCheckoutSessionDetails:
     def test_get_checkout_session_details_not_found(self, client: TestClient):
         """Test getting details for non-existent session."""
         with patch(
-            "spacebridge.services.billing.BillingService.get_user_details_from_session"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.get_user_details_from_session"
         ) as mock_get_details:
             mock_get_details.return_value = None
 
@@ -348,7 +348,7 @@ class TestCreateCheckoutSession:
     ):
         """Test creating checkout session as authenticated user."""
         with patch(
-            "spacebridge.services.billing.BillingService.create_checkout_session"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.create_checkout_session"
         ) as mock_create:
             mock_create.return_value = {"url": "https://checkout.stripe.com/pay/123"}
 
@@ -364,7 +364,7 @@ class TestCreateCheckoutSession:
     def test_create_checkout_session_unauthenticated(self, client: TestClient):
         """Test creating checkout session without authentication."""
         with patch(
-            "spacebridge.services.billing.BillingService.create_checkout_session"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.create_checkout_session"
         ) as mock_create:
             mock_create.return_value = {"url": "https://checkout.stripe.com/pay/123"}
 
@@ -383,7 +383,7 @@ class TestCreatePortalSession:
     def test_create_portal_session_success(self, client: TestClient, test_user: User):
         """Test creating portal session."""
         with patch(
-            "spacebridge.services.billing.BillingService.create_portal_session"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.create_portal_session"
         ) as mock_create:
             mock_create.return_value = "https://billing.stripe.com/session/123"
 
@@ -398,7 +398,7 @@ class TestCreatePortalSession:
     def test_create_portal_session_error(self, client: TestClient, test_user: User):
         """Test creating portal session with error."""
         with patch(
-            "spacebridge.services.billing.BillingService.create_portal_session"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.create_portal_session"
         ) as mock_create:
             mock_create.side_effect = Exception("Stripe error")
 
@@ -417,7 +417,7 @@ class TestStripeWebhooks:
     async def test_stripe_webhooks_success(self, client: TestClient):
         """Test handling stripe webhooks."""
         with patch(
-            "spacebridge.services.billing.BillingService.handle_webhook"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.handle_webhook"
         ) as mock_handle:
             mock_handle.return_value = None
 
@@ -434,7 +434,7 @@ class TestStripeWebhooks:
     async def test_stripe_webhooks_error(self, client: TestClient):
         """Test handling stripe webhooks with error."""
         with patch(
-            "spacebridge.services.billing.BillingService.handle_webhook"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.handle_webhook"
         ) as mock_handle:
             mock_handle.side_effect = Exception("Invalid webhook")
 
@@ -453,7 +453,7 @@ class TestSyncSubscription:
     def test_sync_subscription_success(self, client: TestClient, test_user: User):
         """Test syncing subscription status."""
         with patch(
-            "spacebridge.services.billing.BillingService.sync_subscription_status"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.sync_subscription_status"
         ) as mock_sync:
             mock_sync.return_value = None
 
@@ -468,7 +468,7 @@ class TestSyncSubscription:
     def test_sync_subscription_not_found(self, client: TestClient, test_user: User):
         """Test syncing subscription when account not found."""
         with patch(
-            "spacebridge.services.billing.BillingService.sync_subscription_status"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.sync_subscription_status"
         ) as mock_sync:
             mock_sync.side_effect = ValueError("Account not found")
 
@@ -481,7 +481,7 @@ class TestSyncSubscription:
     def test_sync_subscription_error(self, client: TestClient, test_user: User):
         """Test syncing subscription with error."""
         with patch(
-            "spacebridge.services.billing.BillingService.sync_subscription_status"
+            "spacebridge.plugins.proprietary.billing.service.BillingService.sync_subscription_status"
         ) as mock_sync:
             mock_sync.side_effect = Exception("Stripe API error")
 

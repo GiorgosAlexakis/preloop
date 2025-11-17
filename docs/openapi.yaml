@@ -315,7 +315,7 @@ paths:
               $ref: '#/components/schemas/ApiKeyCreate'
         required: true
       responses:
-        '200':
+        '201':
           description: Successful Response
           content:
             application/json:
@@ -538,7 +538,7 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/public/approval/{request_id}:
+  /approval/{request_id}/data:
     get:
       tags:
       - Public Approval
@@ -549,7 +549,7 @@ paths:
         \ from the approval link\n    db: Database session\n\nReturns:\n    Public\
         \ approval request details\n\nRaises:\n    HTTPException: If token is invalid\
         \ or request not found"
-      operationId: get_approval_request_public_api_v1_public_approval__request_id__get
+      operationId: get_approval_request_public_approval__request_id__data_get
       parameters:
       - name: request_id
         in: path
@@ -579,7 +579,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/public/approval/{request_id}/decide:
+  /approval/{request_id}/decide:
     post:
       tags:
       - Public Approval
@@ -591,7 +591,7 @@ paths:
         \ token from the approval link\n    db_sync: Synchronous database session\
         \ for validation\n\nReturns:\n    Updated approval request\n\nRaises:\n  \
         \  HTTPException: If token is invalid, request not found, or already resolved"
-      operationId: decide_approval_request_public_api_v1_public_approval__request_id__decide_post
+      operationId: decide_approval_request_public_approval__request_id__decide_post
       parameters:
       - name: request_id
         in: path
@@ -1349,6 +1349,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tool-configurations/{config_id}/condition:
+    put:
+      tags:
+      - Tools
+      summary: Update Tool Approval Condition
+      description: "Update or create approval condition for a tool configuration.\n\
+        \nArgs:\n    config_id: Tool configuration ID\n    condition_data: Condition\
+        \ data with 'approval_condition' field\n    account: Current user's account\n\
+        \    db: Database session\n\nReturns:\n    Updated tool configuration\n\n\
+        Raises:\n    HTTPException: If configuration not found or update fails"
+      operationId: update_tool_approval_condition_api_v1_tool_configurations__config_id__condition_put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Condition Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolConfigurationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/approval-policies:
     get:
       tags:
@@ -2020,14 +2062,14 @@ paths:
       tags:
       - Notification Preferences
       summary: Register Device Via Token
-      description: "Register a mobile device using a QR code token.\n\nThis endpoint\
-        \ is called by the mobile app after scanning the QR code.\n\nArgs:\n    token:\
+      description: "Register a mobile device using a QR code token and create an API\
+        \ key.\n\nThis endpoint is called by the mobile app after scanning the QR\
+        \ code.\nIt registers the device for push notifications AND creates an API\
+        \ key\nfor the mobile app to authenticate API requests.\n\nArgs:\n    token:\
         \ Registration token from QR code.\n    device_in: Device registration data.\n\
-        \nReturns:\n    Updated notification preferences.\n\nRaises:\n    HTTPException:\
-        \ If token is invalid or expired."
+        \nReturns:\n    Updated notification preferences with API key.\n\nRaises:\n\
+        \    HTTPException: If token is invalid or expired."
       operationId: register_device_via_token_api_v1_notification_preferences_register_via_token_post
-      security:
-      - bearerAuth: []
       parameters:
       - name: token
         in: query
@@ -2047,13 +2089,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NotificationPreferencesResponse'
+                $ref: '#/components/schemas/MobileDeviceRegistrationResponse'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/issue-dependencies/detect:
     post:
       tags:
@@ -4273,6 +4317,90 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/executions/{execution_id}/logs:
+    get:
+      tags:
+      - Flows
+      summary: Get Flow Execution Logs
+      description: "Get execution logs from the container (if running) or database\
+        \ (if finished).\n\nFor running executions, fetches logs directly from the\
+        \ Docker/Kubernetes container.\nFor finished executions, returns persisted\
+        \ logs from the database.\n\nArgs:\n    execution_id: ID of the execution\n\
+        \    tail: Number of recent log lines to retrieve (default: 1000)\n\nReturns:\n\
+        \    Dictionary with:\n    - logs: List of log lines\n    - source: Where\
+        \ logs were fetched from (\"container\" or \"database\")"
+      operationId: get_flow_execution_logs_api_v1_flows_executions__execution_id__logs_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: execution_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Execution Id
+      - name: tail
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 1000
+          title: Tail
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Flow Execution Logs Api V1 Flows Executions  Execution
+                  Id  Logs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/executions/{execution_id}/metrics:
+    get:
+      tags:
+      - Flows
+      summary: Get Flow Execution Metrics
+      description: "Get execution metrics including tool calls, API usage, and costs.\n\
+        \nReturns:\n    Dictionary with:\n    - tool_calls: Number of MCP tool calls\
+        \ made\n    - api_requests: Number of API requests made during execution\n\
+        \    - token_usage: Token usage statistics\n    - estimated_cost: Estimated\
+        \ cost based on token usage (0.0 if no pricing)\n    - has_pricing: Whether\
+        \ pricing is configured in AI model metadata"
+      operationId: get_flow_execution_metrics_api_v1_flows_executions__execution_id__metrics_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: execution_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Execution Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Flow Execution Metrics Api V1 Flows Executions  Execution
+                  Id  Metrics Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/flows/executions/{execution_id}/command:
     post:
       tags:
@@ -5575,10 +5703,10 @@ paths:
       - Invitations
       summary: Create Invitation
       description: "Create a new user invitation.\n\nArgs:\n    invitation_data: Invitation\
-        \ data with email and optional role IDs\n    current_user: Current authenticated\
-        \ user\n    db: Database session\n\nReturns:\n    InvitationResponse: Created\
-        \ invitation data\n\nRaises:\n    HTTPException: If user already exists or\
-        \ invitation already pending"
+        \ data with email, optional role IDs, and optional team IDs\n    current_user:\
+        \ Current authenticated user\n    db: Database session\n\nReturns:\n    InvitationResponse:\
+        \ Created invitation data\n\nRaises:\n    HTTPException: If user already exists\
+        \ or invitation already pending"
       operationId: create_invitation_api_v1_invitations_post
       security:
       - bearerAuth: []
@@ -6091,9 +6219,10 @@ components:
           type: array
           title: Scopes
           default: []
-        created_by:
+        user_id:
           type: string
-          title: Created By
+          format: uuid
+          title: User Id
         last_used_at:
           anyOf:
           - type: string
@@ -6106,7 +6235,7 @@ components:
       - name
       - key
       - created_at
-      - created_by
+      - user_id
       title: ApiKeyResponse
       description: Response model for API key data.
     ApiKeySummary:
@@ -6704,19 +6833,24 @@ components:
           title: Execution Id
           description: Flow execution ID (if applicable)
         id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Id
         account_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Account Id
         tool_configuration_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Tool Configuration Id
         approval_policy_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Approval Policy Id
         status:
           type: string
@@ -7986,6 +8120,14 @@ components:
             type: array
           - type: 'null'
           title: Role Ids
+        team_ids:
+          anyOf:
+          - items:
+              type: string
+              format: uuid
+            type: array
+          - type: 'null'
+          title: Team Ids
       type: object
       required:
       - email
@@ -8040,6 +8182,20 @@ components:
           - type: string
           - type: 'null'
           title: Error Message
+        role_names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Role Names
+        team_names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Team Names
       type: object
       required:
       - organization_name
@@ -8070,6 +8226,11 @@ components:
           - type: string
           - type: 'null'
           title: Role Ids
+        team_ids:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Team Ids
         invited_by:
           anyOf:
           - type: string
@@ -8097,6 +8258,7 @@ components:
       - token
       - status
       - role_ids
+      - team_ids
       - invited_by
       - created_at
       - accepted_at
@@ -8246,10 +8408,14 @@ components:
     IssueDuplicate:
       properties:
         issue1_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Issue1 Id
         issue2_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Issue2 Id
         decision:
           type: string
@@ -8299,7 +8465,6 @@ components:
         ai_model_id:
           anyOf:
           - type: string
-            format: uuid
           - type: 'null'
           title: Ai Model Id
         ai_model_name:
@@ -8339,9 +8504,11 @@ components:
       properties:
         issue1_id:
           type: string
+          format: uuid
           title: Issue1 Id
         issue2_id:
           type: string
+          format: uuid
           title: Issue2 Id
         resolution:
           type: string
@@ -8380,10 +8547,14 @@ components:
     IssueDuplicateResolutionResponse:
       properties:
         issue1_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Issue1 Id
         issue2_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Issue2 Id
         resolution:
           type: string
@@ -8409,9 +8580,11 @@ components:
       properties:
         issue1_id:
           type: string
+          format: uuid
           title: Issue1 Id
         issue2_id:
           type: string
+          format: uuid
           title: Issue2 Id
         resolution:
           type: string
@@ -8424,11 +8597,13 @@ components:
         resulting_issue1_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Resulting Issue1 Id
         resulting_issue2_id:
           anyOf:
           - type: string
+            format: uuid
           - type: 'null'
           title: Resulting Issue2 Id
       type: object
@@ -8523,7 +8698,9 @@ components:
           title: Meta Data
           description: Additional issue metadata
         id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Id
           description: Internal SpaceBridge database ID (UUID)
         external_id:
@@ -8543,7 +8720,9 @@ components:
           title: Project
           description: Project name
         project_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Project Id
           description: Project ID
         project_identifier:
@@ -8889,12 +9068,45 @@ components:
           type: string
           title: Token
           description: Device push notification token
+        device_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Name
+          description: Optional device name for API key
       type: object
       required:
       - platform
       - token
       title: MobileDeviceRegistration
       description: Schema for registering a mobile device.
+    MobileDeviceRegistrationResponse:
+      properties:
+        preferences:
+          $ref: '#/components/schemas/NotificationPreferencesResponse'
+        api_key:
+          type: string
+          title: Api Key
+          description: API key for mobile app authentication
+        api_key_id:
+          type: string
+          format: uuid
+          title: Api Key Id
+          description: API key ID
+        api_key_expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Api Key Expires At
+          description: API key expiration
+      type: object
+      required:
+      - preferences
+      - api_key
+      - api_key_id
+      title: MobileDeviceRegistrationResponse
+      description: Schema for mobile device registration response with API key.
     NotificationPreferencesResponse:
       properties:
         preferred_channel:
@@ -10114,7 +10326,9 @@ components:
           - type: 'null'
           title: Id
         account_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Account Id
         created_at:
           type: string

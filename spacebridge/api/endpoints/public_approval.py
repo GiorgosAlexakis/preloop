@@ -15,7 +15,7 @@ from spacebridge.services.approval_service import ApprovalService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/public/approval", tags=["public-approval"])
+router = APIRouter(prefix="/approval", tags=["public-approval"])
 
 
 class ApprovalDecisionRequest(BaseModel):
@@ -37,7 +37,7 @@ class ApprovalRequestPublic(BaseModel):
     expires_at: Optional[str]
 
 
-@router.get("/{request_id}")
+@router.get("/{request_id}/data")
 def get_approval_request_public(
     request_id: uuid.UUID,
     token: str = Query(..., description="Approval token"),

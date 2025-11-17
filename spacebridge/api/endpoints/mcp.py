@@ -31,7 +31,6 @@ from spacebridge.api.endpoints.issue_compliance import (
 )
 from spacebridge.schemas.issue import IssueCreate
 from spacebridge.schemas.tracker_models import IssueUpdate
-from spacebridge.services.billing import BillingService
 from spacebridge.schemas.mcp import (
     GetIssueResponse,
     CreateIssueResponse,
@@ -45,7 +44,6 @@ from spacebridge.schemas.mcp import (
 
 from spacebridge.services.duplicate_detection import DuplicateDetector
 from spacebridge.config import get_settings
-from spacebridge.api.endpoints.billing import get_billing_service
 from spacemodels.crud import (
     CRUDIssue,
     CRUDProject,
@@ -604,7 +602,6 @@ async def estimate_compliance(
     # Authenticate user
     db, current_user = await _get_authenticated_user(get_http_request().headers)
     settings = get_settings()
-    billing_service = get_billing_service(db)
 
     # Process issues with controlled parallelism (max 10 concurrent)
     semaphore = asyncio.Semaphore(10)
@@ -617,7 +614,6 @@ async def estimate_compliance(
                 current_user,
                 compliance_metric,
                 settings=settings,
-                billing_service=billing_service,
             )
 
     # Execute all tasks in parallel
@@ -676,7 +672,6 @@ async def _process_single_issue_estimate(
     current_user,
     compliance_metric: str,
     settings=None,
-    billing_service: BillingService = None,
 ) -> ProcessingResult:
     """Process compliance estimation for a single issue."""
     try:
@@ -695,7 +690,6 @@ async def _process_single_issue_estimate(
             db=db,
             current_user=current_user,
             settings=settings,
-            billing_service=billing_service,
         )
 
         return ProcessingResult(
@@ -736,7 +730,6 @@ async def _process_single_issue_compliance(
     current_user,
     prompt_name: str = "default",
     settings=None,
-    billing_service: BillingService = None,
 ) -> ProcessingResult:
     """Process compliance improvement for a single issue."""
     try:
@@ -750,7 +743,6 @@ async def _process_single_issue_compliance(
             db=db,
             current_user=current_user,
             settings=settings,
-            billing_service=billing_service,
         )
 
         # Create suggested update
@@ -812,7 +804,6 @@ async def improve_compliance(
 
     # Authenticate user
     db, current_user = await _get_authenticated_user(get_http_request().headers)
-    billing_service = get_billing_service(db)
     settings = get_settings()
 
     # Process issues with controlled parallelism (max 10 concurrent)
@@ -829,7 +820,6 @@ async def improve_compliance(
                 current_user,
                 prompt_name,
                 settings=settings,
-                billing_service=billing_service,
             )
 
     # Execute all tasks in parallel
@@ -910,28 +900,144 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    try:
-        # Find the target (issue/PR/MR) using our enhanced lookup
-        # Note: For GitHub/GitLab, PRs and MRs are treated as issues in the API,
-        # so the same lookup and add_comment method should work
-        issue_obj = _find_issue_by_identifier(db, target, current_user.account_id)
-    except IssueNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    target = target.strip()
 
-    # Get tracker client
-    tracker_client = await get_tracker_client(
-        issue_obj.project.organization_id, issue_obj.project_id, db, current_user
-    )
+    # Detect if target is a PR/MR URL and handle separately
+    # PRs and MRs are not stored in the issue table, so we need different logic
+    is_pull_request = False
+    is_merge_request = False
+    project_path = None
+    pr_mr_number = None
 
-    if not issue_obj.external_id and not issue_obj.key:
-        logger.error(f"Cannot add comment to {target}: Missing external_id and key.")
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot add comment: Missing external identifier.",
+    if target.startswith("http"):
+        # GitHub PR URL: https://github.com/owner/repo/pull/123
+        if "github.com" in target and "/pull/" in target:
+            is_pull_request = True
+            parts = target.split("/")
+            if len(parts) >= 7:
+                owner = parts[3]
+                repo = parts[4]
+                pr_mr_number = parts[6].rstrip("/").split("?")[0].split("#")[0]
+                project_path = f"{owner}/{repo}"
+                logger.info(f"Detected GitHub PR: {project_path}#{pr_mr_number}")
+        # GitLab MR URL: https://gitlab.com/owner/repo/-/merge_requests/1
+        elif "gitlab" in target and "merge_requests/" in target:
+            is_merge_request = True
+            mr_parts = target.split("merge_requests/")
+            pr_mr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
+            # Extract project path from URL
+            url_path = mr_parts[0].split("://")[1].split("/")
+            if len(url_path) >= 3:
+                # Remove gitlab host and get project path (everything between host and /-/)
+                project_path = "/".join(url_path[1:]).rstrip("/-")
+                logger.info(f"Detected GitLab MR: {project_path}#{pr_mr_number}")
+    # Parse slug format for PRs/MRs: owner/repo#123
+    elif "/" in target and "#" in target:
+        slug_parts = target.split("#")
+        pr_mr_number = slug_parts[1]
+        project_path = slug_parts[0]
+        # Try to determine if it's a GitHub or GitLab project
+        # We'll detect this after finding the project
+        logger.info(f"Detected PR/MR slug format: {project_path}#{pr_mr_number}")
+
+    # Handle PR/MR comments separately
+    if is_pull_request or is_merge_request or (project_path and pr_mr_number):
+        # Find the project
+        if project_path:
+            project_obj = crud_project.get_by_slug_or_identifier(
+                db,
+                slug_or_identifier=project_path,
+                account_id=str(current_user.account_id),
+            )
+            if not project_obj:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Project not found for {project_path}",
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not parse project path from PR/MR identifier",
+            )
+
+        # Get tracker client
+        tracker_client = await get_tracker_client(
+            project_obj.organization_id, project_obj.id, db, current_user
         )
 
-    # Use key if available, otherwise use external_id
-    target_id = issue_obj.key if issue_obj.key else issue_obj.external_id
+        # If we didn't detect the type yet, check the tracker type
+        if not is_pull_request and not is_merge_request:
+            if tracker_client.tracker_type.lower() == "github":
+                is_pull_request = True
+            elif tracker_client.tracker_type.lower() == "gitlab":
+                is_merge_request = True
+
+        # Use the appropriate tracker method
+        target_id = pr_mr_number
+    else:
+        # This is a regular issue - use the existing logic
+        parsed_key = None
+        if target.startswith("http"):
+            # GitHub issue URL: https://github.com/owner/repo/issues/123
+            if "github.com" in target and "/issues/" in target:
+                parts = target.split("/")
+                if len(parts) >= 7:
+                    owner = parts[3]
+                    repo = parts[4]
+                    issue_number = parts[6].rstrip("/").split("?")[0].split("#")[0]
+                    parsed_key = f"{owner}/{repo}#{issue_number}"
+                    logger.info(f"Parsed GitHub issue URL to key: {parsed_key}")
+            # GitLab issue URL: https://gitlab.com/owner/repo/-/issues/1
+            elif "gitlab" in target and "/issues/" in target:
+                issue_parts = target.split("/issues/")
+                issue_number = issue_parts[-1].rstrip("/").split("?")[0].split("#")[0]
+                # Extract project path from URL
+                url_path = issue_parts[0].split("://")[1].split("/")
+                if len(url_path) >= 3:
+                    # Remove gitlab host and get project path (everything between host and /-/)
+                    project_path_tmp = "/".join(url_path[1:]).rstrip("/-")
+                    parsed_key = f"{project_path_tmp}#{issue_number}"
+                    logger.info(f"Parsed GitLab issue URL to key: {parsed_key}")
+
+        # Try to find the issue
+        issue_obj = None
+        try:
+            # First, try with the parsed key if we have one
+            if parsed_key:
+                try:
+                    issue_obj = _find_issue_by_identifier(
+                        db, parsed_key, current_user.account_id
+                    )
+                    logger.info(f"Found issue using parsed key: {parsed_key}")
+                except IssueNotFoundError:
+                    logger.info(
+                        f"Could not find issue with parsed key {parsed_key}, trying original target"
+                    )
+
+            # If not found with parsed key, try the original target
+            if not issue_obj:
+                issue_obj = _find_issue_by_identifier(
+                    db, target, current_user.account_id
+                )
+        except IssueNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+        # Get tracker client
+        tracker_client = await get_tracker_client(
+            issue_obj.project.organization_id, issue_obj.project_id, db, current_user
+        )
+
+        if not issue_obj.external_id and not issue_obj.key:
+            logger.error(
+                f"Cannot add comment to {target}: Missing external_id and key."
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot add comment: Missing external identifier.",
+            )
+
+        # Use key if available, otherwise use external_id
+        target_id = issue_obj.key if issue_obj.key else issue_obj.external_id
 
     try:
         logger.info(f"Adding comment to {target_id} via tracker client")

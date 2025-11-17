@@ -58,7 +58,10 @@ class FlowExecutionOrchestrator:
 
     @staticmethod
     async def send_command(
-        execution_id: str, command: str, payload: Optional[Dict[str, Any]] = None
+        execution_id: str,
+        command: str,
+        payload: Optional[Dict[str, Any]] = None,
+        nats_client: Optional[Client] = None,
     ):
         """
         Send a command to a running flow execution via NATS.
@@ -67,14 +70,27 @@ class FlowExecutionOrchestrator:
             execution_id: ID of the flow execution
             command: Command to send (e.g., 'stop', 'send_message')
             payload: Optional command payload
+            nats_client: Optional NATS client (if not provided, will try to get from app state)
 
         Raises:
             RuntimeError: If NATS client is not available
         """
-        # Get NATS client from app state
-        from spacebridge.api.app import app
+        # If nats_client not provided, try to get it from app state
+        if not nats_client:
+            try:
+                import inspect
 
-        nats_client = getattr(app.state, "nats", None)
+                # Try to find the app instance in the call stack
+                for frame_info in inspect.stack():
+                    frame_locals = frame_info.frame.f_locals
+                    if "request" in frame_locals:
+                        request = frame_locals["request"]
+                        if hasattr(request, "app") and hasattr(request.app, "state"):
+                            nats_client = getattr(request.app.state, "nats", None)
+                            break
+            except Exception:
+                pass
+
         if not nats_client or not nats_client.is_connected:
             raise RuntimeError("NATS client not available or not connected")
 
@@ -279,6 +295,16 @@ class FlowExecutionOrchestrator:
             # Create API key that expires in 2 hours
             expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
 
+            # Store flow execution context in the token for tool filtering
+            context_data = {
+                "flow_execution_id": str(self.execution_log.id)
+                if self.execution_log
+                else None,
+                "flow_id": str(self.flow_id),
+                "allowed_mcp_tools": self.flow.allowed_mcp_tools or [],
+                "allowed_mcp_servers": self.flow.allowed_mcp_servers or [],
+            }
+
             api_key = ApiKey(
                 name=f"Flow Execution {self.execution_log.id if self.execution_log else 'temp'}",
                 key=token_key,
@@ -286,6 +312,7 @@ class FlowExecutionOrchestrator:
                 expires_at=expires_at,
                 is_active=True,
                 scopes=["mcp:read", "mcp:write"],  # Limited scopes for MCP access
+                context_data=context_data,  # Store flow context for tool restrictions
             )
 
             self.db.add(api_key)
@@ -398,7 +425,9 @@ class FlowExecutionOrchestrator:
                     # Inject credentials into URL
                     repo_url = self._inject_credentials_into_url(repo_url, credentials)
 
-            clone_cmd = f"git clone{branch_arg} {repo_url} {full_clone_path}"
+            clone_cmd = (
+                f"git clone --recursive{branch_arg} {repo_url} {full_clone_path}"
+            )
 
             logger.info(f"Executing git clone to {full_clone_path}")
 
@@ -697,16 +726,62 @@ class FlowExecutionOrchestrator:
         """
         logger.info(f"Starting log streaming for {session_reference}")
         log_count = 0
+        total_tokens = 0
+        tool_calls_count = 0
+
+        # Track previous line for token parsing (tokens used pattern spans 2 lines)
+        previous_line = ""
 
         try:
             async for log_line in agent_executor.stream_logs(session_reference):
                 log_count += 1
                 logger.debug(f"Streamed log line #{log_count}: {log_line[:100]}")
 
-                # Parse log line for structured data
+                # Store the log line for later summary
+                self.execution_logger.log_agent_output(log_line)
+
+                # Parse log line for structured data (includes tool call detection)
                 self.execution_logger.parse_agent_logs([log_line])
 
-                # Publish to NATS
+                # Check for token usage pattern: "tokens used" followed by number on next line
+                if "tokens used" in previous_line.lower():
+                    # Try to extract token count from current line
+                    import re
+
+                    # Pattern: number with optional commas (e.g., "1,234" or "1234")
+                    token_match = re.search(r"(\d{1,3}(?:,\d{3})*)", log_line.strip())
+                    if token_match:
+                        tokens = int(token_match.group(1).replace(",", ""))
+                        total_tokens += tokens
+                        logger.info(
+                            f"Detected token usage: {tokens} tokens (total: {total_tokens})"
+                        )
+
+                        # Emit token usage update
+                        await self._publish_update(
+                            "token_usage_update",
+                            {
+                                "total_tokens": total_tokens,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            },
+                        )
+
+                # Check if this log line indicates a tool call was detected
+                previous_tool_calls_count = len(self.execution_logger.mcp_usage_logs)
+                if previous_tool_calls_count > tool_calls_count:
+                    tool_calls_count = previous_tool_calls_count
+                    logger.info(f"Tool call detected (total: {tool_calls_count})")
+
+                    # Emit tool call count update
+                    await self._publish_update(
+                        "tool_calls_update",
+                        {
+                            "tool_calls": tool_calls_count,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+
+                # Publish log line to NATS
                 await self._publish_update(
                     "agent_log_line",
                     {
@@ -715,7 +790,12 @@ class FlowExecutionOrchestrator:
                     },
                 )
 
-            logger.info(f"Log streaming completed. Total logs streamed: {log_count}")
+                # Update previous line for next iteration
+                previous_line = log_line
+
+            logger.info(
+                f"Log streaming completed. Total logs streamed: {log_count}, tokens: {total_tokens}, tool calls: {tool_calls_count}"
+            )
 
         except asyncio.CancelledError:
             logger.info(f"Log streaming cancelled for {session_reference}")
@@ -866,6 +946,10 @@ class FlowExecutionOrchestrator:
             max_wait_time = 3600  # 1 hour max execution time
             poll_interval = 5  # Check status every 5 seconds
             elapsed = 0
+            consecutive_failures = 0
+            max_consecutive_failures = (
+                3  # Fail after 3 consecutive status check failures
+            )
 
             while elapsed < max_wait_time:
                 # Check if user requested stop
@@ -876,12 +960,58 @@ class FlowExecutionOrchestrator:
                     await agent_executor.stop(session_reference)
                     await self._publish_update("user_stopped", {"elapsed": elapsed})
                     break
-                status = await agent_executor.get_status(session_reference)
 
-                # Publish status update
-                await self._publish_update(
-                    "agent_status", {"status": status.value, "elapsed": elapsed}
-                )
+                # Get status with error handling
+                try:
+                    status = await agent_executor.get_status(session_reference)
+                    logger.debug(f"Agent status at {elapsed}s: {status.value}")
+                    consecutive_failures = 0  # Reset failure counter on success
+                except Exception as status_error:
+                    logger.error(
+                        f"Error getting agent status at {elapsed}s: {status_error}",
+                        exc_info=True,
+                    )
+                    # Retry once after a short delay
+                    await asyncio.sleep(2)
+                    try:
+                        status = await agent_executor.get_status(session_reference)
+                        logger.info(f"Status check recovered: {status.value}")
+                        consecutive_failures = 0  # Reset on successful retry
+                    except Exception as retry_error:
+                        logger.error(
+                            f"Status check retry failed: {retry_error}",
+                            exc_info=True,
+                        )
+                        consecutive_failures += 1
+
+                        # Fail execution if too many consecutive failures
+                        if consecutive_failures >= max_consecutive_failures:
+                            logger.error(
+                                f"Agent monitoring failed after {consecutive_failures} consecutive failures"
+                            )
+                            self.execution_logger.log_milestone(
+                                "agent_monitoring_failed",
+                                {"consecutive_failures": consecutive_failures},
+                            )
+                            return {
+                                "status": "FAILED",
+                                "error_message": f"Monitoring error: {str(retry_error)}",
+                                "actions_taken": self.execution_logger.get_actions_taken(),
+                                "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
+                            }
+
+                        # Continue polling for transient errors
+                        await asyncio.sleep(poll_interval)
+                        elapsed += poll_interval
+                        continue
+
+                # Publish status update (best effort - don't fail if NATS is down)
+                try:
+                    await self._publish_update(
+                        "agent_status", {"status": status.value, "elapsed": elapsed}
+                    )
+                except Exception as publish_error:
+                    logger.warning(f"Failed to publish status update: {publish_error}")
 
                 if status in (
                     AgentStatus.SUCCEEDED,
@@ -889,6 +1019,9 @@ class FlowExecutionOrchestrator:
                     AgentStatus.STOPPED,
                 ):
                     # Agent finished, get final result
+                    logger.info(
+                        f"Agent finished with status {status.value} at {elapsed}s"
+                    )
                     result = await agent_executor.get_result(session_reference)
 
                     self.execution_logger.log_milestone(
@@ -1051,9 +1184,22 @@ class FlowExecutionOrchestrator:
 
             # Update execution log with final results including detailed logs
             final_status = agent_result.get("status", "FAILED")
+
+            # Use output_summary from agent result, or fallback to stored logs
+            output_summary = agent_result.get("output_summary")
+            if not output_summary:
+                logger.warning(
+                    "Agent result has no output_summary, using stored logs as fallback"
+                )
+                output_summary = self.execution_logger.get_agent_output_summary()
+                if output_summary:
+                    logger.info(
+                        f"Using stored logs for output_summary ({len(output_summary)} chars)"
+                    )
+
             await self._update_execution_log(
                 status=final_status,
-                model_output_summary=agent_result.get("output_summary"),
+                model_output_summary=output_summary,
                 error_message=agent_result.get("error_message"),
                 actions_taken_summary=agent_result.get("actions_taken"),
                 mcp_usage_logs=agent_result.get("mcp_usage_logs"),

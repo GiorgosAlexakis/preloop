@@ -386,8 +386,8 @@ async def update_tracker(
         db.commit()
         db.refresh(tracker)
 
-        # Send NATS event
-        await event_bus_service.publish_task("poll_tracker", tracker.id)
+        # Send NATS event (convert UUID to string for JSON serialization)
+        await event_bus_service.publish_task("poll_tracker", str(tracker.id))
 
         return tracker
     except IntegrityError as e:
@@ -412,7 +412,6 @@ async def delete_tracker(
     tracker_id: UUID4,
     current_user: UserResponse = Depends(get_current_active_user),
     hard_delete: bool = False,
-    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete a tracker by ID (soft delete by default, hard delete if specified)."""
