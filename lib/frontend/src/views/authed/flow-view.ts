@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import {
@@ -33,6 +33,7 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '../../components/icon-selector.ts';
 import '../../components/add-tracker-modal.ts';
 import '../../components/add-ai-model-modal.ts';
+import consoleStyles from '../../styles/console-styles.css?inline';
 
 interface GitCloneRepository {
   tracker_id: string;
@@ -84,6 +85,7 @@ interface Flow {
   is_preset?: boolean;
   is_enabled?: boolean;
   agent_type?: string;
+  agent_config?: any;
 }
 
 @customElement('flow-view')
@@ -93,25 +95,52 @@ export class FlowView extends LitElement {
     this.flowId = location.params.flowId;
   }
 
-  static styles = css`
-    :host {
-      display: block;
-      padding: 16px;
-    }
-    .form-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    sl-card {
-      margin-bottom: 16px;
-    }
-    sl-input,
-    sl-textarea,
-    sl-select {
-      margin-bottom: 1rem;
-    }
-  `;
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      :host {
+        display: block;
+        padding: var(--sl-spacing-large);
+      }
+      /* Flow-specific styles */
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--sl-spacing-large);
+      }
+      sl-card {
+        width: 100%;
+      }
+      sl-card::part(base) {
+        gap: var(--sl-spacing-large);
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-large);
+      }
+      sl-input,
+      sl-textarea,
+      sl-select {
+        margin-bottom: var(--sl-spacing-medium);
+      }
+      sl-input:last-child,
+      sl-textarea:last-child,
+      sl-select:last-child {
+        margin-bottom: 0;
+      }
+      .preset-card {
+        cursor: pointer;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
+      }
+      .preset-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--sl-shadow-large);
+      }
+    `,
+  ];
 
   @property()
   flowId?: string;
@@ -442,7 +471,9 @@ export class FlowView extends LitElement {
       <div class="column-layout">
         <div class="main-column">
           <!-- Actions -->
-          <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <div
+            style="display: flex; gap: var(--sl-spacing-small); margin-bottom: var(--sl-spacing-large);"
+          >
             <sl-button href="/console/flows">
               <sl-icon name="arrow-left"></sl-icon>
               Back to Flows
@@ -471,13 +502,13 @@ export class FlowView extends LitElement {
           </div>
 
           <!-- Flow Info Card -->
-          <sl-card style="margin-bottom: 16px;">
+          <sl-card>
             <div slot="header">
               <sl-icon name="info-circle"></sl-icon>
               Flow Details
             </div>
             <div
-              style="display: grid; grid-template-columns: 150px 1fr; gap: 12px;"
+              style="display: grid; grid-template-columns: 150px 1fr; gap: var(--sl-spacing-medium);"
             >
               <strong>Name:</strong>
               <span>${this.flow.name}</span>
@@ -524,19 +555,21 @@ export class FlowView extends LitElement {
           ${this.flow.trigger_event_source === 'webhook' &&
           this.flow.webhook_config
             ? html`
-                <sl-card style="margin-bottom: 16px;">
+                <sl-card>
                   <div slot="header">
                     <sl-icon name="link-45deg"></sl-icon>
                     Webhook URL
                   </div>
                   <div>
                     <p
-                      style="margin-bottom: 12px; color: var(--sl-color-neutral-600);"
+                      style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);"
                     >
                       Use this URL to trigger the flow from external services.
                       Keep it secret!
                     </p>
-                    <div style="display: flex; gap: 8px; align-items: center;">
+                    <div
+                      style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+                    >
                       <sl-input
                         readonly
                         style="flex: 1;"
@@ -556,7 +589,7 @@ export class FlowView extends LitElement {
           ${this.flow.git_clone_config?.enabled &&
           (this.flow.git_clone_config.repositories?.length || 0) > 0
             ? html`
-                <sl-card style="margin-bottom: 16px;">
+                <sl-card>
                   <div slot="header">
                     <sl-icon name="git"></sl-icon>
                     Git Clone Configuration
@@ -585,7 +618,7 @@ export class FlowView extends LitElement {
                           Repository ${index + 1}
                         </strong>
                         <div
-                          style="display: grid; grid-template-columns: 150px 1fr; gap: 8px; padding-left: 1rem;"
+                          style="display: grid; grid-template-columns: 150px 1fr; gap: var(--sl-spacing-small); padding-left: var(--sl-spacing-medium);"
                         >
                           <strong>Tracker:</strong>
                           <span
@@ -625,7 +658,7 @@ export class FlowView extends LitElement {
             : ''}
           ${this.flow.custom_commands?.enabled && this.isAdmin
             ? html`
-                <sl-card style="margin-bottom: 16px;">
+                <sl-card>
                   <div slot="header">
                     <sl-icon name="terminal"></sl-icon>
                     Custom Commands
@@ -902,10 +935,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     return html`
       <form @submit=${this.handleSubmit}>
         <sl-card>
-          <div slot="header">
-            <sl-icon name="info-circle"></sl-icon>
-            General
-          </div>
           <sl-input
             label="Name"
             .value=${this.flow.name}
@@ -951,7 +980,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
         <sl-card>
           <div slot="header">
             <sl-icon name="robot"></sl-icon>
-            Agent Configuration
+            AI Agent
           </div>
 
           <sl-select
@@ -972,10 +1001,10 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
           ${this.models.length === 0
             ? html`
                 <div
-                  style="text-align: center; padding: 2rem; background: var(--sl-color-neutral-50); border-radius: 4px; margin-bottom: 1rem;"
+                  style="text-align: center; padding: var(--sl-spacing-2x-large); background: var(--sl-color-neutral-50); border-radius: var(--sl-border-radius-medium); margin-bottom: var(--sl-spacing-medium);"
                 >
                   <p
-                    style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);"
+                    style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);"
                   >
                     No AI models configured yet.
                   </p>
@@ -1016,6 +1045,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
               `}
           <sl-textarea
             label="Prompt"
+            resize="auto"
             .value=${this.flow.prompt_template || ''}
             @sl-input=${(e: Event) =>
               this.handleInputChange('prompt_template', e)}
@@ -1287,10 +1317,10 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             `
           : ''}
 
-        <sl-card>
+        <!-- <sl-card>
           <div slot="header">
-            <sl-icon name="gear"></sl-icon>
-            Settings
+            <sl-icon name="speedometer"></sl-icon>
+            Limits
           </div>
           <div class="form-grid">
             <sl-input
@@ -1298,7 +1328,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
               type="number"
               .value=${String(this.flow.max_iterations || '')}
               @sl-input=${(e: Event) =>
-                this.handleInputChange('max_iterations', e)}
+          this.handleInputChange('max_iterations', e)}
             ></sl-input>
             <sl-input
               label="Max Budget"
@@ -1307,7 +1337,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
               @sl-input=${(e: Event) => this.handleInputChange('max_budget', e)}
             ></sl-input>
           </div>
-        </sl-card>
+        </sl-card> -->
 
         <div>
           <sl-checkbox
@@ -1316,12 +1346,14 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             >Save as Preset</sl-checkbox
           >
         </div>
-        <sl-button type="submit" variant="primary"
-          >${this.isNew ? 'Create' : 'Update'}</sl-button
-        >
-        <sl-button @click=${() => Router.go('/console/flows')}
-          >Cancel</sl-button
-        >
+        <div style="display: flex; gap: var(--sl-spacing-small);">
+          <sl-button type="submit" variant="primary"
+            >${this.isNew ? 'Create' : 'Update'}</sl-button
+          >
+          <sl-button @click=${() => Router.go('/console/flows')}
+            >Cancel</sl-button
+          >
+        </div>
       </form>
     `;
   }
@@ -1905,17 +1937,21 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     if (!this.isNew && this.flow.webhook_config) {
       return html`
         <div>
-          <p style="margin-bottom: 12px; color: var(--sl-color-neutral-600);">
+          <p
+            style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);"
+          >
             This flow will be triggered when a POST request is sent to the
             webhook URL below.
           </p>
-          <div style="margin-bottom: 1rem;">
+          <div>
             <label
-              style="display: block; margin-bottom: 0.5rem; font-weight: 500;"
+              style="display: block; margin-bottom: var(--sl-spacing-2x-small); font-weight: 600;"
             >
               Webhook URL
             </label>
-            <div style="display: flex; gap: 8px; align-items: center;">
+            <div
+              style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+            >
               <sl-input
                 readonly
                 style="flex: 1;"
@@ -2027,8 +2063,10 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     // If no trackers, show add tracker button
     if (this.trackers.length === 0) {
       return html`
-        <div style="text-align: center; padding: 2rem;">
-          <p style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);">
+        <div style="text-align: center; padding: var(--sl-spacing-2x-large);">
+          <p
+            style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);"
+          >
             You don't have any trackers configured yet.
           </p>
           <sl-button variant="primary" @click=${this.openAddTrackerDialog}>
@@ -2226,6 +2264,31 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                   }}
                   help-text="Filter by assignee (matches if any assignee matches)"
                 ></sl-input>
+
+                <!-- Reviewer filter (PR/MR only) -->
+                ${isMREvent
+                  ? html`
+                      <sl-input
+                        label="${tracker.tracker_type === 'gitlab'
+                          ? 'Reviewer (username)'
+                          : 'Requested Reviewer (username)'}"
+                        placeholder="e.g., jane_smith"
+                        .value=${this.flow.trigger_config?.reviewer || ''}
+                        @sl-input=${(e: any) => {
+                          if (!this.flow.trigger_config)
+                            this.flow.trigger_config = {};
+                          const value = e.target.value.trim();
+                          if (value) {
+                            this.flow.trigger_config.reviewer = value;
+                          } else {
+                            delete this.flow.trigger_config.reviewer;
+                          }
+                          this.requestUpdate();
+                        }}
+                        help-text="Filter by reviewer (matches if any reviewer matches)"
+                      ></sl-input>
+                    `
+                  : ''}
 
                 <!-- Labels filter -->
                 <sl-input

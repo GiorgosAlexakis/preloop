@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { AuthedElement } from '../../api';
+import { webSocketService } from '../../services/websocket-service';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -229,16 +230,20 @@ export class NotificationPreferencesView extends AuthedElement {
       display: inline-flex;
       align-items: center;
       gap: var(--sl-spacing-small);
-      padding: var(--sl-spacing-small) var(--sl-spacing-medium);
-      background: var(--sl-color-neutral-900);
-      color: white;
+      padding: var(--sl-spacing-medium) var(--sl-spacing-large);
+      background: var(--sl-color-primary-600);
+      color: var(--sl-color-neutral-0);
       text-decoration: none;
       border-radius: var(--sl-border-radius-medium);
-      transition: background-color 0.2s;
+      transition: all 0.2s ease;
+      font-weight: var(--sl-font-weight-semibold);
+      box-shadow: var(--sl-shadow-small);
     }
 
     .app-store-button:hover {
-      background: var(--sl-color-neutral-700);
+      background: var(--sl-color-primary-700);
+      transform: translateY(-1px);
+      box-shadow: var(--sl-shadow-medium);
     }
 
     .app-store-button sl-icon {
@@ -256,12 +261,50 @@ export class NotificationPreferencesView extends AuthedElement {
   async connectedCallback() {
     super.connectedCallback();
     await this.loadPreferences();
+
+    // Connect to WebSocket for real-time device registration updates
+    try {
+      webSocketService.connectToFlowUpdates(
+        (message: any) => {
+          if (message.type === 'device_registered') {
+            console.log('Device registered via WebSocket:', message);
+
+            // Close QR dialog if open
+            if (this.showQRDialog) {
+              this.handleCloseQRDialog();
+            }
+
+            // Reload preferences to show new device
+            this.loadPreferences();
+
+            // Show success message
+            this.successMessage = `${message.platform === 'ios' ? 'iOS' : 'Android'} device registered successfully`;
+            setTimeout(() => (this.successMessage = ''), 5000);
+          }
+        },
+        () => {
+          console.log('WebSocket connected for device registration updates');
+        },
+        () => {
+          console.log('WebSocket disconnected');
+        }
+      );
+    } catch (error) {
+      console.error('Failed to connect to WebSocket:', error);
+    }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.qrExpiryInterval) {
       clearInterval(this.qrExpiryInterval);
+    }
+
+    // Disconnect from WebSocket
+    try {
+      webSocketService.disconnectFromFlowUpdates();
+    } catch (error) {
+      console.error('Failed to disconnect from WebSocket:', error);
     }
   }
 

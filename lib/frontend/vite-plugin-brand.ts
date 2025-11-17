@@ -49,6 +49,8 @@ export function brandPlugin(brandName: string): Plugin {
       // Generate landing content JSON file
       const landingContent = {
         hero: brandConfig.landing.hero,
+        extended_description: brandConfig.landing.meta.extended_description || '',
+        features_layout: brandConfig.landing.features_layout || 'grid',
         features: brandConfig.landing.features,
         faqs: brandConfig.landing.faqs,
         get_started: brandConfig.landing.get_started,
@@ -128,7 +130,7 @@ export function brandPlugin(brandName: string): Plugin {
       console.log(`✓ Generated standalone HTML pages: privacy.html, terms.html, whatis-mcp.html`);
     },
 
-    transformIndexHtml(html, ctx) {
+    async transformIndexHtml(html, ctx) {
       // Determine which route we're rendering based on the filename
       const filename = ctx.filename || '';
       const route = getRouteFromFilename(filename);
@@ -232,7 +234,7 @@ export function brandPlugin(brandName: string): Plugin {
       html = html.replace('</head>', `${brandScript}\n</head>`);
 
       // Inject route-specific content for SSR
-      const slottedContent = generateSlottedContentForRoute(route, brandConfig);
+      const slottedContent = await generateSlottedContentForRoute(route, brandConfig);
       if (slottedContent) {
         if (route === '/') {
           // Landing page: inject landing-view with slots
@@ -328,7 +330,7 @@ function getMetaForRoute(route: string, config: BrandConfig) {
  * Generate route-specific slotted HTML content for SEO
  * Content uses named slots that web components can consume
  */
-function generateSlottedContentForRoute(route: string, config: BrandConfig): string {
+async function generateSlottedContentForRoute(route: string, config: BrandConfig): Promise<string> {
   switch (route) {
     case '/':
       // Landing page - generate slotted content for landing-view component
@@ -342,6 +344,12 @@ function generateSlottedContentForRoute(route: string, config: BrandConfig): str
     <span slot="cta-primary">${config.landing.hero.cta_primary}</span>
     <span slot="cta-secondary">${config.landing.hero.cta_secondary}</span>
     <span slot="cta-secondary-url">${config.landing.hero.cta_secondary_url}</span>
+
+    <!-- Extended description slot (only if exists) -->
+    ${config.landing.meta.extended_description ? `<p slot="extended-description">${config.landing.meta.extended_description}</p>` : ''}
+
+    <!-- Features layout slot -->
+    <span slot="features-layout">${config.landing.features_layout || 'grid'}</span>
 
     <!-- Feature slots -->
     ${config.landing.features
@@ -403,7 +411,7 @@ function generateSlottedContentForRoute(route: string, config: BrandConfig): str
 
     case '/privacy':
       // Privacy page - will load markdown content
-      return generatePrivacyContent(config);
+      return await generatePrivacyContent(config);
 
     case '/pricing':
       // Pricing page - will load markdown content

@@ -1,7 +1,13 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { webSocketService } from '../../services/websocket-service';
-import { getFlowExecution, getFlow, sendCommandToExecution } from '../../api';
+import {
+  getFlowExecution,
+  getFlow,
+  sendCommandToExecution,
+  getFlowExecutionMetrics,
+  getFlowExecutionLogs,
+} from '../../api';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
@@ -15,6 +21,7 @@ import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
 interface FlowExecutionUpdate {
   execution_id: string;
@@ -182,6 +189,12 @@ export class FlowExecutionView extends LitElement {
   private budgetUsed = 0;
 
   @state()
+  private totalTokens = 0;
+
+  @state()
+  private hasPricing = false;
+
+  @state()
   private commandInput = '';
 
   @state()
@@ -198,11 +211,21 @@ export class FlowExecutionView extends LitElement {
 
   private logContainerRef?: HTMLElement;
   private wsConnected = false;
+  private autoScrollInterval?: number;
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Clean up auto-scroll interval when component is removed
+    if (this.autoScrollInterval) {
+      clearInterval(this.autoScrollInterval);
+      this.autoScrollInterval = undefined;
+    }
+  }
 
   async updated(changedProperties: Map<string, any>) {
     super.updated(changedProperties);
 
-    // When executionId property changes, fetch execution data and connect WebSocket
+    // When executionId property changes, fetch execution data
     if (
       changedProperties.has('executionId') &&
       this.executionId &&
@@ -212,44 +235,88 @@ export class FlowExecutionView extends LitElement {
       await this.fetchExecution();
 
       console.log(`After fetchExecution, logs.length = ${this.logs.length}`);
-
-      // Scroll to bottom after logs are loaded
-      if (this.logs.length > 0 && this.isAutoScroll) {
-        this.scrollToBottom();
+      console.log(`Execution status: ${this.execution?.status}`);
+      console.log(
+        `Has model_output_summary: ${!!this.execution?.model_output_summary}`
+      );
+      if (this.execution?.model_output_summary) {
+        console.log(
+          `model_output_summary length: ${this.execution.model_output_summary.length} chars`
+        );
       }
 
-      // Then connect to WebSocket for live updates
-      this.wsConnected = true;
-      webSocketService.connectToExecution(
-        this.executionId,
-        (message: any) => this.handleWebSocketMessage(message),
-        () => {
-          console.log(
-            `Connected to execution WebSocket, logs.length = ${this.logs.length}`
-          );
-          // Only add connection log if this is a live execution (no persisted logs)
-          if (this.logs.length === 0) {
-            console.log('Adding connection log message');
-            this.logs = [
-              {
-                execution_id: this.executionId!,
-                timestamp: new Date().toISOString(),
-                type: 'connected',
-                payload: { message: 'Connected to flow execution stream' },
-              },
-            ];
-          }
-        },
-        () => {
-          console.log('Disconnected from execution WebSocket');
-          this.wsConnected = false;
-        }
-      );
-    }
+      // Check if execution is still running
+      const isRunning =
+        this.execution &&
+        (this.execution.status === 'RUNNING' ||
+          this.execution.status === 'STARTING' ||
+          this.execution.status === 'INITIALIZING' ||
+          this.execution.status === 'PENDING');
 
-    // Auto-scroll to bottom when new log arrives
-    if (changedProperties.has('logs') && this.isAutoScroll) {
-      this.scrollToBottom();
+      console.log(`isRunning: ${isRunning}`);
+
+      // If finished, show model_output_summary in logs
+      if (!isRunning && this.execution?.model_output_summary) {
+        console.log(
+          'Adding model_output_summary to logs (execution finished on page load)'
+        );
+        this.logs = [
+          ...this.logs,
+          {
+            execution_id: this.executionId,
+            timestamp: this.execution.end_time || new Date().toISOString(),
+            type: 'model_output',
+            payload: { content: this.execution.model_output_summary },
+          },
+        ];
+        console.log(`Updated logs.length = ${this.logs.length}`);
+      } else {
+        console.log(
+          `Not adding model_output: isRunning=${isRunning}, has_summary=${!!this.execution?.model_output_summary}`
+        );
+      }
+
+      // Scroll to bottom after logs are loaded
+      if (this.logs.length > 0) {
+        setTimeout(() => this.scrollToBottom(), 100);
+      }
+
+      // Only connect to WebSocket if execution is still running
+      if (isRunning) {
+        this.wsConnected = true;
+        this.isAutoScroll = true; // Enable auto-scroll for streaming
+        this.startAutoScrollChecker(); // Start periodic scroll checker
+        webSocketService.connectToExecution(
+          this.executionId,
+          (message: any) => this.handleWebSocketMessage(message),
+          () => {
+            console.log(
+              `Connected to execution WebSocket, logs.length = ${this.logs.length}`
+            );
+            // Only add connection log if this is a live execution (no persisted logs)
+            if (this.logs.length === 0) {
+              console.log('Adding connection log message');
+              this.logs = [
+                {
+                  execution_id: this.executionId!,
+                  timestamp: new Date().toISOString(),
+                  type: 'connected',
+                  payload: { message: 'Connected to flow execution stream' },
+                },
+              ];
+            }
+          },
+          () => {
+            console.log('Disconnected from execution WebSocket');
+            this.wsConnected = false;
+            this.stopAutoScrollChecker();
+          }
+        );
+      } else {
+        console.log(
+          'Execution is finished, not connecting to WebSocket stream'
+        );
+      }
     }
   }
 
@@ -267,6 +334,8 @@ export class FlowExecutionView extends LitElement {
 
       // Update execution status
       if (message.type === 'status_update' && this.execution) {
+        const previousStatus = this.execution.status;
+
         if (message.payload.status) {
           this.execution.status = message.payload.status;
         }
@@ -278,6 +347,37 @@ export class FlowExecutionView extends LitElement {
         if (message.payload.model_output_summary) {
           this.execution.model_output_summary =
             message.payload.model_output_summary;
+
+          // Check if execution just finished and model_output_summary is provided
+          const wasRunning =
+            previousStatus === 'RUNNING' ||
+            previousStatus === 'STARTING' ||
+            previousStatus === 'INITIALIZING' ||
+            previousStatus === 'PENDING';
+          const isNowFinished =
+            this.execution.status !== 'RUNNING' &&
+            this.execution.status !== 'STARTING' &&
+            this.execution.status !== 'INITIALIZING' &&
+            this.execution.status !== 'PENDING';
+
+          // If execution just finished, add the model output to logs
+          if (wasRunning && isNowFinished) {
+            // Check if we haven't already added it
+            const hasModelOutput = this.logs.some(
+              (log) => log.type === 'model_output'
+            );
+            if (!hasModelOutput) {
+              this.logs = [
+                ...this.logs,
+                {
+                  execution_id: this.executionId!,
+                  timestamp: new Date().toISOString(),
+                  type: 'model_output',
+                  payload: { content: this.execution.model_output_summary },
+                },
+              ];
+            }
+          }
         }
         this.requestUpdate();
       }
@@ -292,6 +392,16 @@ export class FlowExecutionView extends LitElement {
         this.toolCalls++;
       }
 
+      // Handle real-time tool calls update
+      if (message.type === 'tool_calls_update') {
+        this.toolCalls = message.payload.tool_calls || 0;
+      }
+
+      // Handle real-time token usage update
+      if (message.type === 'token_usage_update') {
+        this.tokensUsed = message.payload.total_tokens || 0;
+      }
+
       // Track budget usage
       if (message.type === 'budget_update') {
         this.budgetUsed = message.payload.budget_used || 0;
@@ -304,12 +414,54 @@ export class FlowExecutionView extends LitElement {
     }
   }
 
-  scrollToBottom() {
-    requestAnimationFrame(() => {
-      if (this.logContainerRef) {
-        this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
+  startAutoScrollChecker() {
+    // Clear any existing interval
+    this.stopAutoScrollChecker();
+
+    this.logContainerRef = this.shadowRoot?.querySelector(
+      '.log-container'
+    ) as HTMLElement;
+    this.logContainerRef.addEventListener('scroll', () => this.handleScroll());
+    // Check scroll position every 200ms and force scroll if auto-scroll is enabled
+    this.autoScrollInterval = window.setInterval(() => {
+      if (this.isAutoScroll && this.logContainerRef) {
+        const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
+        const isAtBottom = scrollHeight - scrollTop - clientHeight < 10;
+
+        // If not at bottom, force scroll
+        if (!isAtBottom) {
+          console.log(
+            'Forcing scroll to bottom for container',
+            this.logContainerRef
+          );
+          this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
+        } else {
+          console.log(
+            'Already at bottom for container',
+            this.logContainerRef,
+            'scrollTop',
+            scrollTop,
+            'scrollHeight',
+            scrollHeight,
+            'clientHeight',
+            clientHeight
+          );
+        }
       }
-    });
+    }, 200);
+  }
+
+  stopAutoScrollChecker() {
+    if (this.autoScrollInterval) {
+      clearInterval(this.autoScrollInterval);
+      this.autoScrollInterval = undefined;
+    }
+  }
+
+  scrollToBottom() {
+    if (this.logContainerRef) {
+      this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
+    }
   }
 
   handleScroll() {
@@ -317,15 +469,20 @@ export class FlowExecutionView extends LitElement {
 
     // Check if user scrolled away from bottom
     const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 10; // 10px threshold
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
 
-    // If user manually scrolled away from bottom, disable auto-scroll
+    // Disable auto-scroll when user manually scrolls away from bottom
     if (!isAtBottom && this.isAutoScroll) {
+      console.log('User scrolled away from bottom, disabling auto-scroll');
       this.isAutoScroll = false;
-    }
-    // If user manually scrolled back to bottom, enable auto-scroll
-    else if (isAtBottom && !this.isAutoScroll) {
+    } else if (isAtBottom && !this.isAutoScroll) {
+      // Re-enable auto-scroll when user scrolls back to bottom
+      console.log('User scrolled to bottom, enabling auto-scroll');
       this.isAutoScroll = true;
+      // Restart the checker if execution is still running
+      if (this.wsConnected) {
+        this.startAutoScrollChecker();
+      }
     }
   }
 
@@ -339,18 +496,33 @@ export class FlowExecutionView extends LitElement {
       // Fetch execution details
       this.execution = await getFlowExecution(this.executionId);
 
-      // Load persisted logs if available
-      if (
-        this.execution &&
-        this.execution.execution_logs &&
-        Array.isArray(this.execution.execution_logs)
-      ) {
-        console.log(
-          `Loaded ${this.execution.execution_logs.length} persisted logs from database`
-        );
-        this.logs = this.execution.execution_logs;
-      } else {
-        console.log('No persisted logs found in execution');
+      // Fetch logs from container (if running) or database (if finished)
+      // This ensures we get all historical logs, even for running executions
+      try {
+        const logsResponse = await getFlowExecutionLogs(this.executionId);
+        if (logsResponse.logs && Array.isArray(logsResponse.logs)) {
+          console.log(
+            `Loaded ${logsResponse.logs.length} logs from ${logsResponse.source}`
+          );
+          this.logs = logsResponse.logs;
+        } else {
+          console.log('No logs found in response');
+        }
+      } catch (error) {
+        console.error('Failed to fetch logs:', error);
+        // Fallback to execution_logs from database if available
+        if (
+          this.execution &&
+          this.execution.execution_logs &&
+          Array.isArray(this.execution.execution_logs)
+        ) {
+          console.log(
+            `Using fallback: Loaded ${this.execution.execution_logs.length} persisted logs from database`
+          );
+          this.logs = this.execution.execution_logs;
+        } else {
+          console.log('No fallback logs available');
+        }
       }
 
       // Fetch flow details
@@ -360,6 +532,26 @@ export class FlowExecutionView extends LitElement {
         } catch (error) {
           console.error('Failed to fetch flow details:', error);
           // Don't fail the whole page if flow fetch fails
+        }
+      }
+
+      // Fetch execution metrics (for completed executions)
+      if (
+        this.execution &&
+        ['COMPLETED', 'FAILED', 'STOPPED', 'TIMEOUT'].includes(
+          this.execution.status
+        )
+      ) {
+        try {
+          const metrics = await getFlowExecutionMetrics(this.executionId);
+          this.toolCalls = metrics.tool_calls;
+          this.budgetUsed = metrics.estimated_cost;
+          this.totalTokens = metrics.token_usage.total_tokens;
+          this.hasPricing = metrics.has_pricing;
+          console.log('Loaded execution metrics:', metrics);
+        } catch (error) {
+          console.error('Failed to fetch execution metrics:', error);
+          // Don't fail the whole page if metrics fetch fails
         }
       }
 
@@ -529,9 +721,13 @@ export class FlowExecutionView extends LitElement {
               </div>
 
               <strong>Started:</strong>
-              <sl-relative-time
-                date=${new Date(this.execution.start_time).toISOString()}
-              ></sl-relative-time>
+              <sl-tooltip
+                content=${this.formatUTCDateTime(this.execution.start_time)}
+              >
+                <sl-relative-time
+                  date=${this.execution.start_time}
+                ></sl-relative-time>
+              </sl-tooltip>
 
               ${this.execution.end_time
                 ? html`
@@ -567,9 +763,13 @@ export class FlowExecutionView extends LitElement {
             </sl-card>
             <sl-card>
               <div slot="header"><sl-icon name="clock"></sl-icon> Started</div>
-              <sl-relative-time
-                date=${new Date(this.execution.start_time).toISOString()}
-              ></sl-relative-time>
+              <sl-tooltip
+                content=${this.formatUTCDateTime(this.execution.start_time)}
+              >
+                <sl-relative-time
+                  date=${this.execution.start_time}
+                ></sl-relative-time>
+              </sl-tooltip>
             </sl-card>
             <sl-card>
               <div slot="header">
@@ -579,9 +779,23 @@ export class FlowExecutionView extends LitElement {
             </sl-card>
             <sl-card>
               <div slot="header">
-                <sl-icon name="cash"></sl-icon> Budget Used
+                <sl-icon name="${this.hasPricing ? 'cash' : 'cpu'}"></sl-icon>
+                ${this.hasPricing ? 'Budget' : 'Tokens Used'}
               </div>
-              $${this.budgetUsed.toFixed(2)}
+              ${this.hasPricing
+                ? html`
+                    <div>
+                      <div style="font-size: 1.2em; font-weight: bold;">
+                        $${this.budgetUsed.toFixed(2)}
+                      </div>
+                      <div
+                        style="font-size: 0.85em; color: var(--sl-color-neutral-600); margin-top: 4px;"
+                      >
+                        ${this.totalTokens.toLocaleString()} tokens
+                      </div>
+                    </div>
+                  `
+                : html` ${this.totalTokens.toLocaleString()} `}
             </sl-card>
           </div>
 
@@ -594,22 +808,19 @@ export class FlowExecutionView extends LitElement {
                 <sl-icon name="terminal"></sl-icon>
                 Output
               </span>
-              <div class="controls">
-                <sl-button-group>
-                  <sl-button
-                    size="small"
-                    variant=${this.isAutoScroll ? 'primary' : 'default'}
-                    @click=${() => (this.isAutoScroll = !this.isAutoScroll)}
-                  >
-                    <sl-icon name="arrow-down"></sl-icon>
-                    Auto-scroll
-                  </sl-button>
-                  <sl-button size="small" @click=${this.clearLogs}>
-                    <sl-icon name="trash"></sl-icon>
-                    Clear
-                  </sl-button>
-                  ${isRunning
-                    ? html`
+              ${isRunning
+                ? html`
+                    <div class="controls">
+                      <sl-button-group>
+                        <sl-button
+                          size="small"
+                          variant=${this.isAutoScroll ? 'primary' : 'default'}
+                          @click=${() =>
+                            (this.isAutoScroll = !this.isAutoScroll)}
+                        >
+                          <sl-icon name="arrow-down"></sl-icon>
+                          Auto-scroll
+                        </sl-button>
                         <sl-button
                           size="small"
                           variant="danger"
@@ -618,23 +829,13 @@ export class FlowExecutionView extends LitElement {
                           <sl-icon name="stop-circle"></sl-icon>
                           Stop
                         </sl-button>
-                      `
-                    : ''}
-                </sl-button-group>
-              </div>
+                      </sl-button-group>
+                    </div>
+                  `
+                : ''}
             </div>
 
-            <div
-              class="log-container"
-              ${(el: Element) => {
-                this.logContainerRef = el as HTMLElement;
-                if (this.logContainerRef) {
-                  this.logContainerRef.addEventListener('scroll', () =>
-                    this.handleScroll()
-                  );
-                }
-              }}
-            >
+            <div class="log-container">
               ${this.logs.length === 0
                 ? html`
                     <div class="empty-logs">
@@ -688,19 +889,6 @@ ${this.execution.error_message}</pre
                 </sl-card>
               `
             : ''}
-          ${this.execution.model_output_summary
-            ? html`
-                <sl-card>
-                  <div slot="header">
-                    <sl-icon name="file-text"></sl-icon>
-                    Summary
-                  </div>
-                  <pre style="white-space: pre-wrap; word-wrap: break-word;">
-${this.execution.model_output_summary}</pre
-                  >
-                </sl-card>
-              `
-            : ''}
         </div>
       </div>
     `;
@@ -708,6 +896,23 @@ ${this.execution.model_output_summary}</pre
 
   renderLogEntry(log: FlowExecutionUpdate) {
     const time = new Date(log.timestamp).toLocaleTimeString();
+
+    // For model output (summary), show as a highlighted section
+    if (log.type === 'model_output') {
+      return html`
+        <div class="log-entry log-metadata" style="border-left-color: #b5cea8;">
+          <span class="log-timestamp">${time}</span>
+          <span class="log-type log-type-success">[Summary]</span>
+          <div class="log-content" style="margin-top: 8px;">
+            <pre
+              style="white-space: pre-wrap; word-wrap: break-word; margin: 0; color: #b5cea8;"
+            >
+${log.payload.content}</pre
+            >
+          </div>
+        </div>
+      `;
+    }
 
     // For log lines, show timestamp + content
     if (log.type === 'agent_log_line') {
@@ -837,13 +1042,47 @@ ${this.execution.model_output_summary}</pre
     }
   }
 
-  clearLogs() {
-    this.logs = [];
-  }
-
   async stopExecution() {
-    if (this.executionId) {
+    if (!this.executionId) return;
+
+    try {
+      // Send stop command to backend (which stops the container directly)
       await sendCommandToExecution(this.executionId, 'stop');
+
+      // Wait a moment for the container to stop
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Refresh execution details to get updated status
+      this.execution = await getFlowExecution(this.executionId);
+
+      // Fetch final logs from the stopped container
+      try {
+        const logsResponse = await getFlowExecutionLogs(this.executionId);
+        if (logsResponse.logs && Array.isArray(logsResponse.logs)) {
+          this.logs = logsResponse.logs;
+          console.log(
+            `Loaded ${logsResponse.logs.length} logs after stop from ${logsResponse.source}`
+          );
+        }
+      } catch (error) {
+        console.error('Failed to fetch logs after stop:', error);
+      }
+
+      // Disconnect from WebSocket since execution is now stopped
+      if (this.wsConnected) {
+        webSocketService.disconnectFromExecution(this.executionId);
+        this.wsConnected = false;
+      }
+
+      // Stop auto-scroll checker
+      this.stopAutoScrollChecker();
+      this.isAutoScroll = false;
+
+      // Force UI update
+      this.requestUpdate();
+    } catch (error) {
+      console.error('Failed to stop execution:', error);
+      // TODO: Show error notification to user
     }
   }
 
@@ -871,5 +1110,30 @@ ${this.execution.model_output_summary}</pre
     if (hours > 0) return `${hours}h ${minutes % 60}m`;
     if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
     return `${seconds}s`;
+  }
+
+  formatUTCDateTime(dateTimeString: string): string {
+    // Ensure the datetime string is treated as UTC
+    // If it doesn't have timezone info, append 'Z' to indicate UTC
+    let utcDateString = dateTimeString;
+    if (
+      !dateTimeString.endsWith('Z') &&
+      !dateTimeString.includes('+') &&
+      !dateTimeString.includes('-', 10)
+    ) {
+      utcDateString = dateTimeString.replace(' ', 'T') + 'Z';
+    }
+
+    const date = new Date(utcDateString);
+
+    // Format as: "YYYY-MM-DD HH:MM:SS UTC"
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} UTC`;
   }
 }

@@ -7,8 +7,10 @@ import './../../components/news-capsule';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
 import '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
+import type SlCarousel from '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
 import type SlCarouselItem from '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+import { getFeatures } from '../../api';
 
 type IdeTab = 'claude-code' | 'cursor' | 'windsurf';
 
@@ -50,6 +52,9 @@ export class LandingView extends LitElement {
     setup_instructions: string;
     code: string;
   }> = [];
+  @state() private _extendedDescription = '';
+  @state() private _featuresLayout: 'carousel' | 'grid' = 'grid';
+  @state() private _billingEnabled = false;
 
   static styles = [
     css`
@@ -59,6 +64,56 @@ export class LandingView extends LitElement {
 
   async firstUpdated() {
     await this._loadContent();
+    await this._checkBillingEnabled();
+  }
+
+  private async _checkBillingEnabled() {
+    try {
+      const features = await getFeatures();
+      this._billingEnabled = features.features['billing'] === true;
+    } catch (error) {
+      console.error('Failed to check billing feature:', error);
+      this._billingEnabled = false;
+    }
+  }
+
+  private async _handleSignup(e: Event) {
+    e.preventDefault();
+
+    if (!this._billingEnabled) {
+      // No billing, use regular registration
+      window.location.href = '/register';
+      return;
+    }
+
+    // Billing enabled - redirect to Stripe checkout
+    try {
+      const response = await fetch('/api/v1/billing/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_id: 'teams',
+          interval: 'month',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create checkout session');
+      }
+
+      const result = await response.json();
+
+      if (result.action === 'redirect' && result.url) {
+        window.location.href = result.url;
+      } else {
+        // Fallback to register if no URL
+        window.location.href = '/register';
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      // Fallback to register on error
+      window.location.href = '/register';
+    }
   }
 
   private async _loadContent() {
@@ -107,6 +162,24 @@ export class LandingView extends LitElement {
     if (ctaSecondary) this._ctaSecondary = ctaSecondary.textContent || '';
     if (ctaSecondaryUrl)
       this._ctaSecondaryUrl = ctaSecondaryUrl.textContent || '';
+
+    // Read extended description from light DOM slot
+    const extendedDescription = children.find(
+      (el) => el.getAttribute('slot') === 'extended-description'
+    ) as HTMLElement | undefined;
+    if (extendedDescription)
+      this._extendedDescription = extendedDescription.textContent || '';
+
+    // Read features layout from light DOM slot
+    const featuresLayout = children.find(
+      (el) => el.getAttribute('slot') === 'features-layout'
+    ) as HTMLElement | undefined;
+    if (featuresLayout) {
+      const layout = featuresLayout.textContent?.trim() as 'carousel' | 'grid';
+      if (layout === 'carousel' || layout === 'grid') {
+        this._featuresLayout = layout;
+      }
+    }
 
     // Read feature slides from light DOM slots
     const features: FeatureSlide[] = [];
@@ -265,6 +338,8 @@ export class LandingView extends LitElement {
         slot &&
         (slot.startsWith('hero-') ||
           slot.startsWith('cta-') ||
+          slot === 'extended-description' ||
+          slot === 'features-layout' ||
           slot.startsWith('feature-') ||
           slot.startsWith('faq-') ||
           slot.startsWith('get-started-') ||
@@ -289,6 +364,8 @@ export class LandingView extends LitElement {
     this._ctaPrimary = content.hero.cta_primary;
     this._ctaSecondary = content.hero.cta_secondary;
     this._ctaSecondaryUrl = content.hero.cta_secondary_url;
+    this._extendedDescription = content.extended_description || '';
+    this._featuresLayout = content.features_layout || 'grid';
 
     // Load features
     this._featureSlides = content.features.map((f: any) => ({
@@ -349,6 +426,36 @@ export class LandingView extends LitElement {
     this._activeSlideIndex = e.detail.index;
   }
 
+  private _getYouTubeEmbedUrl(url: string): string {
+    // Convert YouTube URLs to embed format
+    // Handles: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID
+    try {
+      const urlObj = new URL(url);
+      let videoId = '';
+
+      if (urlObj.hostname.includes('youtu.be')) {
+        // Format: https://youtu.be/VIDEO_ID
+        videoId = urlObj.pathname.slice(1);
+      } else if (urlObj.hostname.includes('youtube.com')) {
+        // Format: https://www.youtube.com/watch?v=VIDEO_ID
+        videoId = urlObj.searchParams.get('v') || '';
+
+        // Already in embed format
+        if (urlObj.pathname.includes('/embed/')) {
+          return url;
+        }
+      }
+
+      if (videoId) {
+        return `https://www.youtube.com/embed/${videoId}`;
+      }
+    } catch (e) {
+      console.error('Failed to parse YouTube URL:', url, e);
+    }
+
+    return url;
+  }
+
   private _handleFaqClick(e: Event) {
     e.preventDefault();
     const summary = e.currentTarget as HTMLElement;
@@ -395,7 +502,10 @@ export class LandingView extends LitElement {
               <h1 class="fw-bold">${unsafeHTML(this._heroTitle)}</h1>
               <p class="lead">${this._heroLead}</p>
               <div class="hero-buttons">
-                <sl-button variant="primary" size="large" href="/register"
+                <sl-button
+                  variant="primary"
+                  size="large"
+                  @click=${this._handleSignup}
                   >${this._ctaPrimary}</sl-button
                 >
                 <sl-button
@@ -412,97 +522,150 @@ export class LandingView extends LitElement {
           </div>
         </section>
 
-        <section class="feature-section main-section" id="features">
-          <div class="section-container text-center">
-            <sl-carousel
-              class="feature-carousel"
-              loop
-              effect="fade"
-              @sl-slide-change=${this._handleSlideChange}
-            >
-              ${this._featureSlides.map(
-                (slide, index) => html`
-                  <sl-carousel-item>
-                    <div class="feature-grid-2-col">
-                      <div class="feature-text-content">
-                        <h2>${slide.title}</h2>
-                        <p>${slide.text}</p>
-                        ${!this._showVideo[index] && slide.videoUrl
-                          ? html`
-                              <sl-button
-                                variant="primary"
-                                class="watch-video-btn"
-                                @click=${() => this._playVideo(index)}
-                              >
-                                <sl-icon
-                                  name="play-circle"
-                                  slot="prefix"
-                                ></sl-icon>
-                                Watch Video
-                              </sl-button>
-                            `
-                          : ''}
-                        <div class="carousel-navigation">
-                          <sl-button
-                            variant="text"
-                            class="carousel-nav carousel-nav--prev"
-                            @click=${() => this._carousel.previous()}
-                          >
-                            <sl-icon name="chevron-left"></sl-icon>
-                          </sl-button>
-                          <span class="slide-indicator">
-                            ${this._activeSlideIndex + 1} /
-                            ${this._featureSlides.length}
-                          </span>
-                          <sl-button
-                            variant="text"
-                            class="carousel-nav carousel-nav--next"
-                            @click=${() => this._carousel.next()}
-                          >
-                            <sl-icon name="chevron-right"></sl-icon>
-                          </sl-button>
-                        </div>
-                      </div>
-
-                      <div class="feature-video-content">
-                        ${this._showVideo[index]
-                          ? html`
-                              <div class="video-wrapper">
-                                <iframe
-                                  width="560"
-                                  height="315"
-                                  src=${`${slide.videoUrl}?autoplay=1`}
-                                  title="YouTube video player"
-                                  frameborder="0"
-                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                  allowfullscreen
-                                ></iframe>
-                              </div>
-                            `
-                          : slide.videoUrl
-                            ? html`
-                                <div
-                                  class="video-placeholder"
-                                  @click=${() => this._playVideo(index)}
+        ${this._extendedDescription
+          ? html`
+              <section class="extended-description-section main-section">
+                <div class="section-container">
+                  <p class="lead text-center">${this._extendedDescription}</p>
+                </div>
+              </section>
+            `
+          : ''}
+        ${this._featuresLayout === 'carousel'
+          ? html`
+              <section class="feature-section main-section" id="features">
+                <div class="section-container text-center">
+                  <sl-carousel
+                    class="feature-carousel"
+                    loop
+                    effect="fade"
+                    @sl-slide-change=${this._handleSlideChange}
+                  >
+                    ${this._featureSlides.map(
+                      (slide, index) => html`
+                        <sl-carousel-item>
+                          <div class="feature-grid-2-col">
+                            <div class="feature-text-content">
+                              <h2>${slide.title}</h2>
+                              <p>${slide.text}</p>
+                              ${!this._showVideo[index] && slide.videoUrl
+                                ? html`
+                                    <sl-button
+                                      variant="primary"
+                                      class="watch-video-btn"
+                                      @click=${() => this._playVideo(index)}
+                                    >
+                                      <sl-icon
+                                        name="play-circle"
+                                        slot="prefix"
+                                      ></sl-icon>
+                                      Watch Video
+                                    </sl-button>
+                                  `
+                                : ''}
+                              <div class="carousel-navigation">
+                                <sl-button
+                                  variant="text"
+                                  class="carousel-nav carousel-nav--prev"
+                                  @click=${() => this._carousel.previous()}
                                 >
-                                  <img
-                                    src=${slide.placeholderImg}
-                                    alt="Video Preview"
-                                  />
-                                  <div class="play-button"></div>
-                                </div>
-                              `
-                            : html`<div class="image-placeholder">
-                                <img src=${slide.placeholderImg} />
-                              </div>`}
-                      </div>
-                    </div>
-                  </sl-carousel-item>
-                `
-              )}
-            </sl-carousel>
-          </div>
-        </section>
+                                  <sl-icon name="chevron-left"></sl-icon>
+                                </sl-button>
+                                <span class="slide-indicator">
+                                  ${this._activeSlideIndex + 1} /
+                                  ${this._featureSlides.length}
+                                </span>
+                                <sl-button
+                                  variant="text"
+                                  class="carousel-nav carousel-nav--next"
+                                  @click=${() => this._carousel.next()}
+                                >
+                                  <sl-icon name="chevron-right"></sl-icon>
+                                </sl-button>
+                              </div>
+                            </div>
+
+                            <div class="feature-video-content">
+                              ${this._showVideo[index] && slide.videoUrl
+                                ? html`
+                                    <div class="video-wrapper">
+                                      <iframe
+                                        width="560"
+                                        height="315"
+                                        src=${`${this._getYouTubeEmbedUrl(slide.videoUrl)}?autoplay=1`}
+                                        title="YouTube video player"
+                                        frameborder="0"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                        allowfullscreen
+                                      ></iframe>
+                                    </div>
+                                  `
+                                : html`
+                                    <div
+                                      class="image-placeholder"
+                                      @click=${() =>
+                                        slide.videoUrl
+                                          ? this._playVideo(index)
+                                          : null}
+                                    >
+                                      ${slide.placeholderImg
+                                        ? html`
+                                            <img
+                                              src=${slide.placeholderImg}
+                                              alt=${slide.title}
+                                            />
+                                            ${slide.videoUrl
+                                              ? html`<div
+                                                  class="play-button"
+                                                ></div>`
+                                              : ''}
+                                          `
+                                        : ''}
+                                    </div>
+                                  `}
+                            </div>
+                          </div>
+                        </sl-carousel-item>
+                      `
+                    )}
+                  </sl-carousel>
+                </div>
+              </section>
+            `
+          : html`
+              <section class="feature-section main-section" id="features">
+                <div class="section-container">
+                  <h2 class="text-center">Features</h2>
+                  <div class="feature-grid three-col">
+                    ${this._featureSlides.map(
+                      (slide) => html`
+                        <div class="feature-box">
+                          ${slide.placeholderImg
+                            ? html`<img
+                                src=${slide.placeholderImg}
+                                alt=${slide.title}
+                              />`
+                            : ''}
+                          <h3>${slide.title}</h3>
+                          <p>${slide.text}</p>
+                          ${slide.videoUrl
+                            ? html`<a
+                                href=${slide.videoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="video-link"
+                              >
+                                <sl-icon name="play-circle"></sl-icon> Watch
+                                Video
+                              </a>`
+                            : ''}
+                        </div>
+                      `
+                    )}
+                  </div>
+                </div>
+              </section>
+            `}
 
         <section class="feature-section main-section" id="get-started">
           <div class="section-container">
@@ -518,51 +681,18 @@ export class LandingView extends LitElement {
               >
             </div>
 
-            <div class="feature-grid">
-              ${this._getStartedFeatures.length > 0
-                ? this._getStartedFeatures.map(
-                    (feature) => html`
-                      <div class="feature-box">
-                        <div class="feature-icon">
-                          <sl-icon name="${feature.icon}"></sl-icon>
-                        </div>
-                        <h3>${feature.title}</h3>
-                        <p>${feature.text}</p>
-                      </div>
-                    `
-                  )
-                : html`
-                    <div class="feature-box">
-                      <div class="feature-icon">
-                        <sl-icon name="search"></sl-icon>
-                      </div>
-                      <h3>Smart Duplicate Detection</h3>
-                      <p>
-                        Intelligent similarity search finds and prevents
-                        duplicate issues, even when terminology varies.
-                      </p>
+            <div class="feature-grid three-col">
+              ${this._getStartedFeatures.map(
+                (feature) => html`
+                  <div class="feature-box">
+                    <div class="feature-icon">
+                      <sl-icon name="${feature.icon}"></sl-icon>
                     </div>
-                    <div class="feature-box">
-                      <div class="feature-icon">
-                        <sl-icon name="journal-plus"></sl-icon>
-                      </div>
-                      <h3>Augment your AI context</h3>
-                      <p>
-                        Seamless issue data access that supercharges your AI
-                        tools' effectiveness
-                      </p>
-                    </div>
-                    <div class="feature-box">
-                      <div class="feature-icon">
-                        <sl-icon name="code-slash"></sl-icon>
-                      </div>
-                      <h3>Cursor, Windsurf, Claude Code Ready</h3>
-                      <p>
-                        Streamlined setup process. Use with any agentic system
-                        that supports MCP.
-                      </p>
-                    </div>
-                  `}
+                    <h3>${feature.title}</h3>
+                    <p>${feature.text}</p>
+                  </div>
+                `
+              )}
             </div>
             <h3>
               ${this._mcpSetupTitle ||
@@ -828,30 +958,51 @@ export class LandingView extends LitElement {
             <div class="tool-logos">
               <sl-tooltip content="GitHub">
                 <img
-                  src="images/logos/github-mark-white.svg"
+                  src="/images/logos/github-mark-white.svg"
                   alt="GitHub Logo"
                   class="github-logo tool-logo"
                 />
               </sl-tooltip>
               <sl-tooltip content="GitLab">
                 <img
-                  src="images/logos/gitlab-logo-700-rgb.svg"
+                  src="/images/logos/gitlab-logo-700-rgb.svg"
                   alt="GitLab Logo"
                   class="gitlab-logo tool-logo"
                 />
               </sl-tooltip>
               <sl-tooltip content="Jira">
                 <img
-                  src="images/logos/jira.webp"
+                  src="/images/logos/jira.webp"
                   alt="Jira Logo"
                   class="jira-logo tool-logo"
                 />
               </sl-tooltip>
               <sl-tooltip content="Slack">
                 <img
-                  src="images/logos/slack-logo-light.png"
+                  src="/images/logos/slack-logo.svg"
                   alt="Slack Logo"
                   class="slack-logo tool-logo"
+                />
+              </sl-tooltip>
+              <sl-tooltip content="Microsoft Teams">
+                <img
+                  src="/images/logos/teams-logo.svg"
+                  alt="Microsoft Teams Logo"
+                  class="teams-logo tool-logo"
+                />
+              </sl-tooltip>
+              <sl-tooltip content="Discord">
+                <img
+                  src="images/logos/discord-logo.svg"
+                  alt="Discord Logo"
+                  class="discord-logo tool-logo"
+                />
+              </sl-tooltip>
+              <sl-tooltip content="Mattermost">
+                <img
+                  src="images/logos/mattermost-logo.svg"
+                  alt="Mattermost Logo"
+                  class="mattermost-logo tool-logo"
                 />
               </sl-tooltip>
             </div>
@@ -884,9 +1035,12 @@ export class LandingView extends LitElement {
 
         <section class="final-cta main-section special-cta">
           <div class="section-container">
-            <h2>Stop curating. Start creating.</h2>
+            <h2>Move fast. Stay safe.</h2>
             <div class="hero-buttons">
-              <sl-button variant="primary" size="large" href="/register"
+              <sl-button
+                variant="primary"
+                size="large"
+                @click=${this._handleSignup}
                 >Get Started for Free</sl-button
               >
               <sl-button variant="text" size="large" href="/request-demo"

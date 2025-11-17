@@ -6,7 +6,8 @@ interface Plan {
   name: string;
   price_monthly: number | null;
   price_annually: number | null;
-  features: { [key: string]: any };
+  features: { [key: string]: any } | string[];
+  badge?: string;
 }
 
 @customElement('pricing-card')
@@ -259,17 +260,19 @@ export class PricingCard extends LitElement {
   `;
 
   render() {
+    const isPopular = this.plan.id === 'teams' || this.plan.id === 'ultra';
+    const hasArrayFeatures = Array.isArray(this.plan.features);
+
     return html`
       <div
-        class="plan-card ${this.plan.id === 'ultra' ? 'popular' : ''} ${this
-          .dark
+        class="plan-card ${isPopular ? 'popular' : ''} ${this.dark
           ? 'sl-theme-dark'
           : ''}"
       >
-        <!-- ${this.plan.id === 'ultra'
-          ? html`<div class="badge">Most popular</div>`
-          : null} -->
-        ${this.plan.id === 'enterprise'
+        ${this.plan.badge
+          ? html`<div class="badge">${this.plan.badge}</div>`
+          : null}
+        ${this.plan.id === 'enterprise' && !this.plan.badge
           ? html`<div class="badge alt">Enterprise</div>`
           : null}
         ${this.plan.id !== 'free'
@@ -280,9 +283,22 @@ export class PricingCard extends LitElement {
         <hr class="divider" />
 
         <ul class="features">
-          ${this.featureOrder.map((key) =>
-            this.renderFeature(this.plan.features[key], key)
-          )}
+          ${hasArrayFeatures
+            ? (this.plan.features as string[]).map(
+                (feature) =>
+                  html`<li class="feature included">
+                    <span class="feat-icon"
+                      ><sl-icon name="check-lg"></sl-icon
+                    ></span>
+                    <span class="feat-text">${feature}</span>
+                  </li>`
+              )
+            : this.featureOrder.map((key) =>
+                this.renderFeature(
+                  (this.plan.features as { [key: string]: any })[key],
+                  key
+                )
+              )}
         </ul>
 
         <sl-button
@@ -295,7 +311,9 @@ export class PricingCard extends LitElement {
             ? 'Contact Sales'
             : this.plan.id === 'free'
               ? 'Get Free'
-              : `Get ${this.plan.name}`}
+              : this.plan.id === 'teams'
+                ? 'Start Free Trial'
+                : `Get ${this.plan.name}`}
         </sl-button>
       </div>
     `;

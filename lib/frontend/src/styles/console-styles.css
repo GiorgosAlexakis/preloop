@@ -140,3 +140,117 @@ sl-dialog.large::part(panel) {
       display: none;
     }
   }
+
+/* Common list and item styles */
+.item-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sl-spacing-small);
+}
+
+.item-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--sl-spacing-small);
+    background: var(--sl-color-neutral-50);
+    border-radius: var(--sl-border-radius-medium);
+    border-left: 3px solid var(--sl-color-neutral-300);
+}
+
+.item-card.warning {
+    background: var(--sl-color-warning-50);
+    border-left-color: var(--sl-color-warning-600);
+}
+
+.item-card.danger {
+    background: var(--sl-color-danger-50);
+    border-left-color: var(--sl-color-danger-600);
+}
+
+.item-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sl-spacing-2x-small);
+    flex: 1;
+}
+
+.item-name {
+    font-weight: 600;
+}
+
+.item-secondary {
+    font-size: var(--sl-font-size-small);
+    color: var(--sl-color-neutral-600);
+}
+
+.item-error {
+    font-size: var(--sl-font-size-small);
+    color: var(--sl-color-danger-700);
+    font-style: italic;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: var(--sl-spacing-large);
+    color: var(--sl-color-neutral-600);
+}
+
+.empty-state sl-icon {
+    font-size: 3rem;
+    color: var(--sl-color-neutral-400);
+    margin-bottom: var(--sl-spacing-small);
+}
+
+/* Chart/Card header */
+.chart-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.card-header-with-action {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.header-action-link {
+    color: var(--sl-color-primary-600);
+    text-decoration: none;
+    font-size: var(--sl-font-size-small);
+    font-weight: 500;
+    margin-left: auto;
+}
+
+.header-action-link:hover {
+    text-decoration: underline;
+}
+
+/* Summary list */
+.summary-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.summary-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--sl-spacing-small) 0;
+    border-bottom: 1px solid var(--sl-color-neutral-200);
+}
+
+.summary-item:last-child {
+    border-bottom: none;
+}
+
+/* Quick actions */
+.quick-actions {
+    display: flex;
+    gap: var(--sl-spacing-small);
+    margin-top: var(--sl-spacing-medium);
+}

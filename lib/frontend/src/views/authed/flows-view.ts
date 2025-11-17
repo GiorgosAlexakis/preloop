@@ -6,6 +6,7 @@ import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import { router } from '../../router';
 import { Router } from '@vaadin/router';
+import { webSocketService } from '../../services/websocket-service';
 import {
   getFlows,
   getFlowPresets,
@@ -173,8 +174,14 @@ export class FlowsView extends LitElement {
     await this.loadData();
     this.isAlertVisible = !localStorage.getItem('flows-alert-dismissed');
 
-    // Refresh executions every 10 seconds
-    setInterval(() => this.refreshExecutions(), 10000);
+    // Connect to WebSocket for real-time updates instead of polling
+    this.connectWebSocket();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Clean up WebSocket connection
+    webSocketService.disconnectFromFlowUpdates();
   }
 
   async loadData() {
@@ -192,6 +199,50 @@ export class FlowsView extends LitElement {
 
   async refreshExecutions() {
     this.executions = await getFlowExecutions();
+  }
+
+  private connectWebSocket() {
+    webSocketService.connectToFlowUpdates(
+      (message: any) => this.handleWebSocketMessage(message),
+      () => {
+        console.log('Connected to flow updates WebSocket');
+      },
+      () => {
+        console.log('Disconnected from flow updates WebSocket');
+      }
+    );
+  }
+
+  private handleWebSocketMessage(message: any) {
+    console.log('Flow updates message:', message);
+
+    // Handle status updates
+    if (message.type === 'status_update' && message.execution_id) {
+      const executionIndex = this.executions.findIndex(
+        (exec) => exec.id === message.execution_id
+      );
+
+      if (executionIndex >= 0) {
+        // Update existing execution
+        const updated = [...this.executions];
+        updated[executionIndex] = {
+          ...updated[executionIndex],
+          status: message.payload.status,
+          ...(message.payload.end_time && {
+            end_time: message.payload.end_time,
+          }),
+        };
+        this.executions = updated;
+      } else {
+        // New execution started, reload the list
+        this.refreshExecutions();
+      }
+    }
+
+    // Handle new executions
+    if (message.type === 'execution_started' && message.payload) {
+      this.refreshExecutions();
+    }
   }
 
   render() {

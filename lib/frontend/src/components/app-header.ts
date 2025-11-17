@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
-import { getAccountDetails } from '../api';
+import { getAccountDetails, getFeatures } from '../api';
 import { getBrandConfig } from '../brand-config';
 
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -27,6 +27,9 @@ export class AppHeader extends LitElement {
 
   @state()
   private isMenuOpen = false;
+
+  @state()
+  private billingEnabled = false;
 
   static styles = css`
     :host {
@@ -102,10 +105,61 @@ export class AppHeader extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.checkAuth();
+    this.checkBillingEnabled();
     window.addEventListener('auth-change', () => this.checkAuth());
     window.addEventListener('vaadin-router-location-changed', () =>
       this.requestUpdate()
     );
+  }
+
+  async checkBillingEnabled() {
+    try {
+      const features = await getFeatures();
+      this.billingEnabled = features.features['billing'] === true;
+    } catch (error) {
+      console.error('Failed to check billing feature:', error);
+      this.billingEnabled = false;
+    }
+  }
+
+  async handleSignup(e: Event) {
+    e.preventDefault();
+    this.isMenuOpen = false; // Close mobile menu
+
+    if (!this.billingEnabled) {
+      // No billing, use regular registration
+      Router.go('/register');
+      return;
+    }
+
+    // Billing enabled - redirect to Stripe checkout
+    try {
+      const response = await fetch('/api/v1/billing/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_id: 'teams',
+          interval: 'month',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create checkout session');
+      }
+
+      const result = await response.json();
+
+      if (result.action === 'redirect' && result.url) {
+        window.location.href = result.url;
+      } else {
+        // Fallback to register if no URL
+        Router.go('/register');
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      // Fallback to register on error
+      Router.go('/register');
+    }
   }
 
   disconnectedCallback() {
@@ -180,7 +234,7 @@ export class AppHeader extends LitElement {
                 `
               : html`
                   <sl-button href="/login" variant="text">Sign in</sl-button>
-                  <sl-button href="/register" variant="primary"
+                  <sl-button variant="primary" @click=${this.handleSignup}
                     >Sign Up</sl-button
                   >
                 `}
