@@ -10,7 +10,8 @@ from spacebridge.api.auth import get_current_active_user
 from spacebridge.services.approval_service import ApprovalService
 from spacemodels.crud import crud_approval_request
 from spacemodels.db.session import get_async_db_session, get_db_session
-from spacemodels.models import Account, ApprovalRequest
+from spacemodels.models import ApprovalRequest
+from spacemodels.models.user import User
 from spacemodels.schemas.approval_request import (
     ApprovalRequestResponse,
     ApprovalDecision,
@@ -25,14 +26,14 @@ router = APIRouter(
 @router.get("/{request_id}", response_model=ApprovalRequestResponse)
 def get_approval_request(
     request_id: uuid.UUID,
-    current_account: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     db=Depends(get_db_session),
 ) -> ApprovalRequest:
     """Get an approval request by ID.
 
     Args:
         request_id: Approval request ID
-        current_account: Current authenticated account
+        current_user: Current authenticated user
         db: Database session
 
     Returns:
@@ -43,7 +44,7 @@ def get_approval_request(
     """
     # Use CRUD layer with account_id filtering
     approval_request = crud_approval_request.get(
-        db, id=str(request_id), account_id=current_account.id
+        db, id=str(request_id), account_id=current_user.account_id
     )
 
     if not approval_request:
@@ -52,13 +53,13 @@ def get_approval_request(
     return approval_request
 
 
-@router.get("/", response_model=list[ApprovalRequestResponse])
+@router.get("", response_model=list[ApprovalRequestResponse])
 def list_approval_requests(
     status: Optional[str] = Query(None, description="Filter by status"),
     execution_id: Optional[str] = Query(None, description="Filter by execution ID"),
     limit: int = Query(50, le=100, description="Maximum number of results"),
     skip: int = Query(0, description="Number of results to skip"),
-    current_account: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     db=Depends(get_db_session),
 ) -> list[ApprovalRequest]:
     """List approval requests for the current account.
@@ -68,7 +69,7 @@ def list_approval_requests(
         execution_id: Filter by execution ID
         limit: Maximum number of results
         skip: Number of results to skip
-        current_account: Current authenticated account
+        current_user: Current authenticated user
 
     Returns:
         List of approval requests
@@ -76,7 +77,7 @@ def list_approval_requests(
     # Use CRUD layer to get approval requests with filters
     return crud_approval_request.get_multi_by_account(
         db,
-        account_id=current_account.id,
+        account_id=current_user.account_id,
         execution_id=execution_id,
         status=status,
         skip=skip,
@@ -89,7 +90,7 @@ async def approve_request(
     request_id: uuid.UUID,
     decision: ApprovalDecision,
     request: Request,
-    current_account: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> ApprovalRequest:
     """Approve an approval request.
 
@@ -97,7 +98,7 @@ async def approve_request(
         request_id: Approval request ID
         decision: Approval decision with optional comment
         request: HTTP request
-        current_account: Current authenticated account
+        current_user: Current authenticated user
 
     Returns:
         Updated approval request
@@ -106,7 +107,7 @@ async def approve_request(
         HTTPException: If request not found or unauthorized
     """
     # Get base URL from request
-    base_url = os.getenv("BASE_URL", str(request.base_url).rstrip("/"))
+    base_url = os.getenv("SPACEBRIDGE_URL", str(request.base_url).rstrip("/"))
 
     async with get_async_db_session() as db:
         approval_service = ApprovalService(db, base_url)
@@ -117,7 +118,7 @@ async def approve_request(
             raise HTTPException(status_code=404, detail="Approval request not found")
 
         # Check authorization
-        if approval_request.account_id != current_account.id:
+        if approval_request.account_id != current_user.account_id:
             raise HTTPException(
                 status_code=403, detail="Not authorized to approve this request"
             )
@@ -142,7 +143,7 @@ async def decline_request(
     request_id: uuid.UUID,
     decision: ApprovalDecision,
     request: Request,
-    current_account: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> ApprovalRequest:
     """Decline an approval request.
 
@@ -150,7 +151,7 @@ async def decline_request(
         request_id: Approval request ID
         decision: Approval decision with optional comment
         request: HTTP request
-        current_account: Current authenticated account
+        current_user: Current authenticated user
 
     Returns:
         Updated approval request
@@ -159,7 +160,7 @@ async def decline_request(
         HTTPException: If request not found or unauthorized
     """
     # Get base URL from request
-    base_url = os.getenv("BASE_URL", str(request.base_url).rstrip("/"))
+    base_url = os.getenv("SPACEBRIDGE_URL", str(request.base_url).rstrip("/"))
 
     async with get_async_db_session() as db:
         approval_service = ApprovalService(db, base_url)
@@ -170,7 +171,7 @@ async def decline_request(
             raise HTTPException(status_code=404, detail="Approval request not found")
 
         # Check authorization
-        if approval_request.account_id != current_account.id:
+        if approval_request.account_id != current_user.account_id:
             raise HTTPException(
                 status_code=403, detail="Not authorized to decline this request"
             )
@@ -195,7 +196,7 @@ async def decide_request(
     request_id: uuid.UUID,
     decision: ApprovalDecision,
     request: Request,
-    current_account: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> ApprovalRequest:
     """Approve or decline an approval request based on decision.approved.
 
@@ -206,7 +207,7 @@ async def decide_request(
         request_id: Approval request ID
         decision: Approval decision with approved flag and optional comment
         request: HTTP request
-        current_account: Current authenticated account
+        current_user: Current authenticated user
 
     Returns:
         Updated approval request
@@ -215,7 +216,7 @@ async def decide_request(
         HTTPException: If request not found or unauthorized
     """
     # Get base URL from request
-    base_url = os.getenv("BASE_URL", str(request.base_url).rstrip("/"))
+    base_url = os.getenv("SPACEBRIDGE_URL", str(request.base_url).rstrip("/"))
 
     async with get_async_db_session() as db:
         approval_service = ApprovalService(db, base_url)
@@ -226,7 +227,7 @@ async def decide_request(
             raise HTTPException(status_code=404, detail="Approval request not found")
 
         # Check authorization
-        if approval_request.account_id != current_account.id:
+        if approval_request.account_id != current_user.account_id:
             raise HTTPException(
                 status_code=403, detail="Not authorized to decide on this request"
             )

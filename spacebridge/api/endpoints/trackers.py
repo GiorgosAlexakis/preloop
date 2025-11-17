@@ -19,7 +19,7 @@ from spacebridge.schemas.tracker import (
 from spacebridge.schemas.tracker import (
     ProjectIdentifier,
 )  # Corrected import location
-from spacesync.spacesync.trackers import create_tracker_client
+from spacesync.trackers import create_tracker_client
 from spacebridge.utils.email import send_tracker_registered_email
 from spacesync.services.event_bus import event_bus_service
 from spacemodels.db.session import get_db_session
@@ -29,6 +29,7 @@ from spacemodels.crud import (
     crud_tracker,
     crud_tracker_scope_rule,
 )
+from spacebridge.plugins.proprietary.rbac.permissions import require_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,6 +48,7 @@ async def debug_tracker_request(request: Request):
 
 
 @router.post("/trackers", status_code=status.HTTP_201_CREATED)
+@require_permission("create_trackers")
 async def register_tracker(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -141,7 +143,7 @@ async def register_tracker(
     # Create a new tracker in the database
     try:
         # Find current user's account using CRUD layer
-        account = crud_account.get_by_username(db, username=current_user.username)
+        account = crud_account.get(db, id=current_user.account_id)
         if not account:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -218,9 +220,9 @@ async def register_tracker(
             )
 
         # Send NATS event
-        await event_bus_service.publish_task("poll_tracker", new_tracker.id)
+        await event_bus_service.publish_task("poll_tracker", str(new_tracker.id))
 
-        return {"id": new_tracker.id}  # Return the tracker ID
+        return {"id": str(new_tracker.id)}  # Return the tracker ID as string
 
     except IntegrityError as e:
         db.rollback()
@@ -259,12 +261,13 @@ async def register_tracker(
 
 
 @router.get("/trackers", response_model=List[TrackerResponse])
+@require_permission("view_trackers")
 async def list_trackers(
     current_user: UserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> List[Tracker]:
     """List all non-deleted trackers for the current user."""
-    account = crud_account.get_by_username(db, username=current_user.username)
+    account = crud_account.get(db, id=current_user.account_id)
     if not account:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
@@ -276,13 +279,14 @@ async def list_trackers(
 
 
 @router.get("/trackers/{tracker_id}", response_model=TrackerResponse)
+@require_permission("view_trackers")
 async def get_tracker(
     tracker_id: UUID4,
     current_user: UserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> Tracker:
     """Get a non-deleted tracker by ID, ensuring it belongs to the current user."""
-    account = crud_account.get_by_username(db, username=current_user.username)
+    account = crud_account.get(db, id=current_user.account_id)
     if not account:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
@@ -305,6 +309,7 @@ async def get_tracker(
 
 
 @router.put("/trackers/{tracker_id}", response_model=TrackerResponse)
+@require_permission("edit_trackers")
 async def update_tracker(
     tracker_id: UUID4,
     tracker_update: TrackerUpdate,  # Use new update schema
@@ -312,7 +317,7 @@ async def update_tracker(
     db: Session = Depends(get_db_session),
 ) -> Tracker:
     """Update an existing tracker."""
-    account = crud_account.get_by_username(db, username=current_user.username)
+    account = crud_account.get(db, id=current_user.account_id)
     if not account:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
@@ -381,8 +386,8 @@ async def update_tracker(
         db.commit()
         db.refresh(tracker)
 
-        # Send NATS event
-        await event_bus_service.publish_task("poll_tracker", tracker.id)
+        # Send NATS event (convert UUID to string for JSON serialization)
+        await event_bus_service.publish_task("poll_tracker", str(tracker.id))
 
         return tracker
     except IntegrityError as e:
@@ -402,15 +407,15 @@ async def update_tracker(
 
 
 @router.delete("/trackers/{tracker_id}", status_code=status.HTTP_200_OK)
+@require_permission("delete_trackers")
 async def delete_tracker(
     tracker_id: UUID4,
     current_user: UserResponse = Depends(get_current_active_user),
     hard_delete: bool = False,
-    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete a tracker by ID (soft delete by default, hard delete if specified)."""
-    account = crud_account.get_by_username(db, username=current_user.username)
+    account = crud_account.get(db, id=current_user.account_id)
     if not account:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
@@ -470,6 +475,7 @@ async def delete_tracker(
 
 
 @router.post("/trackers/test-and-list-orgs", response_model=TrackerTestResponse)
+@require_permission("manage_trackers")
 async def test_connection_and_list_orgs(
     test_data: TrackerTestRequest,
     current_user: UserResponse = Depends(get_current_active_user),
@@ -482,7 +488,7 @@ async def test_connection_and_list_orgs(
     logger.info(
         f"User {current_user.username} testing tracker connection for type {test_data.tracker_type.value}"
     )
-    account = crud_account.get_by_username(db, username=current_user.username)
+    account = crud_account.get(db, id=current_user.account_id)
     if not account:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
@@ -551,6 +557,7 @@ async def test_connection_and_list_orgs(
 
 
 @router.post("/trackers/list-projects-for-org", response_model=List[ProjectIdentifier])
+@require_permission("manage_trackers")
 async def list_projects_for_org(
     project_data: TrackerTestRequest,
     current_user: UserResponse = Depends(get_current_active_user),
@@ -559,7 +566,7 @@ async def list_projects_for_org(
     """
     Lists projects for a specific organization/group within a tracker.
     """
-    account = crud_account.get_by_username(db, username=current_user.username)
+    account = crud_account.get(db, id=current_user.account_id)
     if not account:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"

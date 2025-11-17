@@ -11,9 +11,12 @@ from typing import Callable, Dict, Optional
 
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
-from mcp import types
 
-from spacebridge.services.dynamic_mcp_server import UserContext, has_tracker
+from spacebridge.services.dynamic_mcp_server import (
+    UserContext,
+    has_tracker,
+    get_tracker_types,
+)
 from spacebridge.services.mcp_client_pool import get_mcp_client_pool
 from spacebridge.services.mcp_tool_discovery import get_all_enabled_proxied_tools
 from spacemodels.crud import crud_mcp_server
@@ -54,7 +57,7 @@ class DynamicFastMCP(FastMCP):
         self._user_context_provider = provider
         logger.info("User context provider registered")
 
-    async def _list_tools(self) -> list[Tool]:
+    async def _list_tools(self, context=None) -> list[Tool]:
         """Override FastMCP's _list_tools to filter based on user context.
 
         This method is called by FastMCP's protocol handler to get the list
@@ -63,11 +66,16 @@ class DynamicFastMCP(FastMCP):
 
         Phase 1B: Now includes proxied tools from external MCP servers.
 
+        Args:
+            context: MiddlewareContext (FastMCP 2.13.0+), ignored for now
+
         Returns:
             List of tools available to the current user
         """
+        logger.info("!!! _list_tools called - ENTRY POINT !!!")
         # Get current user context
         user_context = self._get_current_user_context()
+        logger.info(f"!!! Got user context: {user_context} !!!")
 
         if not user_context:
             logger.warning("No user context available, returning empty tool list")
@@ -82,14 +90,40 @@ class DynamicFastMCP(FastMCP):
 
         # Add default tools if user has tracker
         if user_context.has_tracker:
-            default_tools = await super()._list_tools()
+            default_tools = await super()._list_tools(context)
             # Filter out internal proxied tool names (they start with "account_")
             builtin_tools = [
                 t for t in default_tools if not t.name.startswith("account_")
             ]
-            available_tools.extend(builtin_tools)
+
+            # Further filter based on tracker types
+            filtered_tools = []
+            for tool in builtin_tools:
+                # GitHub-only tools
+                if tool.name in ["get_pull_request", "update_pull_request"]:
+                    if "github" in user_context.tracker_types:
+                        filtered_tools.append(tool)
+                    else:
+                        logger.info(
+                            f"Skipping GitHub-only tool '{tool.name}' (no GitHub tracker)"
+                        )
+                # GitLab-only tools
+                elif tool.name in ["get_merge_request", "update_merge_request"]:
+                    if "gitlab" in user_context.tracker_types:
+                        filtered_tools.append(tool)
+                    else:
+                        logger.info(
+                            f"Skipping GitLab-only tool '{tool.name}' (no GitLab tracker)"
+                        )
+                # All other tools (including add_comment) - available if any tracker exists
+                else:
+                    filtered_tools.append(tool)
+
+            available_tools.extend(filtered_tools)
             logger.info(
-                f"Added {len(builtin_tools)} default tools (filtered {len(default_tools) - len(builtin_tools)} internal names)"
+                f"Added {len(filtered_tools)} default tools after tracker-type filtering "
+                f"(filtered out {len(builtin_tools) - len(filtered_tools)} tracker-specific tools, "
+                f"{len(default_tools) - len(builtin_tools)} internal names)"
             )
 
         # Add proxied tools from external MCP servers (Phase 1B)
@@ -140,7 +174,7 @@ class DynamicFastMCP(FastMCP):
                     self._proxied_tool_servers[mcp_tool.name] = str(mcp_server.id)
 
                 # Now get all registered tools and map back to original names
-                all_registered = await super()._list_tools()
+                all_registered = await super()._list_tools(context)
                 logger.info(
                     f"Total registered tools after dynamic registration: {len(all_registered)}"
                 )
@@ -177,6 +211,22 @@ class DynamicFastMCP(FastMCP):
         except Exception as e:
             logger.error(f"Error loading proxied tools: {e}", exc_info=True)
             # Continue with just default tools
+
+        # SECURITY: Enforce flow-specific tool restrictions if present
+        # This provides defense-in-depth: even if an agent is compromised,
+        # it cannot call tools outside the flow's allowed list
+        if user_context.allowed_flow_tools is not None:
+            original_count = len(available_tools)
+            available_tools = [
+                tool
+                for tool in available_tools
+                if tool.name in user_context.allowed_flow_tools
+            ]
+            logger.info(
+                f"Flow execution restriction: filtered {original_count} tools down to "
+                f"{len(available_tools)} allowed tools for flow execution "
+                f"{user_context.flow_execution_id}"
+            )
 
         logger.info(
             f"Returning {len(available_tools)} total tools for user {user_context.username}"
@@ -393,9 +443,7 @@ async def {internal_name}({params_str}) -> str:
 
         return wrapper
 
-    async def _mcp_call_tool(
-        self, name: str, arguments: dict | None
-    ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    async def _call_tool(self, context):
         """Override tool execution for access validation and name translation.
 
         This is called by FastMCP's protocol handler before executing a tool.
@@ -406,33 +454,46 @@ async def {internal_name}({params_str}) -> str:
         for both builtin and proxied tools, allowing streaming progress updates.
 
         Args:
-            name: Tool name (as seen by client)
-            arguments: Tool arguments
+            context: MiddlewareContext[CallToolRequestParams] from FastMCP 2.13.0+
 
         Returns:
-            Tool execution result or access denied error
+            ToolResult from tool execution
         """
+        from fastmcp.tools.tool import ToolResult
+        from mcp.types import TextContent
+
+        # Extract tool name and arguments from context
+        name = context.message.name
+        arguments = context.message.arguments or {}
+
+        logger.info(f"!!! _call_tool called for tool: {name} !!!")
+
         # Get current user context
         user_context = self._get_current_user_context()
 
         if not user_context:
             logger.warning("No user context available for tool call")
-            return [
-                types.TextContent(type="text", text="Error: No user context available")
-            ]
+            return ToolResult(
+                content=[
+                    TextContent(type="text", text="Error: No user context available")
+                ]
+            )
 
         # Check if user has access to this tool
-        available_tools = await self._list_tools()
+        available_tools = await self._list_tools(context=None)
         if not any(tool.name == name for tool in available_tools):
             logger.warning(
                 f"User {user_context.username} attempted to call "
                 f"unauthorized tool: {name}"
             )
-            return [
-                types.TextContent(
-                    type="text", text=f"Access denied: Tool '{name}' is not available"
-                )
-            ]
+            return ToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Access denied: Tool '{name}' is not available",
+                    )
+                ]
+            )
 
         # Translate tool name for proxied tools
         # Client calls "calculate_fibonacci", we translate to "account_123_calculate_fibonacci"
@@ -440,12 +501,15 @@ async def {internal_name}({params_str}) -> str:
             safe_account_id = user_context.account_id.replace("-", "_")
             internal_name = f"account_{safe_account_id}_{name}"
             logger.info(f"Translating proxied tool name: {name} -> {internal_name}")
-            # Call with translated name
-            return await super()._mcp_call_tool(internal_name, arguments)
+            # Modify context with translated name
+            context.message.name = internal_name
 
-        # Builtin tool - call with original name
-        logger.info(f"Calling builtin tool: {name}")
-        return await super()._mcp_call_tool(name, arguments)
+        else:
+            # Builtin tool - call with original name
+            logger.info(f"Calling builtin tool: {name}")
+
+        # Call parent with (possibly modified) context
+        return await super()._call_tool(context)
 
 
 def create_dynamic_mcp_server() -> DynamicFastMCP:
@@ -479,29 +543,77 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
         logger.warning("No authenticated user in scope")
         return None
 
-    account = getattr(auth_user.access_token, "account", None)
+    user = getattr(auth_user.access_token, "user", None)
 
-    if not account:
-        logger.warning("No account cached in access token")
+    if not user:
+        logger.warning("No user cached in access token")
         return None
+
+    # Extract API key if available (for flow execution context)
+    api_key = getattr(auth_user.access_token, "api_key", None)
 
     # Check tracker status
     db = next(get_db())
     try:
-        user_has_tracker = has_tracker(account, db)
+        # Get user's account for tracker check
+        # Handle detached instance by catching the error and querying directly
+        from sqlalchemy.orm.exc import DetachedInstanceError
+        from spacemodels.crud import crud_account
+
+        try:
+            account = user.account if hasattr(user, "account") else None
+        except DetachedInstanceError:
+            account = None
+
+        if not account:
+            # Fallback: query account if relationship not loaded or detached
+            account = crud_account.get(db, id=user.account_id)
+
+        user_has_tracker = has_tracker(account, db) if account else False
+        user_tracker_types = get_tracker_types(account, db) if account else []
+
+        # Extract flow execution context from API key if present
+        flow_execution_id = None
+        allowed_flow_tools = None
+        if api_key and api_key.context_data:
+            flow_execution_id = api_key.context_data.get("flow_execution_id")
+            # Combine allowed_mcp_tools with tool names from allowed_mcp_servers
+            allowed_mcp_tools = api_key.context_data.get("allowed_mcp_tools", [])
+            if allowed_mcp_tools:
+                # Extract tool names from the allowed_mcp_tools list
+                # This could be a list of strings or a list of dicts with "name" or "tool_name" key
+                allowed_flow_tools = []
+                for tool in allowed_mcp_tools:
+                    if isinstance(tool, str):
+                        allowed_flow_tools.append(tool)
+                    elif isinstance(tool, dict):
+                        # Support both "tool_name" (from DB schema) and "name" (legacy)
+                        tool_name = tool.get("tool_name") or tool.get("name")
+                        if tool_name:
+                            allowed_flow_tools.append(tool_name)
+
+                logger.info(
+                    f"Flow execution context: execution_id={flow_execution_id}, "
+                    f"allowed_tools={allowed_flow_tools}"
+                )
 
         user_context = UserContext(
-            user_id=str(account.id),
-            account_id=str(account.id),
-            username=account.username,
+            user_id=str(user.id),
+            account_id=str(user.account_id),
+            username=user.username,
             has_tracker=user_has_tracker,
             enabled_default_tools=[],  # Empty = all tools
             enabled_proxied_tools=[],
+            tracker_types=user_tracker_types,
+            flow_execution_id=flow_execution_id,
+            allowed_flow_tools=allowed_flow_tools,
         )
 
         logger.info(
-            f"Created user context for {account.username}, "
-            f"has_tracker={user_has_tracker}"
+            f"Created user context for {user.username} "
+            f"(account: {user.account_id}), has_tracker={user_has_tracker}, "
+            f"tracker_types={user_tracker_types}, "
+            f"flow_execution_id={flow_execution_id}"
         )
 
         return user_context

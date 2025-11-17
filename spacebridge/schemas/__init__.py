@@ -70,6 +70,21 @@ from spacebridge.schemas.issue_dependency import (
     ExtendScanRequest,
     DependencyPair,
 )
+from spacebridge.schemas.notification_preferences import (
+    NotificationPreferencesBase,
+    NotificationPreferencesUpdate,
+    NotificationPreferencesResponse,
+    MobileDeviceRegistration,
+    QRCodeResponse,
+)
+from spacebridge.schemas.tool_approval_condition import (
+    ToolApprovalConditionBase,
+    ToolApprovalConditionCreate,
+    ToolApprovalConditionUpdate,
+    ToolApprovalConditionResponse,
+    ConditionTestRequest,
+    ConditionTestResponse,
+)
 
 __all__ = [
     # Auth schemas
@@ -133,4 +148,17 @@ __all__ = [
     "DependencyResponse",
     "ExtendScanRequest",
     "DependencyPair",
+    # NotificationPreferences schemas
+    "NotificationPreferencesBase",
+    "NotificationPreferencesUpdate",
+    "NotificationPreferencesResponse",
+    "MobileDeviceRegistration",
+    "QRCodeResponse",
+    # ToolApprovalCondition schemas
+    "ToolApprovalConditionBase",
+    "ToolApprovalConditionCreate",
+    "ToolApprovalConditionUpdate",
+    "ToolApprovalConditionResponse",
+    "ConditionTestRequest",
+    "ConditionTestResponse",
 ]

@@ -50,9 +50,8 @@ class MCPConfigService:
             if server_name == "spacebridge-mcp":
                 # SpaceBridge MCP endpoints with authentication
                 server_config = {
-                    "type": "http",
                     "url": f"{spacebridge_url}/mcp/v1",
-                    "transport": "sse",
+                    "transport": "http-streaming",
                 }
 
                 # Add authentication if token is provided

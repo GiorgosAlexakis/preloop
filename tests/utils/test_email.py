@@ -7,6 +7,7 @@ from spacebridge.utils.email import (
     send_email,
     send_verification_email,
     send_password_reset_email,
+    send_invitation_email,
     send_tracker_registered_email,
     send_product_notification_email,
 )
@@ -61,8 +62,10 @@ class TestSendEmail:
     @patch("spacebridge.utils.email.smtplib.SMTP")
     @patch("spacebridge.utils.email.SMTP_USERNAME", "")
     @patch("spacebridge.utils.email.SMTP_PASSWORD", "")
-    def test_send_email_no_credentials_does_not_send(self, mock_smtp):
-        """Test that email is not sent when credentials are missing."""
+    def test_send_email_no_credentials_does_not_send(self, mock_smtp, caplog):
+        """Test that email logs warning and returns gracefully when credentials are missing."""
+
+        # Call should succeed without raising
         send_email(
             to_email="recipient@example.com",
             subject="Test Subject",
@@ -71,6 +74,13 @@ class TestSendEmail:
 
         # Verify SMTP connection was never attempted
         mock_smtp.assert_not_called()
+
+        # Verify warning was logged
+        assert any(
+            "SMTP credentials not configured" in record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        )
 
     @patch("spacebridge.utils.email.smtplib.SMTP")
     @patch("spacebridge.utils.email.SMTP_USERNAME", "test@example.com")
@@ -161,13 +171,14 @@ class TestSendVerificationEmail:
         assert "verify-email" in html_body
 
     @patch("spacebridge.utils.email.send_email")
+    @patch("spacebridge.utils.email.APP_NAME", "Preloop AI")
     def test_send_verification_email_includes_welcome_message(self, mock_send_email):
         """Test that verification email includes welcome message."""
         send_verification_email("user@example.com", "token")
 
         call_args = mock_send_email.call_args
         text_body = call_args[0][2]
-        assert "Welcome to SpaceBridge" in text_body
+        assert "Welcome to Preloop AI" in text_body
 
 
 class TestSendPasswordResetEmail:
@@ -207,6 +218,120 @@ class TestSendPasswordResetEmail:
         call_args = mock_send_email.call_args
         text_body = call_args[0][2]
         assert "set a new password" in text_body.lower()
+
+
+class TestSendInvitationEmail:
+    """Test send_invitation_email function."""
+
+    @patch("spacebridge.utils.email.send_email")
+    @patch("spacebridge.utils.email.SPACEBRIDGE_URL", "https://app.test.com")
+    def test_send_invitation_email_calls_send_email(self, mock_send_email):
+        """Test that invitation email calls send_email with correct params."""
+        send_invitation_email(
+            user_email="invitee@example.com",
+            token="invite_token_123",
+            organization_name="Test Org",
+            invited_by="admin@example.com",
+        )
+
+        mock_send_email.assert_called_once()
+        call_args = mock_send_email.call_args
+
+        # Check recipient
+        assert call_args[0][0] == "invitee@example.com"
+
+        # Check subject includes organization name
+        subject = call_args[0][1]
+        assert "invited" in subject.lower()
+        assert "Test Org" in subject
+
+        # Check body contains invitation link
+        text_body = call_args[0][2]
+        assert (
+            "https://app.test.com/invitations/accept?token=invite_token_123"
+            in text_body
+        )
+        assert "Test Org" in text_body
+        assert "admin@example.com" in text_body
+
+        # Check HTML body
+        html_body = call_args[0][3]
+        assert "invite_token_123" in html_body
+        assert "invitations/accept" in html_body
+        assert "Test Org" in html_body
+
+    @patch("spacebridge.utils.email.send_email")
+    def test_send_invitation_email_includes_welcome_message(self, mock_send_email):
+        """Test that invitation email includes welcome/greeting."""
+        send_invitation_email(
+            user_email="invitee@example.com",
+            token="token",
+            organization_name="Acme Corp",
+            invited_by="boss@example.com",
+        )
+
+        call_args = mock_send_email.call_args
+        text_body = call_args[0][2]
+        assert "Hello" in text_body
+        assert "invited" in text_body.lower()
+
+    @patch("spacebridge.utils.email.send_email")
+    def test_send_invitation_email_includes_expiration_notice(self, mock_send_email):
+        """Test that invitation email includes expiration information."""
+        send_invitation_email(
+            user_email="invitee@example.com",
+            token="token",
+            organization_name="Test Org",
+            invited_by="admin@example.com",
+        )
+
+        call_args = mock_send_email.call_args
+        text_body = call_args[0][2]
+        assert "7 days" in text_body or "expire" in text_body.lower()
+
+    @patch("spacebridge.utils.email.send_email")
+    def test_send_invitation_email_html_has_button(self, mock_send_email):
+        """Test that HTML invitation email includes a styled button."""
+        send_invitation_email(
+            user_email="invitee@example.com",
+            token="token",
+            organization_name="Test Org",
+            invited_by="admin@example.com",
+        )
+
+        call_args = mock_send_email.call_args
+        html_body = call_args[0][3]
+        # Check for button-like styling
+        assert "button" in html_body.lower() or "class=" in html_body
+
+    @patch("spacebridge.utils.email.send_email")
+    def test_send_invitation_email_includes_inviter_name(self, mock_send_email):
+        """Test that invitation email mentions who invited them."""
+        send_invitation_email(
+            user_email="invitee@example.com",
+            token="token",
+            organization_name="Test Org",
+            invited_by="John Doe",
+        )
+
+        call_args = mock_send_email.call_args
+        text_body = call_args[0][2]
+        assert "John Doe" in text_body
+
+    @patch("spacebridge.utils.email.send_email")
+    @patch("spacebridge.utils.email.SPACEBRIDGE_URL", "https://custom.domain.com")
+    def test_send_invitation_email_uses_custom_url(self, mock_send_email):
+        """Test that invitation email uses configured SPACEBRIDGE_URL."""
+        send_invitation_email(
+            user_email="invitee@example.com",
+            token="token",
+            organization_name="Test Org",
+            invited_by="admin@example.com",
+        )
+
+        call_args = mock_send_email.call_args
+        text_body = call_args[0][2]
+        assert "https://custom.domain.com/invitations/accept" in text_body
 
 
 class TestSendTrackerRegisteredEmail:
@@ -375,39 +500,52 @@ class TestSendProductNotificationEmail:
     @patch("spacebridge.utils.email.send_email")
     @patch("spacebridge.utils.email.settings")
     async def test_send_product_notification_email_raises_on_error(
-        self, mock_settings, mock_send_email
+        self, mock_settings, mock_send_email, caplog
     ):
-        """Test that EmailError is raised when send_email fails."""
+        """Test that EmailError is logged but not raised when send_email fails."""
         mock_settings.product_team_email = "team@example.com"
         mock_send_email.side_effect = EmailError("SMTP failed")
 
         user_data = {"username": "testuser"}
 
-        with pytest.raises(EmailError) as exc_info:
-            await send_product_notification_email(
-                user_data=user_data, tracker_data=None, source_ip="192.168.1.1"
-            )
+        # Should not raise - errors are logged but not raised to avoid breaking flows
+        await send_product_notification_email(
+            user_data=user_data, tracker_data=None, source_ip="192.168.1.1"
+        )
 
-        assert "SMTP failed" in str(exc_info.value)
+        # Verify warning was logged
+        assert any(
+            "Failed to send product notification email" in record.message
+            and "SMTP failed" in record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        )
 
     @pytest.mark.asyncio
     @patch("spacebridge.utils.email.send_email")
     @patch("spacebridge.utils.email.settings")
     async def test_send_product_notification_email_wraps_unexpected_errors(
-        self, mock_settings, mock_send_email
+        self, mock_settings, mock_send_email, caplog
     ):
-        """Test that unexpected errors are wrapped in EmailError."""
+        """Test that unexpected errors are logged but not raised."""
         mock_settings.product_team_email = "team@example.com"
         mock_send_email.side_effect = RuntimeError("Unexpected error")
 
         user_data = {"username": "testuser"}
 
-        with pytest.raises(EmailError) as exc_info:
-            await send_product_notification_email(
-                user_data=user_data, tracker_data=None, source_ip="192.168.1.1"
-            )
+        # Should not raise - errors are logged but not raised to avoid breaking flows
+        await send_product_notification_email(
+            user_data=user_data, tracker_data=None, source_ip="192.168.1.1"
+        )
 
-        assert "An unexpected error occurred" in str(exc_info.value)
+        # Verify error was logged
+        assert any(
+            "An unexpected error occurred while sending product notification email"
+            in record.message
+            and "Unexpected error" in record.message
+            for record in caplog.records
+            if record.levelname == "ERROR"
+        )
 
 
 class TestEmailError:

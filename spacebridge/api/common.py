@@ -1,14 +1,14 @@
 """Common utility functions for the SpaceBridge API."""
 
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Union
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from spacemodels.db.session import get_db_session
 from spacebridge.api.auth import get_current_active_user
-from spacebridge.schemas.auth import UserResponse
 from spacebridge.schemas.issue_compliance import CompliancePromptMetadata
 from spacesync.trackers import create_tracker_client
 from spacemodels.crud import (
@@ -18,6 +18,7 @@ from spacemodels.crud import (
     crud_tracker_scope_rule,
 )
 from spacemodels.models.account import Account
+from spacemodels.models.user import User
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 import yaml
@@ -31,7 +32,10 @@ crud_project = CRUDProject(Project)
 
 
 async def get_tracker_client(
-    organization_id: str, project_id: str, db: Session, current_user: Account
+    organization_id: Union[str, UUID],
+    project_id: Union[str, UUID],
+    db: Session,
+    current_user: User,
 ):
     """Get the appropriate tracker client for the given organization and project,
     ensuring the current user has access.
@@ -40,7 +44,7 @@ async def get_tracker_client(
         organization_id: The organization ID or identifier.
         project_id: The project ID or identifier.
         db: Database session.
-        current_user: The authenticated user account.
+        current_user: The authenticated user.
 
     Returns:
         A tracker client instance.
@@ -50,13 +54,15 @@ async def get_tracker_client(
             does not have access, or if a tracker client cannot be created.
     """
     # Check if organization_id is a UUID or an identifier
-    if len(organization_id) == 36:  # Simple UUID check
+    if isinstance(organization_id, UUID) or (
+        isinstance(organization_id, str) and len(organization_id) == 36
+    ):
         organization = crud_organization.get(
-            db, id=organization_id, account_id=current_user.id
+            db, id=organization_id, account_id=current_user.account_id
         )
     else:
         organization = crud_organization.get_by_identifier(
-            db, identifier=organization_id, account_id=current_user.id
+            db, identifier=str(organization_id), account_id=current_user.account_id
         )
 
     if not organization:
@@ -64,8 +70,12 @@ async def get_tracker_client(
 
     # Resolve project
     project: Optional[Project] = None
-    if len(project_id) == 36:  # Check if project_id looks like a UUID (our internal ID)
-        project = crud_project.get(db, id=project_id, account_id=current_user.id)
+    if isinstance(project_id, UUID) or (
+        isinstance(project_id, str) and len(project_id) == 36
+    ):
+        project = crud_project.get(
+            db, id=project_id, account_id=current_user.account_id
+        )
         # Verify it belongs to the correct organization
         if project and project.organization_id != organization.id:
             logger.warning(
@@ -78,7 +88,7 @@ async def get_tracker_client(
             db,
             organization_id=organization.id,
             slug_or_identifier=project_id,
-            account_id=current_user.id,
+            account_id=current_user.account_id,
         )
         if len(project_list) == 1:
             project = project_list[0]
@@ -107,9 +117,9 @@ async def get_tracker_client(
         )
 
     # --- Authorization Check ---
-    if tracker.account_id != current_user.id:
+    if tracker.account_id != current_user.account_id:
         logger.warning(
-            f"Access denied: User {current_user.username} (Account ID: {current_user.id}) "
+            f"Access denied: User {current_user.username} (Account ID: {current_user.account_id}) "
             f"attempted to access tracker {tracker.id} (Account ID: {tracker.account_id})."
         )
         raise HTTPException(
@@ -119,7 +129,7 @@ async def get_tracker_client(
 
     # --- New Scoping Logic ---
     scope_rules = crud_tracker_scope_rule.get_by_tracker(
-        db, tracker_id=tracker.id, account_id=current_user.id
+        db, tracker_id=tracker.id, account_id=current_user.account_id
     )
 
     org_identifier = organization.identifier
@@ -327,7 +337,7 @@ def load_duplicates_prompts_config(config_path: str) -> Dict[str, Any]:
 
 def get_accessible_projects(
     db: Session,
-    current_user: Account,
+    current_user: User,
     project_ids: Optional[List[str]] = None,
 ) -> List[Project]:
     """Get the list of accessible projects for the given user and project IDs.
@@ -351,7 +361,7 @@ def get_accessible_projects(
     """
     # Use CRUD layer to get projects accessible to user
     all_projects = crud_project.get_accessible_for_user(
-        db, account_id=current_user.id, project_ids=project_ids
+        db, account_id=str(current_user.account_id), project_ids=project_ids
     )
 
     # Apply TrackerScopeRule filtering
@@ -361,7 +371,7 @@ def get_accessible_projects(
 
         # Use CRUD layer to get scope rules for this tracker
         rules = crud_tracker_scope_rule.get_by_tracker(
-            db, tracker_id=tracker.id, account_id=current_user.id
+            db, tracker_id=tracker.id, account_id=current_user.account_id
         )
 
         # Build rule sets (same logic as scanner/core.py)
@@ -409,7 +419,7 @@ def get_accessible_projects(
 
 
 def get_account_for_user(
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> Account:
     """Get Account model for authenticated user.
@@ -418,8 +428,11 @@ def get_account_for_user(
     found across multiple endpoint files. It uses the CRUD layer instead
     of direct database queries.
 
+    Note: This is a convenience dependency. Prefer using the User.account
+    relationship when possible to avoid extra database queries.
+
     Args:
-        current_user: Authenticated user from JWT token
+        current_user: Authenticated user from JWT token (User model)
         db: Database session
 
     Returns:
@@ -428,7 +441,7 @@ def get_account_for_user(
     Raises:
         HTTPException: 401 if account not found for user
     """
-    account = crud_account.get_by_username(db, username=current_user.username)
+    account = crud_account.get(db, id=current_user.account_id)
     if not account:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

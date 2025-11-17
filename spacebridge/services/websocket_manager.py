@@ -41,15 +41,17 @@ async def persist_execution_log(execution_id: str, log_data: dict):
 
 class WebSocketManager:
     """
-    Manages WebSocket connections for real-time updates.
+    Manages WebSocket connections for real-time updates with account-based filtering.
     """
 
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
+        self.connection_accounts: Dict[str, str] = {}  # connection_id -> account_id
 
     async def connect(self, websocket: WebSocket) -> str:
         """
         Accepts a new WebSocket connection and returns a unique ID for it.
+        For backward compatibility - no account filtering.
         """
         await websocket.accept()
         connection_id = str(uuid.uuid4())
@@ -58,20 +60,54 @@ class WebSocketManager:
         logger.info(f"Total active connections: {len(self.active_connections)}")
         return connection_id
 
+    async def connect_with_account(self, websocket: WebSocket, account_id: str) -> str:
+        """
+        Accepts a new WebSocket connection with account ID for filtering.
+
+        Args:
+            websocket: WebSocket connection
+            account_id: Account ID for filtering broadcasts
+
+        Returns:
+            connection_id: Unique identifier for this connection
+        """
+        connection_id = str(uuid.uuid4())
+        self.active_connections[connection_id] = websocket
+        self.connection_accounts[connection_id] = account_id
+        logger.info(
+            f"New WebSocket connection {connection_id} established for account {account_id}."
+        )
+        logger.info(f"Total active connections: {len(self.active_connections)}")
+        return connection_id
+
     def disconnect(self, connection_id: str):
         """
-        Disconnects a WebSocket.
+        Disconnects a WebSocket and removes account association.
         """
         if connection_id in self.active_connections:
             del self.active_connections[connection_id]
             logger.info(f"WebSocket connection {connection_id} closed.")
-            logger.info(f"Total active connections: {len(self.active_connections)}")
 
-    async def broadcast(self, message: str):
+        if connection_id in self.connection_accounts:
+            del self.connection_accounts[connection_id]
+
+        logger.info(f"Total active connections: {len(self.active_connections)}")
+
+    async def broadcast(self, message: str, account_id: str = None):
         """
-        Broadcasts a message to all connected clients.
+        Broadcasts a message to connected clients, optionally filtered by account_id.
+
+        Args:
+            message: Message to broadcast
+            account_id: If provided, only send to connections with matching account_id
         """
-        for connection_id, connection in self.active_connections.items():
+        for connection_id, connection in list(self.active_connections.items()):
+            # If account_id is specified, only send to connections with matching account
+            if account_id is not None:
+                conn_account = self.connection_accounts.get(connection_id)
+                if conn_account != account_id:
+                    continue
+
             try:
                 await connection.send_text(message)
             except Exception:
@@ -79,16 +115,22 @@ class WebSocketManager:
                     f"Failed to send message to connection {connection_id}. It might be closed."
                 )
 
-    async def broadcast_json(self, data: dict):
+    async def broadcast_json(self, data: dict, account_id: str = None):
         """
-        Broadcasts a JSON message to all connected clients.
+        Broadcasts a JSON message to connected clients, optionally filtered by account_id.
+
+        Args:
+            data: Data to broadcast as JSON
+            account_id: If provided, only send to connections with matching account_id
         """
-        await self.broadcast(json.dumps(data))
+        await self.broadcast(json.dumps(data), account_id=account_id)
 
 
 async def nats_consumer(manager: "WebSocketManager"):
     """
     Consumes messages from NATS and broadcasts them to WebSocket clients.
+    Includes account-based filtering for security - only broadcasts to clients
+    with matching account_id.
     Also persists execution logs to the database.
     """
     task_publisher = await get_task_publisher()
@@ -101,13 +143,27 @@ async def nats_consumer(manager: "WebSocketManager"):
         try:
             data = json.loads(msg.data.decode())
 
+            # Extract account_id for filtering
+            account_id = data.get("account_id")
+
             # Persist log messages to database
             execution_id = data.get("execution_id")
             if execution_id:
                 await persist_execution_log(execution_id, data)
 
-            # Broadcast to WebSocket clients
-            await manager.broadcast_json(data)
+            # Broadcast to WebSocket clients with account filtering
+            # Only clients with matching account_id will receive the message
+            if account_id:
+                await manager.broadcast_json(data, account_id=str(account_id))
+            else:
+                # If no account_id in message, log warning but still broadcast
+                # (for backward compatibility during migration)
+                logger.warning(
+                    f"Flow update message missing account_id: {data.get('type')} "
+                    f"for execution {execution_id}"
+                )
+                await manager.broadcast_json(data)
+
         except json.JSONDecodeError:
             logger.warning(f"Received non-JSON message from NATS: {msg.data.decode()}")
         except Exception as e:
@@ -115,8 +171,15 @@ async def nats_consumer(manager: "WebSocketManager"):
 
     try:
         # Subscribe to a wildcard subject to receive all flow updates
-        sub = await nats_client.subscribe("flow-updates.*", cb=message_handler)
+        flow_sub = await nats_client.subscribe("flow-updates.*", cb=message_handler)
         logger.info("Subscribed to NATS subject 'flow-updates.*'")
+
+        # Subscribe to approval updates
+        approval_sub = await nats_client.subscribe(
+            "approval-updates", cb=message_handler
+        )
+        logger.info("Subscribed to NATS subject 'approval-updates'")
+
         # Keep the consumer running
         while True:
             await asyncio.sleep(1)

@@ -15,25 +15,38 @@ from spacebridge.api.auth.jwt import (
     get_user_from_token_if_valid,
     get_current_active_user,
 )
-from spacemodels.models import Account
+from spacemodels.models.user import User
 from spacemodels.schemas.plan import Plan, PlanCreate, Subscription
-from spacebridge.services.billing import BillingService
 from spacemodels.db.session import get_db_session
 from spacemodels.crud.plan import plan as crud_plan, subscription as crud_subscription
+
+# Import from proprietary billing plugin
+try:
+    from spacebridge.plugins.proprietary.billing.service import BillingService
+except ImportError:
+    # Fallback if proprietary plugin is not available
+    BillingService = None  # type: ignore
 
 router = APIRouter()
 
 
-def get_billing_service(db: Session = Depends(get_db_session)) -> BillingService:
-    """Dependency to get the billing service."""
+def get_billing_service_dep(db: Session = Depends(get_db_session)) -> BillingService:
+    """Dependency to get the billing service.
+
+    Creates a new BillingService instance per request with its own database session.
+    This avoids session sharing across concurrent requests.
+    """
+    if BillingService is None:
+        raise HTTPException(status_code=501, detail="Billing service not available")
+    # Create a new BillingService for each request with its own session
     return BillingService(db)
 
 
 @router.post("/billing/plans", response_model=Plan, status_code=201)
 def create_plan(
     plan: PlanCreate,
-    service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    service: BillingService = Depends(get_billing_service_dep),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Create a new subscription plan.
@@ -45,7 +58,7 @@ def create_plan(
 
 
 @router.get("/billing/plans", response_model=List[Plan])
-def list_public_plans(service: BillingService = Depends(get_billing_service)):
+def list_public_plans(service: BillingService = Depends(get_billing_service_dep)):
     """
     List all available public subscription plans.
     """
@@ -54,27 +67,27 @@ def list_public_plans(service: BillingService = Depends(get_billing_service)):
 
 @router.get("/billing/custom-plans", response_model=List[Plan])
 def list_custom_plans(
-    service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    service: BillingService = Depends(get_billing_service_dep),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     List custom subscription plans for the current user's account.
     """
     return crud_plan.get_active_custom_plans_for_account(
-        service.db, account_id=current_user.id
+        service.db, account_id=current_user.account_id
     )
 
 
 @router.get("/billing/subscription", response_model=Subscription)
 def get_subscription(
-    service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    service: BillingService = Depends(get_billing_service_dep),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Get the current user's subscription details.
     """
     subscription = crud_subscription.get_latest_for_account(
-        service.db, account_id=current_user.id
+        service.db, account_id=current_user.account_id
     )
     if not subscription:
         raise HTTPException(status_code=404, detail="Subscription not found")
@@ -84,7 +97,7 @@ def get_subscription(
 @router.get("/billing/checkout-success")
 def checkout_success(
     session_id: str,
-    service: BillingService = Depends(get_billing_service),
+    service: BillingService = Depends(get_billing_service_dep),
 ):
     """
     Handles the synchronous part of a successful checkout.
@@ -98,11 +111,19 @@ def checkout_success(
 
     # For new users, redirect to the welcome page with their details.
     # For existing users, redirect them to the console.
-    if account.hashed_password == "NEEDS_RESET":
+    # Get the primary user for the account
+    from spacemodels.crud import crud_user
+
+    # Use the session from the BillingService
+    primary_user = None
+    if account.primary_user_id:
+        primary_user = crud_user.get(service.db, id=str(account.primary_user_id))
+
+    if primary_user and primary_user.hashed_password == "NEEDS_RESET":
         params = {
-            "username": account.username,
-            "email": account.email,
-            "full_name": account.full_name or "",
+            "username": primary_user.username,
+            "email": primary_user.email,
+            "full_name": primary_user.full_name or "",
         }
         redirect_url = f"/welcome?{urllib.parse.urlencode(params)}"
     else:
@@ -124,7 +145,7 @@ class CheckoutSessionDetailsResponse(BaseModel):
 )
 def get_checkout_session_details(
     session_id: str,
-    service: BillingService = Depends(get_billing_service),
+    service: BillingService = Depends(get_billing_service_dep),
 ):
     """
     Retrieve user details from a completed checkout session.
@@ -153,7 +174,7 @@ class CreateCheckoutSessionResponse(BaseModel):
 @router.post("/billing/create-checkout-session")  # No response model, as it can vary
 async def create_checkout_session(
     request: CreateCheckoutSessionRequest,
-    service: BillingService = Depends(get_billing_service),
+    service: BillingService = Depends(get_billing_service_dep),
     db: Session = Depends(get_db_session),
     authorization: Optional[str] = Header(None),
 ):
@@ -166,7 +187,7 @@ async def create_checkout_session(
         token = authorization.split("Bearer ")[1]
         current_user = await get_user_from_token_if_valid(token, db)
 
-    account_id = current_user.id if current_user else None
+    account_id = str(current_user.account_id) if current_user else None
     result = service.create_checkout_session(
         plan_id=request.plan_id,
         interval=request.interval,
@@ -188,22 +209,31 @@ class CreatePortalSessionResponse(BaseModel):
 )
 def create_portal_session(
     request: CreatePortalSessionRequest,
-    service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    service: BillingService = Depends(get_billing_service_dep),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Create a Stripe Customer Portal session."""
+    import logging
+    import traceback
+
+    logger = logging.getLogger(__name__)
+
     try:
+        logger.info(f"Creating portal session for account {current_user.account_id}")
         url = service.create_portal_session(
-            account_id=current_user.id, return_url=request.return_url
+            account_id=current_user.account_id, return_url=request.return_url
         )
+        logger.info("Portal session created successfully")
         return CreatePortalSessionResponse(url=url)
     except Exception as e:
+        logger.error(f"Error creating portal session: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/billing/webhooks")
 async def stripe_webhooks(
-    request: Request, service: BillingService = Depends(get_billing_service)
+    request: Request, service: BillingService = Depends(get_billing_service_dep)
 ):
     """Handle incoming Stripe webhooks."""
     payload = await request.body()
@@ -219,12 +249,12 @@ async def stripe_webhooks(
 
 @router.post("/billing/sync-subscription", status_code=200)
 def sync_subscription(
-    service: BillingService = Depends(get_billing_service),
-    current_user: Account = Depends(get_current_active_user),
+    service: BillingService = Depends(get_billing_service_dep),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Synchronizes the user's subscription status from Stripe to the local database."""
     try:
-        service.sync_subscription_status(account_id=current_user.id)
+        service.sync_subscription_status(account_id=current_user.account_id)
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

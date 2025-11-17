@@ -18,23 +18,23 @@ from spacebridge.schemas.mcp import (
     GetIssueResponse,
 )
 from spacemodels.models import (
-    Account,
     Organization,
     Project,
     Issue,
     Tracker,
     EmbeddingModel,
 )
+from spacemodels.models.user import User
 
 
 @pytest.mark.asyncio
-async def test_mcp_get_issue_success(db_session: Session, test_user: Account):
+async def test_mcp_get_issue_success(db_session: Session, test_user: User):
     """
     Tests successful retrieval of an issue via the MCP get_issue tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",
@@ -82,7 +82,8 @@ async def test_mcp_get_issue_success(db_session: Session, test_user: Account):
 
         response = await mcp.get_issue(issue=str(issue.id))
 
-    assert response.id == str(issue.id)
+    # response.id is a UUID object, need to compare with issue.id directly
+    assert response.id == issue.id
     assert response.key == "TP-1"
     assert response.title == "Test Issue"
     assert response.project == "test-proj"
@@ -90,13 +91,13 @@ async def test_mcp_get_issue_success(db_session: Session, test_user: Account):
 
 
 @pytest.mark.asyncio
-async def test_mcp_create_issue_success(db_session: Session, test_user: Account):
+async def test_mcp_create_issue_success(db_session: Session, test_user: User):
     """
     Tests successful creation of an issue via the MCP create_issue tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",
@@ -159,13 +160,13 @@ async def test_mcp_create_issue_success(db_session: Session, test_user: Account)
 
 
 @pytest.mark.asyncio
-async def test_mcp_update_issue_success(db_session: Session, test_user: Account):
+async def test_mcp_update_issue_success(db_session: Session, test_user: User):
     """
     Tests successful update of an issue via the MCP update_issue tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",
@@ -227,7 +228,7 @@ async def test_mcp_update_issue_success(db_session: Session, test_user: Account)
 
 
 @pytest.mark.asyncio
-async def test_mcp_search_success(db_session: Session, test_user: Account):
+async def test_mcp_search_success(db_session: Session, test_user: User):
     """
     Tests the MCP search tool.
     """
@@ -262,13 +263,13 @@ async def test_mcp_search_success(db_session: Session, test_user: Account):
 
 
 @pytest.mark.asyncio
-async def test_mcp_estimate_compliance_success(db_session: Session, test_user: Account):
+async def test_mcp_estimate_compliance_success(db_session: Session, test_user: User):
     """
     Tests the MCP estimate_compliance tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",
@@ -336,13 +337,13 @@ async def test_mcp_estimate_compliance_success(db_session: Session, test_user: A
 
 
 @pytest.mark.asyncio
-async def test_mcp_improve_compliance_success(db_session: Session, test_user: Account):
+async def test_mcp_improve_compliance_success(db_session: Session, test_user: User):
     """
     Tests the MCP improve_compliance tool.
     """
     tracker = Tracker(
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="test_key",
         url="https://github.com",
@@ -401,3 +402,365 @@ async def test_mcp_improve_compliance_success(db_session: Session, test_user: Ac
 
     assert len(response.suggested_updates) == 1
     assert response.suggested_updates[0].arguments.title == "Improved Title"
+
+
+@pytest.mark.asyncio
+async def test_mcp_add_comment_success(db_session: Session, test_user: User):
+    """
+    Tests successful addition of a comment via the MCP add_comment tool.
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="github",
+        api_key="test_key",
+        url="https://github.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org", identifier="test-org", tracker_id=tracker.id
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="test-proj",
+        identifier="test-proj",
+        slug="test-proj",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    issue = Issue(
+        title="Test Issue",
+        description="A test issue.",
+        project_id=project.id,
+        tracker_id=tracker.id,
+        external_id="123",
+        key="TP-1",
+    )
+    db_session.add(issue)
+    db_session.commit()
+
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_user_from_token_if_valid",
+            new_callable=AsyncMock,
+        ) as mock_get_user,
+        patch("spacebridge.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_user.return_value = test_user
+        mock_get_db.return_value = iter([db_session])
+
+        mock_tracker = MagicMock()
+        mock_comment = MagicMock()
+        mock_comment.id = "comment-123"
+        mock_comment.meta_data = {
+            "url": "https://github.com/owner/repo/issues/1#comment-123"
+        }
+        mock_tracker.add_comment = AsyncMock(return_value=mock_comment)
+        mock_get_tracker.return_value = mock_tracker
+
+        response = await mcp.add_comment(target=str(issue.id), comment="Test comment")
+
+    assert response.status == "created"
+    assert "successfully added comment" in response.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_pull_request_success(db_session: Session, test_user: User):
+    """
+    Tests successful retrieval of a GitHub pull request via the MCP get_pull_request tool.
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="github",
+        api_key="test_key",
+        url="https://github.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="owner/repo",
+        identifier="owner/repo",
+        slug="owner/repo",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("spacebridge.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "spacebridge.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "github"
+        mock_tracker.client = MagicMock()
+        mock_tracker.client.get_pull_request = AsyncMock(
+            return_value={
+                "id": "pr-123",
+                "number": 123,
+                "title": "Test PR",
+                "description": "Test PR description",
+                "state": "open",
+                "author": "testuser",
+                "url": "https://github.com/owner/repo/pull/123",
+            }
+        )
+        mock_tracker.get_pull_request = mock_tracker.client.get_pull_request
+        mock_get_tracker.return_value = mock_tracker
+
+        response = await mcp.get_pull_request(pull_request="owner/repo#123")
+
+    assert response.number == 123
+    assert response.title == "Test PR"
+    assert response.state == "open"
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_merge_request_success(db_session: Session, test_user: User):
+    """
+    Tests successful retrieval of a GitLab merge request via the MCP get_merge_request tool.
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="gitlab",
+        api_key="test_key",
+        url="https://gitlab.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="group/project",
+        identifier="group/project",
+        slug="group/project",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("spacebridge.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "spacebridge.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "gitlab"
+        mock_tracker.client = MagicMock()
+        mock_tracker.client.get_merge_request = AsyncMock(
+            return_value={
+                "id": "mr-456",
+                "iid": 456,
+                "title": "Test MR",
+                "description": "Test MR description",
+                "state": "opened",
+                "author": "testuser",
+                "url": "https://gitlab.com/group/project/-/merge_requests/456",
+            }
+        )
+        mock_tracker.get_merge_request = mock_tracker.client.get_merge_request
+        mock_get_tracker.return_value = mock_tracker
+
+        response = await mcp.get_merge_request(merge_request="group/project#456")
+
+    assert response.iid == 456
+    assert response.title == "Test MR"
+    assert response.state == "opened"
+
+
+@pytest.mark.asyncio
+async def test_mcp_update_pull_request_success(db_session: Session, test_user: User):
+    """
+    Tests successful update of a GitHub pull request via the MCP update_pull_request tool.
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="github",
+        api_key="test_key",
+        url="https://github.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="owner/repo",
+        identifier="owner/repo",
+        slug="owner/repo",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("spacebridge.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "spacebridge.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "github"
+        mock_tracker.client = MagicMock()
+        mock_tracker.client.update_pull_request = AsyncMock(
+            return_value={
+                "id": "pr-123",
+                "number": 123,
+                "title": "Updated PR Title",
+                "description": "Updated PR description",
+                "state": "open",
+                "url": "https://github.com/owner/repo/pull/123",
+            }
+        )
+        mock_tracker.update_pull_request = mock_tracker.client.update_pull_request
+        mock_get_tracker.return_value = mock_tracker
+
+        response = await mcp.update_pull_request(
+            pull_request="owner/repo#123", title="Updated PR Title"
+        )
+
+    assert response.status == "updated"
+    assert response.pull_request_id == "pr-123"
+    assert "Successfully updated pull request" in response.message
+
+
+@pytest.mark.asyncio
+async def test_mcp_update_merge_request_success(db_session: Session, test_user: User):
+    """
+    Tests successful update of a GitLab merge request via the MCP update_merge_request tool.
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="gitlab",
+        api_key="test_key",
+        url="https://gitlab.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="group/project",
+        identifier="group/project",
+        slug="group/project",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("spacebridge.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("spacebridge.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "spacebridge.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "spacebridge.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "gitlab"
+        mock_tracker.client = MagicMock()
+        mock_tracker.client.update_merge_request = AsyncMock(
+            return_value={
+                "id": "mr-456",
+                "iid": 456,
+                "title": "Updated MR Title",
+                "description": "Updated MR description",
+                "state": "opened",
+                "url": "https://gitlab.com/group/project/-/merge_requests/456",
+            }
+        )
+        mock_tracker.update_merge_request = mock_tracker.client.update_merge_request
+        mock_get_tracker.return_value = mock_tracker
+
+        response = await mcp.update_merge_request(
+            merge_request="group/project#456", title="Updated MR Title"
+        )
+
+    assert response.status == "updated"
+    assert response.merge_request_id == "mr-456"
+    assert "Successfully updated merge request" in response.message

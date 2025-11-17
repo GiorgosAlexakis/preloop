@@ -2,10 +2,11 @@ import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+import uuid
 
 from fastapi import FastAPI
 from spacebridge.api.auth.router import router as auth_router
-from spacemodels.models.account import Account
+from spacemodels.models.user import User
 
 app = FastAPI()
 app.include_router(auth_router, prefix="/auth")
@@ -57,11 +58,13 @@ def test_register_user_success(db_session_mock):
 
 def test_register_user_username_exists(db_session_mock):
     # Mock query chain for username check (returns existing user)
+    mock_user = MagicMock(spec=User)
+    mock_user.username = "testuser"
+    mock_user.email = "test@example.com"
+
     mock_query = MagicMock()
     mock_query.filter.return_value = mock_query
-    mock_query.first.return_value = Account(
-        username="testuser", email="test@example.com"
-    )
+    mock_query.first.return_value = mock_user
     db_session_mock.query.return_value = mock_query
 
     response = client.post(
@@ -78,16 +81,18 @@ def test_register_user_username_exists(db_session_mock):
 
 
 def test_register_user_email_exists(db_session_mock):
-    # First query for username check (returns None), second for email check (returns account)
+    # First query for username check (returns None), second for email check (returns user)
     mock_query_username = MagicMock()
     mock_query_username.filter.return_value = mock_query_username
     mock_query_username.first.return_value = None
 
+    mock_user = MagicMock(spec=User)
+    mock_user.username = "anotheruser"
+    mock_user.email = "test@example.com"
+
     mock_query_email = MagicMock()
     mock_query_email.filter.return_value = mock_query_email
-    mock_query_email.first.return_value = Account(
-        username="anotheruser", email="test@example.com"
-    )
+    mock_query_email.first.return_value = mock_user
 
     # Use side_effect to return different mocks for each query call
     db_session_mock.query.side_effect = [mock_query_username, mock_query_email]
@@ -109,11 +114,11 @@ def test_login_success():
     with patch(
         "spacebridge.api.auth.router.authenticate_user"
     ) as mock_authenticate_user:
-        mock_user = Account(
-            username="testuser",
-            email="test@example.com",
-            hashed_password="hashed_password",
-        )
+        mock_user = MagicMock(spec=User)
+        mock_user.id = uuid.uuid4()
+        mock_user.username = "testuser"
+        mock_user.email = "test@example.com"
+        mock_user.hashed_password = "hashed_password"
         mock_authenticate_user.return_value = mock_user
 
         response = client.post(

@@ -63,6 +63,13 @@ class SpaceBridgeBearerAuthBackend(AuthenticationBackend):
             if not current_user:
                 return None
 
+            # Try to load the API key if this is an API key token (for flow context)
+            api_key_obj = None
+            if token and "." not in token:  # API keys don't have dots (JWTs do)
+                from spacemodels.crud import crud_api_key
+
+                api_key_obj = crud_api_key.get_by_key(db, key=token)
+
             # Create MCP AccessToken with user info stored for later retrieval
             # Store account ID in the AccessToken so we can retrieve the user later
             access_token = AccessToken(
@@ -72,9 +79,11 @@ class SpaceBridgeBearerAuthBackend(AuthenticationBackend):
                 expires_at=None,  # API keys don't expire by default
             )
 
-            # Store user info in AccessToken for later use (avoiding re-validation)
+            # Store user info and API key in AccessToken for later use (avoiding re-validation)
             # Use object.__setattr__() to bypass Pydantic's validation
-            object.__setattr__(access_token, "account", current_user)
+            object.__setattr__(access_token, "user", current_user)
+            if api_key_obj:
+                object.__setattr__(access_token, "api_key", api_key_obj)
 
             # Return authentication credentials and user
             # This will be stored in scope["auth"] and scope["user"]

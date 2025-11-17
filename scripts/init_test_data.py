@@ -157,20 +157,31 @@ async def create_test_data():
 def main():
     """Main function to create test data."""
     try:
-        # First ensure the database tables exist
+        # First ensure the database tables exist using Alembic
         import os
+        import subprocess
 
-        from spacemodels.db.setup import setup_database
+        # Get the SpaceModels directory path
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        spacemodels_dir = os.path.join(os.path.dirname(script_dir), "SpaceModels")
 
-        # Get the database URL from environment
-        database_url = os.getenv(
-            "DATABASE_URL",
-            "postgresql+psycopg://postgres:postgres@localhost/spacebridge",
+        logger.info(
+            "Running Alembic migrations to ensure database schema is up to date..."
         )
 
-        # Set up the database
-        setup_database(database_url)
-        logger.info("Database schema initialized successfully")
+        # Run alembic upgrade head
+        result = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            cwd=spacemodels_dir,
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            logger.error(f"Alembic migration failed: {result.stderr}")
+            raise RuntimeError(f"Failed to run database migrations: {result.stderr}")
+
+        logger.info("Database schema initialized successfully via Alembic")
 
         # Now create the test data
         asyncio.run(create_test_data())

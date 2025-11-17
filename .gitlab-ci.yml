@@ -88,7 +88,7 @@ pre-commit:
     - pip install -e ".[dev]"
     - mkdir -p ./SpaceLit/dist/assets
     - touch ./SpaceLit/dist/index.html
-    - python ./spacesync/scripts/init_db.py --force
+    - python ./SpaceModels/scripts/init_db.py --force
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
@@ -130,30 +130,35 @@ test:unit:spacebridge-endpoints-auth:
   variables:
     TEST_PATHS: "tests/endpoints/test_auth.py"
 
-# test:unit:spacebridge-endpoints-billing:
-#   extends: .test:unit:template
-#   variables:
-#     TEST_PATHS: "tests/endpoints/test_billing.py"
+test:unit:spacebridge-endpoints-billing:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_billing.py"
 
 test:unit:spacebridge-endpoints-comments:
   extends: .test:unit:template
   variables:
     TEST_PATHS: "tests/endpoints/test_comments.py"
 
-# test:unit:spacebridge-endpoints-embedding:
-#   extends: .test:unit:template
-#   variables:
-#     TEST_PATHS: "tests/endpoints/test_embedding.py"
+test:unit:spacebridge-endpoints-embedding:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_embedding.py"
+
+test:unit:spacebridge-endpoints-features:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_features.py"
 
 test:unit:spacebridge-endpoints-flows:
   extends: .test:unit:template
   variables:
     TEST_PATHS: "tests/endpoints/test_flows.py"
 
-# test:unit:spacebridge-endpoints-health:
-#   extends: .test:unit:template
-#   variables:
-#     TEST_PATHS: "tests/endpoints/test_health.py"
+test:unit:spacebridge-endpoints-health:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_health.py"
 
 # test:unit:spacebridge-endpoints-issue-compliance:
 #   extends: .test:unit:template
@@ -185,10 +190,10 @@ test:unit:spacebridge-endpoints-issues:
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_projects.py"
 
-# test:unit:spacebridge-endpoints-search:
-#   extends: .test:unit:template
-#   variables:
-#     TEST_PATHS: "tests/endpoints/test_search.py"
+test:unit:spacebridge-endpoints-search:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_search.py"
 
 test:unit:spacebridge-endpoints-trackers:
   extends: .test:unit:template
@@ -210,10 +215,60 @@ test:unit:spacebridge-endpoints-mcp:
   variables:
     TEST_PATHS: "tests/endpoints/test_mcp.py"
 
+test:unit:spacebridge-endpoints-mcp-servers:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_mcp_servers.py"
+
+test:unit:spacebridge-endpoints-invitations:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_invitations.py"
+
+test:unit:spacebridge-endpoints-teams:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_teams.py"
+
+test:unit:spacebridge-endpoints-users:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_users.py"
+
+test:unit:spacebridge-endpoints-tools:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_tools.py"
+
+test:unit:spacebridge-endpoints-issue-duplicate-stats:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/endpoints/test_issue_duplicate_stats.py"
+
 # test:unit:spacebridge-endpoints-websockets:
 #   extends: .test:unit:template
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_websockets.py"
+
+test:unit:spacebridge-plugins:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/plugins"
+
+test:unit:spacebridge-agents:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/agents"
+
+test:unit:spacebridge-api:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/api"
+
+test:unit:spacebridge-scripts:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "tests/scripts"
 
 test:coverage:
   stage: qa
@@ -224,23 +279,34 @@ test:coverage:
     - test:unit:spacebridge-other
     - test:unit:spacebridge-endpoints-ai-models
     - test:unit:spacebridge-endpoints-auth
-    # - test:unit:spacebridge-endpoints-billing
+    - test:unit:spacebridge-endpoints-billing
     - test:unit:spacebridge-endpoints-comments
-    # - test:unit:spacebridge-endpoints-embedding
+    - test:unit:spacebridge-endpoints-embedding
+    - test:unit:spacebridge-endpoints-features
     - test:unit:spacebridge-endpoints-flows
-    # - test:unit:spacebridge-endpoints-health
+    - test:unit:spacebridge-endpoints-health
     # - test:unit:spacebridge-endpoints-issue-compliance
     - test:unit:spacebridge-endpoints-issue-dependencies
     - test:unit:spacebridge-endpoints-issue-duplicates
     - test:unit:spacebridge-endpoints-issues
     # - test:unit:spacebridge-endpoints-organizations
     # - test:unit:spacebridge-endpoints-projects
-    # - test:unit:spacebridge-endpoints-search
+    - test:unit:spacebridge-endpoints-search
     - test:unit:spacebridge-endpoints-trackers
     # - test:unit:spacebridge-endpoints-version
     - test:unit:spacebridge-endpoints-webhooks
     - test:unit:spacebridge-endpoints-mcp
+    - test:unit:spacebridge-endpoints-mcp-servers
+    - test:unit:spacebridge-endpoints-invitations
+    - test:unit:spacebridge-endpoints-teams
+    - test:unit:spacebridge-endpoints-users
+    - test:unit:spacebridge-endpoints-tools
+    - test:unit:spacebridge-endpoints-issue-duplicate-stats
     # - test:unit:spacebridge-endpoints-websockets
+    - test:unit:spacebridge-plugins
+    - test:unit:spacebridge-agents
+    - test:unit:spacebridge-api
+    - test:unit:spacebridge-scripts
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
     - pip install coverage junitparser
@@ -350,9 +416,22 @@ test:coverage:
       --set ingress.hosts[0].paths[0].path=/
       --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
       --set ingress.tls[0].hosts[0]=${TARGET_DOMAIN}
+      --set ingress.tls[0].hosts[1]=www.${TARGET_DOMAIN}
       --set ingress.tls[0].secretName=spacebridge-${ENV_NAME}-tls
       --set environment.spacebridgeUrl=https://${TARGET_DOMAIN}
       --set database.cnpg.name=${DATABASE_NAME}
+      --set preloop.enabled=${PRELOOP_ENABLED}
+      --set preloop.tag=${SPACELIT_COMMIT_SHA}
+      --set preloop.ingress.host=${PRELOOP_DOMAIN}
+      --set preloop.ingress.hosts[0].host=${PRELOOP_DOMAIN}
+      --set preloop.ingress.hosts[0].paths[0].path=/
+      --set preloop.ingress.hosts[0].paths[0].pathType=ImplementationSpecific
+      --set preloop.ingress.tls[0].hosts[0]=${PRELOOP_DOMAIN}
+      --set preloop.ingress.tls[0].hosts[1]=www.${PRELOOP_DOMAIN}
+      --set preloop.ingress.tls[0].secretName=preloop-${ENV_NAME}-tls
+      --set preloop.url=https://${PRELOOP_DOMAIN}
+      --set environment.preloopUrl=https://${PRELOOP_DOMAIN}
+
     - echo "Helm deployment finished."
     - echo "Checking deployed environment..."
     - for i in $(seq 1 12); do
@@ -370,6 +449,8 @@ test:
     SEED_ENABLED: "true"
     ENV_NAME: "$CI_COMMIT_REF_NAME"
     TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.test.spacebridge.io"
+    PRELOOP_ENABLED: "false"
+    PRELOOP_DOMAIN: ""
     STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_TEST
     STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_TEST
   environment:
@@ -389,6 +470,8 @@ review:
     ENV_NAME: "$CI_COMMIT_REF_NAME"
     SEED_ENABLED: "true"
     TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.review.spacebridge.io"
+    PRELOOP_ENABLED: "true"
+    PRELOOP_DOMAIN: "$CI_COMMIT_REF_NAME.review.preloop.ai"
     STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_REVIEW
     STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_REVIEW
   only:
@@ -410,6 +493,8 @@ staging:
     DATABASE_NAME: spacebridge-db
     SEED_ENABLED: false
     TARGET_DOMAIN: $STAGING_DOMAIN
+    PRELOOP_ENABLED: "true"
+    PRELOOP_DOMAIN: "staging.preloop.ai"
 
 prod:
   extends: .deploy:template
@@ -426,6 +511,8 @@ prod:
     DATABASE_NAME: spacebridge-db
     SEED_ENABLED: false
     TARGET_DOMAIN: $PROD_DOMAIN
+    PRELOOP_ENABLED: "true"
+    PRELOOP_DOMAIN: "preloop.ai"
   before_script:
     - set -e
     - export POD_BACKUP_PATH="/run/tmp/db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
@@ -540,3 +627,75 @@ smoke:
     - pytest tests/smoke
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
+
+# Example MCP Server Jobs
+build-example-mcp-server:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64 -w 0)\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR/scripts/examples
+      --dockerfile $CI_PROJECT_DIR/scripts/examples/Dockerfile
+      --destination $CI_REGISTRY_IMAGE/example-mcp-server:$CI_COMMIT_SHA
+      --destination $CI_REGISTRY_IMAGE/example-mcp-server:latest
+      --cache=true
+      --cache-repo $CI_REGISTRY_IMAGE/cache
+  when: manual
+  only:
+    - branches
+
+deploy-example-mcp-server:
+  stage: deploy
+  needs: [build-example-mcp-server]
+  image: dtzar/helm-kubectl:3.13.2
+  when: manual
+  environment:
+    name: example-mcp/$CI_COMMIT_REF_NAME
+    url: https://$CI_COMMIT_REF_NAME.example-mcp.preloop.ai
+    on_stop: stop-example-mcp-server
+    auto_stop_in: 4 hours
+  variables:
+    NAMESPACE: example-mcp-servers
+    ENV_NAME: "$CI_COMMIT_REF_NAME"
+    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.example-mcp.preloop.ai"
+  script:
+    - kubectl create namespace ${NAMESPACE} || true
+    - helm upgrade --install ${ENV_NAME}-example-mcp ./scripts/examples/helm/example-mcp-server
+      --namespace ${NAMESPACE}
+      --set image.tag=${CI_COMMIT_SHA}
+      --set image.repository=${CI_REGISTRY_IMAGE}/example-mcp-server
+      --set ingress.hosts[0].host=${TARGET_DOMAIN}
+      --set ingress.hosts[0].paths[0].path=/
+      --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
+      --set ingress.tls[0].hosts[0]=${TARGET_DOMAIN}
+      --set ingress.tls[0].secretName=${ENV_NAME}-example-mcp-tls
+      --set env[0].name=BEARER_TOKEN
+      --set env[0].value=${EXAMPLE_MCP_BEARER_TOKEN:-test-token-12345}
+    - echo "Example MCP Server deployed to https://${TARGET_DOMAIN}"
+    - echo "Waiting for deployment to be ready..."
+    - for i in $(seq 1 12); do
+        curl -f https://${TARGET_DOMAIN}/health && break;
+        sleep 5;
+      done
+  only:
+    - branches
+
+stop-example-mcp-server:
+  stage: cleanup
+  needs: [deploy-example-mcp-server]
+  image: dtzar/helm-kubectl:3.13.2
+  when: manual
+  allow_failure: true
+  environment:
+    name: example-mcp/$CI_COMMIT_REF_NAME
+    action: stop
+  variables:
+    NAMESPACE: example-mcp-servers
+  script:
+    - helm delete $CI_COMMIT_REF_NAME-example-mcp --namespace $NAMESPACE || true
+  only:
+    - branches

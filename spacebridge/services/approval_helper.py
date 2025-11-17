@@ -10,6 +10,7 @@ import os
 from typing import Optional, Tuple
 
 from fastmcp import Context
+from spacemodels import models
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,14 @@ async def require_approval(
         )
 
         async with get_async_db_session() as db:
+            # Always try to look up tool configuration first
+            config = await get_tool_config_by_name_and_source_async(
+                db,
+                account_id=account_id,
+                tool_name=tool_name,
+                tool_source=tool_source,
+            )
+
             # If policy_id is provided directly (for standalone requests), use it
             if policy_id:
                 logger.info(
@@ -69,25 +78,121 @@ async def require_approval(
                         False,
                         f"Error: Approval policy with ID '{policy_id}' not found",
                     )
-            else:
-                # Check for tool configuration using CRUD
-                config = await get_tool_config_by_name_and_source_async(
-                    db,
-                    account_id=account_id,
-                    tool_name=tool_name,
-                    tool_source=tool_source,
-                )
 
-                # If tool doesn't require approval, execute directly
-                if (
-                    not config
-                    or not config.requires_approval
-                    or not config.approval_policy_id
-                ):
+                # If no config exists, this is a standalone approval request
+                # Create a tool config for tracking purposes and persist it
+                if not config:
+                    logger.warning(
+                        f"No tool configuration found for {tool_name} ({tool_source}), "
+                        "creating config for approval tracking"
+                    )
+                    from spacemodels.crud.tool_configuration import (
+                        create_tool_configuration_async,
+                    )
+                    from spacemodels.schemas.tool_configuration import (
+                        ToolConfigurationCreate,
+                    )
+
+                    # Create and persist a minimal tool config
+                    config_create = ToolConfigurationCreate(
+                        tool_name=tool_name,
+                        tool_source=tool_source,
+                        account_id=account_id,
+                        approval_policy_id=policy_id,
+                        is_enabled=True,
+                        custom_config={},
+                    )
+                    config = await create_tool_configuration_async(
+                        db, obj_in=config_create, account_id=account_id
+                    )
+                    logger.info(f"Created tool configuration {config.id} for approval")
+            else:
+                # Evaluate approval requirement with condition checking
+
+                # Convert async db to sync for the evaluator (it uses sync queries)
+                # We'll need to fetch the config and evaluate in the async context
+                if not config or not config.approval_policy_id:
                     logger.info(
-                        f"Tool {tool_name} ({tool_source}) does not require approval"
+                        f"Tool {tool_name} ({tool_source}) does not require approval (no policy configured)"
                     )
                     return (True, "")
+
+                # Check if there's an approval condition that might exempt this execution
+                from sqlalchemy import select
+
+                result = await db.execute(
+                    select(models.ToolApprovalCondition).where(
+                        models.ToolApprovalCondition.tool_configuration_id == config.id,
+                        models.ToolApprovalCondition.account_id == account_id,
+                    )
+                )
+                condition = result.scalar_one_or_none()
+
+                logger.info(f"Approval condition found: {condition is not None}")
+                if condition:
+                    logger.info(f"  - is_enabled: {condition.is_enabled}")
+                    logger.info(
+                        f"  - condition_expression: {condition.condition_expression}"
+                    )
+                    logger.info(f"  - condition_type: {condition.condition_type}")
+
+                if (
+                    condition
+                    and condition.is_enabled
+                    and condition.condition_expression
+                ):
+                    # Evaluate the condition
+                    logger.info(f"Evaluating approval condition for {tool_name}...")
+                    try:
+                        from spacebridge.plugins.builtin.argument_evaluator import (
+                            ArgumentEvaluator,
+                        )
+
+                        evaluator = ArgumentEvaluator()
+
+                        # Build context for evaluation
+                        eval_context = {
+                            "tool_name": tool_name,
+                            "args": arguments,
+                            "user_id": str(ctx.request_context.user_context.user_id)
+                            if hasattr(ctx, "request_context")
+                            and hasattr(ctx.request_context, "user_context")
+                            else None,
+                            "account_id": str(account_id),
+                            "execution_id": None,  # Not available in MCP context
+                            "trigger_event": {},
+                        }
+
+                        logger.info(f"  - Expression: {condition.condition_expression}")
+                        logger.info(f"  - Context args: {arguments}")
+
+                        # Evaluate the condition expression
+                        # Note: evaluate() expects condition_config dict with 'expression' key
+                        matches = await evaluator.evaluate(
+                            condition_config={
+                                "expression": condition.condition_expression
+                            },
+                            tool_args=arguments,
+                            context=eval_context,
+                        )
+
+                        logger.info(
+                            f"  - Evaluation result: {matches} (type: {type(matches)})"
+                        )
+
+                        if not matches:
+                            logger.info(
+                                f"Tool {tool_name} ({tool_source}) does not require approval - condition not matched: {condition.condition_expression}"
+                            )
+                            return (True, "")
+                        else:
+                            logger.info(
+                                f"Tool {tool_name} ({tool_source}) requires approval - condition matched: {condition.condition_expression}"
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to evaluate approval condition for {tool_name}: {e}. Defaulting to requiring approval."
+                        )
 
                 # Get approval policy from tool configuration
                 policy = await get_approval_policy_async(
@@ -112,7 +217,7 @@ async def require_approval(
             from spacebridge.services.approval_service import ApprovalService
             from spacemodels.schemas.approval_request import ApprovalRequestUpdate
 
-            base_url = os.getenv("BASE_URL", "http://localhost:8000")
+            base_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000")
             approval_service = ApprovalService(db, base_url)
 
             try:
@@ -128,13 +233,10 @@ async def require_approval(
                 )
 
                 approval_url = f"{base_url}/approval/{approval_request.id}?token={approval_request.approval_token}"
-                notification_channel = (
-                    f"#{policy.channel}"
-                    if policy.channel
-                    else f"@{policy.user}"
-                    if policy.user
-                    else "webhook"
-                )
+
+                # Get notification channels from policy
+                notification_channels = policy.notification_channels or ["email"]
+                channels_display = ", ".join(notification_channels)
 
                 logger.warning(
                     f"\n{'=' * 60}\n"
@@ -143,7 +245,8 @@ async def require_approval(
                     f"Tool: {tool_name}\n"
                     f"Arguments: {arguments}\n"
                     f"Request ID: {approval_request.id}\n"
-                    f"Notification sent to: {policy.approval_type} ({notification_channel})\n"
+                    f"Notification sent via: {channels_display}\n"
+                    f"Approval type: {policy.approval_type}\n"
                     f"Timeout: {policy.timeout_seconds or 300}s\n"
                     f"Approval URL: {approval_url}\n"
                     f"{'=' * 60}\n"
@@ -158,10 +261,7 @@ async def require_approval(
                             f"Has report_progress: {hasattr(ctx, 'report_progress')}"
                         )
                         # Report progress at 0% with status message
-                        status_message = (
-                            f"Approval request sent to {policy.approval_type} "
-                            f"({notification_channel})"
-                        )
+                        status_message = f"Approval request sent via {channels_display}"
                         # Check if progressToken is available
                         progress_token = None
                         try:
@@ -286,7 +386,7 @@ async def require_approval(
 
                             # Create meaningful status message
                             status_message = (
-                                f"Waiting for approval from {notification_channel} "
+                                f"Waiting for approval via {channels_display} "
                                 f"({int(remaining)}s remaining)"
                             )
 
@@ -298,9 +398,18 @@ async def require_approval(
                                 f"[Polling] Sent progress: {progress_pct}% - {status_message}"
                             )
                         except Exception as e:
-                            logger.error(
-                                f"Failed to send progress update: {e}", exc_info=True
-                            )
+                            # Ignore ClosedResourceError - client may have disconnected
+                            from anyio import ClosedResourceError
+
+                            if isinstance(e, ClosedResourceError):
+                                logger.debug(
+                                    "Client disconnected, skipping progress updates"
+                                )
+                            else:
+                                logger.error(
+                                    f"Failed to send progress update: {e}",
+                                    exc_info=True,
+                                )
 
                     # Wait before next poll
                     await asyncio.sleep(poll_interval)

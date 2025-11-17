@@ -32,8 +32,8 @@ class ClaudeCodeAgent(ContainerAgentExecutor):
                 - model: Claude model to use (default: claude-sonnet-4)
                 - max_tokens: Maximum tokens for response (default: 4096)
         """
-        # Use Python base image with Anthropic SDK
-        image = os.getenv("CLAUDE_CODE_IMAGE", "python:3.11-slim")
+        # Use official Claude Code image
+        image = os.getenv("CLAUDE_CODE_IMAGE", "ghcr.io/zeeno-atl/claude-code:latest")
 
         super().__init__(
             agent_type="claude-code",
@@ -115,8 +115,46 @@ class ClaudeCodeAgent(ContainerAgentExecutor):
         # Escape prompt for Python string
         escaped_prompt = prompt.replace("'", "\\'").replace('"', '\\"')
 
-        # Create a simple Python script that uses Claude
-        script = f"""
+        # Prepare initialization commands (git clone, custom commands)
+        init_commands = self._prepare_init_commands(execution_context)
+
+        # Prepare post-execution commands (push, PR/MR creation)
+        post_exec_commands = self._prepare_git_post_execution_commands(
+            execution_context
+        )
+
+        # Build post-execution block if there are commands
+        post_exec_block = ""
+        if post_exec_commands:
+            post_exec_block = f"""
+# Run post-execution commands (push, PR/MR) if claude succeeded
+if [ "$CLAUDE_EXIT_CODE" -eq "0" ]; then
+    echo "========================================="
+    echo "Running post-execution git operations..."
+    echo "========================================="
+    {post_exec_commands}
+fi
+"""
+
+        # Create a bash script that runs init commands then Python
+        bash_script = f"""
+set -e
+
+# Run initialization commands (git clone, custom commands) if any
+{init_commands}
+
+# Configure git to trust all directories (needed for cloned repos)
+git config --global --add safe.directory '*' || true
+
+# Create workspace directory if needed
+mkdir -p /workspace
+cd /workspace
+
+# Install git if not available (python:3.11-slim doesn't include it)
+apt-get update && apt-get install -y git 2>/dev/null || true
+
+# Run Python agent
+python3 << 'PYTHON_SCRIPT'
 import os
 import sys
 
@@ -145,9 +183,15 @@ message = client.messages.create(
 
 # Print response
 print(message.content[0].text)
+PYTHON_SCRIPT
+
+CLAUDE_EXIT_CODE=$?
+{post_exec_block}
+# Exit with claude's exit code
+exit $CLAUDE_EXIT_CODE
 """
 
-        cmd = ["python", "-c", script]
+        cmd = ["bash", "-c", bash_script]
 
         # Container configuration
         container_config = {

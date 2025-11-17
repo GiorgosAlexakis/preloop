@@ -5,14 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, Dict
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 class IssueDuplicate(BaseModel):
     """Base schema for IssueDuplicate."""
 
-    issue1_id: str
-    issue2_id: str
+    issue1_id: UUID  # Changed from str to UUID for validation
+    issue2_id: UUID  # Changed from str to UUID for validation
 
     # AI model's decision
     decision: str
@@ -24,13 +24,23 @@ class IssueDuplicate(BaseModel):
     resolution: Optional[str] = None
     resolution_at: Optional[datetime] = None
     resolution_reason: Optional[str] = None
-    resulting_issue1_id: Optional[str] = None
-    resulting_issue2_id: Optional[str] = None
+    resulting_issue1_id: Optional[UUID] = None  # Changed from str to UUID
+    resulting_issue2_id: Optional[UUID] = None  # Changed from str to UUID
     ai_model_id: Optional[UUID] = None
     ai_model_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer(
+        "issue1_id",
+        "issue2_id",
+        "resulting_issue1_id",
+        "resulting_issue2_id",
+        "ai_model_id",
+    )
+    def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID to string."""
+        return str(value) if value else None
 
 
 class IssueDuplicateUpdate(BaseModel):
@@ -44,12 +54,19 @@ class IssueDuplicateUpdate(BaseModel):
 class IssueDuplicateSuggestionRequest(BaseModel):
     """Schema for suggesting a resolution for an IssueDuplicate."""
 
-    issue1_id: str
-    issue2_id: str
+    issue1_id: UUID
+    issue2_id: UUID
     resolution: str
     resolution_reason: Optional[str] = None
-    resulting_issue1_id: Optional[str] = None
-    resulting_issue2_id: Optional[str] = None
+    resulting_issue1_id: Optional[UUID] = None
+    resulting_issue2_id: Optional[UUID] = None
+
+    @field_serializer(
+        "issue1_id", "issue2_id", "resulting_issue1_id", "resulting_issue2_id"
+    )
+    def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID to string."""
+        return str(value) if value else None
 
 
 class IssueDuplicateSuggestionResponse(BaseModel):
@@ -63,8 +80,8 @@ class IssueDuplicateSuggestionResponse(BaseModel):
 
 
 class IssueDuplicateResolutionRequest(BaseModel):
-    issue1_id: str
-    issue2_id: str
+    issue1_id: UUID
+    issue2_id: UUID
     resolution: str
     resolution_reason: Optional[str] = None
     resulting_issue_1_title: Optional[str] = None
@@ -72,18 +89,33 @@ class IssueDuplicateResolutionRequest(BaseModel):
     resulting_issue_2_title: Optional[str] = None
     resulting_issue_2_description: Optional[str] = None
 
+    @field_serializer("issue1_id", "issue2_id")
+    def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID to string."""
+        return str(value) if value else None
+
 
 class IssueDuplicateResolutionResponse(BaseModel):
-    issue1_id: str
-    issue2_id: str
+    issue1_id: UUID
+    issue2_id: UUID
     resolution: str
+
+    @field_serializer("issue1_id", "issue2_id")
+    def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
+        """Serialize UUID to string."""
+        return str(value) if value else None
 
 
 class IssueDuplicateProjectStats(BaseModel):
-    project_id: str
+    project_id: UUID
     project_name: str
     total: int
     duplicates: int
+
+    @field_serializer("project_id")
+    def serialize_uuid(self, value: UUID) -> str:
+        """Serialize UUID field to string."""
+        return str(value)
 
 
 class IssueDuplicateStats(BaseModel):

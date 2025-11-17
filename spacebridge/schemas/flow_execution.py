@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 # Base Pydantic model for FlowExecution attributes, used for API responses
@@ -49,6 +49,11 @@ class FlowExecutionBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @field_serializer("id", "flow_id")
+    def serialize_uuid(self, value: uuid.UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
+
     class Config:
         from_attributes = True  # Pydantic V2
 
@@ -61,6 +66,11 @@ class FlowExecutionListResponse(BaseModel):
     start_time: datetime
     end_time: Optional[datetime] = None
     created_at: datetime
+
+    @field_serializer("id", "flow_id")
+    def serialize_uuid(self, value: uuid.UUID) -> str:
+        """Serialize UUID to string for JSON response."""
+        return str(value)
 
     class Config:
         from_attributes = True

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.crud.embedding import CRUDIssueEmbedding
 from spacebridge.schemas.embedding import EmbeddingRawResponse, EmbeddingRawDataItem
-from spacemodels.models.account import Account
+from spacemodels.models.user import User
 
 from spacebridge.api.auth import get_current_active_user
 
@@ -21,7 +21,7 @@ router = APIRouter()
 )
 def get_raw_embeddings(
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     embedding_model_id: Optional[str] = Query(
         None, description="The ID of the embedding model to use."
     ),
@@ -57,7 +57,7 @@ def get_raw_embeddings(
 
     raw_data = crud_embedding.get_raw_embeddings(
         db=db,
-        account_id=str(current_user.id),
+        account_id=str(current_user.account_id),
         embedding_model_id=embedding_model_id,
         project_ids=project_id_list,
         project_names=project_name_list,

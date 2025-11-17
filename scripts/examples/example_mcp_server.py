@@ -15,7 +15,6 @@ The server will start on http://localhost:8001
 import logging
 import os
 import random
-from datetime import datetime
 from typing import Optional
 
 from fastmcp import Context, FastMCP
@@ -27,9 +26,43 @@ logger = logging.getLogger(__name__)
 BEARER_TOKEN = os.getenv("BEARER_TOKEN", "test-token-12345")
 
 # Create FastMCP server instance
-# Note: For simplicity, this example doesn't enforce authentication at the FastMCP level.
-# SpaceBridge will handle authentication when it connects to this server.
+# Note: Authentication/middleware is not supported in current FastMCP API
+# The server will be publicly accessible - secure with network policies if needed
 mcp = FastMCP("Example MCP Server")
+
+
+@mcp.tool()
+def pay(recipient: str, amount: int) -> str:
+    """Pay the recipient the specified amount in USD.
+
+    Args:
+        recipient: The recipient of the payment
+        amount: The amount to pay
+
+    Returns:
+        A message indicating the success of the payment
+    """
+    return f"Payment of ${amount} to {recipient} completed successfully"
+
+
+@mcp.tool()
+def send_money(recipient: str, amount: int) -> str:
+    """Send a payment of the specified amount in USD to the recipient.
+
+    Args:
+        recipient: The recipient of the payment
+        amount: The amount to pay
+
+    Returns:
+        A message indicating the success of the payment
+    """
+    return f"Payment of ${amount} to {recipient} completed successfully"
+
+
+@mcp.tool()
+def rollback_deployment(env: str = "production") -> str:
+    """Rollback the deployment to the previous version."""
+    return f"Deployment of {env} environment rolled back successfully"
 
 
 @mcp.tool()
@@ -45,17 +78,6 @@ def get_random_number(min_value: int = 1, max_value: int = 100) -> str:
     """
     number = random.randint(min_value, max_value)
     return f"Random number: {number}"
-
-
-@mcp.tool()
-def get_current_time() -> str:
-    """Get the current date and time.
-
-    Returns:
-        Current timestamp in ISO format
-    """
-    now = datetime.now()
-    return f"Current time: {now.isoformat()}"
 
 
 @mcp.tool()
@@ -109,44 +131,6 @@ def count_words(text: str) -> str:
     words = len(text.split())
     chars = len(text)
     return f"Words: {words}, Characters: {chars}"
-
-
-@mcp.tool()
-async def process_items(count: int, ctx: Optional[Context] = None) -> str:
-    """Process items with progress reporting (simple percentage-based example).
-
-    This is a simplified example from FastMCP docs to demonstrate
-    progress reporting with percentage-based progress.
-
-    Args:
-        count: Number of items to process (1-20)
-
-    Returns:
-        Summary of processing
-    """
-    import asyncio
-
-    if count < 1 or count > 20:
-        return "Error: count must be between 1 and 20"
-
-    items_processed = []
-
-    for i in range(count):
-        # Simulate processing
-        await asyncio.sleep(0.3)
-
-        items_processed.append(f"item_{i + 1}")
-
-        # Report progress as percentage
-        if ctx:
-            percentage = ((i + 1) / count) * 100
-            await ctx.report_progress(progress=percentage, total=100)
-            logger.info(
-                f"[process_items] Progress: {percentage:.0f}% ({i + 1}/{count})"
-            )
-            await asyncio.sleep(0.1)
-
-    return f"Processed {count} items: {', '.join(items_processed)}"
 
 
 @mcp.tool()
@@ -224,8 +208,8 @@ if __name__ == "__main__":
     logger.info("Starting Example MCP Server on http://localhost:8001")
     logger.info("=" * 70)
     logger.info("")
-    logger.info("Note: This is a simple example without authentication.")
-    logger.info("SpaceBridge can still be configured with auth for testing.")
+    logger.info("⚠️  WARNING: No authentication configured (FastMCP limitation)")
+    logger.info("   Secure with network policies or firewall rules if needed")
     logger.info("")
     logger.info("Available tools:")
     logger.info("  - get_random_number: Generate a random number")

@@ -43,7 +43,7 @@ COPY mkdocs.yml .
 COPY plans.yaml .
 
 # Copy built frontend assets
-COPY --from=space-lit-build /app/dist /app/SpaceLit/dist
+COPY --from=space-lit-build /app/dist-spacebridge /app/SpaceLit/dist
 
 # Install the main application and build docs
 RUN pip install --no-cache-dir -e . && mkdocs build

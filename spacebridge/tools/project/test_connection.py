@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from pydantic import BaseModel
 
 from spacebridge.tools.base import Context
-from spacesync.spacesync.trackers.factory import create_tracker_client
+from spacesync.trackers.factory import create_tracker_client
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
 from spacemodels.db.session import get_db_session as get_db

@@ -2,16 +2,20 @@
 Service for handling billing, subscriptions, and usage tracking.
 """
 
+import logging
 import uuid
 from datetime import date, datetime
 from typing import Optional
 import stripe
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from spacebridge.config import settings
 from spacemodels.models import Account, Plan, Subscription, MonthlyUsage
 from spacemodels.schemas.plan import PlanCreate, SubscriptionCreate, MonthlyUsageCreate
-from spacemodels.crud import crud_account, plan, subscription, monthly_usage
+from spacemodels.crud import crud_account, crud_user, plan, subscription, monthly_usage
+
+logger = logging.getLogger(__name__)
 
 
 class BillingService:
@@ -138,11 +142,18 @@ class BillingService:
             account = None
 
         # Get the new price ID from Stripe
-        price_lookup_key = f"{plan_id}_{interval}"
-        prices = stripe.Price.list(lookup_keys=[price_lookup_key], active=True)
-        if not prices.data:
-            raise ValueError(f"Price not found for lookup key: {price_lookup_key}")
-        new_price_id = prices.data[0].id
+        # List all active prices for this product and filter by interval
+        prices = stripe.Price.list(product=plan_id, active=True, limit=100)
+        matching_prices = [
+            p
+            for p in prices.data
+            if p.recurring and p.recurring.get("interval") == interval
+        ]
+        if not matching_prices:
+            raise ValueError(
+                f"No active price found for product {plan_id} with interval {interval}"
+            )
+        new_price_id = matching_prices[0].id
 
         if not account:
             # CASE 1: User is on a free plan (no active Stripe subscription)
@@ -165,6 +176,64 @@ class BillingService:
         if not active_subscription or not active_subscription.stripe_subscription_id:
             # CASE 2: User is on a free plan (no active Stripe subscription)
             # We need to create a new subscription via Checkout.
+
+            # Create Stripe customer if one doesn't exist
+            if not account.stripe_customer_id:
+                # Get primary user email for the customer
+                primary_user = None
+                if account.primary_user_id:
+                    primary_user = crud_user.get(
+                        self.db, id=str(account.primary_user_id)
+                    )
+
+                # Fallback: If no primary user is set, find any active user for this account
+                if not primary_user:
+                    from spacemodels.models.user import User as UserModel
+
+                    any_user = (
+                        self.db.query(UserModel)
+                        .filter(
+                            UserModel.account_id == account.id,
+                            UserModel.is_active.is_(True),
+                        )
+                        .first()
+                    )
+
+                    if any_user:
+                        primary_user = any_user
+                        # Update the account to set this as the primary user
+                        account.primary_user_id = any_user.id
+                        self.db.add(account)
+                        self.db.commit()
+
+                if not primary_user:
+                    raise ValueError("No users found for this account.")
+
+                try:
+                    # Create Stripe customer
+                    stripe_customer = stripe.Customer.create(
+                        email=primary_user.email,
+                        name=primary_user.full_name or primary_user.username,
+                        metadata={
+                            "account_id": str(account.id),
+                            "user_id": str(primary_user.id),
+                        },
+                    )
+
+                    # Save customer ID to account
+                    account.stripe_customer_id = stripe_customer.id
+                    self.db.commit()
+                    self.db.refresh(account)
+
+                    print(
+                        f"Created Stripe customer {stripe_customer.id} for account {account.id}"
+                    )
+                except Exception as e:
+                    print(
+                        f"Error creating Stripe customer for account {account.id}: {e}"
+                    )
+                    raise Exception("Could not create Stripe customer.")
+
             session_params = {
                 "payment_method_types": ["card"],
                 "line_items": [{"price": new_price_id, "quantity": 1}],
@@ -172,11 +241,8 @@ class BillingService:
                 "success_url": f"{settings.spacebridge_url}/api/v1/billing/checkout-success?session_id={{CHECKOUT_SESSION_ID}}",
                 "cancel_url": f"{settings.spacebridge_url}/console/settings/subscription",
                 "client_reference_id": str(account.id),
+                "customer": account.stripe_customer_id,
             }
-            if account.stripe_customer_id:
-                session_params["customer"] = account.stripe_customer_id
-            else:
-                session_params["customer_email"] = account.email
 
             checkout_session = stripe.checkout.Session.create(**session_params)
             return {"url": checkout_session.url, "action": "redirect"}
@@ -218,19 +284,119 @@ class BillingService:
 
     def create_portal_session(self, account_id: str, return_url: str) -> str:
         """Creates a Stripe Customer Portal session."""
+        logger.info(f"[BILLING] create_portal_session called for account {account_id}")
+
         account = crud_account.get(self.db, id=account_id)
-        if not account or not account.stripe_customer_id:
-            raise ValueError("Stripe customer not found for this account.")
+        logger.info(f"[BILLING] Account lookup result: {account is not None}")
+
+        if not account:
+            logger.error(f"[BILLING] Account {account_id} not found")
+            raise ValueError("Account not found.")
+
+        logger.info(
+            f"[BILLING] Account has stripe_customer_id: {account.stripe_customer_id is not None}"
+        )
+
+        # Create Stripe customer if one doesn't exist
+        if not account.stripe_customer_id:
+            logger.info(
+                f"[BILLING] Need to create Stripe customer for account {account_id}"
+            )
+
+            # Get primary user email for the customer
+            primary_user = None
+            if account.primary_user_id:
+                logger.info(
+                    f"[BILLING] Looking up primary user {account.primary_user_id}"
+                )
+                primary_user = crud_user.get(self.db, id=str(account.primary_user_id))
+                logger.info(f"[BILLING] Primary user found: {primary_user is not None}")
+
+            # Fallback: If no primary user is set, find any active user for this account
+            if not primary_user:
+                logger.warning(
+                    f"[BILLING] No primary_user_id set for account {account_id}, searching for any user"
+                )
+                from spacemodels.models.user import User as UserModel
+
+                any_user = (
+                    self.db.query(UserModel)
+                    .filter(
+                        UserModel.account_id == account.id,
+                        UserModel.is_active.is_(True),
+                    )
+                    .first()
+                )
+
+                if any_user:
+                    logger.info(
+                        f"[BILLING] Found user {any_user.id} for account {account_id}"
+                    )
+                    primary_user = any_user
+
+                    # Update the account to set this as the primary user
+                    account.primary_user_id = any_user.id
+                    self.db.add(account)
+                    self.db.commit()
+                    logger.info(
+                        f"[BILLING] Set user {any_user.id} as primary user for account {account_id}"
+                    )
+
+            if not primary_user:
+                logger.error(f"[BILLING] No users found for account {account_id}")
+                raise ValueError("No users found for this account.")
+
+            try:
+                logger.info(
+                    f"[BILLING] Creating Stripe customer for {primary_user.email}"
+                )
+                # Create Stripe customer
+                stripe_customer = stripe.Customer.create(
+                    email=primary_user.email,
+                    name=primary_user.full_name or primary_user.username,
+                    metadata={
+                        "account_id": str(account.id),
+                        "user_id": str(primary_user.id),
+                    },
+                )
+
+                logger.info(f"[BILLING] Stripe customer created: {stripe_customer.id}")
+
+                # Save customer ID to account
+                account.stripe_customer_id = stripe_customer.id
+                self.db.commit()
+                self.db.refresh(account)
+
+                logger.info(
+                    f"[BILLING] Created Stripe customer {stripe_customer.id} for account {account_id}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"[BILLING] Error creating Stripe customer for account {account_id}: {e}"
+                )
+                import traceback
+
+                logger.error(f"[BILLING] Traceback: {traceback.format_exc()}")
+                raise Exception(f"Could not create Stripe customer: {str(e)}")
 
         try:
+            logger.info(
+                f"[BILLING] Creating portal session for customer {account.stripe_customer_id}"
+            )
             portal_session = stripe.billing_portal.Session.create(
                 customer=account.stripe_customer_id,
                 return_url=return_url,
             )
+            logger.info(f"[BILLING] Portal session created: {portal_session.url}")
             return portal_session.url
         except Exception as e:
-            print(f"Error creating portal session for account {account_id}: {e}")
-            raise Exception("Could not create customer portal session.")
+            logger.error(
+                f"[BILLING] Error creating portal session for account {account_id}: {e}"
+            )
+            import traceback
+
+            logger.error(f"[BILLING] Traceback: {traceback.format_exc()}")
+            raise Exception(f"Could not create customer portal session: {str(e)}")
 
     def handle_webhook(self, payload: bytes, sig_header: str) -> None:
         """Handles incoming Stripe webhooks."""
@@ -286,7 +452,10 @@ class BillingService:
         if session.client_reference_id:
             account = crud_account.get(self.db, id=session.client_reference_id)
         elif session.customer and session.customer.email:
-            account = crud_account.get_by_email(self.db, email=session.customer.email)
+            # Email is now on User model, so we need to find the user first
+            user = crud_user.get_by_email(self.db, email=session.customer.email)
+            if user:
+                account = crud_account.get(self.db, id=str(user.account_id))
 
         # 2. Conflict Detection for existing users
         if account and account.get_active_subscription(self.db):
@@ -294,20 +463,52 @@ class BillingService:
             # TODO: Send admin alert
             return account  # Return account for context, but don't create new sub
 
-        # 3. Create new account if necessary
+        # 3. Create new account and user if necessary
         customer_email = session.customer.email
         if not account and customer_email:
             username = self._generate_unique_username(customer_email)
+            # Create Account (organization) first
             account = Account(
-                username=username,
-                email=customer_email,
-                full_name=session.customer.name,
+                organization_name=f"{username}'s Organization",
                 stripe_customer_id=session.customer.id,
-                hashed_password="NEEDS_RESET",
+                is_active=True,
             )
             self.db.add(account)
             self.db.commit()
             self.db.refresh(account)
+
+            # Create User linked to the account
+            from spacemodels.models.user import User
+
+            user = User(
+                account_id=account.id,
+                username=username,
+                email=customer_email,
+                full_name=session.customer.name,
+                hashed_password="NEEDS_RESET",
+                is_active=True,
+                email_verified=False,
+                user_source="local",
+            )
+            self.db.add(user)
+            self.db.commit()
+            self.db.refresh(user)
+
+            # Set the primary user for the account
+            account.primary_user_id = user.id
+            self.db.commit()
+
+            # Assign Owner role to the first user
+            from spacemodels.crud.role import role as crud_role
+            from spacemodels.crud.user_role import user_role as crud_user_role
+
+            owner_role = crud_role.get_by_name(self.db, name="owner")
+            if owner_role:
+                user_role_data = {
+                    "user_id": user.id,
+                    "role_id": owner_role.id,
+                }
+                crud_user_role.create(self.db, obj_in=user_role_data)
         elif account and not account.stripe_customer_id:
             account.stripe_customer_id = session.customer.id
             self.db.commit()
@@ -412,11 +613,12 @@ class BillingService:
             if not email:
                 return None
 
-            account = crud_account.get_by_email(self.db, email=email)
-            if not account:
+            # Get user by email (email is now on User, not Account)
+            user = crud_user.get_by_email(self.db, email=email)
+            if not user:
                 return None
 
-            return {"email": account.email, "username": account.username}
+            return {"email": user.email, "username": user.username}
         except Exception as e:
             print(f"Error retrieving session details: {e}")
             return None
@@ -429,7 +631,7 @@ class BillingService:
             sanitized_prefix = "user"
 
         username = sanitized_prefix
-        while crud_account.get_by_username(self.db, username=username):
+        while crud_user.get_by_username(self.db, username=username):
             suffix = uuid.uuid4().hex[:4]
             username = f"{sanitized_prefix}_{suffix}"
         return username

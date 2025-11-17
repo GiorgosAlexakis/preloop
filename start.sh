@@ -35,12 +35,9 @@ else
   echo "Warning: $ENV_FILE not found. Skipping."
 fi
 echo "" # Add a blank line for separation
-# Initialize database tables and embedding model idempotently
-echo "Initializing database and embedding model..."
-python spacesync/scripts/init_db.py --force
-cd SpaceModels
-alembic stamp head
-cd ..
+# Initialize database tables, embedding model, and AI model using Alembic
+echo "Initializing database schema, embedding model, and AI model..."
+python SpaceModels/scripts/init_db.py --force
 # Default parameters
 API_PORT=8000
 DEBUG="true"

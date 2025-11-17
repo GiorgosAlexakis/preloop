@@ -111,7 +111,7 @@ async def test_get_tracker_client_success(
     tracker = Tracker(
         id=str(uuid.uuid4()),
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="key",
         url="url",
@@ -151,10 +151,10 @@ async def test_get_tracker_client_success(
 
     assert client is not None
     mock_crud_organization.get.assert_called_once_with(
-        db_session, id=organization.id, account_id=test_user.id
+        db_session, id=organization.id, account_id=test_user.account_id
     )
     mock_crud_project.get.assert_called_once_with(
-        db_session, id=project.id, account_id=test_user.id
+        db_session, id=project.id, account_id=test_user.account_id
     )
     mock_create_client.assert_called_once()
 
@@ -183,7 +183,7 @@ async def test_get_tracker_client_project_not_found(
     tracker = Tracker(
         id=str(uuid.uuid4()),
         name="test-tracker",
-        account_id=test_user.id,
+        account_id=test_user.account_id,
         tracker_type="github",
         api_key="key",
         url="url",

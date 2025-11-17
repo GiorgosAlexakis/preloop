@@ -22,6 +22,7 @@ class FlowExecutionLogger:
         self.mcp_usage_logs: List[Dict[str, Any]] = []
         self.actions_taken: List[Dict[str, Any]] = []
         self.milestones: List[Dict[str, Any]] = []
+        self.agent_output_lines: List[str] = []  # Store all agent output for summary
 
     def log_mcp_tool_call(
         self,
@@ -125,6 +126,40 @@ class FlowExecutionLogger:
             List of milestone logs
         """
         return self.milestones
+
+    def log_agent_output(self, line: str):
+        """
+        Log a line of agent output.
+
+        Args:
+            line: A single line of agent stdout/stderr
+        """
+        self.agent_output_lines.append(line)
+
+    def get_agent_output_lines(self) -> List[str]:
+        """
+        Get all agent output lines.
+
+        Returns:
+            List of agent output lines
+        """
+        return self.agent_output_lines
+
+    def get_agent_output_summary(self, tail_lines: int = 50) -> Optional[str]:
+        """
+        Get a summary of the agent output (last N lines).
+
+        Args:
+            tail_lines: Number of last lines to include
+
+        Returns:
+            Combined output string or None if no output
+        """
+        if not self.agent_output_lines:
+            return None
+        # Get the last N lines
+        lines_to_include = self.agent_output_lines[-tail_lines:]
+        return "\n".join(lines_to_include)
 
     def get_summary(self) -> Dict[str, Any]:
         """

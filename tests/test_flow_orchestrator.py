@@ -9,24 +9,39 @@ from sqlalchemy.orm import Session
 from spacebridge.services.flow_orchestrator import FlowExecutionOrchestrator
 from spacebridge.agents.base import AgentStatus, AgentExecutionResult
 from spacemodels.models import Flow, Account
+from spacemodels.models.user import User
 from spacemodels.schemas.flow import FlowCreate
+from spacemodels.crud import crud_account, crud_user
 
 
 @pytest.fixture
 def test_account(db_session: Session) -> Account:
-    """Create a test account."""
-    account = Account(
-        id=str(uuid4()),
-        email=f"orchestrator_test_{uuid4().hex[:8]}@example.com",
-        username=f"orchestrator_test_user_{uuid4().hex[:8]}",
-        full_name="Orchestrator Test User",
-        is_active=True,
-        email_verified=True,
-    )
-    db_session.add(account)
-    db_session.commit()
-    db_session.refresh(account)
+    """Create a test account (organization)."""
+    account_data = {
+        "organization_name": f"Test Org {uuid4().hex[:8]}",
+        "is_active": True,
+    }
+    account = crud_account.create(db_session, obj_in=account_data)
     return account
+
+
+@pytest.fixture
+def test_user(db_session: Session, test_account: Account) -> User:
+    """Create a test user for the account."""
+    user_data = {
+        "account_id": test_account.id,
+        "email": f"orchestrator_test_{uuid4().hex[:8]}@example.com",
+        "username": f"orchestrator_test_user_{uuid4().hex[:8]}",
+        "full_name": "Orchestrator Test User",
+        "is_active": True,
+        "email_verified": True,
+        "hashed_password": "test_password",
+        "user_source": "local",
+    }
+    user = crud_user.create(db_session, obj_in=user_data)
+    db_session.flush()
+    db_session.refresh(user)
+    return user
 
 
 @pytest.fixture
@@ -834,6 +849,14 @@ class TestFlowExecutionOrchestrator:
         mock_executor.start = AsyncMock(return_value="session-123")
         mock_executor.get_status = AsyncMock(side_effect=Exception("Monitoring error"))
         mock_executor.stop = AsyncMock()
+        mock_executor.cleanup = AsyncMock()
+
+        # Mock stream_logs to return empty async iterator
+        async def empty_logs(session_ref):
+            if False:  # Never executes, but makes this an async generator
+                yield
+
+        mock_executor.stream_logs = empty_logs
 
         with patch(
             "spacebridge.services.flow_orchestrator.create_agent_executor",

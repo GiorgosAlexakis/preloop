@@ -11,7 +11,7 @@ from spacebridge.api.auth import get_current_active_user
 from spacebridge.api.endpoints.issues import get_tracker_client
 from spacebridge.schemas.comment import CommentCreate, CommentList, CommentResponse
 from spacemodels.db.session import get_db_session as get_db
-from spacemodels.models.account import Account
+from spacemodels.models.user import User
 from spacebridge.schemas.comment import CommentSearchResults
 
 from spacemodels.crud import (
@@ -27,6 +27,7 @@ from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
+from spacebridge.plugins.proprietary.rbac.permissions import require_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,6 +42,7 @@ crud_tracker = CRUDTracker(Tracker)
 
 
 @router.get("/issues/{issue_id}/comments", response_model=CommentList)
+@require_permission("view_issues")
 async def list_issue_comments(
     issue_id: str,
     organization: str = Query(..., description="Organization identifier"),
@@ -50,7 +52,7 @@ async def list_issue_comments(
     ),
     offset: int = Query(0, ge=0, description="Number of comments to skip"),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> CommentList:
     """Get a list of comments for a specific issue. Requires authentication."""
     try:
@@ -103,13 +105,14 @@ async def list_issue_comments(
 @router.post(
     "/issues/{issue_id}/comments", response_model=CommentResponse, status_code=201
 )
+@require_permission("edit_issues")
 async def add_issue_comment(
     issue_id: str,
     comment: CommentCreate,
     organization: str = Query(..., description="Organization identifier"),
     project: str = Query(..., description="Project identifier"),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> CommentResponse:
     """Add a new comment to a specific issue. Requires authentication."""
     try:
@@ -145,6 +148,7 @@ async def add_issue_comment(
 
 
 @router.get("/comments/search", response_model=CommentSearchResults)
+@require_permission("view_issues")
 async def search_comments(
     query: Optional[str] = Query(
         None, description="Search query text for comment body or vector search"
@@ -170,13 +174,13 @@ async def search_comments(
         None, description="Filter comments by author (username)"
     ),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Search for comments using full-text or similarity search.
     Requires authentication and checks user access to related issues/projects.
     """
-    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+    user_trackers = crud_tracker.get_for_account(db, account_id=current_user.account_id)
     accessible_tracker_ids = [t.id for t in user_trackers]
 
     if not accessible_tracker_ids:
@@ -226,7 +230,7 @@ async def search_comments(
                 limit=limit,
                 project_ids=resolved_project_ids,
                 embedding_type="comment",
-                account_id=current_user.id,
+                account_id=current_user.account_id,
             )
             total_comments = len(similar_comments)
 
@@ -272,11 +276,14 @@ async def search_comments(
             # For full-text, crud_comment.search_full_text expects single ID strings or None
             if author:
                 raw_results = crud_comment.get_multi_by_author(
-                    db, author=author, limit=limit, account_id=current_user.id
+                    db, author=author, limit=limit, account_id=current_user.account_id
                 )
             elif issue_id:
                 raw_results = crud_comment.get_multi_by_issue(
-                    db, issue_id=issue_id, limit=limit, account_id=current_user.id
+                    db,
+                    issue_id=issue_id,
+                    limit=limit,
+                    account_id=current_user.account_id,
                 )
             else:
                 raw_results = []

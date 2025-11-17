@@ -544,6 +544,17 @@ async def receive_webhook(
                     issue_data, project
                 )
 
+            # Extract fields that are NOT part of the Issue model schema
+            # These need to be handled separately or stored in meta_data
+            dependencies = transformed_issue.pop("dependencies", [])
+            comments = transformed_issue.pop("comments", [])
+
+            # Store dependencies in meta_data if present
+            if dependencies and transformed_issue.get("meta_data"):
+                transformed_issue["meta_data"]["dependencies"] = dependencies
+            elif dependencies:
+                transformed_issue["meta_data"] = {"dependencies": dependencies}
+
             existing_issue = crud_issue.get_by_external_id(
                 db,
                 project_id=project.id,
@@ -659,53 +670,110 @@ async def receive_webhook(
             )
 
         db.commit()
+        db_processing_success = True
     except HTTPException as http_exc:
         db.rollback()
+        db_processing_success = False
         logger.error(f"HTTP exception during webhook processing: {http_exc.detail}")
-        raise
+        # Don't raise yet - publish to NATS first
     except Exception as e:
         db.rollback()
+        db_processing_success = False
         logger.error(
             f"Failed to process webhook payload for tracker {resolved_tracker.id}: {e}",
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail="Failed to process webhook payload")
+        # Don't raise yet - publish to NATS first
 
-    # --- 7. Update Timestamp and Publish Event ---
+    # --- 7. Publish Event to NATS (always attempt this, even if DB processing failed) ---
+    # This ensures flows can be triggered even if database operations fail
+    nats_publish_success = False
     try:
-        if organization_context_for_timestamp:  # GH/GL
-            organization_context_for_timestamp.last_webhook_update = datetime.now(
-                timezone.utc
-            )
-            db.add(organization_context_for_timestamp)
-            logger.info(
-                f"Updated last_webhook_update for organization ID {organization_context_for_timestamp.id}"
-            )
-        elif resolved_tracker:  # Jira
-            resolved_tracker.last_updated = datetime.now(
-                timezone.utc
-            )  # Use the general last_updated
-            db.add(resolved_tracker)
-            logger.info(f"Updated last_updated for tracker ID {resolved_tracker.id}")
-        db.commit()
-
-        # Send NATS event
+        logger.info(
+            f"Publishing webhook event to NATS for tracker {resolved_tracker.id}, "
+            f"event_type={actual_event_type}, db_processing_success={db_processing_success}"
+        )
         await task_publisher.publish_task(
             "process_webhook_event",
             tracker_type=tracker_type.lower(),
             event_type=actual_event_type,
             payload=parsed_payload,
-            tracker_id=resolved_tracker.id,
-            organization_id=organization_data.id,
+            tracker_id=str(
+                resolved_tracker.id
+            ),  # Convert UUID to string for JSON serialization
+            organization_id=str(
+                organization_data.id
+            ),  # Convert UUID to string for JSON serialization
+        )
+        nats_publish_success = True
+        logger.info(
+            f"Successfully published webhook event to NATS for tracker {resolved_tracker.id}"
         )
     except Exception as e:
-        db.rollback()
         logger.error(
-            f"Failed to update timestamp or publish task for tracker {resolved_tracker.id} / org: {e}"
+            f"Failed to publish webhook event to NATS for tracker {resolved_tracker.id}: {e}",
+            exc_info=True,
         )
-        # Don't fail the whole request if only timestamp update fails after processing
-        # but log it as a high priority issue.
-        # Consider if this should be a 500 error. For now, let request succeed if NATS part was okay.
+
+    # --- 8. Update Timestamp (best effort, after NATS publish) ---
+    if db_processing_success:
+        try:
+            if organization_context_for_timestamp:  # GH/GL
+                organization_context_for_timestamp.last_webhook_update = datetime.now(
+                    timezone.utc
+                )
+                db.add(organization_context_for_timestamp)
+                logger.info(
+                    f"Updated last_webhook_update for organization ID {organization_context_for_timestamp.id}"
+                )
+            elif resolved_tracker:  # Jira
+                resolved_tracker.last_updated = datetime.now(
+                    timezone.utc
+                )  # Use the general last_updated
+                db.add(resolved_tracker)
+                logger.info(
+                    f"Updated last_updated for tracker ID {resolved_tracker.id}"
+                )
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(
+                f"Failed to update timestamp for tracker {resolved_tracker.id} / org: {e}",
+                exc_info=True,
+            )
+
+    # --- 9. Determine final response status ---
+    # If DB processing failed but NATS succeeded, we consider it a partial success
+    # If both failed, we return an error
+    if not db_processing_success and not nats_publish_success:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process webhook: both database operations and NATS publishing failed",
+        )
+    elif not db_processing_success:
+        # DB failed but NATS succeeded - log warning but return success
+        logger.warning(
+            f"Webhook event published to NATS but database processing failed for tracker {resolved_tracker.id}"
+        )
+        return {
+            "status": "partial_success",
+            "message": "Webhook event published but database processing failed",
+            "tracker_id": resolved_tracker.id,
+            "nats_published": True,
+            "db_processed": False,
+        }
+    elif not nats_publish_success:
+        # DB succeeded but NATS failed - log warning but return success
+        logger.warning(
+            f"Database processing succeeded but NATS publishing failed for tracker {resolved_tracker.id}"
+        )
+        return {
+            "status": "partial_success",
+            "message": "Database processed but NATS publishing failed",
+            "tracker_id": resolved_tracker.id,
+            "nats_published": False,
+            "db_processed": True,
+        }
 
     return {
         "status": "success",

@@ -17,7 +17,7 @@ from spacebridge.schemas.tracker_models import (
     IssueUpdate as TrackerIssueUpdate,
     IssueCreate as TrackerIssueCreate,
 )
-from spacemodels.models.account import Account
+from spacemodels.models.user import User
 
 from spacemodels.crud import (
     CRUDComment,
@@ -35,6 +35,7 @@ from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
 from spacebridge.api.auth import get_current_active_user
+from spacebridge.plugins.proprietary.rbac.permissions import require_permission
 
 
 # Initialize CRUD operations
@@ -87,6 +88,7 @@ router = APIRouter()
 
 
 @router.get("/issues/search", response_model=List[IssueResponse])
+@require_permission("view_issues")
 async def search_issues(
     organization_id: Optional[str] = Query(None, description="Organization ID (UUID)"),
     organization: Optional[str] = Query(None, description="Organization name"),
@@ -117,7 +119,7 @@ async def search_issues(
         None, description="Filter issues updated after this timestamp (ISO 8601 format)"
     ),  # Added
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Search for issues within a project using text query and optional similarity search.
@@ -126,7 +128,9 @@ async def search_issues(
     try:
         # Resolve organization and project using either ID, name, or identifier
 
-        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        user_trackers = crud_tracker.get_for_account(
+            db, account_id=current_user.account_id
+        )
         tracker_ids = [t.id for t in user_trackers]
 
         if not tracker_ids:
@@ -134,20 +138,20 @@ async def search_issues(
 
         # Get Issues linked to the user's trackers using CRUD layer
         issues = crud_issue.get_for_trackers(
-            db, tracker_ids=tracker_ids, account_id=current_user.id
+            db, tracker_ids=tracker_ids, account_id=current_user.account_id
         )
         # Process organization parameters
         org = None
         org_id = None
         if organization_id:
             org = crud_organization.get(
-                db, id=organization_id, account_id=current_user.id
+                db, id=organization_id, account_id=current_user.account_id
             )
             if org:
                 org_id = org.id
         elif organization:
             org = crud_organization.get_by_name(
-                db, name=organization, account_id=current_user.id
+                db, name=organization, account_id=current_user.account_id
             )
             if org:
                 org_id = org.id
@@ -155,13 +159,18 @@ async def search_issues(
         # Process project parameters
         proj = None
         if project_id:
-            proj = crud_project.get(db, id=project_id, account_id=current_user.id)
+            proj = crud_project.get(
+                db, id=project_id, account_id=current_user.account_id
+            )
         elif project:
             # If we have an organization, use it to narrow down the project search
             if org_id:
                 # get_by_name returns Optional[Project] when org_id is specified
                 proj = crud_project.get_by_name(
-                    db, name=project, organization_id=org_id, account_id=current_user.id
+                    db,
+                    name=project,
+                    organization_id=org_id,
+                    account_id=current_user.account_id,
                 )
                 # proj will be None if no project is found by that name in the org
             else:
@@ -171,7 +180,7 @@ async def search_issues(
                 )  # Use warning
                 # Fetch single project by slug/id, returns Project or None
                 project_by_slug_id = crud_project.get_by_slug_or_identifier(
-                    db, slug_or_identifier=project, account_id=current_user.id
+                    db, slug_or_identifier=project, account_id=current_user.account_id
                 )
                 logger.warning(
                     f"API: Found project matching slug/identifier '{project}' globally? {'Yes' if project_by_slug_id else 'No'}"
@@ -179,7 +188,7 @@ async def search_issues(
 
                 # Fetch single project by name, returns Project or None
                 project_by_name = crud_project.get_by_name(
-                    db, name=project, account_id=current_user.id
+                    db, name=project, account_id=current_user.account_id
                 )
                 logger.warning(
                     f"API: Found project matching name '{project}' globally? {'Yes' if project_by_name else 'No'}"
@@ -246,7 +255,7 @@ async def search_issues(
                 f"API: Globally found project '{proj.name}' (ID: {proj.id}). Fetching its organization (ID: {proj.organization_id})."
             )
             org = crud_organization.get(
-                db, id=proj.organization_id, account_id=current_user.id
+                db, id=proj.organization_id, account_id=current_user.account_id
             )
             if not org:
                 # This indicates an orphaned project or data inconsistency
@@ -363,7 +372,7 @@ async def search_issues(
                     score,
                 ) in similar_issues:  # similar_issues already respects limit
                     issue_project = crud_project.get(
-                        db, id=issue.project_id, account_id=current_user.id
+                        db, id=issue.project_id, account_id=current_user.account_id
                     )  # Still need project for response model
                     project_name = issue_project.name if issue_project else None
                     organization_name = None
@@ -371,7 +380,7 @@ async def search_issues(
                         issue_org = crud_organization.get(
                             db,
                             id=issue_project.organization_id,
-                            account_id=current_user.id,
+                            account_id=current_user.account_id,
                         )
                         if issue_org:
                             organization_name = issue_org.name
@@ -409,7 +418,7 @@ async def search_issues(
                             priority=issue.priority,
                             organization=organization_name,
                             project=project_name,
-                            project_id=issue.project_id,
+                            project_id=str(issue.project_id),
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
@@ -499,7 +508,7 @@ async def search_issues(
                 # Convert to IssueResponse
                 for issue in issues_db:
                     issue_project = crud_project.get(
-                        db, id=issue.project_id, account_id=current_user.id
+                        db, id=issue.project_id, account_id=current_user.account_id
                     )
                     project_name = (
                         issue_project.name if issue_project else "Unknown Project"
@@ -509,7 +518,7 @@ async def search_issues(
                         issue_org = crud_organization.get(
                             db,
                             id=issue_project.organization_id,
-                            account_id=current_user.id,
+                            account_id=current_user.account_id,
                         )
                         if issue_org:
                             organization_name = issue_org.name
@@ -549,7 +558,7 @@ async def search_issues(
                             priority=issue.priority,
                             organization=organization_name,
                             project=project_name,
-                            project_id=issue.project_id,
+                            project_id=str(issue.project_id),
                             url=external_url
                             or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
@@ -590,10 +599,11 @@ async def search_issues(
 
 
 @router.post("/issues", response_model=IssueResponse, status_code=201)
+@require_permission("create_issues")
 async def create_issue(
     issue: IssueCreate,  # Use the renamed API schema
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> IssueResponse:
     """Create a new issue in a specified project. Requires authentication and checks user access.
 
@@ -627,7 +637,7 @@ async def create_issue(
         # 1. Try with IDs first if provided
         if issue.organization_id:
             org = crud_organization.get(
-                db, id=issue.organization_id, account_id=current_user.id
+                db, id=issue.organization_id, account_id=current_user.account_id
             )
             if not org:
                 raise HTTPException(
@@ -641,7 +651,9 @@ async def create_issue(
             org_id = org.id
 
         if issue.project_id:
-            proj = crud_project.get(db, id=issue.project_id, account_id=current_user.id)
+            proj = crud_project.get(
+                db, id=issue.project_id, account_id=current_user.account_id
+            )
             if not proj:
                 raise HTTPException(
                     status_code=404,
@@ -660,7 +672,7 @@ async def create_issue(
             # If org wasn't found by ID, infer it from project
             if not org:
                 org = crud_organization.get(
-                    db, id=proj.organization_id, account_id=current_user.id
+                    db, id=proj.organization_id, account_id=current_user.account_id
                 )
                 if not org:  # Should not happen if DB is consistent
                     raise HTTPException(
@@ -680,9 +692,11 @@ async def create_issue(
                 org_input_identifier and not org
             ):  # Org identifier provided, but org not resolved yet
                 org = crud_organization.get_by_identifier(
-                    db, identifier=org_input_identifier, account_id=current_user.id
+                    db,
+                    identifier=org_input_identifier,
+                    account_id=current_user.account_id,
                 ) or crud_organization.get_by_name(
-                    db, name=org_input_identifier, account_id=current_user.id
+                    db, name=org_input_identifier, account_id=current_user.account_id
                 )
                 if not org:
                     raise HTTPException(
@@ -704,7 +718,7 @@ async def create_issue(
                     db,
                     organization_id=org_id,
                     slug_or_identifier=project_input_identifier,
-                    account_id=current_user.id,
+                    account_id=current_user.account_id,
                 )
                 if proj_by_slug and proj_by_slug.is_active:
                     proj = proj_by_slug
@@ -714,7 +728,7 @@ async def create_issue(
                         db,
                         organization_id=org_id,
                         name=project_input_identifier,
-                        account_id=current_user.id,
+                        account_id=current_user.account_id,
                     )
                     if proj_by_name and proj_by_name.is_active:
                         proj = proj_by_name
@@ -732,7 +746,7 @@ async def create_issue(
                     crud_project.get_all_active_by_identifier_or_name_globally(
                         db,
                         identifier_or_name=project_input_identifier,
-                        account_id=current_user.id,
+                        account_id=current_user.account_id,
                     )
                 )
 
@@ -937,12 +951,13 @@ async def create_issue(
 @router.get(
     "/issues/{issue_id:path}", response_model=IssueResponse
 )  # Added response_model
+@require_permission("view_issues")
 def get_issue(
     issue_id: str,  # Issue key, Issue ID or external ID
     organization: Optional[str] = Query(None),
     project: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get details of a specific issue using its external ID."""
     try:
@@ -951,7 +966,9 @@ def get_issue(
 
         issue_id = unquote(issue_id)
 
-        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        user_trackers = crud_tracker.get_for_account(
+            db, account_id=current_user.account_id
+        )
         tracker_ids = [t.id for t in user_trackers]
 
         if not tracker_ids:
@@ -968,12 +985,12 @@ def get_issue(
         # Get the project and organization if project_slug is provided
         if project_slug:
             project_obj = crud_project.get_by_slug_or_identifier(
-                db, slug_or_identifier=project_slug, account_id=current_user.id
+                db, slug_or_identifier=project_slug, account_id=current_user.account_id
             )
             if not project_obj:
                 raise HTTPException(status_code=404, detail="Project not found")
             organization = crud_organization.get(
-                db, id=project_obj.organization_id, account_id=current_user.id
+                db, id=project_obj.organization_id, account_id=current_user.account_id
             )
             if not organization:
                 raise HTTPException(status_code=404, detail="Organization not found")
@@ -993,18 +1010,20 @@ def get_issue(
             tracker_ids=tracker_ids,
             project_id=project_obj.id if project_obj else None,
             alternative_keys=alternative_keys,
-            account_id=current_user.id,
+            account_id=current_user.account_id,
         )
 
         if not issue:
             # Maybe it was the internal ID? Try that as a fallback.
-            issue = crud_issue.get(db, id=issue_id, account_id=current_user.id)
+            issue = crud_issue.get(db, id=issue_id, account_id=current_user.account_id)
             if not issue:
                 raise HTTPException(
                     status_code=404, detail="Issue not found by external or internal ID"
                 )
 
-        project = crud_project.get(db, id=issue.project_id, account_id=current_user.id)
+        project = crud_project.get(
+            db, id=issue.project_id, account_id=current_user.account_id
+        )
         if not project:
             # This indicates data inconsistency if the issue exists but project doesn't
             logger.error(
@@ -1013,7 +1032,7 @@ def get_issue(
             raise HTTPException(status_code=404, detail="Associated project not found")
 
         organization = crud_organization.get(
-            db, id=project.organization_id, account_id=current_user.id
+            db, id=project.organization_id, account_id=current_user.account_id
         )
         if not organization:
             logger.error(
@@ -1040,7 +1059,7 @@ def get_issue(
 
         # Fetch comments for this issue
         comments = crud_comment.get_multi_by_issue(
-            db, issue_id=issue.id, account_id=current_user.id
+            db, issue_id=issue.id, account_id=current_user.account_id
         )
         comments_list = [
             {
@@ -1094,21 +1113,23 @@ def get_issue(
 
 
 @router.get("/issues-count", response_model=Dict[str, int])
+@require_permission("view_issues")
 def get_issue_count(
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get the total number of issues for the current user's account."""
-    count = crud_issue.get_issue_count(db=db, account_id=current_user.id)
+    count = crud_issue.get_issue_count(db=db, account_id=current_user.account_id)
     return {"total_issues": count}
 
 
 @router.put("/issues/{issue_id:path}", response_model=IssueResponse)
+@require_permission("edit_issues")
 async def update_issue(
     issue_id: str,  # Issue key, Issue ID or external ID
     issue_update: IssueUpdate,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Update an existing issue using its internal ID or external key."""
     # URL decode the issue_id in case it's still encoded
@@ -1118,7 +1139,9 @@ async def update_issue(
 
     logger.info(f"Attempting to update issue: {issue_id}")
     try:
-        user_trackers = crud_tracker.get_for_account(db, account_id=current_user.id)
+        user_trackers = crud_tracker.get_for_account(
+            db, account_id=current_user.account_id
+        )
         tracker_ids = [t.id for t in user_trackers]
 
         if not tracker_ids:
@@ -1135,10 +1158,10 @@ async def update_issue(
         # 1. Try internal UUID first
         if len(issue_id) == 36:  # Basic UUID check
             logger.debug(f"Attempting lookup by internal ID: {issue_id}")
-            issue = crud_issue.get(db, id=issue_id, account_id=current_user.id)
+            issue = crud_issue.get(db, id=issue_id, account_id=current_user.account_id)
             if issue and issue.tracker_id not in tracker_ids:
                 logger.warning(
-                    f"Issue {issue_id} found by ID, but tracker {issue.tracker_id} not accessible by user {current_user.id}"
+                    f"Issue {issue_id} found by ID, but tracker {issue.tracker_id} not accessible by user {current_user.account_id}"
                 )
                 issue = None  # Treat as not found if not accessible
 
@@ -1148,7 +1171,7 @@ async def update_issue(
             organization = crud_organization.get_by_name(
                 db,
                 name=issue_update.organization,
-                account_id=current_user.id,
+                account_id=current_user.account_id,
             )
         if issue_update.project:
             if organization:
@@ -1156,13 +1179,13 @@ async def update_issue(
                     db,
                     slug_or_identifier=issue_update.project,
                     organization_id=organization.id,
-                    account_id=current_user.id,
+                    account_id=current_user.account_id,
                 )
             else:
                 project = crud_project.get_by_slug_or_identifier(
                     db,
                     slug_or_identifier=issue_update.project,
-                    account_id=current_user.id,
+                    account_id=current_user.account_id,
                 )
 
         # 2. Try combined key (project_slug#external_id)
@@ -1174,7 +1197,7 @@ async def update_issue(
                 project = crud_project.get_by_slug_or_identifier(
                     db,
                     slug_or_identifier=project_slug_from_key,
-                    account_id=current_user.id,
+                    account_id=current_user.account_id,
                 )
                 if project:
                     # Ensure the project's tracker is accessible
@@ -1191,11 +1214,11 @@ async def update_issue(
                             tracker_ids=tracker_ids,
                             project_id=project.id,
                             alternative_keys=alternative_keys,
-                            account_id=current_user.id,
+                            account_id=current_user.account_id,
                         )
                     else:
                         logger.warning(
-                            f"Project {project_slug_from_key} found, but its tracker {project_for_lookup.tracker_id} not accessible by user {current_user.id}"
+                            f"Project {project_slug_from_key} found, but its tracker {project_for_lookup.tracker_id} not accessible by user {current_user.account_id}"
                         )
                 elif len(project_list) > 1:
                     logger.warning(
@@ -1215,7 +1238,9 @@ async def update_issue(
         ):  # 3. Try constructing combined key (only if project is available)
             logger.debug(f"Attempting lookup by constructing combined key: {issue_id}")
             issue_key = f"{project.slug}#{issue_id}"
-            issue = crud_issue.get_by_key(db, key=issue_key, account_id=current_user.id)
+            issue = crud_issue.get_by_key(
+                db, key=issue_key, account_id=current_user.account_id
+            )
 
         # 4. Try direct external ID
         if not issue:
@@ -1228,12 +1253,12 @@ async def update_issue(
                 tracker_ids=tracker_ids,
                 project_id=project.id if project else None,
                 alternative_keys=[issue_id],
-                account_id=current_user.id,
+                account_id=current_user.account_id,
             )
 
         if not issue:
             logger.warning(
-                f"Issue '{issue_id}' not found or not accessible by user {current_user.id}."
+                f"Issue '{issue_id}' not found or not accessible by user {current_user.account_id}."
             )
             raise HTTPException(
                 status_code=404,
@@ -1245,7 +1270,9 @@ async def update_issue(
         )
 
         # --- Retrieve Project and Organization ---
-        project = crud_project.get(db, id=issue.project_id, account_id=current_user.id)
+        project = crud_project.get(
+            db, id=issue.project_id, account_id=current_user.account_id
+        )
         if not project:
             logger.error(
                 f"Data inconsistency: Project {issue.project_id} not found for issue {issue.id}"
@@ -1256,7 +1283,7 @@ async def update_issue(
             )
 
         organization = crud_organization.get(
-            db, id=project.organization_id, account_id=current_user.id
+            db, id=project.organization_id, account_id=current_user.account_id
         )
         if not organization:
             logger.error(
@@ -1391,11 +1418,11 @@ async def update_issue(
             issue
         )  # Refresh again after potential commit/refresh inside update block
         project = crud_project.get(
-            db, id=issue.project_id, account_id=current_user.id
+            db, id=issue.project_id, account_id=current_user.account_id
         )  # Re-fetch
         organization = (
             crud_organization.get(
-                db, id=project.organization_id, account_id=current_user.id
+                db, id=project.organization_id, account_id=current_user.account_id
             )
             if project
             else None

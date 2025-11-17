@@ -9,7 +9,7 @@ from spacebridge.api.auth import get_current_active_user
 from spacebridge.api.common import get_accessible_projects
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels import models as sm_models
-from spacemodels.models.account import Account
+from spacemodels.models.user import User
 
 from spacemodels.crud import (
     CRUDIssue,
@@ -59,7 +59,7 @@ class SearchResponse(BaseModel):
 async def perform_search(
     query: str,
     db: Session,
-    current_user: Account,
+    current_user: User,
     embedding_type: Optional[str] = None,
     search_type: str = "fulltext",
     limit: int = 10,
@@ -152,7 +152,7 @@ async def perform_search(
             embedding_type=embedding_type,
             sort=sort,  # Pass sort parameter to the CRUD method
             status=status,
-            account_id=current_user.id,
+            account_id=str(current_user.account_id),
         )
 
         # Record usage after successful search
@@ -181,7 +181,7 @@ async def perform_search(
 
         if isinstance(db_obj, sm_models.Issue):
             issue_project = crud_project.get(
-                db, id=db_obj.project_id, account_id=current_user.id
+                db, id=db_obj.project_id, account_id=str(current_user.account_id)
             )  # Still need project for response model
             project_name = issue_project.name if issue_project else None
             project_identifier = (
@@ -194,7 +194,7 @@ async def perform_search(
                 issue_org = crud_organization.get(
                     db,
                     id=issue_project.organization_id,
-                    account_id=current_user.id,
+                    account_id=str(current_user.account_id),
                 )
                 if issue_org:
                     organization_name = issue_org.name
@@ -303,22 +303,29 @@ async def search_all(
         None, description="Filter issues by status ('opened', 'closed', 'all')."
     ),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    return await perform_search(
-        query=query,
-        db=db,
-        current_user=current_user,
-        embedding_type=embedding_type,
-        search_type=search_type,
-        limit=limit,
-        skip=skip,
-        sort=sort,
-        issue_id=issue_id,
-        project_id=project_id,
-        project=project,
-        organization_id=organization_id,
-        organization=organization,
-        author=author,
-        status=status,
-    )
+    try:
+        logger.info(
+            f"Search request: query='{query}', search_type={search_type}, embedding_type={embedding_type}, limit={limit}"
+        )
+        return await perform_search(
+            query=query,
+            db=db,
+            current_user=current_user,
+            embedding_type=embedding_type,
+            search_type=search_type,
+            limit=limit,
+            skip=skip,
+            sort=sort,
+            issue_id=issue_id,
+            project_id=project_id,
+            project=project,
+            organization_id=organization_id,
+            organization=organization,
+            author=author,
+            status=status,
+        )
+    except Exception as e:
+        logger.error(f"Error in search endpoint: {e}", exc_info=True)
+        raise

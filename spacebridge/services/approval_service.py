@@ -3,6 +3,7 @@
 import asyncio
 import json
 import uuid
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from urllib.parse import urljoin
@@ -15,6 +16,9 @@ from spacemodels.schemas.approval_request import (
     ApprovalRequestUpdate,
 )
 from spacemodels.crud.approval_request import get_approval_request_async
+from spacesync.services.event_bus import get_task_publisher
+
+logger = logging.getLogger(__name__)
 
 
 class ApprovalService:
@@ -29,6 +33,49 @@ class ApprovalService:
         """
         self.db = db
         self.base_url = base_url
+
+    async def _broadcast_approval_update(
+        self, approval_request: ApprovalRequest, event_type: str
+    ):
+        """Broadcast approval request update via NATS/WebSocket.
+
+        Args:
+            approval_request: The approval request
+            event_type: Type of event (created, approved, declined, expired)
+        """
+        try:
+            task_publisher = await get_task_publisher()
+            if not task_publisher or not task_publisher.nc:
+                logger.warning("NATS not available for broadcasting approval update")
+                return
+
+            # Prepare update message
+            update_data = {
+                "type": f"approval_{event_type}",
+                "approval_request_id": str(approval_request.id),
+                "account_id": str(approval_request.account_id),
+                "execution_id": approval_request.execution_id,
+                "tool_name": approval_request.tool_name,
+                "status": approval_request.status,
+                "requested_at": approval_request.requested_at.isoformat(),
+                "resolved_at": (
+                    approval_request.resolved_at.isoformat()
+                    if approval_request.resolved_at
+                    else None
+                ),
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+            # Publish to NATS subject for approval updates
+            subject = "approval-updates"
+            await task_publisher.nc.publish(subject, json.dumps(update_data).encode())
+
+            logger.info(
+                f"Broadcasted approval {event_type} for request {approval_request.id}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to broadcast approval update: {e}", exc_info=True)
 
     async def create_approval_request(
         self,
@@ -78,6 +125,9 @@ class ApprovalService:
         self.db.add(approval_request)
         await self.db.commit()
         await self.db.refresh(approval_request)
+
+        # Broadcast creation event
+        await self._broadcast_approval_update(approval_request, "created")
 
         return approval_request
 
@@ -136,7 +186,13 @@ class ApprovalService:
             approver_comment=comment,
             resolved_at=datetime.utcnow(),
         )
-        return await self.update_approval_request(request_id, update)
+        updated_request = await self.update_approval_request(request_id, update)
+
+        # Broadcast approval event
+        if updated_request:
+            await self._broadcast_approval_update(updated_request, "approved")
+
+        return updated_request
 
     async def decline_request(
         self, request_id: uuid.UUID, comment: Optional[str] = None
@@ -155,7 +211,13 @@ class ApprovalService:
             approver_comment=comment,
             resolved_at=datetime.utcnow(),
         )
-        return await self.update_approval_request(request_id, update)
+        updated_request = await self.update_approval_request(request_id, update)
+
+        # Broadcast decline event
+        if updated_request:
+            await self._broadcast_approval_update(updated_request, "declined")
+
+        return updated_request
 
     async def post_webhook_notification(
         self, approval_request: ApprovalRequest, approval_policy: ApprovalPolicy
@@ -328,7 +390,7 @@ class ApprovalService:
         agent_reasoning: Optional[str] = None,
         execution_id: Optional[str] = None,
     ) -> ApprovalRequest:
-        """Create approval request and send webhook notification.
+        """Create approval request and send notifications through configured channels.
 
         Args:
             account_id: The account creating the request
@@ -354,12 +416,167 @@ class ApprovalService:
             timeout_seconds=approval_policy.timeout_seconds,
         )
 
-        # Post webhook notification (don't await - fire and forget)
-        asyncio.create_task(
-            self.post_webhook_notification(approval_request, approval_policy)
-        )
+        # Send notifications through configured channels
+        await self.send_notifications(approval_request, approval_policy)
 
         return approval_request
+
+    async def send_notifications(
+        self,
+        approval_request: ApprovalRequest,
+        approval_policy: ApprovalPolicy,
+    ) -> Dict[str, Any]:
+        """Send notifications for an approval request through configured channels.
+
+        Args:
+            approval_request: The approval request to notify about
+            approval_policy: The approval policy with notification configuration
+
+        Returns:
+            Dict with results per notification channel
+        """
+        results = {}
+
+        # Get notification channels from policy (default to ["email"] for standard type)
+        notification_channels = approval_policy.notification_channels or []
+
+        # If no channels specified and it's a "standard" type, default to email
+        if not notification_channels and approval_policy.approval_type == "standard":
+            notification_channels = ["email"]
+            logger.info(
+                "No notification_channels specified for 'standard' approval type, defaulting to email"
+            )
+
+        # Route notifications to appropriate channels
+        for channel in notification_channels:
+            try:
+                if channel == "email":
+                    result = await self._send_email_notification(
+                        approval_request, approval_policy
+                    )
+                    results["email"] = result
+
+                elif channel == "mobile_push":
+                    result = await self._send_push_notification(
+                        approval_request, approval_policy
+                    )
+                    results["mobile_push"] = result
+
+                elif channel in ["slack", "mattermost", "webhook"]:
+                    # Use existing webhook notification for slack/mattermost/webhook
+                    result = await self.post_webhook_notification(
+                        approval_request, approval_policy
+                    )
+                    results[channel] = {"success": result}
+
+                else:
+                    logger.warning(f"Unknown notification channel: {channel}")
+                    results[channel] = {
+                        "success": False,
+                        "error": f"Unknown channel: {channel}",
+                    }
+
+            except Exception as e:
+                logger.error(f"Failed to send {channel} notification: {str(e)}")
+                results[channel] = {"success": False, "error": str(e)}
+
+        return results
+
+    async def _send_email_notification(
+        self,
+        approval_request: ApprovalRequest,
+        approval_policy: ApprovalPolicy,
+    ) -> Dict[str, Any]:
+        """Send email notification for approval request.
+
+        Args:
+            approval_request: The approval request
+            approval_policy: The approval policy
+
+        Returns:
+            Dict with send result
+        """
+        from spacebridge.utils.email import send_approval_request_email
+        from spacemodels.models.user import User
+        from sqlalchemy import select
+
+        # Get approver user IDs from policy
+        approver_user_ids = approval_policy.approver_user_ids or []
+
+        if not approver_user_ids:
+            logger.warning(
+                f"No approver_user_ids configured for approval policy {approval_policy.id}"
+            )
+            return {"success": False, "error": "No approvers configured"}
+
+        # Send email to each approver
+        sent_count = 0
+        failed_count = 0
+
+        for user_id in approver_user_ids:
+            try:
+                # Get user email using async query
+                result = await self.db.execute(select(User).where(User.id == user_id))
+                user = result.scalar_one_or_none()
+
+                if not user or not user.email:
+                    logger.warning(f"User {user_id} not found or has no email")
+                    failed_count += 1
+                    continue
+
+                # Generate approval URL with token
+                token = approval_request.approval_token
+                approval_url = (
+                    f"{self.base_url}/approval/{approval_request.id}?token={token}"
+                )
+
+                # Send email
+                await send_approval_request_email(
+                    user_email=user.email,
+                    tool_name=approval_request.tool_name,
+                    tool_args=approval_request.tool_args,
+                    approval_url=approval_url,
+                    agent_reasoning=approval_request.agent_reasoning,
+                )
+
+                sent_count += 1
+                logger.info(f"Sent approval email to {user.email}")
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to send email to user {user_id}: {str(e)}", exc_info=True
+                )
+                failed_count += 1
+
+        return {
+            "success": failed_count == 0,
+            "sent": sent_count,
+            "failed": failed_count,
+        }
+
+    async def _send_push_notification(
+        self,
+        approval_request: ApprovalRequest,
+        approval_policy: ApprovalPolicy,
+    ) -> Dict[str, Any]:
+        """Send mobile push notification for approval request.
+
+        Args:
+            approval_request: The approval request
+            approval_policy: The approval policy
+
+        Returns:
+            Dict with send result
+        """
+        # TODO: Implement push notification via FCM/APNS
+        logger.info(
+            f"Would send push notification for approval request {approval_request.id}"
+        )
+
+        return {
+            "success": True,
+            "note": "Push notifications not yet implemented",
+        }
 
     async def wait_for_approval(
         self, request_id: uuid.UUID, poll_interval: float = 1.0
@@ -394,9 +611,13 @@ class ApprovalService:
                 and datetime.utcnow() > approval_request.expires_at
             ):
                 # Mark as expired
-                await self.update_approval_request(
+                expired_request = await self.update_approval_request(
                     request_id, ApprovalRequestUpdate(status="expired")
                 )
+                # Broadcast expiration event
+                if expired_request:
+                    await self._broadcast_approval_update(expired_request, "expired")
+
                 raise TimeoutError(
                     f"Approval request {request_id} expired without response"
                 )

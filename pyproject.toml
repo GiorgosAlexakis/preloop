@@ -9,6 +9,7 @@ description = "REST API server for issue tracker management"
 authors = [{name = "Dimitris Moraitis", email = "dimitris@spacecode.ai"}, {name = "Yannis Chatzikonstantinou", email = "yannis@spacecode.ai"}]
 requires-python = ">=3.10"
 dependencies = [
+    "anthropic>=0.72.0",
     "uvicorn[standard]>=0.36.0",
     "fastapi>=0.115.13",
     "sqlalchemy>=2.0.0",
@@ -32,9 +33,10 @@ dependencies = [
     "pyinstrument>=4.6.2",
     "nats-py>=2.6.0", # Added for NATS integration
     "stripe>=12.4.0",
-    "fastmcp>=0.1.0",
+    "fastmcp>=2.13.0",  # Version 2.13.0+ required for context parameter in _list_tools
     "aiodocker>=0.21.0", # Added for agent container execution
     "kubernetes_asyncio>=30.5.0", # Added for Kubernetes agent execution
+    "cel-python>=0.1.0", # Added for CEL expression evaluation in approval rules
     # Using SpaceModels for database models and operations
     # "spacemodels @ file://${PROJECT_ROOT}/SpaceModels",
     # "spacesync @ file://${PROJECT_ROOT}/spacesync",
@@ -63,6 +65,10 @@ dev = [
     "httpx>=0.24.1",
     "playwright>=1.30.0",
     "mcp>=1.0.0",  # MCP client for integration tests
+]
+ai-providers = [
+    "anthropic>=0.39.0",  # For Anthropic Claude API key validation
+    "google-generativeai>=0.8.0",  # For Google Gemini API key validation
 ]
 
 [tool.black]

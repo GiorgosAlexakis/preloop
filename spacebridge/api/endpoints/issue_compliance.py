@@ -9,8 +9,6 @@ import openai
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from spacebridge.services.billing import BillingService
-from spacebridge.api.endpoints.billing import get_billing_service
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.config import get_settings, Settings
 from spacebridge.schemas.issue import IssueResponse, IssueUpdate
@@ -34,6 +32,7 @@ from spacemodels.crud import (
 from spacemodels.crud.issue_duplicate import crud_issue_duplicate
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.models.account import Account
+from spacemodels.models.user import User
 from spacemodels.models.issue import Issue
 from spacemodels.models.issue_compliance_result import IssueComplianceResult
 from spacemodels.models.ai_model import AIModel
@@ -73,7 +72,6 @@ def _calculate_issue_compliance(
     db: Session,
     current_user: Account,
     settings: Settings,
-    billing_service: BillingService,
 ) -> IssueComplianceResultResponse:
     """Get or calculate the compliance result for a given issue."""
 
@@ -88,20 +86,20 @@ def _calculate_issue_compliance(
     prompt_template = ComplianceWorkflow(**prompt_data)
 
     existing_result = crud_issue_compliance_result.get_by_issue_id_and_prompt_id(
-        db, issue_id=issue_id, prompt_id=prompt_name, account_id=current_user.id
+        db, issue_id=issue_id, prompt_id=prompt_name, account_id=current_user.account_id
     )
     if existing_result:
         existing_result.short_name = prompt_template.short_name
         return existing_result
 
-    issue = crud_issue.get(db, id=issue_id, account_id=current_user.id)
+    issue = crud_issue.get(db, id=issue_id, account_id=current_user.account_id)
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
     project = crud_project.get(db, id=issue.project_id)
 
     default_model = crud_ai_model.get_default_active_model(
-        db, account_id=current_user.id
+        db, account_id=current_user.account_id
     )
     if not default_model:
         raise HTTPException(
@@ -138,7 +136,6 @@ def _calculate_issue_compliance(
             messages=messages,
             response_format={"type": "json_object"},
         )
-        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         llm_response_text = response.choices[0].message.content.strip()
 
         response_obj = json.loads(llm_response_text)
@@ -182,9 +179,8 @@ def get_issue_compliance(
     issue_id: str,
     prompt_name: str,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     settings: Settings = Depends(get_settings),
-    billing_service: BillingService = Depends(get_billing_service),
 ):
     """Get or calculate the compliance result for a given issue."""
     return _calculate_issue_compliance(
@@ -193,7 +189,6 @@ def get_issue_compliance(
         db=db,
         current_user=current_user,
         settings=settings,
-        billing_service=billing_service,
     )
 
 
@@ -205,9 +200,8 @@ def get_compliance_improvement_suggestion(
     issue_id: str,
     prompt_name: str,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     settings: Settings = Depends(get_settings),
-    billing_service: BillingService = Depends(get_billing_service),
 ):
     """Generate a compliance improvement suggestion for a given issue."""
     compliance_result = _calculate_issue_compliance(
@@ -216,7 +210,6 @@ def get_compliance_improvement_suggestion(
         db=db,
         current_user=current_user,
         settings=settings,
-        billing_service=billing_service,
     )
 
     issue = crud_issue.get(db, id=issue_id)
@@ -229,12 +222,12 @@ def get_compliance_improvement_suggestion(
     if (
         not organization
         or not organization.tracker
-        or organization.tracker.account_id != current_user.id
+        or organization.tracker.account_id != current_user.account_id
     ):
         raise HTTPException(status_code=403, detail="Access denied")
 
     default_model = crud_ai_model.get_default_active_model(
-        db, account_id=current_user.id
+        db, account_id=current_user.account_id
     )
     if not default_model:
         logger.error("No default active AI model configured.")
@@ -284,7 +277,6 @@ def get_compliance_improvement_suggestion(
             ],
             response_format={"type": "json_object"},
         )
-        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         suggestion_data = json.loads(llm_response.choices[0].message.content)
         return ComplianceSuggestionResponse(**suggestion_data)
 
@@ -302,7 +294,7 @@ async def update_issue_content(
     issue_id: str,
     issue_update: IssueUpdate,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Update the title and description of an issue and sync to tracker."""
     # Delete any existing compliance results for this issue

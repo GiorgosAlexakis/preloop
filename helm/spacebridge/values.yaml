@@ -27,6 +27,38 @@ spacelit:
   tag: "latest"
   pullPolicy: Always
 
+# Preloop configuration (separate brand deployment)
+preloop:
+  # Set to true to deploy Preloop brand alongside SpaceBridge
+  enabled: false
+  repository: registry.spacecode.ai/spacecode/spacelit/preloop
+  tag: "latest"
+  pullPolicy: Always
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      # Required for MCP StreamableHTTP (SSE) support
+      nginx.ingress.kubernetes.io/proxy-buffering: "off"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+      nginx.ingress.kubernetes.io/connection-proxy-header: "keep-alive"
+      nginx.ingress.kubernetes.io/chunked-transfer-encoding: "true"
+    host: preloop.ai
+    hosts:
+      - host: preloop.ai
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls:
+      - secretName: preloop-tls
+        hosts:
+          - preloop.ai
+          - www.preloop.ai
+
 # Image pull secrets
 imagePullSecrets:
   - name: registry-secret
@@ -101,6 +133,7 @@ affinity: {}
 # Environment configuration
 environment:
   spacebridgeUrl: "https://spacebridge.io"
+  preloopUrl: "https://preloop.ai"
   debug: false
   # Database settings
   databaseUrl: ""
@@ -121,7 +154,7 @@ config:
     username: ""
     password: ""
     from: ""
-    fromName: "SpaceBridge"
+    fromName: "Preloop AI"
 
 # Database configuration
 database:

@@ -7,8 +7,6 @@ import os
 import json
 from datetime import datetime, UTC
 
-from spacebridge.services.billing import BillingService
-from spacebridge.api.endpoints.billing import get_billing_service
 from spacebridge.schemas.issue_duplicate import (
     IssueDuplicate as IssueDuplicateSchema,
     IssueDuplicateSuggestionRequest,
@@ -40,7 +38,8 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateUpdate,
     IssueDuplicate,
 )
-from spacemodels.models.account import Account  # Import Account model
+from spacemodels.models.account import Account
+from spacemodels.models.user import User  # Import Account model
 from spacemodels.models.project import Project
 from spacemodels.models.issue import Issue
 
@@ -67,13 +66,17 @@ def get_duplicate_issues(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
     Retrieve confirmed duplicate issues.
     """
     duplicates = crud_issue_duplicate.get_multi(
-        db, skip=skip, limit=limit, decision="duplicate", account_id=current_user.id
+        db,
+        skip=skip,
+        limit=limit,
+        decision="duplicate",
+        account_id=current_user.account_id,
     )
     return duplicates
 
@@ -88,15 +91,14 @@ def check_or_create_issue_duplicate(
     db: Session = Depends(get_db),
     issue1_id: str,
     issue2_id: str,
-    current_user: Account = Depends(get_current_active_user),
-    billing_service: BillingService = Depends(get_billing_service),
+    current_user: User = Depends(get_current_active_user),
     settings: Settings = Depends(get_settings),
 ) -> Any:
     if issue1_id == issue2_id:
         raise HTTPException(status_code=400, detail="Issue IDs cannot be the same.")
 
     existing_duplicate = crud_issue_duplicate.get_by_issue_ids(
-        db, issue1_id=issue1_id, issue2_id=issue2_id, account_id=current_user.id
+        db, issue1_id=issue1_id, issue2_id=issue2_id, account_id=current_user.account_id
     )
     if existing_duplicate:
         logger.info(
@@ -108,8 +110,8 @@ def check_or_create_issue_duplicate(
         f"No existing duplicate entry for issues {issue1_id} and {issue2_id}. Proceeding with AI model analysis."
     )
 
-    issue1 = crud_issue.get(db, id=issue1_id, account_id=current_user.id)
-    issue2 = crud_issue.get(db, id=issue2_id, account_id=current_user.id)
+    issue1 = crud_issue.get(db, id=issue1_id, account_id=current_user.account_id)
+    issue2 = crud_issue.get(db, id=issue2_id, account_id=current_user.account_id)
 
     if not issue1 or not issue2:
         missing_ids_str = []
@@ -122,7 +124,7 @@ def check_or_create_issue_duplicate(
         raise HTTPException(status_code=404, detail=detail)
 
     default_model = crud_ai_model.get_default_active_model(
-        db, account_id=current_user.id
+        db, account_id=current_user.account_id
     )
     if not default_model:
         logger.error("No default active AI model configured.")
@@ -180,7 +182,6 @@ def check_or_create_issue_duplicate(
             messages=messages,
             response_format={"type": "json_object"},
         )
-        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         llm_response_text = response.choices[0].message.content.strip()
         logger.info(
             f"AI model response for issues {issue1_id}, {issue2_id}: '{llm_response_text}'"
@@ -245,14 +246,14 @@ def check_or_create_issue_duplicate(
 def propose_issue_duplicate_resolution(
     resolution: IssueDuplicateSuggestionRequest,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Propose a resolution for an issue duplicate."""
     existing_duplicate = crud_issue_duplicate.get_by_issue_ids(
         db,
         issue1_id=resolution.issue1_id,
         issue2_id=resolution.issue2_id,
-        account_id=current_user.id,
+        account_id=current_user.account_id,
     )
     if not existing_duplicate:
         raise HTTPException(status_code=404, detail="Duplicate entry not found.")
@@ -280,7 +281,7 @@ def propose_issue_duplicate_resolution(
                 detail="Merge resolution requires resulting_issue1_id, merged_title, and merged_description.",
             )
         issue_to_update = crud_issue.get(
-            db=db, id=resolution.resulting_issue1_id, account_id=current_user.id
+            db=db, id=resolution.resulting_issue1_id, account_id=current_user.account_id
         )
         if not issue_to_update:
             raise HTTPException(status_code=404, detail="Resulting issue not found.")
@@ -305,10 +306,10 @@ def propose_issue_duplicate_resolution(
             )
 
         issue1_to_update = crud_issue.get(
-            db=db, id=resolution.issue1_id, account_id=current_user.id
+            db=db, id=resolution.issue1_id, account_id=current_user.account_id
         )
         issue2_to_update = crud_issue.get(
-            db=db, id=resolution.issue2_id, account_id=current_user.id
+            db=db, id=resolution.issue2_id, account_id=current_user.account_id
         )
         if not issue1_to_update or not issue2_to_update:
             raise HTTPException(status_code=404, detail="One or both issues not found.")
@@ -346,11 +347,15 @@ def propose_issue_duplicate_resolution(
 async def execute_issue_duplicate_resolution(
     resolution: IssueDuplicateResolutionRequest,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Execute the resolution for a pair of duplicate issues."""
-    issue_a = crud_issue.get(db=db, id=resolution.issue1_id, account_id=current_user.id)
-    issue_b = crud_issue.get(db=db, id=resolution.issue2_id, account_id=current_user.id)
+    issue_a = crud_issue.get(
+        db=db, id=resolution.issue1_id, account_id=current_user.account_id
+    )
+    issue_b = crud_issue.get(
+        db=db, id=resolution.issue2_id, account_id=current_user.account_id
+    )
 
     if not issue_a or not issue_b:
         raise HTTPException(status_code=404, detail="One or both issues not found")
@@ -484,7 +489,10 @@ async def execute_issue_duplicate_resolution(
 
     # Update the issue_duplicate record
     duplicate_record = crud_issue_duplicate.get_by_issue_ids(
-        db=db, issue1_id=issue_a.id, issue2_id=issue_b.id, account_id=current_user.id
+        db=db,
+        issue1_id=issue_a.id,
+        issue2_id=issue_b.id,
+        account_id=current_user.account_id,
     )
     if duplicate_record:
         update_data = IssueDuplicateUpdate(
@@ -542,7 +550,7 @@ def _find_issue_duplicates_logic(
             project_id=project.id,
             status=status if status and status != "all" else None,
             limit=max_issues_per_project,
-            account_id=current_user.id,
+            account_id=current_user.account_id,
         )
 
         for issue in project_issues:
@@ -579,7 +587,7 @@ def _find_issue_duplicates_logic(
                         embedding_type="issue",
                         similarity=similarity_threshold,
                         status=status if status and status != "all" else None,
-                        account_id=current_user.id,
+                        account_id=current_user.account_id,
                     )
                 )
             except Exception as e:
@@ -604,7 +612,7 @@ def _find_issue_duplicates_logic(
                             db,
                             issue1_id=id1_str,
                             issue2_id=id2_str,
-                            account_id=current_user.id,
+                            account_id=current_user.account_id,
                         )
                     except Exception as e:
                         logger.error(f"Failed to get duplicate record: {e}")
@@ -688,7 +696,7 @@ def _find_issue_duplicates_logic(
 
     all_duplicates_pairs.sort(key=lambda x: x.similarity, reverse=True)
     paginated_duplicates = all_duplicates_pairs[skip : skip + limit]
-    return paginated_duplicates, model.id
+    return paginated_duplicates, str(model.id)
 
 
 @router.get("/issue-duplicates", response_model=ProjectDuplicatesResponse)
@@ -727,7 +735,7 @@ def find_issue_duplicates(
         "all", description="Filter by resolution status."
     ),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Finds potential duplicate issues within specified projects.
@@ -770,7 +778,7 @@ def get_projects_duplicate_stats(
     ),
     status: Optional[str] = Query(None, description="Filter issues by status."),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Get statistics about duplicate issues for specified projects.
@@ -782,7 +790,7 @@ def get_projects_duplicate_stats(
     issue_counts = crud_issue.get_issue_counts_per_project(
         db,
         project_ids=[str(p.id) for p in accessible_projects],
-        account_id=current_user.id,
+        account_id=current_user.account_id,
     )
 
     duplicate_issue_list, _ = _find_issue_duplicates_logic(
@@ -797,15 +805,16 @@ def get_projects_duplicate_stats(
     )
 
     stats: Dict[str, IssueDuplicateProjectStats] = {
-        project.id: IssueDuplicateProjectStats(
+        str(project.id): IssueDuplicateProjectStats(
             project_id=project.id, project_name=project.name, total=0, duplicates=0
         )
         for project in accessible_projects
     }
 
     for pid, data in issue_counts.items():
-        if pid in stats:
-            stats[pid].total = data.get("total", 0)
+        pid_str = str(pid)
+        if pid_str in stats:
+            stats[pid_str].total = data.get("total", 0)
 
     # Since a duplicate pair contains two issues, we need to count unique issues involved
     duplicate_issues_per_project = {p.id: set() for p in accessible_projects}
@@ -814,7 +823,8 @@ def get_projects_duplicate_stats(
         duplicate_issues_per_project[pair.issue2.project_id].add(pair.issue2.id)
 
     for pid, issues in duplicate_issues_per_project.items():
-        stats[pid].duplicates = len(issues)
+        pid_str = str(pid)
+        stats[pid_str].duplicates = len(issues)
 
     return IssueDuplicateStats(projects=stats)
 
@@ -822,11 +832,10 @@ def get_projects_duplicate_stats(
 @router.post("/ai-suggestion", response_model=IssueDuplicateSuggestionResponse)
 def get_resolution_suggestion(
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     issue1_id: str = Body(...),
     issue2_id: str = Body(...),
     resolution: str = Body(...),
-    billing_service: BillingService = Depends(get_billing_service),
     settings: Settings = Depends(get_settings),
 ):
     """Generate a suggestion for resolving a duplicate issue pair."""
@@ -846,7 +855,7 @@ def get_resolution_suggestion(
         )
 
     default_model = crud_ai_model.get_default_active_model(
-        db, account_id=current_user.id
+        db, account_id=current_user.account_id
     )
     if not default_model:
         raise HTTPException(
@@ -892,7 +901,6 @@ def get_resolution_suggestion(
             ],
             response_format={"type": "json_object"},
         )
-        billing_service.record_usage(account_id=current_user.id, metric="ai_calls")
         suggestion_data = json.loads(llm_response.choices[0].message.content)
 
         # Ensure 'explanation' is present, providing a default if it's missing.

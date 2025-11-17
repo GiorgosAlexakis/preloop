@@ -2,7 +2,7 @@
 
 ## System Overview
 
-SpaceBridge is an AI-driven platform designed to enhance product development by deeply integrating with issue tracking systems. It provides a modular, scalable RESTful API that ingests issues, comments, and documentation from multiple platforms like Jira, GitHub, and GitLab. By leveraging vector-based similarity search, SpaceBridge detects duplicate issues, evaluates compliance metrics, and offers intelligent suggestions to streamline workflows. The architecture emphasizes flexibility, performance, and ease of integration, providing access via a REST API, a web UI, and an MCP server for various clients.
+SpaceBridge is a responsible AI automation platform. It can proxy tools from MCP servers, optionally adding a human approval layer with fine grained policies. It provides event driver agentic flows to intelligently automate common tasks using any agent framework like Claude Code, Codex CLI, Aider or OpenHands. It integrates with issue & code tracking systems like Jira, GitHub, GitLab, both for listening to events and for ingesting issues, comments, documentation and code. By leveraging vector-based similarity search, SpaceBridge detects duplicate and overlapping issues, detects unmapped dependencies, evaluates compliance metrics, and offers intelligent suggestions to streamline workflows. The architecture emphasizes flexibility, performance, and ease of integration, providing access via a REST API, a web UI, and an MCP server for various clients.
 
 ## High-Level Architecture
 
@@ -271,7 +271,7 @@ The `SpaceLit` application is structured around a component-based architecture.
 3.  **SpaceModels:** Interacts with the PostgreSQL database to persist changes.
 
 ### MCP Flow (Integrated HTTP)
-1.  **MCP Client Request:** An MCP client (e.g., Claude Code) sends a tool request as an HTTP POST to the relevant endpoint (e.g., `/api/v1/mcp/search`). The request includes the standard MCP JSON payload and an `Authorization: Bearer <token>` header.
+1.  **MCP Client Request:** An MCP client (e.g., Claude Code) sends a tool request using streamable HTTP transport to the MCP server (e.g., `/mcp/v1`). The request includes the standard MCP payload and an `Authorization: Bearer <token>` header.
 2.  **SpaceBridge API Server:**
     *   Authenticates the request using the JWT token.
     *   Routes the request to the appropriate MCP tool endpoint.
@@ -293,13 +293,6 @@ The detailed schema is defined using SQLAlchemy models within the `SpaceModels` 
 
 Schema migrations are managed using Alembic within `SpaceModels`.
 
-## Integration with Existing Spacecode Infrastructure
-
-- [ ] Authentication integration with Spacecode SSO
-- [ ] Permission synchronization with central user management
-- [ ] Event publishing to message bus for cross-service coordination
-- [ ] Integration with Spacecode logging and monitoring systems
-
 ## Technical Decisions
 
 ### REST API Implementation
@@ -318,7 +311,7 @@ The MCP server is implemented directly within the FastAPI application using a cu
 - **Code Reusability:** Directly calls internal services and CRUD operations, reducing code duplication.
 - **Scalability:** Benefits from the same deployment and scaling infrastructure as the main API.
 
-#### Dynamic Tool Filtering (Phase 1A)
+#### Dynamic Tool Filtering
 The MCP server implements per-user dynamic tool filtering using `DynamicFastMCP`, a custom subclass of FastMCP:
 
 **Implementation Details:**
@@ -331,7 +324,7 @@ The MCP server implements per-user dynamic tool filtering using `DynamicFastMCP`
 - **Endpoint:** Mounted at `/mcp/v1` with full authentication and lifespan management
 
 **Tool Registration:**
-All default tools are registered in `spacebridge/services/initialize_mcp.py` using FastMCP's `@mcp.tool()` decorator, then filtered at runtime based on user context.
+All built-in tools are registered in `spacebridge/services/initialize_mcp.py` using FastMCP's `@mcp.tool()` decorator, then filtered at runtime based on user context.
 
 **Benefits:**
 - Zero performance overhead for tool registration (happens once at startup)
@@ -453,29 +446,70 @@ Python is chosen as the primary language due to its strong ecosystem for machine
 ### Database
 PostgreSQL with the PGVector extension is used. The `SpaceModels` submodule encapsulates all database interaction logic, providing a clean separation from the API and synchronization services. This allows for centralized data management and schema evolution.
 
-### Authentication
-A JWT-based authentication system is implemented for the REST API, with integration points for existing Spacecode authentication services. This allows for flexible identity management while maintaining security.
+### Authentication & Authorization
+
+SpaceBridge implements a comprehensive multi-user authentication and authorization system:
+
+**Authentication:**
+- JWT-based authentication for REST API and MCP endpoints
+- Token-based authentication with refresh token support
+- Email verification for new user accounts
+- Integration points for SSO and OAuth providers (future)
+
+**Multi-User Architecture:**
+- **Account Model:** Represents an organization/company (the billing entity)
+- **User Model:** Represents individual users within an account
+- **Team Model:** Groups of users within an account for collaboration
+- All data is scoped by `account_id` for multi-tenancy isolation
+
+**Authorization (RBAC Plugin):**
+SpaceBridge includes a proprietary Role-Based Access Control (RBAC) plugin that provides enterprise-grade permission enforcement:
+
+- **7 System Roles:** Owner, Admin, Editor, Executor, Tracker Manager, Analyst, Viewer
+- **32 Permissions:** Granular permissions across 8 categories (Issues, Projects, Trackers, Teams, Users, AI Models, Flows, Webhooks)
+- **Plugin Architecture:** RBAC is implemented as a proprietary plugin in `spacebridge/plugins/proprietary/rbac/`
+- **Permission Decorators:**
+  - `@require_permission(permission_name)` - Require specific permission
+  - `@require_any_permission(*permissions)` - Require any one of multiple permissions
+  - `@require_all_permissions(*permissions)` - Require all specified permissions
+- **Permission Checking:** `has_permission(user, permission_name, db)` function for programmatic checks
+- **Owner Role:** Automatically has all permissions
+- **Multi-Role Support:** Users can have multiple roles with combined permissions
+
+**Plugin System:**
+- Extensible plugin architecture in `spacebridge/plugins/`
+- Plugins can provide services, API routes, middleware, and dependencies
+- Built-in plugins: Argument-based condition evaluator for approval workflows
+- Proprietary plugins: RBAC (permission enforcement)
+- Plugin discovery via module paths or file system paths
+- Lifecycle hooks: `on_startup()` and `on_shutdown()`
+
+**Security Features:**
+- Password hashing with industry-standard algorithms
+- Role assignment and permission checks on all protected endpoints
+- Account-level data isolation (all queries filtered by `account_id`)
+- User invitation system with secure token-based email verification
+- Audit logging for security-sensitive operations (future enhancement)
 
 ### Deployment
 The system is designed to be containerized using Docker, enabling easy deployment in various environments including Kubernetes clusters. Stateless components enable horizontal scaling under load.
 
 ## Security Considerations
 
-- [ ] All API requests authenticated and authorized
-- [ ] Issue tracker credentials encrypted at rest
+- [x] All API requests authenticated via JWT tokens
+- [x] Role-based authorization with fine-grained permissions (RBAC plugin)
+- [x] Multi-tenant data isolation (all queries scoped by account_id)
+- [x] User invitation system with secure token-based verification
+- [x] Password hashing with industry-standard algorithms
+- [x] Input validation for all parameters via Pydantic models
+- [ ] Issue tracker credentials encrypted at rest (currently stored securely but not encrypted)
 - [ ] Sensitive data masked in logs
-- [ ] Rate limiting to prevent abuse
-- [ ] Input validation for all parameters
+- [ ] Rate limiting to prevent abuse (partial implementation exists)
+- [ ] Audit logging for security-sensitive operations
+- [ ] 2FA/MFA support for user accounts
+- [ ] Session management and token revocation
 - [ ] Regular security audits and dependency updates
 
-## Performance Considerations
-
-- [ ] Connection pooling for database and external APIs
-- [ ] Caching frequently accessed data
-- [ ] Asynchronous processing for long-running operations
-- [ ] Pagination for large result sets
-- [ ] Efficient vector similarity algorithms
-- [ ] Background indexing of issue embeddings
 
 ## Event-Driven Agentic Flows
 
@@ -604,61 +638,13 @@ graph TD
         *   Listing and retrieving `FlowExecution` history and logs.
         *   Managing Flow presets (e.g., listing, cloning).
 
-### 3. Database Schema Considerations (Conceptual)
+### 3. Database Schema Considerations
 
-The following Pydantic schemas and corresponding SQLAlchemy models will be defined within `SpaceModels`:
+The following Pydantic schemas and corresponding SQLAlchemy models have been defined within `SpaceModels`:
 
-*   **`Flow` Table/Schema:**
-    *   `id`: Primary Key (e.g., UUID)
-    *   `name`: String (User-defined name for the Flow)
-    *   `description`: Text (Optional description)
-    *   `icon`: String (Optional, name of a Shoelace icon or a URL to a custom icon)
-    *   `trigger_event_source`: String (e.g., 'github', 'jira', 'gitlab', 'custom_event', 'scheduled')
-    *   `trigger_event_type`: String (e.g., 'commit_to_main', 'new_issue_created', 'incident_triggered', 'daily_scan')
-    *   `trigger_config`: JSON (Optional, for more complex trigger conditions, e.g., specific branch for commits, specific labels for issues)
-    *   `prompt_template`: Text (The prompt template with placeholders like `{{placeholder_name}}`)
-    *   `ai_model_id`: Foreign Key to `AIModel.id`
-    *   `agent_type`: String (Type of agent to use, e.g., 'openhands', 'claude-code', 'aider', 'custom')
-    *   `agent_config`: JSON (Configuration for the agent, e.g., `{"agent_type": "CodeActAgent", "max_iterations": 10}` for OpenHands, or `{"model": "claude-3-5-sonnet", "auto_test": true}` for Aider)
-    *   `allowed_mcp_servers`: JSON Array of strings (e.g., `["spacebridge-mcp", "code_analysis_mcp"]`)
-    *   `allowed_mcp_tools`: JSON Array of objects (e.g., `[{"server_name": "spacebridge-mcp", "tool_name": "search_issues"}, {"server_name": "code_analysis_mcp", "tool_name": "lint_file"}]`)
-    *   `is_preset`: Boolean (Indicates if this is a system-defined preset)
-    *   `is_enabled`: Boolean (Allows users to enable/disable Flows)
-    *   `account_id`: Foreign Key to `Account.id`
-    *   `created_at`: Timestamp
-    *   `updated_at`: Timestamp
-
-*   **`AIModel` Table/Schema:**
-    *   `id`: Primary Key (UUID)
-    *   `name`: String (User-defined name for this model configuration)
-    *   `description`: Text (Optional description)
-    *   `provider_name`: String (e.g., 'openai', 'anthropic')
-    *   `model_identifier`: String (Standardized identifier, e.g., 'gpt-4-turbo')
-    *   `api_endpoint`: String (URL for the model's API, if not standard)
-    *   `api_key`: String (Stores the API key, unencrypted for now)
-    *   `account_id`: Foreign Key to `Account.id`
-    *   `is_default`: Boolean (Indicates if this is the default model for the account)
-    *   `model_parameters`: JSON (Optional, for model-specific parameters like temperature, max_tokens)
-    *   `meta_data`: JSON (Optional, for custom fields, labels, etc.)
-    *   `created_at`: Timestamp
-    *   `updated_at`: Timestamp
-
-*   **`FlowExecution` Table/Schema:**
-    *   `id`: Primary Key (e.g., UUID)
-    *   `flow_id`: Foreign Key to `Flows.id`
-    *   `trigger_event_id`: String (Optional, an identifier for the specific event that triggered this execution, if available from the event source)
-    *   `trigger_event_details`: JSON (A snapshot of the payload of the triggering event)
-    *   `status`: String (e.g., 'PENDING', 'INITIALIZING', 'RUNNING', 'COMPLETING', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT')
-    *   `start_time`: Timestamp
-    *   `end_time`: Timestamp (Nullable)
-    *   `resolved_input_prompt`: Text (The full prompt after placeholder resolution)
-    *   `model_output_summary`: Text (Optional, a concise summary of the AI model's final output or key findings)
-    *   `actions_taken_summary`: JSON Array (A structured log of significant actions performed by the agent, e.g., files created, MCP tools called with parameters)
-    *   `mcp_usage_logs`: JSON Array of objects (Detailed log of each MCP tool call: `{"server_name", "tool_name", "arguments", "timestamp", "status", "result_summary"}`)
-    *   `agent_session_reference`: String (e.g., agent session ID, Kubernetes job ID, Docker container ID, process ID, or path to detailed logs)
-    *   `error_message`: Text (If status is 'FAILED', stores the error message or stack trace)
-    *   `created_at`: Timestamp
-    *   `updated_at`: Timestamp
+*   **`Flow`**
+*   **`AIModel`**
+*   **`FlowExecution`**
 
 ### 4. Data Flow Diagrams
 
@@ -716,12 +702,7 @@ sequenceDiagram
     FlowExecOrch->>+ModelsDB: Store execution results in FlowExecutions table
 ```
 
-### 5. Interaction with Existing Components
-
-*   **`SpaceModels`:**
-    *   Will house the new SQLAlchemy models and Pydantic schemas for `Flows`, `AIModels`, and `FlowExecutions`.
-
-### 6. Real-Time UI Updates & Interactivity
+### 5. Real-Time UI Updates & Interactivity
 
 To provide users with live feedback and enable future interactivity with Flow executions, a structured, message-based real-time architecture will be implemented.
 
@@ -761,7 +742,7 @@ graph TD
 
 **Components & Protocol:**
 
-*   **Structured Messaging:** Communication will use a standardized JSON envelope, allowing for different message types. This is critical for future extensibility.
+*   **Structured Messaging:** Communication uses a standardized JSON envelope, allowing for different message types. This is critical for future extensibility.
     ```json
     {
       "execution_id": "uuid-of-the-flow-execution",

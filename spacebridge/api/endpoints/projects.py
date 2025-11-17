@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.api.common import get_accessible_projects
+from spacebridge.plugins.proprietary.rbac.permissions import require_permission
 
 from spacebridge.schemas.project import (
     ProjectCreate,
@@ -17,14 +18,14 @@ from spacebridge.schemas.project import (
     TestConnectionRequest,
     TestConnectionResponse,
 )
-from spacesync.spacesync.trackers import create_tracker_client
+from spacesync.trackers import create_tracker_client
 from spacemodels.crud.organization import CRUDOrganization
 from spacemodels.crud.project import CRUDProject
 from spacemodels.crud.tracker import CRUDTracker
 from spacemodels.crud.issue import CRUDIssue
 from spacemodels.crud.embedding import CRUDEmbeddingModel, CRUDIssueEmbedding
 from spacemodels.db.session import get_db_session as get_db
-from spacemodels.models.account import Account
+from spacemodels.models.user import User
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
@@ -42,15 +43,16 @@ crud_embedding_model = CRUDEmbeddingModel(EmbeddingModel)
 
 
 @router.post("/projects", response_model=ProjectResponse, status_code=201)
+@require_permission("create_projects")
 def create_project(
     project: ProjectCreate,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """Create a new project, ensuring user has access to the organization."""
     # Check if organization exists
     organization = crud_organization.get(
-        db, id=project.organization_id, account_id=current_user.id
+        db, id=project.organization_id, account_id=current_user.account_id
     )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -96,12 +98,13 @@ def create_project(
 
 
 @router.get("/projects", response_model=List[ProjectResponse])
+@require_permission("view_projects")
 def list_projects(
     organization_id: Optional[str] = None,
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> List[dict]:
     """List projects accessible to the current user, applying scope rules and optionally filtered by organization."""
     # Use get_accessible_projects which applies TrackerScopeRule filtering
@@ -115,7 +118,7 @@ def list_projects(
     if organization_id:
         # Check organization access first
         organization = crud_organization.get(
-            db, id=organization_id, account_id=current_user.id
+            db, id=organization_id, account_id=current_user.account_id
         )
         if not organization:
             raise HTTPException(status_code=404, detail="Organization not found")
@@ -150,17 +153,18 @@ def list_projects(
 
 
 @router.get("/organizations/{organization_id}/projects")
+@require_permission("view_projects")
 def list_organization_projects(
     organization_id: str,
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """List all projects for an organization, applying scope rules and ensuring user has access."""
     # Check if organization exists
     organization = crud_organization.get(
-        db, id=organization_id, account_id=current_user.id
+        db, id=organization_id, account_id=current_user.account_id
     )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -204,13 +208,14 @@ def list_organization_projects(
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
+@require_permission("view_projects")
 def get_project(
     project_id: str,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """Get a project by ID, ensuring user has access."""
-    project = crud_project.get(db, id=project_id, account_id=current_user.id)
+    project = crud_project.get(db, id=project_id, account_id=current_user.account_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -232,16 +237,17 @@ def get_project(
     "/organizations/{organization_id}/projects/{identifier}",
     response_model=ProjectResponse,
 )
+@require_permission("view_projects")
 def get_project_by_identifier(
     organization_id: str,
     identifier: str,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """Get a project by organization ID and project identifier, ensuring user has access."""
     # Check organization access first
     organization = crud_organization.get(
-        db, id=organization_id, account_id=current_user.id
+        db, id=organization_id, account_id=current_user.account_id
     )
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -268,14 +274,15 @@ def get_project_by_identifier(
 
 
 @router.put("/projects/{project_id}", response_model=ProjectResponse)
+@require_permission("edit_projects")
 def update_project(
     project_id: str,
     project_update: ProjectUpdate,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """Update a project, ensuring user has access."""
-    project = crud_project.get(db, id=project_id, account_id=current_user.id)
+    project = crud_project.get(db, id=project_id, account_id=current_user.account_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -304,13 +311,14 @@ def update_project(
 
 
 @router.delete("/projects/{project_id}", status_code=204)
+@require_permission("delete_projects")
 def delete_project(
     project_id: str,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> None:
     """Delete a project, ensuring user has access."""
-    project = crud_project.get(db, id=project_id, account_id=current_user.id)
+    project = crud_project.get(db, id=project_id, account_id=current_user.account_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -319,10 +327,11 @@ def delete_project(
 
 
 @router.post("/projects/test-connection", response_model=TestConnectionResponse)
+@require_permission("view_projects")
 async def test_project_connection(
     request: TestConnectionRequest,
     db: Session = Depends(get_db),
-    current_user: Account = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> TestConnectionResponse:
     """Test the connection to an issue tracker for a project, ensuring user has access."""
     try:
@@ -330,11 +339,11 @@ async def test_project_connection(
         organization_id = request.organization
         if len(organization_id) == 36:  # Simple UUID check
             organization = crud_organization.get(
-                db, id=organization_id, account_id=current_user.id
+                db, id=organization_id, account_id=current_user.account_id
             )
         else:
             organization = crud_organization.get_by_identifier(
-                db, identifier=organization_id, account_id=current_user.id
+                db, identifier=organization_id, account_id=current_user.account_id
             )
 
         if not organization:
@@ -343,7 +352,9 @@ async def test_project_connection(
         # Resolve project
         project_id = request.project
         if len(project_id) == 36:  # Simple UUID check
-            project = crud_project.get(db, id=project_id, account_id=current_user.id)
+            project = crud_project.get(
+                db, id=project_id, account_id=current_user.account_id
+            )
         else:
             project = crud_project.get_by_identifier(
                 db, organization_id=organization.id, identifier=project_id

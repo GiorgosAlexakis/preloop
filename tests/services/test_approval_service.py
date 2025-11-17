@@ -33,6 +33,7 @@ def sample_approval_policy():
     policy.approval_type = "slack"
     policy.timeout_seconds = 300
     policy.approval_config = {"webhook_url": "https://hooks.slack.com/test"}
+    policy.notification_channels = ["slack"]  # Added to enable notifications
     return policy
 
 
@@ -473,9 +474,8 @@ class TestPostWebhookNotification:
 class TestCreateAndNotify:
     """Test create_and_notify method."""
 
-    @patch("spacebridge.services.approval_service.asyncio.create_task")
     async def test_create_and_notify_success(
-        self, mock_create_task, approval_service, mock_db, sample_approval_policy
+        self, approval_service, mock_db, sample_approval_policy
     ):
         """Test creating and notifying approval request."""
         account_id = "test_account"
@@ -485,11 +485,18 @@ class TestCreateAndNotify:
         mock_approval_request = MagicMock(spec=ApprovalRequest)
         mock_approval_request.id = uuid.uuid4()
 
-        with patch.object(
-            approval_service,
-            "create_approval_request",
-            return_value=mock_approval_request,
-        ) as mock_create:
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                return_value=mock_approval_request,
+            ) as mock_create,
+            patch.object(
+                approval_service,
+                "post_webhook_notification",
+                return_value=True,
+            ) as mock_webhook,
+        ):
             result = await approval_service.create_and_notify(
                 account_id=account_id,
                 tool_configuration_id=tool_config_id,
@@ -501,22 +508,28 @@ class TestCreateAndNotify:
 
             assert result == mock_approval_request
             assert mock_create.called
-            # Verify webhook notification was scheduled
-            assert mock_create_task.called
+            # Verify webhook notification was sent (not scheduled as background task)
+            assert mock_webhook.called
 
-    @patch("spacebridge.services.approval_service.asyncio.create_task")
     async def test_create_and_notify_with_execution_id(
-        self, mock_create_task, approval_service, sample_approval_policy
+        self, approval_service, sample_approval_policy
     ):
         """Test creating and notifying with execution ID."""
         execution_id = "exec_456"
 
         mock_approval_request = MagicMock(spec=ApprovalRequest)
 
-        with patch.object(
-            approval_service,
-            "create_approval_request",
-            return_value=mock_approval_request,
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                return_value=mock_approval_request,
+            ),
+            patch.object(
+                approval_service,
+                "post_webhook_notification",
+                return_value=True,
+            ),
         ):
             result = await approval_service.create_and_notify(
                 account_id="test_account",

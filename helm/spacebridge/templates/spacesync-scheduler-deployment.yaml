@@ -41,7 +41,11 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: SPACEBRIDGE_URL
-              value: {{ .Values.environment.spacebridgeUrl | quote }}
+              {{- if $.Values.preloop.enabled }}
+              value: {{ $.Values.environment.preloopUrl | quote }}
+              {{- else }}
+              value: {{ $.Values.environment.spacebridgeUrl | quote }}
+              {{- end }}
             - name: HOST
               value: {{ .Values.environment.host | quote }}
             - name: PORT

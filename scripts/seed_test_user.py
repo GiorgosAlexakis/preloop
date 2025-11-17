@@ -7,7 +7,7 @@ import os
 import click
 from dotenv import load_dotenv
 
-from spacemodels.crud import crud_account, crud_api_key
+from spacemodels.crud import crud_account, crud_api_key, crud_user
 from spacemodels.db.session import get_db_session
 from spacemodels.db.setup import setup_database
 from spacebridge.api.auth.jwt import get_password_hash
@@ -39,22 +39,40 @@ def seed_test_user(email: str, password: str, api_key: str):
     db_session = next(get_db_session())
 
     click.echo(f"Checking for test user with email: {email}")
-    user = crud_account.get_by_email(db_session, email=email)
+    user = crud_user.get_by_email(db_session, email=email)
 
     if user:
         click.echo("Test user already exists.")
     else:
         click.echo("Creating new test user...")
-        user_in = {
-            "email": email,
-            "hashed_password": get_password_hash(password),
-            "username": os.getenv("TEST_USER_USERNAME", "test_user"),
-            "full_name": "Test User",
+        # First create an account (organization)
+        account_in = {
+            "organization_name": "Test Organization",
             "is_active": True,
             "email_verified": True,
         }
-        user = crud_account.create(db_session, obj_in=user_in)
-        click.echo("Test user created successfully.")
+        account = crud_account.create(db_session, obj_in=account_in)
+        db_session.flush()  # Ensure account.id is available
+
+        # Then create a user with authentication credentials
+        user_in = {
+            "account_id": str(account.id),
+            "email": email,
+            "username": os.getenv("TEST_USER_USERNAME", "test_user"),
+            "full_name": "Test User",
+            "hashed_password": get_password_hash(password),
+            "email_verified": True,
+            "is_active": True,
+            "user_source": "local",
+        }
+        user = crud_user.create(db_session, obj_in=user_in)
+        db_session.flush()  # Ensure user.id is available
+
+        # Update account to set primary_user_id
+        account.primary_user_id = user.id
+        db_session.commit()
+
+        click.echo("Test user and account created successfully.")
 
     click.echo("Checking for test user API key...")
     # A simple check to see if any key exists for the user.

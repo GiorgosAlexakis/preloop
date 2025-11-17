@@ -73,11 +73,8 @@ def with_approval(tool_func: Callable) -> Callable:
                 )
 
                 # If tool doesn't require approval, execute directly
-                if (
-                    not config
-                    or not config.requires_approval
-                    or not config.approval_policy_id
-                ):
+                # A tool requires approval if it has an approval_policy_id set
+                if not config or not config.approval_policy_id:
                     logger.info(f"Tool {tool_name} does not require approval")
                     return await tool_func(*args, **kwargs)
 
@@ -101,7 +98,7 @@ def with_approval(tool_func: Callable) -> Callable:
                 from spacebridge.services.approval_service import ApprovalService
                 from spacemodels.schemas.approval_request import ApprovalRequestUpdate
 
-                base_url = os.getenv("BASE_URL", "http://localhost:8000")
+                base_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000")
                 approval_service = ApprovalService(db, base_url)
 
                 try:

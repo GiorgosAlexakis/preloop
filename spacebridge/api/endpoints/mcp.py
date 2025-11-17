@@ -31,7 +31,6 @@ from spacebridge.api.endpoints.issue_compliance import (
 )
 from spacebridge.schemas.issue import IssueCreate
 from spacebridge.schemas.tracker_models import IssueUpdate
-from spacebridge.services.billing import BillingService
 from spacebridge.schemas.mcp import (
     GetIssueResponse,
     CreateIssueResponse,
@@ -45,7 +44,6 @@ from spacebridge.schemas.mcp import (
 
 from spacebridge.services.duplicate_detection import DuplicateDetector
 from spacebridge.config import get_settings
-from spacebridge.api.endpoints.billing import get_billing_service
 from spacemodels.crud import (
     CRUDIssue,
     CRUDProject,
@@ -211,7 +209,7 @@ async def get_issue(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        issue_obj = _find_issue_by_identifier(db, issue, current_user.id)
+        issue_obj = _find_issue_by_identifier(db, issue, current_user.account_id)
     except IssueNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -221,7 +219,7 @@ async def get_issue(
 
     # Get compliance results using CRUD layer
     compliance_results = crud_issue_compliance_result.get_for_issue(
-        db, issue_id=issue_obj.id, account_id=current_user.id
+        db, issue_id=issue_obj.id, account_id=str(current_user.account_id)
     )
 
     return GetIssueResponse(
@@ -234,7 +232,7 @@ async def get_issue(
         priority=issue_obj.priority,
         organization=organization_name,
         project=project_name,
-        project_id=issue_obj.project_id,
+        project_id=str(issue_obj.project_id),
         project_identifier=project_identifier,
         url=issue_obj.external_url or f"https://spacebridge.io/issues/{issue_obj.id}",
         created_at=issue_obj.created_at,
@@ -268,7 +266,7 @@ async def create_issue(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     project_obj = crud_project.get_by_slug_or_identifier(
-        db, slug_or_identifier=project, account_id=current_user.id
+        db, slug_or_identifier=project, account_id=str(current_user.account_id)
     )
     if not project_obj:
         raise HTTPException(status_code=404, detail=f"Project '{project}' not found.")
@@ -312,7 +310,7 @@ async def create_issue(
         project=project_obj.slug or project_obj.identifier,
         title=title,
         description=description,
-        project_id=project_obj.id,
+        project_id=str(project_obj.id),
         labels=labels,
         assignee=assignee,
         priority=priority,
@@ -357,7 +355,7 @@ async def update_issue(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        issue_obj = _find_issue_by_identifier(db, issue, current_user.id)
+        issue_obj = _find_issue_by_identifier(db, issue, current_user.account_id)
     except IssueNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -474,11 +472,11 @@ async def update_issue(
             issue_obj
         )  # Refresh again after potential commit/refresh inside update block
         project = crud_project.get(
-            db, id=issue_obj.project_id, account_id=current_user.id
+            db, id=issue_obj.project_id, account_id=str(current_user.account_id)
         )  # Re-fetch
         organization = (
             crud_organization.get(
-                db, id=project.organization_id, account_id=current_user.id
+                db, id=project.organization_id, account_id=str(current_user.account_id)
             )
             if project
             else None
@@ -513,7 +511,7 @@ async def update_issue(
 
     # Get compliance results using CRUD layer
     compliance_results = crud_issue_compliance_result.get_for_issue(
-        db, issue_id=issue_obj.id, account_id=current_user.id
+        db, issue_id=issue_obj.id, account_id=str(current_user.account_id)
     )
     project_name = issue_obj.project.name
     organization_name = issue_obj.project.organization.name
@@ -528,7 +526,7 @@ async def update_issue(
         priority=issue_obj.priority,
         organization=organization_name,
         project=project_name,
-        project_id=issue_obj.project_id,
+        project_id=str(issue_obj.project_id),
         project_identifier=project_identifier,
         url=issue_obj.external_url or f"https://spacebridge.io/issues/{issue_obj.id}",
         created_at=issue_obj.created_at,
@@ -559,7 +557,7 @@ async def search(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     project_obj = crud_project.get_by_slug_or_identifier(
-        db, slug_or_identifier=project, account_id=current_user.id
+        db, slug_or_identifier=project, account_id=str(current_user.account_id)
     )
     if project_obj:
         project = project_obj.slug or project_obj.identifier
@@ -604,7 +602,6 @@ async def estimate_compliance(
     # Authenticate user
     db, current_user = await _get_authenticated_user(get_http_request().headers)
     settings = get_settings()
-    billing_service = get_billing_service(db)
 
     # Process issues with controlled parallelism (max 10 concurrent)
     semaphore = asyncio.Semaphore(10)
@@ -617,7 +614,6 @@ async def estimate_compliance(
                 current_user,
                 compliance_metric,
                 settings=settings,
-                billing_service=billing_service,
             )
 
     # Execute all tasks in parallel
@@ -676,12 +672,13 @@ async def _process_single_issue_estimate(
     current_user,
     compliance_metric: str,
     settings=None,
-    billing_service: BillingService = None,
 ) -> ProcessingResult:
     """Process compliance estimation for a single issue."""
     try:
         # Find the issue using our enhanced lookup
-        issue_obj = _find_issue_by_identifier(db, issue_identifier, current_user.id)
+        issue_obj = _find_issue_by_identifier(
+            db, issue_identifier, current_user.account_id
+        )
 
         # Get compliance estimate
         prompt_name = (
@@ -693,7 +690,6 @@ async def _process_single_issue_estimate(
             db=db,
             current_user=current_user,
             settings=settings,
-            billing_service=billing_service,
         )
 
         return ProcessingResult(
@@ -734,12 +730,11 @@ async def _process_single_issue_compliance(
     current_user,
     prompt_name: str = "default",
     settings=None,
-    billing_service: BillingService = None,
 ) -> ProcessingResult:
     """Process compliance improvement for a single issue."""
     try:
         # Find the issue using our enhanced lookup
-        issue = _find_issue_by_identifier(db, issue_identifier, current_user.id)
+        issue = _find_issue_by_identifier(db, issue_identifier, current_user.account_id)
 
         # Get compliance suggestion
         suggestion = api_get_compliance_suggestion(
@@ -748,7 +743,6 @@ async def _process_single_issue_compliance(
             db=db,
             current_user=current_user,
             settings=settings,
-            billing_service=billing_service,
         )
 
         # Create suggested update
@@ -810,7 +804,6 @@ async def improve_compliance(
 
     # Authenticate user
     db, current_user = await _get_authenticated_user(get_http_request().headers)
-    billing_service = get_billing_service(db)
     settings = get_settings()
 
     # Process issues with controlled parallelism (max 10 concurrent)
@@ -827,7 +820,6 @@ async def improve_compliance(
                 current_user,
                 prompt_name,
                 settings=settings,
-                billing_service=billing_service,
             )
 
     # Execute all tasks in parallel
@@ -882,3 +874,749 @@ async def improve_compliance(
     return ImproveComplianceResponse(
         suggested_updates=suggested_updates, metadata=metadata
     )
+
+
+async def add_comment(target: str, comment: str) -> "AddCommentResponse":
+    """
+    Handles the 'add_comment' tool call.
+
+    Adds a comment to an issue, pull request, or merge request.
+
+    Args:
+        target: Issue/PR/MR identifier (URL, key, or ID)
+        comment: Comment text to add
+
+    Returns:
+        AddCommentResponse with comment details
+    """
+    from spacebridge.schemas.mcp import AddCommentResponse
+
+    db = next(get_db())
+    current_user = None
+    authorization = get_http_request().headers.get("authorization")
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ")[1]
+        current_user = await get_user_from_token_if_valid(token, db)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    target = target.strip()
+
+    # Detect if target is a PR/MR URL and handle separately
+    # PRs and MRs are not stored in the issue table, so we need different logic
+    is_pull_request = False
+    is_merge_request = False
+    project_path = None
+    pr_mr_number = None
+
+    if target.startswith("http"):
+        # GitHub PR URL: https://github.com/owner/repo/pull/123
+        if "github.com" in target and "/pull/" in target:
+            is_pull_request = True
+            parts = target.split("/")
+            if len(parts) >= 7:
+                owner = parts[3]
+                repo = parts[4]
+                pr_mr_number = parts[6].rstrip("/").split("?")[0].split("#")[0]
+                project_path = f"{owner}/{repo}"
+                logger.info(f"Detected GitHub PR: {project_path}#{pr_mr_number}")
+        # GitLab MR URL: https://gitlab.com/owner/repo/-/merge_requests/1
+        elif "gitlab" in target and "merge_requests/" in target:
+            is_merge_request = True
+            mr_parts = target.split("merge_requests/")
+            pr_mr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
+            # Extract project path from URL
+            url_path = mr_parts[0].split("://")[1].split("/")
+            if len(url_path) >= 3:
+                # Remove gitlab host and get project path (everything between host and /-/)
+                project_path = "/".join(url_path[1:]).rstrip("/-")
+                logger.info(f"Detected GitLab MR: {project_path}#{pr_mr_number}")
+    # Parse slug format for PRs/MRs: owner/repo#123
+    elif "/" in target and "#" in target:
+        slug_parts = target.split("#")
+        pr_mr_number = slug_parts[1]
+        project_path = slug_parts[0]
+        # Try to determine if it's a GitHub or GitLab project
+        # We'll detect this after finding the project
+        logger.info(f"Detected PR/MR slug format: {project_path}#{pr_mr_number}")
+
+    # Handle PR/MR comments separately
+    if is_pull_request or is_merge_request or (project_path and pr_mr_number):
+        # Find the project
+        if project_path:
+            project_obj = crud_project.get_by_slug_or_identifier(
+                db,
+                slug_or_identifier=project_path,
+                account_id=str(current_user.account_id),
+            )
+            if not project_obj:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Project not found for {project_path}",
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not parse project path from PR/MR identifier",
+            )
+
+        # Get tracker client
+        tracker_client = await get_tracker_client(
+            project_obj.organization_id, project_obj.id, db, current_user
+        )
+
+        # If we didn't detect the type yet, check the tracker type
+        if not is_pull_request and not is_merge_request:
+            if tracker_client.tracker_type.lower() == "github":
+                is_pull_request = True
+            elif tracker_client.tracker_type.lower() == "gitlab":
+                is_merge_request = True
+
+        # Use the appropriate tracker method
+        target_id = pr_mr_number
+    else:
+        # This is a regular issue - use the existing logic
+        parsed_key = None
+        if target.startswith("http"):
+            # GitHub issue URL: https://github.com/owner/repo/issues/123
+            if "github.com" in target and "/issues/" in target:
+                parts = target.split("/")
+                if len(parts) >= 7:
+                    owner = parts[3]
+                    repo = parts[4]
+                    issue_number = parts[6].rstrip("/").split("?")[0].split("#")[0]
+                    parsed_key = f"{owner}/{repo}#{issue_number}"
+                    logger.info(f"Parsed GitHub issue URL to key: {parsed_key}")
+            # GitLab issue URL: https://gitlab.com/owner/repo/-/issues/1
+            elif "gitlab" in target and "/issues/" in target:
+                issue_parts = target.split("/issues/")
+                issue_number = issue_parts[-1].rstrip("/").split("?")[0].split("#")[0]
+                # Extract project path from URL
+                url_path = issue_parts[0].split("://")[1].split("/")
+                if len(url_path) >= 3:
+                    # Remove gitlab host and get project path (everything between host and /-/)
+                    project_path_tmp = "/".join(url_path[1:]).rstrip("/-")
+                    parsed_key = f"{project_path_tmp}#{issue_number}"
+                    logger.info(f"Parsed GitLab issue URL to key: {parsed_key}")
+
+        # Try to find the issue
+        issue_obj = None
+        try:
+            # First, try with the parsed key if we have one
+            if parsed_key:
+                try:
+                    issue_obj = _find_issue_by_identifier(
+                        db, parsed_key, current_user.account_id
+                    )
+                    logger.info(f"Found issue using parsed key: {parsed_key}")
+                except IssueNotFoundError:
+                    logger.info(
+                        f"Could not find issue with parsed key {parsed_key}, trying original target"
+                    )
+
+            # If not found with parsed key, try the original target
+            if not issue_obj:
+                issue_obj = _find_issue_by_identifier(
+                    db, target, current_user.account_id
+                )
+        except IssueNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+        # Get tracker client
+        tracker_client = await get_tracker_client(
+            issue_obj.project.organization_id, issue_obj.project_id, db, current_user
+        )
+
+        if not issue_obj.external_id and not issue_obj.key:
+            logger.error(
+                f"Cannot add comment to {target}: Missing external_id and key."
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot add comment: Missing external identifier.",
+            )
+
+        # Use key if available, otherwise use external_id
+        target_id = issue_obj.key if issue_obj.key else issue_obj.external_id
+
+    try:
+        logger.info(f"Adding comment to {target_id} via tracker client")
+        created_comment = await tracker_client.add_comment(target_id, comment)
+        logger.info(f"Successfully added comment to {target_id}")
+
+        return AddCommentResponse(
+            comment_id=created_comment.id,
+            status="created",
+            message=f"Successfully added comment to {target_id}",
+            url=created_comment.meta_data.get("url")
+            if hasattr(created_comment, "meta_data")
+            else None,
+        )
+    except NotImplementedError:
+        logger.warning(
+            f"Tracker type {tracker_client.tracker_type} does not support adding comments."
+        )
+        raise HTTPException(
+            status_code=501,
+            detail="Adding comments not supported by this tracker type.",
+        )
+    except Exception as e:
+        logger.error(
+            f"Error adding comment to {target_id} via tracker client: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to add comment to the external tracker: {str(e)}",
+        )
+
+
+async def get_pull_request(pull_request: str) -> "PullRequestResponse":
+    """
+    Handles the 'get_pull_request' tool call.
+
+    Gets details of a GitHub pull request.
+
+    Args:
+        pull_request: PR identifier (URL, slug, or number)
+
+    Returns:
+        PullRequestResponse with PR details
+    """
+    from spacebridge.schemas.mcp import PullRequestResponse
+
+    db = next(get_db())
+    db, current_user = await _get_authenticated_user(get_http_request().headers)
+
+    # For PRs, we need to find the project by parsing the identifier
+    # Try to match it against projects in the database
+    # If it's a URL, extract org/repo from it
+    # If it's a slug like "org/repo#123", parse it
+    # If it's just a number, we'll need more context (use first GitHub project)
+
+    pr_identifier = pull_request.strip()
+    owner = None
+    repo = None
+    pr_number = pr_identifier
+
+    # Parse URL format: https://github.com/owner/repo/pull/123
+    if pr_identifier.startswith("http"):
+        if "github.com" in pr_identifier:
+            parts = pr_identifier.split("/")
+            if len(parts) >= 5:
+                owner = parts[3]
+                repo = parts[4]
+                if "pull" in parts:
+                    pr_number = parts[parts.index("pull") + 1]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Only GitHub pull requests are supported. Use get_merge_request for GitLab.",
+            )
+    # Parse slug format: owner/repo#123
+    elif "/" in pr_identifier and "#" in pr_identifier:
+        slug_parts = pr_identifier.split("#")
+        pr_number = slug_parts[1]
+        repo_parts = slug_parts[0].split("/")
+        if len(repo_parts) >= 2:
+            owner = repo_parts[-2]
+            repo = repo_parts[-1]
+
+    # Find the project
+    if owner and repo:
+        # Try to find project by slug (owner/repo format)
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db,
+            slug_or_identifier=f"{owner}/{repo}",
+            account_id=str(current_user.account_id),
+        )
+        if not project_obj:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Project not found for {owner}/{repo}",
+            )
+    else:
+        # Just a number - try to find first GitHub project
+        from spacemodels.crud import crud_tracker
+
+        trackers = crud_tracker.get_multi_by_type(
+            db, tracker_type="github", account_id=current_user.account_id
+        )
+        if not trackers:
+            raise HTTPException(
+                status_code=404,
+                detail="No GitHub tracker found. Please provide full PR identifier.",
+            )
+
+        # Get first project from first GitHub tracker
+        tracker = trackers[0]
+        from spacemodels.crud import crud_organization
+
+        organizations = crud_organization.get_multi_by_tracker(
+            db, tracker_id=tracker.id, account_id=current_user.account_id
+        )
+        if not organizations:
+            raise HTTPException(
+                status_code=404,
+                detail="No organizations found for GitHub tracker.",
+            )
+
+        projects = crud_project.get_multi_by_organization(
+            db, organization_id=organizations[0].id, account_id=current_user.account_id
+        )
+        if not projects:
+            raise HTTPException(
+                status_code=404,
+                detail="No projects found. Please provide full PR identifier.",
+            )
+
+        project_obj = projects[0]
+
+    # Get tracker client
+    tracker_client = await get_tracker_client(
+        project_obj.organization_id, project_obj.id, db, current_user
+    )
+
+    # Verify it's a GitHub tracker
+    if tracker_client.tracker_type.lower() != "github":
+        raise HTTPException(
+            status_code=400,
+            detail="get_pull_request only works with GitHub. Use get_merge_request for GitLab.",
+        )
+
+    try:
+        logger.info(f"Getting pull request {pr_number} via tracker client")
+        pr_data = await tracker_client.get_pull_request(pr_number)
+        logger.info(f"Successfully retrieved pull request {pr_number}")
+
+        return PullRequestResponse(**pr_data)
+
+    except Exception as e:
+        logger.error(
+            f"Error getting pull request {pr_number} via tracker client: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to get pull request from GitHub: {str(e)}",
+        )
+
+
+async def get_merge_request(merge_request: str) -> "MergeRequestResponse":
+    """
+    Handles the 'get_merge_request' tool call.
+
+    Gets details of a GitLab merge request.
+
+    Args:
+        merge_request: MR identifier (URL, slug, or IID)
+
+    Returns:
+        MergeRequestResponse with MR details
+    """
+    from spacebridge.schemas.mcp import MergeRequestResponse
+
+    db = next(get_db())
+    db, current_user = await _get_authenticated_user(get_http_request().headers)
+
+    mr_identifier = merge_request.strip()
+    project_path = None
+    mr_iid = mr_identifier
+
+    # Parse URL format: https://gitlab.com/owner/repo/-/merge_requests/1
+    if mr_identifier.startswith("http"):
+        if "gitlab" in mr_identifier:
+            if "merge_requests" in mr_identifier:
+                parts = mr_identifier.split("merge_requests/")
+                mr_iid = parts[-1].rstrip("/")
+                # Extract project path from URL
+                url_parts = parts[0].split("://")[1].split("/")
+                if len(url_parts) >= 3:
+                    # Remove gitlab host and get project path
+                    project_path = "/".join(url_parts[1:]).rstrip("/-")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Only GitLab merge requests are supported. Use get_pull_request for GitHub.",
+            )
+    # Parse slug format: owner/repo#1
+    elif "/" in mr_identifier and "#" in mr_identifier:
+        slug_parts = mr_identifier.split("#")
+        mr_iid = slug_parts[1]
+        project_path = slug_parts[0]
+
+    # Find the project
+    if project_path:
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db, slug_or_identifier=project_path, account_id=str(current_user.account_id)
+        )
+        if not project_obj:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Project not found for {project_path}",
+            )
+    else:
+        # Just a number - try to find first GitLab project
+        from spacemodels.crud import crud_tracker
+
+        trackers = crud_tracker.get_multi_by_type(
+            db, tracker_type="gitlab", account_id=current_user.account_id
+        )
+        if not trackers:
+            raise HTTPException(
+                status_code=404,
+                detail="No GitLab tracker found. Please provide full MR identifier.",
+            )
+
+        # Get first project from first GitLab tracker
+        tracker = trackers[0]
+        from spacemodels.crud import crud_organization
+
+        organizations = crud_organization.get_multi_by_tracker(
+            db, tracker_id=tracker.id, account_id=current_user.account_id
+        )
+        if not organizations:
+            raise HTTPException(
+                status_code=404,
+                detail="No organizations found for GitLab tracker.",
+            )
+
+        projects = crud_project.get_multi_by_organization(
+            db, organization_id=organizations[0].id, account_id=current_user.account_id
+        )
+        if not projects:
+            raise HTTPException(
+                status_code=404,
+                detail="No projects found. Please provide full MR identifier.",
+            )
+
+        project_obj = projects[0]
+
+    # Get tracker client
+    tracker_client = await get_tracker_client(
+        project_obj.organization_id, project_obj.id, db, current_user
+    )
+
+    # Verify it's a GitLab tracker
+    if tracker_client.tracker_type.lower() != "gitlab":
+        raise HTTPException(
+            status_code=400,
+            detail="get_merge_request only works with GitLab. Use get_pull_request for GitHub.",
+        )
+
+    try:
+        logger.info(f"Getting merge request {mr_iid} via tracker client")
+        mr_data = await tracker_client.get_merge_request(mr_iid)
+        logger.info(f"Successfully retrieved merge request {mr_iid}")
+
+        return MergeRequestResponse(**mr_data)
+
+    except Exception as e:
+        logger.error(
+            f"Error getting merge request {mr_iid} via tracker client: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to get merge request from GitLab: {str(e)}",
+        )
+
+
+async def update_pull_request(
+    pull_request: str,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    state: Optional[str] = None,
+    assignees: Optional[List[str]] = None,
+    reviewers: Optional[List[str]] = None,
+    labels: Optional[List[str]] = None,
+    draft: Optional[bool] = None,
+) -> "UpdatePullRequestResponse":
+    """
+    Handles the 'update_pull_request' tool call.
+
+    Updates a GitHub pull request.
+
+    Args:
+        pull_request: PR identifier (URL, slug, or number)
+        title: New title for the PR
+        description: New description for the PR
+        state: New state ("open" or "closed")
+        assignees: List of assignee usernames
+        reviewers: List of reviewer usernames
+        labels: List of label names
+        draft: Whether to mark as draft
+
+    Returns:
+        UpdatePullRequestResponse with update status
+    """
+    from spacebridge.schemas.mcp import UpdatePullRequestResponse
+
+    db, current_user = await _get_authenticated_user(get_http_request().headers)
+
+    pr_identifier = pull_request.strip()
+    owner = None
+    repo = None
+    pr_number = pr_identifier
+
+    # Parse URL format: https://github.com/owner/repo/pull/123
+    if pr_identifier.startswith("http"):
+        if "github.com" in pr_identifier:
+            parts = pr_identifier.split("/")
+            if len(parts) >= 5:
+                owner = parts[3]
+                repo = parts[4]
+                if "pull" in parts:
+                    pr_number = parts[parts.index("pull") + 1]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Only GitHub pull requests are supported. Use update_merge_request for GitLab.",
+            )
+    # Parse slug format: owner/repo#123
+    elif "/" in pr_identifier and "#" in pr_identifier:
+        slug_parts = pr_identifier.split("#")
+        pr_number = slug_parts[1]
+        repo_parts = slug_parts[0].split("/")
+        if len(repo_parts) >= 2:
+            owner = repo_parts[-2]
+            repo = repo_parts[-1]
+
+    # Find the project
+    if owner and repo:
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db,
+            slug_or_identifier=f"{owner}/{repo}",
+            account_id=str(current_user.account_id),
+        )
+        if not project_obj:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Project not found for {owner}/{repo}",
+            )
+    else:
+        # Just a number - try to find first GitHub project
+        from spacemodels.crud import crud_tracker
+
+        trackers = crud_tracker.get_multi_by_type(
+            db, tracker_type="github", account_id=current_user.account_id
+        )
+        if not trackers:
+            raise HTTPException(
+                status_code=404,
+                detail="No GitHub tracker found. Please provide full PR identifier.",
+            )
+
+        tracker = trackers[0]
+        from spacemodels.crud import crud_organization
+
+        organizations = crud_organization.get_multi_by_tracker(
+            db, tracker_id=tracker.id, account_id=current_user.account_id
+        )
+        if not organizations:
+            raise HTTPException(
+                status_code=404,
+                detail="No organizations found for GitHub tracker.",
+            )
+
+        projects = crud_project.get_multi_by_organization(
+            db, organization_id=organizations[0].id, account_id=current_user.account_id
+        )
+        if not projects:
+            raise HTTPException(
+                status_code=404,
+                detail="No projects found. Please provide full PR identifier.",
+            )
+
+        project_obj = projects[0]
+
+    # Get tracker client
+    tracker_client = await get_tracker_client(
+        project_obj.organization_id, project_obj.id, db, current_user
+    )
+
+    # Verify it's a GitHub tracker
+    if tracker_client.tracker_type.lower() != "github":
+        raise HTTPException(
+            status_code=400,
+            detail="update_pull_request only works with GitHub. Use update_merge_request for GitLab.",
+        )
+
+    try:
+        logger.info(f"Updating pull request {pr_number} via tracker client")
+        pr_data = await tracker_client.update_pull_request(
+            pr_identifier=pr_number,
+            title=title,
+            description=description,
+            state=state,
+            assignees=assignees,
+            reviewers=reviewers,
+            labels=labels,
+            draft=draft,
+        )
+        logger.info(f"Successfully updated pull request {pr_number}")
+
+        return UpdatePullRequestResponse(
+            pull_request_id=pr_data.get("id"),
+            status="updated",
+            message=f"Successfully updated pull request {pr_number}",
+            url=pr_data.get("url"),
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Error updating pull request {pr_number} via tracker client: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to update pull request in GitHub: {str(e)}",
+        )
+
+
+async def update_merge_request(
+    merge_request: str,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    state_event: Optional[str] = None,
+    assignee_ids: Optional[List[int]] = None,
+    reviewer_ids: Optional[List[int]] = None,
+    labels: Optional[List[str]] = None,
+    draft: Optional[bool] = None,
+) -> "UpdateMergeRequestResponse":
+    """
+    Handles the 'update_merge_request' tool call.
+
+    Updates a GitLab merge request.
+
+    Args:
+        merge_request: MR identifier (URL, slug, or IID)
+        title: New title for the MR
+        description: New description for the MR
+        state_event: State event ("close" or "reopen")
+        assignee_ids: List of assignee user IDs
+        reviewer_ids: List of reviewer user IDs
+        labels: List of label names
+        draft: Whether to mark as draft/WIP
+
+    Returns:
+        UpdateMergeRequestResponse with update status
+    """
+    from spacebridge.schemas.mcp import UpdateMergeRequestResponse
+
+    db, current_user = await _get_authenticated_user(get_http_request().headers)
+
+    mr_identifier = merge_request.strip()
+    project_path = None
+    mr_iid = mr_identifier
+
+    # Parse URL format: https://gitlab.com/owner/repo/-/merge_requests/1
+    if mr_identifier.startswith("http"):
+        if "gitlab" in mr_identifier:
+            if "merge_requests" in mr_identifier:
+                parts = mr_identifier.split("merge_requests/")
+                mr_iid = parts[-1].rstrip("/")
+                # Extract project path from URL
+                url_parts = parts[0].split("://")[1].split("/")
+                if len(url_parts) >= 3:
+                    # Remove gitlab host and get project path
+                    project_path = "/".join(url_parts[1:]).rstrip("/-")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Only GitLab merge requests are supported. Use update_pull_request for GitHub.",
+            )
+    # Parse slug format: owner/repo#1
+    elif "/" in mr_identifier and "#" in mr_identifier:
+        slug_parts = mr_identifier.split("#")
+        mr_iid = slug_parts[1]
+        project_path = slug_parts[0]
+
+    # Find the project
+    if project_path:
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db, slug_or_identifier=project_path, account_id=str(current_user.account_id)
+        )
+        if not project_obj:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Project not found for {project_path}",
+            )
+    else:
+        # Just a number - try to find first GitLab project
+        from spacemodels.crud import crud_tracker
+
+        trackers = crud_tracker.get_multi_by_type(
+            db, tracker_type="gitlab", account_id=current_user.account_id
+        )
+        if not trackers:
+            raise HTTPException(
+                status_code=404,
+                detail="No GitLab tracker found. Please provide full MR identifier.",
+            )
+
+        tracker = trackers[0]
+        from spacemodels.crud import crud_organization
+
+        organizations = crud_organization.get_multi_by_tracker(
+            db, tracker_id=tracker.id, account_id=current_user.account_id
+        )
+        if not organizations:
+            raise HTTPException(
+                status_code=404,
+                detail="No organizations found for GitLab tracker.",
+            )
+
+        projects = crud_project.get_multi_by_organization(
+            db, organization_id=organizations[0].id, account_id=current_user.account_id
+        )
+        if not projects:
+            raise HTTPException(
+                status_code=404,
+                detail="No projects found. Please provide full MR identifier.",
+            )
+
+        project_obj = projects[0]
+
+    # Get tracker client
+    tracker_client = await get_tracker_client(
+        project_obj.organization_id, project_obj.id, db, current_user
+    )
+
+    # Verify it's a GitLab tracker
+    if tracker_client.tracker_type.lower() != "gitlab":
+        raise HTTPException(
+            status_code=400,
+            detail="update_merge_request only works with GitLab. Use update_pull_request for GitHub.",
+        )
+
+    try:
+        logger.info(f"Updating merge request {mr_iid} via tracker client")
+        mr_data = await tracker_client.update_merge_request(
+            mr_identifier=mr_iid,
+            title=title,
+            description=description,
+            state_event=state_event,
+            assignee_ids=assignee_ids,
+            reviewer_ids=reviewer_ids,
+            labels=labels,
+            draft=draft,
+        )
+        logger.info(f"Successfully updated merge request {mr_iid}")
+
+        return UpdateMergeRequestResponse(
+            merge_request_id=mr_data.get("id"),
+            status="updated",
+            message=f"Successfully updated merge request {mr_iid}",
+            url=mr_data.get("url"),
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Error updating merge request {mr_iid} via tracker client: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to update merge request in GitLab: {str(e)}",
+        )

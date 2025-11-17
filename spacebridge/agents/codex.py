@@ -31,15 +31,58 @@ class CodexAgent(ContainerAgentExecutor):
                 - model: OpenAI model to use (default: gpt-4)
                 - custom settings for Codex CLI
         """
-        # Use Node.js base image for Codex CLI
-        image = os.getenv("CODEX_IMAGE", "node:20-slim")
+        # Use official Codex Universal image
+        image = os.getenv("CODEX_IMAGE", "ghcr.io/openai/codex-universal:latest")
+
+        # Auto-detect Kubernetes environment or use explicit env var
+        use_k8s = self._detect_kubernetes_environment()
 
         super().__init__(
             agent_type="codex",
             config=config,
             image=image,
-            use_kubernetes=os.getenv("USE_KUBERNETES", "false").lower() == "true",
+            use_kubernetes=use_k8s,
         )
+
+    def _detect_kubernetes_environment(self) -> bool:
+        """
+        Auto-detect if running in Kubernetes environment.
+
+        Checks for:
+        1. Explicit USE_KUBERNETES environment variable
+        2. Kubernetes service account token (in-cluster detection)
+        3. KUBERNETES_SERVICE_HOST environment variable
+
+        Returns:
+            True if Kubernetes environment detected, False otherwise
+        """
+        # Check explicit environment variable first
+        env_value = os.getenv("USE_KUBERNETES", "").lower()
+        if env_value == "true":
+            logger.info("Kubernetes mode enabled via USE_KUBERNETES=true")
+            return True
+        elif env_value == "false":
+            logger.info("Kubernetes mode disabled via USE_KUBERNETES=false")
+            return False
+
+        # Auto-detect: Check for Kubernetes service account token (in-cluster)
+        k8s_token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        if os.path.exists(k8s_token_path):
+            logger.info(
+                f"Kubernetes environment detected (found service account token at {k8s_token_path})"
+            )
+            return True
+
+        # Auto-detect: Check for Kubernetes service host
+        if os.getenv("KUBERNETES_SERVICE_HOST"):
+            logger.info(
+                "Kubernetes environment detected (KUBERNETES_SERVICE_HOST present)"
+            )
+            return True
+
+        # Default to Docker if no Kubernetes indicators found
+        logger.info("No Kubernetes environment detected, defaulting to Docker mode")
+        return False
 
     async def start(self, execution_context: Dict[str, Any]) -> str:
         """
@@ -97,10 +140,23 @@ class CodexAgent(ContainerAgentExecutor):
         # Prepare Codex-specific environment variables
         env = await self._prepare_environment(execution_context)
 
+        # Add account API token for SpaceBridge MCP authentication (always for Codex)
+        account_api_token = execution_context.get("account_api_token")
+        if account_api_token:
+            env["SPACEBRIDGE_API_TOKEN"] = account_api_token
+        else:
+            self.logger.warning(
+                "No account API token provided for SpaceBridge MCP access"
+            )
+
+        # Set SpaceBridge MCP URL (defaults to host.docker.internal for container access)
+        env["SPACEBRIDGE_MCP_URL"] = os.getenv(
+            "SPACEBRIDGE_MCP_URL", "http://host.docker.internal:8000/mcp/v1"
+        )
+
         # Add MCP configuration using MCP config service
         allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
         allowed_mcp_tools = execution_context.get("allowed_mcp_tools", [])
-        account_api_token = execution_context.get("account_api_token")
 
         if allowed_mcp_servers or allowed_mcp_tools:
             # Generate MCP environment variables
@@ -108,14 +164,6 @@ class CodexAgent(ContainerAgentExecutor):
                 allowed_mcp_servers, allowed_mcp_tools
             )
             env.update(mcp_env)
-
-            # Add account API token for SpaceBridge MCP authentication
-            if account_api_token:
-                env["SPACEBRIDGE_API_TOKEN"] = account_api_token
-            else:
-                self.logger.warning(
-                    "No account API token provided for SpaceBridge MCP access"
-                )
 
             # Generate MCP config file
             mcp_config = MCPConfigService.generate_mcp_config(
@@ -125,54 +173,33 @@ class CodexAgent(ContainerAgentExecutor):
             )
             env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
-        # Build the command to run Codex CLI with the prompt
-        prompt = execution_context["prompt"]
-        # Try codex_model first (set by start()), then model_identifier, then default
+        # Build the Codex script using shared method
+        script = self._build_codex_script(execution_context)
+
+        # Determine working directory based on git clone configuration
+        working_dir = "/workspace"
+        git_clone_config = execution_context.get("git_clone_config")
+        if git_clone_config:
+            repositories = git_clone_config.get("repositories", [])
+            if repositories:
+                # Use the first repository's clone path as working directory
+                clone_path = repositories[0].get("clone_path", "/workspace")
+                if clone_path.startswith("/"):
+                    # Absolute path
+                    working_dir = clone_path
+                else:
+                    # Relative path - prepend /workspace/
+                    working_dir = f"/workspace/{clone_path}"
+                self.logger.info(
+                    f"Setting Codex working directory to git repository: {working_dir}"
+                )
+
+        # Extract model for logging
         model = (
             execution_context.get("codex_model")
             or execution_context.get("model_identifier")
             or "gpt-4"
         )
-
-        self.logger.info(f"Using model for Codex CLI: {model}")
-
-        # Escape prompt for shell
-        escaped_prompt = prompt.replace('"', '\\"').replace("'", "\\'")
-
-        # Create a script that installs codex and runs it
-        script = f"""
-set -e
-
-# Install Codex CLI globally
-npm install -g @openai/codex
-
-# Create config directory
-mkdir -p ~/.codex
-
-# Debug: Print environment variables
-echo "=== DEBUG: Environment variables ==="
-echo "OPENAI_API_KEY: ${{OPENAI_API_KEY:0:10}}..." || echo "OPENAI_API_KEY: NOT SET"
-echo "Model being configured: {model}"
-echo "==================================="
-
-# Create config file with API key and model
-cat > ~/.codex/config.toml << EOF
-[ai]
-api_key = "$OPENAI_API_KEY"
-model = "{model}"
-
-[settings]
-zero_data_retention = true
-EOF
-
-# Debug: Show config file
-echo "=== DEBUG: Config file content ==="
-cat ~/.codex/config.toml
-echo "==================================="
-
-# Run codex in non-interactive mode with the prompt
-echo "{escaped_prompt}" | codex exec --model "{model}" --skip-git-repo-check
-"""
 
         self.logger.info(
             f"Container config: model={model}, "
@@ -180,14 +207,14 @@ echo "{escaped_prompt}" | codex exec --model "{model}" --skip-git-repo-check
             f"env_vars={list(env.keys())}"
         )
 
-        cmd = ["bash", "-c", script]
-
         # Container configuration
         container_config = {
             "Image": self.image,
             "Env": [f"{k}={v}" for k, v in env.items()],
-            "Cmd": cmd,
-            "WorkingDir": "/workspace",
+            # Don't override entrypoint - let codex-universal image configure environment
+            # The entrypoint drops into bash, so pass -c and script as arguments to bash
+            "Cmd": ["-c", script],
+            "WorkingDir": working_dir,  # Set to git repo if configured, otherwise /workspace
             "Labels": {
                 "spacebridge.flow_id": execution_context["flow_id"],
                 "spacebridge.execution_id": execution_id,
@@ -234,6 +261,192 @@ echo "{escaped_prompt}" | codex exec --model "{model}" --skip-git-repo-check
             )
             raise RuntimeError(f"Failed to start Codex CLI container: {e}")
 
+    def _build_codex_script(self, execution_context: Dict[str, Any]) -> str:
+        """
+        Build the Codex initialization and execution script.
+
+        This script is used by both Docker and Kubernetes modes.
+
+        Args:
+            execution_context: Execution context
+
+        Returns:
+            Shell script to execute
+        """
+        prompt = execution_context["prompt"]
+        model = (
+            execution_context.get("codex_model")
+            or execution_context.get("model_identifier")
+            or "gpt-4"
+        )
+
+        # Escape prompt for shell
+        escaped_prompt = prompt.replace('"', '\\"').replace("'", "\\'")
+
+        # Prepare initialization commands (git clone, custom commands)
+        init_commands = self._prepare_init_commands(execution_context)
+
+        # Prepare post-execution commands (push, PR/MR creation)
+        post_exec_commands = self._prepare_git_post_execution_commands(
+            execution_context
+        )
+
+        # Build post-execution block if there are commands
+        post_exec_block = ""
+        if post_exec_commands:
+            post_exec_block = f"""
+# Run post-execution commands (push, PR/MR) if codex succeeded
+if [ "$CODEX_EXIT_CODE" -eq "0" ]; then
+    echo "========================================="
+    echo "Running post-execution git operations..."
+    echo "========================================="
+    {post_exec_commands}
+fi
+"""
+
+        # Get execution details for logging
+        execution_id = execution_context.get("execution_id", "unknown")
+        flow_name = execution_context.get("flow_name", "unknown")
+
+        # Create the full script
+        script = f"""
+set -e
+
+# ============================================================
+# Flow Execution Information
+# ============================================================
+echo "=================================================="
+echo "Flow Execution Started"
+echo "=================================================="
+echo "Execution ID: {execution_id}"
+echo "Flow Name: {flow_name}"
+echo "Agent Type: Codex"
+echo "Model: {model}"
+echo "Start Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+echo "=================================================="
+echo ""
+
+# Run initialization commands (git clone, custom commands) if any
+{init_commands}
+
+# Configure git to trust all directories (needed for cloned repos)
+git config --global --add safe.directory '*'
+
+# Configure Codex CLI in the universal image
+npm install -g @openai/codex
+
+# Verify API key is set
+if [ -z "$OPENAI_API_KEY" ]; then
+    echo "ERROR: OPENAI_API_KEY is not set"
+    exit 1
+fi
+
+# Configure Codex CLI authentication
+mkdir -p ~/.codex
+
+# Create auth.json with OpenAI API key
+# Use unquoted heredoc to allow variable substitution (safer than sed with special chars)
+cat > ~/.codex/auth.json << EOF
+{{
+  "OPENAI_API_KEY": "$OPENAI_API_KEY"
+}}
+EOF
+
+# Create config.toml with model and MCP server configuration
+# Use unquoted heredoc to allow variable substitution
+cat > ~/.codex/config.toml << EOF
+model = "{model}"
+
+rmcp_client = true
+
+[mcp_servers.spacebridge]
+url = "$SPACEBRIDGE_MCP_URL"
+bearer_token_env_var = "SPACEBRIDGE_API_TOKEN"
+EOF
+
+# Debug: Show config files (with API key masked)
+echo "=== Codex Configuration ==="
+echo "Model: {model}"
+echo "MCP Server: $SPACEBRIDGE_MCP_URL"
+echo "=========================="
+
+# Run codex in non-interactive mode with the prompt
+echo "{escaped_prompt}" | codex exec --model "{model}" --sandbox workspace-write --yolo
+CODEX_EXIT_CODE=$?
+{post_exec_block}
+# Exit with codex's exit code
+exit $CODEX_EXIT_CODE
+"""
+        return script
+
+    async def _start_kubernetes_pod(self, execution_context: Dict[str, Any]) -> str:
+        """
+        Override to add Codex-specific command to Kubernetes pod.
+
+        The base class creates the pod but doesn't set command/args, which causes
+        codex-universal to drop into a bash shell. We need to override this to
+        provide the script as command arguments.
+
+        IMPORTANT: We only set args, NOT command. Setting command would override
+        the image's ENTRYPOINT, which sets up PATH and other environment variables.
+        By only setting args, the entrypoint runs first (sets up environment), then
+        passes our args to bash for execution.
+        """
+        # Get the script to execute
+        script = self._build_codex_script(execution_context)
+
+        # Store script in execution context so base class can access it if needed
+        execution_context["_codex_script"] = script
+
+        # Set args for Kubernetes - these will be passed to the image's entrypoint
+        # The entrypoint sets up the environment and then executes: bash "$@"
+        # So our args become: bash -c "script"
+        execution_context["_container_args"] = ["-c", script]
+        # Don't set _container_command - let the image's entrypoint run
+
+        # Prepare Codex-specific environment variables and store in context
+        # The base class will merge these with its default env vars
+        codex_env = await self._prepare_environment(execution_context)
+
+        # Add account API token for SpaceBridge MCP authentication (always for Codex)
+        account_api_token = execution_context.get("account_api_token")
+        if account_api_token:
+            codex_env["SPACEBRIDGE_API_TOKEN"] = account_api_token
+        else:
+            self.logger.warning(
+                "No account API token provided for SpaceBridge MCP access"
+            )
+
+        # Set SpaceBridge MCP URL (for Kubernetes, use the service DNS name or external URL)
+        codex_env["SPACEBRIDGE_MCP_URL"] = os.getenv(
+            "SPACEBRIDGE_MCP_URL_K8S",
+            os.getenv("SPACEBRIDGE_MCP_URL", "http://spacebridge-api:8000/mcp/v1"),
+        )
+
+        # Add MCP configuration using MCP config service
+        allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
+        allowed_mcp_tools = execution_context.get("allowed_mcp_tools", [])
+
+        if allowed_mcp_servers or allowed_mcp_tools:
+            # Generate MCP environment variables
+            mcp_env = MCPConfigService.generate_mcp_environment_vars(
+                allowed_mcp_servers, allowed_mcp_tools
+            )
+            codex_env.update(mcp_env)
+
+            # Generate MCP config file
+            mcp_config = MCPConfigService.generate_mcp_config(
+                allowed_mcp_servers,
+                allowed_mcp_tools,
+                account_api_token=account_api_token,
+            )
+            codex_env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
+
+        execution_context["_codex_env"] = codex_env
+
+        # Call parent implementation which will use the args and env
+        return await super()._start_kubernetes_pod(execution_context)
+
     async def _prepare_environment(
         self, execution_context: Dict[str, Any]
     ) -> Dict[str, str]:
@@ -253,6 +466,75 @@ echo "{escaped_prompt}" | codex exec --model "{model}" --skip-git-repo-check
             env["OPENAI_API_KEY"] = execution_context["model_api_key"]
 
         # Set home directory for config storage
+        # Note: This is overridden to /home/agent in Kubernetes mode
         env["HOME"] = "/root"
+
+        # Configure language runtimes for codex-universal image
+        # These env vars tell the image which versions to set up
+        env["CODEX_ENV_PYTHON_VERSION"] = os.getenv("CODEX_ENV_PYTHON_VERSION", "3.12")
+        env["CODEX_ENV_NODE_VERSION"] = os.getenv("CODEX_ENV_NODE_VERSION", "20")
+        env["CODEX_ENV_RUST_VERSION"] = os.getenv("CODEX_ENV_RUST_VERSION", "1.87.0")
+        env["CODEX_ENV_GO_VERSION"] = os.getenv("CODEX_ENV_GO_VERSION", "1.23.8")
+        env["CODEX_ENV_SWIFT_VERSION"] = os.getenv("CODEX_ENV_SWIFT_VERSION", "6.2")
+        env["CODEX_ENV_RUBY_VERSION"] = os.getenv("CODEX_ENV_RUBY_VERSION", "3.4.4")
+        env["CODEX_ENV_PHP_VERSION"] = os.getenv("CODEX_ENV_PHP_VERSION", "8.4")
+
+        # Configure MCP tool timeout based on approval policies
+        # Base timeout is 300 seconds (5 minutes)
+        mcp_timeout = 300
+
+        # Check if there are approval policies that may require longer timeouts
+        account_id = execution_context.get("account_id")
+        if account_id:
+            try:
+                # Query all tool configurations and approval policies for this account
+                from spacemodels.db.session import get_db_context
+                from spacemodels.crud import tool_configuration as tool_config_crud
+                from spacemodels.crud import approval_policy as approval_policy_crud
+
+                with get_db_context() as db:
+                    max_approval_timeout = 0
+                    has_escalation = False
+
+                    # Get all tool configurations for this account
+                    tool_configs = tool_config_crud.get_multi_by_account(
+                        db, account_id=account_id, limit=1000
+                    )
+
+                    # Check each tool configuration for approval policies
+                    for config in tool_configs:
+                        if config.approval_policy_id:
+                            # Get approval policy
+                            policy = approval_policy_crud.get(
+                                db, id=config.approval_policy_id
+                            )
+                            if policy and policy.timeout_seconds:
+                                max_approval_timeout = max(
+                                    max_approval_timeout, policy.timeout_seconds
+                                )
+                                # Check for escalation
+                                if policy.escalation_policy:
+                                    has_escalation = True
+
+                    # Set MCP timeout based on approval policies
+                    if max_approval_timeout > 0:
+                        # Use twice the approval timeout if there's escalation
+                        if has_escalation:
+                            mcp_timeout = max_approval_timeout * 2
+                        else:
+                            mcp_timeout = max_approval_timeout
+
+                        self.logger.info(
+                            f"Set MCP_TOOL_TIMEOUT to {mcp_timeout}s based on approval policies "
+                            f"(max_approval_timeout={max_approval_timeout}, has_escalation={has_escalation})"
+                        )
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to query approval policies for MCP timeout calculation: {e}. "
+                    f"Using default timeout of {mcp_timeout}s"
+                )
+
+        env["MCP_TOOL_TIMEOUT"] = str(mcp_timeout)
+        self.logger.info(f"MCP_TOOL_TIMEOUT set to {mcp_timeout}s")
 
         return env

@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 
@@ -119,8 +120,8 @@ class TrackerUpdate(BaseModel):
 class TrackerResponse(TrackerBase):
     """Response model for tracker data (excluding sensitive info like api_key)."""
 
-    id: str = Field(..., description="Tracker unique identifier (UUID)")
-    account_id: str = Field(..., description="Account ID owning this tracker")
+    id: UUID = Field(..., description="Tracker unique identifier (UUID)")
+    account_id: UUID = Field(..., description="Account ID owning this tracker")
     is_valid: bool = Field(False, description="Whether the connection is validated")
     last_validation: Optional[datetime] = Field(
         None, description="Timestamp of the last validation attempt"
