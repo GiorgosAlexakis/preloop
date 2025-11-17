@@ -272,14 +272,14 @@ p.lead {
   position: relative;
 }
 
-.video-placeholder {
+.video-placeholder, .image-placeholder {
   position: relative;
   cursor: pointer;
   height: 640px;
   overflow: hidden;
 }
 
-.video-placeholder img {
+.video-placeholder img, .image-placeholder img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -288,6 +288,10 @@ p.lead {
   -webkit-mask-image: linear-gradient(to right, black 15%, transparent 80%);
   transform: scale(1.3);
   transform-origin: top left;
+}
+
+.image-placeholder img {
+  transform: scale(1);
 }
 
 .play-button {

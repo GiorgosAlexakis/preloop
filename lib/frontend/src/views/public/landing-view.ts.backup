@@ -1,6 +1,5 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
-import { getBrandConfig } from '../../brand-config';
 import { customElement, state, query } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
 import './../../components/news-capsule';
@@ -31,7 +30,6 @@ export class LandingView extends LitElement {
   @state() private _heroLead = '';
   @state() private _ctaPrimary = '';
   @state() private _ctaSecondary = '';
-  @state() private _ctaSecondaryUrl = '';
   @state() private _getStartedTitle = '';
   @state() private _getStartedLinkText = '';
   @state() private _getStartedLinkUrl = '';
@@ -97,16 +95,11 @@ export class LandingView extends LitElement {
     const ctaSecondary = children.find(
       (el) => el.getAttribute('slot') === 'cta-secondary'
     ) as HTMLElement | undefined;
-    const ctaSecondaryUrl = children.find(
-      (el) => el.getAttribute('slot') === 'cta-secondary-url'
-    ) as HTMLElement | undefined;
 
     if (heroTitle) this._heroTitle = heroTitle.innerHTML || '';
     if (heroLead) this._heroLead = heroLead.textContent || '';
     if (ctaPrimary) this._ctaPrimary = ctaPrimary.textContent || '';
     if (ctaSecondary) this._ctaSecondary = ctaSecondary.textContent || '';
-    if (ctaSecondaryUrl)
-      this._ctaSecondaryUrl = ctaSecondaryUrl.textContent || '';
 
     // Read feature slides from light DOM slots
     const features: FeatureSlide[] = [];
@@ -169,19 +162,12 @@ export class LandingView extends LitElement {
       (el) => el.getAttribute('slot') === 'get-started-link-url'
     ) as HTMLElement | undefined;
 
-    if (getStartedTitle)
-      this._getStartedTitle = getStartedTitle.textContent || '';
-    if (getStartedLinkText)
-      this._getStartedLinkText = getStartedLinkText.textContent || '';
-    if (getStartedLinkUrl)
-      this._getStartedLinkUrl = getStartedLinkUrl.textContent || '';
+    if (getStartedTitle) this._getStartedTitle = getStartedTitle.textContent || '';
+    if (getStartedLinkText) this._getStartedLinkText = getStartedLinkText.textContent || '';
+    if (getStartedLinkUrl) this._getStartedLinkUrl = getStartedLinkUrl.textContent || '';
 
     // Read get-started features from light DOM slots
-    const getStartedFeatures: Array<{
-      icon: string;
-      title: string;
-      text: string;
-    }> = [];
+    const getStartedFeatures: Array<{ icon: string; title: string; text: string }> = [];
     for (let i = 0; i < 10; i++) {
       const featureWrapper = children.find(
         (el) => el.getAttribute('slot') === `get-started-feature-${i}`
@@ -231,23 +217,12 @@ export class LandingView extends LitElement {
         const ide_name = mcpWrapper.getAttribute('data-ide-name') || '';
         const logo_path = mcpWrapper.getAttribute('data-logo-path') || '';
         const logo_width = mcpWrapper.getAttribute('data-logo-width') || '';
-        const prerequisites = JSON.parse(
-          mcpWrapper.getAttribute('data-prerequisites') || '[]'
-        );
-        const setup_instructions =
-          mcpWrapper.getAttribute('data-setup-instructions') || '';
+        const prerequisites = JSON.parse(mcpWrapper.getAttribute('data-prerequisites') || '[]');
+        const setup_instructions = mcpWrapper.getAttribute('data-setup-instructions') || '';
         const code = mcpWrapper.textContent || '';
 
         if (ide && ide_name && logo_path) {
-          mcpConfigs.push({
-            ide,
-            ide_name,
-            logo_path,
-            logo_width,
-            prerequisites,
-            setup_instructions,
-            code,
-          });
+          mcpConfigs.push({ ide, ide_name, logo_path, logo_width, prerequisites, setup_instructions, code });
         }
       } else {
         break;
@@ -288,7 +263,6 @@ export class LandingView extends LitElement {
     this._heroLead = content.hero.lead;
     this._ctaPrimary = content.hero.cta_primary;
     this._ctaSecondary = content.hero.cta_secondary;
-    this._ctaSecondaryUrl = content.hero.cta_secondary_url;
 
     // Load features
     this._featureSlides = content.features.map((f: any) => ({
@@ -337,9 +311,7 @@ export class LandingView extends LitElement {
 
   private _playVideo(index: number) {
     const newShowVideo = [...this._showVideo];
-    if (this._featureSlides[index].videoUrl) {
-      newShowVideo[index] = true;
-    }
+    newShowVideo[index] = true;
     this._showVideo = newShowVideo;
   }
 
@@ -389,7 +361,7 @@ export class LandingView extends LitElement {
       <app-header></app-header>
       <main>
         <section class="hero main-section">
-          <!-- <news-capsule></news-capsule> -->
+          <news-capsule></news-capsule>
           <div class="section-container hero-inner">
             <div class="hero-content">
               <h1 class="fw-bold">${unsafeHTML(this._heroTitle)}</h1>
@@ -398,13 +370,7 @@ export class LandingView extends LitElement {
                 <sl-button variant="primary" size="large" href="/register"
                   >${this._ctaPrimary}</sl-button
                 >
-                <sl-button
-                  variant="text"
-                  size="large"
-                  href=${this._ctaSecondaryUrl}
-                  target=${this._ctaSecondaryUrl.startsWith('http')
-                    ? '_blank'
-                    : '_self'}
+                <sl-button variant="text" size="large" href="/request-demo"
                   >${this._ctaSecondary}</sl-button
                 >
               </div>
@@ -427,7 +393,7 @@ export class LandingView extends LitElement {
                       <div class="feature-text-content">
                         <h2>${slide.title}</h2>
                         <p>${slide.text}</p>
-                        ${!this._showVideo[index] && slide.videoUrl
+                        ${!this._showVideo[index]
                           ? html`
                               <sl-button
                                 variant="primary"
@@ -479,22 +445,18 @@ export class LandingView extends LitElement {
                                 ></iframe>
                               </div>
                             `
-                          : slide.videoUrl
-                            ? html`
-                                <div
-                                  class="video-placeholder"
-                                  @click=${() => this._playVideo(index)}
-                                >
-                                  <img
-                                    src=${slide.placeholderImg}
-                                    alt="Video Preview"
-                                  />
-                                  <div class="play-button"></div>
-                                </div>
-                              `
-                            : html`<div class="image-placeholder">
-                                <img src=${slide.placeholderImg} />
-                              </div>`}
+                          : html`
+                              <div
+                                class="video-placeholder"
+                                @click=${() => this._playVideo(index)}
+                              >
+                                <img
+                                  src=${slide.placeholderImg}
+                                  alt="Video Preview"
+                                />
+                                <div class="play-button"></div>
+                              </div>
+                            `}
                       </div>
                     </div>
                   </sl-carousel-item>
@@ -565,258 +527,164 @@ export class LandingView extends LitElement {
                   `}
             </div>
             <h3>
-              ${this._mcpSetupTitle ||
-              'Get Started with ' + getBrandConfig().name + ' MCP'}
+              ${this._mcpSetupTitle || 'Get Started with Spacebridge MCP'}
             </h3>
             <div class="get-started-container">
               <div class="ide-tabs">
-                ${this._mcpConfigs.length > 0
-                  ? this._mcpConfigs.map(
-                      (config) => html`
-                        <div
-                          class="ide-logo-container ${this._activeIdeTab ===
-                          config.ide
-                            ? 'active'
-                            : ''}"
-                          @click=${() =>
-                            this._handleIdeTabClick(config.ide as IdeTab)}
-                        >
-                          <img
-                            src="${config.logo_path}"
-                            alt="${config.ide_name}"
-                            width="${config.logo_width}"
-                          />
-                        </div>
-                      `
-                    )
-                  : html`
-                      <div
-                        class="ide-logo-container ${this._activeIdeTab ===
-                        'claude-code'
-                          ? 'active'
-                          : ''}"
-                        @click=${() => this._handleIdeTabClick('claude-code')}
-                      >
-                        <img
-                          src="/images/Claude_AI_logo.png"
-                          alt="Claude Code"
-                          width="130"
-                        />
-                      </div>
-                      <div
-                        class="ide-logo-container ${this._activeIdeTab ===
-                        'cursor'
-                          ? 'active'
-                          : ''}"
-                        @click=${() => this._handleIdeTabClick('cursor')}
-                      >
-                        <img
-                          src="/images/cursor_logo.png"
-                          alt="Cursor"
-                          width="130"
-                        />
-                      </div>
-                      <div
-                        class="ide-logo-container ${this._activeIdeTab ===
-                        'windsurf'
-                          ? 'active'
-                          : ''}"
-                        @click=${() => this._handleIdeTabClick('windsurf')}
-                      >
-                        <img
-                          src="/images/windsurf_logo.png"
-                          alt="Windsurf"
-                          width="130"
-                        />
-                      </div>
-                    `}
+                <div
+                  class="ide-logo-container ${this._activeIdeTab ===
+                  'claude-code'
+                    ? 'active'
+                    : ''}"
+                  @click=${() => this._handleIdeTabClick('claude-code')}
+                >
+                  <img
+                    src="/images/Claude_AI_logo.png"
+                    alt="Claude Code"
+                    width="130"
+                  />
+                </div>
+                <div
+                  class="ide-logo-container ${this._activeIdeTab === 'cursor'
+                    ? 'active'
+                    : ''}"
+                  @click=${() => this._handleIdeTabClick('cursor')}
+                >
+                  <img src="/images/cursor_logo.png" alt="Cursor" width="130" />
+                </div>
+                <div
+                  class="ide-logo-container ${this._activeIdeTab === 'windsurf'
+                    ? 'active'
+                    : ''}"
+                  @click=${() => this._handleIdeTabClick('windsurf')}
+                >
+                  <img
+                    src="/images/windsurf_logo.png"
+                    alt="Windsurf"
+                    width="130"
+                  />
+                </div>
               </div>
 
               <div class="tab-content">
-                ${this._mcpConfigs.length > 0
-                  ? this._mcpConfigs.map(
-                      (config) => html`
-                        ${this._activeIdeTab === config.ide
-                          ? html`
-                              <div>
-                                <h5>Prerequisites</h5>
-                                <ul>
-                                  ${config.prerequisites.map(
-                                    (prereq) => html`<li>${prereq}</li>`
-                                  )}
-                                </ul>
-                                <h5>Setup</h5>
-                                <p>${unsafeHTML(config.setup_instructions)}</p>
-                                <div class="code-container">
-                                  <pre><code>${config.code}</code></pre>
-                                  <button
-                                    class="copy-btn"
-                                    @click=${this._copyCode}
-                                  >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      width="16"
-                                      height="16"
-                                      fill="currentColor"
-                                      class="bi bi-clipboard"
-                                      viewBox="0 0 16 16"
-                                    >
-                                      <path
-                                        d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                                      />
-                                      <path
-                                        d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                                      />
-                                    </svg>
-                                  </button>
-                                </div>
-                              </div>
-                            `
-                          : ''}
-                      `
-                    )
-                  : html`
-                      ${this._activeIdeTab === 'claude-code'
-                        ? html`
-                            <div>
-                              <h5>Prerequisites</h5>
-                              <ul>
-                                <li>
-                                  ${getBrandConfig().name} API key (register
-                                  above)
-                                </li>
-                              </ul>
-                              <h5>Setup</h5>
-                              <p>Run the following command in your terminal:</p>
-                              <div class="code-container">
-                                <pre><code>claude mcp add --transport http ${getBrandConfig().domain.split(
-                                  '.'
-                                )[0]} https://${getBrandConfig().domain}/mcp/v1
-  --header "Authorization: Bearer YOUR_${getBrandConfig().name.toUpperCase()}_API_KEY"</code></pre>
-                                <button
-                                  class="copy-btn"
-                                  @click=${this._copyCode}
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    width="16"
-                                    height="16"
-                                    fill="currentColor"
-                                    class="bi bi-clipboard"
-                                    viewBox="0 0 16 16"
-                                  >
-                                    <path
-                                      d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                                    />
-                                    <path
-                                      d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                                    />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          `
-                        : ''}
-                      ${this._activeIdeTab === 'cursor'
-                        ? html`
-                            <div>
-                              <h5>Prerequisites</h5>
-                              <ul>
-                                <li>
-                                  ${getBrandConfig().name} API key (register
-                                  above)
-                                </li>
-                              </ul>
-                              <h5>Setup</h5>
-                              <p>
-                                Create or edit <code>~/.cursor/mcp.json</code>:
-                              </p>
-                              <div class="code-container">
-                                <pre><code># Create or edit ~/.cursor/mcp.json
+                ${this._activeIdeTab === 'claude-code'
+                  ? html`
+                      <div>
+                        <h5>Prerequisites</h5>
+                        <ul>
+                          <li>SpaceBridge API key (register above)</li>
+                        </ul>
+                        <h5>Setup</h5>
+                        <p>Run the following command in your terminal:</p>
+                        <div class="code-container">
+                          <pre><code>claude mcp add --transport http spacebridge https://spacebridge.io/mcp/v1  
+  --header "Authorization: Bearer YOUR_SPACEBRIDGE_API_KEY"</code></pre>
+                          <button class="copy-btn" @click=${this._copyCode}>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              fill="currentColor"
+                              class="bi bi-clipboard"
+                              viewBox="0 0 16 16"
+                            >
+                              <path
+                                d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
+                              />
+                              <path
+                                d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    `
+                  : ''}
+                ${this._activeIdeTab === 'cursor'
+                  ? html`
+                      <div>
+                        <h5>Prerequisites</h5>
+                        <ul>
+                          <li>SpaceBridge API key (register above)</li>
+                        </ul>
+                        <h5>Setup</h5>
+                        <p>Create or edit <code>~/.cursor/mcp.json</code>:</p>
+                        <div class="code-container">
+                          <pre><code># Create or edit ~/.cursor/mcp.json
 {
   "mcpServers": {
-    "${getBrandConfig().domain.split('.')[0]}": {
+    "spacebridge": {
       "transport": "http",
-      "url": "https://${getBrandConfig().domain}/mcp/v1",
+      "url": "https://spacebridge.io/mcp/v1",
       "headers": {
-        "Authorization": "Bearer YOUR_${getBrandConfig().name.toUpperCase()}_API_KEY"
+        "Authorization": "Bearer YOUR_SPACEBRIDGE_API_KEY"
       }
     }
   }
 }</code></pre>
-                                <button
-                                  class="copy-btn"
-                                  @click=${this._copyCode}
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    width="16"
-                                    height="16"
-                                    fill="currentColor"
-                                    class="bi bi-clipboard"
-                                    viewBox="0 0 16 16"
-                                  >
-                                    <path
-                                      d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                                    />
-                                    <path
-                                      d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                                    />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          `
-                        : ''}
-                      ${this._activeIdeTab === 'windsurf'
-                        ? html`
-                            <div>
-                              <h5>Prerequisites</h5>
-                              <ul>
-                                <li>
-                                  ${getBrandConfig().name} API key (register
-                                  above)
-                                </li>
-                              </ul>
-                              <h5>Setup</h5>
-                              <p>Create or edit your MCP configuration file:</p>
-                              <div class="code-container">
-                                <pre><code>{
+                          <button class="copy-btn" @click=${this._copyCode}>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              fill="currentColor"
+                              class="bi bi-clipboard"
+                              viewBox="0 0 16 16"
+                            >
+                              <path
+                                d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
+                              />
+                              <path
+                                d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    `
+                  : ''}
+                ${this._activeIdeTab === 'windsurf'
+                  ? html`
+                      <div>
+                        <h5>Prerequisites</h5>
+                        <ul>
+                          <li>SpaceBridge API key (register above)</li>
+                        </ul>
+                        <h5>Setup</h5>
+                        <p>Create or edit your MCP configuration file:</p>
+                        <div class="code-container">
+                          <pre><code>{
   "mcpServers": {
-    "${getBrandConfig().domain.split('.')[0]}": {
+    "spacebridge": {
         "transport": "http",
-        "url": "https://${getBrandConfig().domain}/mcp/v1",
+        "url": "https://spacebridge.io/mcp/v1",
         "headers": {
-            "Authorization": "Bearer YOUR_${getBrandConfig().name.toUpperCase()}_API_KEY"
+            "Authorization": "Bearer YOUR_SPACEBRIDGE_API_KEY"
         }
     }
   }
 }</code></pre>
-                                <button
-                                  class="copy-btn"
-                                  @click=${this._copyCode}
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    width="16"
-                                    height="16"
-                                    fill="currentColor"
-                                    class="bi bi-clipboard"
-                                    viewBox="0 0 16 16"
-                                  >
-                                    <path
-                                      d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                                    />
-                                    <path
-                                      d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                                    />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          `
-                        : ''}
-                    `}
+                          <button class="copy-btn" @click=${this._copyCode}>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              fill="currentColor"
+                              class="bi bi-clipboard"
+                              viewBox="0 0 16 16"
+                            >
+                              <path
+                                d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
+                              />
+                              <path
+                                d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    `
+                  : ''}
               </div>
             </div>
           </div>
@@ -847,11 +715,11 @@ export class LandingView extends LitElement {
                   class="jira-logo tool-logo"
                 />
               </sl-tooltip>
-              <sl-tooltip content="Slack">
+              <sl-tooltip content="Linear (coming soon)">
                 <img
-                  src="images/logos/slack-logo-light.png"
-                  alt="Slack Logo"
-                  class="slack-logo tool-logo"
+                  src="images/logos/linear-logo-light.png"
+                  alt="Linear Logo"
+                  class="linear-logo tool-logo"
                 />
               </sl-tooltip>
             </div>

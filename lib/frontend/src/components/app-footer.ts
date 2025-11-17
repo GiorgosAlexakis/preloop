@@ -125,7 +125,6 @@ export class AppFooter extends LitElement {
           </div>
           <nav class="footer-nav">
             <ul>
-              <li><a href="/docs">API Documentation</a></li>
               <li><a href="/register">Register</a></li>
               <li><a href="/login">Sign in</a></li>
               <li><a href="/privacy">Privacy Policy</a></li>

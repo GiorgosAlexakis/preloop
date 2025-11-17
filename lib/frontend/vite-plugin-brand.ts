@@ -51,6 +51,7 @@ export function brandPlugin(brandName: string): Plugin {
         hero: brandConfig.landing.hero,
         features: brandConfig.landing.features,
         faqs: brandConfig.landing.faqs,
+        get_started: brandConfig.landing.get_started,
       };
 
       // Add JSON file to bundle
@@ -340,6 +341,7 @@ function generateSlottedContentForRoute(route: string, config: BrandConfig): str
     <p slot="hero-lead">${config.landing.hero.lead}</p>
     <span slot="cta-primary">${config.landing.hero.cta_primary}</span>
     <span slot="cta-secondary">${config.landing.hero.cta_secondary}</span>
+    <span slot="cta-secondary-url">${config.landing.hero.cta_secondary_url}</span>
 
     <!-- Feature slots -->
     ${config.landing.features
@@ -359,6 +361,41 @@ function generateSlottedContentForRoute(route: string, config: BrandConfig): str
     <div slot="faq-${idx}" data-q="${faq.q}" data-a="${faq.a}">
       <h3>${faq.q}</h3>
       <p>${faq.a}</p>
+    </div>`
+      )
+      .join('\n')}
+
+    <!-- Get Started section slots -->
+    <span slot="get-started-title">${config.landing.get_started.title}</span>
+    <span slot="get-started-link-text">${config.landing.get_started.link_text}</span>
+    <span slot="get-started-link-url">${config.landing.get_started.link_url}</span>
+
+    <!-- Get Started feature slots -->
+    ${config.landing.get_started.features
+      .map(
+        (feature, idx) => `
+    <div slot="get-started-feature-${idx}" data-icon="${feature.icon}" data-title="${feature.title}" data-text="${feature.text}">
+      <h3>${feature.title}</h3>
+      <p>${feature.text}</p>
+    </div>`
+      )
+      .join('\n')}
+
+    <!-- MCP Setup slots -->
+    <span slot="mcp-setup-title">${config.landing.get_started.mcp_setup_title}</span>
+
+    <!-- MCP Config slots -->
+    ${config.landing.get_started.mcp_configs
+      .map(
+        (mcpConfig, idx) => `
+    <div slot="mcp-config-${idx}"
+         data-ide="${mcpConfig.ide}"
+         data-ide-name="${mcpConfig.ide_name}"
+         data-logo-path="${mcpConfig.logo_path}"
+         data-logo-width="${mcpConfig.logo_width}"
+         data-prerequisites='${JSON.stringify(mcpConfig.prerequisites)}'
+         data-setup-instructions="${mcpConfig.setup_instructions.replace(/"/g, '&quot;')}">
+      <pre><code>${mcpConfig.code}</code></pre>
     </div>`
       )
       .join('\n')}

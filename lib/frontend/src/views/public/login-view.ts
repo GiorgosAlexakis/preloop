@@ -3,6 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import { post } from '../../api';
 import { formStyles } from '../../styles/form-styles';
+import { getBrandConfig } from '../../brand-config';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '../../components/logo-component';
@@ -69,7 +70,12 @@ export class LoginView extends LitElement {
         Router.go('/console');
       }
     } catch (error) {
-      this.error = 'Invalid username or password';
+      // Extract the error message from the Error object
+      if (error instanceof Error) {
+        this.error = error.message;
+      } else {
+        this.error = 'Invalid username or password';
+      }
       console.error('Sign in failed', error);
     }
   }
@@ -83,7 +89,7 @@ export class LoginView extends LitElement {
           </a>
         </div>
         <div class="form-container">
-          <h2>Sign in to Spacebridge</h2>
+          <h2>Sign in to ${getBrandConfig().name}</h2>
           ${this.successMessage
             ? html`<div class="success-message">${this.successMessage}</div>`
             : ''}

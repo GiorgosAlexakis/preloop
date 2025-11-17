@@ -3,6 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import { post } from '../../api';
 import { formStyles } from '../../styles/form-styles';
+import { getBrandConfig } from '../../brand-config';
 
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -31,7 +32,12 @@ export class RegisterView extends LitElement {
       });
       Router.go('/login?registered=true');
     } catch (error) {
-      this.error = 'Failed to create an account';
+      // Extract the error message from the Error object
+      if (error instanceof Error) {
+        this.error = error.message;
+      } else {
+        this.error = 'Failed to create an account';
+      }
       console.error('Create account failed', error);
     }
   }
@@ -45,7 +51,7 @@ export class RegisterView extends LitElement {
           </a>
         </div>
         <div class="form-container">
-          <h2>Create a Spacebridge account</h2>
+          <h2>Create a ${getBrandConfig().name} account</h2>
           ${this.error
             ? html`<div class="error-message">${this.error}</div>`
             : ''}
