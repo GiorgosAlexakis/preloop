@@ -439,7 +439,7 @@ export class FlowExecutionView extends LitElement {
     this.autoScrollInterval = window.setInterval(() => {
       if (this.isAutoScroll && this.logContainerRef) {
         const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
-        const isAtBottom = scrollHeight - scrollTop - clientHeight < 1;
+        const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
 
         // If not at bottom, force scroll
         if (!isAtBottom) {

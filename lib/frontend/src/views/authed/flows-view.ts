@@ -169,6 +169,9 @@ export class FlowsView extends LitElement {
   @state()
   private triggeringFlowId: string | null = null;
 
+  @state()
+  private deletingFlowId: string | null = null;
+
   private unsubscribe?: () => void;
 
   async connectedCallback() {
@@ -373,16 +376,30 @@ export class FlowsView extends LitElement {
 
         <div
           slot="footer"
-          style="display: flex; gap: 8px; justify-content: space-between;"
+          style="display: flex; gap: 8px; justify-content: space-between; align-items: center;"
         >
-          <sl-button
-            size="small"
-            href=${router.urlForPath(`/console/flows/${flow.id}?edit=true`)}
-            @click=${(e: Event) => e.stopPropagation()}
-          >
-            <sl-icon slot="prefix" name="pencil"></sl-icon>
-            Edit
-          </sl-button>
+          <div style="display: flex; gap: 8px;">
+            <sl-button
+              size="small"
+              href=${router.urlForPath(`/console/flows/${flow.id}?edit=true`)}
+              @click=${(e: Event) => e.stopPropagation()}
+            >
+              <sl-icon slot="prefix" name="pencil"></sl-icon>
+              Edit
+            </sl-button>
+            <sl-button
+              size="small"
+              variant="danger"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                this.deleteFlowHandler(flow.id, flow.name);
+              }}
+              ?loading=${this.deletingFlowId === flow.id}
+            >
+              <sl-icon slot="prefix" name="trash"></sl-icon>
+              Delete
+            </sl-button>
+          </div>
           <sl-button
             size="small"
             variant="primary"
@@ -499,5 +516,24 @@ export class FlowsView extends LitElement {
   async removePreset(presetId: string) {
     await deleteFlow(presetId);
     this.presets = await getFlowPresets();
+  }
+
+  async deleteFlowHandler(flowId: string, flowName: string) {
+    const confirmed = confirm(
+      `Are you sure you want to delete the flow "${flowName}"? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    this.deletingFlowId = flowId;
+    try {
+      await deleteFlow(flowId);
+      // Reload flows list
+      this.flows = await getFlows();
+    } catch (error) {
+      console.error('Failed to delete flow:', error);
+      alert('Failed to delete flow. Please try again.');
+    } finally {
+      this.deletingFlowId = null;
+    }
   }
 }
