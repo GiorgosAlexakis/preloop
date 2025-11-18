@@ -318,6 +318,7 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
 
     # Start heartbeat monitoring
     heartbeat_task = None
+    manager_connection_id = None
 
     try:
         # Register connection with the existing WebSocket manager for broadcast compatibility
@@ -416,14 +417,18 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
         if heartbeat_task:
             heartbeat_task.cancel()
 
-        # Disconnect from manager
-        try:
-            manager.disconnect(manager_connection_id)
-        except Exception as e:
-            logger.error(f"Error disconnecting from manager: {e}")
+        # Disconnect from manager (only if connection was established)
+        if manager_connection_id is not None:
+            try:
+                manager.disconnect(manager_connection_id)
+            except Exception as e:
+                logger.error(f"Error disconnecting from manager: {e}")
 
-        # End session
-        await session_manager.end_session(session.id, db)
+        # End session (only if session was created)
+        try:
+            await session_manager.end_session(session.id, db)
+        except Exception as e:
+            logger.error(f"Error ending session: {e}")
 
         # Close WebSocket
         try:

@@ -39,6 +39,14 @@ async def get_active_sessions(
 
     Uses in-memory session_manager for efficient access without N+1 queries.
 
+    **Multi-Pod Limitation**: This endpoint only returns sessions from the current
+    pod's in-memory session_manager. In multi-pod deployments, each pod maintains
+    its own session registry, so this view will not show sessions connected to
+    other pods. For comprehensive session monitoring across all pods, consider:
+    - Querying the Event table for session_start events
+    - Using a centralized session store (e.g., Redis)
+    - Aggregating results from multiple pod endpoints
+
     Returns:
         List of active sessions with user info and latest activity
     """
@@ -48,20 +56,55 @@ async def get_active_sessions(
     from spacebridge.services.session_manager import session_manager
 
     # Get active sessions directly from in-memory session manager
-    active_sessions = []
+    sessions_list = list(session_manager.sessions.values())
 
-    for session in session_manager.sessions.values():
-        # Get latest page_view activity for current path
-        latest_page_view = (
-            db.query(Event)
-            .filter(
-                Event.session_id == uuid.UUID(session.id),
-                Event.event_type == "page_view",
-            )
-            .order_by(Event.timestamp.desc())
-            .first()
+    if not sessions_list:
+        return {"sessions": [], "total": 0}
+
+    # Log reminder about multi-pod limitation
+    logger.info(
+        f"Returning {len(sessions_list)} sessions from local pod only. "
+        f"In multi-pod deployments, this does not include sessions on other pods."
+    )
+
+    # Batch query: collect all session_ids and user_ids
+    session_ids = [UUID(s.id) for s in sessions_list]
+    user_ids = [s.user_id for s in sessions_list if s.user_id]
+
+    # Batch query: get latest page_view for each session in one query
+    # Use window function to get the latest page_view per session
+    from sqlalchemy.sql import func
+
+    subquery = (
+        db.query(
+            Event.session_id,
+            Event.path,
+            func.row_number()
+            .over(partition_by=Event.session_id, order_by=Event.timestamp.desc())
+            .label("row_num"),
         )
+        .filter(Event.session_id.in_(session_ids), Event.event_type == "page_view")
+        .subquery()
+    )
 
+    page_views_query = (
+        db.query(subquery.c.session_id, subquery.c.path)
+        .filter(subquery.c.row_num == 1)
+        .all()
+    )
+
+    # Build lookup dict for page views
+    page_view_map = {str(row.session_id): row.path for row in page_views_query}
+
+    # Batch query: get all users in one query
+    users_query = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
+
+    # Build lookup dict for users
+    user_map = {str(user.id): user for user in users_query}
+
+    # Build response using batched data
+    active_sessions = []
+    for session in sessions_list:
         session_data = {
             "session_id": session.id,
             "user_id": str(session.user_id) if session.user_id else None,
@@ -71,13 +114,13 @@ async def get_active_sessions(
             "user_agent": session.user_agent,
             "connected_at": session.connected_at.isoformat(),
             "last_activity": session.last_activity.isoformat(),
-            "current_path": latest_page_view.path if latest_page_view else None,
+            "current_path": page_view_map.get(session.id),
             "is_authenticated": session.is_authenticated,
         }
 
         # Add user info if authenticated
         if session.user_id:
-            user = db.query(User).filter(User.id == session.user_id).first()
+            user = user_map.get(str(session.user_id))
             if user:
                 session_data["user"] = {
                     "id": str(user.id),

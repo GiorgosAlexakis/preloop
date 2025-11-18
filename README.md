@@ -295,14 +295,14 @@ SpaceBridge includes a comprehensive admin dashboard for superusers to monitor s
 
 **Managing Superusers:**
 
-Use the provided management script to grant or revoke superuser permissions:
+Use the provided management script to promote or demote superuser permissions:
 
 ```bash
-# Grant superuser access
-python scripts/manage_superusers.py grant user@example.com
+# Promote a user to superuser
+python scripts/manage_superusers.py promote user@example.com
 
-# Revoke superuser access
-python scripts/manage_superusers.py revoke user@example.com
+# Demote a user from superuser
+python scripts/manage_superusers.py demote user@example.com
 
 # List all superusers
 python scripts/manage_superusers.py list
@@ -310,6 +310,7 @@ python scripts/manage_superusers.py list
 
 **Admin Features:**
 - Real-time session monitoring from in-memory session manager (no N+1 queries)
+  - **Note**: In multi-pod deployments, each pod maintains its own session registry. The `/admin/activity/sessions` endpoint only shows sessions connected to the current pod. For cross-pod monitoring, query the Event table or aggregate results from all pod endpoints.
 - User activity tracking and analytics
 - Account management with subscription status
 - Flow execution monitoring and debugging
@@ -319,7 +320,7 @@ python scripts/manage_superusers.py list
 
 SpaceBridge uses a unified WebSocket connection for real-time updates across the application:
 
-**Connection:** `ws://localhost:8000/ws`
+**Connection:** `ws://localhost:8000/api/v1/ws/unified`
 
 **Message Routing:**
 - Flow execution updates (`flow_executions` topic)

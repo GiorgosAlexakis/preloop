@@ -56,6 +56,11 @@ class FlowExecutionOrchestrator:
         self._stop_requested = asyncio.Event()
         self._user_messages: asyncio.Queue = asyncio.Queue()
 
+        # Execution metrics tracked during execution
+        self.total_tokens: int = 0
+        self.tool_calls_count: int = 0
+        self.estimated_cost: float = 0.0
+
     @staticmethod
     async def send_command(
         execution_id: str,
@@ -726,8 +731,6 @@ class FlowExecutionOrchestrator:
         """
         logger.info(f"Starting log streaming for {session_reference}")
         log_count = 0
-        total_tokens = 0
-        tool_calls_count = 0
 
         # Track previous line for token parsing (tokens used pattern spans 2 lines)
         previous_line = ""
@@ -752,31 +755,31 @@ class FlowExecutionOrchestrator:
                     token_match = re.search(r"(\d{1,3}(?:,\d{3})*)", log_line.strip())
                     if token_match:
                         tokens = int(token_match.group(1).replace(",", ""))
-                        total_tokens += tokens
+                        self.total_tokens += tokens
                         logger.info(
-                            f"Detected token usage: {tokens} tokens (total: {total_tokens})"
+                            f"Detected token usage: {tokens} tokens (total: {self.total_tokens})"
                         )
 
                         # Emit token usage update
                         await self._publish_update(
                             "token_usage_update",
                             {
-                                "total_tokens": total_tokens,
+                                "total_tokens": self.total_tokens,
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             },
                         )
 
                 # Check if this log line indicates a tool call was detected
                 previous_tool_calls_count = len(self.execution_logger.mcp_usage_logs)
-                if previous_tool_calls_count > tool_calls_count:
-                    tool_calls_count = previous_tool_calls_count
-                    logger.info(f"Tool call detected (total: {tool_calls_count})")
+                if previous_tool_calls_count > self.tool_calls_count:
+                    self.tool_calls_count = previous_tool_calls_count
+                    logger.info(f"Tool call detected (total: {self.tool_calls_count})")
 
                     # Emit tool call count update
                     await self._publish_update(
                         "tool_calls_update",
                         {
-                            "tool_calls": tool_calls_count,
+                            "tool_calls": self.tool_calls_count,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                     )
@@ -794,7 +797,7 @@ class FlowExecutionOrchestrator:
                 previous_line = log_line
 
             logger.info(
-                f"Log streaming completed. Total logs streamed: {log_count}, tokens: {total_tokens}, tool calls: {tool_calls_count}"
+                f"Log streaming completed. Total logs streamed: {log_count}, tokens: {self.total_tokens}, tool calls: {self.tool_calls_count}"
             )
 
         except asyncio.CancelledError:
@@ -1204,6 +1207,9 @@ class FlowExecutionOrchestrator:
                 actions_taken_summary=agent_result.get("actions_taken"),
                 mcp_usage_logs=agent_result.get("mcp_usage_logs"),
                 end_time=datetime.now(timezone.utc),
+                tool_calls_count=self.tool_calls_count,
+                total_tokens=self.total_tokens,
+                estimated_cost=self.estimated_cost,
             )
 
             logger.info(
@@ -1222,6 +1228,9 @@ class FlowExecutionOrchestrator:
                         status="FAILED",
                         error_message=str(e),
                         end_time=datetime.now(timezone.utc),
+                        tool_calls_count=self.tool_calls_count,
+                        total_tokens=self.total_tokens,
+                        estimated_cost=self.estimated_cost,
                     )
                 except Exception as update_error:
                     logger.error(

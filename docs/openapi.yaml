@@ -7419,6 +7419,27 @@ components:
           - type: 'null'
           title: Error Message
           description: Error message if the execution failed
+        tool_calls_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Tool Calls Count
+          description: Total number of tool/MCP calls made during execution
+          default: 0
+        total_tokens:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Total Tokens
+          description: Total tokens used (input + output) during execution
+          default: 0
+        estimated_cost:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Estimated Cost
+          description: Estimated cost in USD for this execution
+          default: 0.0
         id:
           type: string
           format: uuid

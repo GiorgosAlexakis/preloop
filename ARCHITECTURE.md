@@ -549,6 +549,15 @@ class WebSocketSession:
 - No N+1 database queries needed for active session list
 - Session data enriched with user information only when needed
 
+**Multi-Pod Considerations:**
+- Each pod maintains its own in-memory session registry
+- The `/api/v1/admin/activity/sessions` endpoint only returns sessions from the current pod
+- In multi-pod Kubernetes deployments, sessions are distributed across pods based on load balancer routing
+- For comprehensive cross-pod monitoring, consider:
+  - Querying the `Event` table for `session_start` events (persistent across all pods)
+  - Aggregating results from all pod endpoints (requires service discovery)
+  - Using a centralized session store like Redis (future enhancement)
+
 ### Activity Pipeline
 
 User activity flows through multiple layers:
