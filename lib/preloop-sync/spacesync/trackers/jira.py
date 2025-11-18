@@ -1582,24 +1582,43 @@ class JiraTracker(BaseTracker):
                         f"Error verifying webhook {webhook_id} in Jira (attempt {attempt + 1}/{max_retries}): {verify_error}"
                     )
 
-            # If verification failed after all retries, notify admins
+            # If verification failed after all retries, notify admins (but not in test/dev environments)
             if not verified:
                 error_msg = (
                     f"Failed to verify webhook {webhook_id} for project {project.identifier} "
                     f"after {max_retries} attempts. The webhook may not be properly registered in Jira."
                 )
                 logger.error(error_msg)
-                try:
-                    from spacesync.tasks import notify_admins
 
-                    notify_admins(
-                        subject=f"Jira Webhook Verification Failed: {project.identifier}",
-                        message=error_msg,
-                    )
-                except Exception as notify_error:
-                    logger.error(
-                        f"Failed to send admin notification: {notify_error}",
-                        exc_info=True,
+                # Only send notifications in production environments
+                # Skip notifications if:
+                # - Running tests (pytest detected)
+                # - Development environment (localhost URLs)
+                # - Test project identifiers
+                import sys
+
+                is_test_env = (
+                    "pytest" in sys.modules
+                    or "localhost" in self.jira_url.lower()
+                    or project.identifier.upper() == "TEST"
+                )
+
+                if not is_test_env:
+                    try:
+                        from spacesync.tasks import notify_admins
+
+                        notify_admins(
+                            subject=f"Jira Webhook Verification Failed: {project.identifier}",
+                            message=error_msg,
+                        )
+                    except Exception as notify_error:
+                        logger.error(
+                            f"Failed to send admin notification: {notify_error}",
+                            exc_info=True,
+                        )
+                else:
+                    logger.warning(
+                        f"Skipping admin notification in test/dev environment for project {project.identifier}"
                     )
 
             logger.info(
