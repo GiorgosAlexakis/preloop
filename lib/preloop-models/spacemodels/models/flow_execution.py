@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, UTC
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -39,6 +39,17 @@ class FlowExecution(Base):
         String, nullable=True
     )  # e.g., agent session ID, K8s job ID, Docker container ID, process ID
     error_message = Column(Text, nullable=True)
+
+    # Execution metrics
+    tool_calls_count = Column(
+        Integer, nullable=True, default=0
+    )  # Total number of tool/MCP calls made
+    total_tokens = Column(
+        Integer, nullable=True, default=0
+    )  # Total tokens used (input + output)
+    estimated_cost = Column(
+        Numeric(10, 4), nullable=True, default=0.0
+    )  # Estimated cost in USD
 
     created_at = Column(DateTime, default=datetime.now(UTC), nullable=False)
     updated_at = Column(
