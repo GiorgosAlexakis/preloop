@@ -125,17 +125,28 @@ class ExecutionRecoveryService:
 
     async def _resume_monitoring_task(self, orchestrator, session_reference: str):
         """Background task that resumes monitoring an agent execution."""
+        db = None
         try:
             logger.info(f"Resumed monitoring task for session {session_reference}")
 
-            # Get the agent executor
+            # Get a fresh database session for this task
+            # (the session passed to orchestrator during recovery was closed)
             from spacemodels.db.session import get_db_session
 
             db = next(get_db_session())
+
+            # Update orchestrator to use the fresh session
+            orchestrator.db = db
+
+            # Re-fetch execution_log from new session (old one is detached)
+            execution_id = orchestrator.execution_log.id
+            orchestrator.execution_log = crud_flow_execution.get(db, id=execution_id)
+
+            # Re-fetch flow from new session for account_id access in _publish_update
+            orchestrator.flow = orchestrator.execution_log.flow
+
             try:
-                flow = crud_flow_execution.get(
-                    db, id=orchestrator.execution_log.id
-                ).flow
+                flow = orchestrator.flow
 
                 # Create appropriate agent executor based on flow agent type
                 from spacebridge.agents.codex import CodexAgent
@@ -186,10 +197,19 @@ class ExecutionRecoveryService:
                 f"Error in resumed monitoring task for {session_reference}: {e}",
                 exc_info=True,
             )
-            # Mark as failed
+            # Mark as failed - need a fresh session since the one above was closed
+            failure_db = None
             try:
                 from datetime import datetime, timezone
                 from spacemodels.schemas.flow_execution import FlowExecutionUpdate
+                from spacemodels.db.session import get_db_session
+
+                failure_db = next(get_db_session())
+
+                # Re-fetch execution_log from failure session
+                execution_log = crud_flow_execution.get(
+                    failure_db, id=orchestrator.execution_log.id
+                )
 
                 update_data = FlowExecutionUpdate(
                     status="FAILED",
@@ -197,13 +217,16 @@ class ExecutionRecoveryService:
                     end_time=datetime.now(timezone.utc),
                 )
                 crud_flow_execution.update(
-                    orchestrator.db,
-                    db_obj=orchestrator.execution_log,
+                    failure_db,
+                    db_obj=execution_log,
                     obj_in=update_data,
                 )
-                orchestrator.db.commit()
+                failure_db.commit()
             except Exception as update_error:
                 logger.error(f"Failed to mark execution as failed: {update_error}")
+            finally:
+                if failure_db is not None:
+                    failure_db.close()
 
     async def wait_for_completion(self, timeout: int = 300):
         """

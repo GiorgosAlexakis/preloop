@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 
 from spacebridge.api.auth import get_user_from_token_if_valid
 from spacebridge.services.websocket_manager import manager
+from spacebridge.services.session_manager import session_manager
+from spacebridge.services.activity_tracker import handle_activity
+from spacebridge.utils import get_client_ip
 from spacemodels.db.session import get_db_session as get_db
 from spacemodels.crud import crud_flow_execution, crud_flow
 from spacesync.services.event_bus import EventBus
@@ -258,3 +261,174 @@ async def flow_execution_websocket(
             pass  # Already closed
 
         logger.info(f"WebSocket connection closed for execution {execution_id}")
+
+
+@router.websocket("/ws/unified")
+async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db)):
+    """Unified WebSocket endpoint for all real-time updates.
+
+    Features:
+    - Single persistent connection per user
+    - Supports authenticated and anonymous users
+    - Activity tracking and analytics
+    - Message routing to appropriate handlers
+    - Automatic session management
+
+    Query Parameters:
+        token (optional): Authentication token for authenticated users
+        fingerprint (optional): Browser fingerprint for anonymous users
+    """
+    await websocket.accept()
+
+    # Extract parameters
+    token = websocket.query_params.get("token")
+    fingerprint = websocket.query_params.get("fingerprint")
+
+    # Get real IP address (behind ingress)
+    client_ip = get_client_ip(websocket)
+    user_agent = websocket.headers.get("user-agent", "")
+
+    # Authenticate user (optional for anonymous)
+    user = None
+    if token:
+        user = await get_user_from_token_if_valid(token, db)
+        if not user:
+            logger.warning(f"Invalid token for unified WebSocket from {client_ip}")
+            await websocket.send_json(
+                {"error": "Invalid or expired authentication token"}
+            )
+            await websocket.close(code=1008)
+            return
+
+    # Create session
+    session = await session_manager.create_session(
+        websocket=websocket,
+        user=user,
+        fingerprint=fingerprint,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        db=db,
+    )
+
+    logger.info(
+        f"Unified WebSocket session {session.id} established for "
+        f"{'user ' + user.username if user else 'anonymous ' + (fingerprint[:8] if fingerprint else 'unknown')} "
+        f"from {client_ip}"
+    )
+
+    # Start heartbeat monitoring
+    heartbeat_task = None
+
+    try:
+        # Register connection with the existing WebSocket manager for broadcast compatibility
+        if user:
+            manager_connection_id = await manager.connect_with_account(
+                websocket, str(user.account_id)
+            )
+        else:
+            # For anonymous users, register without account filtering
+            manager_connection_id = str(session.connection_id)
+            manager.active_connections[manager_connection_id] = websocket
+
+        # Send initial handshake confirmation
+        await websocket.send_json(
+            {
+                "type": "handshake",
+                "session_id": session.id,
+                "authenticated": session.is_authenticated,
+                "message": "Connected to unified WebSocket",
+            }
+        )
+
+        # Message loop
+        while True:
+            try:
+                # Wait for message with timeout for heartbeat
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=60.0)
+
+                # Update activity timestamp
+                session_manager.update_activity(session.id)
+
+                # Handle different message types
+                message_type = data.get("type")
+
+                if message_type == "activity":
+                    # Handle activity tracking (page views, actions, conversions)
+                    await handle_activity(data, session, db)
+
+                elif message_type == "command":
+                    # Handle commands (future: stop execution, etc.)
+                    logger.info(
+                        f"Received command from session {session.id}: {data.get('command')}"
+                    )
+                    # TODO: Route commands to appropriate handlers
+
+                elif message_type == "subscribe":
+                    # Handle topic subscriptions
+                    topic = data.get("topic")
+                    logger.info(f"Session {session.id} subscribed to topic: {topic}")
+                    # TODO: Implement topic-based subscription
+
+                elif message_type == "unsubscribe":
+                    # Handle topic unsubscriptions
+                    topic = data.get("topic")
+                    logger.info(
+                        f"Session {session.id} unsubscribed from topic: {topic}"
+                    )
+                    # TODO: Implement topic-based unsubscription
+
+                elif message_type == "pong":
+                    # Heartbeat response
+                    continue
+
+                else:
+                    logger.warning(
+                        f"Unknown message type '{message_type}' from session {session.id}"
+                    )
+
+            except asyncio.TimeoutError:
+                # Send ping for heartbeat
+                try:
+                    await websocket.send_json({"type": "ping"})
+                    # Wait for pong response
+                    pong = await asyncio.wait_for(
+                        websocket.receive_json(), timeout=10.0
+                    )
+                    if pong.get("type") != "pong":
+                        logger.warning(
+                            f"Expected pong from session {session.id}, got: {pong}"
+                        )
+                        break
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"Session {session.id} did not respond to ping, disconnecting"
+                    )
+                    break
+
+    except WebSocketDisconnect:
+        logger.info(f"Session {session.id} disconnected normally")
+    except Exception as e:
+        logger.error(
+            f"Error in unified WebSocket session {session.id}: {e}", exc_info=True
+        )
+    finally:
+        # Cleanup
+        if heartbeat_task:
+            heartbeat_task.cancel()
+
+        # Disconnect from manager
+        try:
+            manager.disconnect(manager_connection_id)
+        except Exception as e:
+            logger.error(f"Error disconnecting from manager: {e}")
+
+        # End session
+        await session_manager.end_session(session.id, db)
+
+        # Close WebSocket
+        try:
+            await websocket.close()
+        except Exception:
+            pass  # Already closed
+
+        logger.info(f"Unified WebSocket session {session.id} closed")

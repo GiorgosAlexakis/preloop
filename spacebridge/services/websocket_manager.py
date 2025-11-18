@@ -180,6 +180,10 @@ async def nats_consumer(manager: "WebSocketManager"):
         )
         logger.info("Subscribed to NATS subject 'approval-updates'")
 
+        # Subscribe to admin activity updates (for admin dashboard)
+        activity_sub = await nats_client.subscribe("admin.activity", cb=message_handler)
+        logger.info("Subscribed to NATS subject 'admin.activity'")
+
         # Keep the consumer running
         while True:
             await asyncio.sleep(1)

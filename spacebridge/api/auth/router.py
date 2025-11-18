@@ -45,6 +45,7 @@ from spacebridge.schemas.auth import (
     UserResponse,
     UserUpdate,
 )
+from spacebridge.utils import get_client_ip
 from spacebridge.utils.email import (
     send_password_reset_email,
     send_product_notification_email,
@@ -220,7 +221,7 @@ async def register(
                 }
                 await send_product_notification_email(
                     user_data=user_info_for_email,
-                    source_ip=request.client.host if request.client else "Unknown",
+                    source_ip=get_client_ip(request),
                     tracker_data=None,
                 )
                 logger.info("[REGISTER] Product notification email sent")
@@ -936,6 +937,8 @@ async def authenticate_user(username: str, password: str) -> Optional[UserModel]
     Returns:
         The user if authentication is successful, None otherwise.
     """
+    from datetime import datetime, timezone
+
     session_generator = get_db_session()
     session = next(session_generator)
 
@@ -951,6 +954,11 @@ async def authenticate_user(username: str, password: str) -> Optional[UserModel]
 
         if not user.is_active:
             return None
+
+        # Update last_login timestamp
+        user.last_login = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(user)
 
         return user
     finally:

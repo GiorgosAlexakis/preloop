@@ -72,19 +72,44 @@ async def create_invitation(
             detail="A pending invitation already exists for this email",
         )
 
+    # Validate that all role_ids belong to the current account
+    # Security: Prevent cross-account role assignment
+    validated_role_ids = []
+    if invitation_data.role_ids:
+        from spacemodels.crud import crud_role
+
+        for role_id in invitation_data.role_ids:
+            role = crud_role.get(db=db, id=role_id, account_id=current_user.account_id)
+            if not role:
+                # Check if it's a system role (account_id is None)
+                role = crud_role.get(db=db, id=role_id)
+                if not role or role.account_id is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Role {role_id} does not exist or does not belong to your account",
+                    )
+            validated_role_ids.append(str(role_id))
+
+    # Validate that all team_ids belong to the current account
+    # Security: Prevent cross-account team assignment
+    validated_team_ids = []
+    if invitation_data.team_ids:
+        from spacemodels.crud import crud_team
+
+        for team_id in invitation_data.team_ids:
+            team = crud_team.get(db=db, id=team_id, account_id=current_user.account_id)
+            if not team:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Team {team_id} does not exist or does not belong to your account",
+                )
+            validated_team_ids.append(str(team_id))
+
     # Convert role_ids list to comma-separated string
-    role_ids_str = (
-        ",".join(str(role_id) for role_id in invitation_data.role_ids)
-        if invitation_data.role_ids
-        else None
-    )
+    role_ids_str = ",".join(validated_role_ids) if validated_role_ids else None
 
     # Convert team_ids list to comma-separated string
-    team_ids_str = (
-        ",".join(str(team_id) for team_id in invitation_data.team_ids)
-        if invitation_data.team_ids
-        else None
-    )
+    team_ids_str = ",".join(validated_team_ids) if validated_team_ids else None
 
     # Create invitation
     invitation_dict = {
@@ -106,7 +131,7 @@ async def create_invitation(
     # Send invitation email
     account = crud_account.get(db, id=current_user.account_id)
     if account:
-        # Get role names
+        # Get role names (already validated above, but double-check for email)
         role_names = []
         if invitation.role_ids:
             from spacemodels.crud import crud_role
@@ -117,11 +142,23 @@ async def create_invitation(
                 if rid.strip()
             ]
             for role_id in role_ids:
-                role = crud_role.get(db=db, id=role_id)
+                # Try account-specific role first, then system role
+                role = crud_role.get(
+                    db=db, id=role_id, account_id=current_user.account_id
+                )
+                if not role:
+                    # Check for system role
+                    role = crud_role.get(db=db, id=role_id)
+                    if role and role.account_id is not None:
+                        # Skip roles from other accounts (shouldn't happen due to validation above)
+                        logger.warning(
+                            f"Skipping role {role_id} in invitation email - belongs to different account"
+                        )
+                        continue
                 if role:
                     role_names.append(role.name)
 
-        # Get team names
+        # Get team names (already validated above, but double-check for email)
         team_names = []
         if invitation.team_ids:
             from spacemodels.crud import crud_team
@@ -132,9 +169,17 @@ async def create_invitation(
                 if tid.strip()
             ]
             for team_id in team_ids:
-                team = crud_team.get(db=db, id=team_id)
-                if team:
-                    team_names.append(team.name)
+                # Validate team belongs to the same account
+                team = crud_team.get(
+                    db=db, id=team_id, account_id=current_user.account_id
+                )
+                if not team:
+                    # Shouldn't happen due to validation above
+                    logger.warning(
+                        f"Skipping team {team_id} in invitation email - not found or belongs to different account"
+                    )
+                    continue
+                team_names.append(team.name)
 
         send_invitation_email(
             user_email=invitation.email,
@@ -345,7 +390,7 @@ async def resend_invitation(
     # Send invitation email
     account = crud_account.get(db, id=current_user.account_id)
     if account:
-        # Get role names
+        # Get role names (with account validation for defense in depth)
         role_names = []
         if invitation.role_ids:
             from spacemodels.crud import crud_role
@@ -356,11 +401,23 @@ async def resend_invitation(
                 if rid.strip()
             ]
             for role_id in role_ids:
-                role = crud_role.get(db=db, id=role_id)
+                # Try account-specific role first, then system role
+                role = crud_role.get(
+                    db=db, id=role_id, account_id=current_user.account_id
+                )
+                if not role:
+                    # Check for system role
+                    role = crud_role.get(db=db, id=role_id)
+                    if role and role.account_id is not None:
+                        # Skip roles from other accounts
+                        logger.warning(
+                            f"Skipping role {role_id} in invitation {invitation_id} - belongs to different account"
+                        )
+                        continue
                 if role:
                     role_names.append(role.name)
 
-        # Get team names
+        # Get team names (with account validation for defense in depth)
         team_names = []
         if invitation.team_ids:
             from spacemodels.crud import crud_team
@@ -371,9 +428,16 @@ async def resend_invitation(
                 if tid.strip()
             ]
             for team_id in team_ids:
-                team = crud_team.get(db=db, id=team_id)
-                if team:
-                    team_names.append(team.name)
+                # Validate team belongs to the same account
+                team = crud_team.get(
+                    db=db, id=team_id, account_id=current_user.account_id
+                )
+                if not team:
+                    logger.warning(
+                        f"Skipping team {team_id} in invitation {invitation_id} - not found or belongs to different account"
+                    )
+                    continue
+                team_names.append(team.name)
 
         send_invitation_email(
             user_email=invitation.email,
@@ -556,14 +620,28 @@ async def accept_invitation(
     # Mark invitation as accepted
     crud_user_invitation.accept(db=db, invitation_id=invitation.id, user_id=user.id)
 
-    # Assign roles if specified
+    # Assign roles if specified (with strict account validation)
+    # Security: Prevent cross-account role assignment during invitation acceptance
     if invitation.role_ids:
-        from spacemodels.crud import crud_user_role
+        from spacemodels.crud import crud_user_role, crud_role
 
         role_ids = [
             UUID(rid.strip()) for rid in invitation.role_ids.split(",") if rid.strip()
         ]
         for role_id in role_ids:
+            # Validate role belongs to the invitation's account or is a system role
+            role = crud_role.get(db=db, id=role_id, account_id=invitation.account_id)
+            if not role:
+                # Check if it's a system role
+                role = crud_role.get(db=db, id=role_id)
+                if not role or role.account_id is not None:
+                    # Role doesn't exist or belongs to a different account
+                    logger.error(
+                        f"Security: Skipping role {role_id} during invitation acceptance - "
+                        f"not found or belongs to different account. Invitation ID: {invitation.id}"
+                    )
+                    continue
+
             user_role_dict = {
                 "user_id": user.id,
                 "role_id": role_id,
@@ -571,7 +649,8 @@ async def accept_invitation(
             }
             crud_user_role.create(db=db, obj_in=user_role_dict)
 
-    # Assign teams if specified
+    # Assign teams if specified (with strict account validation)
+    # Security: Prevent cross-account team assignment during invitation acceptance
     if invitation.team_ids:
         from spacemodels.crud import crud_team
 
@@ -579,6 +658,16 @@ async def accept_invitation(
             UUID(tid.strip()) for tid in invitation.team_ids.split(",") if tid.strip()
         ]
         for team_id in team_ids:
+            # Validate team belongs to the invitation's account
+            team = crud_team.get(db=db, id=team_id, account_id=invitation.account_id)
+            if not team:
+                # Team doesn't exist or belongs to a different account - skip it
+                logger.error(
+                    f"Security: Skipping team {team_id} during invitation acceptance - "
+                    f"not found or belongs to different account. Invitation ID: {invitation.id}"
+                )
+                continue
+
             crud_team.add_member(
                 db=db,
                 team_id=team_id,
@@ -591,6 +680,16 @@ async def accept_invitation(
     db.refresh(user)
 
     logger.info(f"User {user.username} created by accepting invitation {invitation.id}")
+
+    # Update Stripe subscription quantity to reflect new user count
+    try:
+        from spacebridge.plugins.proprietary.billing.service import BillingService
+
+        billing_service = BillingService(db)
+        billing_service.update_subscription_quantity(str(invitation.account_id))
+    except Exception as e:
+        logger.warning(f"Failed to update Stripe subscription quantity: {e}")
+        # Don't fail user creation if billing update fails
 
     return {
         "message": "Account created successfully",

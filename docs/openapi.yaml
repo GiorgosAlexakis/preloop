@@ -538,198 +538,6 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /approval/{request_id}/data:
-    get:
-      tags:
-      - Public Approval
-      - public-approval
-      summary: Get Approval Request Public
-      description: "Get approval request details using token (no authentication required).\n\
-        \nArgs:\n    request_id: UUID of the approval request\n    token: Secure token\
-        \ from the approval link\n    db: Database session\n\nReturns:\n    Public\
-        \ approval request details\n\nRaises:\n    HTTPException: If token is invalid\
-        \ or request not found"
-      operationId: get_approval_request_public_approval__request_id__data_get
-      parameters:
-      - name: request_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Request Id
-      - name: token
-        in: query
-        required: true
-        schema:
-          type: string
-          description: Approval token
-          title: Token
-        description: Approval token
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApprovalRequestPublic'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /approval/{request_id}/decide:
-    post:
-      tags:
-      - Public Approval
-      - public-approval
-      summary: Decide Approval Request Public
-      description: "Approve or decline an approval request using token (no authentication\
-        \ required).\n\nArgs:\n    request_id: UUID of the approval request\n    decision:\
-        \ Approval decision (approve/decline) and optional comment\n    token: Secure\
-        \ token from the approval link\n    db_sync: Synchronous database session\
-        \ for validation\n\nReturns:\n    Updated approval request\n\nRaises:\n  \
-        \  HTTPException: If token is invalid, request not found, or already resolved"
-      operationId: decide_approval_request_public_approval__request_id__decide_post
-      parameters:
-      - name: request_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Request Id
-      - name: token
-        in: query
-        required: true
-        schema:
-          type: string
-          description: Approval token
-          title: Token
-        description: Approval token
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ApprovalDecisionRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApprovalRequestPublic'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/features:
-    get:
-      tags:
-      - Features
-      summary: Get Features
-      description: "Get enabled features and plugins.\n\nReturns information about\
-        \ which plugins are installed and what features\nare available in the system.\
-        \ This allows the frontend to dynamically\nshow/hide UI sections based on\
-        \ backend capabilities.\n\nReturns:\n    Dictionary with:\n    - plugins:\
-        \ List of enabled plugin metadata\n    - features: Dict of feature flags (e.g.,\
-        \ rbac, user_management, etc.)"
-      operationId: get_features_api_v1_features_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                additionalProperties: true
-                type: object
-                title: Response Get Features Api V1 Features Get
-  /api/v1/health:
-    get:
-      tags:
-      - Health
-      summary: Health Check
-      description: "Health check endpoint with database and MCP server status.\n\n\
-        Returns:\n    Dictionary with health status including:\n    - status: Overall\
-        \ health status (healthy/unhealthy)\n    - database: Database connection status\n\
-        \    - mcp_server: MCP server availability\n    - upstream_connections: Number\
-        \ of active upstream MCP connections\n    - timestamp: Current timestamp"
-      operationId: health_check_api_v1_health_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                additionalProperties: true
-                type: object
-                title: Response Health Check Api V1 Health Get
-  /api/v1/version:
-    get:
-      tags:
-      - Version
-      summary: Get Version Info
-      description: 'Returns the server version information and logs the client version.
-
-
-        Accepts an optional `X-Client-Version` header from the client.
-
-        If an `Authorization: Bearer <token>` header is provided and valid,
-
-        the associated account ID will also be logged.'
-      operationId: get_version_info_api_v1_version_get
-      parameters:
-      - name: X-Client-Version
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Version
-      - name: X-Client-Organization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Organization
-      - name: X-Client-Project
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Project
-      - name: X-Additional-Info
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Additional-Info
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VersionInfo'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - bearerAuth: []
   /api/v1/trackers/debug:
     post:
       tags:
@@ -4091,6 +3899,68 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/version:
+    get:
+      tags:
+      - Version
+      summary: Get Version Info
+      description: 'Returns the server version information and logs the client version.
+
+
+        Accepts an optional `X-Client-Version` header from the client.
+
+        If an `Authorization: Bearer <token>` header is provided and valid,
+
+        the associated account ID will also be logged.'
+      operationId: get_version_info_api_v1_version_get
+      parameters:
+      - name: X-Client-Version
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Client-Version
+      - name: X-Client-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Client-Organization
+      - name: X-Client-Project
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Client-Project
+      - name: X-Additional-Info
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Additional-Info
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionInfo'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/private/webhooks/{tracker_type}/{organization_id}:
     post:
       tags:
@@ -6327,21 +6197,6 @@ components:
       - approved
       title: ApprovalDecision
       description: Schema for approval decision.
-    ApprovalDecisionRequest:
-      properties:
-        action:
-          type: string
-          title: Action
-        comment:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Comment
-      type: object
-      required:
-      - action
-      title: ApprovalDecisionRequest
-      description: Request to approve or decline.
     ApprovalPolicyCreate:
       properties:
         name:
@@ -6770,45 +6625,6 @@ components:
       type: object
       title: ApprovalPolicyUpdate
       description: Schema for updating approval policy.
-    ApprovalRequestPublic:
-      properties:
-        id:
-          type: string
-          title: Id
-        tool_name:
-          type: string
-          title: Tool Name
-        tool_args:
-          additionalProperties: true
-          type: object
-          title: Tool Args
-        agent_reasoning:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Agent Reasoning
-        status:
-          type: string
-          title: Status
-        requested_at:
-          type: string
-          title: Requested At
-        expires_at:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Expires At
-      type: object
-      required:
-      - id
-      - tool_name
-      - tool_args
-      - agent_reasoning
-      - status
-      - requested_at
-      - expires_at
-      title: ApprovalRequestPublic
-      description: Public view of approval request (no sensitive account data).
     ApprovalRequestResponse:
       properties:
         tool_name:

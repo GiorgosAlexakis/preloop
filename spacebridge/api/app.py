@@ -28,10 +28,12 @@ from fastapi.encoders import jsonable_encoder
 from spacebridge.api.auth import auth_router, get_current_active_user
 from spacebridge.api.endpoints import (
     account,
+    admin,
     approval_requests,
     comments,
     features,
     health,
+    impersonation,
     invitations,
     issues,
     issue_compliance,
@@ -666,13 +668,17 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        public_approval.router, tags=["Public Approval"]
+        public_approval.router, tags=["Public Approval"], include_in_schema=False
     )  # No auth required, mounted at /approval (not /api/v1/approval)
     app.include_router(
-        features.router, prefix="/api/v1", tags=["Features"]
+        features.router, prefix="/api/v1", tags=["Features"], include_in_schema=False
     )  # No auth required
-    app.include_router(health.router, prefix="/api/v1", tags=["Health"])
-    app.include_router(version.router, prefix="/api/v1", tags=["Version"])
+    app.include_router(
+        health.router, prefix="/api/v1", tags=["Health"], include_in_schema=False
+    )
+    app.include_router(
+        version.router, prefix="/api/v1", tags=["Version"], include_in_schema=False
+    )
     app.include_router(
         trackers.router,
         prefix="/api/v1",
@@ -795,6 +801,24 @@ def create_app() -> FastAPI:
 
     # WebSocket router
     app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
+
+    # Admin router (requires superuser permission)
+    app.include_router(
+        admin.router,
+        prefix="/api/v1",
+        tags=["Admin"],
+        dependencies=[Depends(get_current_active_user)],
+        include_in_schema=False,
+    )
+
+    # Impersonation router (requires superuser permission)
+    app.include_router(
+        impersonation.router,
+        prefix="/api/v1",
+        tags=["Admin", "Impersonation"],
+        dependencies=[Depends(get_current_active_user)],
+        include_in_schema=False,
+    )
 
     # User, Team, Role, and Invitation management routers
     app.include_router(

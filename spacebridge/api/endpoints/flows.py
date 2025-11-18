@@ -246,7 +246,7 @@ async def get_flow_execution_logs(
                         "execution_id": str(execution_id),
                         "timestamp": timestamp,
                         "type": "agent_log_line",
-                        "payload": {"content": log_line},
+                        "payload": {"line": log_line},
                     }
                 )
 
@@ -330,9 +330,17 @@ async def send_execution_command(
     from datetime import datetime, timezone
     from spacebridge.agents.container import ContainerAgentExecutor
     from spacebridge.agents.codex import CodexAgent
+    from spacesync.services.event_bus import get_nats_client
     import os
 
     logger = logging.getLogger(__name__)
+
+    # Get NATS client for sending commands
+    try:
+        nats_client = await get_nats_client()
+    except Exception as e:
+        logger.error(f"Failed to get NATS client: {e}")
+        nats_client = None
 
     # Verify execution exists and user has access
     execution = crud_flow_execution.get(
@@ -390,7 +398,7 @@ async def send_execution_command(
                                             timezone.utc
                                         ).isoformat(),
                                         "type": "agent_log_line",
-                                        "payload": {"content": log_line},
+                                        "payload": {"line": log_line},
                                     }
                                 )
 
@@ -441,6 +449,7 @@ async def send_execution_command(
                 execution_id=str(execution_id),
                 command=command_data.command,
                 payload=command_data.payload,
+                nats_client=nats_client,
             )
         except Exception as e:
             logger.warning(f"Failed to send stop command via NATS: {e}")
@@ -456,6 +465,7 @@ async def send_execution_command(
             execution_id=str(execution_id),
             command=command_data.command,
             payload=command_data.payload,
+            nats_client=nats_client,
         )
         return {"status": "command_sent"}
     except Exception as e:

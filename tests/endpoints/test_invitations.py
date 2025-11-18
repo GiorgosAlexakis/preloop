@@ -1,6 +1,7 @@
 """Tests for invitation endpoints."""
 
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -353,3 +354,311 @@ def test_resend_invitation_expired(
 
     assert response.status_code == 400
     assert "expired" in response.json()["detail"]
+
+
+# ============================================================================
+# Security Tests for Cross-Account Team/Role Assignment Prevention
+# ============================================================================
+
+
+@patch("spacebridge.api.endpoints.invitations.send_invitation_email")
+def test_create_invitation_with_cross_account_team_fails(
+    mock_send_email, client: TestClient, test_user: User, db_session: Session
+):
+    """Test that creating invitation with team from different account fails.
+
+    Security: CVE-2025-XXXX - Prevent cross-account team assignment vulnerability
+    """
+    from spacemodels.crud import crud_account, crud_team
+
+    # Create another account
+    other_account = crud_account.create(
+        db_session,
+        obj_in={"organization_name": "Other Org"},
+    )
+    db_session.commit()
+
+    # Create a team in the other account
+    other_team = crud_team.create(
+        db_session,
+        obj_in={
+            "account_id": other_account.id,
+            "name": "Other Team",
+            "description": "Team from different account",
+        },
+    )
+    db_session.commit()
+
+    # Try to create invitation with the other account's team
+    invitation_data = {
+        "email": "victim@example.com",
+        "team_ids": [str(other_team.id)],
+    }
+
+    response = client.post("/api/v1/invitations", json=invitation_data)
+
+    # Should fail with 403 Forbidden
+    assert response.status_code == 403
+    assert "does not belong to your account" in response.json()["detail"]
+
+    # Email should not be sent for failed invitation
+    mock_send_email.assert_not_called()
+
+
+@patch("spacebridge.api.endpoints.invitations.send_invitation_email")
+def test_create_invitation_with_cross_account_role_fails(
+    mock_send_email, client: TestClient, test_user: User, db_session: Session
+):
+    """Test that creating invitation with role from different account fails.
+
+    Security: CVE-2025-XXXX - Prevent cross-account role assignment vulnerability
+    """
+    from spacemodels.crud import crud_account, crud_role
+
+    # Create another account
+    other_account = crud_account.create(
+        db_session,
+        obj_in={"organization_name": "Other Org"},
+    )
+    db_session.commit()
+
+    # Create a custom role in the other account
+    other_role = crud_role.create(
+        db_session,
+        obj_in={
+            "account_id": other_account.id,
+            "name": "Other Custom Role",
+            "description": "Custom role from different account",
+            "is_system_role": False,
+        },
+    )
+    db_session.commit()
+
+    # Try to create invitation with the other account's role
+    invitation_data = {
+        "email": "victim@example.com",
+        "role_ids": [str(other_role.id)],
+    }
+
+    response = client.post("/api/v1/invitations", json=invitation_data)
+
+    # Should fail with 403 Forbidden
+    assert response.status_code == 403
+    assert "does not belong to your account" in response.json()["detail"]
+
+    # Email should not be sent for failed invitation
+    mock_send_email.assert_not_called()
+
+
+def test_accept_invitation_with_tampered_team_ids(
+    client: TestClient, test_user: User, db_session: Session
+):
+    """Test that accepting invitation with tampered team IDs doesn't add user to wrong teams.
+
+    Security: CVE-2025-XXXX - Prevent exploitation via database manipulation
+    This tests the defense-in-depth validation during acceptance.
+    """
+    from spacemodels.crud import crud_account, crud_team, crud_user_invitation
+
+    # Create another account
+    other_account = crud_account.create(
+        db_session,
+        obj_in={"organization_name": "Other Org"},
+    )
+    db_session.commit()
+
+    # Create a team in the other account
+    other_team = crud_team.create(
+        db_session,
+        obj_in={
+            "account_id": other_account.id,
+            "name": "Other Team",
+            "description": "Team from different account",
+        },
+    )
+    db_session.commit()
+
+    # Create invitation with valid team from test_user's account
+    invitation_dict = {
+        "account_id": test_user.account_id,
+        "email": "victim@example.com",
+        "invited_by": test_user.id,
+        "team_ids": None,  # Initially no teams
+    }
+    invitation = crud_user_invitation.create(db_session, obj_in=invitation_dict)
+    db_session.commit()
+
+    # Simulate attacker tampering with database to inject other_team.id
+    # (This simulates a scenario where validation was bypassed in create)
+    invitation.team_ids = str(other_team.id)
+    db_session.commit()
+
+    # Accept the invitation
+    accept_data = {
+        "token": invitation.token,
+        "username": "victim_user",
+        "password": "SecureP@ssw0rd123",
+        "full_name": "Victim User",
+    }
+
+    response = client.post("/api/v1/invitations/accept", json=accept_data)
+
+    # Acceptance should succeed (user created) - returns 201 Created
+    assert response.status_code == 201
+
+    # But user should NOT be added to other_team
+    from spacemodels.crud import crud_user
+
+    created_user = crud_user.get_by_username(db_session, username="victim_user")
+    assert created_user is not None
+
+    # Check that user is NOT a member of other_team
+    from spacemodels.crud import crud_team
+
+    user_teams = crud_team.get_user_teams(db_session, user_id=created_user.id)
+    team_ids = [team.id for team in user_teams]
+    assert other_team.id not in team_ids
+
+
+def test_accept_invitation_with_tampered_role_ids(
+    client: TestClient, test_user: User, db_session: Session
+):
+    """Test that accepting invitation with tampered role IDs doesn't assign wrong roles.
+
+    Security: CVE-2025-XXXX - Prevent exploitation via database manipulation
+    """
+    from spacemodels.crud import crud_account, crud_role, crud_user_invitation
+
+    # Create another account
+    other_account = crud_account.create(
+        db_session,
+        obj_in={"organization_name": "Other Org"},
+    )
+    db_session.commit()
+
+    # Create a custom role in the other account (e.g., admin role)
+    other_role = crud_role.create(
+        db_session,
+        obj_in={
+            "account_id": other_account.id,
+            "name": "Other Admin",
+            "description": "Admin role from different account",
+            "is_system_role": False,
+        },
+    )
+    db_session.commit()
+
+    # Create invitation with no roles
+    invitation_dict = {
+        "account_id": test_user.account_id,
+        "email": "victim2@example.com",
+        "invited_by": test_user.id,
+        "role_ids": None,
+    }
+    invitation = crud_user_invitation.create(db_session, obj_in=invitation_dict)
+    db_session.commit()
+
+    # Simulate attacker tampering with database
+    invitation.role_ids = str(other_role.id)
+    db_session.commit()
+
+    # Accept the invitation
+    accept_data = {
+        "token": invitation.token,
+        "username": "victim_user2",
+        "password": "SecureP@ssw0rd123",
+        "full_name": "Victim User 2",
+    }
+
+    response = client.post("/api/v1/invitations/accept", json=accept_data)
+
+    # Acceptance should succeed (user created) - returns 201 Created
+    assert response.status_code == 201
+
+    # But user should NOT have other_role assigned
+    from spacemodels.crud import crud_user, crud_user_role
+
+    created_user = crud_user.get_by_username(db_session, username="victim_user2")
+    assert created_user is not None
+
+    # Check that user doesn't have the other_role
+    user_roles = crud_user_role.get_by_user(db_session, user_id=created_user.id)
+    role_ids = [ur.role_id for ur in user_roles]
+    assert other_role.id not in role_ids
+
+
+@patch("spacebridge.api.endpoints.invitations.send_invitation_email")
+def test_create_invitation_with_own_account_team_succeeds(
+    mock_send_email, client: TestClient, test_user: User, db_session: Session
+):
+    """Test that creating invitation with team from own account succeeds.
+
+    This verifies that the fix doesn't break legitimate use cases.
+    """
+    from spacemodels.crud import crud_team
+
+    # Create a team in test_user's account
+    own_team = crud_team.create(
+        db_session,
+        obj_in={
+            "account_id": test_user.account_id,
+            "name": "My Team",
+            "description": "Team from my account",
+        },
+    )
+    db_session.commit()
+
+    # Create invitation with own team
+    invitation_data = {
+        "email": "legitimate@example.com",
+        "team_ids": [str(own_team.id)],
+    }
+
+    response = client.post("/api/v1/invitations", json=invitation_data)
+
+    # Should succeed - returns 201 Created
+    assert response.status_code == 201
+    data = response.json()
+    assert data["email"] == "legitimate@example.com"
+
+    # Email should be sent for successful invitation
+    mock_send_email.assert_called_once()
+
+
+@patch("spacebridge.api.endpoints.invitations.send_invitation_email")
+def test_create_invitation_with_system_role_succeeds(
+    mock_send_email, client: TestClient, test_user: User, db_session: Session
+):
+    """Test that creating invitation with system role succeeds.
+
+    System roles (account_id = NULL) should be available to all accounts.
+    """
+    from spacemodels.crud import crud_role
+
+    # Create a system role
+    system_role = crud_role.create(
+        db_session,
+        obj_in={
+            "account_id": None,  # System role
+            "name": "System Viewer",
+            "description": "System-wide viewer role",
+            "is_system_role": True,
+        },
+    )
+    db_session.commit()
+
+    # Create invitation with system role
+    invitation_data = {
+        "email": "system_role_user@example.com",
+        "role_ids": [str(system_role.id)],
+    }
+
+    response = client.post("/api/v1/invitations", json=invitation_data)
+
+    # Should succeed - returns 201 Created
+    assert response.status_code == 201
+    data = response.json()
+    assert data["email"] == "system_role_user@example.com"
+
+    # Email should be sent for successful invitation
+    mock_send_email.assert_called_once()

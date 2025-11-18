@@ -11,10 +11,11 @@ from spacebridge.config import (
 )  # Import constants directly
 from spacebridge.api.auth import get_current_user  # Remove oauth2_scheme import
 from spacebridge.schemas.version import VersionInfo
-from SpaceModels.spacemodels.db.session import get_db_session  # Correct function name
+from spacebridge.utils import get_client_ip
+from spacemodels.db.session import get_db_session  # Correct function name
 
 # Account model is returned by get_current_user
-from SpaceModels.spacemodels.models.client_version_log import ClientVersionLog
+from spacemodels.models.client_version_log import ClientVersionLog
 from fastapi import HTTPException  # To catch auth errors
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ async def get_version_info(
     If an `Authorization: Bearer <token>` header is provided and valid,
     the associated account ID will also be logged.
     """
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     account_id: Optional[int] = None
     current_user = None
     # Explicitly check header for optional authentication
