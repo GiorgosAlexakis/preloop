@@ -133,6 +133,162 @@ async def get_active_sessions(
     return {"sessions": active_sessions, "total": len(active_sessions)}
 
 
+@router.get("/admin/activity/stats")
+@require_permission("view_admin_dashboard")
+async def get_activity_stats(
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get system-wide activity statistics.
+
+    Returns:
+        Aggregated activity statistics across all accounts including:
+        - Total accounts, users, and active sessions
+        - Activity breakdown by time period
+        - Most active accounts
+        - Event type distribution
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    now = datetime.now(timezone.utc)
+
+    # Calculate time boundaries
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = now - timedelta(days=7)
+    month_start = now - timedelta(days=30)
+
+    # Total accounts and users
+    total_accounts = db.query(func.count(Account.id)).scalar() or 0
+    total_users = db.query(func.count(User.id)).scalar() or 0
+    active_users = db.query(func.count(User.id)).filter(User.is_active).scalar() or 0
+
+    # Activity by time period
+    events_today = (
+        db.query(func.count(Event.id)).filter(Event.timestamp >= today_start).scalar()
+        or 0
+    )
+    events_this_week = (
+        db.query(func.count(Event.id)).filter(Event.timestamp >= week_start).scalar()
+        or 0
+    )
+    events_this_month = (
+        db.query(func.count(Event.id)).filter(Event.timestamp >= month_start).scalar()
+        or 0
+    )
+
+    # Unique active accounts by period
+    active_accounts_today = (
+        db.query(func.count(func.distinct(Event.account_id)))
+        .filter(Event.timestamp >= today_start)
+        .scalar()
+        or 0
+    )
+    active_accounts_week = (
+        db.query(func.count(func.distinct(Event.account_id)))
+        .filter(Event.timestamp >= week_start)
+        .scalar()
+        or 0
+    )
+    active_accounts_month = (
+        db.query(func.count(func.distinct(Event.account_id)))
+        .filter(Event.timestamp >= month_start)
+        .scalar()
+        or 0
+    )
+
+    # Event type distribution (last 30 days)
+    event_types = (
+        db.query(Event.event_type, func.count(Event.id).label("count"))
+        .filter(Event.timestamp >= month_start)
+        .group_by(Event.event_type)
+        .order_by(func.count(Event.id).desc())
+        .limit(10)
+        .all()
+    )
+    event_type_distribution = {event_type: count for event_type, count in event_types}
+
+    # Most active accounts (last 30 days)
+    most_active_accounts = (
+        db.query(
+            Event.account_id,
+            Account.organization_name,
+            func.count(Event.id).label("event_count"),
+        )
+        .join(Account, Event.account_id == Account.id)
+        .filter(Event.timestamp >= month_start)
+        .group_by(Event.account_id, Account.organization_name)
+        .order_by(func.count(Event.id).desc())
+        .limit(10)
+        .all()
+    )
+
+    top_accounts = [
+        {
+            "account_id": str(account_id),
+            "organization_name": org_name,
+            "event_count": count,
+        }
+        for account_id, org_name, count in most_active_accounts
+    ]
+
+    # Flow execution stats (last 30 days)
+    from spacemodels.models import FlowExecution
+
+    flow_executions_total = (
+        db.query(func.count(FlowExecution.id))
+        .filter(FlowExecution.start_time >= month_start)
+        .scalar()
+        or 0
+    )
+    flow_executions_success = (
+        db.query(func.count(FlowExecution.id))
+        .filter(
+            FlowExecution.start_time >= month_start,
+            FlowExecution.status == "COMPLETED",
+        )
+        .scalar()
+        or 0
+    )
+    flow_executions_failed = (
+        db.query(func.count(FlowExecution.id))
+        .filter(
+            FlowExecution.start_time >= month_start,
+            FlowExecution.status == "FAILED",
+        )
+        .scalar()
+        or 0
+    )
+
+    return {
+        "overview": {
+            "total_accounts": total_accounts,
+            "total_users": total_users,
+            "active_users": active_users,
+        },
+        "activity": {
+            "events_today": events_today,
+            "events_this_week": events_this_week,
+            "events_this_month": events_this_month,
+            "active_accounts_today": active_accounts_today,
+            "active_accounts_week": active_accounts_week,
+            "active_accounts_month": active_accounts_month,
+        },
+        "event_type_distribution": event_type_distribution,
+        "top_accounts": top_accounts,
+        "flow_executions": {
+            "total": flow_executions_total,
+            "success": flow_executions_success,
+            "failed": flow_executions_failed,
+            "success_rate": (
+                (flow_executions_success / flow_executions_total * 100)
+                if flow_executions_total > 0
+                else 0
+            ),
+        },
+    }
+
+
 @router.get("/admin/accounts")
 @require_permission("view_admin_dashboard")
 async def get_accounts(
@@ -208,12 +364,124 @@ async def get_accounts(
     total_count = query.count()
     accounts = query.offset(offset).limit(limit).all()
 
+    # Batch load primary user data for all accounts at once
+    account_ids = [acc.id for acc in accounts]
+    primary_user_ids = [acc.primary_user_id for acc in accounts if acc.primary_user_id]
+
+    primary_users_map = {}
+    if primary_user_ids:
+        primary_users = (
+            db.query(User.id, User.username, User.email)
+            .filter(User.id.in_(primary_user_ids))
+            .all()
+        )
+        primary_users_map = {user.id: user for user in primary_users}
+
+    # Batch load stats for all accounts
+    from spacemodels.models import Team, Tracker, Flow
+
+    stats_query = (
+        db.query(
+            Account.id.label("account_id"),
+            func.count(func.distinct(User.id)).label("users_count"),
+            func.count(func.distinct(Team.id)).label("teams_count"),
+            func.count(func.distinct(Tracker.id)).label("trackers_count"),
+            func.count(func.distinct(Flow.id)).label("flows_count"),
+        )
+        .select_from(Account)
+        .outerjoin(User, User.account_id == Account.id)
+        .outerjoin(Team, Team.account_id == Account.id)
+        .outerjoin(Tracker, Tracker.account_id == Account.id)
+        .outerjoin(Flow, Flow.account_id == Account.id)
+        .filter(Account.id.in_(account_ids))
+        .group_by(Account.id)
+    )
+    stats_results = stats_query.all()
+    stats_map = {row.account_id: row for row in stats_results}
+
+    # Batch load last activity times
+    last_activity_query = (
+        db.query(Event.account_id, func.max(Event.timestamp).label("last_activity"))
+        .filter(Event.account_id.in_(account_ids))
+        .group_by(Event.account_id)
+    )
+    last_activity_results = last_activity_query.all()
+    last_activity_map = {
+        row.account_id: row.last_activity for row in last_activity_results
+    }
+
+    # Batch load active session counts
+    now = datetime.now(timezone.utc)
+    cutoff_time = now - timedelta(hours=1)
+
+    # Get all started sessions
+    started_sessions = (
+        db.query(Event.account_id, Event.session_id)
+        .filter(
+            Event.account_id.in_(account_ids),
+            Event.event_type == "session_start",
+            Event.timestamp >= cutoff_time,
+        )
+        .distinct()
+        .all()
+    )
+
+    started_by_account = {}
+    session_ids_per_account = {}
+    for acc_id, sess_id in started_sessions:
+        started_by_account.setdefault(acc_id, []).append(sess_id)
+        session_ids_per_account.setdefault(acc_id, set()).add(sess_id)
+
+    # Get all ended sessions
+    all_session_ids = {
+        sess_id for sessions in session_ids_per_account.values() for sess_id in sessions
+    }
+    if all_session_ids:
+        ended_sessions = (
+            db.query(Event.account_id, Event.session_id)
+            .filter(
+                Event.account_id.in_(account_ids),
+                Event.event_type == "session_end",
+                Event.session_id.in_(all_session_ids),
+            )
+            .distinct()
+            .all()
+        )
+
+        ended_by_account = {}
+        for acc_id, sess_id in ended_sessions:
+            ended_by_account.setdefault(acc_id, set()).add(sess_id)
+    else:
+        ended_by_account = {}
+
+    active_sessions_map = {}
+    for acc_id in account_ids:
+        started = started_by_account.get(acc_id, [])
+        ended = ended_by_account.get(acc_id, set())
+        active_sessions_map[acc_id] = len([s for s in started if s not in ended])
+
     # Enrich accounts with stats
     enriched_accounts = []
     for account in accounts:
-        account_stats = get_account_stats(account.id, db)
-        # Cache last_activity_time to avoid calling it twice
-        last_activity = get_last_activity_time(account.id, db)
+        stats_row = stats_map.get(account.id)
+        account_stats = {
+            "users_count": stats_row.users_count if stats_row else 0,
+            "teams_count": stats_row.teams_count if stats_row else 0,
+            "trackers_count": stats_row.trackers_count if stats_row else 0,
+            "flows_count": stats_row.flows_count if stats_row else 0,
+        }
+
+        primary_user = None
+        if account.primary_user_id and account.primary_user_id in primary_users_map:
+            user_data = primary_users_map[account.primary_user_id]
+            primary_user = {
+                "id": str(account.primary_user_id),
+                "username": user_data.username,
+                "email": user_data.email,
+            }
+
+        last_activity = last_activity_map.get(account.id)
+        active_sessions = active_sessions_map.get(account.id, 0)
 
         enriched_accounts.append(
             {
@@ -222,21 +490,9 @@ async def get_accounts(
                 "created_at": account.created_at.isoformat()
                 if account.created_at
                 else None,
-                "primary_user": (
-                    {
-                        "id": str(account.primary_user_id),
-                        "username": db.query(User.username)
-                        .filter(User.id == account.primary_user_id)
-                        .scalar(),
-                        "email": db.query(User.email)
-                        .filter(User.id == account.primary_user_id)
-                        .scalar(),
-                    }
-                    if account.primary_user_id
-                    else None
-                ),
+                "primary_user": primary_user,
                 "stats": account_stats,
-                "active_sessions_count": get_active_sessions_count(account.id, db),
+                "active_sessions_count": active_sessions,
                 "last_activity_at": (
                     last_activity.isoformat() if last_activity else None
                 ),

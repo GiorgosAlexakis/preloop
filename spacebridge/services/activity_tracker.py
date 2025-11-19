@@ -116,10 +116,12 @@ async def handle_activity(data: dict, session: WebSocketSession, db: Session) ->
 
         activity_message = {
             "type": "activity_update",
+            "account_id": str(activity.account_id) if activity.account_id else None,
             "activity": {
                 "id": str(activity.id),
                 "session_id": str(activity.session_id) if activity.session_id else None,
                 "user_id": str(activity.user_id) if activity.user_id else None,
+                "account_id": str(activity.account_id) if activity.account_id else None,
                 "event_type": activity.event_type,
                 "timestamp": activity.timestamp.isoformat(),
                 "path": activity.path,

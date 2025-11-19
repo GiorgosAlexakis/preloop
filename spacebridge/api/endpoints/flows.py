@@ -199,6 +199,7 @@ async def get_flow_execution_logs(
 
     if is_running and execution.agent_session_reference:
         # Fetch logs directly from container
+        agent = None
         try:
             # Get the flow to determine agent type
             flow = crud_flow.get(
@@ -261,6 +262,10 @@ async def get_flow_execution_logs(
             )
             # Fall back to database logs if container logs fail
             pass
+        finally:
+            # Always cleanup agent resources to avoid leaking connections
+            if agent is not None:
+                await agent.cleanup()
 
     # For finished executions or if container logs failed, return database logs
     if execution.execution_logs and isinstance(execution.execution_logs, list):

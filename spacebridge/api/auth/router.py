@@ -69,6 +69,9 @@ from spacemodels.db.session import get_db_session
 from spacemodels.models.user import User as UserModel
 from spacemodels.models.api_key import ApiKey
 from pydantic import BaseModel
+from spacebridge.services.flow_presets_service import (
+    create_default_presets_for_account_background,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -204,6 +207,14 @@ async def register(
                 send_verification_email, user_email=user_data.email, token=token
             )
             logger.info("[REGISTER] Verification email scheduled")
+
+            # Create default flow presets for the new account
+            logger.info("[REGISTER] Scheduling flow presets creation")
+            background_tasks.add_task(
+                create_default_presets_for_account_background,
+                account_id=new_account.id,
+            )
+            logger.info("[REGISTER] Flow presets creation scheduled")
 
             # Send product notification email
             logger.info("[REGISTER] Sending product notification email")

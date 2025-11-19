@@ -756,8 +756,15 @@ class FlowExecutionOrchestrator:
                     if token_match:
                         tokens = int(token_match.group(1).replace(",", ""))
                         self.total_tokens += tokens
+
+                        # Estimate cost based on tokens (using average of $5 per million tokens)
+                        # This is a rough estimate - actual costs vary by model and input/output ratio
+                        cost_per_million_tokens = 5.0  # Average cost
+                        tokens_cost = (tokens / 1_000_000) * cost_per_million_tokens
+                        self.estimated_cost += tokens_cost
+
                         logger.info(
-                            f"Detected token usage: {tokens} tokens (total: {self.total_tokens})"
+                            f"Detected token usage: {tokens} tokens (total: {self.total_tokens}, estimated cost: ${self.estimated_cost:.4f})"
                         )
 
                         # Emit token usage update
@@ -765,6 +772,7 @@ class FlowExecutionOrchestrator:
                             "token_usage_update",
                             {
                                 "total_tokens": self.total_tokens,
+                                "estimated_cost": self.estimated_cost,
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             },
                         )

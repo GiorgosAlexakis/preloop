@@ -3,12 +3,38 @@
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy.orm import Session
 import stripe
 
 from spacebridge.plugins.proprietary.billing.service import BillingService
 from spacemodels.crud.plan import subscription as crud_subscription
 from spacemodels.models.user import User
+from spacemodels.models.plan import Plan
+
+
+@pytest.fixture
+def test_plan(db_session: Session) -> Plan:
+    """Create a test plan for subscription tests."""
+    # Check if plan already exists
+    existing_plan = db_session.query(Plan).filter(Plan.id == "teams").first()
+    if existing_plan:
+        return existing_plan
+
+    plan = Plan(
+        id="teams",
+        name="Teams Plan",
+        price_monthly=10.00,
+        price_annually=100.00,
+        stripe_product_id="prod_test",
+        is_active=True,
+        is_custom=False,
+        features=["feature1", "feature2"],
+    )
+    db_session.add(plan)
+    db_session.commit()
+    db_session.refresh(plan)
+    return plan
 
 
 class TestUpdateSubscriptionQuantity:
@@ -22,6 +48,7 @@ class TestUpdateSubscriptionQuantity:
         mock_stripe_modify,
         db_session: Session,
         test_user: User,
+        test_plan: Plan,
     ):
         """Test successful quantity update when user count changes."""
         # Create active subscription using CRUD
@@ -81,7 +108,11 @@ class TestUpdateSubscriptionQuantity:
 
     @patch("stripe.Subscription.retrieve")
     def test_update_subscription_quantity_no_subscription(
-        self, mock_stripe_retrieve, db_session: Session, test_user: User
+        self,
+        mock_stripe_retrieve,
+        db_session: Session,
+        test_user: User,
+        test_plan: Plan,
     ):
         """Test returns False when account has no active subscription."""
         service = BillingService(db_session)
@@ -99,6 +130,7 @@ class TestUpdateSubscriptionQuantity:
         mock_stripe_modify,
         db_session: Session,
         test_user: User,
+        test_plan: Plan,
     ):
         """Test returns False when quantity already matches user count."""
         # Create active subscription using CRUD
@@ -135,6 +167,7 @@ class TestUpdateSubscriptionQuantity:
         mock_stripe_modify,
         db_session: Session,
         test_user: User,
+        test_plan: Plan,
     ):
         """Test ensures minimum of 1 user when all users are inactive."""
         # Create active subscription using CRUD
@@ -168,7 +201,11 @@ class TestUpdateSubscriptionQuantity:
 
     @patch("stripe.Subscription.retrieve")
     def test_update_subscription_quantity_no_subscription_items(
-        self, mock_stripe_retrieve, db_session: Session, test_user: User
+        self,
+        mock_stripe_retrieve,
+        db_session: Session,
+        test_user: User,
+        test_plan: Plan,
     ):
         """Test handles subscription with no items gracefully."""
         # Create active subscription using CRUD
@@ -197,7 +234,11 @@ class TestUpdateSubscriptionQuantity:
 
     @patch("stripe.Subscription.retrieve")
     def test_update_subscription_quantity_stripe_error(
-        self, mock_stripe_retrieve, db_session: Session, test_user: User
+        self,
+        mock_stripe_retrieve,
+        db_session: Session,
+        test_user: User,
+        test_plan: Plan,
     ):
         """Test handles Stripe API errors gracefully without raising."""
         # Create active subscription using CRUD
@@ -212,7 +253,7 @@ class TestUpdateSubscriptionQuantity:
         subscription = crud_subscription.create(db_session, obj_in=subscription_data)
 
         # Mock Stripe to raise error
-        mock_stripe_retrieve.side_effect = stripe.error.StripeError("API Error")
+        mock_stripe_retrieve.side_effect = stripe.StripeError("API Error")
 
         # Test - should not raise, just return False
         service = BillingService(db_session)
@@ -229,6 +270,7 @@ class TestUpdateSubscriptionQuantity:
         mock_stripe_modify,
         db_session: Session,
         test_user: User,
+        test_plan: Plan,
     ):
         """Test handles errors during subscription item modification."""
         # Create active subscription using CRUD
@@ -249,7 +291,7 @@ class TestUpdateSubscriptionQuantity:
         }
 
         # Mock modification to raise error
-        mock_stripe_modify.side_effect = stripe.error.StripeError("Update failed")
+        mock_stripe_modify.side_effect = stripe.StripeError("Update failed")
 
         # Test - should not raise, just return False
         service = BillingService(db_session)
@@ -266,6 +308,7 @@ class TestUpdateSubscriptionQuantity:
         mock_stripe_modify,
         db_session: Session,
         test_user: User,
+        test_plan: Plan,
     ):
         """Test handles inactive subscription correctly."""
         # Create inactive subscription using CRUD (no active subscription will be found)
@@ -296,6 +339,7 @@ class TestUpdateSubscriptionQuantity:
         mock_stripe_modify,
         db_session: Session,
         test_user: User,
+        test_plan: Plan,
     ):
         """Test correctly counts and updates for multiple active users."""
         # Create active subscription using CRUD
@@ -351,6 +395,7 @@ class TestUpdateSubscriptionQuantity:
         mock_stripe_modify,
         db_session: Session,
         test_user: User,
+        test_plan: Plan,
     ):
         """Test ensures minimum quantity of 1 when ALL users are inactive (0 active)."""
         # Create active subscription using CRUD
@@ -394,6 +439,7 @@ class TestUpdateSubscriptionQuantity:
         mock_stripe_modify,
         db_session: Session,
         test_user: User,
+        test_plan: Plan,
     ):
         """Test behavior when all users inactive and quantity already at minimum (1).
 
@@ -443,6 +489,7 @@ class TestUpdateSubscriptionQuantity:
         mock_stripe_modify,
         db_session: Session,
         test_user: User,
+        test_plan: Plan,
     ):
         """Test correctly counts only active users when mix of active/inactive exists."""
         # Create active subscription using CRUD
@@ -508,7 +555,11 @@ class TestUpdateSubscriptionQuantity:
 
     @patch("stripe.Subscription.retrieve")
     def test_update_subscription_quantity_missing_quantity_field(
-        self, mock_stripe_retrieve, db_session: Session, test_user: User
+        self,
+        mock_stripe_retrieve,
+        db_session: Session,
+        test_user: User,
+        test_plan: Plan,
     ):
         """Test handles Stripe item with missing quantity field gracefully."""
         # Create active subscription using CRUD
