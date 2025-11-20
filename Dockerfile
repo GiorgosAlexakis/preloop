@@ -28,7 +28,7 @@ COPY spacesync/setup.py spacesync/
 COPY spacesync/requirements.txt spacesync/
 
 # Install build dependencies and Python packages in separate layers for better caching
-RUN pip install -U --no-cache-dir build setuptools pip wheel mkdocs mkdocs-material mkdocs-mermaid2-plugin ipdb
+RUN pip install -U --no-cache-dir build setuptools pip wheel ipdb
 
 # Copy only necessary files for SpaceModels and spacesync installation
 COPY SpaceModels/ SpaceModels/
@@ -39,14 +39,13 @@ RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e s
 COPY spacebridge/ spacebridge/
 COPY scripts/ scripts/
 COPY docs/ docs/
-COPY mkdocs.yml .
 COPY plans.yaml .
 
 # Copy built frontend assets
 COPY --from=space-lit-build /app/dist-spacebridge /app/SpaceLit/dist
 
-# Install the main application and build docs
-RUN pip install --no-cache-dir -e . && mkdocs build
+# Install the main application
+RUN pip install --no-cache-dir -e .
 
 # Expose the port
 EXPOSE 8000

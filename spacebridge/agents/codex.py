@@ -154,6 +154,12 @@ class CodexAgent(ContainerAgentExecutor):
             "SPACEBRIDGE_MCP_URL", "http://host.docker.internal:8000/mcp/v1"
         )
 
+        # Add MCP_TOOL_TIMEOUT_SEC for config.toml substitution
+        # This is retrieved from the execution context (set by _prepare_environment)
+        mcp_timeout = execution_context.get("_mcp_tool_timeout", 600)
+        env["MCP_TOOL_TIMEOUT_SEC"] = str(mcp_timeout)
+        self.logger.info(f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for config.toml")
+
         # Add MCP configuration using MCP config service
         allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
         allowed_mcp_tools = execution_context.get("allowed_mcp_tools", [])
@@ -354,6 +360,7 @@ EOF
 
 # Create config.toml with model and MCP server configuration
 # Use unquoted heredoc to allow variable substitution
+# Note: MCP_TOOL_TIMEOUT_SEC will be substituted at runtime
 cat > ~/.codex/config.toml << EOF
 model = "{model}"
 
@@ -362,6 +369,7 @@ rmcp_client = true
 [mcp_servers.spacebridge]
 url = "$SPACEBRIDGE_MCP_URL"
 bearer_token_env_var = "SPACEBRIDGE_API_TOKEN"
+tool_timeout_sec = $MCP_TOOL_TIMEOUT_SEC
 EOF
 
 # Debug: Show config files (with API key masked)
@@ -423,6 +431,14 @@ exit $CODEX_EXIT_CODE
             os.getenv("SPACEBRIDGE_MCP_URL", "http://spacebridge-api:8000/mcp/v1"),
         )
 
+        # Add MCP_TOOL_TIMEOUT_SEC for config.toml substitution
+        # This is retrieved from the execution context (set by _prepare_environment)
+        mcp_timeout = execution_context.get("_mcp_tool_timeout", 600)
+        codex_env["MCP_TOOL_TIMEOUT_SEC"] = str(mcp_timeout)
+        self.logger.info(
+            f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for config.toml (Kubernetes)"
+        )
+
         # Add MCP configuration using MCP config service
         allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
         allowed_mcp_tools = execution_context.get("allowed_mcp_tools", [])
@@ -480,8 +496,9 @@ exit $CODEX_EXIT_CODE
         env["CODEX_ENV_PHP_VERSION"] = os.getenv("CODEX_ENV_PHP_VERSION", "8.4")
 
         # Configure MCP tool timeout based on approval policies
-        # Base timeout is 300 seconds (5 minutes)
-        mcp_timeout = 300
+        # Base timeout is 600 seconds (10 minutes) - increased from 5 minutes
+        # This is higher than the default 60s to account for approval workflows
+        mcp_timeout = 600
 
         # Check if there are approval policies that may require longer timeouts
         account_id = execution_context.get("account_id")
@@ -535,6 +552,10 @@ exit $CODEX_EXIT_CODE
                 )
 
         env["MCP_TOOL_TIMEOUT"] = str(mcp_timeout)
-        self.logger.info(f"MCP_TOOL_TIMEOUT set to {mcp_timeout}s")
+        # Store timeout in context for use in config.toml generation
+        execution_context["_mcp_tool_timeout"] = mcp_timeout
+        self.logger.info(
+            f"MCP_TOOL_TIMEOUT set to {mcp_timeout}s (will be configured in config.toml)"
+        )
 
         return env

@@ -31,7 +31,7 @@ Your task:
 Use the search_issues tool to check for similar issues.
 Use the update_issue tool to add your suggested labels and priority.
 Provide a clear summary of your analysis in a comment on the issue.""",
-        "agent_type": "openhands",
+        "agent_type": "codex",
         "agent_config": {
             "sandbox_type": "exec",
             "enable_auto_lint": False,
@@ -76,7 +76,7 @@ Your task:
 
 Use the add_comment tool to post your review findings.
 Be thorough but constructive in your feedback.""",
-        "agent_type": "openhands",
+        "agent_type": "codex",
         "agent_config": {
             "sandbox_type": "exec",
             "enable_auto_lint": True,
@@ -127,7 +127,7 @@ Your task:
 
 Use best practices for the project's language and framework.
 Make sure to handle edge cases and error conditions.""",
-        "agent_type": "openhands",
+        "agent_type": "codex",
         "agent_config": {
             "sandbox_type": "exec",
             "enable_auto_lint": True,
@@ -183,7 +183,7 @@ Your task:
 
 Focus on clarity, completeness, and examples.
 Include code snippets and diagrams where appropriate.""",
-        "agent_type": "openhands",
+        "agent_type": "codex",
         "agent_config": {
             "sandbox_type": "exec",
             "enable_auto_lint": False,
@@ -237,7 +237,7 @@ Your task:
 
 If you can reproduce the bug, provide clear evidence.
 If you cannot, explain what might be missing from the reproduction steps.""",
-        "agent_type": "openhands",
+        "agent_type": "codex",
         "agent_config": {
             "sandbox_type": "exec",
             "enable_auto_lint": False,
@@ -289,7 +289,7 @@ Format release notes professionally with:
 - Bullet points for each change
 - Links to relevant PRs and issues
 - Credits to contributors""",
-        "agent_type": "openhands",
+        "agent_type": "codex",
         "agent_config": {
             "sandbox_type": "exec",
             "enable_auto_lint": False,
@@ -334,7 +334,7 @@ Your task:
 
 Comment on the PR with your findings.
 Mark critical security issues prominently.""",
-        "agent_type": "openhands",
+        "agent_type": "codex",
         "agent_config": {
             "sandbox_type": "exec",
             "enable_auto_lint": True,
