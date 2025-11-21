@@ -23,7 +23,9 @@ from spacemodels.models import (
     Tracker,
     User,
     Event,
+    Subscription,
 )
+from spacebridge.agents.base import AgentStatus
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -245,7 +247,7 @@ async def get_activity_stats(
         db.query(func.count(FlowExecution.id))
         .filter(
             FlowExecution.start_time >= month_start,
-            FlowExecution.status == "COMPLETED",
+            FlowExecution.status == AgentStatus.SUCCEEDED,
         )
         .scalar()
         or 0
@@ -254,7 +256,7 @@ async def get_activity_stats(
         db.query(func.count(FlowExecution.id))
         .filter(
             FlowExecution.start_time >= month_start,
-            FlowExecution.status == "FAILED",
+            FlowExecution.status == AgentStatus.FAILED,
         )
         .scalar()
         or 0
@@ -331,6 +333,12 @@ async def get_accounts(
                     )
                 ),
             )
+        )
+
+    # Subscription status filter
+    if subscription_status:
+        query = query.join(Subscription, Account.id == Subscription.account_id).filter(
+            Subscription.status == subscription_status
         )
 
     # Activity level filter
@@ -750,7 +758,10 @@ def get_flow_stats(flow_id: UUID, db: Session) -> dict:
 
     successful = (
         db.query(FlowExecution)
-        .filter(FlowExecution.flow_id == flow_id, FlowExecution.status == "success")
+        .filter(
+            FlowExecution.flow_id == flow_id,
+            FlowExecution.status == AgentStatus.SUCCEEDED,
+        )
         .count()
     )
 

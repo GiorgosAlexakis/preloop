@@ -27,8 +27,9 @@ from sqlalchemy.orm import Session
 from spacemodels.db.session import get_db_session
 from spacemodels.crud.account import CRUDAccount
 from spacemodels.crud.flow import CRUDFlow
+from spacemodels.crud.user import CRUDUser
 from spacemodels.models.account import Account
-from spacemodels.models.flow import Flow
+from spacemodels.models.user import User
 from spacemodels import schemas
 from spacebridge.flow_presets import FLOW_PRESETS
 
@@ -56,7 +57,7 @@ def sync_presets_for_account(
     Returns:
         Number of presets synced/updated
     """
-    crud_flow = CRUDFlow(Flow)
+    crud_flow = CRUDFlow()
     changes_count = 0
 
     account_label = account_email or str(account_id)
@@ -217,15 +218,18 @@ def main():
             logger.info("DRY RUN MODE - No changes will be made")
 
         if args.email:
-            # Find account by user email
-            crud_account = CRUDAccount(Account)
-            account = crud_account.get_by_email(db, email=args.email)
-            if not account:
-                logger.error(f"No account found with email: {args.email}")
+            # Find user by email, then get their account
+            crud_user = CRUDUser(User)
+            user = crud_user.get_by_email(db, email=args.email)
+            if not user:
+                logger.error(f"No user found with email: {args.email}")
+                sys.exit(1)
+            if not user.account_id:
+                logger.error(f"User {args.email} has no associated account")
                 sys.exit(1)
 
             changes = sync_presets_for_account(
-                db, account.id, account_email=args.email, dry_run=args.dry_run
+                db, user.account_id, account_email=args.email, dry_run=args.dry_run
             )
             logger.info(f"Total changes: {changes}")
 

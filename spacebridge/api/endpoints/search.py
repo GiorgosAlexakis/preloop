@@ -88,6 +88,11 @@ async def perform_search(
         project_ids=[project_id] if project_id else None,
     )
 
+    logger.info(
+        f"Found {len(accessible_projects)} accessible projects for user {current_user.username} "
+        f"(account_id={current_user.account_id})"
+    )
+
     # Apply additional filtering based on organization/project name filters
     if organization_id or organization:
         # Filter by organization
@@ -99,17 +104,36 @@ async def perform_search(
             accessible_projects = [
                 p for p in accessible_projects if p.organization.name == organization
             ]
+        logger.info(f"After organization filter: {len(accessible_projects)} projects")
 
     if project:
         # Filter by project name
         accessible_projects = [p for p in accessible_projects if p.name == project]
+        logger.info(f"After project name filter: {len(accessible_projects)} projects")
 
     # Extract project IDs - this now always contains scope-filtered projects
     resolved_project_ids_param = [p.id for p in accessible_projects]
 
+    if not resolved_project_ids_param:
+        logger.warning(
+            f"No accessible projects found for search. User: {current_user.username}, "
+            f"Account: {current_user.account_id}, Filters: project_id={project_id}, "
+            f"organization_id={organization_id}, project={project}, organization={organization}"
+        )
+
     # --- End of Project and Organization Resolution Logic ---
 
     if search_type == "similarity":
+        # Validate query is not empty for similarity search
+        if not query or not query.strip():
+            logger.warning(
+                f"Empty query provided for similarity search by user {current_user.username}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Query cannot be empty for similarity search. Please provide a search query.",
+            )
+
         # TODO:Check usage limit before proceeding
         # if not billing_service.check_limit(current_user.id, "ai_calls"):
         #     raise HTTPException(
