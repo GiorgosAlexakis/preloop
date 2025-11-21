@@ -3128,12 +3128,16 @@ paths:
       parameters:
       - name: query
         in: query
-        required: true
+        required: false
         schema:
-          type: string
-          description: The text query to search for.
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: The text query to search for. If not provided, lists all issues
+            matching filters.
           title: Query
-        description: The text query to search for.
+        description: The text query to search for. If not provided, lists all issues
+          matching filters.
       - name: embedding_type
         in: query
         required: false

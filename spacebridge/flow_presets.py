@@ -104,9 +104,7 @@ Be thorough but constructive in your feedback.""",
         "icon": "lightning",
         "trigger_event_source": None,  # Will be set to tracker_id when instantiated
         "trigger_event_type": "issue.labeled",
-        "trigger_config": {
-            "filter_conditions": {"labels": ["auto-implement", "ready-for-automation"]}
-        },
+        "trigger_config": {"filter_conditions": {}},
         "prompt_template": """You are an expert software engineer.
 
 An issue has been marked for automatic implementation:

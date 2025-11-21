@@ -44,10 +44,28 @@ class FlowTriggerService:
         # {"status": "opened"} - for PR events
         # {"assignee": "username"} - for assignee filter
         # {"reviewer": "username"} - for reviewer filter
+        #
+        # For backward compatibility, also support nested filter_conditions:
+        # {"assignee": "user", "filter_conditions": {"labels": [...]}}
 
         payload = event_data.get("payload", {})
 
-        for key, expected_value in flow.trigger_config.items():
+        # Flatten trigger_config if it has filter_conditions wrapper
+        flattened_config = {}
+        for key, value in flow.trigger_config.items():
+            if key == "filter_conditions" and isinstance(value, dict):
+                # Unpack filter_conditions into top-level
+                flattened_config.update(value)
+            else:
+                flattened_config[key] = value
+
+        logger.info(
+            f"Flow {flow.id} ({flow.name}): Checking trigger_config. "
+            f"Original: {flow.trigger_config}, Flattened: {flattened_config}, "
+            f"Payload keys: {list(payload.keys())}"
+        )
+
+        for key, expected_value in flattened_config.items():
             actual_value = payload.get(key)
 
             # Handle None/missing values
@@ -145,12 +163,13 @@ class FlowTriggerService:
             flows_to_trigger = []
             for flow in matching_flows:
                 if not flow.is_enabled:
-                    logger.debug(f"Skipping disabled flow '{flow.name}' ({flow.id})")
+                    logger.info(f"Skipping disabled flow '{flow.name}' ({flow.id})")
                     continue
 
                 if not self._matches_trigger_config(flow, event_data):
-                    logger.debug(
-                        f"Skipping flow '{flow.name}' ({flow.id}) - trigger_config does not match"
+                    logger.info(
+                        f"Skipping flow '{flow.name}' ({flow.id}) - trigger_config does not match. "
+                        f"Config: {flow.trigger_config}"
                     )
                     continue
 
