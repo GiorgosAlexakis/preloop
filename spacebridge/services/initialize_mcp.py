@@ -364,9 +364,9 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
     @mcp.tool()
     async def request_approval(
         operation: str,
-        caller: str,
         context: str,
         reasoning: str,
+        caller: str | None = None,
         approval_policy: str | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
@@ -382,6 +382,40 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             return "Error: No user context available"
 
         account_id = user_context.account_id
+
+        # Auto-populate caller if not provided
+        if not caller:
+            # Try to build caller from available context
+            caller_parts = []
+
+            # Try to get flow execution info from Context if available
+            flow_name = None
+            agent_type = None
+            if ctx and hasattr(ctx, "request_context"):
+                try:
+                    # Check if we have flow execution context
+                    request_ctx = ctx.request_context
+                    if hasattr(request_ctx, "flow_execution"):
+                        exec_ctx = request_ctx.flow_execution
+                        if hasattr(exec_ctx, "flow_name"):
+                            flow_name = exec_ctx.flow_name
+                        if hasattr(exec_ctx, "agent_type"):
+                            agent_type = exec_ctx.agent_type
+                except Exception as e:
+                    logger.debug(f"Could not extract flow context: {e}")
+
+            # Build caller string from available info
+            if flow_name:
+                caller_parts.append(f"Flow: {flow_name}")
+            if agent_type:
+                caller_parts.append(f"Agent: {agent_type}")
+            if user_context.username:
+                caller_parts.append(f"User: {user_context.username}")
+
+            # Fallback to simple string if no info available
+            caller = " | ".join(caller_parts) if caller_parts else "AI Agent"
+
+            logger.info(f"Auto-populated caller: {caller}")
 
         # Get the approval policy
         policy_id = None
