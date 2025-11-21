@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from .team import TeamMembership
     from .permission import UserRole
     from .notification_preferences import NotificationPreferences
+    from .event import Event
 
 
 class UserSource(str):
@@ -46,6 +47,7 @@ class User(Base):
         full_name: User's full name.
         hashed_password: Hashed password (null for external auth).
         is_active: Whether the user account is active.
+        is_superuser: Whether the user has superuser/admin privileges (platform-wide access).
         user_source: Source of authentication ('local', 'ldap', 'ad', 'saml', 'oauth').
         oauth_provider: OAuth provider if user_source is 'oauth'.
         oauth_id: OAuth provider's user ID.
@@ -85,6 +87,11 @@ class User(Base):
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, comment="Whether the user account is active"
+    )
+    is_superuser: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        comment="Whether the user has superuser/admin privileges",
     )
 
     # External authentication
@@ -145,6 +152,12 @@ class User(Base):
             uselist=False,  # 1:1 relationship
             cascade="all, delete-orphan",
         )
+    )
+    events: Mapped[List["Event"]] = relationship(
+        "Event",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="[Event.user_id]",
     )
 
     def __repr__(self) -> str:

@@ -47,6 +47,15 @@ class FlowExecutionBase(BaseModel):
     error_message: Optional[str] = Field(
         None, description="Error message if the execution failed"
     )
+    tool_calls_count: Optional[int] = Field(
+        0, description="Total number of tool/MCP calls made during execution"
+    )
+    total_tokens: Optional[int] = Field(
+        0, description="Total tokens used (input + output) during execution"
+    )
+    estimated_cost: Optional[float] = Field(
+        0.0, description="Estimated cost in USD for this execution"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -66,6 +75,9 @@ class FlowExecutionUpdate(BaseModel):
     mcp_usage_logs: Optional[List[Dict[str, Any]]] = None
     agent_session_reference: Optional[str] = None
     error_message: Optional[str] = None
+    tool_calls_count: Optional[int] = None
+    total_tokens: Optional[int] = None
+    estimated_cost: Optional[float] = None
 
 
 # Pydantic model for representing a FlowExecution in API responses (includes DB fields)

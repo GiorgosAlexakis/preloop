@@ -120,10 +120,37 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
         self, db: Session, db_obj: FlowExecution, obj_in: FlowExecutionUpdate
     ) -> FlowExecution:
         """Update an existing flow execution (synchronous)."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
         update_data = obj_in.model_dump(exclude_unset=True)
+
+        # Debug logging for metrics updates
+        if "tool_calls_count" in update_data or "total_tokens" in update_data:
+            logger.info(
+                f"CRUD update - Setting metrics on FlowExecution {db_obj.id}: "
+                f"tool_calls_count={update_data.get('tool_calls_count')}, "
+                f"total_tokens={update_data.get('total_tokens')}, "
+                f"estimated_cost={update_data.get('estimated_cost')}"
+            )
+            logger.info(
+                f"Current DB values before update: tool_calls_count={db_obj.tool_calls_count}, "
+                f"total_tokens={db_obj.total_tokens}, estimated_cost={db_obj.estimated_cost}"
+            )
+
         for field, value in update_data.items():
             setattr(db_obj, field, value)
+
         db.flush()  # Use flush instead of commit to stay in transaction
+
+        # Debug logging after flush
+        if "tool_calls_count" in update_data or "total_tokens" in update_data:
+            logger.info(
+                f"After flush: tool_calls_count={db_obj.tool_calls_count}, "
+                f"total_tokens={db_obj.total_tokens}, estimated_cost={db_obj.estimated_cost}"
+            )
+
         return db_obj
 
     def get_by_flow(

@@ -66,6 +66,7 @@ from .permission import (
 from .team import CRUDTeam, crud_team
 from .user_invitation import CRUDUserInvitation, crud_user_invitation
 from .registration_token import CRUDRegistrationToken, crud_registration_token
+from .issue_duplicate import CRUDIssueDuplicate, crud_issue_duplicate
 from . import tool_approval_condition
 from . import notification_preferences
 
@@ -128,6 +129,7 @@ __all__ = [
     "CRUDTeam",
     "CRUDUserInvitation",
     "CRUDRegistrationToken",
+    "CRUDIssueDuplicate",
     "crud_account",
     "crud_tracker",
     "crud_tracker_scope_rule",
@@ -163,6 +165,7 @@ __all__ = [
     "crud_team",
     "crud_user_invitation",
     "crud_registration_token",
+    "crud_issue_duplicate",
     "tool_approval_condition",
     "notification_preferences",
 ]

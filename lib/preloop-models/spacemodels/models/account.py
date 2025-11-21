@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from .team import Team
     from .user import User
     from .user_invitation import UserInvitation
+    from .event import Event
 
 
 class Account(Base):
@@ -133,6 +134,11 @@ class Account(Base):
     )
     audit_logs: Mapped[List["AuditLog"]] = relationship(
         "AuditLog", back_populates="account", cascade="all, delete-orphan"
+    )
+    events: Mapped[List["Event"]] = relationship(
+        "Event",
+        cascade="all, delete-orphan",
+        foreign_keys="[Event.account_id]",
     )
 
     # Many-to-many relationship helper for organizational roles
