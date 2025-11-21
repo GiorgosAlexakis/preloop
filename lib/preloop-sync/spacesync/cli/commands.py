@@ -74,7 +74,21 @@ def status(verbose: bool) -> None:
         click.echo("\nAccounts:")
         accounts = crud_account.get_active(db)
         for account in accounts:
-            click.echo(f"  - {account.username} (ID: {account.id})")
+            # Display organization name or fallback to primary user info
+            display_name = account.organization_name or "Unnamed Organization"
+
+            # If there's a primary user, show their info too
+            user_info = ""
+            if account.users:
+                primary_user = next(
+                    (u for u in account.users if u.id == account.primary_user_id), None
+                )
+                if not primary_user:
+                    primary_user = account.users[0]
+                if primary_user:
+                    user_info = f" ({primary_user.email or primary_user.username})"
+
+            click.echo(f"  - {display_name}{user_info} (ID: {account.id})")
             account_trackers = crud_tracker.get_for_account(db, account_id=account.id)
             if account_trackers:
                 for tracker in account_trackers:
