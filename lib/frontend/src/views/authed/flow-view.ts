@@ -932,6 +932,34 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     this.showPresets = false;
   }
 
+  /**
+   * Get AI models compatible with the selected agent type.
+   */
+  getCompatibleModels() {
+    const agentType = this.flow.agent_type || 'codex';
+
+    // Define agent type to provider mapping
+    const agentProviderMap: Record<string, string[]> = {
+      gemini: ['google'],
+      codex: ['openai', 'google', 'deepseek', 'qwen'],
+      'claude-code': ['anthropic'],
+      aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen'], // Aider supports multiple providers
+      openhands: ['openai', 'anthropic', 'google', 'deepseek', 'qwen'], // OpenHands supports multiple
+    };
+
+    const compatibleProviders = agentProviderMap[agentType] || [];
+
+    // If no provider mapping or empty, return all models
+    if (compatibleProviders.length === 0) {
+      return this.models;
+    }
+
+    // Filter models by compatible providers
+    return this.models.filter((model: any) =>
+      compatibleProviders.includes(model.provider_name?.toLowerCase())
+    );
+  }
+
   renderForm() {
     return html`
       <form @submit=${this.handleSubmit}>
@@ -994,6 +1022,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             help-text="Choose which AI agent to use for executing this flow"
           >
             <sl-option value="codex">Codex (Recommended)</sl-option>
+            <sl-option value="gemini">Gemini CLI</sl-option>
             <sl-option value="claude-code">Claude Code</sl-option>
             <sl-option value="aider">Aider</sl-option>
             <sl-option value="openhands">OpenHands</sl-option>
@@ -1018,32 +1047,50 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                   </sl-button>
                 </div>
               `
-            : html`
-                <div>
-                  <sl-select
-                    label="AI Model"
-                    .value=${this.flow.ai_model_id || ''}
-                    @sl-change=${(e: any) =>
-                      (this.flow.ai_model_id = e.target.value)}
-                  >
-                    ${this.models.map(
-                      (model) =>
-                        html`<sl-option value=${model.id}
-                          >${model.name}</sl-option
-                        >`
-                    )}
-                  </sl-select>
-                  <sl-button
-                    size="small"
-                    variant="text"
-                    @click=${this.openAddAIModelDialog}
-                    style="margin-top: 0.5rem;"
-                  >
-                    <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                    Add New AI Model
-                  </sl-button>
-                </div>
-              `}
+            : (() => {
+                const compatibleModels = this.getCompatibleModels();
+                const agentType = this.flow.agent_type || 'codex';
+                const providerNames: Record<string, string> = {
+                  gemini: 'Google',
+                  codex: 'OpenAI',
+                  'claude-code': 'Anthropic',
+                  aider: 'OpenAI/Anthropic',
+                  openhands: 'OpenAI/Anthropic/Google',
+                };
+                const providerName = providerNames[agentType] || 'compatible';
+
+                return html`
+                  <div>
+                    <sl-select
+                      label="AI Model"
+                      .value=${this.flow.ai_model_id || ''}
+                      @sl-change=${(e: any) =>
+                        (this.flow.ai_model_id = e.target.value)}
+                      help-text="Showing ${providerName} models compatible with ${agentType}"
+                    >
+                      ${compatibleModels.length === 0
+                        ? html`<sl-option value="" disabled>
+                            No compatible models available
+                          </sl-option>`
+                        : compatibleModels.map(
+                            (model) =>
+                              html`<sl-option value=${model.id}
+                                >${model.name}</sl-option
+                              >`
+                          )}
+                    </sl-select>
+                    <sl-button
+                      size="small"
+                      variant="text"
+                      @click=${this.openAddAIModelDialog}
+                      style="margin-top: 0.5rem;"
+                    >
+                      <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                      Add New AI Model
+                    </sl-button>
+                  </div>
+                `;
+              })()}
           <sl-textarea
             label="Prompt"
             resize="auto"
