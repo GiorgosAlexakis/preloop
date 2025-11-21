@@ -14,12 +14,11 @@ from spacebridge.schemas.issue_duplicate import (
     IssueDuplicateResolutionRequest,
     IssueDuplicateResolutionResponse,
 )
-from spacemodels.crud import issue_duplicate as issue_duplicate_crud
+from spacemodels.crud import crud_issue_duplicate
 
 from spacebridge.schemas.issue import IssueResponse, IssueUpdate
 
 from fastapi import Query
-from SpaceModels.spacemodels.crud.issue_duplicate import crud_issue_duplicate
 from spacemodels.crud import (
     crud_issue_embedding,
     crud_embedding_model,
@@ -326,7 +325,7 @@ def propose_issue_duplicate_resolution(
         }
         crud_issue.update(db=db, db_obj=issue2_to_update, obj_in=update_data2)
 
-    db_duplicate = issue_duplicate_crud.update_resolution(
+    db_duplicate = crud_issue_duplicate.update_resolution(
         db=db,
         issue1_id=resolution.issue1_id,
         issue2_id=resolution.issue2_id,

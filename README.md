@@ -280,6 +280,105 @@ SpaceBridge provides a RESTful API with the following key endpoints:
 - `DELETE /api/v1/flows/{id}` - Delete flow
 - `GET /api/v1/flows/{id}/executions` - List flow executions
 - `GET /api/v1/flows/executions/{id}` - Get execution details
+- `GET /api/v1/flows/executions/{id}/logs` - Get execution logs (from container or database)
+- `GET /api/v1/flows/executions/{id}/metrics` - Get execution metrics (tool calls, tokens, cost)
+
+### Admin Dashboard and API
+
+SpaceBridge includes a comprehensive admin dashboard for superusers to monitor system activity, manage users, and track resource usage.
+
+**Admin Endpoints** (require superuser permissions):
+- `GET /api/v1/admin/activity/sessions` - Get active WebSocket sessions with real-time activity
+- `GET /api/v1/admin/accounts` - List all accounts with stats and filtering
+- `GET /api/v1/admin/accounts/{id}` - Get detailed account information
+- `GET /api/v1/admin/activity/stats` - Get system-wide activity statistics
+
+**Managing Superusers:**
+
+Use the provided management script to promote or demote superuser permissions:
+
+```bash
+# Promote a user to superuser
+python scripts/manage_superusers.py promote user@example.com
+
+# Demote a user from superuser
+python scripts/manage_superusers.py demote user@example.com
+
+# List all superusers
+python scripts/manage_superusers.py list
+```
+
+**Admin Features:**
+- Real-time session monitoring from in-memory session manager (no N+1 queries)
+  - **Note**: In multi-pod deployments, each pod maintains its own session registry. The `/admin/activity/sessions` endpoint only shows sessions connected to the current pod. For cross-pod monitoring, query the Event table or aggregate results from all pod endpoints.
+- User activity tracking and analytics
+- Account management with subscription status
+- Flow execution monitoring and debugging
+- Audit log viewing (see Impersonation Auditing below)
+
+### Unified WebSocket
+
+SpaceBridge uses a unified WebSocket connection for real-time updates across the application:
+
+**Connection:** `ws://localhost:8000/api/v1/ws/unified`
+
+**Message Routing:**
+- Flow execution updates (`flow_executions` topic)
+- Approval request notifications (`approvals` topic)
+- System activity updates (`activity` topic)
+- Session events (`system` topic)
+
+**Features:**
+- Automatic reconnection with exponential backoff
+- Pub/sub message routing to subscribers
+- Topic-based filtering for efficient message delivery
+- Session management with activity tracking
+- Heartbeat monitoring
+
+**Usage in Frontend:**
+```typescript
+import { unifiedWebSocketManager } from './services/unified-websocket-manager';
+
+// Subscribe to flow execution updates
+const unsubscribe = unifiedWebSocketManager.subscribe(
+  'flow_executions',
+  (message) => console.log('Flow update:', message),
+  (message) => message.execution_id === myExecutionId  // Optional filter
+);
+
+// Clean up when done
+unsubscribe();
+```
+
+### Impersonation Auditing
+
+SpaceBridge tracks all user impersonation events for security and compliance. Administrators can audit impersonated sessions to trace actions back to the original operator.
+
+**Audit Events:**
+- `impersonation_started` - When an admin begins impersonating a user
+- `impersonation_ended` - When impersonation session ends
+- All actions during impersonation are logged with both impersonator and impersonated user IDs
+
+**Viewing Audit Logs:**
+```bash
+# View audit logs for a specific user
+curl -X GET "https://YOUR_SPACEBRIDGE_URL/api/v1/admin/audit-logs?user_id=USER_ID" \
+  -H "Authorization: Bearer YOUR_ADMIN_API_KEY"
+
+# Filter by event type
+curl -X GET "https://YOUR_SPACEBRIDGE_URL/api/v1/admin/audit-logs?event_type=impersonation_started" \
+  -H "Authorization: Bearer YOUR_ADMIN_API_KEY"
+```
+
+**Tracing Impersonated Sessions:**
+Each audit log entry includes:
+- `impersonator_id`: The admin who initiated impersonation
+- `impersonated_user_id`: The user being impersonated
+- `session_id`: Links to session tracking for full activity trail
+- `ip_address`, `user_agent`: Device and location information
+- `event_data`: Additional context (target user, reason, etc.)
+
+For more details, see [ARCHITECTURE.md](docs/ARCHITECTURE.md) section on audit logging and impersonation.
 
 ### Using MCP Tools via API
 

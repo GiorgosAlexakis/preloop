@@ -88,6 +88,11 @@ async def perform_search(
         project_ids=[project_id] if project_id else None,
     )
 
+    logger.info(
+        f"Found {len(accessible_projects)} accessible projects for user {current_user.username} "
+        f"(account_id={current_user.account_id})"
+    )
+
     # Apply additional filtering based on organization/project name filters
     if organization_id or organization:
         # Filter by organization
@@ -99,17 +104,73 @@ async def perform_search(
             accessible_projects = [
                 p for p in accessible_projects if p.organization.name == organization
             ]
+        logger.info(f"After organization filter: {len(accessible_projects)} projects")
 
     if project:
         # Filter by project name
         accessible_projects = [p for p in accessible_projects if p.name == project]
+        logger.info(f"After project name filter: {len(accessible_projects)} projects")
 
     # Extract project IDs - this now always contains scope-filtered projects
     resolved_project_ids_param = [p.id for p in accessible_projects]
 
+    if not resolved_project_ids_param:
+        logger.warning(
+            f"No accessible projects found for search. User: {current_user.username}, "
+            f"Account: {current_user.account_id}, Filters: project_id={project_id}, "
+            f"organization_id={organization_id}, project={project}, organization={organization}"
+        )
+
     # --- End of Project and Organization Resolution Logic ---
 
-    if search_type == "similarity":
+    # If no query provided, just list issues from database
+    if not query or not query.strip():
+        logger.info(
+            f"No query provided, listing issues from database for user {current_user.username}"
+        )
+        # Query issues directly from database with filters
+        # Need to join through Project -> Organization -> Tracker to access account_id
+        from spacemodels.models.tracker import Tracker
+        from spacemodels.models.organization import Organization
+
+        issues_query = (
+            db.query(Issue)
+            .join(Project, Issue.project_id == Project.id)
+            .join(Organization, Project.organization_id == Organization.id)
+            .join(Tracker, Organization.tracker_id == Tracker.id)
+            .filter(Tracker.account_id == current_user.account_id)
+        )
+
+        # Apply project filter if provided
+        if resolved_project_ids_param:
+            issues_query = issues_query.filter(
+                Issue.project_id.in_(resolved_project_ids_param)
+            )
+
+        # Apply status filter if provided
+        if status:
+            if status == "opened":
+                issues_query = issues_query.filter(Issue.status.in_(["opened", "open"]))
+            elif status == "closed":
+                issues_query = issues_query.filter(Issue.status.in_(["closed", "done"]))
+            # 'all' means no filtering
+
+        # Apply pagination
+        issues_query = issues_query.offset(skip).limit(limit).all()
+
+        db_results_with_scores = [(issue, 1.0) for issue in issues_query]
+
+    elif search_type == "similarity":
+        # Validate query is not empty for similarity search
+        if not query or not query.strip():
+            logger.warning(
+                f"Empty query provided for similarity search by user {current_user.username}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Query cannot be empty for similarity search. Please provide a search query.",
+            )
+
         # TODO:Check usage limit before proceeding
         # if not billing_service.check_limit(current_user.id, "ai_calls"):
         #     raise HTTPException(
@@ -261,7 +322,10 @@ router = APIRouter()
     description="Performs a similarity search across issues and/or comments based on a query text and an embedding model.",
 )
 async def search_all(
-    query: str = Query(..., description="The text query to search for."),
+    query: Optional[str] = Query(
+        None,
+        description="The text query to search for. If not provided, lists all issues matching filters.",
+    ),
     embedding_type: Optional[str] = Query(
         None,
         examples=["issue", "comment"],

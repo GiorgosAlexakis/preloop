@@ -45,6 +45,7 @@ from spacebridge.schemas.auth import (
     UserResponse,
     UserUpdate,
 )
+from spacebridge.utils import get_client_ip
 from spacebridge.utils.email import (
     send_password_reset_email,
     send_product_notification_email,
@@ -68,6 +69,9 @@ from spacemodels.db.session import get_db_session
 from spacemodels.models.user import User as UserModel
 from spacemodels.models.api_key import ApiKey
 from pydantic import BaseModel
+from spacebridge.services.flow_presets_service import (
+    create_default_presets_for_account_background,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -204,6 +208,14 @@ async def register(
             )
             logger.info("[REGISTER] Verification email scheduled")
 
+            # Create default flow presets for the new account
+            logger.info("[REGISTER] Scheduling flow presets creation")
+            background_tasks.add_task(
+                create_default_presets_for_account_background,
+                account_id=new_account.id,
+            )
+            logger.info("[REGISTER] Flow presets creation scheduled")
+
             # Send product notification email
             logger.info("[REGISTER] Sending product notification email")
             try:
@@ -220,7 +232,7 @@ async def register(
                 }
                 await send_product_notification_email(
                     user_data=user_info_for_email,
-                    source_ip=request.client.host if request.client else "Unknown",
+                    source_ip=get_client_ip(request),
                     tracker_data=None,
                 )
                 logger.info("[REGISTER] Product notification email sent")
@@ -936,6 +948,8 @@ async def authenticate_user(username: str, password: str) -> Optional[UserModel]
     Returns:
         The user if authentication is successful, None otherwise.
     """
+    from datetime import datetime, timezone
+
     session_generator = get_db_session()
     session = next(session_generator)
 
@@ -951,6 +965,11 @@ async def authenticate_user(username: str, password: str) -> Optional[UserModel]
 
         if not user.is_active:
             return None
+
+        # Update last_login timestamp
+        user.last_login = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(user)
 
         return user
     finally:

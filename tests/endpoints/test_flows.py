@@ -437,3 +437,230 @@ async def test_read_flow_execution_not_found(
 
     assert exc_info.value.status_code == 404
     assert "not found" in str(exc_info.value.detail).lower()
+
+
+@pytest.mark.asyncio
+async def test_send_execution_command_execution_not_found(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that sending a command to non-existent execution raises HTTPException."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    mock_crud_flow_execution = mocker.patch(
+        "spacebridge.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = None
+
+    # Mock get_nats_client
+    mocker.patch(
+        "spacesync.services.event_bus.get_nats_client",
+        return_value=MagicMock(),
+    )
+
+    command_data = schemas.FlowExecutionCommand(
+        command="stop",
+        payload={},
+    )
+
+    # Act & Assert
+    with pytest.raises(HTTPException) as exc_info:
+        await flows.send_execution_command(
+            db=MagicMock(),
+            execution_id=execution_id,
+            command_data=command_data,
+            current_user=mock_account,
+        )
+
+    assert exc_info.value.status_code == 404
+    assert "not found" in str(exc_info.value.detail).lower()
+
+
+@pytest.mark.asyncio
+async def test_send_execution_command_stop_success(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that sending a stop command works correctly."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    flow_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+    mock_execution.flow_id = flow_id
+    mock_execution.status = "RUNNING"
+    mock_execution.agent_session_reference = "test-session-123"
+
+    mock_flow = MagicMock()
+    mock_flow.agent_type = "codex"
+
+    mock_crud_flow_execution = mocker.patch(
+        "spacebridge.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+    mock_crud_flow_execution.update.return_value = mock_execution
+
+    mock_crud_flow = mocker.patch(
+        "spacebridge.api.endpoints.flows.crud_flow",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow.get.return_value = mock_flow
+
+    # Mock get_nats_client
+    mock_nats_client = MagicMock()
+    mock_get_nats_client = mocker.patch(
+        "spacesync.services.event_bus.get_nats_client",
+        return_value=mock_nats_client,
+    )
+
+    # Mock CodexAgent
+    mock_agent = MagicMock()
+    mock_agent.get_logs = mocker.AsyncMock(return_value=["log line 1", "log line 2"])
+    mock_agent.stop = mocker.AsyncMock()
+    mock_codex_agent_class = mocker.patch(
+        "spacebridge.agents.codex.CodexAgent",
+        return_value=mock_agent,
+    )
+
+    # Mock FlowExecutionOrchestrator.send_command
+    mock_send_command = mocker.patch(
+        "spacebridge.services.flow_orchestrator.FlowExecutionOrchestrator.send_command",
+        new=mocker.AsyncMock(),
+    )
+
+    command_data = schemas.FlowExecutionCommand(
+        command="stop",
+        payload={},
+    )
+
+    # Act
+    result = await flows.send_execution_command(
+        db=MagicMock(),
+        execution_id=execution_id,
+        command_data=command_data,
+        current_user=mock_account,
+    )
+
+    # Assert
+    assert result == {"status": "stopped"}
+    mock_get_nats_client.assert_called_once()
+    mock_agent.stop.assert_called_once_with("test-session-123")
+
+    # Update is called twice: once for logs, once for status
+    assert mock_crud_flow_execution.update.call_count == 2
+
+    # Verify the final update call has status='STOPPED'
+    final_call = mock_crud_flow_execution.update.call_args
+    assert final_call.kwargs["obj_in"].status == "STOPPED"
+    assert final_call.kwargs["obj_in"].error_message == "Manually stopped by user"
+
+    # Verify send_command was called with nats_client
+    mock_send_command.assert_called_once()
+    call_kwargs = mock_send_command.call_args.kwargs
+    assert call_kwargs["execution_id"] == str(execution_id)
+    assert call_kwargs["command"] == "stop"
+    assert call_kwargs["nats_client"] == mock_nats_client
+
+
+@pytest.mark.asyncio
+async def test_send_execution_command_other_command_success(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that sending a non-stop command works correctly via NATS."""
+    # Arrange
+    execution_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+
+    mock_crud_flow_execution = mocker.patch(
+        "spacebridge.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    # Mock get_nats_client
+    mock_nats_client = MagicMock()
+    mock_get_nats_client = mocker.patch(
+        "spacesync.services.event_bus.get_nats_client",
+        return_value=mock_nats_client,
+    )
+
+    # Mock FlowExecutionOrchestrator.send_command
+    mock_send_command = mocker.patch(
+        "spacebridge.services.flow_orchestrator.FlowExecutionOrchestrator.send_command",
+        new=mocker.AsyncMock(),
+    )
+
+    command_data = schemas.FlowExecutionCommand(
+        command="send_message",
+        payload={"message": "test message"},
+    )
+
+    # Act
+    result = await flows.send_execution_command(
+        db=MagicMock(),
+        execution_id=execution_id,
+        command_data=command_data,
+        current_user=mock_account,
+    )
+
+    # Assert
+    assert result == {"status": "command_sent"}
+    mock_get_nats_client.assert_called_once()
+
+    # Verify send_command was called with nats_client
+    mock_send_command.assert_called_once()
+    call_kwargs = mock_send_command.call_args.kwargs
+    assert call_kwargs["execution_id"] == str(execution_id)
+    assert call_kwargs["command"] == "send_message"
+    assert call_kwargs["payload"] == {"message": "test message"}
+    assert call_kwargs["nats_client"] == mock_nats_client
+
+
+@pytest.mark.asyncio
+async def test_send_execution_command_nats_failure(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that command sending fails gracefully when NATS is unavailable."""
+    # Arrange
+    execution_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+
+    mock_crud_flow_execution = mocker.patch(
+        "spacebridge.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    # Mock get_nats_client to raise an exception
+    mocker.patch(
+        "spacesync.services.event_bus.get_nats_client",
+        side_effect=Exception("NATS connection failed"),
+    )
+
+    # Mock FlowExecutionOrchestrator.send_command to raise an exception
+    mocker.patch(
+        "spacebridge.services.flow_orchestrator.FlowExecutionOrchestrator.send_command",
+        new=mocker.AsyncMock(side_effect=RuntimeError("NATS client not available")),
+    )
+
+    command_data = schemas.FlowExecutionCommand(
+        command="send_message",
+        payload={"message": "test message"},
+    )
+
+    # Act & Assert
+    with pytest.raises(HTTPException) as exc_info:
+        await flows.send_execution_command(
+            db=MagicMock(),
+            execution_id=execution_id,
+            command_data=command_data,
+            current_user=mock_account,
+        )
+
+    assert exc_info.value.status_code == 500
+    assert "Failed to send command" in str(exc_info.value.detail)

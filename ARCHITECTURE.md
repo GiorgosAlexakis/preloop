@@ -400,7 +400,7 @@ graph TD
    - Webhook notifications are sent to configured channels (Slack, Mattermost, custom endpoints)
    - The service waits for approval with configurable timeout
 4. Approver reviews request and responds via:
-   - Public approval API endpoint (`/api/v1/public/approval/{request_id}/respond`)
+   - Public approval API endpoint (`/approval/{request_id}/decide`)
    - Direct API call to SpaceBridge
 5. On approval, tool execution proceeds; on decline, error is returned to client
 
@@ -412,7 +412,8 @@ graph TD
 - `GET /api/v1/approval-policies` - List approval policies
 - `POST /api/v1/approval-policies` - Create approval policy
 - `GET /api/v1/approval-requests` - List approval requests
-- `POST /api/v1/public/approval/{id}/respond` - Public endpoint for approval responses
+- `GET /approval/{id}/data` - Public endpoint for getting approval request details (token-based)
+- `POST /approval/{id}/decide` - Public endpoint for approval responses (token-based)
 
 ### MCP Server Management
 
@@ -510,6 +511,164 @@ The system is designed to be containerized using Docker, enabling easy deploymen
 - [ ] Session management and token revocation
 - [ ] Regular security audits and dependency updates
 
+
+## Session Management and Activity Tracking
+
+SpaceBridge implements a comprehensive session management system for tracking WebSocket connections, user activity, and audit events.
+
+### Session Manager
+
+The `SessionManager` class (`spacebridge/services/session_manager.py`) maintains an in-memory registry of active WebSocket sessions:
+
+**Key Features:**
+- **In-Memory Session Store**: Fast O(1) lookups for active sessions
+- **Connection Lifecycle Management**: Tracks session creation, activity updates, and termination
+- **Database Persistence**: Session events (start/end) persisted to `Event` table for historical analysis
+- **Activity Tracking**: Updates last_activity timestamp on each WebSocket message
+- **Account-Based Filtering**: Quick lookup of all sessions for a given account
+
+**Data Structure:**
+```python
+@dataclass
+class WebSocketSession:
+    id: str
+    connection_id: str
+    websocket: WebSocket
+    user_id: Optional[UUID]
+    account_id: Optional[UUID]
+    fingerprint: Optional[str]
+    ip_address: str
+    user_agent: str
+    connected_at: datetime
+    last_activity: datetime
+    metadata: dict
+```
+
+**Usage:**
+- Admin dashboard queries `session_manager.sessions` directly for real-time session monitoring
+- No N+1 database queries needed for active session list
+- Session data enriched with user information only when needed
+
+**Multi-Pod Considerations:**
+- Each pod maintains its own in-memory session registry
+- The `/api/v1/admin/activity/sessions` endpoint only returns sessions from the current pod
+- In multi-pod Kubernetes deployments, sessions are distributed across pods based on load balancer routing
+- For comprehensive cross-pod monitoring, consider:
+  - Querying the `Event` table for `session_start` events (persistent across all pods)
+  - Aggregating results from all pod endpoints (requires service discovery)
+  - Using a centralized session store like Redis (future enhancement)
+
+### Activity Pipeline
+
+User activity flows through multiple layers:
+
+1. **WebSocket Events** → Session Manager updates `last_activity`
+2. **Page View Events** → Persisted to `Event` table with `event_type="page_view"`
+3. **Session Events** → `session_start` and `session_end` events for session lifecycle
+4. **Audit Events** → Security-sensitive operations logged with full context
+
+**Event Table Schema:**
+```python
+class Event(Base):
+    id: UUID
+    session_id: UUID
+    user_id: Optional[UUID]
+    account_id: Optional[UUID]
+    fingerprint: Optional[str]
+    event_type: str  # "session_start", "session_end", "page_view", "impersonation_started", etc.
+    timestamp: datetime
+    path: Optional[str]  # For page_view events
+    ip_address: str
+    user_agent: str
+    event_data: dict  # JSON field for event-specific metadata
+```
+
+### Unified WebSocket Architecture
+
+Single WebSocket connection per client with pub/sub message routing:
+
+**MessageRouter** (`spacebridge/services/message_router.py`):
+- Routes messages to topic-based subscribers
+- Supports wildcard subscriptions (`'*'` topic)
+- Optional per-subscriber filter functions
+- Topics: `flow_executions`, `approvals`, `activity`, `system`
+
+**UnifiedWebSocketManager** (frontend):
+- Automatic reconnection with exponential backoff
+- Session establishment with handshake
+- Heartbeat/keepalive (ping/pong)
+- Topic-based subscription management
+
+**Benefits:**
+- Single WebSocket reduces connection overhead
+- Scalable pub/sub pattern
+- Easy to add new message types/topics
+- Clear separation of concerns
+
+## User Impersonation
+
+SpaceBridge supports admin impersonation of users for support and debugging purposes, with comprehensive audit logging.
+
+### Impersonation Flow
+
+1. **Initiation**: Admin calls `POST /api/v1/admin/impersonate/{user_id}`
+2. **Token Generation**: Special JWT token issued with both impersonator and impersonated user IDs
+3. **Audit Log**: `impersonation_started` event logged with:
+   - `impersonator_id`: Admin initiating impersonation
+   - `impersonated_user_id`: Target user
+   - `session_id`: Links to WebSocket session
+   - `ip_address`, `user_agent`: Device information
+   - `event_data`: Additional context (reason, etc.)
+4. **Session Tracking**: All actions during impersonation linked to both user IDs
+5. **Termination**: Explicit end or token expiration logs `impersonation_ended` event
+
+### Security Considerations
+
+- Only superusers can impersonate
+- All impersonated actions clearly marked in audit log
+- Impersonation sessions have shorter TTL
+- Original admin identity preserved throughout
+- Full audit trail for compliance
+
+### Audit Log Querying
+
+```bash
+# Find all impersonation events
+GET /api/v1/admin/audit-logs?event_type=impersonation_started
+
+# Trace all actions by an impersonated user
+GET /api/v1/admin/audit-logs?impersonated_user_id={user_id}
+
+# See who impersonated whom
+GET /api/v1/admin/audit-logs?impersonator_id={admin_id}
+```
+
+### Use Cases
+
+- **Customer Support**: Debug user-specific issues
+- **Data Migration**: Perform actions on behalf of users
+- **Testing**: Validate permissions and UI behavior
+- **Compliance Audits**: Full traceability of admin actions
+
+## Billing Integration
+
+(Note: Billing documentation is detailed in the "Usage, Billing, and Plans" section below)
+
+The billing system integrates with Stripe for subscription management:
+
+**Key Changes:**
+- Plans defined in `plans.yaml` as source of truth
+- Stripe products/prices sync via `scripts/sync_plans.py`
+- Usage tracking at account level (API requests, storage, etc.)
+- Proprietary features gate-checked against subscription tier
+- Automatic feature access based on plan capabilities
+
+**Architecture Highlights:**
+- Plan metadata stored in both `plans.yaml` and Stripe
+- Account.subscription_tier links to plan ID
+- Real-time usage metering for billing
+- Webhook handlers for subscription lifecycle events
+- Grace period handling for failed payments
 
 ## Event-Driven Agentic Flows
 

@@ -81,6 +81,7 @@
             border-radius: 0.5rem;
             overflow-x: auto;
             font-size: 0.875rem;
+            text-wrap: auto;
         }
     </style>
 </head>
@@ -171,6 +172,18 @@
 
         let approvalData = null;
 
+        function formatToolArgs(args) {
+            // Convert args to JSON string with proper formatting
+            const jsonStr = JSON.stringify(args, null, 2);
+
+            // Replace escaped newlines with actual newlines for better readability
+            // This handles strings that contain \n, \r\n, etc.
+            return jsonStr
+                .replace(/\\n/g, '\n')
+                .replace(/\\r/g, '\r')
+                .replace(/\\t/g, '\t');
+        }
+
         async function loadApproval() {
             try {
                 const response = await fetch(`/approval/${requestId}/data?token=${token}`);
@@ -196,7 +209,7 @@
             // Set tool info
             document.getElementById('tool-name').textContent = approvalData.tool_name;
             document.getElementById('requested-at').textContent = new Date(approvalData.requested_at).toLocaleString();
-            document.getElementById('tool-args').textContent = JSON.stringify(approvalData.tool_args, null, 2);
+            document.getElementById('tool-args').textContent = formatToolArgs(approvalData.tool_args);
 
             // Show reasoning if available
             if (approvalData.agent_reasoning) {

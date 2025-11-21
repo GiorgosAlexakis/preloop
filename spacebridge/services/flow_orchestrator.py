@@ -56,6 +56,11 @@ class FlowExecutionOrchestrator:
         self._stop_requested = asyncio.Event()
         self._user_messages: asyncio.Queue = asyncio.Queue()
 
+        # Execution metrics tracked during execution
+        self.total_tokens: int = 0
+        self.tool_calls_count: int = 0
+        self.estimated_cost: float = 0.0
+
     @staticmethod
     async def send_command(
         execution_id: str,
@@ -726,8 +731,6 @@ class FlowExecutionOrchestrator:
         """
         logger.info(f"Starting log streaming for {session_reference}")
         log_count = 0
-        total_tokens = 0
-        tool_calls_count = 0
 
         # Track previous line for token parsing (tokens used pattern spans 2 lines)
         previous_line = ""
@@ -752,31 +755,39 @@ class FlowExecutionOrchestrator:
                     token_match = re.search(r"(\d{1,3}(?:,\d{3})*)", log_line.strip())
                     if token_match:
                         tokens = int(token_match.group(1).replace(",", ""))
-                        total_tokens += tokens
+                        self.total_tokens += tokens
+
+                        # Estimate cost based on tokens (using average of $5 per million tokens)
+                        # This is a rough estimate - actual costs vary by model and input/output ratio
+                        cost_per_million_tokens = 5.0  # Average cost
+                        tokens_cost = (tokens / 1_000_000) * cost_per_million_tokens
+                        self.estimated_cost += tokens_cost
+
                         logger.info(
-                            f"Detected token usage: {tokens} tokens (total: {total_tokens})"
+                            f"Detected token usage: {tokens} tokens (total: {self.total_tokens}, estimated cost: ${self.estimated_cost:.4f})"
                         )
 
                         # Emit token usage update
                         await self._publish_update(
                             "token_usage_update",
                             {
-                                "total_tokens": total_tokens,
+                                "total_tokens": self.total_tokens,
+                                "estimated_cost": self.estimated_cost,
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             },
                         )
 
                 # Check if this log line indicates a tool call was detected
                 previous_tool_calls_count = len(self.execution_logger.mcp_usage_logs)
-                if previous_tool_calls_count > tool_calls_count:
-                    tool_calls_count = previous_tool_calls_count
-                    logger.info(f"Tool call detected (total: {tool_calls_count})")
+                if previous_tool_calls_count > self.tool_calls_count:
+                    self.tool_calls_count = previous_tool_calls_count
+                    logger.info(f"Tool call detected (total: {self.tool_calls_count})")
 
                     # Emit tool call count update
                     await self._publish_update(
                         "tool_calls_update",
                         {
-                            "tool_calls": tool_calls_count,
+                            "tool_calls": self.tool_calls_count,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                     )
@@ -794,7 +805,7 @@ class FlowExecutionOrchestrator:
                 previous_line = log_line
 
             logger.info(
-                f"Log streaming completed. Total logs streamed: {log_count}, tokens: {total_tokens}, tool calls: {tool_calls_count}"
+                f"Log streaming completed. Total logs streamed: {log_count}, tokens: {self.total_tokens}, tool calls: {self.tool_calls_count}"
             )
 
         except asyncio.CancelledError:
@@ -1101,13 +1112,37 @@ class FlowExecutionOrchestrator:
         """Update the execution log and publish the update to NATS."""
         logger.info(f"Updating execution log to status: {status}")
 
+        # Debug logging for metrics
+        if "tool_calls_count" in kwargs or "total_tokens" in kwargs:
+            logger.info(
+                f"Updating execution metrics: tool_calls_count={kwargs.get('tool_calls_count')}, "
+                f"total_tokens={kwargs.get('total_tokens')}, estimated_cost={kwargs.get('estimated_cost')}"
+            )
+
         update_data = schemas.FlowExecutionUpdate(status=status, **kwargs)
+
+        # Debug: Log what fields are actually in the update
+        update_dict = update_data.model_dump(exclude_unset=True)
+        logger.info(f"Update data fields: {list(update_dict.keys())}")
+        if "tool_calls_count" in update_dict or "total_tokens" in update_dict:
+            logger.info(
+                f"Update dict metrics: tool_calls_count={update_dict.get('tool_calls_count')}, "
+                f"total_tokens={update_dict.get('total_tokens')}, estimated_cost={update_dict.get('estimated_cost')}"
+            )
+
         updated_log = crud_flow_execution.update(
             self.db, db_obj=self.execution_log, obj_in=update_data
         )
         self.db.commit()
         self.db.refresh(updated_log)
         self.execution_log = updated_log
+
+        # Debug: Verify the values were actually set
+        if "tool_calls_count" in kwargs or "total_tokens" in kwargs:
+            logger.info(
+                f"After update - DB values: tool_calls_count={updated_log.tool_calls_count}, "
+                f"total_tokens={updated_log.total_tokens}, estimated_cost={updated_log.estimated_cost}"
+            )
 
         # Publish update to NATS for real-time UI updates
         # Convert datetime objects to ISO format strings for JSON serialization
@@ -1204,6 +1239,9 @@ class FlowExecutionOrchestrator:
                 actions_taken_summary=agent_result.get("actions_taken"),
                 mcp_usage_logs=agent_result.get("mcp_usage_logs"),
                 end_time=datetime.now(timezone.utc),
+                tool_calls_count=self.tool_calls_count,
+                total_tokens=self.total_tokens,
+                estimated_cost=self.estimated_cost,
             )
 
             logger.info(
@@ -1222,6 +1260,9 @@ class FlowExecutionOrchestrator:
                         status="FAILED",
                         error_message=str(e),
                         end_time=datetime.now(timezone.utc),
+                        tool_calls_count=self.tool_calls_count,
+                        total_tokens=self.total_tokens,
+                        estimated_cost=self.estimated_cost,
                     )
                 except Exception as update_error:
                     logger.error(

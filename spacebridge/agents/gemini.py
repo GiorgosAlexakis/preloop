@@ -1,4 +1,4 @@
-"""OpenAI Codex CLI agent implementation."""
+"""Google Gemini CLI agent implementation."""
 
 import json
 import logging
@@ -14,31 +14,34 @@ from .container import ContainerAgentExecutor
 logger = logging.getLogger(__name__)
 
 
-class CodexAgent(ContainerAgentExecutor):
+class GeminiAgent(ContainerAgentExecutor):
     """
-    OpenAI Codex CLI agent executor.
+    Google Gemini CLI agent executor.
 
-    Runs OpenAI's Codex CLI tool (https://github.com/openai/codex) in a Docker
+    Runs Google's Gemini CLI tool (https://github.com/google-gemini/gemini-cli) in a Docker
     container for autonomous coding tasks.
     """
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Initialize Codex agent.
+        Initialize Gemini agent.
 
         Args:
             config: Agent configuration including:
-                - model: OpenAI model to use (default: gpt-4)
-                - custom settings for Codex CLI
+                - model: Gemini model to use (default: gemini-3-pro-preview)
+                - custom settings for Gemini CLI
         """
-        # Use official Codex Universal image
-        image = os.getenv("CODEX_IMAGE", "ghcr.io/openai/codex-universal:latest")
+        # Use the official Gemini CLI sandbox image
+        image = os.getenv(
+            "GEMINI_IMAGE",
+            "registry.spacecode.ai/spacecode/preloop-ai/gemini-cli/sandbox:0.16.0",
+        )
 
         # Auto-detect Kubernetes environment or use explicit env var
         use_k8s = self._detect_kubernetes_environment()
 
         super().__init__(
-            agent_type="codex",
+            agent_type="gemini",
             config=config,
             image=image,
             use_kubernetes=use_k8s,
@@ -86,7 +89,7 @@ class CodexAgent(ContainerAgentExecutor):
 
     async def start(self, execution_context: Dict[str, Any]) -> str:
         """
-        Start Codex agent with specialized configuration.
+        Start Gemini agent with specialized configuration.
 
         Args:
             execution_context: Execution context
@@ -94,32 +97,32 @@ class CodexAgent(ContainerAgentExecutor):
         Returns:
             Container ID or pod name
         """
-        # Enhance execution context with Codex-specific settings
-        codex_context = execution_context.copy()
+        # Enhance execution context with Gemini-specific settings
+        gemini_context = execution_context.copy()
 
-        # Extract Codex config
+        # Extract Gemini config
         agent_config = execution_context.get("agent_config", {})
 
-        # Set Codex model - prefer model_identifier from AIModel, fall back to agent_config
+        # Set Gemini model - prefer model_identifier from AIModel, fall back to agent_config
         model_identifier = execution_context.get("model_identifier")
         agent_model = agent_config.get("model")
 
         self.logger.info(
-            f"Codex model resolution: model_identifier={model_identifier}, "
+            f"Gemini model resolution: model_identifier={model_identifier}, "
             f"agent_config.model={agent_model}"
         )
 
-        model = model_identifier or agent_model or "gpt-4"
-        codex_context["codex_model"] = model
+        model = model_identifier or agent_model or "gemini-3-pro-preview"
+        gemini_context["gemini_model"] = model
 
-        self.logger.info(f"Starting Codex CLI with model={model}")
+        self.logger.info(f"Starting Gemini CLI with model={model}")
 
         # Start the container with enhanced context
-        return await super().start(codex_context)
+        return await super().start(gemini_context)
 
     async def _start_docker_container(self, execution_context: Dict[str, Any]) -> str:
         """
-        Start Codex CLI in a Docker container.
+        Start Gemini CLI in a Docker container.
 
         Args:
             execution_context: Execution context
@@ -132,15 +135,15 @@ class CodexAgent(ContainerAgentExecutor):
 
         # Log execution context for debugging
         self.logger.info(
-            f"_start_docker_container called with codex_model={execution_context.get('codex_model')}, "
+            f"_start_docker_container called with gemini_model={execution_context.get('gemini_model')}, "
             f"model_identifier={execution_context.get('model_identifier')}, "
             f"has_model_api_key={('model_api_key' in execution_context)}"
         )
 
-        # Prepare Codex-specific environment variables
+        # Prepare Gemini-specific environment variables
         env = await self._prepare_environment(execution_context)
 
-        # Add account API token for SpaceBridge MCP authentication (always for Codex)
+        # Add account API token for SpaceBridge MCP authentication (always for Gemini)
         account_api_token = execution_context.get("account_api_token")
         if account_api_token:
             env["SPACEBRIDGE_API_TOKEN"] = account_api_token
@@ -154,11 +157,10 @@ class CodexAgent(ContainerAgentExecutor):
             "SPACEBRIDGE_MCP_URL", "http://host.docker.internal:8000/mcp/v1"
         )
 
-        # Add MCP_TOOL_TIMEOUT_SEC for config.toml substitution
-        # This is retrieved from the execution context (set by _prepare_environment)
+        # Add MCP_TOOL_TIMEOUT_SEC for config substitution
         mcp_timeout = execution_context.get("_mcp_tool_timeout", 600)
         env["MCP_TOOL_TIMEOUT_SEC"] = str(mcp_timeout)
-        self.logger.info(f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for config.toml")
+        self.logger.info(f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for Gemini config")
 
         # Add MCP configuration using MCP config service
         allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
@@ -179,8 +181,8 @@ class CodexAgent(ContainerAgentExecutor):
             )
             env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
-        # Build the Codex script using shared method
-        script = self._build_codex_script(execution_context)
+        # Build the Gemini script using shared method
+        script = self._build_gemini_script(execution_context)
 
         # Determine working directory based on git clone configuration
         working_dir = "/workspace"
@@ -197,19 +199,19 @@ class CodexAgent(ContainerAgentExecutor):
                     # Relative path - prepend /workspace/
                     working_dir = f"/workspace/{clone_path}"
                 self.logger.info(
-                    f"Setting Codex working directory to git repository: {working_dir}"
+                    f"Setting Gemini working directory to git repository: {working_dir}"
                 )
 
         # Extract model for logging
         model = (
-            execution_context.get("codex_model")
+            execution_context.get("gemini_model")
             or execution_context.get("model_identifier")
-            or "gpt-4"
+            or "gemini-3-pro-preview"
         )
 
         self.logger.info(
             f"Container config: model={model}, "
-            f"has_api_key={'OPENAI_API_KEY' in env}, "
+            f"has_api_key={'GEMINI_API_KEY' in env}, "
             f"env_vars={list(env.keys())}"
         )
 
@@ -217,10 +219,8 @@ class CodexAgent(ContainerAgentExecutor):
         container_config = {
             "Image": self.image,
             "Env": [f"{k}={v}" for k, v in env.items()],
-            # Don't override entrypoint - let codex-universal image configure environment
-            # The entrypoint drops into bash, so pass -c and script as arguments to bash
-            "Cmd": ["-c", script],
-            "WorkingDir": working_dir,  # Set to git repo if configured, otherwise /workspace
+            "Cmd": ["/bin/bash", "-c", script],
+            "WorkingDir": working_dir,
             "Labels": {
                 "spacebridge.flow_id": execution_context["flow_id"],
                 "spacebridge.execution_id": execution_id,
@@ -257,19 +257,19 @@ class CodexAgent(ContainerAgentExecutor):
             self._containers[container_id] = container
 
             self.logger.info(
-                f"Started Codex CLI container {container_id[:12]} for execution {execution_id}"
+                f"Started Gemini CLI container {container_id[:12]} for execution {execution_id}"
             )
             return container_id
 
         except DockerError as e:
             self.logger.error(
-                f"Failed to start Codex CLI container for execution {execution_id}: {e}"
+                f"Failed to start Gemini CLI container for execution {execution_id}: {e}"
             )
-            raise RuntimeError(f"Failed to start Codex CLI container: {e}")
+            raise RuntimeError(f"Failed to start Gemini CLI container: {e}")
 
-    def _build_codex_script(self, execution_context: Dict[str, Any]) -> str:
+    def _build_gemini_script(self, execution_context: Dict[str, Any]) -> str:
         """
-        Build the Codex initialization and execution script.
+        Build the Gemini initialization and execution script.
 
         This script is used by both Docker and Kubernetes modes.
 
@@ -281,13 +281,14 @@ class CodexAgent(ContainerAgentExecutor):
         """
         prompt = execution_context["prompt"]
         model = (
-            execution_context.get("codex_model")
+            execution_context.get("gemini_model")
             or execution_context.get("model_identifier")
-            or "gpt-4"
+            or "gemini-3-pro-preview"
         )
 
-        # Escape prompt for shell
-        escaped_prompt = prompt.replace('"', '\\"').replace("'", "\\'")
+        # Escape prompt for shell - need to handle both single and double quotes carefully
+        # We'll use a heredoc to pass the prompt safely
+        prompt_safe = prompt.replace("'", "'\\''")  # Escape single quotes for heredoc
 
         # Prepare initialization commands (git clone, custom commands)
         init_commands = self._prepare_init_commands(execution_context)
@@ -301,8 +302,8 @@ class CodexAgent(ContainerAgentExecutor):
         post_exec_block = ""
         if post_exec_commands:
             post_exec_block = f"""
-# Run post-execution commands (push, PR/MR) if codex succeeded
-if [ "$CODEX_EXIT_CODE" -eq "0" ]; then
+# Run post-execution commands (push, PR/MR) if gemini succeeded
+if [ "$GEMINI_EXIT_CODE" -eq "0" ]; then
     echo "========================================="
     echo "Running post-execution git operations..."
     echo "========================================="
@@ -313,6 +314,9 @@ fi
         # Get execution details for logging
         execution_id = execution_context.get("execution_id", "unknown")
         flow_name = execution_context.get("flow_name", "unknown")
+
+        # Convert timeout from seconds to milliseconds for Gemini CLI
+        mcp_timeout_ms = execution_context.get("_mcp_tool_timeout", 600) * 1000
 
         # Create the full script
         script = f"""
@@ -326,7 +330,7 @@ echo "Flow Execution Started"
 echo "=================================================="
 echo "Execution ID: {execution_id}"
 echo "Flow Name: {flow_name}"
-echo "Agent Type: Codex"
+echo "Agent Type: Gemini"
 echo "Model: {model}"
 echo "Start Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo "=================================================="
@@ -338,136 +342,137 @@ echo ""
 # Configure git to trust all directories (needed for cloned repos)
 git config --global --add safe.directory '*'
 
-# Configure Codex CLI in the universal image
-npm install -g @openai/codex
-
 # Verify API key is set
-if [ -z "$OPENAI_API_KEY" ]; then
-    echo "ERROR: OPENAI_API_KEY is not set"
+if [ -z "$GEMINI_API_KEY" ]; then
+    echo "ERROR: GEMINI_API_KEY is not set"
     exit 1
 fi
 
-# Configure Codex CLI authentication
-mkdir -p ~/.codex
+# Configure Gemini CLI MCP servers
+mkdir -p ~/.gemini
 
-# Create auth.json with OpenAI API key
-# Use unquoted heredoc to allow variable substitution (safer than sed with special chars)
-cat > ~/.codex/auth.json << EOF
+# Create settings.json with MCP server configuration
+# Using envsubst for variable substitution
+cat > ~/.gemini/settings.json << 'SETTINGS_EOF'
 {{
-  "OPENAI_API_KEY": "$OPENAI_API_KEY"
+  "mcpServers": {{
+    "spacebridge": {{
+      "httpUrl": "$SPACEBRIDGE_MCP_URL",
+      "headers": {{
+        "Authorization": "Bearer $SPACEBRIDGE_API_TOKEN"
+      }},
+      "timeout": {mcp_timeout_ms},
+      "trust": true
+    }}
+  }}
 }}
-EOF
+SETTINGS_EOF
 
-# Create config.toml with model and MCP server configuration
-# Use unquoted heredoc to allow variable substitution
-# Note: MCP_TOOL_TIMEOUT_SEC will be substituted at runtime
-cat > ~/.codex/config.toml << EOF
-model = "{model}"
+# Substitute environment variables in settings.json
+export SPACEBRIDGE_MCP_URL
+export SPACEBRIDGE_API_TOKEN
+envsubst < ~/.gemini/settings.json > ~/.gemini/settings.json.tmp
+mv ~/.gemini/settings.json.tmp ~/.gemini/settings.json
 
-rmcp_client = true
-
-[mcp_servers.spacebridge]
-url = "$SPACEBRIDGE_MCP_URL"
-bearer_token_env_var = "SPACEBRIDGE_API_TOKEN"
-tool_timeout_sec = $MCP_TOOL_TIMEOUT_SEC
-EOF
-
-# Debug: Show config files (with API key masked)
-echo "=== Codex Configuration ==="
+# Debug: Show config (with token masked)
+echo "=== Gemini Configuration ==="
 echo "Model: {model}"
 echo "MCP Server: $SPACEBRIDGE_MCP_URL"
+echo "MCP Timeout: {mcp_timeout_ms}ms ({execution_context.get("_mcp_tool_timeout", 600)}s)"
+echo "Working Directory: $(pwd)"
 echo "=========================="
 
-# Run codex in non-interactive mode with the prompt
-echo "{escaped_prompt}" | codex exec --model "{model}" --sandbox workspace-write --yolo
-CODEX_EXIT_CODE=$?
+# Create prompt file to avoid shell escaping issues
+cat > /tmp/prompt.txt << 'PROMPT_EOF'
+{prompt_safe}
+PROMPT_EOF
+
+# Run Gemini CLI with the prompt
+# --output-format stream-json: Stream JSON output for real-time monitoring
+# --yolo: Skip confirmation prompts for tool usage
+# -m: Specify the model
+# --prompt: Pass the prompt (read from file)
+gemini --output-format stream-json --yolo -m "{model}" --prompt "$(cat /tmp/prompt.txt)"
+GEMINI_EXIT_CODE=$?
+
+echo ""
+echo "=================================================="
+echo "Gemini CLI exited with code: $GEMINI_EXIT_CODE"
+echo "=================================================="
 {post_exec_block}
-# Exit with codex's exit code
-exit $CODEX_EXIT_CODE
+# Exit with gemini's exit code
+exit $GEMINI_EXIT_CODE
 """
         return script
 
     async def _start_kubernetes_pod(self, execution_context: Dict[str, Any]) -> str:
         """
-        Override to add Codex-specific command to Kubernetes pod.
+        Override to add Gemini-specific command to Kubernetes pod.
 
-        The base class creates the pod but doesn't set command/args, which causes
-        codex-universal to drop into a bash shell. We need to override this to
-        provide the script as command arguments.
-
-        IMPORTANT: We only set args, NOT command. Setting command would override
-        the image's ENTRYPOINT, which sets up PATH and other environment variables.
-        By only setting args, the entrypoint runs first (sets up environment), then
-        passes our args to bash for execution.
+        Similar to Codex, we only set args (not command) to preserve the
+        image's entrypoint that sets up the environment.
         """
         # Get the script to execute
-        script = self._build_codex_script(execution_context)
+        script = self._build_gemini_script(execution_context)
 
-        # Store script in execution context so base class can access it if needed
-        execution_context["_codex_script"] = script
+        # Store script in execution context
+        execution_context["_gemini_script"] = script
 
-        # Set args for Kubernetes - these will be passed to the image's entrypoint
-        # The entrypoint sets up the environment and then executes: bash "$@"
-        # So our args become: bash -c "script"
+        # Set args for Kubernetes
         execution_context["_container_args"] = ["-c", script]
-        # Don't set _container_command - let the image's entrypoint run
 
-        # Prepare Codex-specific environment variables and store in context
-        # The base class will merge these with its default env vars
-        codex_env = await self._prepare_environment(execution_context)
+        # Prepare Gemini-specific environment variables
+        gemini_env = await self._prepare_environment(execution_context)
 
-        # Add account API token for SpaceBridge MCP authentication (always for Codex)
+        # Add account API token for SpaceBridge MCP authentication
         account_api_token = execution_context.get("account_api_token")
         if account_api_token:
-            codex_env["SPACEBRIDGE_API_TOKEN"] = account_api_token
+            gemini_env["SPACEBRIDGE_API_TOKEN"] = account_api_token
         else:
             self.logger.warning(
                 "No account API token provided for SpaceBridge MCP access"
             )
 
-        # Set SpaceBridge MCP URL (for Kubernetes, use the service DNS name or external URL)
-        codex_env["SPACEBRIDGE_MCP_URL"] = os.getenv(
+        # Set SpaceBridge MCP URL (for Kubernetes)
+        gemini_env["SPACEBRIDGE_MCP_URL"] = os.getenv(
             "SPACEBRIDGE_MCP_URL_K8S",
             os.getenv("SPACEBRIDGE_MCP_URL", "http://spacebridge-api:8000/mcp/v1"),
         )
 
-        # Add MCP_TOOL_TIMEOUT_SEC for config.toml substitution
-        # This is retrieved from the execution context (set by _prepare_environment)
+        # Add MCP_TOOL_TIMEOUT_SEC
         mcp_timeout = execution_context.get("_mcp_tool_timeout", 600)
-        codex_env["MCP_TOOL_TIMEOUT_SEC"] = str(mcp_timeout)
+        gemini_env["MCP_TOOL_TIMEOUT_SEC"] = str(mcp_timeout)
         self.logger.info(
-            f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for config.toml (Kubernetes)"
+            f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for Gemini (Kubernetes)"
         )
 
-        # Add MCP configuration using MCP config service
+        # Add MCP configuration
         allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
         allowed_mcp_tools = execution_context.get("allowed_mcp_tools", [])
 
         if allowed_mcp_servers or allowed_mcp_tools:
-            # Generate MCP environment variables
             mcp_env = MCPConfigService.generate_mcp_environment_vars(
                 allowed_mcp_servers, allowed_mcp_tools
             )
-            codex_env.update(mcp_env)
+            gemini_env.update(mcp_env)
 
-            # Generate MCP config file
             mcp_config = MCPConfigService.generate_mcp_config(
                 allowed_mcp_servers,
                 allowed_mcp_tools,
                 account_api_token=account_api_token,
             )
-            codex_env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
+            gemini_env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
-        execution_context["_codex_env"] = codex_env
+        execution_context["_gemini_env"] = gemini_env
 
-        # Call parent implementation which will use the args and env
+        # Call parent implementation
         return await super()._start_kubernetes_pod(execution_context)
 
     async def _prepare_environment(
         self, execution_context: Dict[str, Any]
     ) -> Dict[str, str]:
         """
-        Prepare Codex-specific environment variables.
+        Prepare Gemini-specific environment variables.
 
         Args:
             execution_context: Execution context
@@ -477,34 +482,21 @@ exit $CODEX_EXIT_CODE
         """
         env = {}
 
-        # Add OpenAI API key
+        # Add Gemini API key
         if "model_api_key" in execution_context:
-            env["OPENAI_API_KEY"] = execution_context["model_api_key"]
+            env["GEMINI_API_KEY"] = execution_context["model_api_key"]
 
         # Set home directory for config storage
-        # Note: This is overridden to /home/agent in Kubernetes mode
         env["HOME"] = "/root"
 
-        # Configure language runtimes for codex-universal image
-        # These env vars tell the image which versions to set up
-        env["CODEX_ENV_PYTHON_VERSION"] = os.getenv("CODEX_ENV_PYTHON_VERSION", "3.12")
-        env["CODEX_ENV_NODE_VERSION"] = os.getenv("CODEX_ENV_NODE_VERSION", "20")
-        env["CODEX_ENV_RUST_VERSION"] = os.getenv("CODEX_ENV_RUST_VERSION", "1.87.0")
-        env["CODEX_ENV_GO_VERSION"] = os.getenv("CODEX_ENV_GO_VERSION", "1.23.8")
-        env["CODEX_ENV_SWIFT_VERSION"] = os.getenv("CODEX_ENV_SWIFT_VERSION", "6.2")
-        env["CODEX_ENV_RUBY_VERSION"] = os.getenv("CODEX_ENV_RUBY_VERSION", "3.4.4")
-        env["CODEX_ENV_PHP_VERSION"] = os.getenv("CODEX_ENV_PHP_VERSION", "8.4")
-
         # Configure MCP tool timeout based on approval policies
-        # Base timeout is 600 seconds (10 minutes) - increased from 5 minutes
-        # This is higher than the default 60s to account for approval workflows
+        # Base timeout is 600 seconds (10 minutes)
         mcp_timeout = 600
 
         # Check if there are approval policies that may require longer timeouts
         account_id = execution_context.get("account_id")
         if account_id:
             try:
-                # Query all tool configurations and approval policies for this account
                 from spacemodels.db.session import get_db_context
                 from spacemodels.crud import tool_configuration as tool_config_crud
                 from spacemodels.crud import approval_policy as approval_policy_crud
@@ -513,15 +505,12 @@ exit $CODEX_EXIT_CODE
                     max_approval_timeout = 0
                     has_escalation = False
 
-                    # Get all tool configurations for this account
                     tool_configs = tool_config_crud.get_multi_by_account(
                         db, account_id=account_id, limit=1000
                     )
 
-                    # Check each tool configuration for approval policies
                     for config in tool_configs:
                         if config.approval_policy_id:
-                            # Get approval policy
                             policy = approval_policy_crud.get(
                                 db, id=config.approval_policy_id
                             )
@@ -529,13 +518,10 @@ exit $CODEX_EXIT_CODE
                                 max_approval_timeout = max(
                                     max_approval_timeout, policy.timeout_seconds
                                 )
-                                # Check for escalation
                                 if policy.escalation_policy:
                                     has_escalation = True
 
-                    # Set MCP timeout based on approval policies
                     if max_approval_timeout > 0:
-                        # Use twice the approval timeout if there's escalation
                         if has_escalation:
                             mcp_timeout = max_approval_timeout * 2
                         else:
@@ -552,10 +538,8 @@ exit $CODEX_EXIT_CODE
                 )
 
         env["MCP_TOOL_TIMEOUT"] = str(mcp_timeout)
-        # Store timeout in context for use in config.toml generation
+        # Store timeout in context for use in config generation
         execution_context["_mcp_tool_timeout"] = mcp_timeout
-        self.logger.info(
-            f"MCP_TOOL_TIMEOUT set to {mcp_timeout}s (will be configured in config.toml)"
-        )
+        self.logger.info(f"MCP_TOOL_TIMEOUT set to {mcp_timeout}s")
 
         return env

@@ -6,10 +6,12 @@
 # Define __all__ to explicitly list all endpoint modules in this package
 __all__ = [
     "account",
+    "admin",
     "approval_requests",
     "comments",
     "features",
     "health",
+    "impersonation",
     "invitations",
     "issues",
     "issue_compliance",

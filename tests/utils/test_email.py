@@ -77,7 +77,7 @@ class TestSendEmail:
 
         # Verify warning was logged
         assert any(
-            "SMTP credentials not configured" in record.message
+            "SMTP credentials not configured" in record.getMessage()
             for record in caplog.records
             if record.levelname == "WARNING"
         )
@@ -515,8 +515,8 @@ class TestSendProductNotificationEmail:
 
         # Verify warning was logged
         assert any(
-            "Failed to send product notification email" in record.message
-            and "SMTP failed" in record.message
+            "Failed to send product notification email" in record.getMessage()
+            and "SMTP failed" in record.getMessage()
             for record in caplog.records
             if record.levelname == "WARNING"
         )
@@ -541,8 +541,8 @@ class TestSendProductNotificationEmail:
         # Verify error was logged
         assert any(
             "An unexpected error occurred while sending product notification email"
-            in record.message
-            and "Unexpected error" in record.message
+            in record.getMessage()
+            and "Unexpected error" in record.getMessage()
             for record in caplog.records
             if record.levelname == "ERROR"
         )

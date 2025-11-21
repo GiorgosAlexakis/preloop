@@ -1,5 +1,11 @@
 # This file is the source of truth for subscription plans.
 # Use `scripts/sync_plans.py` to sync these with the database and Stripe.
+#
+# IMPORTANT: Pricing is per-user (per-seat) pricing.
+# - price_monthly: Price per user per month (USD)
+# - price_annually: Price per user per year (USD)
+# - Stripe subscription quantities are automatically updated based on active user count
+# - See BillingService.update_subscription_quantity() for quantity management
 plans:
   # - id: "free"
   #   name: "Free"

@@ -199,6 +199,7 @@ async def get_flow_execution_logs(
 
     if is_running and execution.agent_session_reference:
         # Fetch logs directly from container
+        agent = None
         try:
             # Get the flow to determine agent type
             flow = crud_flow.get(
@@ -246,7 +247,7 @@ async def get_flow_execution_logs(
                         "execution_id": str(execution_id),
                         "timestamp": timestamp,
                         "type": "agent_log_line",
-                        "payload": {"content": log_line},
+                        "payload": {"line": log_line},
                     }
                 )
 
@@ -261,6 +262,10 @@ async def get_flow_execution_logs(
             )
             # Fall back to database logs if container logs fail
             pass
+        finally:
+            # Always cleanup agent resources to avoid leaking connections
+            if agent is not None:
+                await agent.cleanup()
 
     # For finished executions or if container logs failed, return database logs
     if execution.execution_logs and isinstance(execution.execution_logs, list):
@@ -330,9 +335,17 @@ async def send_execution_command(
     from datetime import datetime, timezone
     from spacebridge.agents.container import ContainerAgentExecutor
     from spacebridge.agents.codex import CodexAgent
+    from spacesync.services.event_bus import get_nats_client
     import os
 
     logger = logging.getLogger(__name__)
+
+    # Get NATS client for sending commands
+    try:
+        nats_client = await get_nats_client()
+    except Exception as e:
+        logger.error(f"Failed to get NATS client: {e}")
+        nats_client = None
 
     # Verify execution exists and user has access
     execution = crud_flow_execution.get(
@@ -390,7 +403,7 @@ async def send_execution_command(
                                             timezone.utc
                                         ).isoformat(),
                                         "type": "agent_log_line",
-                                        "payload": {"content": log_line},
+                                        "payload": {"line": log_line},
                                     }
                                 )
 
@@ -441,6 +454,7 @@ async def send_execution_command(
                 execution_id=str(execution_id),
                 command=command_data.command,
                 payload=command_data.payload,
+                nats_client=nats_client,
             )
         except Exception as e:
             logger.warning(f"Failed to send stop command via NATS: {e}")
@@ -456,6 +470,7 @@ async def send_execution_command(
             execution_id=str(execution_id),
             command=command_data.command,
             payload=command_data.payload,
+            nats_client=nats_client,
         )
         return {"status": "command_sent"}
     except Exception as e:
@@ -550,10 +565,39 @@ def delete_flow(
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete a flow."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Log the delete attempt for debugging
+    logger.info(
+        f"Attempting to delete flow {flow_id} for account {current_user.account_id}"
+    )
+
+    # Check if flow exists and belongs to the user's account
     flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
-        raise HTTPException(status_code=404, detail="Flow not found")
+        # Flow not found with account filter - check if it exists at all for better error messaging
+        flow_any = crud_flow.get(db=db, id=flow_id)
+        if not flow_any:
+            logger.warning(f"Flow {flow_id} not found in database")
+            raise HTTPException(status_code=404, detail="Flow not found")
+        else:
+            logger.warning(
+                f"Flow {flow_id} exists but doesn't belong to account {current_user.account_id} "
+                f"(belongs to {flow_any.account_id}, is_preset={flow_any.is_preset})"
+            )
+            raise HTTPException(status_code=404, detail="Flow not found")
+
+    # Prevent deletion of built-in presets
+    if flow.is_preset and flow.account_id is None:
+        logger.warning(f"Attempt to delete built-in preset {flow_id}")
+        raise HTTPException(
+            status_code=403, detail="Cannot delete built-in flow presets"
+        )
+
     crud_flow.remove(db=db, id=flow_id, account_id=current_user.account_id)
+    logger.info(f"Successfully deleted flow {flow_id}")
     return flow
 
 

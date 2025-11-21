@@ -25,7 +25,7 @@ def generate_openapi_schema():
     app = create_app()  # Create the app instance using the factory
     openapi_schema = app.openapi()
 
-    output_path = project_root / "docs" / "openapi.yaml"
+    output_path = project_root / "openapi.yaml"
     print(f"Writing schema to {output_path}...")
 
     try:

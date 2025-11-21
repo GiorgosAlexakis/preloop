@@ -278,23 +278,25 @@ async def require_approval(
                             f"   request_context.meta: {ctx.request_context.meta if hasattr(ctx, 'request_context') else 'N/A'}"
                         )
 
-                        # Try to send directly via session to debug
-                        try:
-                            await ctx.session.send_progress_notification(
-                                progress_token=progress_token,
-                                progress=0.0,
-                                total=100.0,
-                                message=status_message,
-                                related_request_id=ctx.request_id,
-                            )
-                            logger.info(
-                                "✅ DIRECT send_progress_notification succeeded"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"❌ DIRECT send_progress_notification failed: {e}",
-                                exc_info=True,
-                            )
+                        # Only send progress notification if we have a valid progressToken
+                        if progress_token is not None:
+                            # Try to send directly via session to debug
+                            try:
+                                await ctx.session.send_progress_notification(
+                                    progress_token=progress_token,
+                                    progress=0.0,
+                                    total=100.0,
+                                    message=status_message,
+                                    related_request_id=ctx.request_id,
+                                )
+                                logger.info(
+                                    "✅ DIRECT send_progress_notification succeeded"
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"❌ DIRECT send_progress_notification failed: {e}",
+                                    exc_info=True,
+                                )
 
                         result = await ctx.report_progress(
                             progress=0, total=100, message=status_message

@@ -213,6 +213,16 @@ async def create_user(
 
     logger.info(f"User {user.username} created by {current_user.username}")
 
+    # Update Stripe subscription quantity to reflect new user count
+    try:
+        from spacebridge.plugins.proprietary.billing.service import BillingService
+
+        billing_service = BillingService(db)
+        billing_service.update_subscription_quantity(str(current_user.account_id))
+    except Exception as e:
+        logger.warning(f"Failed to update Stripe subscription quantity: {e}")
+        # Don't fail user creation if billing update fails
+
     return UserResponse.model_validate(user)
 
 
@@ -449,6 +459,16 @@ async def deactivate_user(
     db.commit()
 
     logger.info(f"User {user_id} deactivated by {current_user.username}")
+
+    # Update Stripe subscription quantity to reflect reduced user count
+    try:
+        from spacebridge.plugins.proprietary.billing.service import BillingService
+
+        billing_service = BillingService(db)
+        billing_service.update_subscription_quantity(str(current_user.account_id))
+    except Exception as e:
+        logger.warning(f"Failed to update Stripe subscription quantity: {e}")
+        # Don't fail user deactivation if billing update fails
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
