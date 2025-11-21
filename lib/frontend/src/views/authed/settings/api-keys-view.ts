@@ -15,6 +15,7 @@ import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
 import consoleStyles from '../../../styles/console-styles.css?inline';
+import { parseUTCDate } from '../../../utils/date';
 
 @customElement('api-keys-view')
 export class ApiKeysView extends LitElement {
@@ -180,15 +181,17 @@ export class ApiKeysView extends LitElement {
                 (key) => html`
                   <tr>
                     <td>${key.name}</td>
-                    <td>${new Date(key.created_at).toLocaleDateString()}</td>
+                    <td>
+                      ${parseUTCDate(key.created_at).toLocaleDateString()}
+                    </td>
                     <td>
                       ${key.last_used_at
-                        ? new Date(key.last_used_at).toLocaleDateString()
+                        ? parseUTCDate(key.last_used_at).toLocaleDateString()
                         : 'Never'}
                     </td>
                     <td>
                       ${key.expires_at
-                        ? new Date(key.expires_at).toLocaleDateString()
+                        ? parseUTCDate(key.expires_at).toLocaleDateString()
                         : 'Never'}
                     </td>
                     <td>

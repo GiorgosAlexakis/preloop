@@ -15,7 +15,12 @@ import {
   getAllTools,
   getMCPServers,
 } from '../../api';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import {
+  parseUTCDate,
+  formatLocalDateTime,
+  calculateDuration,
+} from '../../utils/date';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
@@ -212,6 +217,7 @@ export class FlowView extends LitElement {
 
   private organizationPollingInterval?: number;
   private projectPollingInterval?: number;
+  private unsubscribe?: () => void;
 
   disconnectedCallback() {
     super.disconnectedCallback();
@@ -223,7 +229,7 @@ export class FlowView extends LitElement {
       clearInterval(this.projectPollingInterval);
     }
     // Disconnect from WebSocket
-    webSocketService.disconnectFromFlowUpdates();
+    this.unsubscribe?.();
   }
 
   async connectedCallback() {
@@ -266,7 +272,8 @@ export class FlowView extends LitElement {
         .filter((exec: any) => exec.flow_id === this.flowId)
         .sort(
           (a: any, b: any) =>
-            new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+            parseUTCDate(b.start_time).getTime() -
+            parseUTCDate(a.start_time).getTime()
         )
         .slice(0, 10);
 
@@ -344,7 +351,8 @@ export class FlowView extends LitElement {
 
   private connectToFlowUpdates() {
     // Connect to WebSocket for real-time flow execution updates
-    webSocketService.connectToFlowUpdates(
+    this.unsubscribe = unifiedWebSocketManager.subscribe(
+      'flow_executions',
       (message) => {
         // Handle incoming WebSocket messages
         console.log('Received flow update:', message);
@@ -389,14 +397,13 @@ export class FlowView extends LitElement {
             ];
           }
         }
-      },
-      () => {
-        console.log('WebSocket connected for flow updates');
-      },
-      () => {
-        console.log('WebSocket disconnected for flow updates');
       }
     );
+
+    // Track connection state
+    unifiedWebSocketManager.onStateChange((state) => {
+      console.log(`Flow view WebSocket state: ${state}`);
+    });
   }
 
   render() {
@@ -715,11 +722,11 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                               </sl-badge>
                             </td>
                             <td style="padding: 8px;">
-                              ${new Date(exec.start_time).toLocaleString()}
+                              ${formatLocalDateTime(exec.start_time)}
                             </td>
                             <td style="padding: 8px;">
                               ${exec.end_time
-                                ? this.calculateDuration(
+                                ? calculateDuration(
                                     exec.start_time,
                                     exec.end_time
                                   )
@@ -757,19 +764,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
       default:
         return 'neutral';
     }
-  }
-
-  calculateDuration(startTime: string, endTime: string): string {
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    const durationMs = end.getTime() - start.getTime();
-    const seconds = Math.floor(durationMs / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-
-    if (hours > 0) return `${hours}h ${minutes % 60}m`;
-    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-    return `${seconds}s`;
   }
 
   private extractTriggerEventPlaceholders(): string[] {
@@ -931,6 +925,34 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     this.showPresets = false;
   }
 
+  /**
+   * Get AI models compatible with the selected agent type.
+   */
+  getCompatibleModels() {
+    const agentType = this.flow.agent_type || 'codex';
+
+    // Define agent type to provider mapping
+    const agentProviderMap: Record<string, string[]> = {
+      gemini: ['google'],
+      codex: ['openai', 'google', 'deepseek', 'qwen'],
+      'claude-code': ['anthropic'],
+      aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen'], // Aider supports multiple providers
+      openhands: ['openai', 'anthropic', 'google', 'deepseek', 'qwen'], // OpenHands supports multiple
+    };
+
+    const compatibleProviders = agentProviderMap[agentType] || [];
+
+    // If no provider mapping or empty, return all models
+    if (compatibleProviders.length === 0) {
+      return this.models;
+    }
+
+    // Filter models by compatible providers
+    return this.models.filter((model: any) =>
+      compatibleProviders.includes(model.provider_name?.toLowerCase())
+    );
+  }
+
   renderForm() {
     return html`
       <form @submit=${this.handleSubmit}>
@@ -993,6 +1015,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             help-text="Choose which AI agent to use for executing this flow"
           >
             <sl-option value="codex">Codex (Recommended)</sl-option>
+            <sl-option value="gemini">Gemini CLI</sl-option>
             <sl-option value="claude-code">Claude Code</sl-option>
             <sl-option value="aider">Aider</sl-option>
             <sl-option value="openhands">OpenHands</sl-option>
@@ -1017,32 +1040,50 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                   </sl-button>
                 </div>
               `
-            : html`
-                <div>
-                  <sl-select
-                    label="AI Model"
-                    .value=${this.flow.ai_model_id || ''}
-                    @sl-change=${(e: any) =>
-                      (this.flow.ai_model_id = e.target.value)}
-                  >
-                    ${this.models.map(
-                      (model) =>
-                        html`<sl-option value=${model.id}
-                          >${model.name}</sl-option
-                        >`
-                    )}
-                  </sl-select>
-                  <sl-button
-                    size="small"
-                    variant="text"
-                    @click=${this.openAddAIModelDialog}
-                    style="margin-top: 0.5rem;"
-                  >
-                    <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                    Add New AI Model
-                  </sl-button>
-                </div>
-              `}
+            : (() => {
+                const compatibleModels = this.getCompatibleModels();
+                const agentType = this.flow.agent_type || 'codex';
+                const providerNames: Record<string, string> = {
+                  gemini: 'Google',
+                  codex: 'OpenAI',
+                  'claude-code': 'Anthropic',
+                  aider: 'OpenAI/Anthropic',
+                  openhands: 'OpenAI/Anthropic/Google',
+                };
+                const providerName = providerNames[agentType] || 'compatible';
+
+                return html`
+                  <div>
+                    <sl-select
+                      label="AI Model"
+                      .value=${this.flow.ai_model_id || ''}
+                      @sl-change=${(e: any) =>
+                        (this.flow.ai_model_id = e.target.value)}
+                      help-text="Showing ${providerName} models compatible with ${agentType}"
+                    >
+                      ${compatibleModels.length === 0
+                        ? html`<sl-option value="" disabled>
+                            No compatible models available
+                          </sl-option>`
+                        : compatibleModels.map(
+                            (model) =>
+                              html`<sl-option value=${model.id}
+                                >${model.name}</sl-option
+                              >`
+                          )}
+                    </sl-select>
+                    <sl-button
+                      size="small"
+                      variant="text"
+                      @click=${this.openAddAIModelDialog}
+                      style="margin-top: 0.5rem;"
+                    >
+                      <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                      Add New AI Model
+                    </sl-button>
+                  </div>
+                `;
+              })()}
           <sl-textarea
             label="Prompt"
             resize="auto"

@@ -6,7 +6,7 @@ import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import { router } from '../../router';
 import { Router } from '@vaadin/router';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import {
   getFlows,
   getFlowPresets,
@@ -15,6 +15,7 @@ import {
   getFlowExecutions,
   triggerFlowExecution,
 } from '../../api';
+import { parseUTCDate, formatLocalDateTime } from '../../utils/date';
 
 interface Flow {
   id: string;
@@ -169,6 +170,11 @@ export class FlowsView extends LitElement {
   @state()
   private triggeringFlowId: string | null = null;
 
+  @state()
+  private deletingFlowId: string | null = null;
+
+  private unsubscribe?: () => void;
+
   async connectedCallback() {
     super.connectedCallback();
     await this.loadData();
@@ -181,7 +187,7 @@ export class FlowsView extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     // Clean up WebSocket connection
-    webSocketService.disconnectFromFlowUpdates();
+    this.unsubscribe?.();
   }
 
   async loadData() {
@@ -202,15 +208,15 @@ export class FlowsView extends LitElement {
   }
 
   private connectWebSocket() {
-    webSocketService.connectToFlowUpdates(
-      (message: any) => this.handleWebSocketMessage(message),
-      () => {
-        console.log('Connected to flow updates WebSocket');
-      },
-      () => {
-        console.log('Disconnected from flow updates WebSocket');
-      }
+    this.unsubscribe = unifiedWebSocketManager.subscribe(
+      'flow_executions',
+      (message: any) => this.handleWebSocketMessage(message)
     );
+
+    // Track connection state
+    unifiedWebSocketManager.onStateChange((state) => {
+      console.log(`Flows view WebSocket state: ${state}`);
+    });
   }
 
   private handleWebSocketMessage(message: any) {
@@ -371,16 +377,30 @@ export class FlowsView extends LitElement {
 
         <div
           slot="footer"
-          style="display: flex; gap: 8px; justify-content: space-between;"
+          style="display: flex; gap: 8px; justify-content: space-between; align-items: center;"
         >
-          <sl-button
-            size="small"
-            href=${router.urlForPath(`/console/flows/${flow.id}?edit=true`)}
-            @click=${(e: Event) => e.stopPropagation()}
-          >
-            <sl-icon slot="prefix" name="pencil"></sl-icon>
-            Edit
-          </sl-button>
+          <div style="display: flex; gap: 8px;">
+            <sl-button
+              size="small"
+              href=${router.urlForPath(`/console/flows/${flow.id}?edit=true`)}
+              @click=${(e: Event) => e.stopPropagation()}
+            >
+              <sl-icon slot="prefix" name="pencil"></sl-icon>
+              Edit
+            </sl-button>
+            <sl-button
+              size="small"
+              variant="danger"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                this.deleteFlowHandler(flow.id, flow.name);
+              }}
+              ?loading=${this.deletingFlowId === flow.id}
+            >
+              <sl-icon slot="prefix" name="trash"></sl-icon>
+              Delete
+            </sl-button>
+          </div>
           <sl-button
             size="small"
             variant="primary"
@@ -447,7 +467,7 @@ export class FlowsView extends LitElement {
             <div
               style="font-size: 0.85rem; color: var(--sl-color-neutral-600);"
             >
-              Started ${new Date(exec.start_time).toLocaleString()}
+              Started ${formatLocalDateTime(exec.start_time)}
             </div>
           </div>
         </div>
@@ -497,5 +517,24 @@ export class FlowsView extends LitElement {
   async removePreset(presetId: string) {
     await deleteFlow(presetId);
     this.presets = await getFlowPresets();
+  }
+
+  async deleteFlowHandler(flowId: string, flowName: string) {
+    const confirmed = confirm(
+      `Are you sure you want to delete the flow "${flowName}"? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    this.deletingFlowId = flowId;
+    try {
+      await deleteFlow(flowId);
+      // Reload flows list
+      this.flows = await getFlows();
+    } catch (error) {
+      console.error('Failed to delete flow:', error);
+      alert('Failed to delete flow. Please try again.');
+    } finally {
+      this.deletingFlowId = null;
+    }
   }
 }

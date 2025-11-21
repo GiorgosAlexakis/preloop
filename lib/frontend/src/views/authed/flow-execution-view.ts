@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import {
   getFlowExecution,
   getFlow,
@@ -8,6 +8,12 @@ import {
   getFlowExecutionMetrics,
   getFlowExecutionLogs,
 } from '../../api';
+import {
+  parseUTCDate,
+  formatLocalTime,
+  formatUTCDateTime,
+  calculateDuration,
+} from '../../utils/date';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
@@ -212,6 +218,7 @@ export class FlowExecutionView extends LitElement {
   private logContainerRef?: HTMLElement;
   private wsConnected = false;
   private autoScrollInterval?: number;
+  private unsubscribe?: () => void;
 
   disconnectedCallback() {
     super.disconnectedCallback();
@@ -220,6 +227,8 @@ export class FlowExecutionView extends LitElement {
       clearInterval(this.autoScrollInterval);
       this.autoScrollInterval = undefined;
     }
+    // Unsubscribe from WebSocket
+    this.unsubscribe?.();
   }
 
   async updated(changedProperties: Map<string, any>) {
@@ -286,32 +295,42 @@ export class FlowExecutionView extends LitElement {
         this.wsConnected = true;
         this.isAutoScroll = true; // Enable auto-scroll for streaming
         this.startAutoScrollChecker(); // Start periodic scroll checker
-        webSocketService.connectToExecution(
-          this.executionId,
+
+        // Subscribe to flow execution updates for this specific execution
+        this.unsubscribe = unifiedWebSocketManager.subscribe(
+          'flow_executions',
           (message: any) => this.handleWebSocketMessage(message),
-          () => {
-            console.log(
-              `Connected to execution WebSocket, logs.length = ${this.logs.length}`
-            );
-            // Only add connection log if this is a live execution (no persisted logs)
-            if (this.logs.length === 0) {
-              console.log('Adding connection log message');
-              this.logs = [
-                {
-                  execution_id: this.executionId!,
-                  timestamp: new Date().toISOString(),
-                  type: 'connected',
-                  payload: { message: 'Connected to flow execution stream' },
-                },
-              ];
-            }
-          },
-          () => {
-            console.log('Disconnected from execution WebSocket');
-            this.wsConnected = false;
+          // Filter to only receive messages for this execution
+          (message: any) => message.execution_id === this.executionId
+        );
+
+        // Track connection state
+        unifiedWebSocketManager.onStateChange((state) => {
+          const wasConnected = this.wsConnected;
+          this.wsConnected = state === 'connected';
+
+          // Add connection log if this is initial connection
+          if (
+            state === 'connected' &&
+            !wasConnected &&
+            this.logs.length === 0
+          ) {
+            console.log('Adding connection log message');
+            this.logs = [
+              {
+                execution_id: this.executionId!,
+                timestamp: new Date().toISOString(),
+                type: 'connected',
+                payload: { message: 'Connected to flow execution stream' },
+              },
+            ];
+          }
+
+          // Stop auto-scroll when disconnected
+          if (state !== 'connected') {
             this.stopAutoScrollChecker();
           }
-        );
+        });
       } else {
         console.log(
           'Execution is finished, not connecting to WebSocket stream'
@@ -399,7 +418,7 @@ export class FlowExecutionView extends LitElement {
 
       // Handle real-time token usage update
       if (message.type === 'token_usage_update') {
-        this.tokensUsed = message.payload.total_tokens || 0;
+        this.totalTokens = message.payload.total_tokens || 0;
       }
 
       // Track budget usage
@@ -426,26 +445,11 @@ export class FlowExecutionView extends LitElement {
     this.autoScrollInterval = window.setInterval(() => {
       if (this.isAutoScroll && this.logContainerRef) {
         const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
-        const isAtBottom = scrollHeight - scrollTop - clientHeight < 10;
+        const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
 
         // If not at bottom, force scroll
         if (!isAtBottom) {
-          console.log(
-            'Forcing scroll to bottom for container',
-            this.logContainerRef
-          );
           this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
-        } else {
-          console.log(
-            'Already at bottom for container',
-            this.logContainerRef,
-            'scrollTop',
-            scrollTop,
-            'scrollHeight',
-            scrollHeight,
-            'clientHeight',
-            clientHeight
-          );
         }
       }
     }, 200);
@@ -606,13 +610,6 @@ export class FlowExecutionView extends LitElement {
     return 'lightning';
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this.executionId) {
-      webSocketService.disconnectFromExecution(this.executionId);
-    }
-  }
-
   render() {
     // Waiting for router to set executionId
     if (!this.executionId) {
@@ -722,10 +719,10 @@ export class FlowExecutionView extends LitElement {
 
               <strong>Started:</strong>
               <sl-tooltip
-                content=${this.formatUTCDateTime(this.execution.start_time)}
+                content=${formatUTCDateTime(this.execution.start_time)}
               >
                 <sl-relative-time
-                  date=${this.execution.start_time}
+                  date=${parseUTCDate(this.execution.start_time).toISOString()}
                 ></sl-relative-time>
               </sl-tooltip>
 
@@ -733,7 +730,7 @@ export class FlowExecutionView extends LitElement {
                 ? html`
                     <strong>Duration:</strong>
                     <span>
-                      ${this.calculateDuration(
+                      ${calculateDuration(
                         this.execution.start_time,
                         this.execution.end_time
                       )}
@@ -764,10 +761,10 @@ export class FlowExecutionView extends LitElement {
             <sl-card>
               <div slot="header"><sl-icon name="clock"></sl-icon> Started</div>
               <sl-tooltip
-                content=${this.formatUTCDateTime(this.execution.start_time)}
+                content=${formatUTCDateTime(this.execution.start_time)}
               >
                 <sl-relative-time
-                  date=${this.execution.start_time}
+                  date=${parseUTCDate(this.execution.start_time).toISOString()}
                 ></sl-relative-time>
               </sl-tooltip>
             </sl-card>
@@ -895,7 +892,7 @@ ${this.execution.error_message}</pre
   }
 
   renderLogEntry(log: FlowExecutionUpdate) {
-    const time = new Date(log.timestamp).toLocaleTimeString();
+    const time = formatLocalTime(log.timestamp);
 
     // For model output (summary), show as a highlighted section
     if (log.type === 'model_output') {
@@ -916,7 +913,8 @@ ${log.payload.content}</pre
 
     // For log lines, show timestamp + content
     if (log.type === 'agent_log_line') {
-      const content = log.payload.line || log.payload.message || '';
+      const content =
+        log.payload.line || log.payload.message || log.payload.content || '';
       const stream = log.payload.stream || 'stdout';
       const streamClass = stream === 'stderr' ? 'log-stderr' : '';
 
@@ -1013,7 +1011,11 @@ ${log.payload.content}</pre
       }
 
       // Send command via WebSocket
-      webSocketService.sendToExecution(this.executionId, commandData);
+      unifiedWebSocketManager.send({
+        type: 'command',
+        execution_id: this.executionId,
+        ...commandData,
+      });
 
       // Add command to logs for user feedback
       this.logs = [
@@ -1068,12 +1070,6 @@ ${log.payload.content}</pre
         console.error('Failed to fetch logs after stop:', error);
       }
 
-      // Disconnect from WebSocket since execution is now stopped
-      if (this.wsConnected) {
-        webSocketService.disconnectFromExecution(this.executionId);
-        this.wsConnected = false;
-      }
-
       // Stop auto-scroll checker
       this.stopAutoScrollChecker();
       this.isAutoScroll = false;
@@ -1097,43 +1093,5 @@ ${log.payload.content}</pre
       default:
         return 'neutral';
     }
-  }
-
-  calculateDuration(startTime: string, endTime: string): string {
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    const durationMs = end.getTime() - start.getTime();
-    const seconds = Math.floor(durationMs / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-
-    if (hours > 0) return `${hours}h ${minutes % 60}m`;
-    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-    return `${seconds}s`;
-  }
-
-  formatUTCDateTime(dateTimeString: string): string {
-    // Ensure the datetime string is treated as UTC
-    // If it doesn't have timezone info, append 'Z' to indicate UTC
-    let utcDateString = dateTimeString;
-    if (
-      !dateTimeString.endsWith('Z') &&
-      !dateTimeString.includes('+') &&
-      !dateTimeString.includes('-', 10)
-    ) {
-      utcDateString = dateTimeString.replace(' ', 'T') + 'Z';
-    }
-
-    const date = new Date(utcDateString);
-
-    // Format as: "YYYY-MM-DD HH:MM:SS UTC"
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const hours = String(date.getUTCHours()).padStart(2, '0');
-    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
-
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} UTC`;
   }
 }

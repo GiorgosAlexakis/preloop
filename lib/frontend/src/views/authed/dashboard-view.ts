@@ -13,7 +13,8 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import * as api from '../../api';
 import { AuthedElement } from '../../api';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import { parseUTCDate } from '../../utils/date';
 import '../../components/similar-issues-widget.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/tracker-pill.ts';
@@ -140,93 +141,161 @@ export class DashboardView extends AuthedElement {
   @state()
   private showSetupDialog = false;
 
+  @state()
+  private hasAIModels = false;
+
+  @state()
+  private welcomeCardDismissed = false;
+
+  @state()
+  private dismissedExecutions: Set<string> = new Set();
+
+  @state()
+  private approvalStats = {
+    total: 0,
+    approved: 0,
+    declined: 0,
+    expired: 0,
+    avgApprovalTime: 0,
+  };
+
+  private unsubscribe?: () => void;
+
   async connectedCallback() {
     super.connectedCallback();
+    this.loadDismissedState();
     this.fetchDashboardData();
     this.connectToFlowUpdates();
   }
 
+  private loadDismissedState() {
+    // Load dismissed welcome card state
+    const dismissedWelcome = localStorage.getItem(
+      'dashboard_welcome_dismissed'
+    );
+    this.welcomeCardDismissed = dismissedWelcome === 'true';
+
+    // Load dismissed executions
+    const dismissedExecs = localStorage.getItem(
+      'dashboard_dismissed_executions'
+    );
+    if (dismissedExecs) {
+      try {
+        this.dismissedExecutions = new Set(JSON.parse(dismissedExecs));
+      } catch (e) {
+        this.dismissedExecutions = new Set();
+      }
+    }
+  }
+
+  private dismissWelcomeCard() {
+    this.welcomeCardDismissed = true;
+    localStorage.setItem('dashboard_welcome_dismissed', 'true');
+  }
+
+  private dismissExecution(executionId: string) {
+    this.dismissedExecutions.add(executionId);
+    localStorage.setItem(
+      'dashboard_dismissed_executions',
+      JSON.stringify(Array.from(this.dismissedExecutions))
+    );
+    this.requestUpdate();
+  }
+
   disconnectedCallback() {
     super.disconnectedCallback();
-    webSocketService.disconnectFromFlowUpdates();
+    this.unsubscribe?.();
   }
 
   private connectToFlowUpdates() {
     // Connect to WebSocket for real-time flow execution updates and approval updates
-    webSocketService.connectToFlowUpdates(
-      (message) => {
-        // Handle incoming WebSocket messages
-        console.log('Dashboard received update:', message);
+    const handleMessage = (message: any) => {
+      // Handle incoming WebSocket messages
+      console.log('Dashboard received update:', message);
 
-        // Handle approval-related messages
-        if (message.type?.startsWith('approval_')) {
-          this.handleApprovalMessage(message);
-          return;
-        }
+      // Handle approval-related messages
+      if (message.type?.startsWith('approval_')) {
+        this.handleApprovalMessage(message);
+        return;
+      }
 
-        // If this is an execution_started event, add it to recent executions
-        if (message.type === 'execution_started') {
-          const newExecution = {
-            id: message.execution_id,
-            flow_id: message.flow_id,
-            status: message.payload.status || 'PENDING',
-            start_time: message.timestamp,
-            end_time: null,
-            flow_name: message.payload.flow_name,
-            error_message: null,
+      // If this is an execution_started event, add it to recent executions
+      if (message.type === 'execution_started') {
+        const newExecution = {
+          id: message.execution_id,
+          flow_id: message.flow_id,
+          status: message.payload.status || 'PENDING',
+          start_time: message.timestamp,
+          end_time: null,
+          flow_name: message.payload.flow_name,
+          error_message: null,
+        };
+
+        // Add to the beginning of recent executions and keep only top 5
+        this.recentFlowExecutions = [
+          newExecution,
+          ...this.recentFlowExecutions,
+        ].slice(0, 5);
+
+        // Dispatch custom event for global notification
+        window.dispatchEvent(
+          new CustomEvent('flow-execution-update', {
+            detail: { execution: newExecution, type: 'started' },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      }
+
+      // If this is a status update, update the execution
+      if (message.type === 'status_update' && message.execution_id) {
+        const executionIndex = this.recentFlowExecutions.findIndex(
+          (exec) => exec.id === message.execution_id
+        );
+        if (executionIndex !== -1) {
+          const updatedExecution = {
+            ...this.recentFlowExecutions[executionIndex],
+            status: message.payload.status,
+            end_time: message.payload.end_time || null,
           };
-
-          // Add to the beginning of recent executions and keep only top 5
           this.recentFlowExecutions = [
-            newExecution,
-            ...this.recentFlowExecutions,
-          ].slice(0, 5);
+            ...this.recentFlowExecutions.slice(0, executionIndex),
+            updatedExecution,
+            ...this.recentFlowExecutions.slice(executionIndex + 1),
+          ];
 
           // Dispatch custom event for global notification
           window.dispatchEvent(
             new CustomEvent('flow-execution-update', {
-              detail: { execution: newExecution, type: 'started' },
+              detail: { execution: updatedExecution, type: 'updated' },
               bubbles: true,
               composed: true,
             })
           );
         }
-
-        // If this is a status update, update the execution
-        if (message.type === 'status_update' && message.execution_id) {
-          const executionIndex = this.recentFlowExecutions.findIndex(
-            (exec) => exec.id === message.execution_id
-          );
-          if (executionIndex !== -1) {
-            const updatedExecution = {
-              ...this.recentFlowExecutions[executionIndex],
-              status: message.payload.status,
-              end_time: message.payload.end_time || null,
-            };
-            this.recentFlowExecutions = [
-              ...this.recentFlowExecutions.slice(0, executionIndex),
-              updatedExecution,
-              ...this.recentFlowExecutions.slice(executionIndex + 1),
-            ];
-
-            // Dispatch custom event for global notification
-            window.dispatchEvent(
-              new CustomEvent('flow-execution-update', {
-                detail: { execution: updatedExecution, type: 'updated' },
-                bubbles: true,
-                composed: true,
-              })
-            );
-          }
-        }
-      },
-      () => {
-        console.log('Dashboard WebSocket connected');
-      },
-      () => {
-        console.log('Dashboard WebSocket disconnected');
       }
+    };
+
+    // Subscribe to both flow_executions and approvals topics
+    const unsubscribeFlow = unifiedWebSocketManager.subscribe(
+      'flow_executions',
+      handleMessage
     );
+    const unsubscribeApprovals = unifiedWebSocketManager.subscribe(
+      'approvals',
+      handleMessage
+    );
+
+    // Combine both unsubscribe functions
+    this.unsubscribe = () => {
+      unsubscribeFlow();
+      unsubscribeApprovals();
+    };
+
+    // Track connection state
+    unifiedWebSocketManager.onStateChange((state) => {
+      console.log(`Dashboard WebSocket state: ${state}`);
+    });
   }
 
   private handleApprovalMessage(message: any) {
@@ -296,6 +365,8 @@ export class DashboardView extends AuthedElement {
         complianceMetrics,
         approvalRequests,
         users,
+        aiModels,
+        allApprovalRequests,
       ] = await Promise.all([
         catchWith403Handling(api.getTrackers(), []),
         catchWith403Handling(api.getApiUsageStats(), undefined),
@@ -321,6 +392,11 @@ export class DashboardView extends AuthedElement {
           skip: 0,
           limit: 0,
         }),
+        catchWith403Handling(api.getAIModels(), []),
+        catchWith403Handling(
+          this.fetchData('/api/v1/approval-requests?limit=100'),
+          []
+        ),
       ]);
 
       this.trackers = trackers;
@@ -349,10 +425,16 @@ export class DashboardView extends AuthedElement {
       this.complianceMetrics = complianceMetrics;
       this.pendingApprovals = approvalRequests || [];
 
+      // Check if AI models exist
+      this.hasAIModels = (aiModels || []).length > 0;
+
       // Calculate enabled users count
       this.enabledUsersCount = (users.users || []).filter(
         (user) => user.is_active
       ).length;
+
+      // Calculate approval statistics
+      this.calculateApprovalStats(allApprovalRequests || []);
     } catch (error) {
       console.error('Failed to fetch dashboard data', error);
     } finally {
@@ -414,8 +496,38 @@ export class DashboardView extends AuthedElement {
     }
   }
 
+  private calculateApprovalStats(requests: ApprovalRequest[]) {
+    const total = requests.length;
+    const approved = requests.filter((r) => r.status === 'approved').length;
+    const declined = requests.filter((r) => r.status === 'declined').length;
+    const expired = requests.filter((r) => r.status === 'expired').length;
+
+    // Calculate average time to approval/decline (in minutes)
+    let totalTime = 0;
+    let count = 0;
+    requests.forEach((r) => {
+      if (
+        (r.status === 'approved' || r.status === 'declined') &&
+        (r as any).resolved_at
+      ) {
+        const requestTime = parseUTCDate(r.requested_at).getTime();
+        const resolvedTime = parseUTCDate((r as any).resolved_at).getTime();
+        totalTime += (resolvedTime - requestTime) / 60000; // Convert to minutes
+        count++;
+      }
+    });
+
+    this.approvalStats = {
+      total,
+      approved,
+      declined,
+      expired,
+      avgApprovalTime: count > 0 ? Math.round(totalTime / count) : 0,
+    };
+  }
+
   private formatDate(dateString: string): string {
-    const date = new Date(dateString);
+    const date = parseUTCDate(dateString);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
@@ -567,8 +679,286 @@ export class DashboardView extends AuthedElement {
           gap: 9rem;
         }
       }
+      /* Welcome card styles */
+      .welcome-card {
+        background: linear-gradient(
+          135deg,
+          var(--sl-color-primary-50) 0%,
+          var(--sl-color-primary-100) 100%
+        );
+        border: 1px solid var(--sl-color-primary-200);
+      }
+      .welcome-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--sl-spacing-medium);
+      }
+      .welcome-title {
+        font-size: var(--sl-font-size-large);
+        font-weight: 600;
+        color: var(--sl-color-primary-700);
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-small);
+      }
+      .welcome-content {
+        color: var(--sl-color-neutral-700);
+        line-height: 1.6;
+        margin-bottom: var(--sl-spacing-large);
+      }
+      .getting-started-steps {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-medium);
+        margin-top: var(--sl-spacing-large);
+      }
+      .step-item {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--sl-spacing-medium);
+        padding: var(--sl-spacing-medium);
+        background: var(--sl-color-neutral-0);
+        border-radius: var(--sl-border-radius-medium);
+        border: 1px solid var(--sl-color-neutral-200);
+      }
+      .step-item.completed {
+        background: var(--sl-color-success-50);
+        border-color: var(--sl-color-success-200);
+      }
+      .step-icon {
+        font-size: 1.5rem;
+        flex-shrink: 0;
+      }
+      .step-content {
+        flex: 1;
+      }
+      .step-title {
+        font-weight: 600;
+        margin-bottom: var(--sl-spacing-2x-small);
+        color: var(--sl-color-neutral-900);
+      }
+      .step-description {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-600);
+        margin-bottom: var(--sl-spacing-small);
+      }
+      .step-action {
+        display: inline-block;
+        margin-top: var(--sl-spacing-x-small);
+      }
+      .progress-overview {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-small);
+        margin-top: var(--sl-spacing-large);
+        padding-top: var(--sl-spacing-large);
+        border-top: 1px solid var(--sl-color-primary-200);
+      }
+      .progress-text {
+        font-size: var(--sl-font-size-small);
+        font-weight: 500;
+        color: var(--sl-color-primary-700);
+      }
+      /* Analytics card styles */
+      .analytics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--sl-spacing-large);
+        margin-top: var(--sl-spacing-medium);
+      }
+      .analytics-stat {
+        text-align: center;
+      }
+      .analytics-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: var(--sl-color-primary-600);
+        line-height: 1;
+      }
+      .analytics-label {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-600);
+        margin-top: var(--sl-spacing-small);
+      }
+      .analytics-subtext {
+        font-size: var(--sl-font-size-x-small);
+        color: var(--sl-color-neutral-500);
+        margin-top: var(--sl-spacing-2x-small);
+      }
     `,
   ];
+
+  private renderWelcomeCard() {
+    if (this.welcomeCardDismissed) {
+      return '';
+    }
+
+    const hasMCPServers = this.mcpServers.length > 0 || this.tools.length > 0;
+    const hasFlows = this.hasFlows;
+    const hasTrackersAndModels = this.trackers.length > 0 && this.hasAIModels;
+
+    const completedSteps = [
+      hasMCPServers,
+      hasFlows,
+      hasTrackersAndModels,
+    ].filter(Boolean).length;
+    const totalSteps = 3;
+    const progress = (completedSteps / totalSteps) * 100;
+
+    return html`
+      <sl-card class="welcome-card">
+        <div class="welcome-header">
+          <div class="welcome-title">
+            <sl-icon name="rocket-takeoff"></sl-icon>
+            Welcome to SpaceBridge!
+          </div>
+          <sl-button
+            size="small"
+            variant="text"
+            @click=${this.dismissWelcomeCard}
+          >
+            <sl-icon name="x-lg"></sl-icon>
+          </sl-button>
+        </div>
+
+        <div class="welcome-content">
+          SpaceBridge helps you automate your workflow with AI-powered agents,
+          intelligent issue management, and seamless tool integration. Here's
+          how to get started:
+        </div>
+
+        <div class="getting-started-steps">
+          <!-- Step 1: MCP Servers & Tools -->
+          <div class="step-item ${hasMCPServers ? 'completed' : ''}">
+            <div class="step-icon">
+              ${hasMCPServers
+                ? html`<sl-icon
+                    name="check-circle-fill"
+                    style="color: var(--sl-color-success-600);"
+                  ></sl-icon>`
+                : html`<sl-icon
+                    name="1-circle"
+                    style="color: var(--sl-color-primary-600);"
+                  ></sl-icon>`}
+            </div>
+            <div class="step-content">
+              <div class="step-title">
+                Add MCP Servers & Configure Approvals
+              </div>
+              <div class="step-description">
+                Set up Model Context Protocol servers to extend your
+                capabilities with custom tools. Configure approval policies for
+                tools that need human oversight.
+              </div>
+              ${!hasMCPServers
+                ? html`<sl-button
+                    size="small"
+                    href="/console/tools"
+                    class="step-action"
+                  >
+                    <sl-icon slot="prefix" name="tools"></sl-icon>
+                    Configure Tools
+                  </sl-button>`
+                : html`<sl-badge variant="success">Completed</sl-badge>`}
+            </div>
+          </div>
+
+          <!-- Step 2: Create Flows -->
+          <div class="step-item ${hasFlows ? 'completed' : ''}">
+            <div class="step-icon">
+              ${hasFlows
+                ? html`<sl-icon
+                    name="check-circle-fill"
+                    style="color: var(--sl-color-success-600);"
+                  ></sl-icon>`
+                : html`<sl-icon
+                    name="2-circle"
+                    style="color: var(--sl-color-primary-600);"
+                  ></sl-icon>`}
+            </div>
+            <div class="step-content">
+              <div class="step-title">Create Event-Driven Agentic Flows</div>
+              <div class="step-description">
+                Automate your most time-consuming tasks with AI agents that
+                respond to events from your trackers. Start with a preset or
+                build from scratch.
+              </div>
+              ${!hasFlows
+                ? html`<sl-button
+                    size="small"
+                    href="/console/flows"
+                    class="step-action"
+                  >
+                    <sl-icon slot="prefix" name="diagram-3"></sl-icon>
+                    Create Flow
+                  </sl-button>`
+                : html`<sl-badge variant="success">Completed</sl-badge>`}
+            </div>
+          </div>
+
+          <!-- Step 3: Connect Trackers & AI Models -->
+          <div class="step-item ${hasTrackersAndModels ? 'completed' : ''}">
+            <div class="step-icon">
+              ${hasTrackersAndModels
+                ? html`<sl-icon
+                    name="check-circle-fill"
+                    style="color: var(--sl-color-success-600);"
+                  ></sl-icon>`
+                : html`<sl-icon
+                    name="3-circle"
+                    style="color: var(--sl-color-primary-600);"
+                  ></sl-icon>`}
+            </div>
+            <div class="step-content">
+              <div class="step-title">Connect Trackers & AI Models</div>
+              <div class="step-description">
+                Link your issue trackers (Jira, GitHub, GitLab) and AI models to
+                power your flows, detect duplicate issues, assess compliance,
+                and identify unmapped dependencies.
+              </div>
+              ${!hasTrackersAndModels
+                ? html`
+                    <div style="display: flex; gap: var(--sl-spacing-small);">
+                      ${!this.trackers.length
+                        ? html`<sl-button
+                            size="small"
+                            href="/console/trackers"
+                            class="step-action"
+                          >
+                            <sl-icon slot="prefix" name="link-45deg"></sl-icon>
+                            Add Tracker
+                          </sl-button>`
+                        : ''}
+                      ${!this.hasAIModels
+                        ? html`<sl-button
+                            size="small"
+                            href="/console/settings/ai-models"
+                            class="step-action"
+                          >
+                            <sl-icon slot="prefix" name="cpu"></sl-icon>
+                            Add AI Model
+                          </sl-button>`
+                        : ''}
+                    </div>
+                  `
+                : html`<sl-badge variant="success">Completed</sl-badge>`}
+            </div>
+          </div>
+        </div>
+
+        <div class="progress-overview">
+          <sl-progress-bar
+            value="${progress}"
+            style="flex: 1;"
+          ></sl-progress-bar>
+          <span class="progress-text"
+            >${completedSteps} / ${totalSteps} completed</span
+          >
+        </div>
+      </sl-card>
+    `;
+  }
 
   render() {
     if (this.isLoading) {
@@ -587,98 +977,8 @@ export class DashboardView extends AuthedElement {
       <div class="column-layout">
         <!-- Main Column -->
         <div class="main-column">
-          <!-- MCP Server & Tools Status -->
-          <sl-card>
-            <div slot="header" class="card-header-with-action">
-              <div class="chart-header">
-                <img
-                  src="/images/mcp.png"
-                  alt="MCP"
-                  style="width: 20px; height: 20px;"
-                />
-                MCP Server
-                <sl-tooltip
-                  content="Built-in and external MCP tools for issue management and automation"
-                >
-                  <sl-icon name="question-circle"></sl-icon>
-                </sl-tooltip>
-              </div>
-              <div
-                style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
-              >
-                <a
-                  href="#"
-                  class="header-action-link"
-                  @click=${(e: Event) => {
-                    e.preventDefault();
-                    this.showSetupDialog = true;
-                  }}
-                  >Setup Instructions</a
-                >
-                <a href="/console/tools" class="header-action-link"
-                  >Manage Tools</a
-                >
-              </div>
-            </div>
-
-            ${this.mcpServers.length === 0 && this.tools.length === 0
-              ? html`
-                  <div class="empty-state">
-                    <sl-icon name="inbox"></sl-icon>
-                    <p>
-                      No MCP servers or tools configured yet.
-                      <a href="/console/tools">Configure tools</a>
-                    </p>
-                  </div>
-                `
-              : html`
-                  <!-- Built-in Tools Summary -->
-                  <div class="tool-counts">
-                    <div class="tool-count">
-                      <sl-icon name="tools"></sl-icon>
-                      <div class="tool-count-value">
-                        ${this.tools.filter((t) => t.source === 'builtin')
-                          .length}
-                      </div>
-                      <div class="tool-count-label">built-in tools</div>
-                    </div>
-                    <div class="tool-count">
-                      <sl-icon
-                        name="check-circle"
-                        style="color: var(--sl-color-success-600);"
-                      ></sl-icon>
-                      <div class="tool-count-value">
-                        ${this.tools.filter((t) => t.is_enabled).length}
-                      </div>
-                      <div class="tool-count-label">enabled</div>
-                    </div>
-                    <div class="tool-count">
-                      <sl-icon
-                        name="shield-check"
-                        style="color: var(--sl-color-warning-600);"
-                      ></sl-icon>
-                      <div class="tool-count-value">
-                        ${this.tools.filter((t) => t.requires_approval).length}
-                      </div>
-                      <div class="tool-count-label">require approval</div>
-                    </div>
-                  </div>
-
-                  <!-- Built-in MCP Server -->
-                  <div class="mcp-server-capsule">
-                    <div class="status-indicator"></div>
-                    <div class="server-details">
-                      <span class="server-endpoint"
-                        >${window.location.origin}/mcp/v1</span
-                      >
-                      <span class="server-auth">Bearer Token</span>
-                    </div>
-                    <a href="/console/settings/api-keys" class="capsule-link">
-                      Manage Keys
-                    </a>
-                  </div>
-                `}
-          </sl-card>
+          <!-- Welcome Card -->
+          ${this.renderWelcomeCard()}
 
           <!-- Setup Instructions Dialog -->
           <mcp-setup-dialog
@@ -711,45 +1011,60 @@ export class DashboardView extends AuthedElement {
                     `
                   : html`
                       <div class="item-list">
-                        ${this.recentFlowExecutions.slice(0, 5).map(
-                          (exec) => html`
-                            <div
-                              class="item-card ${exec.status === 'FAILED'
-                                ? 'danger'
-                                : ''}"
-                            >
-                              <div class="item-info">
-                                <span class="item-name"
-                                  >${exec.flow_name || 'Unnamed Flow'}</span
-                                >
-                                ${exec.error_message
-                                  ? html`<span class="item-error"
-                                      >${exec.error_message}</span
-                                    >`
-                                  : ''}
-                                <span class="item-secondary"
-                                  >${this.formatDate(exec.start_time)}</span
-                                >
-                              </div>
+                        ${this.recentFlowExecutions
+                          .filter(
+                            (exec) => !this.dismissedExecutions.has(exec.id)
+                          )
+                          .slice(0, 5)
+                          .map(
+                            (exec) => html`
                               <div
-                                style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
+                                class="item-card ${exec.status === 'FAILED'
+                                  ? 'danger'
+                                  : ''}"
                               >
-                                <sl-tag
-                                  size="small"
-                                  variant="${this.getStatusColor(exec.status)}"
+                                <div class="item-info">
+                                  <span class="item-name"
+                                    >${exec.flow_name || 'Unnamed Flow'}</span
+                                  >
+                                  ${exec.error_message
+                                    ? html`<span class="item-error"
+                                        >${exec.error_message}</span
+                                      >`
+                                    : ''}
+                                  <span class="item-secondary"
+                                    >${this.formatDate(exec.start_time)}</span
+                                  >
+                                </div>
+                                <div
+                                  style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
                                 >
-                                  ${exec.status}
-                                </sl-tag>
-                                <sl-button
-                                  size="small"
-                                  href="/console/flows/executions/${exec.id}"
-                                >
-                                  View
-                                </sl-button>
+                                  <sl-tag
+                                    size="small"
+                                    variant="${this.getStatusColor(
+                                      exec.status
+                                    )}"
+                                  >
+                                    ${exec.status}
+                                  </sl-tag>
+                                  <sl-button
+                                    size="small"
+                                    href="/console/flows/executions/${exec.id}"
+                                  >
+                                    View
+                                  </sl-button>
+                                  <sl-icon-button
+                                    name="x-lg"
+                                    label="Dismiss"
+                                    @click=${(e: Event) => {
+                                      e.preventDefault();
+                                      this.dismissExecution(exec.id);
+                                    }}
+                                  ></sl-icon-button>
+                                </div>
                               </div>
-                            </div>
-                          `
-                        )}
+                            `
+                          )}
                       </div>
 
                       <div class="quick-actions">
@@ -863,6 +1178,168 @@ export class DashboardView extends AuthedElement {
 
         <!-- Side Column -->
         <div class="side-column">
+          <!-- MCP Server & Tools Status -->
+          <sl-card>
+            <div slot="header" class="card-header-with-action">
+              <div class="chart-header">
+                <img
+                  src="/images/mcp.png"
+                  alt="MCP"
+                  style="width: 20px; height: 20px;"
+                />
+                MCP Server
+                <sl-tooltip
+                  content="Built-in and external MCP tools for issue management and automation"
+                >
+                  <sl-icon name="question-circle"></sl-icon>
+                </sl-tooltip>
+              </div>
+              <div
+                style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+              >
+                <a
+                  href="#"
+                  class="header-action-link"
+                  @click=${(e: Event) => {
+                    e.preventDefault();
+                    this.showSetupDialog = true;
+                  }}
+                  >Setup</a
+                >
+                <a href="/console/tools" class="header-action-link">Manage</a>
+              </div>
+            </div>
+
+            ${this.mcpServers.length === 0 && this.tools.length === 0
+              ? html`
+                  <div class="empty-state">
+                    <sl-icon name="inbox"></sl-icon>
+                    <p>
+                      No MCP servers or tools configured yet.
+                      <a href="/console/tools">Configure tools</a>
+                    </p>
+                  </div>
+                `
+              : html`
+                  <!-- Built-in Tools Summary -->
+                  <div class="tool-counts">
+                    <div class="tool-count">
+                      <sl-icon name="tools"></sl-icon>
+                      <div class="tool-count-value">
+                        ${this.tools.filter((t) => t.source === 'builtin')
+                          .length}
+                      </div>
+                      <div class="tool-count-label">built-in tools</div>
+                    </div>
+                    <div class="tool-count">
+                      <sl-icon
+                        name="check-circle"
+                        style="color: var(--sl-color-success-600);"
+                      ></sl-icon>
+                      <div class="tool-count-value">
+                        ${this.tools.filter((t) => t.is_enabled).length}
+                      </div>
+                      <div class="tool-count-label">enabled</div>
+                    </div>
+                    <div class="tool-count">
+                      <sl-icon
+                        name="shield-check"
+                        style="color: var(--sl-color-warning-600);"
+                      ></sl-icon>
+                      <div class="tool-count-value">
+                        ${this.tools.filter((t) => t.requires_approval).length}
+                      </div>
+                      <div class="tool-count-label">require approval</div>
+                    </div>
+                  </div>
+
+                  <!-- Built-in MCP Server -->
+                  <div class="mcp-server-capsule">
+                    <div class="status-indicator"></div>
+                    <div class="server-details">
+                      <span class="server-endpoint"
+                        >${window.location.origin}/mcp/v1</span
+                      >
+                      <span class="server-auth">Bearer Token</span>
+                    </div>
+                    <a href="/console/settings/api-keys" class="capsule-link">
+                      Manage Keys
+                    </a>
+                  </div>
+                `}
+          </sl-card>
+
+          <!-- Approval Analytics -->
+          ${this.approvalStats.total > 0
+            ? html`
+                <sl-card>
+                  <div slot="header" class="chart-header">
+                    <sl-icon name="bar-chart"></sl-icon>
+                    Approval Analytics
+                  </div>
+
+                  <div class="analytics-grid">
+                    <div class="analytics-stat">
+                      <div class="analytics-value">
+                        ${this.approvalStats.total}
+                      </div>
+                      <div class="analytics-label">Total Requests</div>
+                    </div>
+                    <div class="analytics-stat">
+                      <div
+                        class="analytics-value"
+                        style="color: var(--sl-color-success-600);"
+                      >
+                        ${this.approvalStats.approved}
+                      </div>
+                      <div class="analytics-label">Approved</div>
+                      <div class="analytics-subtext">
+                        ${this.approvalStats.total > 0
+                          ? Math.round(
+                              (this.approvalStats.approved /
+                                this.approvalStats.total) *
+                                100
+                            )
+                          : 0}%
+                        approval rate
+                      </div>
+                    </div>
+                    <div class="analytics-stat">
+                      <div
+                        class="analytics-value"
+                        style="color: var(--sl-color-danger-600);"
+                      >
+                        ${this.approvalStats.declined}
+                      </div>
+                      <div class="analytics-label">Declined</div>
+                    </div>
+                    ${this.approvalStats.avgApprovalTime > 0
+                      ? html`
+                          <div class="analytics-stat">
+                            <div class="analytics-value">
+                              ${this.approvalStats.avgApprovalTime}
+                            </div>
+                            <div class="analytics-label">
+                              Avg. Response Time
+                            </div>
+                            <div class="analytics-subtext">minutes</div>
+                          </div>
+                        `
+                      : ''}
+                  </div>
+
+                  <div style="margin-top: var(--sl-spacing-medium);">
+                    <a
+                      href="/console/tools"
+                      style="font-size: var(--sl-font-size-small);"
+                    >
+                      View all approval requests →
+                    </a>
+                  </div>
+                </sl-card>
+              `
+            : ''}
+
           <!-- Pending Approvals -->
           ${this.pendingApprovals.length > 0
             ? html`

@@ -41,6 +41,11 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      '/admin': {
+        target: 'http://localhost:5175',
+        changeOrigin: true,
+        ws: true,
+      },
       '/docs': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,

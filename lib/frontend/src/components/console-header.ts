@@ -10,7 +10,7 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import './theme-switcher.ts';
 import * as api from '../api.ts';
 import { Router } from '@vaadin/router';
-import { webSocketService } from '../services/websocket-service';
+import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
 
 interface UserDetails {
   username: string;
@@ -34,6 +34,8 @@ export class ConsoleHeader extends LitElement {
 
   @state()
   private _runningExecutions: FlowExecution[] = [];
+
+  private unsubscribe?: () => void;
 
   static styles = css`
     :host {
@@ -107,7 +109,7 @@ export class ConsoleHeader extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    webSocketService.disconnectFromFlowUpdates();
+    this.unsubscribe?.();
   }
 
   private async loadRunningExecutions() {
@@ -124,7 +126,8 @@ export class ConsoleHeader extends LitElement {
   }
 
   private connectToFlowUpdates() {
-    webSocketService.connectToFlowUpdates(
+    this.unsubscribe = unifiedWebSocketManager.subscribe(
+      'flow_executions',
       (message) => {
         console.log('Console header received flow update:', message);
 
@@ -185,10 +188,13 @@ export class ConsoleHeader extends LitElement {
             }
           }
         }
-      },
-      () => console.log('Console header WebSocket connected'),
-      () => console.log('Console header WebSocket disconnected')
+      }
     );
+
+    // Track connection state
+    unifiedWebSocketManager.onStateChange((state) => {
+      console.log(`Console header WebSocket state: ${state}`);
+    });
   }
 
   async fetchUserDetails() {

@@ -3,12 +3,13 @@ import { customElement, state } from 'lit/decorators.js';
 import { router } from '../../router';
 import { getFlowExecutions } from '../../api';
 import { AuthedElement } from '../../api';
-import { webSocketService } from '../../services/websocket-service';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
+import { parseUTCDate, formatLocalDateTime } from '../../utils/date';
 
 interface FlowExecution {
   id: string;
@@ -106,6 +107,8 @@ export class FlowExecutionsView extends AuthedElement {
   @state()
   private pageSize = 20;
 
+  private unsubscribe?: () => void;
+
   async connectedCallback() {
     super.connectedCallback();
     await this.loadExecutions();
@@ -117,7 +120,8 @@ export class FlowExecutionsView extends AuthedElement {
     // Sort by start_time descending (most recent first)
     this.executions = allExecutions.sort(
       (a, b) =>
-        new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+        parseUTCDate(b.start_time).getTime() -
+        parseUTCDate(a.start_time).getTime()
     );
   }
 
@@ -161,18 +165,17 @@ export class FlowExecutionsView extends AuthedElement {
   }
 
   connectWebSocket() {
-    // Connect to general flow updates WebSocket
-    webSocketService.connectToFlowUpdates(
-      (message: any) => this.handleWebSocketMessage(message),
-      () => {
-        console.log('Connected to flow updates WebSocket');
-        this.wsConnected = true;
-      },
-      () => {
-        console.log('Disconnected from flow updates WebSocket');
-        this.wsConnected = false;
-      }
+    // Subscribe to flow execution updates through unified WebSocket
+    this.unsubscribe = unifiedWebSocketManager.subscribe(
+      'flow_executions',
+      (message: any) => this.handleWebSocketMessage(message)
     );
+
+    // Track connection state
+    unifiedWebSocketManager.onStateChange((state) => {
+      this.wsConnected = state === 'connected';
+      console.log(`Flow executions WebSocket state: ${state}`);
+    });
   }
 
   handleWebSocketMessage(message: any) {
@@ -197,7 +200,8 @@ export class FlowExecutionsView extends AuthedElement {
         // Maintain sort order after update
         this.executions = updated.sort(
           (a, b) =>
-            new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+            parseUTCDate(b.start_time).getTime() -
+            parseUTCDate(a.start_time).getTime()
         );
       } else {
         // New execution started, reload the list
@@ -213,7 +217,8 @@ export class FlowExecutionsView extends AuthedElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    webSocketService.disconnectFromFlowUpdates();
+    // Unsubscribe from flow execution updates
+    this.unsubscribe?.();
   }
 
   render() {
@@ -304,10 +309,10 @@ export class FlowExecutionsView extends AuthedElement {
                               >
                             </div>
                           </td>
-                          <td>${new Date(exec.start_time).toLocaleString()}</td>
+                          <td>${formatLocalDateTime(exec.start_time)}</td>
                           <td>
                             ${exec.end_time
-                              ? new Date(exec.end_time).toLocaleString()
+                              ? formatLocalDateTime(exec.end_time)
                               : '-'}
                           </td>
                           <td>${exec.actions_taken_summary?.length || 0}</td>
