@@ -8,6 +8,7 @@ from .openhands import OpenHandsAgent
 from .aider import AiderAgent
 from .claude_code import ClaudeCodeAgent
 from .codex import CodexAgent
+from .gemini import GeminiAgent
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ def create_agent_executor(agent_type: str, config: Dict[str, Any]) -> AgentExecu
     Create an agent executor based on agent type.
 
     Args:
-        agent_type: Type of agent (e.g., 'openhands', 'claude-code', 'aider', 'codex')
+        agent_type: Type of agent (e.g., 'openhands', 'claude-code', 'aider', 'codex', 'gemini')
         config: Agent-specific configuration
 
     Returns:
@@ -36,8 +37,10 @@ def create_agent_executor(agent_type: str, config: Dict[str, Any]) -> AgentExecu
         return AiderAgent(config)
     elif agent_type_lower == "codex":
         return CodexAgent(config)
+    elif agent_type_lower == "gemini":
+        return GeminiAgent(config)
     else:
         raise ValueError(
             f"Unsupported agent type: {agent_type}. "
-            f"Supported types: openhands, claude-code, aider, codex"
+            f"Supported types: openhands, claude-code, aider, codex, gemini"
         )

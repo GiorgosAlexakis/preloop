@@ -1112,13 +1112,37 @@ class FlowExecutionOrchestrator:
         """Update the execution log and publish the update to NATS."""
         logger.info(f"Updating execution log to status: {status}")
 
+        # Debug logging for metrics
+        if "tool_calls_count" in kwargs or "total_tokens" in kwargs:
+            logger.info(
+                f"Updating execution metrics: tool_calls_count={kwargs.get('tool_calls_count')}, "
+                f"total_tokens={kwargs.get('total_tokens')}, estimated_cost={kwargs.get('estimated_cost')}"
+            )
+
         update_data = schemas.FlowExecutionUpdate(status=status, **kwargs)
+
+        # Debug: Log what fields are actually in the update
+        update_dict = update_data.model_dump(exclude_unset=True)
+        logger.info(f"Update data fields: {list(update_dict.keys())}")
+        if "tool_calls_count" in update_dict or "total_tokens" in update_dict:
+            logger.info(
+                f"Update dict metrics: tool_calls_count={update_dict.get('tool_calls_count')}, "
+                f"total_tokens={update_dict.get('total_tokens')}, estimated_cost={update_dict.get('estimated_cost')}"
+            )
+
         updated_log = crud_flow_execution.update(
             self.db, db_obj=self.execution_log, obj_in=update_data
         )
         self.db.commit()
         self.db.refresh(updated_log)
         self.execution_log = updated_log
+
+        # Debug: Verify the values were actually set
+        if "tool_calls_count" in kwargs or "total_tokens" in kwargs:
+            logger.info(
+                f"After update - DB values: tool_calls_count={updated_log.tool_calls_count}, "
+                f"total_tokens={updated_log.total_tokens}, estimated_cost={updated_log.estimated_cost}"
+            )
 
         # Publish update to NATS for real-time UI updates
         # Convert datetime objects to ISO format strings for JSON serialization

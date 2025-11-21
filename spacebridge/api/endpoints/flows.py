@@ -574,19 +574,20 @@ def delete_flow(
         f"Attempting to delete flow {flow_id} for account {current_user.account_id}"
     )
 
-    # First check if flow exists at all (without account filter)
-    flow_any = crud_flow.get(db=db, id=flow_id)
-    if not flow_any:
-        logger.warning(f"Flow {flow_id} not found in database")
-        raise HTTPException(status_code=404, detail="Flow not found")
-
-    # Check if it belongs to the user's account
+    # Check if flow exists and belongs to the user's account
     flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
-        logger.warning(
-            f"Flow {flow_id} exists but doesn't belong to account {current_user.account_id} (belongs to {flow_any.account_id}, is_preset={flow_any.is_preset})"
-        )
-        raise HTTPException(status_code=404, detail="Flow not found")
+        # Flow not found with account filter - check if it exists at all for better error messaging
+        flow_any = crud_flow.get(db=db, id=flow_id)
+        if not flow_any:
+            logger.warning(f"Flow {flow_id} not found in database")
+            raise HTTPException(status_code=404, detail="Flow not found")
+        else:
+            logger.warning(
+                f"Flow {flow_id} exists but doesn't belong to account {current_user.account_id} "
+                f"(belongs to {flow_any.account_id}, is_preset={flow_any.is_preset})"
+            )
+            raise HTTPException(status_code=404, detail="Flow not found")
 
     # Prevent deletion of built-in presets
     if flow.is_preset and flow.account_id is None:

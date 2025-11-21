@@ -27,6 +27,8 @@ from sqlalchemy.orm import Session
 from spacemodels.db.session import get_db_session
 from spacemodels.crud.account import CRUDAccount
 from spacemodels.crud.flow import CRUDFlow
+from spacemodels.models.account import Account
+from spacemodels.models.flow import Flow
 from spacemodels import schemas
 from spacebridge.flow_presets import FLOW_PRESETS
 
@@ -54,7 +56,7 @@ def sync_presets_for_account(
     Returns:
         Number of presets synced/updated
     """
-    crud_flow = CRUDFlow()
+    crud_flow = CRUDFlow(Flow)
     changes_count = 0
 
     account_label = account_email or str(account_id)
@@ -165,7 +167,7 @@ def sync_all_accounts(db: Session, dry_run: bool = False) -> int:
     Returns:
         Total number of changes across all accounts
     """
-    crud_account = CRUDAccount()
+    crud_account = CRUDAccount(Account)
     total_changes = 0
 
     # Get all accounts
@@ -216,7 +218,7 @@ def main():
 
         if args.email:
             # Find account by user email
-            crud_account = CRUDAccount()
+            crud_account = CRUDAccount(Account)
             account = crud_account.get_by_email(db, email=args.email)
             if not account:
                 logger.error(f"No account found with email: {args.email}")

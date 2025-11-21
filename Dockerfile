@@ -38,7 +38,6 @@ RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e s
 # Copy application code (this changes most frequently, so put it last)
 COPY spacebridge/ spacebridge/
 COPY scripts/ scripts/
-COPY docs/ docs/
 COPY plans.yaml .
 
 # Copy built frontend assets
