@@ -281,13 +281,15 @@ export async function searchIssues(
   params: FetchIssuesListParams
 ): Promise<any[]> {
   const queryParams = new URLSearchParams();
-  queryParams.append('search_type', 'similarity');
-  queryParams.append('embedding_type', 'issue');
 
-  if (params.query) {
+  // Use similarity search when there's a query, fulltext otherwise
+  if (params.query && params.query.trim()) {
+    queryParams.append('search_type', 'similarity');
+    queryParams.append('embedding_type', 'issue');
     queryParams.append('query', params.query);
   } else {
-    // The new endpoint requires a query, so we'll use an empty one to get all issues.
+    // Use fulltext search with empty query to list all issues
+    queryParams.append('search_type', 'fulltext');
     queryParams.append('query', '');
     queryParams.append('sort', 'newest');
   }

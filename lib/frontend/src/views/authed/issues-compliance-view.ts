@@ -379,13 +379,20 @@ export class IssuesComplianceView extends LitElement {
           : undefined;
       const skip = (this._currentPage - 1) * this._pageSize;
       console.log(`Searching with query: "${this._searchQuery}"`);
-      const issues = await searchIssues({
-        query: this._searchQuery,
+
+      // Only include query parameter if it's not empty
+      const searchParams: any = {
         project_ids: project_ids,
         status: this._selectedStatus,
         limit: this._pageSize,
         skip: skip,
-      });
+      };
+
+      if (this._searchQuery && this._searchQuery.trim()) {
+        searchParams.query = this._searchQuery;
+      }
+
+      const issues = await searchIssues(searchParams);
       this._issues = issues;
       this._hasMorePages = issues.length === this._pageSize;
       this._updateUrl(); // Update URL after fetching

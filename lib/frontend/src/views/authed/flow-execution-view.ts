@@ -8,6 +8,12 @@ import {
   getFlowExecutionMetrics,
   getFlowExecutionLogs,
 } from '../../api';
+import {
+  parseUTCDate,
+  formatLocalTime,
+  formatUTCDateTime,
+  calculateDuration,
+} from '../../utils/date';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
@@ -713,10 +719,10 @@ export class FlowExecutionView extends LitElement {
 
               <strong>Started:</strong>
               <sl-tooltip
-                content=${this.formatUTCDateTime(this.execution.start_time)}
+                content=${formatUTCDateTime(this.execution.start_time)}
               >
                 <sl-relative-time
-                  date=${this.execution.start_time}
+                  date=${parseUTCDate(this.execution.start_time).toISOString()}
                 ></sl-relative-time>
               </sl-tooltip>
 
@@ -724,7 +730,7 @@ export class FlowExecutionView extends LitElement {
                 ? html`
                     <strong>Duration:</strong>
                     <span>
-                      ${this.calculateDuration(
+                      ${calculateDuration(
                         this.execution.start_time,
                         this.execution.end_time
                       )}
@@ -755,10 +761,10 @@ export class FlowExecutionView extends LitElement {
             <sl-card>
               <div slot="header"><sl-icon name="clock"></sl-icon> Started</div>
               <sl-tooltip
-                content=${this.formatUTCDateTime(this.execution.start_time)}
+                content=${formatUTCDateTime(this.execution.start_time)}
               >
                 <sl-relative-time
-                  date=${this.execution.start_time}
+                  date=${parseUTCDate(this.execution.start_time).toISOString()}
                 ></sl-relative-time>
               </sl-tooltip>
             </sl-card>
@@ -886,7 +892,7 @@ ${this.execution.error_message}</pre
   }
 
   renderLogEntry(log: FlowExecutionUpdate) {
-    const time = new Date(log.timestamp).toLocaleTimeString();
+    const time = formatLocalTime(log.timestamp);
 
     // For model output (summary), show as a highlighted section
     if (log.type === 'model_output') {
@@ -1087,43 +1093,5 @@ ${log.payload.content}</pre
       default:
         return 'neutral';
     }
-  }
-
-  calculateDuration(startTime: string, endTime: string): string {
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    const durationMs = end.getTime() - start.getTime();
-    const seconds = Math.floor(durationMs / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-
-    if (hours > 0) return `${hours}h ${minutes % 60}m`;
-    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-    return `${seconds}s`;
-  }
-
-  formatUTCDateTime(dateTimeString: string): string {
-    // Ensure the datetime string is treated as UTC
-    // If it doesn't have timezone info, append 'Z' to indicate UTC
-    let utcDateString = dateTimeString;
-    if (
-      !dateTimeString.endsWith('Z') &&
-      !dateTimeString.includes('+') &&
-      !dateTimeString.includes('-', 10)
-    ) {
-      utcDateString = dateTimeString.replace(' ', 'T') + 'Z';
-    }
-
-    const date = new Date(utcDateString);
-
-    // Format as: "YYYY-MM-DD HH:MM:SS UTC"
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const hours = String(date.getUTCHours()).padStart(2, '0');
-    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
-
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} UTC`;
   }
 }

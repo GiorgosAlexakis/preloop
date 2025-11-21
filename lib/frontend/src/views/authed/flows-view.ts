@@ -15,6 +15,7 @@ import {
   getFlowExecutions,
   triggerFlowExecution,
 } from '../../api';
+import { parseUTCDate, formatLocalDateTime } from '../../utils/date';
 
 interface Flow {
   id: string;
@@ -466,7 +467,7 @@ export class FlowsView extends LitElement {
             <div
               style="font-size: 0.85rem; color: var(--sl-color-neutral-600);"
             >
-              Started ${new Date(exec.start_time).toLocaleString()}
+              Started ${formatLocalDateTime(exec.start_time)}
             </div>
           </div>
         </div>

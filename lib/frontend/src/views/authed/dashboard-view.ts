@@ -14,6 +14,7 @@ import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import * as api from '../../api';
 import { AuthedElement } from '../../api';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import { parseUTCDate } from '../../utils/date';
 import '../../components/similar-issues-widget.ts';
 import '../../components/duplicate-stats-chart.ts';
 import '../../components/tracker-pill.ts';
@@ -509,8 +510,8 @@ export class DashboardView extends AuthedElement {
         (r.status === 'approved' || r.status === 'declined') &&
         (r as any).resolved_at
       ) {
-        const requestTime = new Date(r.requested_at).getTime();
-        const resolvedTime = new Date((r as any).resolved_at).getTime();
+        const requestTime = parseUTCDate(r.requested_at).getTime();
+        const resolvedTime = parseUTCDate((r as any).resolved_at).getTime();
         totalTime += (resolvedTime - requestTime) / 60000; // Convert to minutes
         count++;
       }
@@ -526,7 +527,7 @@ export class DashboardView extends AuthedElement {
   }
 
   private formatDate(dateString: string): string {
-    const date = new Date(dateString);
+    const date = parseUTCDate(dateString);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);

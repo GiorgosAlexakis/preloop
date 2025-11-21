@@ -16,6 +16,11 @@ import {
   getMCPServers,
 } from '../../api';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import {
+  parseUTCDate,
+  formatLocalDateTime,
+  calculateDuration,
+} from '../../utils/date';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
@@ -267,7 +272,8 @@ export class FlowView extends LitElement {
         .filter((exec: any) => exec.flow_id === this.flowId)
         .sort(
           (a: any, b: any) =>
-            new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+            parseUTCDate(b.start_time).getTime() -
+            parseUTCDate(a.start_time).getTime()
         )
         .slice(0, 10);
 
@@ -716,11 +722,11 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                               </sl-badge>
                             </td>
                             <td style="padding: 8px;">
-                              ${new Date(exec.start_time).toLocaleString()}
+                              ${formatLocalDateTime(exec.start_time)}
                             </td>
                             <td style="padding: 8px;">
                               ${exec.end_time
-                                ? this.calculateDuration(
+                                ? calculateDuration(
                                     exec.start_time,
                                     exec.end_time
                                   )
@@ -758,19 +764,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
       default:
         return 'neutral';
     }
-  }
-
-  calculateDuration(startTime: string, endTime: string): string {
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    const durationMs = end.getTime() - start.getTime();
-    const seconds = Math.floor(durationMs / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-
-    if (hours > 0) return `${hours}h ${minutes % 60}m`;
-    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-    return `${seconds}s`;
   }
 
   private extractTriggerEventPlaceholders(): string[] {
