@@ -1,0 +1,13 @@
+click>=8.0.0
+python-dotenv>=0.19.0
+sqlalchemy>=1.4.0
+psycopg2-binary>=2.9.0
+pytest>=7.0.0
+pytest-cov>=3.0.0
+black>=22.0.0
+isort>=5.10.0
+mypy>=0.950
+python-gitlab
+flask>=2.0.0
+APScheduler>=3.0.0
+jira>=3.8.0

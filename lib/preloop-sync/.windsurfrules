@@ -1,0 +1,105 @@
+- You are a Python engineer
+- Use type hints consistently
+- Optimize for readability over premature optimization
+- Write modular code, using separate files for models, data loading, training, and evaluation
+- Follow PEP8 style guide for Python code
+- My test framework is pytest
+- ALWAYS use the CRUD rules, never direct db access
+- DO NOT mock everything as soon as you hit a roadblock -- try to find a solution instead
+- Do not create try/except blocks just to log errors and exit! It is unnecessary, hides error information and clutters the code
+- Do not bloat the code continuously! Use concise, smart logic.
+- Use the following API for the db:
+
+```
+## SpaceModels API
+
+### Account Operations
+- `crud_account.create(db, obj_in={})` - Create new account
+- `crud_account.get_by_email(db, email="")` - Get account by email
+- `crud_account.get_by_username(db, username="")` - Get account by username
+- `crud_account.create_with_organization(db, obj_in={}, organization_id="", role="owner")` - Create account linked to organization
+- `crud_account.get_active(db, skip=0, limit=100)` - Get active accounts
+- `crud_account.deactivate(db, id="")` - Deactivate account
+
+### Tracker Operations
+- `crud_tracker.create(db, obj_in={})` - Create new tracker
+- `crud_tracker.validate_connection(db, tracker_id="")` - Validate tracker connection and update status
+- `crud_tracker.get_for_account(db, account_id="", tracker_type=None)` - Get trackers for account
+- `crud_tracker.get_active(db, skip=0, limit=100)` - Get active trackers
+- `crud_tracker.deactivate(db, id="")` - Deactivate tracker
+
+### Organization Operations
+- `crud_organization.create(db, obj_in={})` - Create new organization
+- `crud_organization.get_by_identifier(db, identifier="")` - Get organization by identifier
+- `crud_organization.get_for_account(db, account_id="")` - Get organizations for account
+- `crud_organization.get_for_tracker(db, tracker_id="", skip=0, limit=100)` - Get organizations for tracker
+- `crud_organization.deactivate(db, id="")` - Deactivate organization
+
+### Project Operations
+- `crud_project.create(db, obj_in={})` - Create new project
+- `crud_project.get_by_identifier(db, organization_id="", identifier="")` - Get project by identifier
+- `crud_project.get_for_organization(db, organization_id="", skip=0, limit=100)` - Get projects for organization
+- `crud_project.deactivate(db, id="")` - Deactivate project
+
+### Issue Operations
+- `crud_issue.create(db, obj_in={})` - Create new issue
+- `crud_issue.create_with_external(db, obj_in={}, sync_to_tracker=True)` - Create issue, optionally syncing to external tracker
+- `crud_issue.get_for_project(db, project_id="", status=None, issue_type=None, skip=0, limit=100)` - Get issues for project
+- `crud_issue.get_for_tracker(db, tracker_id="", skip=0, limit=100)` - Get issues for tracker
+- `crud_issue.sync_from_external(db, tracker_id="", external_id="")` - Sync issue from external tracker
+- `crud_issue.create_embeddings(db, issue_id="", force_update=False)` - Create embeddings for issue
+
+### Embedding Model Operations
+- `crud_embedding_model.create(db, obj_in={})` - Create embedding model
+- `crud_embedding_model.get_by_name(db, name="")` - Get embedding model by name
+- `crud_embedding_model.get_by_provider_version(db, provider="", version="")` - Get model by provider/version
+- `crud_embedding_model.get_active(db)` - Get all active embedding models
+
+### Issue Embedding Operations
+- `crud_issue_embedding.create(db, obj_in={})` - Create issue embedding
+- `crud_issue_embedding.get_for_issue(db, issue_id="")` - Get all embeddings for issue
+- `crud_issue_embedding.get_for_model(db, model_id="", skip=0, limit=100)` - Get embeddings for model
+- `crud_issue_embedding.similarity_search(db, model_id="", query_vector=[], limit=10)` - Search similar issues
+
+### Database Session Management
+- `get_engine(database_url=None)` - Create SQLAlchemy engine
+- `get_session_factory(engine=None)` - Get session factory
+- `get_db_session()` - Get database session
+```
+
+Example:
+```python
+from spacemodels.db.session import get_db_session
+from spacemodels.crud import crud_account, crud_tracker
+
+# Get database session
+db = next(get_db_session())
+
+# Create a new account
+new_account = crud_account.create(
+    db,
+    obj_in={
+        "username": "johndoe",
+        "email": "john@example.com",
+        "full_name": "John Doe",
+        "hashed_password": "hashed_password_here"
+    }
+)
+
+# Set up a GitHub tracker for the account
+new_tracker = crud_tracker.create(
+    db,
+    obj_in={
+        "name": "GitHub Issues",
+        "tracker_type": "github",
+        "account_id": new_account.id,
+        "api_key": "github_token_here",
+        "connection_details": {
+            "repository": "owner/repo"
+        }
+    }
+)
+
+# Always close the session when done
+db.close()
+```
