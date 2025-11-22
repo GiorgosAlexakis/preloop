@@ -56,10 +56,6 @@ BUILTIN_TOOLS = [
                     "type": "string",
                     "description": "Description of the operation requiring approval",
                 },
-                "caller": {
-                    "type": "string",
-                    "description": "Name of the agent or flow requesting approval",
-                },
                 "context": {
                     "type": "string",
                     "description": "Additional context about the situation",
@@ -68,12 +64,16 @@ BUILTIN_TOOLS = [
                     "type": "string",
                     "description": "Explanation of why this operation is needed",
                 },
+                "caller": {
+                    "type": "string",
+                    "description": "Optional: Name of the agent or flow requesting approval (auto-populated if not specified)",
+                },
                 "approval_policy": {
                     "type": "string",
                     "description": "Optional name of the approval policy to use",
                 },
             },
-            "required": ["operation", "caller", "context", "reasoning"],
+            "required": ["operation", "context", "reasoning"],
         },
     },
     {

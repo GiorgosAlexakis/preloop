@@ -1,11 +1,11 @@
 ingress:
   enabled: true
   hosts:
-    - host: "{{ .Values.branchName }}.test.spacebridge.io"
+    - host: "{{ .Values.branchName }}.test.preloop.ai"
       paths:
         - path: /
           pathType: ImplementationSpecific
   tls:
     - hosts:
-        - "{{ .Values.branchName }}.test.spacebridge.io"
+        - "{{ .Values.branchName }}.test.preloop.ai"
       secretName: spacebridge-test-tls

@@ -2,8 +2,8 @@ import os
 import pytest
 from playwright.sync_api import Page, expect
 
-STAGING_URL = "https://staging.spacebridge.io"
-PRODUCTION_URL = "https://spacebridge.io"
+STAGING_URL = "https://staging.preloop.ai"
+PRODUCTION_URL = "https://preloop.ai"
 USERNAME = os.environ.get("SPACEBRIDGE_USERNAME")
 PASSWORD = os.environ.get("SPACEBRIDGE_PASSWORD")
 

@@ -26,7 +26,9 @@ from spacemodels.models.issue import Issue
 from spacemodels.models.organization import Organization
 from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
+from spacebridge.config import get_settings
 
+settings = get_settings()
 # Initialize CRUD operations
 crud_organization = CRUDOrganization(Organization)
 crud_project = CRUDProject(Project)
@@ -279,7 +281,8 @@ async def perform_search(
                 organization=organization_name,
                 project=project_name,
                 project_identifier=project_identifier,
-                url=external_url or f"https://spacebridge.io/issues/{db_obj.id}",
+                url=external_url
+                or f"https://{settings.spacebridge_url}/issues/{db_obj.id}",
                 created_at=db_obj.created_at,
                 updated_at=db_obj.updated_at,
                 meta_data=metadata_dict,

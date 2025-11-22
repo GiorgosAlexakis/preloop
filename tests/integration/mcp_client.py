@@ -21,7 +21,7 @@ class MCPTestClient:
         Initialize MCP test client.
 
         Args:
-            base_url: SpaceBridge base URL (e.g., https://test.spacebridge.io)
+            base_url: SpaceBridge base URL (e.g., https://test.preloop.ai)
             api_key: API key for authentication
         """
         self.base_url = base_url.rstrip("/")

@@ -1,17 +1,15 @@
-# SpaceBridge
+# Preloop AI
 
-![SpaceBridge Logo](assets/logo.webp)
+![Preloop Logo](assets/logo.webp)
 
 ## Overview
 
-SpaceBridge.io drives your product using AI. It ingests issues, comments, documentation and (optionally) code from your issue tracker. It detects duplication and overlap of issues, evaluates compliance metrics and provides suggestions with the most impactful actions to improve your issue tracker.
+Preloop is an event-driven automation platform with built-in human-in-the-loop safety. AI agents respond to events across your tools automatically. When agents call sensitive operations, Preloop intercepts the request and routes it for human approval—no infrastructure changes required.
 
 ## Key Features
 
-- **Issue Tracker Integration**: Continuous ingestion of issues, comments, projects, and organizations from Jira, GitHub, GitLab, and more
-- **Vector Search**: Intelligent similarity search across issue trackers and projects using embeddings
-- **Duplicate Detection**: Automated detection of duplicate and overlapping issues
-- **Compliance Metrics**: Evaluate issue compliance and receive actionable improvement recommendations
+- **Event-Driven Automation**: AI agents respond to events across your tools automatically
+- **Human-in-the-Loop Safety**: When agents call sensitive operations, Preloop intercepts the request and routes it for human approval—no infrastructure changes required
 - **MCP Server**: Standards-based Model Context Protocol (MCP) server with dynamic tool filtering
   - 6 built-in tools: get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance
   - JWT authentication with per-user tool visibility
@@ -32,6 +30,10 @@ SpaceBridge.io drives your product using AI. It ingests issues, comments, docume
   - Custom roles and permissions
   - Invitation system with email verification
 - **Agentic Flows**: Event-driven workflows triggered by issue tracker events with real-time monitoring
+- **Issue Tracker Integration**: Continuous ingestion of issues, comments, projects, and organizations from Jira, GitHub, GitLab, and more
+- **Vector Search**: Intelligent similarity search across issue trackers and projects using embeddings
+- **Duplicate Detection**: Automated detection of duplicate and overlapping issues
+- **Compliance Metrics**: Evaluate issue compliance and receive actionable improvement recommendations
 - **Web UI**: Comprehensive interface built with Lit, Vite, and Material Web Components
 
 ## Supported Issue Trackers
@@ -43,9 +45,9 @@ SpaceBridge.io drives your product using AI. It ingests issues, comments, docume
 
 ## Architecture
 
-SpaceBridge is designed with a modular architecture:
+Preloop AI is designed with a modular architecture:
 
-1.  **SpaceBridge** (this repository): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
+1.  **Preloop AI** (this repository): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
 2.  **SpaceModels** (submodule `./SpaceModels`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
 3.  **SpaceSync** (submodule `./spacesync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
 4.  **SpaceLit** (submodule `./SpaceLit`): A web application built using Lit, Vite, TypeScript, and Shoelace Web Components.
@@ -72,8 +74,8 @@ The frontend is in the `SpaceLit` directory. It is built using modern web techno
 
 ```bash
 # Clone the repository
-git clone https://github.com/spacecode/spacebridge.git
-cd spacebridge
+git clone https://github.com/spacecode/preloop-ai.git
+cd preloop-ai
 
 # Create and activate a virtual environment
 python -m venv .venv
@@ -93,8 +95,8 @@ cp .env.example .env
 
 ```bash
 # Clone the repository
-git clone https://github.com/spacecode/spacebridge.git
-cd spacebridge
+git clone https://github.com/spacecode/preloop-ai.git
+cd preloop-ai
 
 # Run with Docker Compose
 docker-compose up
@@ -102,21 +104,21 @@ docker-compose up
 
 ### Kubernetes Setup
 
-SpaceBridge can be deployed to Kubernetes using the provided Helm chart:
+Preloop AI can be deployed to Kubernetes using the provided Helm chart:
 
 ```bash
-# Add the SpaceCode Helm repository (if available)
+# Add the Spacecode Helm repository (if available)
 # helm repo add spacecode https://charts.spacecode.ai
 # helm repo update
 
 # Install from the local chart
-helm install spacebridge ./helm/spacebridge
+helm install preloop-ai ./helm/preloop-ai
 
 # Or install with custom values
-helm install spacebridge ./helm/spacebridge --values custom-values.yaml
+helm install preloop-ai ./helm/preloop-ai --values custom-values.yaml
 ```
 
-For more details about the Helm chart, see the [chart README](./helm/spacebridge/README.md).
+For more details about the Helm chart, see the [chart README](./helm/preloop-ai/README.md).
 
 ## Usage
 
@@ -125,7 +127,7 @@ For more details about the Helm chart, see the [chart README](./helm/spacebridge
 1.  **Set Environment Variables:**
     Ensure you have a `.env` file configured with the necessary environment variables (see `.env.example`). Key variables include database connection details, API keys, etc.
 
-2.  **Start SpaceBridge API:**
+2.  **Start Preloop AI API:**
     Use the provided script to start the main API server:
     ```bash
     ./start.sh
@@ -157,13 +159,13 @@ http://localhost:8000/openapi.json
 
 ### Using the REST API
 
-SpaceBridge provides a RESTful HTTP API for interacting with issue tracking systems:
+Preloop AI provides a RESTful HTTP API:
 
 ```python
 import requests
 import json
 
-# Base URL for the SpaceBridge API
+# Base URL for the Preloop AI API
 base_url = "http://localhost:8000/api/v1"
 
 # Authenticate and get a token
@@ -216,34 +218,11 @@ print(json.dumps(issue.json(), indent=2))
 
 ## API Endpoints
 
-SpaceBridge provides a RESTful API with the following key endpoints:
+Preloop AI provides a RESTful API with the following key endpoints:
 
 ### Authentication
 - `POST /api/v1/auth/token` - Get authentication token
 - `POST /api/v1/auth/refresh` - Refresh authentication token
-
-### Organizations
-- `GET /api/v1/organizations` - List organizations
-- `GET /api/v1/organizations/{org_id}` - Get organization details
-- `POST /api/v1/organizations` - Create organization
-- `PUT /api/v1/organizations/{org_id}` - Update organization
-- `DELETE /api/v1/organizations/{org_id}` - Delete organization
-
-### Projects
-- `GET /api/v1/organizations/{org_id}/projects` - List projects
-- `GET /api/v1/projects/{project_id}` - Get project details
-- `POST /api/v1/projects` - Create project
-- `PUT /api/v1/projects/{project_id}` - Update project
-- `DELETE /api/v1/projects/{project_id}` - Delete project
-- `POST /api/v1/projects/test-connection` - Test project connection
-
-### Issues
-- `GET /api/v1/issues/search` - Search issues
-- `POST /api/v1/issues` - Create issue
-- `GET /api/v1/issues/{issue_id}` - Get issue details
-- `PUT /api/v1/issues/{issue_id}` - Update issue
-- `DELETE /api/v1/issues/{issue_id}` - Delete issue
-- `POST /api/v1/issues/{issue_id}/comments` - Add comment to issue
 
 ### MCP Server Management
 - `GET /api/v1/mcp-servers` - List configured MCP servers
@@ -283,9 +262,40 @@ SpaceBridge provides a RESTful API with the following key endpoints:
 - `GET /api/v1/flows/executions/{id}/logs` - Get execution logs (from container or database)
 - `GET /api/v1/flows/executions/{id}/metrics` - Get execution metrics (tool calls, tokens, cost)
 
-### Admin Dashboard and API
+## Trackers
+- `GET /api/v1/trackers` - List trackers
+- `GET /api/v1/trackers/{tracker_id}` - Get tracker details
+- `POST /api/v1/trackers` - Create tracker
+- `PUT /api/v1/trackers/{tracker_id}` - Update tracker
+- `DELETE /api/v1/trackers/{tracker_id}` - Delete tracker
 
-SpaceBridge includes a comprehensive admin dashboard for superusers to monitor system activity, manage users, and track resource usage.
+### Organizations
+- `GET /api/v1/organizations` - List organizations
+- `GET /api/v1/organizations/{org_id}` - Get organization details
+- `POST /api/v1/organizations` - Create organization
+- `PUT /api/v1/organizations/{org_id}` - Update organization
+- `DELETE /api/v1/organizations/{org_id}` - Delete organization
+
+### Projects
+- `GET /api/v1/organizations/{org_id}/projects` - List projects
+- `GET /api/v1/projects/{project_id}` - Get project details
+- `POST /api/v1/projects` - Create project
+- `PUT /api/v1/projects/{project_id}` - Update project
+- `DELETE /api/v1/projects/{project_id}` - Delete project
+- `POST /api/v1/projects/test-connection` - Test project connection
+
+### Issues
+- `GET /api/v1/issues/search` - Search issues
+- `POST /api/v1/issues` - Create issue
+- `GET /api/v1/issues/{issue_id}` - Get issue details
+- `PUT /api/v1/issues/{issue_id}` - Update issue
+- `DELETE /api/v1/issues/{issue_id}` - Delete issue
+- `POST /api/v1/issues/{issue_id}/comments` - Add comment to issue
+
+
+### Admin Dashboard and API (not available in open source version)
+
+Preloop AI includes a comprehensive admin dashboard for superusers to monitor system activity, manage users, and track resource usage.
 
 **Admin Endpoints** (require superuser permissions):
 - `GET /api/v1/admin/activity/sessions` - Get active WebSocket sessions with real-time activity
@@ -318,7 +328,7 @@ python scripts/manage_superusers.py list
 
 ### Unified WebSocket
 
-SpaceBridge uses a unified WebSocket connection for real-time updates across the application:
+Preloop AI uses a unified WebSocket connection for real-time updates across the application:
 
 **Connection:** `ws://localhost:8000/api/v1/ws/unified`
 
@@ -352,7 +362,7 @@ unsubscribe();
 
 ### Impersonation Auditing
 
-SpaceBridge tracks all user impersonation events for security and compliance. Administrators can audit impersonated sessions to trace actions back to the original operator.
+Preloop AI tracks all user impersonation events for security and compliance. Administrators can audit impersonated sessions to trace actions back to the original operator.
 
 **Audit Events:**
 - `impersonation_started` - When an admin begins impersonating a user
@@ -382,7 +392,7 @@ For more details, see [ARCHITECTURE.md](docs/ARCHITECTURE.md) section on audit l
 
 ### Using MCP Tools via API
 
-The SpaceBridge API now includes integrated MCP tool endpoints with dynamic tool filtering, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
+The Preloop AI API now includes integrated MCP tool endpoints with dynamic tool filtering, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
 
 **Authentication:** All MCP endpoints use the same Bearer Token authentication as the rest of the API.
 
@@ -390,23 +400,23 @@ The SpaceBridge API now includes integrated MCP tool endpoints with dynamic tool
 
 **Connecting with Claude Code:**
 
-You can connect Claude Code directly to your SpaceBridge instance using the `claude mcp add` command.
+You can connect Claude Code directly to your Preloop AI instance using the `claude mcp add` command.
 
-1.  **Get your SpaceBridge API Key:** You can find or create an API key in your SpaceBridge user settings.
-2.  **Add the MCP Server:** Run the following command, replacing `YOUR_SPACEBRIDGE_URL` and `YOUR_API_KEY` with your details.
+1.  **Get your Preloop AI API Key:** You can find or create an API key in your Preloop AI user settings.
+2.  **Add the MCP Server:** Run the following command, replacing `YOUR_PRELOOP_AI_URL` and `YOUR_API_KEY` with your details.
 
     ```bash
     claude mcp add \
       --transport http \
       --header "Authorization: Bearer YOUR_API_KEY" \
-      spacebridge \
-      https://YOUR_SPACEBRIDGE_URL/mcp/v1
+      preloop_ai \
+      https://YOUR_PRELOOP_AI_URL/mcp/v1
     ```
 
     - `--transport http`: Specifies that the server uses the HTTP transport.
     - `--header "Authorization: Bearer YOUR_API_KEY"`: Provides the necessary authentication header for all requests.
-    - `spacebridge`: This is the name you will use to refer to the server (e.g., `@spacebridge get_issue ...`).
-    - `https://YOUR_SPACEBRIDGE_URL/mcp/v1`: This is the base URL for the SpaceBridge MCP endpoints.
+    - `preloop_ai`: This is the name you will use to refer to the server (e.g., `@preloop_ai get_issue ...`).
+    - `https://YOUR_PRELOOP_AI_URL/mcp/v1`: This is the base URL for the Preloop AI MCP endpoints.
 
 **Example Workflow (using `curl`):**
 
@@ -414,7 +424,7 @@ If you are not using an MCP client and want to interact with the tool endpoints 
 
 1.  **Create an Issue:**
     ```bash
-    curl -X POST "https://YOUR_SPACEBRIDGE_URL/api/v1/mcp/create_issue" \
+    curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/mcp/create_issue" \
     -H "Authorization: Bearer YOUR_API_KEY" \
     -H "Content-Type: application/json" \
     -d '{
@@ -426,7 +436,7 @@ If you are not using an MCP client and want to interact with the tool endpoints 
 
 ### Tool Approval Workflows
 
-SpaceBridge provides sophisticated approval workflows for tool execution with conditional policies and multi-channel notifications. Control which operations require approval and define conditional rules based on tool arguments, user context, and more.
+Preloop AI provides sophisticated approval workflows for tool execution with conditional policies and multi-channel notifications. Control which operations require approval and define conditional rules based on tool arguments, user context, and more.
 
 **Key Concepts:**
 - **Tool Configuration**: Enable/disable tools and assign approval policies
@@ -440,7 +450,7 @@ SpaceBridge provides sophisticated approval workflows for tool execution with co
 
 1. **Create an Approval Policy:**
    ```bash
-   curl -X POST "https://YOUR_SPACEBRIDGE_URL/api/v1/approval-policies" \
+   curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/approval-policies" \
    -H "Authorization: Bearer YOUR_API_KEY" \
    -H "Content-Type: application/json" \
    -d '{
@@ -460,12 +470,12 @@ SpaceBridge provides sophisticated approval workflows for tool execution with co
 
 2. **Configure tool with conditional approval:**
    ```bash
-   curl -X POST "https://YOUR_SPACEBRIDGE_URL/api/v1/tool-configurations" \
+   curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/tool-configurations" \
    -H "Authorization: Bearer YOUR_API_KEY" \
    -H "Content-Type: application/json" \
    -d '{
      "tool_name": "update_issue",
-     "tool_source": "spacebridge_builtin",
+     "tool_source": "preloop_ai_builtin",
      "is_enabled": true,
      "approval_policy_id": "<policy_id_from_step_1>",
      "conditions": [
@@ -512,11 +522,10 @@ args.project_id in ["proj-123", "proj-456"]
 
 For detailed setup instructions, see:
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and approval flow
-- [DEEP_LINKING_SETUP.md](docs/DEEP_LINKING_SETUP.md) - Mobile push notification setup
 
 ## Testing
 
-SpaceBridge uses pytest for unit and integration testing. The test suite covers API endpoints, database models, and tracker integrations.
+Preloop AI uses pytest for unit and integration testing. The test suite covers API endpoints, database models, and tracker integrations.
 
 ### Running Tests
 
@@ -566,4 +575,6 @@ Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING
 
 ## License
 
-Copyright (c) 2025 SpaceCode. All rights reserved.
+The core of Preloop AI is open source software licensed under the [Apache License 2.0](LICENSE).
+
+The proprietary plugins of Preloop AI are Copyright (c) 2025 Spacecode AI Inc. All rights reserved.

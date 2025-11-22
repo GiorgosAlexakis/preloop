@@ -1,6 +1,6 @@
-# SpaceBridge Examples
+# Preloop AI Examples
 
-This directory contains example code for working with SpaceBridge.
+This directory contains example code for working with Preloop AI.
 
 ## Example MCP Server
 
@@ -58,16 +58,16 @@ The example MCP server can be deployed to the Kubernetes cluster via GitLab CI:
 
 See `.gitlab-ci.yml` for job definitions and `helm/example-mcp-server/` for Helm chart details.
 
-### Adding to SpaceBridge
+### Adding to Preloop AI
 
-Once the server is running (locally, via Docker, or on Kubernetes), add it to SpaceBridge:
+Once the server is running (locally, via Docker, or on Kubernetes), add it to Preloop AI:
 
 #### Via API
 
 ```bash
 # For local development
-curl -X POST https://spacebridge.io/api/v1/mcp-servers \
-  -H "Authorization: Bearer YOUR_SPACEBRIDGE_API_KEY" \
+curl -X POST https://preloop.ai/api/v1/mcp-servers \
+  -H "Authorization: Bearer YOUR_PRELOOP_AI_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Example MCP Server",
@@ -79,8 +79,8 @@ curl -X POST https://spacebridge.io/api/v1/mcp-servers \
   }'
 
 # For deployed environment
-curl -X POST https://spacebridge.io/api/v1/mcp-servers \
-  -H "Authorization: Bearer YOUR_SPACEBRIDGE_API_KEY" \
+curl -X POST https://preloop.ai/api/v1/mcp-servers \
+  -H "Authorization: Bearer YOUR_PRELOOP_AI_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Example MCP Server",

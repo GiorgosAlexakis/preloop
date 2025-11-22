@@ -4,7 +4,7 @@ WORKDIR /app
 COPY SpaceLit /app
 RUN npm install && npm run build
 
-# Stage 2: Build SpaceBridge
+# Stage 2: Build Preloop AI
 FROM python:3.11-slim
 
 WORKDIR /app

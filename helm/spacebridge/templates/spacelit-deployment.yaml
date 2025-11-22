@@ -5,6 +5,7 @@ metadata:
   labels:
     {{- include "spacebridge.labels" . | nindent 4 }}
     app.kubernetes.io/component: spacelit
+    app: spacelit
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}

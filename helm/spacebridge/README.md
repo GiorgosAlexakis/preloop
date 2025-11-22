@@ -1,6 +1,6 @@
-# SpaceBridge Helm Chart
+# Preloop AI Helm Chart
 
-This Helm chart deploys SpaceBridge, a Model Context Protocol (MCP) server that serves as a unified interface between Spacecode's infrastructure and multiple issue tracking systems.
+This Helm chart deploys Preloop AI, an event-driven automation platform with built-in human-in-the-loop safety.
 
 ## Prerequisites
 
@@ -14,15 +14,15 @@ This Helm chart deploys SpaceBridge, a Model Context Protocol (MCP) server that 
 To install the chart with the release name `spacebridge`:
 
 ```bash
-# Add the SpaceCode Helm repository (if available)
+# Add the Spacecode AI Helm repository (if available)
 # helm repo add spacecode https://charts.spacecode.ai
 # helm repo update
 
 # Install the chart from local path
-helm install spacebridge ./charts/spacebridge
+helm install preloop-ai ./charts/preloop-ai
 ```
 
-The command deploys SpaceBridge on the Kubernetes cluster in the default configuration. The [Parameters](#parameters) section lists the parameters that can be configured during installation.
+The command deploys Preloop AI on the Kubernetes cluster in the default configuration. The [Parameters](#parameters) section lists the parameters that can be configured during installation.
 
 ## Uninstalling the Chart
 
@@ -39,9 +39,9 @@ helm uninstall spacebridge
 | Name                | Description                                                                                         | Value           |
 |---------------------|-----------------------------------------------------------------------------------------------------|-----------------|
 | `replicaCount`      | Number of replicas                                                                                 | `1`             |
-| `image.repository`  | SpaceBridge image repository                                                                       | `gitlab.spacecode.ai:5000/spacecode/spacebridge` |
-| `image.tag`         | SpaceBridge image tag                                                                              | `latest`        |
-| `image.pullPolicy`  | SpaceBridge image pull policy                                                                      | `Always`  |
+| `image.repository`  | Preloop AI image repository                                                                        | `gitlab.spacecode.ai:5000/spacecode/spacebridge` |
+| `image.tag`         | Preloop AI image tag                                                                               | `latest`        |
+| `image.pullPolicy`  | Preloop AI image pull policy                                                                       | `Always`  |
 | `imagePullSecrets`  | Secret names for pulling images                                                                    | `[]`            |
 | `nameOverride`      | String to partially override the name template                                                     | `""`            |
 | `fullnameOverride`  | String to fully override the name template                                                         | `""`            |
@@ -124,7 +124,7 @@ helm uninstall spacebridge
 
 ### Observability
 
-This Helm chart includes several features to enhance the observability of the SpaceBridge application. These features are disabled by default and can be enabled and configured through the `values.yaml` file.
+This Helm chart includes several features to enhance the observability of the Preloop AI application. These features are disabled by default and can be enabled and configured through the `values.yaml` file.
 
 #### Performance Profiling
 
@@ -157,7 +157,7 @@ sentry:
 
 ### PostgreSQL with PGVector
 
-This chart deploys PostgreSQL with the PGVector extension by default, which is required for vector search capabilities in SpaceBridge. If you prefer to use an external PostgreSQL instance, ensure that it has the PGVector extension installed.
+This chart deploys PostgreSQL with the PGVector extension by default, which is required for vector search capabilities in Preloop AI. If you prefer to use an external PostgreSQL instance, ensure that it has the PGVector extension installed.
 
 ### Using an external PostgreSQL database
 
@@ -177,7 +177,7 @@ database:
 
 ### JWT Authentication
 
-SpaceBridge uses JWT for authentication. By default, it uses a placeholder JWT secret. For production deployments, you should set a proper JWT secret:
+Preloop AI uses JWT for authentication. By default, it uses a placeholder JWT secret. For production deployments, you should set a proper JWT secret:
 
 ```yaml
 environment:

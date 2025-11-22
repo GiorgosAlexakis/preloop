@@ -98,9 +98,9 @@ async def create_test_data():
                 db,
                 obj_in={
                     "id": str(uuid.uuid4()),
-                    "name": "SpaceCode",
+                    "name": "Spacecode AI",
                     "identifier": "spacecode",
-                    "description": "SpaceCode organization for testing",
+                    "description": "Spacecode AI organization for testing",
                     "tracker_id": tracker.id,
                     "is_active": True,
                     "settings": {"default_tracker": tracker.id},

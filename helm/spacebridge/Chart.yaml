@@ -1,6 +1,6 @@
 apiVersion: v2
 name: spacebridge
-description: A Helm chart for SpaceBridge - A Model Context Protocol (MCP) server for issue tracking systems
+description: A Helm chart for Preloop AI - An event-driven automation platform with built-in human-in-the-loop safety
 
 # A chart can be either an 'application' or a 'library' chart.
 type: application
@@ -13,23 +13,24 @@ appVersion: "0.1.0"
 
 # Keywords for the chart
 keywords:
-  - spacebridge
+  - preloop-ai
+  - automation
+  - human-in-the-loop
   - mcp
-  - issue-tracking
   - jira
   - github
   - gitlab
 
 # Home URL for the project
-home: https://gitlab.spacecode.ai/spacecode/spacebridge
+home: https://preloop.ai
 
 # Chart maintainers
 maintainers:
-  - name: SpaceCode Team
-    email: support@spacecode.ai
+  - name: Spacecode AI Inc. Team
+    email: hello@preloop.ai
 
 # Icon for the chart (optional)
-icon: https://spacebridge.io/assets/favicon.png
+icon: https://preloop.ai/assets/favicon.png
 
 # Dependencies
 # CloudNativePG operator should be installed in the cluster

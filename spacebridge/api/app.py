@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pyinstrument import Profiler
 from pyinstrument.renderers import SpeedscopeRenderer
@@ -528,9 +528,6 @@ def create_app() -> FastAPI:
         app.add_middleware(ApiUsageMiddleware)
     app.add_middleware(UIRoutingMiddleware)
 
-    # --- Static Files Setup ---
-    mkdocs_site_dir = base_dir / "site"  # Directory where 'mkdocs build' outputs
-
     # Mount general static files (CSS, JS for landing/auth pages)
     try:
         app.mount(
@@ -545,37 +542,6 @@ def create_app() -> FastAPI:
         )
     except Exception as e:
         logger.error(f"Failed to mount SpaceLit static files: {e}")
-
-    # --- Mount MkDocs Site ---
-    # Check if the 'site' directory exists (created by 'mkdocs build')
-    if mkdocs_site_dir.exists() and mkdocs_site_dir.is_dir():
-        logger.info(f"Mounting MkDocs site from: {mkdocs_site_dir}")
-        app.mount(
-            "/docs",  # Serve the built MkDocs site here
-            StaticFiles(directory=str(mkdocs_site_dir), html=True),
-            name="documentation",
-        )
-    else:
-        logger.warning(
-            f"MkDocs site directory '{mkdocs_site_dir}' not found or not a directory. Documentation will not be served at /docs."
-        )
-
-        # Optionally, mount a placeholder or raise an error during development
-        @app.get("/docs", include_in_schema=False)
-        async def docs_placeholder():
-            return HTMLResponse(
-                """
-                <html>
-                    <head><title>Documentation Not Found</title></head>
-                    <body>
-                        <h1>Documentation Not Found</h1>
-                        <p>The documentation site has not been built. Please run 'mkdocs build' in the project root.</p>
-                        <p>API documentation is available at <a href="/docs/api">/docs/api</a>.</p>
-                    </body>
-                </html>
-            """,
-                status_code=404,
-            )
 
     # --- Custom API Docs Routes (Moved to /docs/api and /docs/redoc) ---
     @app.get("/docs/api", include_in_schema=False)  # Changed path
@@ -626,7 +592,6 @@ def create_app() -> FastAPI:
             "/api/v1/billing/create-checkout-session",
             "/",
             "/static",
-            "/docs",  # Exclude the main docs path and subpaths
             "/register",
             "/logout",
             "/api/v1/health",

@@ -5,6 +5,7 @@ metadata:
   labels:
     {{- include "spacebridge.labels" . | nindent 4 }}
     app.kubernetes.io/component: spacesync-scheduler
+    app: spacesync-scheduler
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: 1

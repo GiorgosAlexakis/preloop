@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start SpaceBridge REST API server
+# Start Preloop AI REST API server
 
 set -e
 
@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --help)
-      echo "SpaceBridge Startup Script"
+      echo "Preloop AI Startup Script"
       echo ""
       echo "Usage: $0 [options]"
       echo ""
@@ -103,7 +103,7 @@ fi
 
 
 echo ""
-echo "Starting SpaceBridge REST API with configuration:"
+echo "Starting Preloop AI REST API with configuration:"
 echo " - API Server: http://localhost:$API_PORT"
 echo " - API Documentation (Swagger): http://localhost:$API_PORT/docs/api"
 echo " - User Documentation: http://localhost:$API_PORT/docs"

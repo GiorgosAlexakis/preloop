@@ -26,7 +26,7 @@ Test Flow:
 
 Environment Variables Required:
 --------------------------------
-- SPACEBRIDGE_TEST_URL: SpaceBridge instance URL (e.g., https://test.spacebridge.io)
+- SPACEBRIDGE_TEST_URL: SpaceBridge instance URL (e.g., https://test.preloop.ai)
 - SPACEBRIDGE_TEST_API_KEY: API key for SpaceBridge authentication
 
 GitHub:

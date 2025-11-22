@@ -1,6 +1,6 @@
-# SpaceBridge Testing Strategy
+# Preloop AI Testing Strategy
 
-This document outlines the testing strategy for the SpaceBridge application, covering unit, integration, and production smoke tests.
+This document outlines the testing strategy for the Preloop AI application, covering unit, integration, and production smoke tests.
 
 ## Unit Tests
 
@@ -46,7 +46,7 @@ Integration tests for MCP endpoints are part of the tracker synchronization test
 - `tests/integration/test_tracker_sync_gitlab.py`
 - `tests/integration/test_tracker_sync_jira.py`
 
-These tests use a direct Python MCP client (`tests/integration/mcp_client.py`) that connects via HTTP to the SpaceBridge MCP endpoint. This approach provides:
+These tests use a direct Python MCP client (`tests/integration/mcp_client.py`) that connects via HTTP to the Preloop AI MCP endpoint. This approach provides:
 - **Fast execution**: Direct HTTP calls instead of spawning CLI processes
 - **Reliable testing**: Uses the official `mcp` Python client library
 - **Complete coverage**: Tests MCP tools (`create_issue`, `get_issue`, `update_issue`, `search`) alongside tracker sync functionality

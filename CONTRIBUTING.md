@@ -1,4 +1,4 @@
-# Contributing to SpaceBridge
+# Contributing to Preloop AI
 
 We welcome contributions from the community. To ensure a high-quality codebase, we have established the following guidelines.
 

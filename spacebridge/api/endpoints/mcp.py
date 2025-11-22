@@ -221,7 +221,7 @@ async def get_issue(
     compliance_results = crud_issue_compliance_result.get_for_issue(
         db, issue_id=issue_obj.id, account_id=str(current_user.account_id)
     )
-
+    settings = get_settings()
     return GetIssueResponse(
         id=str(issue_obj.id),
         external_id=issue_obj.external_id,
@@ -234,7 +234,8 @@ async def get_issue(
         project=project_name,
         project_id=str(issue_obj.project_id),
         project_identifier=project_identifier,
-        url=issue_obj.external_url or f"https://spacebridge.io/issues/{issue_obj.id}",
+        url=issue_obj.external_url
+        or f"https://{settings.spacebridge_url}/issues/{issue_obj.id}",
         created_at=issue_obj.created_at,
         updated_at=issue_obj.updated_at,
         meta_data=issue_obj.meta_data,
@@ -516,6 +517,7 @@ async def update_issue(
     project_name = issue_obj.project.name
     organization_name = issue_obj.project.organization.name
     project_identifier = issue_obj.project.identifier or issue_obj.project.slug
+    settings = get_settings()
     return GetIssueResponse(
         id=str(issue_obj.id),
         external_id=issue_obj.external_id,
@@ -528,7 +530,8 @@ async def update_issue(
         project=project_name,
         project_id=str(issue_obj.project_id),
         project_identifier=project_identifier,
-        url=issue_obj.external_url or f"https://spacebridge.io/issues/{issue_obj.id}",
+        url=issue_obj.external_url
+        or f"https://{settings.spacebridge_url}/issues/{issue_obj.id}",
         created_at=issue_obj.created_at,
         updated_at=issue_obj.updated_at,
         meta_data=issue_obj.meta_data,

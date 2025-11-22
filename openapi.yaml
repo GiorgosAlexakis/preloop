@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
-  title: SpaceBridge API
-  description: REST API for SpaceBridge issue tracking management
+  title: Preloop AI API
+  description: REST API for Preloop AI issue tracking management
   version: 0.1.0
 paths:
   /api/v1/auth/register:
@@ -1950,7 +1950,7 @@ paths:
       - Issues
       summary: Commit a list of issue dependencies.
       description: 'Commits a list of issue dependency pairs. This will create the
-        dependency in the external tracker and mark it as ''committed'' in SpaceBridge.
+        dependency in the external tracker and mark it as ''committed'' in Preloop AI.
 
 
         - **dependencies**: A list of dependency pairs to commit.'
@@ -8543,7 +8543,7 @@ components:
           - type: string
           - type: 'null'
           title: Id
-          description: Internal SpaceBridge database ID (UUID)
+          description: Internal Preloop AI database ID (UUID)
         external_id:
           type: string
           title: External Id
@@ -10642,7 +10642,7 @@ components:
         server_version:
           type: string
           title: Server Version
-          description: Current version of the SpaceBridge server.
+          description: Current version of the Preloop AI server.
         min_client_version:
           type: string
           title: Min Client Version

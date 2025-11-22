@@ -36,7 +36,7 @@ from spacemodels.models.project import Project
 from spacemodels.models.tracker import Tracker
 from spacebridge.api.auth import get_current_active_user
 from spacebridge.plugins.proprietary.rbac.permissions import require_permission
-
+from spacebridge.settings import settings
 
 # Initialize CRUD operations
 crud_comment = CRUDComment(Comment)
@@ -420,7 +420,7 @@ async def search_issues(
                             project=project_name,
                             project_id=str(issue.project_id),
                             url=external_url
-                            or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
+                            or f"{settings.spacebridge_url}/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
                             updated_at=issue.updated_at,
                             meta_data=metadata_dict,
@@ -560,7 +560,7 @@ async def search_issues(
                             project=project_name,
                             project_id=str(issue.project_id),
                             url=external_url
-                            or f"https://spacebridge.io/issues/{issue.id}",  # Use external URL if available
+                            or f"https://{settings.spacebridge_url}/issues/{issue.id}",  # Use external URL if available
                             created_at=issue.created_at,
                             updated_at=issue.updated_at,
                             meta_data=metadata_dict,
@@ -1055,7 +1055,7 @@ def get_issue(
         external_url = meta_data.get("url") or issue.external_url
         if not external_url:
             # Basic fallback if external_id exists but no URL found
-            external_url = f"https://spacebridge.io/issues/{issue.id}"
+            external_url = f"https://{settings.spacebridge_url}/issues/{issue.id}"
 
         # Fetch comments for this issue
         comments = crud_comment.get_multi_by_issue(
