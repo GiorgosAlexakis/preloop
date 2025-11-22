@@ -1,0 +1,176 @@
+from typing import List, Optional, Union
+from uuid import UUID
+
+from sqlalchemy import cast, String
+from sqlalchemy.orm import Session
+
+from .. import models, schemas
+from .base import CRUDBase
+
+
+class CRUDFlow(CRUDBase[models.Flow]):
+    """CRUD operations for Flow model."""
+
+    def __init__(self):
+        """Initialize with the Flow model."""
+        super().__init__(model=models.Flow)
+
+    def get(
+        self,
+        db: Session,
+        id: Union[str, UUID],
+        account_id: Union[str, UUID, None] = None,
+    ) -> Optional[models.Flow]:
+        """
+        Retrieve a flow by its ID.
+
+        Args:
+            db: The database session.
+            id: The ID of the flow to retrieve (string or UUID).
+            account_id: The ID of the account associated with the flow (string or UUID). Optional.
+
+        Returns:
+            The flow object if found, otherwise None.
+        """
+        # Convert to string if UUID
+        id_str = str(id) if isinstance(id, UUID) else id
+
+        query = db.query(self.model).filter(cast(self.model.id, String) == id_str)
+
+        if account_id:
+            account_id_str = (
+                str(account_id) if isinstance(account_id, UUID) else account_id
+            )
+            query = query.filter(cast(self.model.account_id, String) == account_id_str)
+
+        return query.first()
+
+    def get_by_account(
+        self,
+        db: Session,
+        account_id: Union[str, UUID],
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[models.Flow]:
+        """
+        Retrieve flows for a specific account with pagination.
+        """
+        account_id_str = str(account_id) if isinstance(account_id, UUID) else account_id
+        query = db.query(self.model).filter(
+            cast(self.model.account_id, String) == account_id_str
+        )
+        return query.offset(skip).limit(limit).all()
+
+    def get_by_trigger(
+        self,
+        db: Session,
+        *,
+        event_source: str,
+        event_type: str,
+        account_id: Optional[Union[str, UUID]] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[models.Flow]:
+        """
+        Retrieve flows that match a specific trigger event.
+        """
+        query = db.query(self.model).filter(
+            self.model.trigger_event_source == event_source,
+            self.model.trigger_event_type == event_type,
+        )
+        if account_id:
+            account_id_str = (
+                str(account_id) if isinstance(account_id, UUID) else account_id
+            )
+            query = query.filter(cast(self.model.account_id, String) == account_id_str)
+        return query.offset(skip).limit(limit).all()
+
+    def create(
+        self,
+        db: Session,
+        *,
+        flow_in: schemas.FlowCreate,
+        account_id: Optional[Union[str, UUID]] = None,
+    ) -> models.Flow:
+        """
+        Create a new flow.
+
+        Args:
+            db: The database session.
+            flow_in: The data for the new flow.
+            account_id: Account ID (string or UUID).
+
+        Returns:
+            The created flow object.
+        """
+        db_flow = self.model(**flow_in.model_dump())
+        if account_id:
+            db_flow.account_id = (
+                str(account_id) if isinstance(account_id, UUID) else account_id
+            )
+        db.add(db_flow)
+        db.commit()
+        db.refresh(db_flow)
+        return db_flow
+
+    def update(
+        self,
+        db: Session,
+        *,
+        db_obj: models.Flow,
+        flow_in: schemas.FlowUpdate,
+        account_id: Union[str, UUID],
+    ) -> models.Flow:
+        """
+        Update an existing flow.
+
+        Args:
+            db: The database session.
+            db_obj: The existing flow object to update.
+            flow_in: The new data for the flow.
+            account_id: Account ID (string or UUID).
+
+        Returns:
+            The updated flow object.
+        """
+        update_data = flow_in.model_dump(exclude_unset=True)
+        update_data["account_id"] = (
+            str(account_id) if isinstance(account_id, UUID) else account_id
+        )
+        for field, value in update_data.items():
+            setattr(db_obj, field, value)
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def remove(
+        self, db: Session, *, id: Union[str, UUID], account_id: Union[str, UUID]
+    ) -> Optional[models.Flow]:
+        """
+        Remove a flow by its ID.
+
+        Args:
+            db: The database session.
+            id: The ID of the flow to remove (string or UUID).
+            account_id: The ID of the account (string or UUID).
+
+        Returns:
+            The removed flow object if found and deleted, otherwise None.
+        """
+        # Convert to string if UUID
+        id_str = str(id) if isinstance(id, UUID) else id
+        account_id_str = str(account_id) if isinstance(account_id, UUID) else account_id
+
+        db_flow = (
+            db.query(self.model)
+            .filter(
+                cast(self.model.id, String) == id_str,
+                cast(self.model.account_id, String) == account_id_str,
+            )
+            .first()
+        )
+        if db_flow:
+            db.delete(db_flow)
+            db.commit()
+        return db_flow
