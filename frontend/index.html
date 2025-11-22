@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpaceBridge - Drive your Product with AI</title>
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="Spacebridge curates your backlog, automates high value, low-risk work, and safeguards critical actions.">
+  <meta name="keywords" content="SpaceBridge, MCP, AI, Issue Tracker, Jira, GitLab, Integration, Automation, API">
+
+  <!-- Open Graph Meta Tags -->
+  <meta property="og:title" content="SpaceBridge - Drive your Product with AI">
+  <meta property="og:description" content="Spacebridge curates your backlog, automates high value, low-risk work, and safeguards critical actions.">
+  <meta property="og:image" content="/images/diagram.png">
+  <meta property="og:url" content="https://spacebridge.io/">
+  <meta property="og:type" content="website">
+
+  <!-- Twitter Card Meta Tags -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@spacebridge_io">
+  <meta name="twitter:creator" content="@spacebridge_io">
+  <meta name="twitter:title" content="SpaceBridge - Drive your Product with AI">
+  <meta name="twitter:description" content="Spacebridge curates your backlog, automates high value, low-risk work, and safeguards critical actions.">
+  <meta name="twitter:image" content="/images/diagram.png">
+  <link rel="shortcut icon" type="image/png" href="/images/favicon.png">
+
+  <!-- Shoelace Styles & Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/themes/light.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/themes/dark.css" />
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/shoelace-autoloader.js"></script>
+
+  <!-- Critical CSS to prevent FOUC (Flash of Unstyled Content) -->
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: #0d1117;
+      color: #e6edf3;
+    }
+
+    /* Hide unhydrated web components until they're defined */
+    landing-view:not(:defined),
+    static-view-wrapper:not(:defined),
+    static-view:not(:defined),
+    app-header:not(:defined),
+    app-footer:not(:defined),
+    public-pricing-view:not(:defined) {
+      opacity: 0;
+      display: block;
+    }
+
+    /* Once defined, fade them in smoothly */
+    landing-view:defined,
+    static-view-wrapper:defined,
+    static-view:defined,
+    app-header:defined,
+    app-footer:defined,
+    public-pricing-view:defined {
+      opacity: 1;
+      transition: opacity 0.2s ease-in;
+    }
+
+    /* Loading indicator for lit-app */
+    lit-app:not(:defined) {
+      display: block;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      background-color: #0d1117;
+    }
+
+    lit-app:not(:defined)::before {
+      content: '> ';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 1.5rem;
+      color: #58a6ff;
+      white-space: nowrap;
+    }
+
+    lit-app:not(:defined)::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      margin-left: 20px;
+      display: inline-block;
+      width: 12px;
+      height: 24px;
+      background-color: #58a6ff;
+      animation: blink 1s step-end infinite;
+    }
+
+    @keyframes blink {
+      0%, 50% {
+        opacity: 1;
+      }
+      50.01%, 100% {
+        opacity: 0;
+      }
+    }
+  </style>
+
+  <link rel="stylesheet" href="/src/main.css">
+</head>
+<body>
+  <lit-app></lit-app>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

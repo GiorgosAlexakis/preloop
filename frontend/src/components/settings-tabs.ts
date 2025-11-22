@@ -1,0 +1,58 @@
+import { LitElement, html, css } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
+import { Router } from '@vaadin/router';
+import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
+import '@shoelace-style/shoelace/dist/components/tab/tab.js';
+
+@customElement('settings-tabs')
+export class SettingsTabs extends LitElement {
+  @property({ type: String })
+  active = '';
+
+  static styles = css`
+    :host {
+      display: block;
+      margin-bottom: 2rem;
+    }
+    sl-tab-group {
+      --indicator-color: var(--sl-color-primary-600);
+    }
+  `;
+
+  private tabs = [
+    { path: '/console/settings/profile', label: 'Profile' },
+    { path: '/console/settings/security', label: 'Security' },
+    { path: '/console/settings/account', label: 'Account' },
+    { path: '/console/settings/users', label: 'Users' },
+    { path: '/console/settings/teams', label: 'Teams' },
+    { path: '/console/settings/invitations', label: 'Invitations' },
+    { path: '/console/settings/api-keys', label: 'API Keys' },
+    { path: '/console/settings/ai-models', label: 'AI Models' },
+    { path: '/console/settings/appearance', label: 'Appearance' },
+  ];
+
+  private onTabSelect(e: CustomEvent) {
+    const panel = e.detail.name;
+    if (panel) {
+      Router.go(panel);
+    }
+  }
+
+  render() {
+    return html`
+      <sl-tab-group @sl-tab-show=${this.onTabSelect}>
+        ${this.tabs.map(
+          (tab) => html`
+            <sl-tab
+              slot="nav"
+              panel=${tab.path}
+              ?active=${this.active === tab.path}
+            >
+              ${tab.label}
+            </sl-tab>
+          `
+        )}
+      </sl-tab-group>
+    `;
+  }
+}
