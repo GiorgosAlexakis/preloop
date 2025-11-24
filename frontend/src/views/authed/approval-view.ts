@@ -449,8 +449,8 @@ export class ApprovalView extends AuthedElement {
         ? html`
             <sl-alert
               variant=${this.actionResult.type === 'success'
-                ? 'success'
-                : 'danger'}
+            ? 'success'
+            : 'danger'}
               open
               closable
               @sl-hide=${() => (this.actionResult = null)}
@@ -458,8 +458,8 @@ export class ApprovalView extends AuthedElement {
               <sl-icon
                 slot="icon"
                 name=${this.actionResult.type === 'success'
-                  ? 'check-circle'
-                  : 'exclamation-octagon'}
+            ? 'check-circle'
+            : 'exclamation-octagon'}
               ></sl-icon>
               ${this.actionResult.message}
             </sl-alert>
@@ -488,15 +488,15 @@ export class ApprovalView extends AuthedElement {
             </div>
 
             ${this.approvalRequest.expires_at
-              ? html`
+        ? html`
                   <div class="info-label">Expires:</div>
                   <div class="info-value">
                     ${this.formatDate(this.approvalRequest.expires_at)}
                   </div>
                 `
-              : ''}
+        : ''}
             ${this.approvalRequest.execution_id
-              ? html`
+        ? html`
                   <div class="info-label">Execution ID:</div>
                   <div class="info-value">
                     <code style="font-size: 0.75rem;"
@@ -504,12 +504,12 @@ export class ApprovalView extends AuthedElement {
                     >
                   </div>
                 `
-              : ''}
+        : ''}
           </div>
         </div>
 
         ${this.approvalRequest.agent_reasoning
-          ? html`
+        ? html`
               <div class="content-section">
                 <h2>Agent Reasoning</h2>
                 <div class="reasoning-text">
@@ -517,42 +517,42 @@ export class ApprovalView extends AuthedElement {
                 </div>
               </div>
             `
-          : ''}
+        : ''}
 
         <div class="content-section">
           <h2>Tool Arguments</h2>
           <div class="code-block">
-            ${this.formatToolArgs(this.approvalRequest.tool_args)}
+            ${this.formatToolArgs(this.approvalRequest.tool_args.trimStart())}
           </div>
         </div>
 
         ${isResolved
-          ? html`
+        ? html`
               <div class="resolved-info">
                 <h3>
                   ${this.approvalRequest.status === 'approved'
-                    ? '✅ Approved'
-                    : '❌ Declined'}
+            ? '✅ Approved'
+            : '❌ Declined'}
                 </h3>
                 ${this.approvalRequest.resolved_at
-                  ? html`<p>
+            ? html`<p>
                       Resolved at:
                       ${this.formatDate(this.approvalRequest.resolved_at)}
                     </p>`
-                  : ''}
+            : ''}
                 ${this.approvalRequest.approver_comment
-                  ? html`
+            ? html`
                       <p><strong>Comment:</strong></p>
                       <div class="code-block">
                         ${this.approvalRequest.approver_comment}
                       </div>
                     `
-                  : ''}
+            : ''}
               </div>
             `
-          : ''}
+        : ''}
         ${isPending
-          ? html`
+        ? html`
               <sl-divider></sl-divider>
 
               <div class="comment-section">
@@ -590,7 +590,7 @@ export class ApprovalView extends AuthedElement {
                 </sl-button>
               </div>
             `
-          : ''}
+        : ''}
 
         <div class="metadata">
           <sl-icon name="info-circle"></sl-icon>

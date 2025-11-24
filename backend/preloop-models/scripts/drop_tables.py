@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Script to drop all tables in the SpaceSync database.
+Script to drop all tables in the Preloop database.
 Use with caution - this will delete all data!
 """
 
@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 @click.option("--force", is_flag=True, help="Skip confirmation and force deletion")
 def drop_tables(force: bool):
     """
-    Drop all tables in the SpaceSync database.
+    Drop all tables in the Preloop database.
     """
     # Load environment variables
     load_dotenv()

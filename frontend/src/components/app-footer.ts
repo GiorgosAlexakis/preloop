@@ -99,17 +99,6 @@ export class AppFooter extends LitElement {
     }
   }
 
-  switchToOldUI(event: MouseEvent) {
-    event.preventDefault();
-    // Set the cookie to expire in 30 days
-    const d = new Date();
-    d.setTime(d.getTime() + 30 * 24 * 60 * 60 * 1000);
-    let expires = 'expires=' + d.toUTCString();
-    document.cookie = 'ui_version=spacebridge; ' + expires + '; path=/';
-    // Reload the page
-    window.location.reload();
-  }
-
   render() {
     return html`
       <div class="footer-container">
@@ -149,7 +138,7 @@ export class AppFooter extends LitElement {
             <sl-icon-button
               name="instagram"
               label="Instagram"
-              href="https://www.instagram.com/spacebridge.io"
+              href="https://www.instagram.com/preloop_ai.io"
               target="_blank"
             ></sl-icon-button>
           </div>

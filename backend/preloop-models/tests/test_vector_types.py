@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from spacemodels.db.vector_types import (
+from preloop_models.db.vector_types import (
     VectorType,
     check_pgvector_extension,
     cosine_distance,

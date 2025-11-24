@@ -1,4 +1,4 @@
-"""Initialize test data for SpaceBridge."""
+"""Initialize test data for Preloop AI."""
 
 import asyncio
 import logging
@@ -7,15 +7,15 @@ import uuid
 from passlib.context import CryptContext
 from sqlalchemy.exc import SQLAlchemyError
 
-from spacemodels.crud.account import CRUDAccount
-from spacemodels.crud.organization import CRUDOrganization
-from spacemodels.crud.project import CRUDProject
-from spacemodels.crud.tracker import CRUDTracker
-from spacemodels.db.session import get_db_session
-from spacemodels.models.account import Account
-from spacemodels.models.organization import Organization
-from spacemodels.models.project import Project
-from spacemodels.models.tracker import Tracker, TrackerType
+from preloop_models.crud.account import CRUDAccount
+from preloop_models.crud.organization import CRUDOrganization
+from preloop_models.crud.project import CRUDProject
+from preloop_models.crud.tracker import CRUDTracker
+from preloop_models.db.session import get_db_session
+from preloop_models.models.account import Account
+from preloop_models.models.organization import Organization
+from preloop_models.models.project import Project
+from preloop_models.models.tracker import Tracker, TrackerType
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -27,7 +27,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 async def create_test_data():
-    """Create test data for the SpaceBridge server."""
+    """Create test data for the Preloop AI server."""
     session_generator = get_db_session()
     db = next(session_generator)
     crud_account = CRUDAccount(Account)

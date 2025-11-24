@@ -4,15 +4,15 @@ from unittest.mock import patch, MagicMock
 from jira import JIRAError
 from uuid import uuid4
 
-from spacesync.trackers.jira import JiraTracker
-from spacemodels.models import Webhook
+from preloop_sync.trackers.jira import JiraTracker
+from preloop_models.models import Webhook
 
 
 @pytest.mark.asyncio
 class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.mock_jira_patcher = patch("spacesync.trackers.jira.JIRA")
-        self.mock_crud_patcher = patch("spacesync.trackers.jira.crud_webhook")
+        self.mock_jira_patcher = patch("preloop_sync.trackers.jira.JIRA")
+        self.mock_crud_patcher = patch("preloop_sync.trackers.jira.crud_webhook")
 
         self.mock_jira_class = self.mock_jira_patcher.start()
         self.mock_crud_webhook = self.mock_crud_patcher.start()
@@ -121,16 +121,16 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
 
     async def test_cleanup_stale_webhooks(self):
         """Test cleaning up stale webhooks."""
-        spacebridge_url = "https://stale-spacebridge.com"
+        preloop_url = "https://stale-preloop_ai.com"
         mock_webhooks_data = [
-            {"id": "1", "url": f"{spacebridge_url}/webhook"},
+            {"id": "1", "url": f"{preloop_url}/webhook"},
             {"id": "2", "url": "https://another-service.com/webhook"},
-            {"id": "3", "url": f"{spacebridge_url}/another_webhook"},
+            {"id": "3", "url": f"{preloop_url}/another_webhook"},
         ]
         mock_response = MagicMock()
         mock_response.json.return_value = mock_webhooks_data
         self.mock_jira_client._session.get.return_value = mock_response
-        result = self.tracker.cleanup_stale_webhooks(spacebridge_url)
+        result = self.tracker.cleanup_stale_webhooks(preloop_url)
         self.assertEqual(result, {"unregistered": 2, "failed": 0})
         self.mock_jira_client._session.get.assert_called_once_with(
             "https://myjira.atlassian.net/rest/webhooks/1.0/webhook"
@@ -145,10 +145,10 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
 
     async def test_cleanup_stale_webhooks_with_failures(self):
         """Test cleanup with some deletions failing."""
-        spacebridge_url = "https://stale-spacebridge.com"
+        preloop_url = "https://stale-preloop_ai.com"
         mock_webhooks_data = [
-            {"id": "1", "url": f"{spacebridge_url}/webhook"},
-            {"id": "2", "url": f"{spacebridge_url}/failing"},
+            {"id": "1", "url": f"{preloop_url}/webhook"},
+            {"id": "2", "url": f"{preloop_url}/failing"},
         ]
         mock_response = MagicMock()
         mock_response.json.return_value = mock_webhooks_data
@@ -157,7 +157,7 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
             MagicMock(status_code=204),
             JIRAError(status_code=500, text="Internal Server Error"),
         ]
-        result = self.tracker.cleanup_stale_webhooks(spacebridge_url)
+        result = self.tracker.cleanup_stale_webhooks(preloop_url)
         self.assertEqual(result, {"unregistered": 1, "failed": 1})
         self.mock_jira_client._session.get.assert_called_once_with(
             "https://myjira.atlassian.net/rest/webhooks/1.0/webhook"
@@ -173,7 +173,7 @@ class TestJiraTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
 
 @pytest.mark.asyncio
 class TestJiraTracker(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.jira.JIRA")
+    @patch("preloop_sync.trackers.jira.JIRA")
     async def test_get_organizations(self, mock_jira_class):
         tracker = JiraTracker(
             "tracker-1",
@@ -185,7 +185,7 @@ class TestJiraTracker(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(orgs), 1)
         self.assertEqual(orgs[0]["name"], "test.jira.com")
 
-    @patch("spacesync.trackers.jira.JIRA")
+    @patch("preloop_sync.trackers.jira.JIRA")
     async def test_get_projects(self, mock_jira_class):
         tracker = JiraTracker(
             "tracker-1",

@@ -7,8 +7,8 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.plan import CRUDPlan, CRUDSubscription, CRUDMonthlyUsage
-from spacemodels.models.plan import Plan, Subscription, MonthlyUsage
+from preloop_models.crud.plan import CRUDPlan, CRUDSubscription, CRUDMonthlyUsage
+from preloop_models.models.plan import Plan, Subscription, MonthlyUsage
 
 
 @pytest.fixture

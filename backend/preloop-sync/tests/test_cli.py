@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from spacesync.cli.scan_commands import scan
+from preloop_sync.cli.scan_commands import scan
 
 
 class TestScanCommands(unittest.TestCase):
@@ -15,8 +15,8 @@ class TestScanCommands(unittest.TestCase):
         """Set up test fixtures."""
         self.runner = CliRunner()
 
-    @patch("spacesync.cli.scan_commands.scan_all_accounts")
-    @patch("spacesync.cli.scan_commands.get_db_session")
+    @patch("preloop_sync.cli.scan_commands.scan_all_accounts")
+    @patch("preloop_sync.cli.scan_commands.get_db_session")
     def test_scan_all_sync(self, mock_get_db, mock_scan_all_accounts):
         """Test scan all command runs synchronously and prints stats."""
         # Setup mocks
@@ -82,8 +82,8 @@ class TestScanCommands(unittest.TestCase):
             self.assertIn("Issues: 150", result.output)  # Corrected assertion
             self.assertIn("Embeddings updated: 75", result.output)
 
-    @patch("spacesync.cli.scan_commands.scan_all_accounts")
-    @patch("spacesync.cli.scan_commands.get_db_session")
+    @patch("preloop_sync.cli.scan_commands.scan_all_accounts")
+    @patch("preloop_sync.cli.scan_commands.get_db_session")
     def test_scan_all_sync_verbose(self, mock_get_db, mock_scan_all_accounts):
         """Test scan all command with --verbose flag."""
         mock_db = MagicMock()
@@ -121,8 +121,8 @@ class TestScanCommands(unittest.TestCase):
                 "=== Scan Complete ===", result.output
             )  # Match actual output format
 
-    @patch("spacesync.cli.scan_commands.scan_all_accounts")
-    @patch("spacesync.cli.scan_commands.get_db_session")
+    @patch("preloop_sync.cli.scan_commands.scan_all_accounts")
+    @patch("preloop_sync.cli.scan_commands.get_db_session")
     def test_scan_all_sync_force_update(self, mock_get_db, mock_scan_all_accounts):
         """Test scan all command with --force-update flag."""
         mock_db = MagicMock()
@@ -160,9 +160,9 @@ class TestScanCommands(unittest.TestCase):
                 "=== Scan Complete ===", result.output
             )  # Match actual output format
 
-    @patch("spacesync.cli.scan_commands.scan_account")
-    @patch("spacesync.cli.scan_commands.crud_account")
-    @patch("spacesync.cli.scan_commands.get_db_session")
+    @patch("preloop_sync.cli.scan_commands.scan_account")
+    @patch("preloop_sync.cli.scan_commands.crud_account")
+    @patch("preloop_sync.cli.scan_commands.get_db_session")
     def test_scan_account_cmd(self, mock_get_db, mock_crud_account, mock_scan_account):
         """Test scan_account_cmd command."""
         # Setup mocks
@@ -211,9 +211,9 @@ class TestScanCommands(unittest.TestCase):
                 force_update=False,
             )
 
-    @patch("spacesync.cli.scan_commands.scan_tracker_func")
-    @patch("spacesync.cli.scan_commands.crud_tracker")
-    @patch("spacesync.cli.scan_commands.get_db_session")
+    @patch("preloop_sync.cli.scan_commands.scan_tracker_func")
+    @patch("preloop_sync.cli.scan_commands.crud_tracker")
+    @patch("preloop_sync.cli.scan_commands.get_db_session")
     def test_scan_tracker_cmd(
         self, mock_get_db, mock_crud_tracker, mock_scan_tracker_func
     ):

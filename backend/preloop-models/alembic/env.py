@@ -7,21 +7,21 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 # Import Base from your models
-from spacemodels.models.base import Base
+from preloop_models.models.base import Base
 
 # Import all models here to ensure they are registered with Base.metadata
 # Adjust these imports based on your actual model file structure
-from spacemodels.models import issue  # noqa: F401
-from spacemodels.models import organization  # noqa: F401
-from spacemodels.models import project  # noqa: F401
-from spacemodels.models import tracker  # noqa: F401
-from spacemodels.models import account  # noqa: F401
-from spacemodels.models import api_key  # noqa: F401
-from spacemodels.models import api_usage  # noqa: F401
-from spacemodels.models import client_version_log  # noqa: F401
-from spacemodels.models import comment  # noqa: F401
-from spacemodels.models import ai_model  # noqa: F401
-from spacemodels.models import issue_duplicate  # noqa: F401
+from preloop_models.models import issue  # noqa: F401
+from preloop_models.models import organization  # noqa: F401
+from preloop_models.models import project  # noqa: F401
+from preloop_models.models import tracker  # noqa: F401
+from preloop_models.models import account  # noqa: F401
+from preloop_models.models import api_key  # noqa: F401
+from preloop_models.models import api_usage  # noqa: F401
+from preloop_models.models import client_version_log  # noqa: F401
+from preloop_models.models import comment  # noqa: F401
+from preloop_models.models import ai_model  # noqa: F401
+from preloop_models.models import issue_duplicate  # noqa: F401
 
 # Load .env file from the parent directory (project root)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
@@ -53,10 +53,10 @@ if not database_url:
     # but ideally, migrations should fail if the URL isn't explicitly set.
     print(
         "Warning: DATABASE_URL not found in environment. "
-        "Using default postgresql+psycopg://postgres:postgres@localhost/spacebridge. "
+        "Using default postgresql+psycopg://postgres:postgres@localhost/preloop_ai. "
         "Ensure DATABASE_URL is set in your .env file or environment."
     )
-    database_url = "postgresql+psycopg://postgres:postgres@localhost/spacebridge"
+    database_url = "postgresql+psycopg://postgres:postgres@localhost/preloop"
 
 # Set the database URL in the Alembic config object
 config.set_main_option("sqlalchemy.url", database_url)

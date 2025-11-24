@@ -6,8 +6,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.webhook import CRUDWebhook
-from spacemodels.models.webhook import Webhook
+from preloop_models.crud.webhook import CRUDWebhook
+from preloop_models.models.webhook import Webhook
 
 
 @pytest.fixture

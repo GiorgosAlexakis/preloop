@@ -1,20 +1,20 @@
 # Preloop AI Development Guide
 
-Only use the DB models defined in SpaceModels package `from spacemodels import models`
+Only use the DB models defined in SpaceModels package `from preloop_models import models`
 
 Use the Lit.dev framework for frontend code. If you create new web components ensure that the landing page content is not hidden in their shadow DOM.
 
 ## Commands
 - **Install**: `pip install -e ".[dev]"`
-- **Run server**: `python -m spacebridge.server`
+- **Run server**: `python -m preloop_ai.server`
 - **Run tests**: `pytest`
 - **Run single test**: `pytest tests/path/to/test_file.py::TestClass::test_function`
 - **Lint**: `ruff check .`
 - **Format**: `ruff format .`
-- **Type check**: `mypy spacebridge tests`
+- **Type check**: `mypy backend tests`
 - **Docker development**: `docker-compose up`
 - **Install pre-commit**: `pre-commit install`
-- **PostgreSQL access**: `docker compose exec postgres psql -U postgres -d spacebridge`
+- **PostgreSQL access**: `docker compose exec postgres psql -U postgres -d preloop`
 - **Database migrations**: `alembic upgrade head` (from project root)
 
 ## Git Workflow

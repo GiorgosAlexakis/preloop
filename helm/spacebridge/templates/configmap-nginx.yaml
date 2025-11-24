@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-nginx
+  name: {{ include "preloop_ai.fullname" . }}-nginx
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
 data:
   default.conf.template: |
     server {
@@ -23,8 +23,8 @@ data:
 
         # API proxy configuration
         location /api/ {
-            # Proxy to SpaceBridge backend service
-            set $api_backend "http://{{ include "spacebridge.fullname" . }}-api:80";
+            # Proxy to Preloop AI backend service
+            set $api_backend "http://{{ include "preloop_ai.fullname" . }}-api:80";
 
             proxy_pass $api_backend;
             proxy_http_version 1.1;
@@ -57,8 +57,8 @@ data:
         # Approval page proxy configuration (public approval without authentication)
         # Use prefix match with ^~ to stop searching and prevent SPA catch-all
         location ^~ /approval/ {
-            # Proxy to SpaceBridge backend service
-            proxy_pass http://{{ include "spacebridge.fullname" . }}-api:80;
+            # Proxy to Preloop AI backend service
+            proxy_pass http://{{ include "preloop_ai.fullname" . }}-api:80;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -69,8 +69,8 @@ data:
         # Invitation accept page proxy configuration (public invitation accept)
         # Use prefix match with ^~ to stop searching and prevent SPA catch-all
         location ^~ /invitations/accept {
-            # Proxy to SpaceBridge backend service
-            proxy_pass http://{{ include "spacebridge.fullname" . }}-api:80;
+            # Proxy to Preloop AI backend service
+            proxy_pass http://{{ include "preloop_ai.fullname" . }}-api:80;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -81,8 +81,8 @@ data:
         # MCP server proxy configuration
         # Use prefix match with ^~ to stop searching and prevent SPA catch-all
         location ^~ /mcp/ {
-            # Proxy to SpaceBridge backend service
-            proxy_pass http://{{ include "spacebridge.fullname" . }}-api:80;
+            # Proxy to Preloop AI backend service
+            proxy_pass http://{{ include "preloop_ai.fullname" . }}-api:80;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

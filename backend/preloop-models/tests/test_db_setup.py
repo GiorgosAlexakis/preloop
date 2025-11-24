@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from spacemodels.db.setup import reset_database, setup_database
+from preloop_models.db.setup import reset_database, setup_database
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def mock_subprocess_run():
 
 def test_setup_database_success(mock_engine, mock_subprocess_run):
     """Test successful database setup using Alembic."""
-    with patch("spacemodels.db.setup.get_engine", return_value=mock_engine):
+    with patch("preloop_models.db.setup.get_engine", return_value=mock_engine):
         setup_database()
 
         # Verify that Alembic upgrade was called
@@ -36,7 +36,7 @@ def test_setup_database_success(mock_engine, mock_subprocess_run):
 
 def test_setup_database_with_pgvector(mock_engine, mock_subprocess_run):
     """Test database setup with pgvector extension."""
-    with patch("spacemodels.db.setup.get_engine", return_value=mock_engine):
+    with patch("preloop_models.db.setup.get_engine", return_value=mock_engine):
         setup_database(database_url="postgresql://localhost/test")
 
         # Verify that Alembic upgrade was called
@@ -54,7 +54,7 @@ def test_setup_database_error(mock_engine, mock_subprocess_run):
         returncode=1, stdout="", stderr="Alembic error"
     )
 
-    with patch("spacemodels.db.setup.get_engine", return_value=mock_engine):
+    with patch("preloop_models.db.setup.get_engine", return_value=mock_engine):
         with pytest.raises(RuntimeError, match="Alembic migration failed"):
             setup_database()
 
@@ -62,8 +62,8 @@ def test_setup_database_error(mock_engine, mock_subprocess_run):
 def test_reset_database_success(mock_engine, mock_subprocess_run):
     """Test successful database reset using Alembic."""
     with (
-        patch("spacemodels.db.setup.get_engine", return_value=mock_engine),
-        patch("spacemodels.db.setup.setup_database") as mock_setup,
+        patch("preloop_models.db.setup.get_engine", return_value=mock_engine),
+        patch("preloop_models.db.setup.setup_database") as mock_setup,
     ):
         reset_database()
 
@@ -82,6 +82,6 @@ def test_reset_database_error(mock_engine, mock_subprocess_run):
         returncode=1, stdout="", stderr="Alembic error"
     )
 
-    with patch("spacemodels.db.setup.get_engine", return_value=mock_engine):
+    with patch("preloop_models.db.setup.get_engine", return_value=mock_engine):
         with pytest.raises(RuntimeError, match="Alembic downgrade failed"):
             reset_database()

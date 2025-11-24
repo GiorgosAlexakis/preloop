@@ -3,17 +3,17 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "spacebridge"
+name = "preloop-ai"
 version = "0.3.0"
-description = "REST API server for issue tracker management"
+description = "Preloop AI - Event-driven automation platform with built-in human-in-the-loop safety"
 authors = [{name = "Dimitris Moraitis", email = "dimitris@spacecode.ai"}, {name = "Yannis Chatzikonstantinou", email = "yannis@spacecode.ai"}]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.72.0",
     "uvicorn[standard]>=0.36.0",
     "fastapi>=0.115.13",
     "sqlalchemy>=2.0.0",
-    "psycopg>=3.1.12",
+    "psycopg[binary]>=3.1.12",
     "pgvector>=0.2.0",
     "pydantic>=2.4.0",
     "pydantic-settings>=2.0.0",
@@ -37,13 +37,13 @@ dependencies = [
     "aiodocker>=0.21.0", # Added for agent container execution
     "kubernetes_asyncio>=30.5.0", # Added for Kubernetes agent execution
     "cel-python>=0.1.0", # Added for CEL expression evaluation in approval rules
-    # Using SpaceModels for database models and operations
-    # "spacemodels @ file://${PROJECT_ROOT}/SpaceModels",
-    # "spacesync @ file://${PROJECT_ROOT}/spacesync",
 ]
 
 [tool.setuptools]
-packages = ["spacebridge"]
+packages = ["preloop_ai"]
+
+[tool.setuptools.package-dir]
+preloop_ai = "backend/preloop-ai/preloop_ai"
 
 [project.optional-dependencies]
 dev = [
@@ -81,6 +81,10 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+explicit_package_bases = true
+namespace_packages = true
+mypy_path = "backend"
+exclude = ["backend/preloop-models/conftest.py"]
 
 [tool.ruff]
 line-length = 88
@@ -101,9 +105,9 @@ line-ending = "auto"
 
 [tool.pytest.ini_options]
 testpaths = [
-    "tests",
-    "SpaceModels/tests",
-    "spacesync/tests",
+    "backend/preloop-ai/tests",
+    "backend/preloop-models/tests",
+    "backend/preloop-sync/tests",
 ]
 python_files = "test_*.py"
 python_functions = "test_*"
@@ -119,12 +123,13 @@ markers = [
 
 [tool.coverage.run]
 source = [
-    "spacebridge",
-    "SpaceModels/spacemodels",
-    "spacesync/spacesync",
+    "preloop_ai",
+    "preloop_models",
+    "preloop_sync",
 ]
 
 omit = [
-    "tests/*",
-    "*/tests/*",
+    "backend/preloop-ai/tests/*",
+    "backend/preloop-models/tests/*",
+    "backend/preloop-sync/tests/*",
 ]

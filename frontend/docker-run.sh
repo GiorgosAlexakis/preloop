@@ -93,7 +93,7 @@ show_logs() {
         docker-compose ps --services 2>/dev/null || echo "No running services"
         return
     fi
-    
+
     echo -e "${GREEN}Showing logs for: $service${NC}"
     docker-compose logs -f "$service" 2>/dev/null || \
     docker-compose -f docker-compose.dev.yml logs -f "$service" 2>/dev/null || \

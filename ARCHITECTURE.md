@@ -1,8 +1,8 @@
-# SpaceBridge Architecture
+# Preloop AI Architecture
 
 ## System Overview
 
-SpaceBridge is a responsible AI automation platform. It can proxy tools from MCP servers, optionally adding a human approval layer with fine grained policies. It provides event driver agentic flows to intelligently automate common tasks using any agent framework like Claude Code, Codex CLI, Aider or OpenHands. It integrates with issue & code tracking systems like Jira, GitHub, GitLab, both for listening to events and for ingesting issues, comments, documentation and code. By leveraging vector-based similarity search, SpaceBridge detects duplicate and overlapping issues, detects unmapped dependencies, evaluates compliance metrics, and offers intelligent suggestions to streamline workflows. The architecture emphasizes flexibility, performance, and ease of integration, providing access via a REST API, a web UI, and an MCP server for various clients.
+Preloop AI is a responsible AI automation platform. It can proxy tools from MCP servers, optionally adding a human approval layer with fine grained policies. It provides event driver agentic flows to intelligently automate common tasks using any agent framework like Claude Code, Codex CLI, Aider or OpenHands. It integrates with issue & code tracking systems like Jira, GitHub, GitLab, both for listening to events and for ingesting issues, comments, documentation and code. By leveraging vector-based similarity search, Preloop AI detects duplicate and overlapping issues, detects unmapped dependencies, evaluates compliance metrics, and offers intelligent suggestions to streamline workflows. The architecture emphasizes flexibility, performance, and ease of integration, providing access via a REST API, a web UI, and an MCP server for various clients.
 
 ## High-Level Architecture
 
@@ -15,19 +15,18 @@ graph LR
         Issue_Trackers["Issue Trackers (Jira, GitHub, GitLab)"]
         Browser["Browser"]
     end
-    subgraph "SpaceBridge Platform"
+    subgraph "Preloop AI Platform"
         subgraph "Main Repository"
             direction LR
-            API["SpaceBridge REST API"]
-            API["SpaceBridge REST API"]
+            API["Preloop AI REST API"]
             subgraph "Submodules"
                 direction LR
-                SpaceModels["SpaceModels (Data Layer)"]
-                subgraph "SpaceSync (Data Sync Service)"
-                    Scheduler["SpaceSync Scheduler"]
-                    Worker["SpaceSync Worker"]
+                PreloopModels["Preloop Models (Data Layer)"]
+                subgraph "Preloop Sync (Data Sync Service)"
+                    Scheduler["Preloop Sync Scheduler"]
+                    Worker["Preloop Sync Worker"]
                 end
-                SpaceLit["SpaceLit (Frontend)"]
+                PreloopConsole["Preloop Console (Frontend)"]
             end
         end
         subgraph "Services"
@@ -38,31 +37,31 @@ graph LR
 
 
     end
-    Browser --> SpaceLit
-    SpaceModels --> DB
+    Browser --> PreloopConsole
+    PreloopModels --> DB
     Scheduler --> NATS
     NATS --> Worker
     Worker --> Issue_Trackers
     API --> Issue_Trackers
 
     MCP_Clients -- HTTP --> API
-    SpaceLit --> API
+    PreloopConsole --> API
 ```
 
 **Key Components:**
 
-*   **SpaceBridge REST API (Main Repository):** The core FastAPI application providing the HTTP interface.
-*   **SpaceModels (Submodule):** Handles database interactions, defining SQLAlchemy models, Pydantic schemas, and CRUD operations. Manages the PostgreSQL database connection and PGVector operations.
-*   **SpaceSync (Submodule):** A service responsible for polling external issue trackers, processing data, generating embeddings, and storing/updating information in the database via `SpaceModels`. The spacesync cli can launch one-off scan operations, or start the scheduler process that adds polling tasks to the NATS queue. The NATS queue is consumed by the SpaceSync worker process.
-    *   **SpaceSync Scheduler:** A process that adds polling tasks to the NATS queue.
-    *   **SpaceSync Worker:** A process that consumes tasks from the NATS queue and processes them.
-*   **SpaceLit (Submodule):** A web application built using Lit, Vite, TypeScript, and Material Web Components.
+*   **Preloop AI REST API:** The core FastAPI application providing the HTTP interface.
+*   **Preloop Models:** Handles database interactions, defining SQLAlchemy models, Pydantic schemas, and CRUD operations. Manages the PostgreSQL database connection and PGVector operations.
+*   **Preloop Sync:** A service responsible for polling external issue trackers, processing data, generating embeddings, and storing/updating information in the database via `Preloop Models`. The preloop-sync cli can launch one-off scan operations, or start the scheduler process that adds polling tasks to the NATS queue. The NATS queue is consumed by the Preloop Sync worker process.
+    *   **Preloop Sync Scheduler:** A process that adds polling tasks to the NATS queue.
+    *   **Preloop Sync Worker:** A process that consumes tasks from the NATS queue and processes them.
+*   **Preloop Console:** A web application built using Lit, Vite, TypeScript, and Material Web Components.
 *   **PostgreSQL + PGVector:** The database storing metadata and vector embeddings.
 *   **NATS:** An event bus used for both a reliable task queue (JetStream) and real-time streaming updates. It decouples the API from the background processing of events and flows.
-*   **External Systems:** Issue trackers and MCP clients interacting with the SpaceBridge ecosystem.
+*   **External Systems:** Issue trackers and MCP clients interacting with the Preloop AI ecosystem.
 
 ## Frontend Architecture
-The frontend is in the `SpaceLit` directory.
+The frontend is in the `frontend` directory.
 
 ```mermaid
 graph TD
@@ -81,12 +80,12 @@ graph TD
     end
 
     subgraph "Backend"
-        SpaceBridgeAPI["SpaceBridge REST API"]
+        PreloopAPI["Preloop AI REST API"]
     end
 
     WebApp -- Bundled by --> Vite
     TypeScript -- Transpiled by --> Vite
-    WebApp -- Makes API Calls to --> SpaceBridgeAPI
+    WebApp -- Makes API Calls to --> PreloopAPI
     WTR -- Runs Tests on --> WebApp
 
     style WebApp fill:#aef,stroke:#333,stroke-width:2px
@@ -102,26 +101,26 @@ graph TD
 
 ### Structure
 
-The `SpaceLit` application is structured around a component-based architecture.
+The `Preloop Console` application is structured around a component-based architecture.
 
 *   **`src/components/`**: This directory contains all the custom Lit components that make up the application. Each component is typically defined in its own file (e.g., `tracker-list.ts`) and may have a corresponding test file (e.g., `tracker-list.test.ts`).
-*   **`src/api.ts`**: A dedicated module for handling communication with the SpaceBridge REST API. It encapsulates fetch logic, authentication, and data transformation.
+*   **`src/api.ts`**: A dedicated module for handling communication with the Preloop AI REST API. It encapsulates fetch logic, authentication, and data transformation.
 *   **`index.html`**: The main entry point for the application.
 *   **`vite.config.ts`**: Configuration for the Vite build tool.
 *   **`package.json`**: Defines project metadata, dependencies, and scripts for development, building, and testing.
 
 ## Core Components
 
-### SpaceBridge API Server (Main Repository)
+### Preloop AI API Server (Main Repository)
 *   **Framework:** FastAPI-based RESTful API server.
 *   **Authentication:** JWT authentication and authorization.
 *   **MCP Server:** Includes integrated MCP tool endpoints under `/api/v1/mcp/` for direct communication with MCP clients over HTTP.
-*   **Validation:** Request validation using Pydantic models (defined in `SpaceModels`).
+*   **Validation:** Request validation using Pydantic models (defined in `PreloopModels`).
 *   **Documentation:** Automatic API documentation with Swagger/ReDoc.
 *   **Features:** Rate limiting, error handling, monitoring integration.
-*   **Interaction:** Communicates with `SpaceModels` for database operations and directly with Issue Tracker APIs for certain actions (e.g., creating/updating issues in real-time).
+*   **Interaction:** Communicates with `PreloopModels` for database operations and directly with Issue Tracker APIs for certain actions (e.g., creating/updating issues in real-time).
 
-### SpaceModels (Submodule `./SpaceModels`)
+### PreloopModels (`./backend/preloop-models`)
 *   **Purpose:** Data modeling and database interaction layer.
 *   **Technology:** SQLAlchemy for ORM, Pydantic for data validation/schemas.
 *   **Database:** Defines schema for PostgreSQL, including tables for organizations, projects, issues, embeddings, etc.
@@ -129,17 +128,17 @@ The `SpaceLit` application is structured around a component-based architecture.
 *   **Operations:** Provides CRUD (Create, Read, Update, Delete) functions for all database entities.
 *   **Migrations:** Uses Alembic for database schema evolution.
 
-### SpaceSync (Submodule `./spacesync`)
+### Preloop Sync ( `./backend/preloop-sync`)
 *   **Purpose:** Data synchronization and embedding generation service.
 *   **Functionality:**
-    *   The `spacesync` CLI can launch one-off scan operations or start a persistent scheduler.
+    *   The `preloop-sync` CLI can launch one-off scan operations or start a persistent scheduler.
     *   **Scheduler:** Periodically adds polling tasks for each configured tracker to the NATS queue.
     *   **Worker:** Consumes tasks from the NATS queue. Multiple, specialized worker groups can be deployed, each subscribing to a specific subset of tasks (e.g., polling, webhooks). This allows for independent scaling and monitoring of different task types.
 *   **Execution:** Runs as two distinct, long-running processes (scheduler and worker) or as a one-off CLI command.
 
 
-### Issue Tracker Clients (within SpaceBridge & SpaceSync)
-*   **Location:** Implementations reside within both the main SpaceBridge API (for direct actions) and SpaceSync (for polling). Shared logic might be abstracted.
+### Issue Tracker Clients (within Preloop Sync)
+*   **Location:** Implementations reside within Preloop Sync.
 *   **Structure:** Abstract base classes define common interfaces (`get_issue`, `create_issue`, etc.).
 *   **Implementations:** Concrete classes for each supported tracker (Jira, GitHub, GitLab).
 *   **Features:** Handles authentication, API specifics, rate limiting, and error mapping for each tracker.
@@ -148,7 +147,7 @@ The `SpaceLit` application is structured around a component-based architecture.
 
 **Purpose:** TrackerScopeRule provides fine-grained control over which organizations and projects within a tracker are synchronized and accessible. This allows users to focus on relevant data and reduce noise.
 
-**Data Model:** Defined in `SpaceModels/spacemodels/models/tracker_scope_rule.py`
+**Data Model:** Defined in `backend/preloop-models/spacemodels/models/tracker_scope_rule.py`
 
 *   **Fields:**
     *   `tracker_id`: Foreign key to the Tracker
@@ -156,7 +155,7 @@ The `SpaceLit` application is structured around a component-based architecture.
     *   `rule_type`: Enum - `INCLUDE` or `EXCLUDE`
     *   `identifier`: String - the organization or project identifier (e.g., `"my-org"` or `"my-org/my-repo"`)
 
-**Filtering Logic:** The following rules are applied consistently across all components (SpaceSync scanner, API endpoints, cleanup scripts):
+**Filtering Logic:** The following rules are applied consistently across all components (Preloop Sync scanner, API endpoints, cleanup scripts):
 
 1.  **Organization Level (Required):**
     *   An organization MUST have an `INCLUDE` rule to be processed.
@@ -185,23 +184,23 @@ The `SpaceLit` application is structured around a component-based architecture.
 
 **Implementation Locations:**
 
-*   **Scanner (SpaceSync):** `spacesync/spacesync/scanner/core.py` - Lines 73-191
+*   **Scanner (Preloop Sync):** `backend/preloop-sync/preloop_sync/scanner/core.py` - Lines 73-191
     *   Filters organizations and projects during synchronization
     *   Skips organizations not in the include list
     *   Applies project include/exclude logic
-*   **API (get_tracker_client):** `spacebridge/api/common.py` - Lines 118-173
+*   **API (get_tracker_client):** `backend/preloop-sync/preloop_sync/api/common.py` - Lines 118-173
     *   Validates scope when a user requests access to a specific organization/project
     *   Returns HTTP 403 if access is denied
-*   **API (get_accessible_projects):** `spacebridge/api/common.py` - Lines 326-422
+*   **API (get_accessible_projects):** `backend/preloop-sync/preloop_sync/api/common.py` - Lines 326-422
     *   Returns list of projects accessible to a user based on scope rules
     *   Used by search endpoints, project listing, and other features that query across projects
-*   **API (Projects Endpoints):** `spacebridge/api/endpoints/projects.py`
+*   **API (Projects Endpoints):** `backend/preloop-sync/preloop_sync/api/endpoints/projects.py`
     *   `GET /projects` - Lists only accessible projects based on scope rules
     *   `GET /organizations/{organization_id}/projects` - Lists only accessible projects within an organization
-*   **API (Search Endpoint):** `spacebridge/api/endpoints/search.py`
+*   **API (Search Endpoint):** `backend/preloop-sync/preloop_sync/api/endpoints/search.py`
     *   `GET /search` - Applies scope filtering to all search results (similarity and fulltext)
     *   Always filters by accessible projects, even when no project/org filter is specified
-*   **Cleanup Script:** `spacebridge/scripts/cleanup_out_of_scope_issues.py` - Lines 38-131
+*   **Cleanup Script:** `backend/preloop-sync/preloop_sync/scripts/cleanup_out_of_scope_issues.py` - Lines 38-131
     *   Identifies issues that violate current scope rules
     *   Allows administrators to clean up out-of-scope data
 
@@ -246,43 +245,43 @@ The `SpaceLit` application is structured around a component-based architecture.
 ## Data Flow
 
 ### REST API Flow (e.g., Searching Issues)
-1.  **Client Request:** An HTTP client sends a `GET /api/v1/issues/search` request to the SpaceBridge API server.
+1.  **Client Request:** An HTTP client sends a `GET /api/v1/issues/search` request to the Preloop AI API server.
 2.  **API Server:**
     *   Authenticates the request (JWT).
-    *   Validates query parameters (using Pydantic models from `SpaceModels`).
+    *   Validates query parameters (using Pydantic models from `PreloopModels`).
     *   Calls the appropriate service function.
 3.  **Service Layer (API):**
     *   Generates an embedding for the search query.
-    *   Calls a function in `SpaceModels` to perform a vector similarity search in the PostgreSQL/PGVector database, potentially with metadata filters.
-4.  **SpaceModels:**
+    *   Calls a function in `PreloopModels` to perform a vector similarity search in the PostgreSQL/PGVector database, potentially with metadata filters.
+4.  **PreloopModels:**
     *   Constructs and executes the SQL query against the database.
     *   Retrieves matching issue data.
 5.  **API Server:** Formats the results and returns the HTTP response to the client.
 
-### Data Synchronization Flow (SpaceSync)
-1.  **Trigger:** `spacesync scan all` command is executed.
-2.  **SpaceSync Service:**
-    *   Retrieves tracker configurations using `SpaceModels`.
+### Data Synchronization Flow (Preloop Sync)
+1.  **Trigger:** `preloop-sync scan all` command is executed.
+2.  **Preloop Sync Service:**
+    *   Retrieves tracker configurations using `PreloopModels`.
     *   For each configured tracker:
         *   Uses the appropriate Issue Tracker Client to poll the external API (e.g., Jira API) for new/updated issues since the last scan.
         *   Processes the fetched issues.
         *   Generates vector embeddings for new/updated issue text.
-        *   Calls functions in `SpaceModels` to insert or update issue data and embeddings in the database.
-3.  **SpaceModels:** Interacts with the PostgreSQL database to persist changes.
+        *   Calls functions in `PreloopModels` to insert or update issue data and embeddings in the database.
+3.  **PreloopModels:** Interacts with the PostgreSQL database to persist changes.
 
 ### MCP Flow (Integrated HTTP)
 1.  **MCP Client Request:** An MCP client (e.g., Claude Code) sends a tool request using streamable HTTP transport to the MCP server (e.g., `/mcp/v1`). The request includes the standard MCP payload and an `Authorization: Bearer <token>` header.
-2.  **SpaceBridge API Server:**
+2.  **Preloop AI API Server:**
     *   Authenticates the request using the JWT token.
     *   Routes the request to the appropriate MCP tool endpoint.
     *   Validates the incoming MCP parameters against the Pydantic schema for that tool.
-    *   Executes the tool logic, interacting with other SpaceBridge services and `SpaceModels` as needed.
+    *   Executes the tool logic, interacting with other Preloop AI services and `PreloopModels` as needed.
     *   Formats the result into the standard MCP JSON response format.
 3.  **MCP Client:** Receives the HTTP response containing the tool's output.
 
-## Database Schema (Managed by SpaceModels)
+## Database Schema (Managed by PreloopModels)
 
-The detailed schema is defined using SQLAlchemy models within the `SpaceModels` submodule. Key tables include:
+The detailed schema is defined using SQLAlchemy models within the `PreloopModels` submodule. Key tables include:
 
 *   **Organizations:** Stores organization metadata, settings, and potentially user associations.
 *   **Projects:** Contains project details, tracker configurations (type, API URL, credentials), and links to organizations.
@@ -291,12 +290,12 @@ The detailed schema is defined using SQLAlchemy models within the `SpaceModels` 
 *   **Issue Embeddings:** Contains vector embeddings (using PGVector `vector` type) linked to issues, used for similarity search.
 *   **Other Metadata:** Tables for comments, users, API keys, etc., as needed.
 
-Schema migrations are managed using Alembic within `SpaceModels`.
+Schema migrations are managed using Alembic within `PreloopModels`.
 
 ## Technical Decisions
 
 ### REST API Implementation
-SpaceBridge implements a RESTful HTTP API using FastAPI, which provides:
+Preloop AI implements a RESTful HTTP API using FastAPI, which provides:
 - High performance with Starlette and Pydantic
 - Automatic OpenAPI documentation generation
 - Type annotation-based parameter validation
@@ -315,16 +314,16 @@ The MCP server is implemented directly within the FastAPI application using a cu
 The MCP server implements per-user dynamic tool filtering using `DynamicFastMCP`, a custom subclass of FastMCP:
 
 **Implementation Details:**
-- **`DynamicFastMCP`** (`spacebridge/services/dynamic_fastmcp.py`): Extends FastMCP and overrides `_list_tools()` and `_mcp_call_tool()` methods
+- **`DynamicFastMCP`** (`preloop-ai/services/dynamic_fastmcp.py`): Extends FastMCP and overrides `_list_tools()` and `_mcp_call_tool()` methods
 - **Tool Visibility:** Default tools (get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance) are only visible when the authenticated account has one or more trackers configured
 - **User Context Propagation:** Uses Python's `ContextVar` for async-safe user context storage across request boundaries
-- **Authentication:** `SpaceBridgeBearerAuthBackend` validates JWT tokens and injects user context into the request scope
+- **Authentication:** `PreloopBearerAuthBackend` validates JWT tokens and injects user context into the request scope
 - **Middleware:** `UserContextMiddleware` extracts authenticated user info and stores it in a ContextVar for access during tool listing and execution
 - **StreamableHTTP Transport:** Uses FastMCP's proven `http_app(transport="streamable-http")` implementation for bidirectional streaming
 - **Endpoint:** Mounted at `/mcp/v1` with full authentication and lifespan management
 
 **Tool Registration:**
-All built-in tools are registered in `spacebridge/services/initialize_mcp.py` using FastMCP's `@mcp.tool()` decorator, then filtered at runtime based on user context.
+All built-in tools are registered in `preloop-ai/services/initialize_mcp.py` using FastMCP's `@mcp.tool()` decorator, then filtered at runtime based on user context.
 
 **Benefits:**
 - Zero performance overhead for tool registration (happens once at startup)
@@ -334,7 +333,7 @@ All built-in tools are registered in `spacebridge/services/initialize_mcp.py` us
 
 ### Tool Configuration and Approval Workflow
 
-SpaceBridge includes comprehensive infrastructure for managing tool configurations and implementing human-in-the-loop approval workflows for sensitive tool operations.
+Preloop AI includes comprehensive infrastructure for managing tool configurations and implementing human-in-the-loop approval workflows for sensitive tool operations.
 
 #### Tool Configuration Management
 
@@ -357,7 +356,7 @@ graph TD
         Client["MCP Client (Claude Code, etc.)"]
     end
 
-    subgraph "SpaceBridge API"
+    subgraph "Preloop AI API"
         MCPEndpoint["MCP Endpoint (/mcp/v1)"]
         DynamicMCP["DynamicMCPServer"]
         ApprovalCheck["Approval Check"]
@@ -401,7 +400,7 @@ graph TD
    - The service waits for approval with configurable timeout
 4. Approver reviews request and responds via:
    - Public approval API endpoint (`/approval/{request_id}/decide`)
-   - Direct API call to SpaceBridge
+   - Direct API call to Preloop AI
 5. On approval, tool execution proceeds; on decline, error is returned to client
 
 **API Endpoints:**
@@ -417,7 +416,7 @@ graph TD
 
 ### MCP Server Management
 
-SpaceBridge supports configuration and management of external MCP servers, enabling tool proxying and federation.
+Preloop AI supports configuration and management of external MCP servers, enabling tool proxying and federation.
 
 **Database Model:**
 - **`MCPServer`**: Stores configuration for external MCP servers
@@ -445,11 +444,11 @@ SpaceBridge supports configuration and management of external MCP servers, enabl
 Python is chosen as the primary language due to its strong ecosystem for machine learning and data processing, which is essential for similarity search and embedding generation. FastAPI is used for the REST API due to its performance, type safety, and automatic OpenAPI documentation generation.
 
 ### Database
-PostgreSQL with the PGVector extension is used. The `SpaceModels` submodule encapsulates all database interaction logic, providing a clean separation from the API and synchronization services. This allows for centralized data management and schema evolution.
+PostgreSQL with the PGVector extension is used. The `preloop-models` package encapsulates all database interaction logic, providing a clean separation from the API and synchronization services. This allows for centralized data management and schema evolution.
 
 ### Authentication & Authorization
 
-SpaceBridge implements a comprehensive multi-user authentication and authorization system:
+Preloop AI implements a comprehensive multi-user authentication and authorization system:
 
 **Authentication:**
 - JWT-based authentication for REST API and MCP endpoints
@@ -464,11 +463,11 @@ SpaceBridge implements a comprehensive multi-user authentication and authorizati
 - All data is scoped by `account_id` for multi-tenancy isolation
 
 **Authorization (RBAC Plugin):**
-SpaceBridge includes a proprietary Role-Based Access Control (RBAC) plugin that provides enterprise-grade permission enforcement:
+Preloop AI includes a proprietary Role-Based Access Control (RBAC) plugin that provides enterprise-grade permission enforcement:
 
 - **7 System Roles:** Owner, Admin, Editor, Executor, Tracker Manager, Analyst, Viewer
 - **32 Permissions:** Granular permissions across 8 categories (Issues, Projects, Trackers, Teams, Users, AI Models, Flows, Webhooks)
-- **Plugin Architecture:** RBAC is implemented as a proprietary plugin in `spacebridge/plugins/proprietary/rbac/`
+- **Plugin Architecture:** RBAC is implemented as a proprietary plugin in `preloop-ai/plugins/proprietary/rbac/`
 - **Permission Decorators:**
   - `@require_permission(permission_name)` - Require specific permission
   - `@require_any_permission(*permissions)` - Require any one of multiple permissions
@@ -478,7 +477,7 @@ SpaceBridge includes a proprietary Role-Based Access Control (RBAC) plugin that 
 - **Multi-Role Support:** Users can have multiple roles with combined permissions
 
 **Plugin System:**
-- Extensible plugin architecture in `spacebridge/plugins/`
+- Extensible plugin architecture in `preloop-ai/plugins/`
 - Plugins can provide services, API routes, middleware, and dependencies
 - Built-in plugins: Argument-based condition evaluator for approval workflows
 - Proprietary plugins: RBAC (permission enforcement)
@@ -506,7 +505,7 @@ The system is designed to be containerized using Docker, enabling easy deploymen
 - [ ] Issue tracker credentials encrypted at rest (currently stored securely but not encrypted)
 - [ ] Sensitive data masked in logs
 - [ ] Rate limiting to prevent abuse (partial implementation exists)
-- [ ] Audit logging for security-sensitive operations
+- [x] Audit logging for security-sensitive operations (proprietary plugin)
 - [ ] 2FA/MFA support for user accounts
 - [ ] Session management and token revocation
 - [ ] Regular security audits and dependency updates
@@ -514,11 +513,11 @@ The system is designed to be containerized using Docker, enabling easy deploymen
 
 ## Session Management and Activity Tracking
 
-SpaceBridge implements a comprehensive session management system for tracking WebSocket connections, user activity, and audit events.
+Preloop AI implements a comprehensive session management system for tracking WebSocket connections, user activity, and audit events.
 
 ### Session Manager
 
-The `SessionManager` class (`spacebridge/services/session_manager.py`) maintains an in-memory registry of active WebSocket sessions:
+The `SessionManager` class (`preloop-ai/services/session_manager.py`) maintains an in-memory registry of active WebSocket sessions:
 
 **Key Features:**
 - **In-Memory Session Store**: Fast O(1) lookups for active sessions
@@ -587,7 +586,7 @@ class Event(Base):
 
 Single WebSocket connection per client with pub/sub message routing:
 
-**MessageRouter** (`spacebridge/services/message_router.py`):
+**MessageRouter** (`backend/preloop-ai/services/message_router.py`):
 - Routes messages to topic-based subscribers
 - Supports wildcard subscriptions (`'*'` topic)
 - Optional per-subscriber filter functions
@@ -607,7 +606,7 @@ Single WebSocket connection per client with pub/sub message routing:
 
 ## User Impersonation
 
-SpaceBridge supports admin impersonation of users for support and debugging purposes, with comprehensive audit logging.
+Preloop AI supports admin impersonation of users for support and debugging purposes, with comprehensive audit logging.
 
 ### Impersonation Flow
 
@@ -697,11 +696,11 @@ graph TD
         OtherSources["Other Sources (Incidents, OTel, etc.)"]
     end
 
-    subgraph "SpaceBridge Core"
+    subgraph "Preloop AI Core"
         direction TB
         WebhookEndpoint["Webhook Endpoint (/api/v1/private/webhooks/...)"]
         TaskQueue["Internal Task Queue (NATS)"]
-        APIExt["SpaceBridge API (Flow/AIModel CRUD, Logs)"]
+        APIExt["Preloop AI API (Flow/AIModel CRUD, Logs)"]
         SpaceModelsDB["SpaceModels (PostgreSQL - Flows, AIModels, Executions)"]
     end
 
@@ -756,7 +755,7 @@ graph TD
 *   **Internal Task Queue (NATS):**
     *   NATS is used as a simple, reliable task queue. It decouples the API from the background processing of events and flows.
     *   The `EventBus` service is used to enqueue tasks.
-    *   Workers consume tasks from the `spacesync.tasks` subject using a `workqueue` retention policy, which ensures that acknowledged messages are immediately removed from the stream.
+    *   Workers consume tasks from the `preloop_sync.tasks` subject using a `workqueue` retention policy, which ensures that acknowledged messages are immediately removed from the stream.
 *   **Flow Trigger Service:**
     *   This logic is part of the NATS worker. When a `process_webhook_event` task is received, the worker acts as the trigger service.
     *   It matches the incoming event data against the `trigger_event_source` and `trigger_event_type` defined in active `Flows`.
@@ -764,7 +763,7 @@ graph TD
 *   **Flow Execution Orchestrator:**
     *   Responsible for managing the lifecycle of a single Flow execution.
     *   Retrieves the `Flow` definition and its associated `AIModel` (including the encrypted API key) from the database.
-    *   **Dynamic Prompt Resolution:** Parses the `prompt_template` and resolves any placeholders (e.g., `{{project_docs_summary}}`, `{{relevant_code_files}}`) by querying `SpaceModels` or other SpaceBridge services for the necessary context data.
+    *   **Dynamic Prompt Resolution:** Parses the `prompt_template` and resolves any placeholders (e.g., `{{project_docs_summary}}`, `{{relevant_code_files}}`) by querying `SpaceModels` or other Preloop AI services for the necessary context data.
     *   Decrypts the API key and prepares the complete execution context for the agent, including the fully resolved prompt, AI model details (model name, API endpoint, decrypted API key), and the specific list of allowed MCP servers/tools.
     *   Initiates and manages an agent session via the Agent Execution Infrastructure based on the configured `agent_type`.
     *   Monitors the execution and records results/logs.
@@ -791,8 +790,8 @@ graph TD
 *   **Flow Execution Log (`FlowExecutions`):**
     *   A database table in `SpaceModels` to record the history and outcome of each Flow run.
     *   Includes details like the triggering event, start/end times, status (pending, running, succeeded, failed), the resolved input prompt, a summary of actions taken by the agent, logs of MCP tool usage, and a reference to more detailed logs from the agent session (e.g., container logs, session ID, or process output).
-*   **SpaceBridge API Extensions:**
-    *   New API endpoints will be added to the `SpaceBridge API` for:
+*   **Preloop AI API Extensions:**
+    *   New API endpoints will be added to the `Preloop AI API` for:
         *   CRUD (Create, Read, Update, Delete) operations on `Flows` and `AIModels`.
         *   Listing and retrieving `FlowExecution` history and logs.
         *   Managing Flow presets (e.g., listing, cloning).
@@ -814,9 +813,9 @@ The following Pydantic schemas and corresponding SQLAlchemy models have been def
 ```mermaid
 sequenceDiagram
     participant ExtSrc as External Event Source (e.g., GitHub)
-    participant WebhookEP as SpaceBridge Webhook Endpoint
+    participant WebhookEP as Preloop AI Webhook Endpoint
     participant TaskQueue as Internal Task Queue (NATS)
-    participant Worker as SpaceSync Worker (Flow Trigger)
+    participant Worker as Preloop Sync Worker (Flow Trigger)
     participant FlowsDB as Flows Database (SpaceModels)
     participant FlowExecOrch as Flow Execution Orchestrator
 
@@ -921,15 +920,15 @@ graph TD
 *   **Future Extensibility:** This design allows for the seamless addition of new message types to support interactivity (`user_input_request`, `user_input_response`) or advanced capabilities (`ui_control_command`) without requiring architectural changes.
     *   CRUD operations for these new entities will be added to `SpaceModels`.
     *   Will be queried by the Flow Execution Orchestrator to resolve dynamic prompt content.
-*   **`SpaceSync` / Webhook Infrastructure:**
-    *   The existing webhook ingestion mechanism within the main `SpaceBridge API` will publish a `process_webhook_event` task to the NATS task queue.
-    *   The `SpaceSync` worker, upon receiving this task, will be responsible for triggering the appropriate Agentic Flows.
-*   **`SpaceBridge API`:**
+*   **`Preloop Sync` / Webhook Infrastructure:**
+    *   The existing webhook ingestion mechanism within the main `Preloop AI API` will publish a `process_webhook_event` task to the NATS task queue.
+    *   The `Preloop Sync` worker, upon receiving this task, will be responsible for triggering the appropriate Agentic Flows.
+*   **`Preloop AI API`:**
     *   Will be extended with new RESTful API endpoints for:
         *   Managing `Flows` (CRUD, enable/disable, list presets).
         *   Managing `AIModels` (CRUD, share).
         *   Retrieving `FlowExecution` history, status, and logs (including links or content from OpenHands logs).
-*   **`SpaceBridge-MCP` (and other MCP Servers):**
+*   **`Preloop-MCP` (and other MCP Servers):**
     *   MCP servers are *consumers* in this context. The OpenHands agents, as configured per Flow, will directly call tools on these MCP servers.
     *   The `Flow` definition will specify which MCP servers and which specific tools on those servers the agent is permitted to use.
 
@@ -971,7 +970,7 @@ graph TD
     *   Comprehensive logging of Flow executions, including which MCP tools were called with what parameters (sensitive data redacted).
     *   Audit trails for changes to `Flows` and `AIModels`.
 *   **Permissions:**
-    *   Role-based access control (RBAC) for managing `Flows` and `AIModels` via the SpaceBridge API. Users should only be able to create/edit/view Flows and AIModels within their authorized scope (e.g., organization).
+    *   Role-based access control (RBAC) for managing `Flows` and `AIModels` via the Preloop AI API. Users should only be able to create/edit/view Flows and AIModels within their authorized scope (e.g., organization).
 
 ### 8. Scalability and Extensibility
 
@@ -999,7 +998,7 @@ This section outlines the architecture for tracking API/feature usage, managing 
 
 The single source of truth for all subscription plans is a YAML file named `plans.yaml` located in the root of the repository. This approach ensures that plan definitions are version-controlled and can be easily reviewed and modified.
 
-A Python script, `scripts/sync_plans.py`, is responsible for synchronizing this YAML file with both the Stripe API and the SpaceBridge database. This script is executed as part of the deployment pipeline to ensure all environments are consistent.
+A Python script, `scripts/sync_plans.py`, is responsible for synchronizing this YAML file with both the Stripe API and the Preloop AI database. This script is executed as part of the deployment pipeline to ensure all environments are consistent.
 
 ### 2. Architecture Overview
 
@@ -1017,7 +1016,7 @@ graph TD
         StripeAPI["Stripe API"]
     end
 
-    subgraph "SpaceBridge Backend"
+    subgraph "Preloop AI Backend"
         SpaceModelsDB["SpaceModels (PostgreSQL)"]
         BillingService["BillingService"]
         BillingAPI["Billing API Endpoints"]
@@ -1054,16 +1053,16 @@ Four tables are used to manage billing and subscriptions:
 
 ### 4. Core Logic and Data Flow
 
-*   **Usage Tracking:** The `BillingService` provides a `record_usage(account_id, metric)` method. This method is called from specific, high-value locations in the codebase (e.g., within `SpaceSync` when an issue is ingested or an embedding is generated). It increments the appropriate counter in the `MonthlyUsage` table for the current billing cycle.
+*   **Usage Tracking:** The `BillingService` provides a `record_usage(account_id, metric)` method. This method is called from specific, high-value locations in the codebase (e.g., within `Preloop Sync` when an issue is ingested or an embedding is generated). It increments the appropriate counter in the `MonthlyUsage` table for the current billing cycle.
 *   **Limit Enforcement:** A `check_limit(account_id, metric)` method in the `BillingService` determines if an account has exceeded its usage for a given metric based on its current plan. If no active subscription is found, the limits of the "free" plan are applied. The API endpoints use this to return a `429 Too Many Requests` error when a limit is reached.
 *   **Checkout & Portal:** The `BillingService` integrates with the Stripe API to create Checkout sessions (for new subscriptions) and Customer Portal sessions (for managing existing subscriptions). The API endpoints expose these functions to the frontend.
-*   **Subscription Creation:** When a user successfully completes a checkout, Stripe redirects them to a `/checkout-success` endpoint in the SpaceBridge API. This endpoint retrieves the session details from Stripe, creates the `Subscription` record in the local database, and then redirects the user to the subscription management page.
+*   **Subscription Creation:** When a user successfully completes a checkout, Stripe redirects them to a `/checkout-success` endpoint in the Preloop AI API. This endpoint retrieves the session details from Stripe, creates the `Subscription` record in the local database, and then redirects the user to the subscription management page.
 
 ### 5. Stripe Integration
 
 *   **Products and Prices:** The `sync_plans.py` script creates a "Product" in Stripe for each plan ID (e.g., "pro") and attaches monthly and annual "Prices" to it.
-*   **Customers:** A Stripe "Customer" is created for a SpaceBridge `Account` the first time they initiate a checkout session. The `stripe_customer_id` is stored on the `Account` model.
-*   **Subscriptions:** When a user successfully completes a checkout, a Stripe "Subscription" is created. The `/checkout-success` handler then creates a corresponding `Subscription` record in the SpaceBridge database.
+*   **Customers:** A Stripe "Customer" is created for a Preloop AI `Account` the first time they initiate a checkout session. The `stripe_customer_id` is stored on the `Account` model.
+*   **Subscriptions:** When a user successfully completes a checkout, a Stripe "Subscription" is created. The `/checkout-success` handler then creates a corresponding `Subscription` record in the Preloop AI database.
 
 *   **Commit to `main` -> Doc/Test Check:** When a commit lands in the `main` branch, evaluate if documentation or tests require updates. If so, check if these updates have been applied. If not, open an issue detailing what needs to be done, and/or open a Pull Request with suggested changes.
 *   **New Issue Created -> Triage & Label:** Analyze new issue content, suggest priority, labels, and potentially assign to a default team/person based on keywords or project area.
@@ -1075,7 +1074,7 @@ Four tables are used to manage billing and subscriptions:
 
 ## Usage, Billing, and Plans
 
-To support different subscription tiers and enforce usage limits, a comprehensive usage tracking and billing system is integrated into SpaceBridge. This system is designed to be scalable, accurate, and have minimal performance overhead.
+To support different subscription tiers and enforce usage limits, a comprehensive usage tracking and billing system is integrated into Preloop AI. This system is designed to be scalable, accurate, and have minimal performance overhead.
 
 ### 1. Plan Management: Source of Truth
 
@@ -1084,7 +1083,7 @@ Subscription plans (e.g., Free, Pro) and their associated features/limits are de
 A synchronization script (`scripts/sync_plans.py`) is responsible for:
 1.  Reading `plans.yaml`.
 2.  Creating or updating corresponding "Products" and "Prices" in the Stripe dashboard via the Stripe API.
-3.  Seeding or updating the `plans` table in the SpaceBridge database.
+3.  Seeding or updating the `plans` table in the Preloop AI database.
 
 This approach ensures that plan definitions are tied to the application's version history.
 
@@ -1094,7 +1093,7 @@ The system introduces a new `Usage & Billing Service` that acts as the central a
 
 ```mermaid
 graph TD
-    subgraph "SpaceBridge API"
+    subgraph "Preloop AI API"
         direction TB
         APIMiddleware["Usage Tracking Middleware"]
         APIEndpoints["API Endpoints (e.g., /issues/search)"]
@@ -1105,7 +1104,7 @@ graph TD
     subgraph "Core Services"
         UsageService["Usage & Billing Service"]
         AIModelService["Existing AI Model Service"]
-        SpaceSyncService["Existing SpaceSync Service"]
+        PreloopSyncService["Existing Preloop Sync Service"]
     end
 
     subgraph "SpaceModels (Database)"
@@ -1123,7 +1122,7 @@ graph TD
     APIMiddleware -- "Records API Call" --> UsageService
     APIEndpoints -- "Calls" --> AIModelService
     AIModelService -- "Records AI Call" --> UsageService
-    SpaceSyncService -- "Records Data Ingestion" --> UsageService
+    PreloopSyncService -- "Records Data Ingestion" --> UsageService
 
     FeatureGatedEndpoint -- "Checks Feature Flag & Limits" --> UsageService
     BillingEndpoints -- "Manages Subscriptions & Plans" --> UsageService
@@ -1175,7 +1174,7 @@ Three new tables are added to manage billing and usage:
 
 *   **Usage Recording**:
     1.  A **FastAPI Middleware** intercepts every API request and calls `UsageService.record_usage(org_id, "api_calls")`.
-    2.  Specific services, like the **AI Model Service** or **SpaceSync**, call `UsageService.record_usage(...)` for more granular events (e.g., `"ai_calls"`, `"issues_ingested"`).
+    2.  Specific services, like the **AI Model Service** or **Preloop Sync**, call `UsageService.record_usage(...)` for more granular events (e.g., `"ai_calls"`, `"issues_ingested"`).
     3.  The `UsageService` finds the current `MonthlyUsage` record for the organization and atomically increments the relevant counter in the `usage_counts` JSONB field.
 
 *   **Limit Enforcement**:

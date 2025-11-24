@@ -16,7 +16,7 @@ When you create an account with us, you must provide us with information that is
 
 ## 4. Intellectual Property
 
-The Service and its original content, features, and functionality are and will remain the exclusive property of SpaceBridge and its licensors.
+The Service and its original content, features, and functionality are and will remain the exclusive property of Preloop AI and its licensors.
 
 ## 5. Termination
 
@@ -24,7 +24,7 @@ We may terminate or suspend your account immediately, without prior notice or li
 
 ## 6. Limitation of Liability
 
-In no event shall SpaceBridge, nor its directors, employees, partners, agents, suppliers, or affiliates, be liable for any indirect, incidental, special, consequential or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses, resulting from your access to or use of or inability to access or use the Service.
+In no event shall Preloop AI, nor its directors, employees, partners, agents, suppliers, or affiliates, be liable for any indirect, incidental, special, consequential or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses, resulting from your access to or use of or inability to access or use the Service.
 
 ## 7. Governing Law
 
@@ -36,4 +36,4 @@ We reserve the right, at our sole discretion, to modify or replace these Terms a
 
 ## 9. Contact Us
 
-If you have any questions about these Terms, please contact us at legal@spacebridge.io.
+If you have any questions about these Terms, please contact us at legal@preloop_ai.io.

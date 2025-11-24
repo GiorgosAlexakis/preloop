@@ -4,18 +4,18 @@ from unittest.mock import patch, MagicMock
 from unittest import IsolatedAsyncioTestCase
 import httpx
 from uuid import uuid4
-from spacesync.exceptions import (
+from preloop_sync.exceptions import (
     TrackerAuthenticationError,
     TrackerConnectionError,
     TrackerResponseError,
 )
 
-from spacesync.trackers.github import GitHubTracker
+from preloop_sync.trackers.github import GitHubTracker
 
 
 @pytest.mark.asyncio
 class TestGitHubTrackerDependencies(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_get_issues_parses_dependencies_from_body_and_comments(
         self, mock_requests_get
     ):
@@ -112,7 +112,7 @@ class TestGitHubTrackerDependencies(unittest.IsolatedAsyncioTestCase):
 
 @pytest.mark.asyncio
 class TestGitHubTrackerComments(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_get_issues_fetches_and_transforms_comments(self, mock_requests_get):
         # --- Mock API Responses ---
         # Response for repo details (if project_id is not full_name)
@@ -226,7 +226,7 @@ class TestGitHubTrackerComments(unittest.IsolatedAsyncioTestCase):
 
 @pytest.mark.asyncio
 class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_get_organizations(self, mock_requests_get):
         mock_user_response = MagicMock()
         mock_user_response.status_code = 200
@@ -254,7 +254,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(orgs[0]["name"], "octocat")
         self.assertEqual(orgs[1]["name"], "github")
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_get_projects(self, mock_requests_get):
         mock_repos_response = MagicMock()
         mock_repos_response.status_code = 200
@@ -280,7 +280,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(projects), 1)
         self.assertEqual(projects[0]["name"], "Hello-World")
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_get_projects_personal(self, mock_requests_get):
         mock_repos_response = MagicMock()
         mock_repos_response.status_code = 200
@@ -311,7 +311,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
             params={"per_page": 100, "sort": "updated", "direction": "desc"},
         )
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_get_issues_repo_details_error(self, mock_requests_get):
         mock_requests_get.side_effect = TrackerResponseError("Failed to fetch")
 
@@ -320,7 +320,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(issues), 0)
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_get_issues_fetch_error(self, mock_requests_get):
         mock_repo_details_response = MagicMock()
         mock_repo_details_response.status_code = 200
@@ -341,7 +341,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(issues), 0)
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_get_issues_skips_pull_requests(self, mock_requests_get):
         mock_issues_response = MagicMock()
         mock_issues_response.status_code = 200
@@ -360,7 +360,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(issues), 0)
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_get_issues_no_comments(self, mock_requests_get):
         mock_issues_response = MagicMock()
         mock_issues_response.status_code = 200
@@ -400,7 +400,7 @@ class TestGitHubTracker(unittest.IsolatedAsyncioTestCase):
 
 @pytest.mark.asyncio
 class TestGitHubTrackerRequestErrors(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_make_request_authentication_error(self, mock_requests_get):
         mock_response = MagicMock()
         mock_response.status_code = 401
@@ -410,7 +410,7 @@ class TestGitHubTrackerRequestErrors(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TrackerAuthenticationError):
             await tracker._make_request("user")
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_make_request_connection_error(self, mock_requests_get):
         mock_requests_get.side_effect = httpx.RequestError(
             "Connection failed", request=MagicMock()
@@ -420,7 +420,7 @@ class TestGitHubTrackerRequestErrors(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TrackerConnectionError):
             await tracker._make_request("user")
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_make_request_response_error(self, mock_requests_get):
         mock_response = MagicMock()
         mock_response.status_code = 500
@@ -434,7 +434,7 @@ class TestGitHubTrackerRequestErrors(unittest.IsolatedAsyncioTestCase):
 
 @pytest.mark.asyncio
 class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.github.httpx.AsyncClient.delete")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.delete")
     async def test_make_request_delete_success(self, mock_requests_delete):
         mock_response = MagicMock()
         mock_response.status_code = 204
@@ -443,7 +443,7 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
         tracker = GitHubTracker(str(uuid4()), "api-key", {})
         self.assertTrue(await tracker._make_request_delete("hooks/1"))
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.delete")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.delete")
     async def test_make_request_delete_not_found(self, mock_requests_delete):
         mock_response = MagicMock()
         mock_response.status_code = 404
@@ -452,7 +452,7 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
         tracker = GitHubTracker(str(uuid4()), "api-key", {})
         self.assertTrue(await tracker._make_request_delete("hooks/1"))
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.delete")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.delete")
     async def test_make_request_delete_authentication_error(self, mock_requests_delete):
         mock_response = MagicMock()
         mock_response.status_code = 401
@@ -462,7 +462,7 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TrackerAuthenticationError):
             await tracker._make_request_delete("hooks/1")
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.delete")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.delete")
     async def test_make_request_delete_connection_error(self, mock_requests_delete):
         mock_requests_delete.side_effect = httpx.RequestError(
             "Connection failed", request=MagicMock()
@@ -472,7 +472,7 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TrackerConnectionError):
             await tracker._make_request_delete("hooks/1")
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.delete")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.delete")
     async def test_make_request_delete_response_error(self, mock_requests_delete):
         mock_response = MagicMock()
         mock_response.status_code = 500
@@ -486,8 +486,8 @@ class TestGitHubTrackerDeleteRequest(unittest.IsolatedAsyncioTestCase):
 
 @pytest.mark.asyncio
 class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.github.GitHubTracker.get_projects")
-    @patch("spacesync.trackers.github.GitHubTracker._make_request")
+    @patch("preloop_sync.trackers.github.GitHubTracker.get_projects")
+    @patch("preloop_sync.trackers.github.GitHubTracker._make_request")
     async def test_get_webhooks(self, mock_make_request, mock_get_projects):
         mock_get_projects.return_value = [
             {"meta_data": {"full_name": "octocat/Hello-World"}}
@@ -509,8 +509,8 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
             "repos/octocat/Hello-World/hooks", params={"per_page": 100}
         )
 
-    @patch("spacesync.trackers.github.httpx.AsyncClient.post")
-    @patch("spacesync.trackers.github.crud_webhook.create")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.post")
+    @patch("preloop_sync.trackers.github.crud_webhook.create")
     async def test_register_webhook(self, mock_crud_create, mock_requests_post):
         mock_response = MagicMock()
         mock_response.status_code = 201
@@ -534,8 +534,8 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result)
 
-    @patch("spacesync.trackers.github.crud_webhook.remove")
-    @patch("spacesync.trackers.github.httpx.AsyncClient.delete")
+    @patch("preloop_sync.trackers.github.crud_webhook.remove")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.delete")
     async def test_unregister_webhook(self, mock_requests_delete, mock_crud_remove):
         mock_response = MagicMock()
         mock_response.status_code = 204
@@ -557,7 +557,7 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         )
         mock_crud_remove.assert_called_with(db_mock, id="webhook-db-id")
 
-    @patch("spacesync.trackers.github.GitHubTracker._make_request")
+    @patch("preloop_sync.trackers.github.GitHubTracker._make_request")
     async def test_is_webhook_registered_for_project(self, mock_make_request):
         mock_make_request.return_value = [
             {"config": {"url": "https://example.com/webhook"}}
@@ -573,7 +573,7 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(is_registered)
         mock_make_request.assert_called_with("repos/octocat/Hello-World/hooks")
 
-    @patch("spacesync.trackers.github.GitHubTracker._make_request")
+    @patch("preloop_sync.trackers.github.GitHubTracker._make_request")
     async def test_is_webhook_not_registered_for_project(self, mock_make_request):
         mock_make_request.return_value = [
             {"config": {"url": "https://example.com/other-webhook"}}
@@ -591,7 +591,7 @@ class TestGitHubTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
 
 
 class TestGitHubTrackerPagination(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.github.httpx.AsyncClient.get")
+    @patch("preloop_sync.trackers.github.httpx.AsyncClient.get")
     async def test_make_request_pagination(self, mock_requests_get):
         mock_response_1 = MagicMock()
         mock_response_1.status_code = 200
@@ -618,9 +618,9 @@ class TestGitHubTrackerPagination(unittest.IsolatedAsyncioTestCase):
 
 @pytest.mark.asyncio
 class TestGitHubTrackerUnregisterAllWebhooks(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.github.crud_project.get_for_organization")
-    @patch("spacesync.trackers.github.crud_organization.get_multi")
-    @patch("spacesync.trackers.github.GitHubTracker.unregister_webhook")
+    @patch("preloop_sync.trackers.github.crud_project.get_for_organization")
+    @patch("preloop_sync.trackers.github.crud_organization.get_multi")
+    @patch("preloop_sync.trackers.github.GitHubTracker.unregister_webhook")
     async def test_unregister_all_webhooks_success(
         self,
         mock_unregister_webhook,
@@ -653,9 +653,9 @@ class TestGitHubTrackerUnregisterAllWebhooks(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results["unregistered"], 2)
         self.assertEqual(results["failed"], 0)
 
-    @patch("spacesync.trackers.github.crud_project.get_for_organization")
-    @patch("spacesync.trackers.github.crud_organization.get_multi")
-    @patch("spacesync.trackers.github.GitHubTracker.unregister_webhook")
+    @patch("preloop_sync.trackers.github.crud_project.get_for_organization")
+    @patch("preloop_sync.trackers.github.crud_organization.get_multi")
+    @patch("preloop_sync.trackers.github.GitHubTracker.unregister_webhook")
     async def test_unregister_all_webhooks_failure(
         self,
         mock_unregister_webhook,
@@ -688,8 +688,8 @@ class TestGitHubTrackerUnregisterAllWebhooks(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results["unregistered"], 1)
         self.assertEqual(results["failed"], 1)
 
-    @patch("spacesync.trackers.github.crud_project.get_for_organization")
-    @patch("spacesync.trackers.github.crud_organization.get_multi")
+    @patch("preloop_sync.trackers.github.crud_project.get_for_organization")
+    @patch("preloop_sync.trackers.github.crud_organization.get_multi")
     async def test_unregister_all_webhooks_no_webhooks(
         self, mock_crud_organization_get_multi, mock_crud_project_get_for_organization
     ):
@@ -717,43 +717,43 @@ class TestGitHubTrackerUnregisterAllWebhooks(unittest.IsolatedAsyncioTestCase):
 
 @pytest.mark.asyncio
 class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.github.GitHubTracker._make_request_delete")
-    @patch("spacesync.trackers.github.GitHubTracker._make_request")
+    @patch("preloop_sync.trackers.github.GitHubTracker._make_request_delete")
+    @patch("preloop_sync.trackers.github.GitHubTracker._make_request")
     async def test_cleanup_stale_webhooks_org_hooks(
         self, mock_make_request, mock_make_request_delete
     ):
         """
         Test that cleanup_stale_webhooks only deletes webhooks that:
-        1. Point to our spacebridge_url
+        1. Point to our preloop_url
         2. Are NOT in our database
 
-        This test has a webhook pointing to spacebridge_url that's not in DB, so it should be deleted.
+        This test has a webhook pointing to preloop_url that's not in DB, so it should be deleted.
         """
         # Arrange
         tracker = GitHubTracker(str(uuid4()), "api-key", {})
         mock_make_request.side_effect = [
             {"login": "user", "html_url": ""},
             [{"login": "org1", "url": "...", "id": "org1", "name": "org1"}],
-            [{"config": {"url": "http://my-spacebridge.com/webhook"}, "id": 1}],
+            [{"config": {"url": "http://my-preloop_ai.com/webhook"}, "id": 1}],
         ]
         mock_make_request_delete.return_value = True
 
         # Act
-        results = await tracker.cleanup_stale_webhooks("http://my-spacebridge.com")
+        results = await tracker.cleanup_stale_webhooks("http://my-preloop_ai.com")
 
-        # Assert: Should delete the stale webhook (points to spacebridge but not in DB)
+        # Assert: Should delete the stale webhook (points to preloop but not in DB)
         self.assertEqual(results["unregistered"], 1)
         self.assertEqual(results["failed"], 0)
         mock_make_request_delete.assert_called_with("orgs/org1/hooks/1")
 
-    @patch("spacesync.trackers.github.GitHubTracker._make_request_delete")
-    @patch("spacesync.trackers.github.GitHubTracker._make_request")
+    @patch("preloop_sync.trackers.github.GitHubTracker._make_request_delete")
+    @patch("preloop_sync.trackers.github.GitHubTracker._make_request")
     async def test_cleanup_stale_webhooks_project_hooks(
         self, mock_make_request, mock_make_request_delete
     ):
         """
         Test cleanup for project-level webhooks.
-        A webhook pointing to spacebridge_url that's not in DB should be deleted.
+        A webhook pointing to preloop_url that's not in DB should be deleted.
         """
         # Arrange
         tracker = GitHubTracker(str(uuid4()), "api-key", {})
@@ -773,30 +773,30 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
             {"login": "user", "html_url": ""},
             [{"login": "org1", "url": "...", "id": "org1", "name": "org1"}],
             [repo_meta],
-            [{"config": {"url": "http://my-spacebridge.com/webhook"}, "id": 2}],
+            [{"config": {"url": "http://my-preloop_ai.com/webhook"}, "id": 2}],
             [],
         ]
         mock_make_request_delete.return_value = True
 
         # Act
         results = await tracker.cleanup_stale_webhooks(
-            "http://my-spacebridge.com", cleanup_projects=True
+            "http://my-preloop_ai.com", cleanup_projects=True
         )
 
-        # Assert: Should delete the stale webhook (points to spacebridge but not in DB)
+        # Assert: Should delete the stale webhook (points to preloop but not in DB)
         self.assertEqual(results["unregistered"], 1)
         self.assertEqual(results["failed"], 0)
         mock_make_request_delete.assert_called_with("repos/org1/repo1/hooks/2")
 
-    @patch("spacesync.trackers.github.GitHubTracker._make_request_delete")
-    @patch("spacesync.trackers.github.GitHubTracker._make_request")
+    @patch("preloop_sync.trackers.github.GitHubTracker._make_request_delete")
+    @patch("preloop_sync.trackers.github.GitHubTracker._make_request")
     async def test_cleanup_stale_webhooks_no_stale_hooks(
         self, mock_make_request, mock_make_request_delete
     ):
         """
-        Test that webhooks pointing to OTHER URLs (not our spacebridge_url) are ignored.
+        Test that webhooks pointing to OTHER URLs (not our preloop_url) are ignored.
         A webhook at "http://other-service.com/webhook" should NOT be deleted
-        even though it's not in our DB, because it doesn't point to our SpaceBridge.
+        even though it's not in our DB, because it doesn't point to our Preloop AI.
         """
         # Arrange
         tracker = GitHubTracker(str(uuid4()), "api-key", {})
@@ -807,9 +807,9 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
         ]
 
         # Act
-        results = await tracker.cleanup_stale_webhooks("http://my-spacebridge.com")
+        results = await tracker.cleanup_stale_webhooks("http://my-preloop_ai.com")
 
-        # Assert: Should NOT delete webhooks that don't point to our SpaceBridge
+        # Assert: Should NOT delete webhooks that don't point to our Preloop AI
         self.assertEqual(results["unregistered"], 0)
         self.assertEqual(results["failed"], 0)
         mock_make_request_delete.assert_not_called()

@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.project import CRUDProject
-from spacemodels.models.project import Project
+from preloop_models.crud.project import CRUDProject
+from preloop_models.models.project import Project
 
 
 @pytest.fixture

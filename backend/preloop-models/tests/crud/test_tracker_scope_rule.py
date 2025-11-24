@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.tracker_scope_rule import crud_tracker_scope_rule
-from spacemodels.models.tracker_scope_rule import (
+from preloop_models.crud.tracker_scope_rule import crud_tracker_scope_rule
+from preloop_models.models.tracker_scope_rule import (
     TrackerScopeRule,
     ScopeType,
     RuleType,

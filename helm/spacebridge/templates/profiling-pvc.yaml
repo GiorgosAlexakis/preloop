@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-profiling
+  name: {{ include "preloop_ai.fullname" . }}-profiling
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
 spec:
   accessModes:
     - ReadWriteOnce

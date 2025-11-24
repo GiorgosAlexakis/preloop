@@ -90,7 +90,7 @@ export class RequestDemoView extends LitElement {
         headcount: this._headcount,
         trackers: this._trackers,
         comments: this._comments,
-        source: 'request-demo spacebridge',
+        source: 'request-demo preloop-ai',
       }),
     });
 
@@ -197,8 +197,8 @@ export class RequestDemoView extends LitElement {
             ></sl-textarea>
 
             ${this._error
-              ? html`<sl-alert variant="danger" open>${this._error}</sl-alert>`
-              : ''}
+        ? html`<sl-alert variant="danger" open>${this._error}</sl-alert>`
+        : ''}
 
             <sl-button
               type="submit"

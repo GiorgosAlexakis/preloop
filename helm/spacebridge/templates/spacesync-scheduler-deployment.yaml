@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-spacesync-scheduler
+  name: {{ include "preloop_ai.fullname" . }}-preloop-sync-scheduler
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
-    app.kubernetes.io/component: spacesync-scheduler
-    app: spacesync-scheduler
+    {{- include "preloop_ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: preloop-sync-scheduler
+    app: preloop-sync-scheduler
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: 1
   {{- end }}
   selector:
     matchLabels:
-      {{- include "spacebridge.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: spacesync-scheduler
+      {{- include "preloop_ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: preloop-sync-scheduler
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -21,32 +21,28 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "spacebridge.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: spacesync-scheduler
+        {{- include "preloop_ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: preloop-sync-scheduler
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "spacebridge.serviceAccountName" . }}
+      serviceAccountName: {{ include "preloop_ai.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: spacesync-scheduler
+        - name: preloop-sync-scheduler
           command:
-            - spacesync
+            - preloop-sync
             - scheduler
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
-            - name: SPACEBRIDGE_URL
-              {{- if $.Values.preloop.enabled }}
+            - name: PRELOOP_URL
               value: {{ $.Values.environment.preloopUrl | quote }}
-              {{- else }}
-              value: {{ $.Values.environment.spacebridgeUrl | quote }}
-              {{- end }}
             - name: HOST
               value: {{ .Values.environment.host | quote }}
             - name: PORT
@@ -54,11 +50,11 @@ spec:
             - name: DEBUG
               value: {{ .Values.environment.debug | quote }}
             - name: DATABASE_URL
-              value: {{ include "spacebridge.databaseUrl" . }}
+              value: {{ include "preloop_ai.databaseUrl" . }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "preloop_ai.fullname" . }}
                   key: jwt-secret
             - name: JWT_ALGORITHM
               value: {{ .Values.environment.jwtAlgorithm | quote }}
@@ -72,14 +68,14 @@ spec:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "preloop_ai.fullname" . }}
                   key: openai-api-key
             {{- end }}
             {{- if .Values.config.anthropic.apiKey }}
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "preloop_ai.fullname" . }}
                   key: anthropic-api-key
             {{- end }}
             {{- if .Values.config.smtp.host }}
@@ -102,7 +98,7 @@ spec:
             - name: SENTRY_DSN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" $ }}
+                  name: {{ include "preloop_ai.fullname" $ }}
                   key: sentry-dsn
             {{- end }}
           resources:

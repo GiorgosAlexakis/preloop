@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 from unittest import IsolatedAsyncioTestCase
 from datetime import datetime
 
-from spacesync.trackers.jira import JiraTracker
-from spacesync.exceptions import TrackerResponseError
+from preloop_sync.trackers.jira import JiraTracker
+from preloop_sync.exceptions import TrackerResponseError
 
 
 class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
@@ -22,7 +22,7 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
             "project_key": "TEST",
         }
         # Mock the JIRA client to avoid real API calls during initialization
-        with patch("spacesync.trackers.jira.JIRA"):
+        with patch("preloop_sync.trackers.jira.JIRA"):
             self.tracker = JiraTracker(
                 "tracker-1", "api-token", self.connection_details
             )
@@ -257,7 +257,7 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
     async def test_create_issue_success(self):
         """Test successful issue creation."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueCreate
+        from preloop_ai.schemas.tracker_models import IssueCreate
 
         issue_create = IssueCreate(
             title="New Issue",
@@ -301,7 +301,7 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
     async def test_update_issue_success(self):
         """Test successful issue update."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueUpdate
+        from preloop_ai.schemas.tracker_models import IssueUpdate
 
         issue_update = IssueUpdate(
             title="Updated Issue",
@@ -396,7 +396,7 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
     async def test_search_issues_success(self):
         """Test successful issue search."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueFilter
+        from preloop_ai.schemas.tracker_models import IssueFilter
 
         filter_params = IssueFilter(query="bug", status=["Open"], labels=["critical"])
 
@@ -488,7 +488,7 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
     async def test_update_issue_with_nested_json_description(self):
         """Test updating issue with nested JSON in description (regression test for nested JSON bug)."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueUpdate
+        from preloop_ai.schemas.tracker_models import IssueUpdate
 
         # Simulate a description that comes from the database with nested JSON
         # This is the exact pattern that was causing the "Operation value must be a string" error
@@ -574,7 +574,7 @@ class TestJiraTrackerNewMethods(IsolatedAsyncioTestCase):
     async def test_update_issue_with_string_nested_json_description(self):
         """Test updating issue when description is a JSON string (from API serialization)."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueUpdate
+        from preloop_ai.schemas.tracker_models import IssueUpdate
 
         # Simulate description as a JSON string (like what might come from Pydantic serialization)
         nested_json_string = '{"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "{\\"type\\": \\"doc\\", \\"version\\": 1, \\"content\\": [{\\"type\\": \\"paragraph\\", \\"content\\": [{\\"type\\": \\"text\\", \\"text\\": \\"Real text\\"}]}]}"}]}]}'

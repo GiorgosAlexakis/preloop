@@ -4,8 +4,8 @@ import uuid
 from datetime import datetime, timezone
 
 
-from spacemodels.models.mcp_server import MCPServer
-from spacemodels.schemas.mcp_server import MCPServerResponse, MCPServerCreate
+from preloop_models.models.mcp_server import MCPServer
+from preloop_models.schemas.mcp_server import MCPServerResponse, MCPServerCreate
 
 
 def test_mcp_server_response_serializes_uuids():

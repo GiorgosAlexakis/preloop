@@ -1,11 +1,11 @@
 image: alpine:3.22
 
 variables:
-  CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/spacebridge
+  CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/preloop-ai
   GIT_SUBMODULE_STRATEGY: "recursive"
   GITLAB_TOKEN: $GITLAB_TOKEN
-  PROD_DOMAIN: "spacebridge.io"
-  STAGING_DOMAIN: "staging.spacebridge.io"
+  PROD_DOMAIN: "preloop.ai"
+  STAGING_DOMAIN: "staging.preloop.ai"
   STRIPE_SECRET_KEY_PROD: $STRIPE_SECRET_KEY_PROD
   STRIPE_WEBHOOK_SECRET_PROD: $STRIPE_WEBHOOK_SECRET_PROD
   STRIPE_SECRET_KEY_STAGING: $STRIPE_SECRET_KEY_STAGING
@@ -14,10 +14,10 @@ variables:
   STRIPE_WEBHOOK_SECRET_TEST: $STRIPE_WEBHOOK_SECRET_TEST
   STRIPE_SECRET_KEY_REVIEW: $STRIPE_SECRET_KEY_REVIEW
   STRIPE_WEBHOOK_SECRET_REVIEW: $STRIPE_WEBHOOK_SECRET_REVIEW
-  SPACEBRIDGE_TEST_PASSWORD: $SPACEBRIDGE_TEST_PASSWORD
-  SPACEBRIDGE_TEST_USERNAME: $SPACEBRIDGE_TEST_USERNAME
-  SPACEBRIDGE_TEST_EMAIL: $SPACEBRIDGE_TEST_EMAIL
-  SPACEBRIDGE_TEST_API_KEY: $SPACEBRIDGE_TEST_API_KEY
+  PRELOOP_TEST_PASSWORD: $PRELOOP_TEST_PASSWORD
+  PRELOOP_TEST_USERNAME: $PRELOOP_TEST_USERNAME
+  PRELOOP_TEST_EMAIL: $PRELOOP_TEST_EMAIL
+  PRELOOP_TEST_API_KEY: $PRELOOP_TEST_API_KEY
   FF_TIMESTAMPS: "true"
 
 cache:
@@ -59,9 +59,8 @@ pre-commit:
   before_script:
     - apt-get update && apt-get install -y git
     - pip install -U pip pre-commit ruff
-    - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
+    - pip install --no-cache-dir -e ./backend/preloop-models && pip install --no-cache-dir -e ./backend/preloop-sync
     - pip install -e ".[dev]"
-    - cp -r /app/SpaceLit/dist ./SpaceLit/dist
   script:
     - pre-commit install
     - sleep 1
@@ -84,229 +83,227 @@ pre-commit:
   before_script:
     - pip install -U pip
     - pip install pytest pytest-cov loguru
-    - pip install --no-cache-dir -e ./SpaceModels && pip install --no-cache-dir -e ./spacesync
+    - pip install --no-cache-dir -e ./backend/preloop-models && pip install --no-cache-dir -e ./backend/preloop-sync
     - pip install -e ".[dev]"
-    - mkdir -p ./SpaceLit/dist/assets
-    - touch ./SpaceLit/dist/index.html
-    - python ./SpaceModels/scripts/init_db.py --force
+    - python ./backend/preloop-models/scripts/init_db.py --force
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
     - export COVERAGE_FILE=".coverage.${CI_JOB_NAME}"
-    - pytest -v --cov spacebridge --cov SpaceModels --cov=spacesync --cov-report= --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
+    - pytest -v --cov preloop-models --cov=preloop-sync --cov-report= --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
   artifacts:
     paths:
       - ".coverage.*"
       - "report-*.xml"
     expire_in: 1 day
 
-test:unit:spacemodels:
+test:unit:preloop-models:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "SpaceModels/tests"
+    TEST_PATHS: "backend/preloop-models/tests"
 
 # test:unit:mcp:
 #   extends: .test:unit:template
 #   variables:
 #     TEST_PATHS: "mcp/tests"
 
-test:unit:spacesync:
+test:unit:preloop-sync:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "spacesync/tests"
+    TEST_PATHS: "backend/preloop-sync/tests"
 
-test:unit:spacebridge-other:
+test:unit:preloop-other:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/test_*.py tests/tools tests/services"
+    TEST_PATHS: "backend/preloop-ai/tests/test_*.py backend/preloop-ai/tests/tools backend/preloop-ai/tests/services"
 
-test:unit:spacebridge-endpoints-ai-models:
+test:unit:preloop-endpoints-ai-models:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_ai_models.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_ai_models.py"
 
-test:unit:spacebridge-endpoints-auth:
+test:unit:preloop-endpoints-auth:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_auth.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_auth.py"
 
-test:unit:spacebridge-endpoints-billing:
+test:unit:preloop-endpoints-billing:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_billing.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_billing.py"
 
-test:unit:spacebridge-endpoints-comments:
+test:unit:preloop-endpoints-comments:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_comments.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_comments.py"
 
-test:unit:spacebridge-endpoints-embedding:
+test:unit:preloop-endpoints-embedding:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_embedding.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_embedding.py"
 
-test:unit:spacebridge-endpoints-features:
+test:unit:preloop-endpoints-features:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_features.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_features.py"
 
-test:unit:spacebridge-endpoints-flows:
+test:unit:preloop-endpoints-flows:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_flows.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_flows.py"
 
-test:unit:spacebridge-endpoints-health:
+test:unit:preloop-endpoints-health:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_health.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_health.py"
 
-# test:unit:spacebridge-endpoints-issue-compliance:
+# test:unit:preloop-endpoints-issue-compliance:
 #   extends: .test:unit:template
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_issue_compliance.py"
 
-test:unit:spacebridge-endpoints-issue-dependencies:
+test:unit:preloop-endpoints-issue-dependencies:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_issue_dependencies.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_dependencies.py"
 
-test:unit:spacebridge-endpoints-issue-duplicates:
+test:unit:preloop-endpoints-issue-duplicates:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_issue_duplicates.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_duplicates.py"
 
-test:unit:spacebridge-endpoints-issues:
+test:unit:preloop-endpoints-issues:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_issues.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issues.py"
 
-# test:unit:spacebridge-endpoints-organizations:
+# test:unit:preloop-endpoints-organizations:
 #   extends: .test:unit:template
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_organizations.py"
 
-# test:unit:spacebridge-endpoints-projects:
+# test:unit:preloop-endpoints-projects:
 #   extends: .test:unit:template
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_projects.py"
 
-test:unit:spacebridge-endpoints-search:
+test:unit:preloop-endpoints-search:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_search.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_search.py"
 
-test:unit:spacebridge-endpoints-trackers:
+test:unit:preloop-endpoints-trackers:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_trackers.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_trackers.py"
 
-# test:unit:spacebridge-endpoints-version:
+# test:unit:preloop-endpoints-version:
 #   extends: .test:unit:template
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_version.py"
 
-test:unit:spacebridge-endpoints-webhooks:
+test:unit:preloop-endpoints-webhooks:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_webhooks.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_webhooks.py"
 
-test:unit:spacebridge-endpoints-mcp:
+test:unit:preloop-endpoints-mcp:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_mcp.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_mcp.py"
 
-test:unit:spacebridge-endpoints-mcp-servers:
+test:unit:preloop-endpoints-mcp-servers:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_mcp_servers.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_mcp_servers.py"
 
-test:unit:spacebridge-endpoints-invitations:
+test:unit:preloop-endpoints-invitations:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_invitations.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_invitations.py"
 
-test:unit:spacebridge-endpoints-teams:
+test:unit:preloop-endpoints-teams:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_teams.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_teams.py"
 
-test:unit:spacebridge-endpoints-users:
+test:unit:preloop-endpoints-users:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_users.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_users.py"
 
-test:unit:spacebridge-endpoints-tools:
+test:unit:preloop-endpoints-tools:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_tools.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_tools.py"
 
-test:unit:spacebridge-endpoints-issue-duplicate-stats:
+test:unit:preloop-endpoints-issue-duplicate-stats:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/endpoints/test_issue_duplicate_stats.py"
+    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_duplicate_stats.py"
 
-# test:unit:spacebridge-endpoints-websockets:
+# test:unit:preloop-endpoints-websockets:
 #   extends: .test:unit:template
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_websockets.py"
 
-test:unit:spacebridge-plugins:
+test:unit:preloop-plugins:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/plugins"
+    TEST_PATHS: "backend/preloop-ai/tests/plugins"
 
-test:unit:spacebridge-agents:
+test:unit:preloop-agents:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/agents"
+    TEST_PATHS: "backend/preloop-ai/tests/agents"
 
-test:unit:spacebridge-api:
+test:unit:preloop-api:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/api"
+    TEST_PATHS: "backend/preloop-ai/tests/api"
 
-test:unit:spacebridge-scripts:
+test:unit:preloop-scripts:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "tests/scripts"
+    TEST_PATHS: "backend/preloop-ai/tests/scripts"
 
 test:coverage:
   stage: qa
   needs:
-    - test:unit:spacemodels
+    - test:unit:preloop-models
     # - test:unit:mcp
-    - test:unit:spacesync
-    - test:unit:spacebridge-other
-    - test:unit:spacebridge-endpoints-ai-models
-    - test:unit:spacebridge-endpoints-auth
-    - test:unit:spacebridge-endpoints-billing
-    - test:unit:spacebridge-endpoints-comments
-    - test:unit:spacebridge-endpoints-embedding
-    - test:unit:spacebridge-endpoints-features
-    - test:unit:spacebridge-endpoints-flows
-    - test:unit:spacebridge-endpoints-health
-    # - test:unit:spacebridge-endpoints-issue-compliance
-    - test:unit:spacebridge-endpoints-issue-dependencies
-    - test:unit:spacebridge-endpoints-issue-duplicates
-    - test:unit:spacebridge-endpoints-issues
-    # - test:unit:spacebridge-endpoints-organizations
-    # - test:unit:spacebridge-endpoints-projects
-    - test:unit:spacebridge-endpoints-search
-    - test:unit:spacebridge-endpoints-trackers
-    # - test:unit:spacebridge-endpoints-version
-    - test:unit:spacebridge-endpoints-webhooks
-    - test:unit:spacebridge-endpoints-mcp
-    - test:unit:spacebridge-endpoints-mcp-servers
-    - test:unit:spacebridge-endpoints-invitations
-    - test:unit:spacebridge-endpoints-teams
-    - test:unit:spacebridge-endpoints-users
-    - test:unit:spacebridge-endpoints-tools
-    - test:unit:spacebridge-endpoints-issue-duplicate-stats
-    # - test:unit:spacebridge-endpoints-websockets
-    - test:unit:spacebridge-plugins
-    - test:unit:spacebridge-agents
-    - test:unit:spacebridge-api
-    - test:unit:spacebridge-scripts
+    - test:unit:preloop-sync
+    - test:unit:preloop-other
+    - test:unit:preloop-endpoints-ai-models
+    - test:unit:preloop-endpoints-auth
+    - test:unit:preloop-endpoints-billing
+    - test:unit:preloop-endpoints-comments
+    - test:unit:preloop-endpoints-embedding
+    - test:unit:preloop-endpoints-features
+    - test:unit:preloop-endpoints-flows
+    - test:unit:preloop-endpoints-health
+    # - test:unit:preloop-endpoints-issue-compliance
+    - test:unit:preloop-endpoints-issue-dependencies
+    - test:unit:preloop-endpoints-issue-duplicates
+    - test:unit:preloop-endpoints-issues
+    # - test:unit:preloop-endpoints-organizations
+    # - test:unit:preloop-endpoints-projects
+    - test:unit:preloop-endpoints-search
+    - test:unit:preloop-endpoints-trackers
+    # - test:unit:preloop-endpoints-version
+    - test:unit:preloop-endpoints-webhooks
+    - test:unit:preloop-endpoints-mcp
+    - test:unit:preloop-endpoints-mcp-servers
+    - test:unit:preloop-endpoints-invitations
+    - test:unit:preloop-endpoints-teams
+    - test:unit:preloop-endpoints-users
+    - test:unit:preloop-endpoints-tools
+    - test:unit:preloop-endpoints-issue-duplicate-stats
+    # - test:unit:preloop-endpoints-websockets
+    - test:unit:preloop-plugins
+    - test:unit:preloop-agents
+    - test:unit:preloop-api
+    - test:unit:preloop-scripts
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
     - pip install coverage junitparser
@@ -375,9 +372,9 @@ test:coverage:
   script:
     - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
-    - helm dependency update ./helm/spacebridge
-    - helm dependency build ./helm/spacebridge
-    - helm upgrade --install ${ENV_NAME} ./helm/spacebridge
+    - helm dependency update ./helm/preloop
+    - helm dependency build ./helm/preloop
+    - helm upgrade --install ${ENV_NAME} ./helm/preloop
       --namespace ${NAMESPACE}
       --set image.tag=${CI_COMMIT_SHA}
       --set spacelit.tag=${SPACELIT_COMMIT_SHA}
@@ -406,10 +403,10 @@ test:coverage:
       --set worker.pools[2].replicaCount=1
       --set worker.pools[2].tasks=process_webhook_event
       --set seed.enabled=${SEED_ENABLED}
-      --set seed.email=${SPACEBRIDGE_TEST_EMAIL}
-      --set seed.username=${SPACEBRIDGE_TEST_USERNAME}
-      --set seed.password=${SPACEBRIDGE_TEST_PASSWORD}
-      --set seed.apiKey=${SPACEBRIDGE_TEST_API_KEY}
+      --set seed.email=${PRELOOP_TEST_EMAIL}
+      --set seed.username=${PRELOOP_TEST_USERNAME}
+      --set seed.password=${PRELOOP_TEST_PASSWORD}
+      --set seed.apiKey=${PRELOOP_TEST_API_KEY}
       --set database.name=${DATABASE_NAME}
       --set ingress.enabled=true
       --set ingress.hosts[0].host=${TARGET_DOMAIN}
@@ -417,20 +414,9 @@ test:coverage:
       --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
       --set ingress.tls[0].hosts[0]=${TARGET_DOMAIN}
       --set ingress.tls[0].hosts[1]=www.${TARGET_DOMAIN}
-      --set ingress.tls[0].secretName=spacebridge-${ENV_NAME}-tls
-      --set environment.spacebridgeUrl=https://${TARGET_DOMAIN}
+      --set ingress.tls[0].secretName=preloop-${ENV_NAME}-tls
+      --set environment.preloopUrl=https://${TARGET_DOMAIN}
       --set database.cnpg.name=${DATABASE_NAME}
-      --set preloop.enabled=${PRELOOP_ENABLED}
-      --set preloop.tag=${SPACELIT_COMMIT_SHA}
-      --set preloop.ingress.host=${PRELOOP_DOMAIN}
-      --set preloop.ingress.hosts[0].host=${PRELOOP_DOMAIN}
-      --set preloop.ingress.hosts[0].paths[0].path=/
-      --set preloop.ingress.hosts[0].paths[0].pathType=ImplementationSpecific
-      --set preloop.ingress.tls[0].hosts[0]=${PRELOOP_DOMAIN}
-      --set preloop.ingress.tls[0].hosts[1]=www.${PRELOOP_DOMAIN}
-      --set preloop.ingress.tls[0].secretName=preloop-${ENV_NAME}-tls
-      --set preloop.url=https://${PRELOOP_DOMAIN}
-      --set environment.preloopUrl=https://${PRELOOP_DOMAIN}
 
     - echo "Helm deployment finished."
     - echo "Checking deployed environment..."
@@ -445,17 +431,15 @@ test:
   when: always
   stage: deploy
   variables:
-    NAMESPACE: spacebridge-test
+    NAMESPACE: preloop-test
     SEED_ENABLED: "true"
     ENV_NAME: "$CI_COMMIT_REF_NAME"
-    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.test.spacebridge.io"
-    PRELOOP_ENABLED: "false"
-    PRELOOP_DOMAIN: ""
+    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.test.preloop.ai"
     STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_TEST
     STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_TEST
   environment:
     name: test/$CI_COMMIT_REF_NAME
-    url: https://$CI_COMMIT_REF_NAME.test.spacebridge.io
+    url: https://$CI_COMMIT_REF_NAME.test.preloop.ai
     on_stop: stop-test-env
     auto_stop_in: 4 hours
 
@@ -463,15 +447,13 @@ review:
   extends: .deploy:template
   environment:
     name: review/$CI_COMMIT_REF_NAME
-    url: https://$CI_COMMIT_REF_NAME.review.spacebridge.io
+    url: https://$CI_COMMIT_REF_NAME.review.preloop.ai
     on_stop: stop-review-env
   variables:
-    NAMESPACE: spacebridge-review
+    NAMESPACE: preloop-review
     ENV_NAME: "$CI_COMMIT_REF_NAME"
     SEED_ENABLED: "true"
-    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.review.spacebridge.io"
-    PRELOOP_ENABLED: "true"
-    PRELOOP_DOMAIN: "$CI_COMMIT_REF_NAME.review.preloop.ai"
+    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.review.preloop.ai"
     STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_REVIEW
     STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_REVIEW
   only:
@@ -481,52 +463,48 @@ review:
 staging:
   environment:
     name: staging
-    url: https://staging.spacebridge.io
+    url: https://staging.preloop.ai
   extends:
     - .deploy:template
   variables:
-    ENV_NAME: "spacebridge"
+    ENV_NAME: "preloop"
     SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
-    NAMESPACE: spacebridge-staging
+    NAMESPACE: preloop-staging
     STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_STAGING
     STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_STAGING
-    DATABASE_NAME: spacebridge-db
+    DATABASE_NAME: preloop-db
     SEED_ENABLED: false
     TARGET_DOMAIN: $STAGING_DOMAIN
-    PRELOOP_ENABLED: "true"
-    PRELOOP_DOMAIN: "staging.preloop.ai"
 
 prod:
   extends: .deploy:template
   environment:
     name: production
-    url: https://spacebridge.io
+    url: https://preloop.ai
   when: manual
   variables:
-    ENV_NAME: "spacebridge"
+    ENV_NAME: "preloop"
     SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
-    NAMESPACE: spacebridge
+    NAMESPACE: preloop-prod
     STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_PROD
     STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_PROD
-    DATABASE_NAME: spacebridge-db
+    DATABASE_NAME: preloop-db
     SEED_ENABLED: false
     TARGET_DOMAIN: $PROD_DOMAIN
-    PRELOOP_ENABLED: "true"
-    PRELOOP_DOMAIN: "preloop.ai"
   before_script:
     - set -e
     - export POD_BACKUP_PATH="/run/tmp/db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
     - export LOCAL_BACKUP_FILENAME="db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
     - echo "Starting database backup inside pod $DB_POD_NAME to $POD_BACKUP_PATH..."
-    - kubectl exec -n spacebridge spacebridge-db-1 -- bash -c "pg_dump -U postgres -d spacebridge -F c -b -v -f $POD_BACKUP_PATH" # Removed --xz
+    - kubectl exec -n preloop-prod preloop-db-1 -- bash -c "pg_dump -U postgres -d preloop -F c -b -v -f $POD_BACKUP_PATH" # Removed --xz
     - echo "Backup created inside pod. Copying to runner..."
-    - kubectl cp -n spacebridge spacebridge-db-1:$POD_BACKUP_PATH "$LOCAL_BACKUP_FILENAME"
+    - kubectl cp -n preloop-prod preloop-db-1:$POD_BACKUP_PATH "$LOCAL_BACKUP_FILENAME"
     - echo "Compressing backup file on runner..."
     - apk add --no-cache xz # Ensure xz is available
     - xz "$LOCAL_BACKUP_FILENAME" # Compress the file locally
     - export LOCAL_COMPRESSED_FILENAME="$LOCAL_BACKUP_FILENAME.xz" # Define compressed filename variable
     - echo "Cleaning up backup file inside pod..."
-    - kubectl exec -n spacebridge spacebridge-db-1 -- rm "$POD_BACKUP_PATH"
+    - kubectl exec -n preloop-prod preloop-db-1 -- rm "$POD_BACKUP_PATH"
     - if [ -n "$S3_BUCKET" ] && [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_DEFAULT_REGION" ]; then
         apk add --no-cache aws-cli;
         echo "Uploading backup to S3 bucket $S3_BUCKET...";
@@ -546,7 +524,7 @@ prod:
   needs: [test]
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   variables:
-    SPACEBRIDGE_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.spacebridge.io"
+    PRELOOP_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.preloop.ai"
   before_script:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
     - playwright install
@@ -600,13 +578,13 @@ test:integration:api:jira:
     - branches
   script:
     - helm delete $CI_COMMIT_REF_NAME --namespace $NAMESPACE
-    - kubectl delete job --namespace $NAMESPACE $CI_COMMIT_REF_NAME-spacebridge-migration-job $CI_COMMIT_REF_NAME-spacebridge-init-db-job $CI_COMMIT_REF_NAME-spacebridge-webhook-cleanup-job || true
+    - kubectl delete job --namespace $NAMESPACE $CI_COMMIT_REF_NAME-preloop-migration-job $CI_COMMIT_REF_NAME-preloop-init-db-job $CI_COMMIT_REF_NAME-preloop-webhook-cleanup-job || true
 
 stop-test-env:
   extends: .stop-env:template
   when: on_success
   variables:
-    NAMESPACE: "spacebridge-test"
+    NAMESPACE: "preloop-test"
   environment:
     name: test/$CI_COMMIT_REF_NAME
 
@@ -614,7 +592,7 @@ stop-review-env:
   extends: .stop-env:template
   when: manual
   variables:
-    NAMESPACE: "spacebridge-review"
+    NAMESPACE: "preloop-review"
   environment:
     name: review/$CI_COMMIT_REF_NAME
 

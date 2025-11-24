@@ -1,1 +1,1 @@
-"""Tests for SpaceBridge plugins."""
+"""Tests for Preloop AI plugins."""

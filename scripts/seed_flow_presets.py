@@ -1,8 +1,8 @@
 import asyncio
 from dotenv import load_dotenv
-from spacemodels.db.session import get_db_session
-from spacemodels.crud.flow import CRUDFlow
-from spacemodels.schemas.flow import FlowCreate
+from preloop_models.db.session import get_db_session
+from preloop_models.crud.flow import CRUDFlow
+from preloop_models.schemas.flow import FlowCreate
 
 
 async def seed_presets():

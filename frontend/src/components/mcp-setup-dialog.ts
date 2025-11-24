@@ -115,32 +115,32 @@ export class MCPSetupDialog extends LitElement {
         <div class="ide-tabs">
           <div
             class="ide-logo-container ${this.activeTab === 'claude-code'
-              ? 'active'
-              : ''}"
+        ? 'active'
+        : ''}"
             @click=${() => this._handleTabClick('claude-code')}
           >
             <img src="/images/Claude_AI_logo.png" alt="Claude Code" />
           </div>
           <div
             class="ide-logo-container ${this.activeTab === 'cursor'
-              ? 'active'
-              : ''}"
+        ? 'active'
+        : ''}"
             @click=${() => this._handleTabClick('cursor')}
           >
             <img src="/images/cursor_logo.png" alt="Cursor" />
           </div>
           <div
             class="ide-logo-container ${this.activeTab === 'windsurf'
-              ? 'active'
-              : ''}"
+        ? 'active'
+        : ''}"
             @click=${() => this._handleTabClick('windsurf')}
           >
             <img src="/images/windsurf_logo.png" alt="Windsurf" />
           </div>
           <div
             class="ide-logo-container ${this.activeTab === 'aider'
-              ? 'active'
-              : ''}"
+        ? 'active'
+        : ''}"
             @click=${() => this._handleTabClick('aider')}
           >
             <img src="/images/aider_logo.svg" alt="Aider CE" />
@@ -149,35 +149,35 @@ export class MCPSetupDialog extends LitElement {
 
         <div class="tab-content">
           ${this.activeTab === 'claude-code'
-            ? html`
+        ? html`
                 <div>
                   <h5>Prerequisites</h5>
                   <ul>
                     <li>
-                      SpaceBridge API key (create one in Settings → API Keys)
+                      Preloop AI API key (create one in Settings → API Keys)
                     </li>
                     <li>Claude Code CLI</li>
                   </ul>
                   <h5>Setup</h5>
                   <p>
-                    Run this command in your terminal to add SpaceBridge to
+                    Run this command in your terminal to add Preloop AI to
                     Claude Code:
                   </p>
                   <pre><code>claude mcp add --transport http preloop ${mcpUrl} --header "Authorization: Bearer YOUR_API_KEY_HERE"</code></pre>
                   <p style="margin-top: 1rem;">
                     Replace <code>YOUR_API_KEY_HERE</code> with your actual
-                    SpaceBridge API key.
+                    Preloop AI API key.
                   </p>
                 </div>
               `
-            : ''}
+        : ''}
           ${this.activeTab === 'cursor'
-            ? html`
+        ? html`
                 <div>
                   <h5>Prerequisites</h5>
                   <ul>
                     <li>
-                      SpaceBridge API key (create one in Settings → API Keys)
+                      Preloop AI API key (create one in Settings → API Keys)
                     </li>
                     <li>Cursor IDE</li>
                   </ul>
@@ -185,7 +185,7 @@ export class MCPSetupDialog extends LitElement {
                   <p>Add to your Cursor MCP settings:</p>
                   <pre><code>{
   "mcpServers": {
-    "spacebridge": {
+    "preloop": {
       "url": "${mcpUrl}",
       "transport": "http-streaming",
       "headers": {
@@ -196,14 +196,14 @@ export class MCPSetupDialog extends LitElement {
 }</code></pre>
                 </div>
               `
-            : ''}
+        : ''}
           ${this.activeTab === 'windsurf'
-            ? html`
+        ? html`
                 <div>
                   <h5>Prerequisites</h5>
                   <ul>
                     <li>
-                      SpaceBridge API key (create one in Settings → API Keys)
+                      Preloop AI API key (create one in Settings → API Keys)
                     </li>
                     <li>Windsurf IDE</li>
                   </ul>
@@ -211,7 +211,7 @@ export class MCPSetupDialog extends LitElement {
                   <p>Add to your Windsurf MCP settings:</p>
                   <pre><code>{
   "mcpServers": {
-    "spacebridge": {
+    "preloop": {
       "url": "${mcpUrl}",
       "transport": "http-streaming",
       "headers": {
@@ -222,14 +222,14 @@ export class MCPSetupDialog extends LitElement {
 }</code></pre>
                 </div>
               `
-            : ''}
+        : ''}
           ${this.activeTab === 'aider'
-            ? html`
+        ? html`
                 <div>
                   <h5>Prerequisites</h5>
                   <ul>
                     <li>
-                      SpaceBridge API key (create one in Settings → API Keys)
+                      Preloop AI API key (create one in Settings → API Keys)
                     </li>
                     <li>
                       Aider CE (Community Edition with MCP support):
@@ -243,7 +243,7 @@ export class MCPSetupDialog extends LitElement {
                   <p>Create or edit <code>~/.aider/mcp_settings.json</code>:</p>
                   <pre><code>{
   "mcpServers": {
-    "spacebridge": {
+    "preloop": {
       "url": "${mcpUrl}",
       "transport": "http-streaming",
       "headers": {
@@ -255,7 +255,7 @@ export class MCPSetupDialog extends LitElement {
                   <p style="margin-top: 1rem;">
                     <strong>Usage:</strong> Run <code>aider</code> in your
                     project directory. It will automatically load MCP tools from
-                    SpaceBridge.
+                    Preloop AI.
                   </p>
                   <p
                     style="margin-top: 0.5rem; color: var(--sl-color-neutral-600); font-size: 0.875rem;"
@@ -265,7 +265,7 @@ export class MCPSetupDialog extends LitElement {
                   </p>
                 </div>
               `
-            : ''}
+        : ''}
         </div>
 
         <p class="help-text" style="margin-top: var(--sl-spacing-medium);">

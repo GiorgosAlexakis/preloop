@@ -659,7 +659,7 @@ export class ToolsView extends LitElement {
       <sl-card class="builtin-server-card">
         <div class="builtin-card-content">
           <div class="builtin-server-header">
-            <h3 class="builtin-server-name">SpaceBridge MCP Server</h3>
+            <h3 class="builtin-server-name">Preloop AI MCP Server</h3>
             <sl-badge variant="success" size="small">Built-in</sl-badge>
           </div>
           <p class="builtin-server-url" title=${mcpUrl}>${mcpUrl}</p>
@@ -718,52 +718,52 @@ export class ToolsView extends LitElement {
       <div class="column-layout">
         <div class="main-column">
           ${this.isAddingMCPServer
-            ? html`<mcp-server-form
+        ? html`<mcp-server-form
                 @server-added=${this.handleServerAdded}
                 @close-modal=${this.closeServerForm}
               ></mcp-server-form>`
-            : ''}
+        : ''}
           ${this.editingMCPServer
-            ? html`<mcp-server-form
+        ? html`<mcp-server-form
                 .server=${this.editingMCPServer}
                 @server-updated=${this.handleServerUpdated}
                 @close-modal=${this.closeServerForm}
               ></mcp-server-form>`
-            : ''}
+        : ''}
           ${this.error
-            ? html`<sl-alert variant="danger" open>
+        ? html`<sl-alert variant="danger" open>
                 <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
                 <strong>Error:</strong> ${this.error}
               </sl-alert>`
-            : ''}
+        : ''}
           <div class="proxy-notice">
             <div class="proxy-notice-text">
               Tools from external MCP servers are proxied through the
-              SpaceBridge MCP server. Any tool (built-in or external) can be
+              Preloop AI MCP server. Any tool (built-in or external) can be
               "prelooped" with a human approval policy, requiring review and
               approval by the appropriate users before allowing tool executions
               to run.
             </div>
           </div>
           ${this.loading
-            ? html`<div class="loading-indicator">
+        ? html`<div class="loading-indicator">
                 <sl-spinner></sl-spinner>
               </div>`
-            : html`
+        : html`
                 <div class="servers-grid">
                   ${this.renderBuiltinMCPCard()}
                   ${repeat(
-                    this.mcpServers,
-                    (server) => server.id,
-                    (server) =>
-                      html`<mcp-server-card
+          this.mcpServers,
+          (server) => server.id,
+          (server) =>
+            html`<mcp-server-card
                         .server=${server}
                         @server-edit=${this.handleServerEdit}
                         @server-scan=${this.handleScanMCPServer}
                         @server-deleted=${this.handleDeleteMCPServer}
                         @server-toggle-enabled=${this.handleToggleMCPServer}
                       ></mcp-server-card>`
-                  )}
+        )}
                 </div>
 
                 <div class="tabs">
@@ -780,31 +780,31 @@ export class ToolsView extends LitElement {
                     Built-in (${builtinTools.length})
                   </button>
                   ${this.mcpServers.map(
-                    (server) => html`
+          (server) => html`
                       <button
                         class="tab ${this.activeTab === server.id
-                          ? 'active'
-                          : ''}"
+              ? 'active'
+              : ''}"
                         @click=${() => (this.activeTab = server.id)}
                       >
                         ${server.name} (${server.tool_count || 0})
                       </button>
                     `
-                  )}
+        )}
                 </div>
 
                 ${filteredTools.length === 0
-                  ? html`<div class="empty-state">
+            ? html`<div class="empty-state">
                       <p>No tools available in this category.</p>
                     </div>`
-                  : html`
+            : html`
                       <div class="tools-grid">
                         ${repeat(
-                          filteredTools,
-                          (tool) =>
-                            `${tool.name}-${tool.source}-${tool.source_id}`,
-                          (tool) =>
-                            html`<tool-card
+              filteredTools,
+              (tool) =>
+                `${tool.name}-${tool.source}-${tool.source_id}`,
+              (tool) =>
+                html`<tool-card
                               .tool=${tool}
                               .policies=${this.approvalPolicies}
                               @toggle-enabled=${this.handleToggleEnabled}
@@ -814,7 +814,7 @@ export class ToolsView extends LitElement {
                               @update-policy=${this.handleUpdatePolicy}
                               @save-condition=${this.handleSaveCondition}
                             ></tool-card>`
-                        )}
+            )}
                       </div>
                     `}
               `}

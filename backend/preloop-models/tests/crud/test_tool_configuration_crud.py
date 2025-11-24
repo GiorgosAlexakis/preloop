@@ -6,8 +6,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.tool_configuration import CRUDToolConfiguration
-from spacemodels.schemas.tool_configuration import (
+from preloop_models.crud.tool_configuration import CRUDToolConfiguration
+from preloop_models.schemas.tool_configuration import (
     ToolConfigurationCreate,
     ToolConfigurationUpdate,
 )

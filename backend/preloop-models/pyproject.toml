@@ -3,13 +3,13 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "spacemodels"
+name = "preloop-models"
 version = "0.1.0"
 authors = [
-  {name = "Dimitris Moraitis", email = "dimo@spacecode.ai"},
+  {name = "Dimitris Moraitis", email = "dimitris@spacecode.ai"},
   {name = "Yannis Chatzikonstantinou", email = "yannis@spacecode.ai"},
 ]
-description = "SQLAlchemy ORM models for SpaceBridge ecosystem"
+description = "SQLAlchemy ORM models for Preloop AI"
 readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
@@ -42,8 +42,8 @@ dependencies = [
 
 
 [project.urls]
-"Homepage" = "https://gitlab.spacecode.ai/spacecode/spacemodels"
-"Bug Tracker" = "https://gitlab.spacecode.ai/spacecode/spacemodels/issues"
+"Homepage" = "https://preloop.ai"
+"Bug Tracker" = "https://github.com/spacecode-ai/preloop-ai/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -66,3 +66,9 @@ omit = [
     "tests/*",
     "*/migrations/*"
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["preloop_models"]
+exclude = ["preloop_models.tests*"]
+namespaces = false

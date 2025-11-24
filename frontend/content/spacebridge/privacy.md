@@ -4,7 +4,7 @@ Effective Date: 2025-06-22
 
 ## 1. Introduction
 
-Welcome to SpaceBridge. We are committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our services.
+Welcome to Preloop AI. We are committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our services.
 
 ## 2. Information We Collect
 
@@ -35,4 +35,4 @@ We may update this Privacy Policy from time to time. We will notify you of any c
 
 ## 7. Contact Us
 
-If you have any questions about this Privacy Policy, please contact us at privacy@spacebridge.io.
+If you have any questions about this Privacy Policy, please contact us at privacy@preloop_ai.io.

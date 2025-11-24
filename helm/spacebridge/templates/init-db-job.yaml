@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-init-db-job
+  name: {{ include "preloop_ai.fullname" . }}-init-db-job
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "-5"
@@ -12,7 +12,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "spacebridge.selectorLabels" . | nindent 8 }}
+        {{- include "preloop_ai.selectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
       containers:
@@ -26,6 +26,6 @@ spec:
               python scripts/init_db.py --force
           env:
             - name: DATABASE_URL
-              value: {{ include "spacebridge.databaseUrl" . }}
+              value: {{ include "preloop_ai.databaseUrl" . }}
             - name: OPENAI_API_KEY
               value: {{ .Values.config.openai.apiKey }}

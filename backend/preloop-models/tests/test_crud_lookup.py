@@ -5,8 +5,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
-from spacemodels.crud import crud_organization, crud_project, crud_issue, crud_comment
-from spacemodels.models import Organization, Project, Issue, Tracker
+from preloop_models.crud import (
+    crud_organization,
+    crud_project,
+    crud_issue,
+    crud_comment,
+)
+from preloop_models.models import Organization, Project, Issue, Tracker
 
 
 def test_organization_get_by_name(db_session: Session, create_account):

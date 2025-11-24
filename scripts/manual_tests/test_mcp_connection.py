@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from spacebridge.services.mcp_client_pool import MCPClient
+from preloop_ai.services.mcp_client_pool import MCPClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

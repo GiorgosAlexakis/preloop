@@ -2,13 +2,13 @@ import unittest
 from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime
 
-from spacesync.trackers.gitlab import GitLabTracker
+from preloop_sync.trackers.gitlab import GitLabTracker
 # Assuming logger is available or mockable; for now, we proceed
-# from spacesync.config import logger # If needed for more complex logger mocking
+# from preloop_sync.config import logger # If needed for more complex logger mocking
 
 
 class TestGitLabTrackerComments(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")  # Patch where it's looked up
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")  # Patch where it's looked up
     async def test_get_issues_fetches_and_transforms_comments(
         self, mock_gitlab_constructor
     ):
@@ -178,7 +178,7 @@ if __name__ == "__main__":
 
 
 class TestGitLabTracker(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_organizations(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -195,7 +195,7 @@ class TestGitLabTracker(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(orgs), 1)
         self.assertEqual(orgs[0]["name"], "Test Group")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_projects(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -219,7 +219,7 @@ class TestGitLabTracker(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(projects), 1)
         self.assertEqual(projects[0]["name"], "Test Project")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_issue(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -279,8 +279,8 @@ class TestGitLabTracker(unittest.IsolatedAsyncioTestCase):
 
 
 class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
-    @patch("spacesync.trackers.gitlab.crud_webhook")
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.crud_webhook")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_register_group_webhook_success(
         self, mock_gitlab_constructor, mock_crud_webhook
     ):
@@ -318,8 +318,8 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_group.hooks.create.assert_called_once()
         mock_crud_webhook.create.assert_called_once()
 
-    @patch("spacesync.trackers.gitlab.crud_webhook")
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.crud_webhook")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_register_group_webhook_already_exists(
         self, mock_gitlab_constructor, mock_crud_webhook
     ):
@@ -350,7 +350,7 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_group.hooks.create.assert_not_called()
         mock_crud_webhook.create.assert_not_called()
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_register_group_webhook_not_supported(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -387,7 +387,7 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, "group_hooks_not_supported")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_register_group_webhook_api_error(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -418,8 +418,8 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result)
 
-    @patch("spacesync.trackers.gitlab.crud_webhook")
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.crud_webhook")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_register_project_webhook_success(
         self, mock_gitlab_constructor, mock_crud_webhook
     ):
@@ -457,8 +457,8 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_project.hooks.create.assert_called_once()
         mock_crud_webhook.create.assert_called_once()
 
-    @patch("spacesync.trackers.gitlab.crud_webhook")
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.crud_webhook")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_register_project_webhook_already_exists(
         self, mock_gitlab_constructor, mock_crud_webhook
     ):
@@ -494,7 +494,7 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         mock_project.hooks.create.assert_not_called()
         mock_crud_webhook.create.assert_not_called()
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_register_project_webhook_api_error(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -530,7 +530,7 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result)
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_unregister_project_webhook_success(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -551,7 +551,7 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result)
         mock_project.hooks.delete.assert_called_once_with("hook-456")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_unregister_group_webhook_success(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -572,7 +572,7 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result)
         mock_group.hooks.delete.assert_called_once_with("hook-123")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_unregister_webhook_api_error(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -598,7 +598,7 @@ class TestGitLabTrackerWebhooks(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result)
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_issue(self, mock_gitlab_constructor):
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance

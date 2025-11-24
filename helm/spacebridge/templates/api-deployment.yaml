@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-api
+  name: {{ include "preloop_ai.fullname" . }}-api
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
     app: api
 spec:
@@ -12,7 +12,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "spacebridge.selectorLabels" . | nindent 6 }}
+      {{- include "preloop_ai.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: api
   template:
     metadata:
@@ -21,14 +21,14 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "spacebridge.selectorLabels" . | nindent 8 }}
+        {{- include "preloop_ai.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "spacebridge.serviceAccountName" . }}
+      serviceAccountName: {{ include "preloop_ai.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -38,12 +38,8 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
-            - name: SPACEBRIDGE_URL
-              {{- if .Values.preloop.enabled }}
+            - name: PRELOOP_URL
               value: {{ .Values.environment.preloopUrl | quote }}
-              {{- else }}
-              value: {{ .Values.environment.spacebridgeUrl | quote }}
-              {{- end }}
             - name: HOST
               value: "0.0.0.0"
             - name: PORT
@@ -51,7 +47,7 @@ spec:
             - name: DEBUG
               value: {{ .Values.environment.debug | quote }}
             - name: DATABASE_URL
-              value: {{ include "spacebridge.databaseUrl" . }}
+              value: {{ include "preloop_ai.databaseUrl" . }}
             - name: AGENT_EXECUTION_NAMESPACE
               value: {{ .Values.agentExecution.namespace.create | ternary .Values.agentExecution.namespace.name .Release.Namespace | quote }}
             - name: USE_KUBERNETES
@@ -59,7 +55,7 @@ spec:
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "preloop_ai.fullname" . }}
                   key: jwt-secret
             - name: JWT_ALGORITHM
               value: {{ .Values.environment.jwtAlgorithm | quote }}
@@ -73,14 +69,14 @@ spec:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "preloop_ai.fullname" . }}
                   key: openai-api-key
             {{- end }}
             {{- if .Values.config.anthropic.apiKey }}
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" . }}
+                  name: {{ include "preloop_ai.fullname" . }}
                   key: anthropic-api-key
             {{- end }}
             {{- if .Values.config.smtp.host }}
@@ -103,7 +99,7 @@ spec:
             - name: SENTRY_DSN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" $ }}
+                  name: {{ include "preloop_ai.fullname" $ }}
                   key: sentry-dsn
             {{- end }}
             - name: PROFILING_ENABLED
@@ -150,7 +146,7 @@ spec:
       {{- if .Values.profiling.enabled }}
         - name: profiling-storage
           persistentVolumeClaim:
-            claimName: {{ include "spacebridge.fullname" . }}-profiling
+            claimName: {{ include "preloop_ai.fullname" . }}-profiling
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SpaceLit is a modern web application frontend for SpaceBridge, built with:
+SpaceLit is a modern web application frontend for Preloop AI, built with:
 - **Lit** (Web Components framework)
 - **TypeScript** for type safety
 - **Vaadin components** for UI (Vaadin router, forms, layouts)
@@ -12,7 +12,7 @@ SpaceLit is a modern web application frontend for SpaceBridge, built with:
 - **Vite** for build tooling and development server
 - **Chart.js** for data visualization
 
-The application is a single-page application (SPA) that provides an interface for managing issue trackers through the SpaceBridge API.
+The application is a single-page application (SPA) that provides an interface for managing issue trackers through the Preloop AI API.
 
 ## Development Commands
 
@@ -65,7 +65,7 @@ npm run docker:test   # Run tests in container
 ```
 / - Landing page
 /login - Login form
-/register - Registration form  
+/register - Registration form
 /forgot-password - Password reset
 /console - Authenticated app shell
   ├── / - Dashboard
@@ -124,7 +124,7 @@ npm run docker:test   # Run tests in container
 npm run docker:dev     # or ./docker-run.sh dev
 
 # Production with real API
-npm run docker:prod    # or ./docker-run.sh prod  
+npm run docker:prod    # or ./docker-run.sh prod
 
 # Production with mock API (testing)
 npm run docker:mock    # or ./docker-run.sh mock

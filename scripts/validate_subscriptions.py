@@ -12,9 +12,9 @@ import sys
 import stripe
 
 
-from spacebridge.config import settings
-from spacemodels.models import Subscription
-from spacemodels.db.session import get_db_session
+from preloop_ai.config import settings
+from preloop_models.models import Subscription
+from preloop_models.db.session import get_db_session
 
 
 # Add the project root to the Python path

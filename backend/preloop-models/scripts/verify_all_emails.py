@@ -6,8 +6,8 @@ Script to set the email_verified flag to True for all Account records in the dat
 import sys
 import click
 from sqlalchemy.orm import Session
-from spacemodels.models.account import Account  # Corrected import path if needed
-from spacemodels.db.session import get_db_session  # Corrected import path if needed
+from preloop_models.models.account import Account  # Corrected import path if needed
+from preloop_models.db.session import get_db_session  # Corrected import path if needed
 
 # Ensure the project root is in the Python path if running script directly
 # import os

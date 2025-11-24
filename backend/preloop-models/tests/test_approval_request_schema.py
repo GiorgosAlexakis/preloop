@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from spacemodels.schemas.approval_request import (
+from preloop_models.schemas.approval_request import (
     ApprovalDecision,
     ApprovalRequestBase,
     ApprovalRequestCreate,

@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-webhook-cleanup-job
+  name: {{ include "preloop_ai.fullname" . }}-webhook-cleanup-job
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": pre-delete
     "helm.sh/hook-weight": "-5"
@@ -12,23 +12,19 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "spacebridge.selectorLabels" . | nindent 8 }}
+        {{- include "preloop_ai.selectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
       containers:
         - name: webhook-cleanup
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
-          command: ["spacesync", "unregister-webhooks", "--cleanup-all"]
+          command: ["preloop-sync", "unregister-webhooks", "--cleanup-all"]
           env:
             - name: DATABASE_URL
-              value: {{ include "spacebridge.databaseUrl" . }}
-            - name: SPACEBRIDGE_URL
-              {{- if $.Values.preloop.enabled }}
+              value: {{ include "preloop_ai.databaseUrl" . }}
+            - name: PRELOOP_URL
               value: {{ $.Values.environment.preloopUrl | quote }}
-              {{- else }}
-              value: {{ $.Values.environment.spacebridgeUrl | quote }}
-              {{- end }}
             - name: LOG_LEVEL
               value: "INFO"
       # Set a reasonable timeout for the job

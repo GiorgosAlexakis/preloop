@@ -5,9 +5,9 @@ Integration tests for tracker methods called by the API.
 from unittest.mock import MagicMock, patch, AsyncMock
 from unittest import IsolatedAsyncioTestCase
 
-from spacesync.trackers.github import GitHubTracker
-from spacesync.trackers.gitlab import GitLabTracker
-from spacesync.trackers.jira import JiraTracker
+from preloop_sync.trackers.github import GitHubTracker
+from preloop_sync.trackers.gitlab import GitLabTracker
+from preloop_sync.trackers.jira import JiraTracker
 
 
 class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
@@ -111,7 +111,7 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
             expected_endpoint, params={"per_page": 100}
         )
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_gitlab_tracker_get_issue_api_integration(
         self, mock_gitlab_constructor
     ):
@@ -175,7 +175,7 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
         # Verify the project_id from connection_details was used
         tracker._make_request.assert_any_call(mock_gl_instance.projects.get, "123")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_gitlab_tracker_get_comments_api_integration(
         self, mock_gitlab_constructor
     ):
@@ -325,7 +325,7 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
         self.assertFalse(hasattr(github_tracker, "list_projects"))
 
         # Test GitLab tracker has get_projects
-        with patch("spacesync.trackers.gitlab.gitlab.Gitlab"):
+        with patch("preloop_sync.trackers.gitlab.gitlab.Gitlab"):
             gitlab_tracker = GitLabTracker(
                 "tracker-1", "api-key", {"url": "https://gitlab.com"}
             )
@@ -353,7 +353,7 @@ class TestTrackerApiIntegration(IsolatedAsyncioTestCase):
         self.assertTrue(callable(github_tracker.get_comments))
 
         # Test GitLab tracker
-        with patch("spacesync.trackers.gitlab.gitlab.Gitlab"):
+        with patch("preloop_sync.trackers.gitlab.gitlab.Gitlab"):
             gitlab_tracker = GitLabTracker(
                 "tracker-1", "api-key", {"url": "https://gitlab.com"}
             )

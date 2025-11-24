@@ -4,9 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spacemodels.crud import flow_execution as crud_flow_execution
-from spacemodels.schemas.flow_execution import FlowExecutionCreate, FlowExecutionUpdate
-from spacemodels.models.flow_execution import FlowExecution
+from preloop_models.crud import flow_execution as crud_flow_execution
+from preloop_models.schemas.flow_execution import (
+    FlowExecutionCreate,
+    FlowExecutionUpdate,
+)
+from preloop_models.models.flow_execution import FlowExecution
 
 
 @pytest.fixture
@@ -86,7 +89,7 @@ async def test_delete_flow_execution(mock_db_session):
     mock_flow_execution = FlowExecution(id=flow_execution_id)
 
     with patch(
-        "spacemodels.crud.flow_execution.get_flow_execution",
+        "preloop_models.crud.flow_execution.get_flow_execution",
         new=AsyncMock(return_value=mock_flow_execution),
     ):
         # Act

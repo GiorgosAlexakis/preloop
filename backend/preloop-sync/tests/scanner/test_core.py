@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
 from sqlalchemy.orm import Session
 
-from spacemodels.models import (
+from preloop_models.models import (
     Organization,
     Project,
     Tracker,
@@ -12,7 +12,7 @@ from spacemodels.models import (
     Issue,
     Account,
 )
-from spacesync.scanner.core import (
+from preloop_sync.scanner.core import (
     scan_tracker,
     TrackerClient,
     _process_organization,
@@ -66,8 +66,8 @@ def mock_account():
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core._process_organization")
-@patch("spacesync.scanner.core.TrackerClient")
+@patch("preloop_sync.scanner.core._process_organization")
+@patch("preloop_sync.scanner.core.TrackerClient")
 async def test_scan_tracker_happy_path(
     mock_tracker_client_class,
     mock_process_org,
@@ -119,8 +119,8 @@ async def test_scan_tracker_skips_deleted_tracker(mock_db_session, mock_tracker)
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core._process_organization")
-@patch("spacesync.scanner.core.TrackerClient")
+@patch("preloop_sync.scanner.core._process_organization")
+@patch("preloop_sync.scanner.core.TrackerClient")
 async def test_scan_tracker_skips_recently_polled_org(
     mock_tracker_client_class,
     mock_process_org,
@@ -148,7 +148,7 @@ async def test_scan_tracker_skips_recently_polled_org(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.TrackerClient")
+@patch("preloop_sync.scanner.core.TrackerClient")
 async def test_scan_tracker_force_update_ignores_polling_time(
     mock_tracker_client_class,
     mock_db_session,
@@ -164,7 +164,7 @@ async def test_scan_tracker_force_update_ignores_polling_time(
     mock_client_instance.scan_organizations.return_value = [mock_organization]
     mock_tracker_client_class.return_value = mock_client_instance
 
-    with patch("spacesync.scanner.core._process_organization") as mock_process_org:
+    with patch("preloop_sync.scanner.core._process_organization") as mock_process_org:
         mock_process_org.return_value = {
             "projects": 1,
             "issues": 5,
@@ -183,13 +183,13 @@ async def test_scan_tracker_force_update_ignores_polling_time(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_organization")
+@patch("preloop_sync.scanner.core.crud_organization")
 async def test_tracker_client_scan_organizations(
     mock_crud_org, mock_db_session, mock_tracker
 ):
     """Test that TrackerClient.scan_organizations correctly processes organizations."""
     # Arrange
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         mock_client = AsyncMock()
         mock_client.get_organizations.return_value = [
             {"id": "test-org", "name": "Test Org"}
@@ -218,13 +218,13 @@ async def test_tracker_client_scan_organizations(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_project")
+@patch("preloop_sync.scanner.core.crud_project")
 async def test_tracker_client_scan_projects(
     mock_crud_project, mock_db_session, mock_tracker, mock_organization
 ):
     """Test that TrackerClient.scan_projects correctly processes projects."""
     # Arrange
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         mock_client = AsyncMock()
         mock_client.get_projects.return_value = [
             {"id": "test-project", "name": "Test Project"}
@@ -253,9 +253,9 @@ async def test_tracker_client_scan_projects(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_issue")
-@patch("spacesync.scanner.core.crud_comment")
-@patch("spacesync.scanner.core.crud_issue_embedding")
+@patch("preloop_sync.scanner.core.crud_issue")
+@patch("preloop_sync.scanner.core.crud_comment")
+@patch("preloop_sync.scanner.core.crud_issue_embedding")
 async def test_tracker_client_scan_issues_new_issue(
     mock_crud_embedding,
     mock_crud_comment,
@@ -267,7 +267,7 @@ async def test_tracker_client_scan_issues_new_issue(
 ):
     """Test that TrackerClient.scan_issues correctly processes a new issue."""
     # Arrange
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         mock_internal_client = AsyncMock()
         mock_internal_client.get_issues.return_value = [
             {"id": "1", "updated_at": "2025-01-01T00:00:00Z"}
@@ -299,9 +299,9 @@ async def test_tracker_client_scan_issues_new_issue(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_issue")
-@patch("spacesync.scanner.core.crud_comment")
-@patch("spacesync.scanner.core.crud_issue_embedding")
+@patch("preloop_sync.scanner.core.crud_issue")
+@patch("preloop_sync.scanner.core.crud_comment")
+@patch("preloop_sync.scanner.core.crud_issue_embedding")
 async def test_tracker_client_scan_issues_updated_issue(
     mock_crud_embedding,
     mock_crud_comment,
@@ -313,7 +313,7 @@ async def test_tracker_client_scan_issues_updated_issue(
 ):
     """Test that TrackerClient.scan_issues correctly processes an updated issue."""
     # Arrange
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         mock_internal_client = AsyncMock()
         mock_internal_client.get_issues.return_value = [
             {"id": "1", "updated_at": "2025-01-02T00:00:00Z"}
@@ -343,7 +343,7 @@ async def test_tracker_client_scan_issues_updated_issue(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_organization")
+@patch("preloop_sync.scanner.core.crud_organization")
 @patch("os.getenv")
 async def test_process_organization_github(
     mock_getenv,
@@ -380,8 +380,8 @@ async def test_process_organization_github(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.scan_tracker")
-@patch("spacesync.scanner.core.crud_account")
+@patch("preloop_sync.scanner.core.scan_tracker")
+@patch("preloop_sync.scanner.core.crud_account")
 async def test_scan_account(
     mock_crud_account, mock_scan_tracker, mock_db_session, mock_account
 ):
@@ -412,8 +412,8 @@ async def test_scan_account(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_account")
-@patch("spacesync.scanner.core.scan_account")
+@patch("preloop_sync.scanner.core.crud_account")
+@patch("preloop_sync.scanner.core.scan_account")
 async def test_scan_all_accounts(mock_scan_account, mock_crud_account, mock_db_session):
     """Test scanning all active accounts."""
     # Arrange
@@ -472,7 +472,7 @@ def mock_tracker_jira():
 @pytest.mark.asyncio
 async def test_tracker_client_init_gitlab(mock_tracker_gitlab):
     """Test TrackerClient initialization for GitLab."""
-    with patch("spacesync.trackers.gitlab.GitLabTracker") as mock_gitlab_tracker:
+    with patch("preloop_sync.trackers.gitlab.GitLabTracker") as mock_gitlab_tracker:
         client = TrackerClient(mock_tracker_gitlab)
         mock_gitlab_tracker.assert_called_once_with(
             mock_tracker_gitlab.id,
@@ -485,7 +485,7 @@ async def test_tracker_client_init_gitlab(mock_tracker_gitlab):
 @pytest.mark.asyncio
 async def test_tracker_client_init_jira(mock_tracker_jira):
     """Test TrackerClient initialization for Jira."""
-    with patch("spacesync.trackers.jira.JiraTracker") as mock_jira_tracker:
+    with patch("preloop_sync.trackers.jira.JiraTracker") as mock_jira_tracker:
         client = TrackerClient(mock_tracker_jira)
         mock_jira_tracker.assert_called_once_with(
             mock_tracker_jira.id,
@@ -505,7 +505,7 @@ async def test_tracker_client_init_unsupported():
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_project")
+@patch("preloop_sync.scanner.core.crud_project")
 async def test_scan_projects_skips_excluded_project(
     mock_crud_project, mock_db_session, mock_organization
 ):
@@ -515,7 +515,7 @@ async def test_scan_projects_skips_excluded_project(
     tracker.id = 1
     tracker.tracker_type = "github"
 
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         client = TrackerClient(tracker)
         client.client = AsyncMock()
         client.client.get_projects.return_value = [
@@ -548,7 +548,7 @@ async def test_scan_projects_skips_excluded_project(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_project")
+@patch("preloop_sync.scanner.core.crud_project")
 async def test_scan_projects_skips_unincluded_project(
     mock_crud_project, mock_db_session, mock_organization
 ):
@@ -558,7 +558,7 @@ async def test_scan_projects_skips_unincluded_project(
     tracker.id = 1
     tracker.tracker_type = "github"
 
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         client = TrackerClient(tracker)
         client.client = AsyncMock()
         client.client.get_projects.return_value = [
@@ -588,7 +588,7 @@ async def test_scan_projects_skips_unincluded_project(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_project")
+@patch("preloop_sync.scanner.core.crud_project")
 async def test_scan_projects_handles_exception(
     mock_crud_project, mock_db_session, mock_organization
 ):
@@ -598,7 +598,7 @@ async def test_scan_projects_handles_exception(
     tracker.id = 1
     tracker.tracker_type = "github"
 
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         client = TrackerClient(tracker)
         client.client = AsyncMock()
         client.client.get_projects.side_effect = Exception("API Error")
@@ -612,7 +612,7 @@ async def test_scan_projects_handles_exception(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_organization")
+@patch("preloop_sync.scanner.core.crud_organization")
 @patch("os.getenv")
 async def test_process_organization_gitlab(
     mock_getenv,
@@ -648,7 +648,7 @@ async def test_process_organization_gitlab(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_organization")
+@patch("preloop_sync.scanner.core.crud_organization")
 @patch("os.getenv")
 async def test_process_organization_jira(
     mock_getenv,
@@ -683,8 +683,8 @@ async def test_process_organization_jira(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.scan_tracker")
-@patch("spacesync.scanner.core.crud_account")
+@patch("preloop_sync.scanner.core.scan_tracker")
+@patch("preloop_sync.scanner.core.crud_account")
 async def test_scan_account_no_trackers(
     mock_crud_account, mock_scan_tracker, mock_db_session
 ):
@@ -703,8 +703,8 @@ async def test_scan_account_no_trackers(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.scan_account")
-@patch("spacesync.scanner.core.crud_account")
+@patch("preloop_sync.scanner.core.scan_account")
+@patch("preloop_sync.scanner.core.crud_account")
 async def test_scan_all_accounts_no_active_accounts(
     mock_crud_account, mock_scan_account, mock_db_session
 ):
@@ -720,9 +720,9 @@ async def test_scan_all_accounts_no_active_accounts(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_issue")
-@patch("spacesync.scanner.core.crud_comment")
-@patch("spacesync.scanner.core.crud_issue_embedding")
+@patch("preloop_sync.scanner.core.crud_issue")
+@patch("preloop_sync.scanner.core.crud_comment")
+@patch("preloop_sync.scanner.core.crud_issue_embedding")
 async def test_scan_issues_with_new_comment(
     mock_crud_embedding,
     mock_crud_comment,
@@ -733,7 +733,7 @@ async def test_scan_issues_with_new_comment(
     mock_project,
 ):
     """Test scanning an issue that has a new comment."""
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         client = TrackerClient(mock_tracker)
         client.client = AsyncMock()
         client.client.get_issues.return_value = [
@@ -778,7 +778,7 @@ async def test_scan_issues_with_new_comment(
 
 
 @pytest.mark.asyncio
-@patch("spacemodels.crud.crud_tracker")
+@patch("preloop_models.crud.crud_tracker")
 @patch("os.getenv")
 async def test_process_organization_gitlab_group_hooks_not_supported(
     mock_getenv, mock_crud_tracker, mock_db_session, mock_organization, mock_project
@@ -810,7 +810,7 @@ async def test_process_organization_gitlab_group_hooks_not_supported(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core._process_organization")
+@patch("preloop_sync.scanner.core._process_organization")
 async def test_scan_tracker_skips_recently_updated_by_webhook_org(
     mock_process_org, mock_db_session, mock_tracker, mock_organization
 ):
@@ -822,7 +822,7 @@ async def test_scan_tracker_skips_recently_updated_by_webhook_org(
 
     mock_client_instance = AsyncMock()
     mock_client_instance.scan_organizations.return_value = [mock_organization]
-    with patch("spacesync.scanner.core.TrackerClient") as mock_tracker_client_class:
+    with patch("preloop_sync.scanner.core.TrackerClient") as mock_tracker_client_class:
         mock_tracker_client_class.return_value = mock_client_instance
 
         # Act
@@ -834,12 +834,12 @@ async def test_scan_tracker_skips_recently_updated_by_webhook_org(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_organization")
+@patch("preloop_sync.scanner.core.crud_organization")
 async def test_scan_organizations_skips_unincluded(
     mock_crud_org, mock_db_session, mock_tracker
 ):
     """Test that scan_organizations skips an org not in the inclusion list."""
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         client = TrackerClient(mock_tracker)
         client.client = AsyncMock()
         client.client.get_organizations.return_value = [
@@ -870,7 +870,7 @@ async def test_scan_projects_skips_missing_identifier(
     mock_db_session, mock_organization
 ):
     """Test that scan_projects skips a project with a missing identifier."""
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         tracker = MagicMock(spec=Tracker)
         tracker.tracker_type = "github"
         client = TrackerClient(tracker)

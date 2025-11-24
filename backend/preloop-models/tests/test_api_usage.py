@@ -1,6 +1,6 @@
 """Tests for API usage model and CRUD operations."""
 
-from spacemodels.crud import crud_api_usage
+from preloop_models.crud import crud_api_usage
 
 
 def test_log_request(db_session, create_account, create_user):

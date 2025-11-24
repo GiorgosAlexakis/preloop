@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-migration-job
+  name: {{ include "preloop_ai.fullname" . }}-migration-job
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": post-upgrade
     "helm.sh/hook-weight": "0"
@@ -12,7 +12,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "spacebridge.selectorLabels" . | nindent 8 }}
+        {{- include "preloop_ai.selectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
       containers:
@@ -23,4 +23,4 @@ spec:
           args: ["cd /app/SpaceModels && alembic upgrade head"]
           env:
             - name: DATABASE_URL
-              value: {{ include "spacebridge.databaseUrl" . }}
+              value: {{ include "preloop_ai.databaseUrl" . }}

@@ -1,4 +1,4 @@
-"""Test fixtures for SpaceModels."""
+"""Test fixtures for preloop_models."""
 
 import os  # Added import
 
@@ -66,7 +66,7 @@ def create_account(db_session):
     """
     import uuid
 
-    from spacemodels.crud import crud_account
+    from preloop_models.crud import crud_account
 
     def _create_account(organization_name=None, **kwargs):
         # Generate unique organization name if not provided
@@ -88,7 +88,7 @@ def create_user(db_session, create_account):
     """Create a test user within an account."""
     import uuid
 
-    from spacemodels.crud import crud_user
+    from preloop_models.crud import crud_user
 
     def _create_user(username=None, email=None, account=None, **kwargs):
         # Create account if not provided
@@ -116,7 +116,7 @@ def create_user(db_session, create_account):
 @pytest.fixture
 def create_tracker(db_session, create_account):
     """Create a test tracker."""
-    from spacemodels.crud import crud_tracker
+    from preloop_models.crud import crud_tracker
 
     def _create_tracker(
         account=None, tracker_type="github", name="Test Tracker", **kwargs
@@ -149,7 +149,7 @@ def create_organization(db_session, create_tracker):
     """Create a test organization."""
     import uuid
 
-    from spacemodels.crud import crud_organization
+    from preloop_models.crud import crud_organization
 
     def _create_organization(tracker=None, name=None, identifier=None, **kwargs):
         # Generate unique values if not provided
@@ -175,7 +175,7 @@ def create_organization(db_session, create_tracker):
 @pytest.fixture
 def create_project(db_session, create_organization):
     """Create a test project."""
-    from spacemodels.crud import crud_project
+    from preloop_models.crud import crud_project
 
     def _create_project(
         name="Test Project", identifier="test-project", slug=None, **kwargs
@@ -200,7 +200,7 @@ def create_project(db_session, create_organization):
 def create_issue(db_session, create_project, create_tracker):
     """Create a test issue."""
     import uuid  # Import uuid
-    from spacemodels.crud import crud_issue
+    from preloop_models.crud import crud_issue
 
     def _create_issue(title="Test Issue", description="Test description", **kwargs):
         # Create project and tracker first if not provided
@@ -237,8 +237,8 @@ def create_comment(db_session, create_issue, create_user):
     Handles 'author' (as username string or User object) passed in kwargs,
     or creates a default author user.
     """
-    from spacemodels.crud import crud_comment
-    from spacemodels.models import User, Issue
+    from preloop_models.crud import crud_comment
+    from preloop_models.models import User, Issue
 
     def _create_comment(body="Test comment body", type="issue", **kwargs):
         current_issue: "Issue"
@@ -286,7 +286,7 @@ def create_comment(db_session, create_issue, create_user):
 @pytest.fixture
 def create_embedding_model(db_session):
     """Create a test embedding model."""
-    from spacemodels.crud import crud_embedding_model
+    from preloop_models.crud import crud_embedding_model
 
     def _create_embedding_model(
         name="test-embedding",

@@ -5,8 +5,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.issue_duplicate import CRUDIssueDuplicate
-from spacemodels.models.issue_duplicate import IssueDuplicate
+from preloop_models.crud.issue_duplicate import CRUDIssueDuplicate
+from preloop_models.models.issue_duplicate import IssueDuplicate
 
 
 @pytest.fixture

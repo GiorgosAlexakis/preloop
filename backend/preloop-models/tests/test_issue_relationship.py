@@ -1,6 +1,6 @@
 """Tests for issue relationship functionality."""
 
-from spacemodels.crud import crud_issue, crud_issue_relationship
+from preloop_models.crud import crud_issue, crud_issue_relationship
 
 
 def test_create_relationship_blocks(db_session, create_issue):

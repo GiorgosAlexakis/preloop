@@ -3,7 +3,7 @@ import json
 
 import requests
 
-# Base URL for the SpaceBridge API
+# Base URL for the Preloop AI API
 base_url = "http://localhost:8000/api/v1"
 
 # Authenticate and get a token

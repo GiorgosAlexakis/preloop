@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.mcp_server import CRUDMCPServer
+from preloop_models.crud.mcp_server import CRUDMCPServer
 
 
 @pytest.fixture

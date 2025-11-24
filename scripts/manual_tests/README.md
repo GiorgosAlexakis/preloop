@@ -20,18 +20,18 @@ python scripts/manual_tests/test_basic_progress_client.py
 
 Expected output: Progress handler should be called for each table backup (5 times total).
 
-### SpaceBridge Progress Test
+### Preloop AI Progress Test
 
-Tests that progress reporting works with SpaceBridge's stateless HTTP mode.
+Tests that progress reporting works with Preloop AI's stateless HTTP mode.
 
 **Prerequisites:**
-- SpaceBridge server running on `http://localhost:8001`
+- Preloop AI server running on `http://localhost:8001`
 - Valid API key/token
 
 **Run the test:**
 ```bash
-export SPACEBRIDGE_TOKEN="your-api-key-here"
-python scripts/manual_tests/test_spacebridge_progress.py
+export PRELOOP_TOKEN="your-api-key-here"
+python scripts/manual_tests/test_preloop_progress.py
 ```
 
 Expected output: Progress handler should be called during `test_progress` tool execution.

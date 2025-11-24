@@ -2,10 +2,10 @@ import * as Sentry from '@sentry/browser';
 
 const getEnvironment = () => {
   const hostname = window.location.hostname;
-  if (hostname === 'staging.spacebridge.io') {
+  if (hostname === 'staging.preloop_ai.io') {
     return 'staging';
   }
-  if (hostname === 'spacebridge.io') {
+  if (hostname === 'preloop_ai.io') {
     return 'production';
   }
   // Fallback to development for unknown domains

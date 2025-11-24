@@ -8,4 +8,4 @@ ingress:
   tls:
     - hosts:
         - "{{ .Values.branchName }}.test.preloop.ai"
-      secretName: spacebridge-test-tls
+      secretName: preloop-test-tls

@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: spacebridge
+      POSTGRES_DB: preloop
     ports:
       - "5432:5432"
     volumes:
@@ -19,19 +19,19 @@ services:
     ports:
       - "4222:4222" # Client port
       - "8222:8222" # Monitoring port
-    command: ["-js"]
+    command: [ "-js" ]
 
-  spacebridge:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.spacecode.ai/spacecode/spacebridge:latest
+    image: registry.spacecode.ai/spacecode/preloop-ai:latest
     restart: unless-stopped
     depends_on:
       - postgres
       - nats
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/spacebridge
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/preloop
       NATS_URL: nats://nats:4222
       HOST: 0.0.0.0
       PORT: 8000
@@ -51,13 +51,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.spacecode.ai/spacecode/spacebridge:latest
+    image: registry.spacecode.ai/spacecode/preloop-ai:latest
     restart: unless-stopped
     depends_on:
       - postgres
       - nats
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/spacebridge
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/preloop
       NATS_URL: nats://nats:4222
       HOST: 0.0.0.0
       PORT: 8000
@@ -69,19 +69,19 @@ services:
       INIT_TEST_DATA: 'true'
     volumes:
       - .:/app
-    command: spacesync scheduler
+    command: preloop-sync scheduler
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.spacecode.ai/spacecode/spacebridge:latest
+    image: registry.spacecode.ai/spacecode/preloop-ai:latest
     restart: unless-stopped
     depends_on:
       - postgres
       - nats
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/spacebridge
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/preloop
       NATS_URL: nats://nats:4222
       HOST: 0.0.0.0
       PORT: 8000
@@ -93,7 +93,7 @@ services:
       INIT_TEST_DATA: 'true'
     volumes:
       - .:/app
-    command: spacesync worker
+    command: preloop-sync worker
 
 volumes:
   postgres-data:

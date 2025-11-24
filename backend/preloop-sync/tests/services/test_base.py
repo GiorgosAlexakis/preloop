@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, patch
 import datetime
 
-from spacesync.services.base import (
+from preloop_sync.services.base import (
     BaseTrackerUpdateService,
     PollingTrackerUpdateService,
 )
@@ -47,7 +47,7 @@ def mock_tracker():
     return tracker
 
 
-@patch("spacesync.trackers.jira.JIRA")
+@patch("preloop_sync.trackers.jira.JIRA")
 def test_base_tracker_update_service_initialization(
     mock_jira, mock_db_session, mock_tracker
 ):
@@ -58,7 +58,7 @@ def test_base_tracker_update_service_initialization(
     assert isinstance(service.last_check, datetime.datetime)
 
 
-@patch("spacesync.trackers.jira.JIRA")
+@patch("preloop_sync.trackers.jira.JIRA")
 def test_base_tracker_update_service_start_stop(
     mock_jira, mock_db_session, mock_tracker
 ):
@@ -73,7 +73,7 @@ def test_base_tracker_update_service_start_stop(
     service.cleanup.assert_called_once()
 
 
-@patch("spacesync.trackers.jira.JIRA")
+@patch("preloop_sync.trackers.jira.JIRA")
 def test_polling_tracker_update_service_initialization(
     mock_jira, mock_db_session, mock_tracker
 ):
@@ -83,8 +83,8 @@ def test_polling_tracker_update_service_initialization(
     assert service.poll_interval == 120
 
 
-@patch("spacesync.services.base.logger")
-@patch("spacesync.trackers.jira.JIRA")
+@patch("preloop_sync.services.base.logger")
+@patch("preloop_sync.trackers.jira.JIRA")
 def test_polling_tracker_update_service_start_stop(
     mock_jira, mock_logger, mock_db_session, mock_tracker
 ):

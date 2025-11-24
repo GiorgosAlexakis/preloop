@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import patch
 
-from spacesync.config import (
+from preloop_sync.config import (
     DATABASE_URL,
     LOG_LEVEL,
     SERVICE_PORT,
@@ -20,11 +20,11 @@ class TestConfig(unittest.TestCase):
         self.assertIsNotNone(LOG_LEVEL)
         self.assertIsInstance(SERVICE_PORT, int)  # Should be converted to int
 
-    @patch("spacesync.config.logging")
+    @patch("preloop_sync.config.logging")
     def test_logger_setup(self, mock_logging):
         """Test logger setup configuration."""
         # Import inside the test to use the mocked logging
-        from spacesync.config import setup_logging
+        from preloop_sync.config import setup_logging
 
         # Call the function directly
         logger = setup_logging()

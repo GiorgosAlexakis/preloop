@@ -4,8 +4,8 @@ import asyncio
 import os
 
 from sqlalchemy import select
-from spacemodels.db.session import get_async_db_session
-from spacemodels.models import ApprovalPolicy, ToolConfiguration
+from preloop_models.db.session import get_async_db_session
+from preloop_models.models import ApprovalPolicy, ToolConfiguration
 
 
 async def check_approval_config(tool_name: str = "estimate_compliance"):
@@ -26,7 +26,7 @@ async def check_approval_config(tool_name: str = "estimate_compliance"):
         if not configs:
             print(f"❌ No ToolConfiguration found for '{tool_name}'")
             print("\nTo configure approval:")
-            print("  1. Go to SpaceBridge UI: /console/tools")
+            print("  1. Go to Preloop AI UI: /console/tools")
             print(f"  2. Find '{tool_name}' tool")
             print("  3. Enable 'Requires Approval'")
             print("  4. Select or create an approval policy")
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     if not os.getenv("DATABASE_URL"):
         print("⚠️  DATABASE_URL not set, using default")
         os.environ["DATABASE_URL"] = (
-            "postgresql+psycopg://postgres:postgres@localhost/spacebridge"
+            "postgresql+psycopg://postgres:postgres@localhost/preloop"
         )
 
     asyncio.run(check_approval_config())

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 async def list_flow_containers() -> List[Dict[str, Any]]:
     """
-    List all SpaceBridge flow execution containers.
+    List all Preloop AI flow execution containers.
 
     Returns:
         List of container information dicts
@@ -26,10 +26,10 @@ async def list_flow_containers() -> List[Dict[str, Any]]:
     docker = aiodocker.Docker()
 
     try:
-        # Get containers with spacebridge labels
+        # Get containers with preloop_ai labels
         # Docker API expects label filters as a list
         containers = await docker.containers.list(
-            all=True, filters={"label": ["spacebridge.agent_type"]}
+            all=True, filters={"label": ["preloop_ai.agent_type"]}
         )
 
         container_info = []
@@ -42,9 +42,9 @@ async def list_flow_containers() -> List[Dict[str, Any]]:
             container_data = {
                 "id": container.id,
                 "short_id": container.id[:12],
-                "flow_id": labels.get("spacebridge.flow_id"),
-                "execution_id": labels.get("spacebridge.execution_id"),
-                "agent_type": labels.get("spacebridge.agent_type"),
+                "flow_id": labels.get("preloop_ai.flow_id"),
+                "execution_id": labels.get("preloop_ai.execution_id"),
+                "agent_type": labels.get("preloop_ai.agent_type"),
                 "status": state["Status"],
                 "running": state["Running"],
                 "exit_code": state.get("ExitCode"),
@@ -119,7 +119,7 @@ def format_container_info(container: Dict[str, Any]) -> str:
 async def main():
     """Main function."""
     parser = argparse.ArgumentParser(
-        description="Inspect SpaceBridge flow execution containers"
+        description="Inspect Preloop AI flow execution containers"
     )
     parser.add_argument("--list", action="store_true", help="List all flow containers")
     parser.add_argument(
@@ -144,7 +144,7 @@ async def main():
             print(json.dumps(containers, indent=2))
         else:
             if not containers:
-                print("No SpaceBridge flow containers found.")
+                print("No Preloop AI flow containers found.")
             else:
                 print(f"Found {len(containers)} flow containers:\n")
                 for container in containers:

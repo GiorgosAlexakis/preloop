@@ -2,10 +2,10 @@ import pytest
 from sqlalchemy.orm import Session
 from uuid import uuid4
 
-from spacemodels.models import Tracker
-from spacemodels.schemas.flow import FlowCreate, FlowUpdate
-from spacemodels.crud import crud_flow  # Import the CRUD instances
-from spacemodels.models import Account
+from preloop_models.models import Tracker
+from preloop_models.schemas.flow import FlowCreate, FlowUpdate
+from preloop_models.crud import crud_flow  # Import the CRUD instances
+from preloop_models.models import Account
 
 # Removed local db_session override, will use global one from conftest.py
 
@@ -13,8 +13,8 @@ from spacemodels.models import Account
 @pytest.fixture(scope="function")
 def test_tracker(db_session: Session, create_account) -> Tracker:
     """Creates a tracker for use in tests, ensuring an account exists."""
-    from spacemodels.crud import crud_tracker
-    from spacemodels.schemas.tracker import TrackerCreate  # Local import
+    from preloop_models.crud import crud_tracker
+    from preloop_models.schemas.tracker import TrackerCreate  # Local import
 
     account = create_account()  # Use the fixture from conftest
     tracker_create = TrackerCreate(

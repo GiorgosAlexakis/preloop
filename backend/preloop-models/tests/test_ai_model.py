@@ -2,8 +2,8 @@
 
 from sqlalchemy.orm import Session
 
-from spacemodels.models import Account
-from spacemodels.crud import crud_ai_model
+from preloop_models.models import Account
+from preloop_models.crud import crud_ai_model
 
 
 def test_create_ai_model(db_session: Session, create_account):
@@ -242,7 +242,7 @@ def test_default_model_exists(db_session: Session):
     assert isinstance(result, bool)
 
     # Ensure a system-wide default model exists for test coverage
-    from spacemodels.models.ai_model import AIModel
+    from preloop_models.models.ai_model import AIModel
 
     default_model = AIModel(
         name="System Default Test",

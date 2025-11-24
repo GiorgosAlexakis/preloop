@@ -4,7 +4,7 @@ Account now represents an organization, not individual users.
 For user tests, see test_user_model.py
 """
 
-from spacemodels.crud import crud_account
+from preloop_models.crud import crud_account
 
 
 def test_create_account(db_session, create_account):

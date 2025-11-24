@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from spacemodels.schemas.plan import (
+from preloop_models.schemas.plan import (
     MonthlyUsage,
     MonthlyUsageBase,
     MonthlyUsageCreate,

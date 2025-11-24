@@ -2,17 +2,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "spacebridge.fullname" $ }}-spacesync-worker-{{ .name }}
+  name: {{ include "preloop_ai.fullname" $ }}-preloop-sync-worker-{{ .name }}
   labels:
-    {{- include "spacebridge.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: spacesync-worker-{{ .name }}
-    app: spacesync-worker-{{ .name}}
+    {{- include "preloop_ai.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: preloop-sync-worker-{{ .name }}
+    app: preloop-sync-worker-{{ .name}}
 spec:
   replicas: {{ .replicaCount }}
   selector:
     matchLabels:
-      {{- include "spacebridge.selectorLabels" $ | nindent 6 }}
-      app.kubernetes.io/component: spacesync-worker-{{ .name }}
+      {{- include "preloop_ai.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: preloop-sync-worker-{{ .name }}
   template:
     metadata:
       {{- with $.Values.podAnnotations }}
@@ -20,20 +20,20 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "spacebridge.selectorLabels" $ | nindent 8 }}
-        app.kubernetes.io/component: spacesync-worker-{{ .name }}
+        {{- include "preloop_ai.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: preloop-sync-worker-{{ .name }}
     spec:
       {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "spacebridge.serviceAccountName" $ }}
+      serviceAccountName: {{ include "preloop_ai.serviceAccountName" $ }}
       securityContext:
         {{- toYaml $.Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: spacesync-worker-{{ .name }}
+        - name: preloop-sync-worker-{{ .name }}
           command:
-            - spacesync
+            - preloop-sync
             - worker
             - "--tasks"
             - {{ if kindIs "slice" .tasks }}{{ join "," .tasks | quote }}{{ else }}{{ .tasks | quote }}{{ end }}
@@ -42,12 +42,8 @@ spec:
           image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           env:
-            - name: SPACEBRIDGE_URL
-              {{- if $.Values.preloop.enabled }}
+            - name: PRELOOP_URL
               value: {{ $.Values.environment.preloopUrl | quote }}
-              {{- else }}
-              value: {{ $.Values.environment.spacebridgeUrl | quote }}
-              {{- end }}
             - name: HOST
               value: {{ $.Values.environment.host | quote }}
             - name: PORT
@@ -55,7 +51,7 @@ spec:
             - name: DEBUG
               value: {{ $.Values.environment.debug | quote }}
             - name: DATABASE_URL
-              value: {{ include "spacebridge.databaseUrl" $ }}
+              value: {{ include "preloop_ai.databaseUrl" $ }}
             - name: AGENT_EXECUTION_NAMESPACE
               value: {{ $.Values.agentExecution.namespace.create | ternary $.Values.agentExecution.namespace.name $.Release.Namespace | quote }}
             - name: USE_KUBERNETES
@@ -63,7 +59,7 @@ spec:
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" $ }}
+                  name: {{ include "preloop_ai.fullname" $ }}
                   key: jwt-secret
             - name: JWT_ALGORITHM
               value: {{ $.Values.environment.jwtAlgorithm | quote }}
@@ -77,14 +73,14 @@ spec:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" $ }}
+                  name: {{ include "preloop_ai.fullname" $ }}
                   key: openai-api-key
             {{- end }}
             {{- if $.Values.config.anthropic.apiKey }}
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" $ }}
+                  name: {{ include "preloop_ai.fullname" $ }}
                   key: anthropic-api-key
             {{- end }}
             {{- if $.Values.config.smtp.host }}
@@ -107,7 +103,7 @@ spec:
             - name: SENTRY_DSN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "spacebridge.fullname" $ }}
+                  name: {{ include "preloop_ai.fullname" $ }}
                   key: sentry-dsn
             {{- end }}
           resources:

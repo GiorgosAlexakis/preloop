@@ -1,7 +1,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "spacebridge.name" -}}
+{{- define "preloop_ai.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -10,7 +10,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "spacebridge.fullname" -}}
+{{- define "preloop_ai.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -26,16 +26,16 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "spacebridge.chart" -}}
+{{- define "preloop_ai.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "spacebridge.labels" -}}
-helm.sh/chart: {{ include "spacebridge.chart" . }}
-{{ include "spacebridge.selectorLabels" . }}
+{{- define "preloop_ai.labels" -}}
+helm.sh/chart: {{ include "preloop_ai.chart" . }}
+{{ include "preloop_ai.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -45,17 +45,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "spacebridge.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "spacebridge.name" . }}
+{{- define "preloop_ai.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "preloop_ai.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "spacebridge.serviceAccountName" -}}
+{{- define "preloop_ai.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "spacebridge.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "preloop_ai.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
@@ -64,7 +64,7 @@ Create the name of the service account to use
 {{/*
 Create the database connection URL
 */}}
-{{- define "spacebridge.databaseUrl" -}}
+{{- define "preloop_ai.databaseUrl" -}}
 {{- if .Values.database.enabled -}}
 {{- if .Values.database.external -}}
 postgresql://{{ .Values.database.externalDatabase.user }}:{{ .Values.database.externalDatabase.password }}@{{ .Values.database.externalDatabase.host }}:{{ .Values.database.externalDatabase.port }}/{{ .Values.database.externalDatabase.database }}

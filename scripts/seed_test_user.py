@@ -7,11 +7,11 @@ import os
 import click
 from dotenv import load_dotenv
 
-from spacemodels.crud import crud_account, crud_api_key, crud_user
-from spacemodels.db.session import get_db_session
-from spacemodels.db.setup import setup_database
-from spacebridge.api.auth.jwt import get_password_hash
-from spacebridge.schemas.auth import ApiKeyCreate
+from preloop_models.crud import crud_account, crud_api_key, crud_user
+from preloop_models.db.session import get_db_session
+from preloop_models.db.setup import setup_database
+from preloop_ai.api.auth.jwt import get_password_hash
+from preloop_ai.schemas.auth import ApiKeyCreate
 
 
 @click.command()

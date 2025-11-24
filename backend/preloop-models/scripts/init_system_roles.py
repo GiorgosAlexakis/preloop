@@ -20,7 +20,7 @@ from typing import Dict, List
 
 from sqlalchemy.orm import Session
 
-from spacemodels.models.permission import Permission, Role, RolePermission
+from preloop_models.models.permission import Permission, Role, RolePermission
 
 logger = logging.getLogger(__name__)
 dotenv.load_dotenv()
@@ -471,7 +471,7 @@ def main():
     # Add parent directory to path for imports
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-    from spacemodels.db.session import get_db_session
+    from preloop_models.db.session import get_db_session
 
     # Configure logging
     logging.basicConfig(

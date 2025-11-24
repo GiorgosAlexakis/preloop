@@ -42,7 +42,7 @@ import consoleStyles from '../../styles/console-styles.css?inline';
 @customElement('issues-compliance-view')
 export class IssuesComplianceView extends LitElement {
   private readonly INFO_ALERT_DISMISSED_KEY =
-    'spacebridge-issues-compliance-info-alert-dismissed';
+    'preloop-issues-compliance-info-alert-dismissed';
 
   @state()
   private _isInfoAlertOpen = false;
@@ -523,19 +523,19 @@ export class IssuesComplianceView extends LitElement {
       <div class="active-filters">
         <span>Filtered by:</span>
         ${selectedProjects.map(
-          (project) => html`
+      (project) => html`
             <sl-tag
               size="medium"
               removable
               @sl-remove=${() =>
-                this._removeProjectFilter(project.id.toString())}
+          this._removeProjectFilter(project.id.toString())}
             >
               ${project.name}
             </sl-tag>
           `
-        )}
+    )}
         ${this._selectedStatus !== 'opened'
-          ? html`
+        ? html`
               <sl-tag
                 size="medium"
                 removable
@@ -544,7 +544,7 @@ export class IssuesComplianceView extends LitElement {
                 ${this._selectedStatus === 'closed' ? 'Closed' : 'All'}
               </sl-tag>
             `
-          : ''}
+        : ''}
         <sl-button size="small" pill @click=${this._clearAllFilters}
           >Clear all</sl-button
         >
@@ -595,10 +595,10 @@ export class IssuesComplianceView extends LitElement {
           placeholder="Search issues by title, description, or ID..."
           .value=${this._searchQuery}
           @sl-input=${(e: Event) =>
-            (this._searchQuery = (e.target as HTMLInputElement).value)}
+        (this._searchQuery = (e.target as HTMLInputElement).value)}
           @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Enter') this.handleSearch(e);
-          }}
+        if (e.key === 'Enter') this.handleSearch(e);
+      }}
           clearable
         >
           <sl-icon name="search" slot="prefix"></sl-icon>
@@ -609,11 +609,11 @@ export class IssuesComplianceView extends LitElement {
           </sl-button>
           <sl-menu @sl-select=${this._handleComplianceTypeSelect}>
             ${this._compliancePrompts.map(
-              (prompt) =>
-                html`<sl-menu-item value=${prompt.id}
+        (prompt) =>
+          html`<sl-menu-item value=${prompt.id}
                   >${prompt.name}</sl-menu-item
                 >`
-            )}
+      )}
           </sl-menu>
         </sl-dropdown>
         <sl-button-group>
@@ -665,14 +665,14 @@ export class IssuesComplianceView extends LitElement {
             </thead>
             <tbody>
               ${this._issues.map((issue) => {
-                const issueId = issue.id;
-                const isExpanded = this._expandedRowKey === issueId;
-                const project = this._allProjects.find(
-                  (p) => p.id === issue.project_id
-                );
-                const complianceResult = this._complianceResults[issue.id];
+      const issueId = issue.id;
+      const isExpanded = this._expandedRowKey === issueId;
+      const project = this._allProjects.find(
+        (p) => p.id === issue.project_id
+      );
+      const complianceResult = this._complianceResults[issue.id];
 
-                return html`
+      return html`
                   <tr
                     class="clickable-row ${isExpanded ? 'row-expanded' : ''}"
                     @click=${() => this._toggleRow(issueId)}
@@ -694,47 +694,47 @@ export class IssuesComplianceView extends LitElement {
                     </td>
                     <td>
                       ${when(
-                        this._loadingCompliance[issue.id],
-                        () => html`<sl-spinner></sl-spinner>`,
-                        () => {
-                          return complianceResult
-                            ? html`
+        this._loadingCompliance[issue.id],
+        () => html`<sl-spinner></sl-spinner>`,
+        () => {
+          return complianceResult
+            ? html`
                                 <sl-tooltip content=${complianceResult.reason}>
                                   <sl-badge
                                     variant=${getComplianceVariant(
-                                      complianceResult.compliance_factor
-                                    )}
+              complianceResult.compliance_factor
+            )}
                                     pill
                                   >
                                     ${(
-                                      complianceResult.compliance_factor * 100
-                                    ).toFixed(0)}%
+                complianceResult.compliance_factor * 100
+              ).toFixed(0)}%
                                   </sl-badge>
                                 </sl-tooltip>
                               `
-                            : html`<span>-</span>`;
-                        }
-                      )}
+            : html`<span>-</span>`;
+        }
+      )}
                     </td>
                     <td>
                       <sl-button-group>
                         <sl-button
                           size="small"
                           @click=${(e: Event) => {
-                            e.stopPropagation();
-                            this._openImproveComplianceModal(issue);
-                          }}
+          e.stopPropagation();
+          this._openImproveComplianceModal(issue);
+        }}
                           ?disabled=${!complianceResult ||
-                          complianceResult.compliance_factor === 0 ||
-                          complianceResult.compliance_factor === 1}
+        complianceResult.compliance_factor === 0 ||
+        complianceResult.compliance_factor === 1}
                         >
                           Improve
                         </sl-button>
                         <sl-dropdown
                           @click=${(e: Event) => e.stopPropagation()}
                           ?disabled=${!complianceResult ||
-                          complianceResult.compliance_factor === 0 ||
-                          complianceResult.compliance_factor === 1}
+        complianceResult.compliance_factor === 0 ||
+        complianceResult.compliance_factor === 1}
                         >
                           <sl-button
                             slot="trigger"
@@ -745,7 +745,7 @@ export class IssuesComplianceView extends LitElement {
                           </sl-button>
                           <sl-menu
                             @sl-select=${(e: CustomEvent) =>
-                              this._handleMenuAction(e, issue)}
+          this._handleMenuAction(e, issue)}
                           >
                             <sl-menu-item value="improve-compliance">
                               <sl-icon
@@ -760,25 +760,25 @@ export class IssuesComplianceView extends LitElement {
                     </td>
                   </tr>
                   ${isExpanded
-                    ? html`
+          ? html`
                         <tr class="inline-detail-row">
                           <td colspan="6">
                             <div class="detail-view-card">
                               <single-issue-detail-view .issue=${issue}>
                                 <div slot="additional-info">
                                   ${this._renderComplianceDetails(
-                                    issue,
-                                    complianceResult
-                                  )}
+            issue,
+            complianceResult
+          )}
                                 </div>
                               </single-issue-detail-view>
                             </div>
                           </td>
                         </tr>
                       `
-                    : ''}
+          : ''}
                 `;
-              })}
+    })}
             </tbody>
           </table>
         </sl-card>
@@ -857,8 +857,8 @@ export class IssuesComplianceView extends LitElement {
 
             ${this._renderActiveFilters()}
             ${when(
-              this._updateSummary,
-              () => html`
+      this._updateSummary,
+      () => html`
                 <sl-alert
                   variant="success"
                   open
@@ -869,53 +869,53 @@ export class IssuesComplianceView extends LitElement {
                   ${this._updateSummary}
                 </sl-alert>
               `
-            )}
+    )}
             ${when(
-              this._loading,
-              () =>
-                html`<div class="loading-overlay">
+      this._loading,
+      () =>
+        html`<div class="loading-overlay">
                   <sl-spinner></sl-spinner>
                   <span>Loading issues...</span>
                 </div>`
-            )}
+    )}
             ${when(
-              this._error,
-              () => html`<div class="error">${this._error}</div>`
-            )}
+      this._error,
+      () => html`<div class="error">${this._error}</div>`
+    )}
             ${when(!this._loading && !this._error && this._hasSearched, () =>
-              this.renderIssueTable()
-            )}
+      this.renderIssueTable()
+    )}
           </div>
         </div>
         <div class="side-column">
           <sl-card class="detail-view-card">
             <div slot="header">Issue Details</div>
             ${when(
-              this._expandedRowKey,
-              () => {
-                const issue = this._issues.find(
-                  (i) => i.id === this._expandedRowKey
-                );
-                if (issue) {
-                  const complianceResult = this._complianceResults[issue.id];
-                  return html`<single-issue-detail-view .issue=${issue}>
+      this._expandedRowKey,
+      () => {
+        const issue = this._issues.find(
+          (i) => i.id === this._expandedRowKey
+        );
+        if (issue) {
+          const complianceResult = this._complianceResults[issue.id];
+          return html`<single-issue-detail-view .issue=${issue}>
                     <div slot="additional-info">
                       ${this._renderComplianceDetails(issue, complianceResult)}
                     </div>
                   </single-issue-detail-view>`;
-                } else {
-                  return html`<div class="placeholder-content">
+        } else {
+          return html`<div class="placeholder-content">
                     <sl-icon name="info-circle"></sl-icon>
                     <p>Select an issue to see details.</p>
                   </div>`;
-                }
-              },
-              () =>
-                html`<div class="placeholder-content">
+        }
+      },
+      () =>
+        html`<div class="placeholder-content">
                   <sl-icon name="info-circle"></sl-icon>
                   <p>Select an issue to see details.</p>
                 </div>`
-            )}
+    )}
           </sl-card>
         </div>
       </div>
@@ -946,21 +946,21 @@ export class IssuesComplianceView extends LitElement {
         </div>
 
         ${when(
-          complianceResult.compliance_factor === 0,
-          () => html`
+      complianceResult.compliance_factor === 0,
+      () => html`
             <sl-alert variant="warning" open>
               <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
               This issue could not be evaluated and requires manual review. It
               may be missing key information or be too vague.
             </sl-alert>
           `,
-          () => html`
+      () => html`
             <div class="score-container">
               <b class="compliance-title">Compliance Score</b>
               <sl-badge
                 variant=${getComplianceVariant(
-                  complianceResult.compliance_factor
-                )}
+        complianceResult.compliance_factor
+      )}
                 pill
               >
                 ${(complianceResult.compliance_factor * 100).toFixed(0)}%
@@ -981,14 +981,14 @@ export class IssuesComplianceView extends LitElement {
                 size="small"
                 @click=${() => this._openImproveComplianceModal(issue)}
                 ?disabled=${!complianceResult ||
-                complianceResult.compliance_factor === 0 ||
-                complianceResult.compliance_factor === 1}
+        complianceResult.compliance_factor === 0 ||
+        complianceResult.compliance_factor === 1}
               >
                 Improve
               </sl-button>
             </div>
           `
-        )}
+    )}
       </div>
     `;
   }

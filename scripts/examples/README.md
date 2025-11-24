@@ -92,7 +92,7 @@ curl -X POST https://preloop.ai/api/v1/mcp-servers \
   }'
 ```
 
-#### Via SpaceBridge UI
+#### Via Preloop AI UI
 
 1. Navigate to Settings > MCP Servers
 2. Click "Add MCP Server"
@@ -113,7 +113,7 @@ The example server is designed to test approval policies in flows:
 
 #### Create Approval Policy
 
-1. In SpaceBridge, create an approval policy for the `add` tool:
+1. In Preloop AI, create an approval policy for the `add` tool:
 ```json
 {
   "tool_name": "add",
@@ -123,7 +123,7 @@ The example server is designed to test approval policies in flows:
 }
 ```
 
-2. Test the policy by calling the `add` tool through SpaceBridge in a flow
+2. Test the policy by calling the `add` tool through Preloop AI in a flow
 3. The request should be pending approval
 4. Approve it via the UI or API
 5. The tool should execute and return the result

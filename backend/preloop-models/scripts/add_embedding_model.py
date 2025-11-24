@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from spacemodels.crud import crud_embedding_model
-from spacemodels.db.session import get_db_session
+from preloop_models.crud import crud_embedding_model
+from preloop_models.db.session import get_db_session
 
 
 def clean_embedding_models(db: Session):

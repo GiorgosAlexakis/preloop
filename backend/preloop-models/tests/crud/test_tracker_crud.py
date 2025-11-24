@@ -6,8 +6,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.tracker import CRUDTracker
-from spacemodels.models.tracker import Tracker
+from preloop_models.crud.tracker import CRUDTracker
+from preloop_models.models.tracker import Tracker
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def test_get_active_with_account_id(crud_tracker, mock_db_session):
 def test_get_by_type_without_account_id(crud_tracker, mock_db_session):
     """Test retrieving trackers by type without account filter."""
     # Arrange
-    from spacemodels.models.tracker import TrackerType
+    from preloop_models.models.tracker import TrackerType
 
     mock_trackers = [MagicMock()]
 
@@ -106,7 +106,7 @@ def test_get_by_type_without_account_id(crud_tracker, mock_db_session):
 def test_get_by_type_with_account_id(crud_tracker, mock_db_session):
     """Test retrieving trackers by type with account filter."""
     # Arrange
-    from spacemodels.models.tracker import TrackerType
+    from preloop_models.models.tracker import TrackerType
 
     account_id = str(uuid4())
     mock_trackers = [MagicMock()]

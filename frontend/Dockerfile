@@ -4,8 +4,8 @@
 # Stage 1: Build the application
 FROM node:18-alpine AS builder
 
-# Build argument for brand (spacebridge or preloop)
-ARG BRAND=spacebridge
+# Build argument for brand
+ARG BRAND=preloop
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 
 # Build argument for brand (must be redeclared in this stage)
-ARG BRAND=spacebridge
+ARG BRAND=preloop
 
 # Copy built application
 COPY --from=builder /app/dist-${BRAND} /usr/share/nginx/html

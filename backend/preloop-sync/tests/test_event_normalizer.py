@@ -5,11 +5,11 @@ Tests use real webhook payload structures from GitLab, GitHub, and Jira.
 """
 
 import pytest
-from spacesync.event_normalizer import (
+from preloop_sync.event_normalizer import (
     normalize_event_type,
     extract_filter_fields,
 )
-from spacesync.webhook_payloads import (
+from preloop_sync.webhook_payloads import (
     GITLAB_ISSUE_OPENED,
     GITLAB_ISSUE_CLOSED,
     GITHUB_ISSUE_OPENED,
@@ -260,7 +260,7 @@ class TestUUIDSerialization:
     def test_serialize_uuids_in_dict(self):
         """Test that UUIDs in dictionaries are converted to strings."""
         from uuid import UUID
-        from spacesync.tasks import serialize_uuids
+        from preloop_sync.tasks import serialize_uuids
 
         test_uuid = UUID("9607c913-df61-4a24-9179-b6e83893c501")
         data = {"tracker_id": test_uuid, "name": "test"}
@@ -274,7 +274,7 @@ class TestUUIDSerialization:
     def test_serialize_uuids_in_nested_dict(self):
         """Test that UUIDs in nested structures are converted to strings."""
         from uuid import UUID
-        from spacesync.tasks import serialize_uuids
+        from preloop_sync.tasks import serialize_uuids
 
         test_uuid1 = UUID("9607c913-df61-4a24-9179-b6e83893c501")
         test_uuid2 = UUID("f3dd00c0-7316-411d-aea7-2fee793b5c08")
@@ -301,7 +301,7 @@ class TestUUIDSerialization:
 
     def test_serialize_uuids_preserves_non_uuid_data(self):
         """Test that non-UUID data is preserved unchanged."""
-        from spacesync.tasks import serialize_uuids
+        from preloop_sync.tasks import serialize_uuids
 
         data = {
             "string": "test",

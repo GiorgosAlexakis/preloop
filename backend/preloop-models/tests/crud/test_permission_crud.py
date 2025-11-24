@@ -6,13 +6,13 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.permission import (
+from preloop_models.crud.permission import (
     CRUDPermission,
     CRUDRole,
     CRUDUserRole,
     CRUDTeamRole,
 )
-from spacemodels.models.permission import (
+from preloop_models.models.permission import (
     Permission,
     Role,
     RolePermission,

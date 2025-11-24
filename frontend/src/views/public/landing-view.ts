@@ -513,8 +513,8 @@ export class LandingView extends LitElement {
                   size="large"
                   href=${this._ctaSecondaryUrl}
                   target=${this._ctaSecondaryUrl.startsWith('http')
-                    ? '_blank'
-                    : '_self'}
+        ? '_blank'
+        : '_self'}
                   >${this._ctaSecondary}</sl-button
                 >
               </div>
@@ -523,16 +523,16 @@ export class LandingView extends LitElement {
         </section>
 
         ${this._extendedDescription
-          ? html`
+        ? html`
               <section class="extended-description-section main-section">
                 <div class="section-container">
                   <p class="lead text-center">${this._extendedDescription}</p>
                 </div>
               </section>
             `
-          : ''}
+        : ''}
         ${this._featuresLayout === 'carousel'
-          ? html`
+        ? html`
               <section class="feature-section main-section" id="features">
                 <div class="section-container text-center">
                   <sl-carousel
@@ -542,14 +542,14 @@ export class LandingView extends LitElement {
                     @sl-slide-change=${this._handleSlideChange}
                   >
                     ${this._featureSlides.map(
-                      (slide, index) => html`
+          (slide, index) => html`
                         <sl-carousel-item>
                           <div class="feature-grid-2-col">
                             <div class="feature-text-content">
                               <h2>${slide.title}</h2>
                               <p>${slide.text}</p>
                               ${!this._showVideo[index] && slide.videoUrl
-                                ? html`
+              ? html`
                                     <sl-button
                                       variant="primary"
                                       class="watch-video-btn"
@@ -562,7 +562,7 @@ export class LandingView extends LitElement {
                                       Watch Video
                                     </sl-button>
                                   `
-                                : ''}
+              : ''}
                               <div class="carousel-navigation">
                                 <sl-button
                                   variant="text"
@@ -587,7 +587,7 @@ export class LandingView extends LitElement {
 
                             <div class="feature-video-content">
                               ${this._showVideo[index] && slide.videoUrl
-                                ? html`
+              ? html`
                                     <div class="video-wrapper">
                                       <iframe
                                         width="560"
@@ -600,56 +600,56 @@ export class LandingView extends LitElement {
                                       ></iframe>
                                     </div>
                                   `
-                                : html`
+              : html`
                                     <div
                                       class="image-placeholder"
                                       @click=${() =>
-                                        slide.videoUrl
-                                          ? this._playVideo(index)
-                                          : null}
+                  slide.videoUrl
+                    ? this._playVideo(index)
+                    : null}
                                     >
                                       ${slide.placeholderImg
-                                        ? html`
+                  ? html`
                                             <img
                                               src=${slide.placeholderImg}
                                               alt=${slide.title}
                                             />
                                             ${slide.videoUrl
-                                              ? html`<div
+                      ? html`<div
                                                   class="play-button"
                                                 ></div>`
-                                              : ''}
+                      : ''}
                                           `
-                                        : ''}
+                  : ''}
                                     </div>
                                   `}
                             </div>
                           </div>
                         </sl-carousel-item>
                       `
-                    )}
+        )}
                   </sl-carousel>
                 </div>
               </section>
             `
-          : html`
+        : html`
               <section class="feature-section main-section" id="features">
                 <div class="section-container">
                   <h2 class="text-center">Features</h2>
                   <div class="feature-grid three-col">
                     ${this._featureSlides.map(
-                      (slide) => html`
+          (slide) => html`
                         <div class="feature-box">
                           ${slide.placeholderImg
-                            ? html`<img
+              ? html`<img
                                 src=${slide.placeholderImg}
                                 alt=${slide.title}
                               />`
-                            : ''}
+              : ''}
                           <h3>${slide.title}</h3>
                           <p>${slide.text}</p>
                           ${slide.videoUrl
-                            ? html`<a
+              ? html`<a
                                 href=${slide.videoUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
@@ -658,10 +658,10 @@ export class LandingView extends LitElement {
                                 <sl-icon name="play-circle"></sl-icon> Watch
                                 Video
                               </a>`
-                            : ''}
+              : ''}
                         </div>
                       `
-                    )}
+        )}
                   </div>
                 </div>
               </section>
@@ -672,7 +672,7 @@ export class LandingView extends LitElement {
             <div class="title-container">
               <h2>
                 ${this._getStartedTitle ||
-                'Turbocharge your AI Workflow with MCP'}
+      'Turbocharge your AI Workflow with MCP'}
               </h2>
               <a
                 class="main-link"
@@ -683,7 +683,7 @@ export class LandingView extends LitElement {
 
             <div class="feature-grid three-col">
               ${this._getStartedFeatures.map(
-                (feature) => html`
+        (feature) => html`
                   <div class="feature-box">
                     <div class="feature-icon">
                       <sl-icon name="${feature.icon}"></sl-icon>
@@ -692,24 +692,24 @@ export class LandingView extends LitElement {
                     <p>${feature.text}</p>
                   </div>
                 `
-              )}
+      )}
             </div>
             <h3>
               ${this._mcpSetupTitle ||
-              'Get Started with ' + getBrandConfig().name + ' MCP'}
+      'Get Started with ' + getBrandConfig().name + ' MCP'}
             </h3>
             <div class="get-started-container">
               <div class="ide-tabs">
                 ${this._mcpConfigs.length > 0
-                  ? this._mcpConfigs.map(
-                      (config) => html`
+        ? this._mcpConfigs.map(
+          (config) => html`
                         <div
                           class="ide-logo-container ${this._activeIdeTab ===
-                          config.ide
-                            ? 'active'
-                            : ''}"
+              config.ide
+              ? 'active'
+              : ''}"
                           @click=${() =>
-                            this._handleIdeTabClick(config.ide as IdeTab)}
+              this._handleIdeTabClick(config.ide as IdeTab)}
                         >
                           <img
                             src="${config.logo_path}"
@@ -718,13 +718,13 @@ export class LandingView extends LitElement {
                           />
                         </div>
                       `
-                    )
-                  : html`
+        )
+        : html`
                       <div
                         class="ide-logo-container ${this._activeIdeTab ===
-                        'claude-code'
-                          ? 'active'
-                          : ''}"
+            'claude-code'
+            ? 'active'
+            : ''}"
                         @click=${() => this._handleIdeTabClick('claude-code')}
                       >
                         <img
@@ -735,9 +735,9 @@ export class LandingView extends LitElement {
                       </div>
                       <div
                         class="ide-logo-container ${this._activeIdeTab ===
-                        'cursor'
-                          ? 'active'
-                          : ''}"
+            'cursor'
+            ? 'active'
+            : ''}"
                         @click=${() => this._handleIdeTabClick('cursor')}
                       >
                         <img
@@ -748,9 +748,9 @@ export class LandingView extends LitElement {
                       </div>
                       <div
                         class="ide-logo-container ${this._activeIdeTab ===
-                        'windsurf'
-                          ? 'active'
-                          : ''}"
+            'windsurf'
+            ? 'active'
+            : ''}"
                         @click=${() => this._handleIdeTabClick('windsurf')}
                       >
                         <img
@@ -764,21 +764,21 @@ export class LandingView extends LitElement {
 
               <div class="tab-content">
                 ${this._mcpConfigs.length > 0
-                  ? this._mcpConfigs.map(
-                      (config) => html`
+        ? this._mcpConfigs.map(
+          (config) => html`
                         ${this._activeIdeTab === config.ide
-                          ? html`
+              ? html`
                               <div>
                                 <h5>Prerequisites</h5>
                                 <ul>
                                   ${config.prerequisites.map(
-                                    (prereq) => html`<li>${prereq}</li>`
-                                  )}
+                (prereq) => html`<li>${prereq}</li>`
+              )}
                                 </ul>
                                 <h5>Setup</h5>
                                 <p>${unsafeHTML(config.setup_instructions)}</p>
                                 <div class="code-container">
-                                  <pre><code>${config.code}</code></pre>
+                                  <pre><code>${config.code.trimStart()}</code></pre>
                                   <button
                                     class="copy-btn"
                                     @click=${this._copyCode}
@@ -802,12 +802,12 @@ export class LandingView extends LitElement {
                                 </div>
                               </div>
                             `
-                          : ''}
+              : ''}
                       `
-                    )
-                  : html`
+        )
+        : html`
                       ${this._activeIdeTab === 'claude-code'
-                        ? html`
+            ? html`
                             <div>
                               <h5>Prerequisites</h5>
                               <ul>
@@ -820,8 +820,8 @@ export class LandingView extends LitElement {
                               <p>Run the following command in your terminal:</p>
                               <div class="code-container">
                                 <pre><code>claude mcp add --transport http ${getBrandConfig().domain.split(
-                                  '.'
-                                )[0]} https://${getBrandConfig().domain}/mcp/v1
+              '.'
+            )[0]} https://${getBrandConfig().domain}/mcp/v1
   --header "Authorization: Bearer YOUR_${getBrandConfig().name.toUpperCase()}_API_KEY"</code></pre>
                                 <button
                                   class="copy-btn"
@@ -846,9 +846,9 @@ export class LandingView extends LitElement {
                               </div>
                             </div>
                           `
-                        : ''}
+            : ''}
                       ${this._activeIdeTab === 'cursor'
-                        ? html`
+            ? html`
                             <div>
                               <h5>Prerequisites</h5>
                               <ul>
@@ -862,18 +862,18 @@ export class LandingView extends LitElement {
                                 Create or edit <code>~/.cursor/mcp.json</code>:
                               </p>
                               <div class="code-container">
-                                <pre><code># Create or edit ~/.cursor/mcp.json
+                                <pre><code>${dedent`## Create or edit ~/.cursor/mcp.json
 {
   "mcpServers": {
     "${getBrandConfig().domain.split('.')[0]}": {
       "transport": "http",
       "url": "https://${getBrandConfig().domain}/mcp/v1",
       "headers": {
-        "Authorization": "Bearer YOUR_${getBrandConfig().name.toUpperCase()}_API_KEY"
+        "Authorization": "Bearer YOUR_${getBrandConfig().name.toUpperCase().replace(' ', '_')}_API_KEY"
       }
     }
   }
-}</code></pre>
+}`}</code></pre>
                                 <button
                                   class="copy-btn"
                                   @click=${this._copyCode}
@@ -897,9 +897,9 @@ export class LandingView extends LitElement {
                               </div>
                             </div>
                           `
-                        : ''}
+            : ''}
                       ${this._activeIdeTab === 'windsurf'
-                        ? html`
+            ? html`
                             <div>
                               <h5>Prerequisites</h5>
                               <ul>
@@ -945,7 +945,7 @@ export class LandingView extends LitElement {
                               </div>
                             </div>
                           `
-                        : ''}
+            : ''}
                     `}
               </div>
             </div>
@@ -1014,7 +1014,7 @@ export class LandingView extends LitElement {
             <h2 class="text-center">Frequently Asked Questions</h2>
             <div class="faq-list">
               ${this._faqs.map(
-                (faq) => html`
+              (faq) => html`
                   <details class="faq-item">
                     <summary
                       class="faq-question"
@@ -1028,7 +1028,7 @@ export class LandingView extends LitElement {
                     </div>
                   </details>
                 `
-              )}
+            )}
             </div>
           </div>
         </section>

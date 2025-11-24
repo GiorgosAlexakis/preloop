@@ -1,4 +1,4 @@
-"""Test progress reporting with SpaceBridge MCP server.
+"""Test progress reporting with Preloop AI MCP server.
 
 This tests that progress updates work correctly with stateless_http=True.
 """
@@ -24,27 +24,27 @@ async def my_progress_handler(
 
 
 async def main():
-    """Test progress reporting with SpaceBridge server."""
+    """Test progress reporting with Preloop AI server."""
     print("\n" + "=" * 70)
-    print("Testing Progress Reporting with SpaceBridge (stateless_http=True)")
+    print("Testing Progress Reporting with Preloop AI (stateless_http=True)")
     print("=" * 70)
     print()
 
     # Get auth token from environment
-    token = os.getenv("SPACEBRIDGE_TOKEN")
+    token = os.getenv("PRELOOP_TOKEN")
     if not token:
-        print("❌ Error: SPACEBRIDGE_TOKEN environment variable not set")
-        print("   Please set it with: export SPACEBRIDGE_TOKEN='your-api-key'")
+        print("❌ Error: PRELOOP_TOKEN environment variable not set")
+        print("   Please set it with: export PRELOOP_TOKEN='your-api-key'")
         return
 
-    # Connect to SpaceBridge server
+    # Connect to Preloop AI server
     transport = StreamableHttpTransport(
         url="http://localhost:8001/mcp/v1",
         headers={"Authorization": f"Bearer {token}"},
     )
 
     async with Client(transport=transport) as client:
-        print("✓ Connected to SpaceBridge server")
+        print("✓ Connected to Preloop AI server")
         print()
 
         # List tools
@@ -56,7 +56,7 @@ async def main():
         if not any(t.name == "test_progress" for t in tools):
             print("❌ Error: test_progress tool not found")
             print(
-                "   Make sure the SpaceBridge server has test_progress tool registered"
+                "   Make sure the Preloop AI server has test_progress tool registered"
             )
             return
 

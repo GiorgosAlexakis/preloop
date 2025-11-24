@@ -1,6 +1,6 @@
 """Tests for API usage model edge cases."""
 
-from spacemodels.crud import crud_api_usage
+from preloop_models.crud import crud_api_usage
 
 
 def test_log_request_nonexistent_user(db_session):

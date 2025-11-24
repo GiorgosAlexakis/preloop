@@ -16,7 +16,7 @@ npm run docker:dev
 ### Production (with real API)
 ```bash
 npm run docker:prod
-# OR  
+# OR
 ./docker-run.sh prod
 ```
 - **Frontend**: http://localhost:3000 (nginx)
@@ -52,14 +52,14 @@ npm run docker:mock
 - **Features**: Hot module replacement, live debugging, mock API
 - **Use case**: Local development with instant feedback
 
-### 2. Production Environment  
+### 2. Production Environment
 - **File**: `docker-compose.yml`
 - **Container**: Multi-stage build with nginx
 - **Features**: Optimized static assets, API proxy, real backend
 - **Use case**: Testing with actual backend services
 
 ### 3. Mock Testing Environment
-- **File**: `docker-compose.mock.yml`  
+- **File**: `docker-compose.mock.yml`
 - **Container**: Production build with mock API
 - **Features**: Full production setup, mock backend responses
 - **Use case**: Testing without external dependencies
@@ -83,7 +83,7 @@ API_URL=https://your-api.example.com ./docker-run.sh prod
 The mock API provides realistic responses for testing:
 
 - `POST /api/v1/auth/token/json` - Login
-- `POST /api/v1/auth/register` - Registration  
+- `POST /api/v1/auth/register` - Registration
 - `POST /api/v1/auth/refresh` - Token refresh
 - `GET /api/v1/auth/users/me` - User profile
 - `GET /api/v1/trackers` - Issue trackers

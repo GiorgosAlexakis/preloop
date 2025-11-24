@@ -1,9 +1,9 @@
 """Tests for embedding functionality."""
 
-from spacemodels.crud import crud_embedding_model, crud_issue_embedding, crud_comment
-from spacemodels.models.issue import IssueEmbedding
-from spacemodels.models.comment import Comment
-from spacemodels.models import Issue  # Ensure Issue is imported
+from preloop_models.crud import crud_embedding_model, crud_issue_embedding, crud_comment
+from preloop_models.models.issue import IssueEmbedding
+from preloop_models.models.comment import Comment
+from preloop_models.models import Issue  # Ensure Issue is imported
 
 from sqlalchemy.orm import Session
 
@@ -139,7 +139,7 @@ def test_delete_comment_cascades_embeddings(
 
     # Mock the private method that generates embeddings
     mock_generate_embedding = mocker.patch(
-        "spacemodels.crud.crud_issue_embedding._generate_embedding_vector"
+        "preloop_models.crud.crud_issue_embedding._generate_embedding_vector"
     )
     mock_generate_embedding.return_value = [0.1] * model.dimensions
 

@@ -1,9 +1,9 @@
 """
-This script connects to a NATS server, inspects all messages from the 'spacesync.tasks'
+This script connects to a NATS server, inspects all messages from the 'preloop_sync.tasks'
 subject within the 'tasks' stream without consuming them, and provides a summary of the pending tasks.
 
 To run this script, ensure you have the necessary dependencies installed and that
-the Python path is correctly configured to import from the 'spacebridge' package.
+the Python path is correctly configured to import from the 'preloop_ai' package.
 
 Usage:
     python -m scripts.inspect_nats
@@ -25,10 +25,10 @@ logging.basicConfig(
 
 # Attempt to import settings. If it fails, provide a clear error message.
 try:
-    from spacebridge.config import settings
+    from preloop_ai.config import settings
 except ImportError:
     logging.error(
-        "Could not import settings from spacebridge.config. "
+        "Could not import settings from preloop_ai.config. "
         "Please ensure that the script is run from the root of the project "
         "and the project is installed in editable mode (e.g., 'pip install -e .')."
     )
@@ -65,8 +65,10 @@ async def inspect_queue():
 
         # Bind to the existing durable consumer used by the workers.
         # This avoids creating a new consumer, which the stream policy forbids.
-        consumer_name = "spacesync_worker_queue"
-        sub = await js.pull_subscribe(subject="spacesync.tasks", durable=consumer_name)
+        consumer_name = "preloop_sync_worker_queue"
+        sub = await js.pull_subscribe(
+            subject="preloop_sync.tasks", durable=consumer_name
+        )
 
         logging.info(f"Inspecting messages from existing consumer '{consumer_name}'...")
 

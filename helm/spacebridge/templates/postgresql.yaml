@@ -2,9 +2,9 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: {{ .Values.database.cnpg.name | default (printf "%s-db" (include "spacebridge.fullname" .)) }}
+  name: {{ .Values.database.cnpg.name | default (printf "%s-db" (include "preloop_ai.fullname" .)) }}
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
 spec:
   instances: {{ .Values.database.cnpg.instances }}
   imageName: {{ .Values.database.cnpg.imageName }}
@@ -22,7 +22,7 @@ spec:
   # User management
   enableSuperuserAccess: true
   superuserSecret:
-    name: {{ include "spacebridge.fullname" . }}-db-superuser
+    name: {{ include "preloop_ai.fullname" . }}-db-superuser
   bootstrap:
     initdb:
       postInitTemplateSQL: {{ .Values.database.cnpg.bootstrap.initdb.postInitTemplateSQL }}
@@ -34,7 +34,7 @@ spec:
     #   database: {{ .Values.database.cnpg.auth.database }}
     #   owner: {{ .Values.database.cnpg.auth.username }}
     #   secret:
-    #     name: {{ include "spacebridge.fullname" . }}-db-user
+    #     name: {{ include "preloop_ai.fullname" . }}-db-user
 
   # Storage configuration
   storage:
@@ -52,7 +52,7 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-db-superuser
+  name: {{ include "preloop_ai.fullname" . }}-db-superuser
 type: kubernetes.io/basic-auth
 stringData:
   username: postgres
@@ -63,7 +63,7 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-db-user
+  name: {{ include "preloop_ai.fullname" . }}-db-user
 type: kubernetes.io/basic-auth
 stringData:
   username: {{ .Values.database.cnpg.auth.username }}

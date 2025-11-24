@@ -1,10 +1,3 @@
-# Stage 1: Build SpaceLit
-FROM node:18-alpine AS space-lit-build
-WORKDIR /app
-COPY SpaceLit /app
-RUN npm install && npm run build
-
-# Stage 2: Build Preloop AI
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -23,25 +16,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements files first to leverage Docker cache
 COPY pyproject.toml .
-COPY SpaceModels/pyproject.toml SpaceModels/
-COPY spacesync/setup.py spacesync/
-COPY spacesync/requirements.txt spacesync/
+COPY backend/preloop-models/pyproject.toml backend/preloop-models/
+COPY backend/preloop-sync/setup.py backend/preloop-sync/
+COPY backend/preloop-sync/requirements.txt backend/preloop-sync/
 
 # Install build dependencies and Python packages in separate layers for better caching
 RUN pip install -U --no-cache-dir build setuptools pip wheel ipdb
 
-# Copy only necessary files for SpaceModels and spacesync installation
-COPY SpaceModels/ SpaceModels/
-COPY spacesync/ spacesync/
-RUN pip install --no-cache-dir -e SpaceModels && pip install --no-cache-dir -e spacesync
+# Copy only necessary files for preloop-models and preloop-sync installation
+COPY backend/preloop-models/ backend/preloop-models/
+COPY backend/preloop-sync/ backend/preloop-sync/
+RUN pip install --no-cache-dir -e backend/preloop-models && pip install --no-cache-dir -e backend/preloop-sync
 
 # Copy application code (this changes most frequently, so put it last)
-COPY spacebridge/ spacebridge/
+COPY backend/preloop-ai/ backend/preloop-ai/
 COPY scripts/ scripts/
 COPY plans.yaml .
-
-# Copy built frontend assets
-COPY --from=space-lit-build /app/dist-spacebridge /app/SpaceLit/dist
 
 # Install the main application
 RUN pip install --no-cache-dir -e .
@@ -50,4 +40,4 @@ RUN pip install --no-cache-dir -e .
 EXPOSE 8000
 
 # Run the application
-CMD ["python", "-m", "spacebridge.server"]
+CMD ["python", "-m", "preloop_ai.server"]

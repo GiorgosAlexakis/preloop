@@ -6,7 +6,7 @@ This script uses the REST API to test agent flows, making it easy to test
 without needing direct database access.
 
 Usage:
-    export SPACEBRIDGE_TOKEN=your_token_here
+    export PRELOOP_TOKEN=your_token_here
     python scripts/test_agent_api.py --agent-type codex --model-id 684f4c9d-021d-4f43-83b1-e3f6f13b985b
 
 Examples:
@@ -30,8 +30,8 @@ import requests
 
 
 # Configuration
-BASE_URL = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000/api/v1")
-API_TOKEN = os.getenv("SPACEBRIDGE_TOKEN", "LJ6Eq2kpKyj6JMKoJ9VntWy6xSBIdP0UAELqAmXK")
+BASE_URL = os.getenv("PRELOOP_URL", "http://localhost:8000/api/v1")
+API_TOKEN = os.getenv("PRELOOP_TOKEN", "LJ6Eq2kpKyj6JMKoJ9VntWy6xSBIdP0UAELqAmXK")
 
 # Default test prompts for each agent type
 TEST_PROMPTS = {
@@ -249,8 +249,8 @@ def main():
 
     # Check API token
     if not API_TOKEN:
-        print("❌ Error: SPACEBRIDGE_TOKEN not set")
-        print("   export SPACEBRIDGE_TOKEN=your_token_here")
+        print("❌ Error: PRELOOP_TOKEN not set")
+        print("   export PRELOOP_TOKEN=your_token_here")
         sys.exit(1)
 
     print_section(f"AGENT FLOW TEST: {args.agent_type.upper()}")

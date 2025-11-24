@@ -2,9 +2,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-spacelit-preloop
+  name: {{ include "preloop_ai.fullname" . }}-spacelit-preloop
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
     app.kubernetes.io/component: spacelit-preloop
     app: spacelit-preloop
 spec:
@@ -13,7 +13,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "spacebridge.selectorLabels" . | nindent 6 }}
+      {{- include "preloop_ai.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: spacelit-preloop
   template:
     metadata:
@@ -22,14 +22,14 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "spacebridge.selectorLabels" . | nindent 8 }}
+        {{- include "preloop_ai.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: spacelit-preloop
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "spacebridge.serviceAccountName" . }}
+      serviceAccountName: {{ include "preloop_ai.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -53,7 +53,7 @@ spec:
       volumes:
         - name: nginx-config
           configMap:
-            name: {{ include "spacebridge.fullname" . }}-nginx
+            name: {{ include "preloop_ai.fullname" . }}-nginx
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

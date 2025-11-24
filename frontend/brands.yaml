@@ -1,150 +1,4 @@
 brands:
-  spacebridge:
-    name: "Spacebridge"
-    domain: "spacebridge.io"
-
-    company:
-      legal_name: "Spacecode.AI, Inc."
-      address: "166 Geary Street, Suite 1500"
-      city: "San Francisco, CA 94108"
-
-    branding:
-      logo_light: "/images/logo_light.png"
-      logo_dark: "/images/logo_dark.png"
-      favicon: "/images/favicon.png"
-      primary_color: "#58a6ff"
-      gradient_product: "linear-gradient(90deg, hsl(220, 60%, 50%), hsl(260, 65%, 48%))"
-      gradient_ai: "linear-gradient(90deg, hsl(280, 70%, 60%), hsl(320, 75%, 55%))"
-
-    social:
-      twitter: "@spacebridge_io"
-      linkedin: "https://www.linkedin.com/company/spacecode-ai/"
-      instagram: "https://www.instagram.com/spacebridge.io"
-
-    landing:
-      meta:
-        title: "SpaceBridge - Drive your Product with AI"
-        description: "Spacebridge curates your backlog, automates high value, low-risk work, and safeguards critical actions."
-        extended_description: ""
-        keywords: "SpaceBridge, MCP, AI, Issue Tracker, Jira, GitLab, Integration, Automation, API"
-        og_image: "/images/diagram.png"
-
-      features_layout: "carousel"  # "carousel" or "grid"
-
-      hero:
-        title: "Drive your <span class=\"gradient-product\">Product</span> with <span class=\"gradient-ai\">AI</span>"
-        lead: "Eliminate duplicates, map dependencies, ensure compliance, ship faster."
-        cta_primary: "Get Started"
-        cta_secondary: "Request a Demo"
-        cta_secondary_url: "/request-demo"
-
-      features:
-        - title: "Eliminate Duplicates & Overlap"
-          text: "Our AI analyzes your issues and detects true duplicates beyond simple keyword matching, reveals where issues and epics intersect, and provides actionable recommendations to merge, deconflict, or link related items - cleaning your backlog with a single click."
-          videoUrl: "https://youtu.be/nJXBknwZGDM"
-          placeholderImg: "/images/ui_01.png"
-
-        - title: "Achieve Compliance for Every Issue"
-          text: "Get Definition of Ready scores for goal clarity and acceptance criteria, risk analysis for potential roadblocks, and AI-driven implementation complexity estimates. Our AI-powered suggestions help improve titles and descriptions, ensuring every ticket is crystal clear and development-ready."
-          videoUrl: "https://youtu.be/8bxf_ChYrLo"
-          placeholderImg: "/images/ui_02.png"
-
-        - title: "Discover Unmapped Dependencies"
-          text: "Spacebridge scans your issue tracker for hidden dependencies that haven't been mapped, helping you avoid unexpected blockers and ensure smooth sprint flow. Review AI-detected relationships and update your tracker in one tap through our intuitive interface."
-          videoUrl: "https://youtu.be/Fw6JZDK1z7M"
-          placeholderImg: "/images/ui_03.png"
-
-      faqs:
-        - q: "What is Spacebridge?"
-          a: "Spacebridge is an AI platform that connects to your existing project management tools like Jira, GitHub, and GitLab. It acts as an intelligent governance layer for your backlog, helping you eliminate duplicate issues, ensure tickets are development-ready, and discover hidden dependencies. By automating backlog curation, you can focus on building better products, faster."
-
-        - q: "Which issue tracking and project management platforms does Spacebridge support?"
-          a: "Spacebridge offers native integrations with Jira, GitHub, and GitLab. We are continuously expanding our support for other platforms based on customer needs."
-
-        - q: "Do I need to migrate my issues to Spacebridge?"
-          a: "No, you don't. Spacebridge seamlessly connects with your existing issue tracker, like Jira, GitHub, or GitLab. It syncs and indexes your issues, merge requests, and comments without requiring you to change your current workflow."
-
-        - q: "How does AI-Assisted Product Management help my team?"
-          a: "AI-Assisted Product Management helps your team by automating the tedious parts of backlog curation. Spacebridge cleans your backlog by identifying true duplicate issues and thematic overlap, improves compliance with 'Definition of Ready' scores for every ticket, and prevents unexpected blockers by discovering unmapped dependencies. This allows your team to spend less time on administrative tasks and more time on strategic, high-impact work."
-
-        - q: "How does Spacebridge ensure issues are 'development-ready'?"
-          a: "Spacebridge provides a 'Definition of Ready' score for each issue, analyzing goal clarity and acceptance criteria. It also offers risk analysis to identify potential roadblocks and AI-driven estimates for implementation complexity. These insights, combined with AI-powered suggestions for improving titles and descriptions, help ensure every ticket is compliant and ready for development."
-
-        - q: "How does Spacebridge handle dependencies between issues?"
-          a: "Spacebridge automatically scans your issue tracker to discover hidden or unmapped dependencies that could cause unexpected blockers. It presents these AI-detected relationships in an intuitive interface, allowing you to review and update your tracker with a single click, ensuring a smoother sprint flow."
-
-        - q: "Is it secure to connect my development tools to Spacebridge?"
-          a: "Security is our top priority. Spacebridge uses industry-standard encryption for all data. We connect to your tools via secure, permission-scoped API tokens and OAuth, ensuring our platform only has the minimum access it needs to function."
-
-      get_started:
-        title: "Turbocharge your AI Workflow with MCP"
-        link_text: "What is MCP?"
-        link_url: "/whatis-mcp"
-        features:
-          - icon: "search"
-            title: "Smart Duplicate Detection"
-            text: "Intelligent similarity search finds and prevents duplicate issues, even when terminology varies."
-          - icon: "journal-plus"
-            title: "Augment your AI context"
-            text: "Seamless issue data access that supercharges your AI tools' effectiveness"
-          - icon: "code-slash"
-            title: "Cursor, Windsurf, Claude Code Ready"
-            text: "Streamlined setup process. Use with any agentic system that supports MCP."
-
-        mcp_setup_title: "Get Started with Spacebridge MCP"
-        mcp_configs:
-          - ide: "claude-code"
-            ide_name: "Claude Code"
-            logo_path: "/images/Claude_AI_logo.png"
-            logo_width: "130"
-            prerequisites:
-              - "SpaceBridge API key (register above)"
-            setup_instructions: "Run the following command in your terminal:"
-            code: |
-              claude mcp add --transport http spacebridge https://spacebridge.io/mcp/v1
-                --header "Authorization: Bearer YOUR_SPACEBRIDGE_API_KEY"
-
-          - ide: "cursor"
-            ide_name: "Cursor"
-            logo_path: "/images/cursor_logo.png"
-            logo_width: "130"
-            prerequisites:
-              - "SpaceBridge API key (register above)"
-            setup_instructions: "Create or edit <code>~/.cursor/mcp.json</code>:"
-            code: |
-              # Create or edit ~/.cursor/mcp.json
-              {
-                "mcpServers": {
-                  "spacebridge": {
-                    "transport": "http",
-                    "url": "https://spacebridge.io/mcp/v1",
-                    "headers": {
-                      "Authorization": "Bearer YOUR_SPACEBRIDGE_API_KEY"
-                    }
-                  }
-                }
-              }
-
-          - ide: "windsurf"
-            ide_name: "Windsurf"
-            logo_path: "/images/windsurf_logo.png"
-            logo_width: "130"
-            prerequisites:
-              - "SpaceBridge API key (register above)"
-            setup_instructions: "Create or edit your MCP configuration file:"
-            code: |
-              {
-                "mcpServers": {
-                  "spacebridge": {
-                      "transport": "http",
-                      "url": "https://spacebridge.io/mcp/v1",
-                      "headers": {
-                          "Authorization": "Bearer YOUR_SPACEBRIDGE_API_KEY"
-                      }
-                  }
-                }
-              }
-
   preloop:
     name: "Preloop AI"
     domain: "preloop.ai"
@@ -244,18 +98,18 @@ brands:
             logo_path: "/images/Claude_AI_logo.png"
             logo_width: "130"
             prerequisites:
-              - "Preloop API key (start your free trial above)"
+              - "Preloop AI API key (start your free trial above)"
             setup_instructions: "Run the following command in your terminal:"
             code: |
               claude mcp add --transport http preloop https://preloop.ai/mcp/v1
-                --header "Authorization: Bearer YOUR_PRELOOP_API_KEY"
+                --header "Authorization: Bearer YOUR_PRELOOP_AI_API_KEY"
 
           - ide: "cursor"
             ide_name: "Cursor"
             logo_path: "/images/cursor_logo.png"
             logo_width: "130"
             prerequisites:
-              - "Preloop API key (start your free trial above)"
+              - "Preloop AI API key (start your free trial above)"
             setup_instructions: "Create or edit <code>~/.cursor/mcp.json</code>:"
             code: |
               # Create or edit ~/.cursor/mcp.json
@@ -265,7 +119,7 @@ brands:
                     "transport": "http",
                     "url": "https://preloop.ai/mcp/v1",
                     "headers": {
-                      "Authorization": "Bearer YOUR_PRELOOP_API_KEY"
+                      "Authorization": "Bearer YOUR_PRELOOP_AI_API_KEY"
                     }
                   }
                 }
@@ -276,7 +130,7 @@ brands:
             logo_path: "/images/windsurf_logo.png"
             logo_width: "130"
             prerequisites:
-              - "Preloop API key (start your free trial above)"
+              - "Preloop AI API key (start your free trial above)"
             setup_instructions: "Create or edit your MCP configuration file:"
             code: |
               {
@@ -285,7 +139,7 @@ brands:
                       "transport": "http",
                       "url": "https://preloop.ai/mcp/v1",
                       "headers": {
-                          "Authorization": "Bearer YOUR_PRELOOP_API_KEY"
+                          "Authorization": "Bearer YOUR_PRELOOP_AI_API_KEY"
                       }
                   }
                 }

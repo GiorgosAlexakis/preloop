@@ -555,24 +555,24 @@ export class NotificationPreferencesView extends AuthedElement {
           </div>
 
           ${this.preferences?.mobile_device_tokens &&
-          this.preferences.mobile_device_tokens.length > 0
-            ? html`
+        this.preferences.mobile_device_tokens.length > 0
+        ? html`
                 <div class="devices-list">
                   ${this.preferences.mobile_device_tokens.map(
-                    (device) => html`
+          (device) => html`
                       <div class="device-item">
                         <div class="device-info">
                           <div class="device-platform">
                             <sl-icon
                               name=${device.platform === 'ios'
-                                ? 'phone'
-                                : 'phone-fill'}
+              ? 'phone'
+              : 'phone-fill'}
                               style="font-size: 1.5rem;"
                             ></sl-icon>
                             <sl-badge
                               variant=${device.platform === 'ios'
-                                ? 'primary'
-                                : 'success'}
+              ? 'primary'
+              : 'success'}
                             >
                               ${device.platform === 'ios' ? 'iOS' : 'Android'}
                             </sl-badge>
@@ -591,17 +591,17 @@ export class NotificationPreferencesView extends AuthedElement {
                           size="small"
                           variant="danger"
                           @click=${() =>
-                            this.handleUnregisterDevice(device.token)}
+              this.handleUnregisterDevice(device.token)}
                         >
                           <sl-icon slot="prefix" name="trash"></sl-icon>
                           Unregister
                         </sl-button>
                       </div>
                     `
-                  )}
+        )}
                 </div>
               `
-            : html`
+        : html`
                 <div class="empty-state">
                   <sl-icon name="phone"></sl-icon>
                   <p>No mobile devices registered</p>
@@ -645,12 +645,12 @@ export class NotificationPreferencesView extends AuthedElement {
         style="--width: 600px;"
       >
         ${this.qrCodeData
-          ? html`
+        ? html`
               <div class="qr-container">
                 <div class="qr-instructions">
                   <h4>Scan with your mobile app</h4>
                   <p>
-                    Open the SpaceBridge mobile app and scan this QR code to
+                    Open the Preloop AI mobile app and scan this QR code to
                     register your device for push notifications.
                   </p>
                 </div>
@@ -668,7 +668,7 @@ export class NotificationPreferencesView extends AuthedElement {
                 </div>
               </div>
             `
-          : html`<sl-spinner></sl-spinner>`}
+        : html`<sl-spinner></sl-spinner>`}
 
         <sl-button slot="footer" @click=${this.handleCloseQRDialog}>
           Close

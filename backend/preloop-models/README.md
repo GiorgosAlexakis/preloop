@@ -1,13 +1,13 @@
-# SpaceModels Library
+# PreloopModels Library
 
-SpaceModels is a SQLAlchemy-based ORM library that provides a comprehensive set of models and CRUD operations for SpaceBridge and related applications. This library aims to unify data models across the SpaceBridge ecosystem.
+PreloopModels is a SQLAlchemy-based ORM library that provides a comprehensive set of models and CRUD operations for Preloop AI and related applications. This library aims to unify data models across the Preloop AI ecosystem.
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/spacecode/spacemodels.git
-cd spacemodels
+git clone https://github.com/spacecode-ai/preloop-ai.git
+cd backend/preloop-models
 ```
 
 2. Create a virtual environment (optional but recommended):
@@ -25,22 +25,22 @@ pip install -e .  # Install in development mode
 4. Set up your database:
 ```bash
 # For PostgreSQL (recommended for production)
-export DATABASE_URL="postgresql+psycopg://user:password@localhost/spacemodels"
+export DATABASE_URL="postgresql+psycopg://user:password@localhost/preloop_ai"
 
 ```
 
 ## Usage
 
 ```python
-from spacemodels.db.session import get_db_session
-from spacemodels.crud import crud_account, crud_tracker
+from preloop_models.db.session import get_db_session
+from preloop_models.crud import crud_account, crud_tracker
 
 # Get database session
 db = next(get_db_session())
 
 # Create a new account
 new_account = crud_account.create(
-    db, 
+    db,
     obj_in={
         "username": "johndoe",
         "email": "john@example.com",

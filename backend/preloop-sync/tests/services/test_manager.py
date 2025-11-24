@@ -2,11 +2,11 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from spacesync.services import manager
+from preloop_sync.services import manager
 
 
 @pytest.mark.asyncio
-@patch("spacesync.services.manager.event_bus_service")
+@patch("preloop_sync.services.manager.event_bus_service")
 async def test_poll_tracker_success(mock_event_bus_service):
     mock_ack = AsyncMock()
     mock_ack.stream = "tasks"
@@ -21,7 +21,7 @@ async def test_poll_tracker_success(mock_event_bus_service):
 
 
 @pytest.mark.asyncio
-@patch("spacesync.services.manager.event_bus_service")
+@patch("preloop_sync.services.manager.event_bus_service")
 async def test_poll_tracker_failure(mock_event_bus_service):
     mock_event_bus_service.publish_task.return_value = None
 
@@ -32,8 +32,8 @@ async def test_poll_tracker_failure(mock_event_bus_service):
     )
 
 
-@patch("spacesync.services.manager.crud_tracker")
-@patch("spacesync.services.manager.get_db_session")
+@patch("preloop_sync.services.manager.crud_tracker")
+@patch("preloop_sync.services.manager.get_db_session")
 def test_sync_scheduled_jobs(mock_get_db_session, mock_crud_tracker):
     mock_scheduler = Mock(spec=AsyncIOScheduler)
     mock_db_session = Mock()

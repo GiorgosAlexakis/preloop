@@ -6,8 +6,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.approval_request import CRUDApprovalRequest
-from spacemodels.models.approval_request import ApprovalRequest
+from preloop_models.crud.approval_request import CRUDApprovalRequest
+from preloop_models.models.approval_request import ApprovalRequest
 
 
 @pytest.fixture

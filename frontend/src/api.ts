@@ -20,6 +20,20 @@ import type {
 // Global refresh promise to prevent concurrent refresh requests
 let refreshPromise: Promise<string | null> | null = null;
 
+export function extractErrorMessage(errorData: any, defaultMessage: string): string {
+  if (errorData && errorData.detail) {
+    if (Array.isArray(errorData.detail)) {
+      return errorData.detail
+        .map((item: any) => item.msg || JSON.stringify(item))
+        .join(', ');
+    } else if (typeof errorData.detail === 'object') {
+      return JSON.stringify(errorData.detail);
+    }
+    return String(errorData.detail);
+  }
+  return defaultMessage;
+}
+
 async function refreshToken(): Promise<string | null> {
   // If a refresh is already in progress, wait for it
   if (refreshPromise) {
@@ -335,7 +349,7 @@ export async function post(url: string, body: any) {
     try {
       const errorData = await response.json();
       if (errorData.detail) {
-        errorMessage = errorData.detail;
+        errorMessage = extractErrorMessage(errorData, errorMessage);
       }
     } catch (e) {
       // If JSON parsing fails, use the default error message
@@ -355,7 +369,7 @@ export async function detectIssueDependencies(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to detect issue dependencies');
+    throw new Error(extractErrorMessage(errorData, 'Failed to detect issue dependencies'));
   }
   return response.json();
 }
@@ -372,7 +386,7 @@ export async function extendIssueDependencyScan(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      errorData.detail || 'Failed to extend issue dependency scan'
+      extractErrorMessage(errorData, 'Failed to extend issue dependency scan')
     );
   }
   return response.json();
@@ -388,7 +402,7 @@ export async function commitIssueDependencies(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to commit issue dependencies');
+    throw new Error(extractErrorMessage(errorData, 'Failed to commit issue dependencies'));
   }
   return response.json();
 }
@@ -428,7 +442,7 @@ export async function changePassword(passwords: {
   }
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to change password');
+    throw new Error(extractErrorMessage(errorData, 'Failed to change password'));
   }
 }
 
@@ -483,7 +497,7 @@ export async function createAIModel(model: any) {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to create AI model');
+    throw new Error(extractErrorMessage(errorData, 'Failed to create AI model'));
   }
   return response.json();
 }
@@ -496,7 +510,7 @@ export async function updateAIModel(modelId: string, model: any) {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update AI model');
+    throw new Error(extractErrorMessage(errorData, 'Failed to update AI model'));
   }
   return response.json();
 }
@@ -507,7 +521,7 @@ export async function deleteAIModel(modelId: string) {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to delete AI model');
+    throw new Error(extractErrorMessage(errorData, 'Failed to delete AI model'));
   }
 }
 
@@ -523,7 +537,7 @@ export async function getAvailableModelsForProvider(
   const response = await fetch(url);
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to fetch available models');
+    throw new Error(extractErrorMessage(errorData, 'Failed to fetch available models'));
   }
   return response.json();
 }
@@ -852,7 +866,7 @@ export async function executeIssueDuplicateResolution(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      errorData.detail || 'Failed to execute issue duplicate resolution'
+      extractErrorMessage(errorData, 'Failed to execute issue duplicate resolution')
     );
   }
   return response.json();
@@ -884,7 +898,7 @@ export async function getComplianceImprovementSuggestion(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      errorData.detail || 'Failed to get compliance improvement suggestion'
+      extractErrorMessage(errorData, 'Failed to get compliance improvement suggestion')
     );
   }
   return response.json();
@@ -914,7 +928,7 @@ export async function updateIssueContent(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update issue content');
+    throw new Error(extractErrorMessage(errorData, 'Failed to update issue content'));
   }
 
   return response.json();
@@ -967,7 +981,7 @@ export async function createToolConfiguration(config: any): Promise<any> {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to create tool configuration');
+    throw new Error(extractErrorMessage(errorData, 'Failed to create tool configuration'));
   }
   return response.json();
 }
@@ -996,7 +1010,7 @@ export async function updateToolConfiguration(
   );
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update tool configuration');
+    throw new Error(extractErrorMessage(errorData, 'Failed to update tool configuration'));
   }
   return response.json();
 }
@@ -1043,7 +1057,7 @@ export async function updateToolApprovalCondition(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      errorData.detail || 'Failed to update tool approval condition'
+      extractErrorMessage(errorData, 'Failed to update tool approval condition')
     );
   }
   return response.json();
@@ -1066,7 +1080,7 @@ export async function createApprovalPolicy(policy: any): Promise<any> {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to create approval policy');
+    throw new Error(extractErrorMessage(errorData, 'Failed to create approval policy'));
   }
   return response.json();
 }
@@ -1093,7 +1107,7 @@ export async function updateApprovalPolicy(
   );
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update approval policy');
+    throw new Error(extractErrorMessage(errorData, 'Failed to update approval policy'));
   }
   return response.json();
 }
@@ -1127,7 +1141,7 @@ export async function createMCPServer(server: any): Promise<any> {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to create MCP server');
+    throw new Error(extractErrorMessage(errorData, 'Failed to create MCP server'));
   }
   return response.json();
 }
@@ -1151,7 +1165,7 @@ export async function updateMCPServer(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update MCP server');
+    throw new Error(extractErrorMessage(errorData, 'Failed to update MCP server'));
   }
   return response.json();
 }
@@ -1171,7 +1185,7 @@ export async function scanMCPServer(serverId: string): Promise<any> {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to scan MCP server');
+    throw new Error(extractErrorMessage(errorData, 'Failed to scan MCP server'));
   }
   return response.json();
 }
@@ -1240,7 +1254,7 @@ export async function approveRequest(
   );
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to approve request');
+    throw new Error(extractErrorMessage(errorData, 'Failed to approve request'));
   }
   return response.json();
 }
@@ -1259,7 +1273,7 @@ export async function declineRequest(
   );
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to decline request');
+    throw new Error(extractErrorMessage(errorData, 'Failed to decline request'));
   }
   return response.json();
 }
@@ -1299,7 +1313,7 @@ export async function createUser(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to create user');
+    throw new Error(extractErrorMessage(errorData, 'Failed to create user'));
   }
   return response.json();
 }
@@ -1315,7 +1329,7 @@ export async function updateUser(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update user');
+    throw new Error(extractErrorMessage(errorData, 'Failed to update user'));
   }
   return response.json();
 }
@@ -1326,7 +1340,7 @@ export async function deleteUser(userId: string): Promise<void> {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to deactivate user');
+    throw new Error(extractErrorMessage(errorData, 'Failed to deactivate user'));
   }
 }
 
@@ -1365,7 +1379,7 @@ export async function createTeam(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to create team');
+    throw new Error(extractErrorMessage(errorData, 'Failed to create team'));
   }
   return response.json();
 }
@@ -1381,7 +1395,7 @@ export async function updateTeam(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update team');
+    throw new Error(extractErrorMessage(errorData, 'Failed to update team'));
   }
   return response.json();
 }
@@ -1392,7 +1406,7 @@ export async function deleteTeam(teamId: string): Promise<void> {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to delete team');
+    throw new Error(extractErrorMessage(errorData, 'Failed to delete team'));
   }
 }
 
@@ -1418,7 +1432,7 @@ export async function addTeamMember(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to add team member');
+    throw new Error(extractErrorMessage(errorData, 'Failed to add team member'));
   }
   return response.json();
 }
@@ -1435,7 +1449,7 @@ export async function removeTeamMember(
   );
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to remove team member');
+    throw new Error(extractErrorMessage(errorData, 'Failed to remove team member'));
   }
 }
 
@@ -1460,7 +1474,7 @@ export async function assignTeamRole(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to assign role to team');
+    throw new Error(extractErrorMessage(errorData, 'Failed to assign role to team'));
   }
 }
 
@@ -1476,7 +1490,7 @@ export async function removeTeamRole(
   );
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to remove role from team');
+    throw new Error(extractErrorMessage(errorData, 'Failed to remove role from team'));
   }
 }
 
@@ -1510,7 +1524,7 @@ export async function createInvitation(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to create invitation');
+    throw new Error(extractErrorMessage(errorData, 'Failed to create invitation'));
   }
   return response.json();
 }
@@ -1524,7 +1538,7 @@ export async function resendInvitation(invitationId: string): Promise<void> {
   );
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to resend invitation');
+    throw new Error(extractErrorMessage(errorData, 'Failed to resend invitation'));
   }
 }
 
@@ -1534,7 +1548,7 @@ export async function cancelInvitation(invitationId: string): Promise<void> {
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to cancel invitation');
+    throw new Error(extractErrorMessage(errorData, 'Failed to cancel invitation'));
   }
 }
 
@@ -1571,7 +1585,7 @@ export async function assignUserRole(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to assign role');
+    throw new Error(extractErrorMessage(errorData, 'Failed to assign role'));
   }
 }
 
@@ -1587,7 +1601,7 @@ export async function removeUserRole(
   );
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to remove role');
+    throw new Error(extractErrorMessage(errorData, 'Failed to remove role'));
   }
 }
 

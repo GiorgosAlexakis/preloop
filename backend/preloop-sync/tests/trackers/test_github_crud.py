@@ -6,8 +6,8 @@ import unittest
 from unittest.mock import AsyncMock
 from unittest import IsolatedAsyncioTestCase
 
-from spacesync.trackers.github import GitHubTracker
-from spacesync.exceptions import TrackerResponseError
+from preloop_sync.trackers.github import GitHubTracker
+from preloop_sync.exceptions import TrackerResponseError
 
 
 class TestGitHubTrackerCRUD(IsolatedAsyncioTestCase):
@@ -24,7 +24,7 @@ class TestGitHubTrackerCRUD(IsolatedAsyncioTestCase):
     async def test_create_issue_success(self):
         """Test successful issue creation."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueCreate
+        from preloop_ai.schemas.tracker_models import IssueCreate
 
         issue_create = IssueCreate(
             title="New Issue",
@@ -69,7 +69,7 @@ class TestGitHubTrackerCRUD(IsolatedAsyncioTestCase):
     async def test_update_issue_success(self):
         """Test successful issue update."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueUpdate
+        from preloop_ai.schemas.tracker_models import IssueUpdate
 
         issue_update = IssueUpdate(
             title="Updated Issue",
@@ -173,7 +173,7 @@ class TestGitHubTrackerCRUD(IsolatedAsyncioTestCase):
     async def test_search_issues_success(self):
         """Test successful issue search."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueFilter
+        from preloop_ai.schemas.tracker_models import IssueFilter
 
         filter_params = IssueFilter(query="bug", status=["open"], labels=["critical"])
 
@@ -249,7 +249,7 @@ class TestGitHubTrackerCRUD(IsolatedAsyncioTestCase):
         """Test error when connection details are missing."""
         # Arrange
         tracker = GitHubTracker("tracker-1", "api-key", {})
-        from spacebridge.schemas.tracker_models import IssueCreate
+        from preloop_ai.schemas.tracker_models import IssueCreate
 
         issue_create = IssueCreate(title="New Issue")
 

@@ -3,7 +3,7 @@ import json
 from unittest.mock import AsyncMock, patch, Mock
 
 from nats.js.errors import APIError
-from spacesync.services.event_bus import EventBus
+from preloop_sync.services.event_bus import EventBus
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ def event_bus():
 
 
 @pytest.mark.asyncio
-@patch("spacesync.services.event_bus.nats.connect")
+@patch("preloop_sync.services.event_bus.nats.connect")
 async def test_publish_task_success(mock_nats_connect, event_bus: EventBus):
     """
     Tests that a task is successfully published with the correct payload format.
@@ -56,7 +56,7 @@ async def test_publish_task_success(mock_nats_connect, event_bus: EventBus):
     call_args = mock_js.publish.call_args
 
     # Check subject and payload
-    assert call_args.args[0] == f"spacesync.tasks.{task_name}"
+    assert call_args.args[0] == f"preloop_sync.tasks.{task_name}"
     payload = json.loads(call_args.args[1].decode("utf-8"))
 
     assert payload["function"] == task_name
@@ -69,7 +69,7 @@ async def test_publish_task_success(mock_nats_connect, event_bus: EventBus):
 
 
 @pytest.mark.asyncio
-@patch("spacesync.services.event_bus.nats.connect")
+@patch("preloop_sync.services.event_bus.nats.connect")
 async def test_publish_task_reconnects_if_not_connected(
     mock_nats_connect, event_bus: EventBus
 ):
@@ -97,14 +97,14 @@ async def test_publish_task_reconnects_if_not_connected(
     mock_nats_connect.assert_called_once()  # Should be called inside publish_task
     mock_js.stream_info.side_effect = APIError(err_code=10059)
     mock_js.publish.assert_called_once_with(
-        "spacesync.tasks.some_task",
+        "preloop_sync.tasks.some_task",
         b'{"function": "some_task", "args": [], "kwargs": {}}',
     )
     assert result is not None
 
 
 @pytest.mark.asyncio
-@patch("spacesync.services.event_bus.nats.connect")
+@patch("preloop_sync.services.event_bus.nats.connect")
 async def test_publish_task_handles_publish_failure(
     mock_nats_connect, event_bus: EventBus
 ):
@@ -132,7 +132,7 @@ async def test_publish_task_handles_publish_failure(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.services.event_bus.nats.connect")
+@patch("preloop_sync.services.event_bus.nats.connect")
 async def test_connect_when_already_connected(mock_nats_connect, event_bus: EventBus):
     """
     Tests that connect() does not try to reconnect if already connected.
@@ -150,7 +150,7 @@ async def test_connect_when_already_connected(mock_nats_connect, event_bus: Even
 
 
 @pytest.mark.asyncio
-@patch("spacesync.services.event_bus.nats.connect")
+@patch("preloop_sync.services.event_bus.nats.connect")
 async def test_connect_handles_connection_failure(
     mock_nats_connect, event_bus: EventBus
 ):
@@ -169,7 +169,7 @@ async def test_connect_handles_connection_failure(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.services.event_bus.nats.connect")
+@patch("preloop_sync.services.event_bus.nats.connect")
 async def test_connect_updates_stream_with_different_subjects(
     mock_nats_connect, event_bus: EventBus
 ):

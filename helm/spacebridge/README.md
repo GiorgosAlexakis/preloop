@@ -11,7 +11,7 @@ This Helm chart deploys Preloop AI, an event-driven automation platform with bui
 
 ## Installing the Chart
 
-To install the chart with the release name `spacebridge`:
+To install the chart with the release name `preloop-ai`:
 
 ```bash
 # Add the Spacecode AI Helm repository (if available)
@@ -26,10 +26,10 @@ The command deploys Preloop AI on the Kubernetes cluster in the default configur
 
 ## Uninstalling the Chart
 
-To uninstall/delete the `spacebridge` deployment:
+To uninstall/delete the `preloop-ai` deployment:
 
 ```bash
-helm uninstall spacebridge
+helm uninstall preloop-ai
 ```
 
 ## Parameters
@@ -39,7 +39,7 @@ helm uninstall spacebridge
 | Name                | Description                                                                                         | Value           |
 |---------------------|-----------------------------------------------------------------------------------------------------|-----------------|
 | `replicaCount`      | Number of replicas                                                                                 | `1`             |
-| `image.repository`  | Preloop AI image repository                                                                        | `gitlab.spacecode.ai:5000/spacecode/spacebridge` |
+| `image.repository`  | Preloop AI image repository                                                                        | `registry.spacecode.ai/spacecode/preloop-ai` |
 | `image.tag`         | Preloop AI image tag                                                                               | `latest`        |
 | `image.pullPolicy`  | Preloop AI image pull policy                                                                       | `Always`  |
 | `imagePullSecrets`  | Secret names for pulling images                                                                    | `[]`            |
@@ -76,7 +76,7 @@ helm uninstall spacebridge
 | `database.externalDatabase.database` | External PostgreSQL database                       | `""`        |
 | `database.postgresql.auth.username` | PostgreSQL username                                 | `postgres`  |
 | `database.postgresql.auth.password` | PostgreSQL password                                 | `postgres`  |
-| `database.postgresql.auth.database` | PostgreSQL database                                 | `spacebridge` |
+| `database.postgresql.auth.database` | PostgreSQL database                                 | `preloop` |
 | `database.postgresql.service.port`  | PostgreSQL service port                             | `5432`      |
 | `database.postgresql.persistence.enabled` | Enable PostgreSQL persistence                | `true`      |
 | `database.postgresql.persistence.size`   | PostgreSQL persistence size                    | `1Gi`       |
@@ -172,7 +172,7 @@ database:
     port: 5432
     user: postgres
     password: my-password
-    database: spacebridge
+    database: preloop
 ```
 
 ### JWT Authentication
@@ -196,14 +196,14 @@ ingress:
     kubernetes.io/ingress.class: nginx
     cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: spacebridge.example.com
+    - host: preloop_ai.example.com
       paths:
         - path: /
           pathType: Prefix
   tls:
-    - secretName: spacebridge-tls
+    - secretName: preloop-tls
       hosts:
-        - spacebridge.example.com
+        - preloop_ai.example.com
 ```
 
 ### Scaling the deployment

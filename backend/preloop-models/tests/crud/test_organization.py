@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.organization import CRUDOrganization
-from spacemodels.models.organization import Organization
+from preloop_models.crud.organization import CRUDOrganization
+from preloop_models.models.organization import Organization
 
 
 @pytest.fixture

@@ -1,4 +1,3 @@
-// /Users/yanconst/Projects/spacebridge/SpaceLit/src/workers/tsne.worker.ts
 import * as tsnejs from 'tsne-js';
 
 self.onmessage = (e) => {

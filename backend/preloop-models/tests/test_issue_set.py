@@ -3,8 +3,8 @@
 import pytest
 from sqlalchemy.orm import Session
 
-from spacemodels.crud import crud_issue_set
-from spacemodels.models import AIModel, Account, IssueSet
+from preloop_models.crud import crud_issue_set
+from preloop_models.models import AIModel, Account, IssueSet
 
 
 @pytest.fixture

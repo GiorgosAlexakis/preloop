@@ -1,5 +1,5 @@
 {{- if and .Values.preloop.enabled .Values.preloop.ingress.enabled -}}
-{{- $fullName := include "spacebridge.fullname" . -}}
+{{- $fullName := include "preloop_ai.fullname" . -}}
 {{- $svcPort := 80 -}}
 {{- if and .Values.preloop.ingress.className (not (semverCompare ">=1.18-0" .Capabilities.KubeVersion.GitVersion)) }}
   {{- if not (hasKey .Values.preloop.ingress.annotations "kubernetes.io/ingress.class") }}
@@ -17,7 +17,7 @@ kind: Ingress
 metadata:
   name: {{ $fullName }}-preloop
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
     app.kubernetes.io/component: spacelit-preloop
   {{- with .Values.preloop.ingress.annotations }}
   annotations:

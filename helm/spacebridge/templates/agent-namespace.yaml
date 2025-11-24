@@ -4,7 +4,7 @@ kind: Namespace
 metadata:
   name: {{ .Values.agentExecution.namespace.name }}
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
     app.kubernetes.io/component: agent-execution
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/audit: restricted

@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "spacebridge.fullname" . }}
+  name: {{ include "preloop_ai.fullname" . }}
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -12,5 +12,5 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "spacebridge.selectorLabels" . | nindent 4 }}
+    {{- include "preloop_ai.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: spacelit

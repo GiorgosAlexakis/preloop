@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.comment import crud_comment
+from preloop_models.crud.comment import crud_comment
 
 
 class TestCommentCRUD:

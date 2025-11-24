@@ -5,14 +5,14 @@ Tests for new GitLab tracker methods (get_issue and get_comments).
 from unittest.mock import MagicMock, patch, AsyncMock
 from unittest import IsolatedAsyncioTestCase
 
-from spacesync.trackers.gitlab import GitLabTracker
-from spacesync.exceptions import TrackerResponseError
+from preloop_sync.trackers.gitlab import GitLabTracker
+from preloop_sync.exceptions import TrackerResponseError
 
 
 class TestGitLabTrackerNewMethods(IsolatedAsyncioTestCase):
     """Test GitLab tracker's new get_issue and get_comments methods."""
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_comments_success(self, mock_gitlab_constructor):
         """Test successful comments retrieval."""
         # Arrange
@@ -84,7 +84,7 @@ class TestGitLabTrackerNewMethods(IsolatedAsyncioTestCase):
         self.assertEqual(result[1].author.id, "102")
         self.assertEqual(result[1].author.name, "commenter2")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_comments_missing_project_id(self, mock_gitlab_constructor):
         """Test error when project_id is missing from connection details."""
         # Arrange
@@ -98,7 +98,7 @@ class TestGitLabTrackerNewMethods(IsolatedAsyncioTestCase):
             "Project ID not found in connection details", str(context.exception)
         )
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_comments_filters_system_notes(self, mock_gitlab_constructor):
         """Test that system notes are filtered out from comments."""
         # Arrange
@@ -150,7 +150,7 @@ class TestGitLabTrackerNewMethods(IsolatedAsyncioTestCase):
         self.assertEqual(result[0].id, "1001")
         self.assertEqual(result[0].body, "User comment")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_issue_missing_project_id(self, mock_gitlab_constructor):
         """Test error when project_id is missing from connection details."""
         # Arrange
@@ -164,7 +164,7 @@ class TestGitLabTrackerNewMethods(IsolatedAsyncioTestCase):
             "Project ID not found in connection details", str(context.exception)
         )
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_issue_with_project_context(self, mock_gitlab_constructor):
         """Test get_issue uses project_id from connection_details."""
         # Arrange

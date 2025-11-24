@@ -1,6 +1,6 @@
 """Test approval streaming with proxied external MCP tools.
 
-This client connects to SpaceBridge and calls a proxied tool (from example_mcp_server.py)
+This client connects to Preloop AI and calls a proxied tool (from example_mcp_server.py)
 that requires approval, displaying progress notifications during the approval wait period.
 """
 
@@ -45,22 +45,22 @@ async def progress_handler(
 async def main():
     """Test approval streaming with proxied tools."""
     print("\n" + "=" * 80)
-    print("SpaceBridge Approval Streaming Test - PROXIED TOOLS")
+    print("Preloop AI Approval Streaming Test - PROXIED TOOLS")
     print("=" * 80)
     print()
 
     # Get configuration from environment or use defaults
-    server_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000/mcp/v1")
-    bearer_token = os.getenv("SPACEBRIDGE_TOKEN")
+    server_url = os.getenv("PRELOOP_URL", "http://localhost:8000/mcp/v1")
+    bearer_token = os.getenv("PRELOOP_TOKEN")
 
     if not bearer_token:
-        print("ERROR: SPACEBRIDGE_TOKEN environment variable not set!")
+        print("ERROR: PRELOOP_TOKEN environment variable not set!")
         print(
-            "Usage: SPACEBRIDGE_TOKEN=your-token python test_proxied_approval_streaming.py"
+            "Usage: PRELOOP_TOKEN=your-token python test_proxied_approval_streaming.py"
         )
         return
 
-    print(f"Connecting to SpaceBridge: {server_url}")
+    print(f"Connecting to Preloop AI: {server_url}")
     print(f"Using bearer token: {bearer_token[:20]}...")
     print()
 
@@ -88,7 +88,7 @@ async def main():
             print()
             print("Please ensure:")
             print("  1. example_mcp_server.py is running on http://localhost:8001")
-            print("  2. The external MCP server is added to your SpaceBridge account")
+            print("  2. The external MCP server is added to your Preloop AI account")
             print("  3. The tools have been scanned and are active")
             print()
             return
@@ -136,8 +136,8 @@ if __name__ == "__main__":
     print("1. Make sure example_mcp_server.py is running:")
     print("   python examples/example_mcp_server.py")
     print()
-    print("2. Add the external MCP server to SpaceBridge:")
-    print("   - Go to SpaceBridge UI: /console/tools")
+    print("2. Add the external MCP server to Preloop AI:")
+    print("   - Go to Preloop AI UI: /console/tools")
     print("   - Click 'Add MCP Server'")
     print("   - Enter:")
     print("     * Name: Example MCP Server")
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     print("   - Click 'Add' and then 'Scan' to discover tools")
     print()
     print("3. Configure an approval policy for calculate_fibonacci:")
-    print("   - Go to SpaceBridge UI: /console/tools")
+    print("   - Go to Preloop AI UI: /console/tools")
     print("   - Find 'calculate_fibonacci' tool (from External MCP server)")
     print("   - Enable 'Requires Approval'")
     print("   - Configure approval policy (Slack/Mattermost/webhook)")
@@ -157,15 +157,15 @@ if __name__ == "__main__":
     print("   - Create or view an MCP access token")
     print()
     print("5. Run this script with your token:")
-    print("   export SPACEBRIDGE_TOKEN='your-token-here'")
+    print("   export PRELOOP_TOKEN='your-token-here'")
     print("   python test_proxied_approval_streaming.py")
     print("=" * 80)
     print()
 
     # Check if token is set
-    if os.getenv("SPACEBRIDGE_TOKEN"):
+    if os.getenv("PRELOOP_TOKEN"):
         asyncio.run(main())
     else:
         print(
-            "⚠️  SPACEBRIDGE_TOKEN not set. Please follow the setup instructions above."
+            "⚠️  PRELOOP_TOKEN not set. Please follow the setup instructions above."
         )

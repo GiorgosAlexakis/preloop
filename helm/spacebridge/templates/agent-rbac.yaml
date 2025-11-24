@@ -5,10 +5,10 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-agent-manager
+  name: {{ include "preloop_ai.fullname" . }}-agent-manager
   namespace: {{ $agentNamespace }}
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
     app.kubernetes.io/component: agent-execution
 rules:
   # Permissions to manage Jobs for agent execution
@@ -33,21 +33,21 @@ rules:
     verbs: ["get", "list"]
 
 ---
-# RoleBinding to grant the SpaceBridge ServiceAccount access to manage agent containers
+# RoleBinding to grant the Preloop AI ServiceAccount access to manage agent containers
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-agent-manager
+  name: {{ include "preloop_ai.fullname" . }}-agent-manager
   namespace: {{ $agentNamespace }}
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
     app.kubernetes.io/component: agent-execution
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "spacebridge.fullname" . }}-agent-manager
+  name: {{ include "preloop_ai.fullname" . }}-agent-manager
 subjects:
   - kind: ServiceAccount
-    name: {{ include "spacebridge.serviceAccountName" . }}
+    name: {{ include "preloop_ai.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}

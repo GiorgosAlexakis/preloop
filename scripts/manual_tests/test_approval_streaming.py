@@ -1,6 +1,6 @@
-"""Test approval streaming with SpaceBridge MCP server.
+"""Test approval streaming with Preloop AI MCP server.
 
-This client connects to SpaceBridge and calls a tool that requires approval,
+This client connects to Preloop AI and calls a tool that requires approval,
 displaying progress notifications during the approval wait period.
 """
 
@@ -45,20 +45,20 @@ async def progress_handler(
 async def main():
     """Test approval streaming."""
     print("\n" + "=" * 80)
-    print("SpaceBridge Approval Streaming Test")
+    print("Preloop AI Approval Streaming Test")
     print("=" * 80)
     print()
 
     # Get configuration from environment or use defaults
-    server_url = os.getenv("SPACEBRIDGE_URL", "http://localhost:8000/mcp/v1")
-    bearer_token = os.getenv("SPACEBRIDGE_TOKEN")
+    server_url = os.getenv("PRELOOP_URL", "http://localhost:8000/mcp/v1")
+    bearer_token = os.getenv("PRELOOP_TOKEN")
 
     if not bearer_token:
-        print("ERROR: SPACEBRIDGE_TOKEN environment variable not set!")
-        print("Usage: SPACEBRIDGE_TOKEN=your-token python test_approval_streaming.py")
+        print("ERROR: PRELOOP_TOKEN environment variable not set!")
+        print("Usage: PRELOOP_TOKEN=your-token python test_approval_streaming.py")
         return
 
-    print(f"Connecting to SpaceBridge: {server_url}")
+    print(f"Connecting to Preloop AI: {server_url}")
     print(f"Using bearer token: {bearer_token[:20]}...")
     print()
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     print("SETUP INSTRUCTIONS:")
     print("=" * 80)
     print("1. Configure an approval policy for estimate_compliance:")
-    print("   - Go to SpaceBridge UI: /console/tools")
+    print("   - Go to Preloop AI UI: /console/tools")
     print("   - Find 'estimate_compliance' tool")
     print("   - Enable 'Requires Approval'")
     print("   - Configure approval policy (Slack/Mattermost/webhook)")
@@ -132,15 +132,15 @@ if __name__ == "__main__":
     print("   - Create or view an MCP access token")
     print()
     print("3. Run this script with your token:")
-    print("   export SPACEBRIDGE_TOKEN='your-token-here'")
+    print("   export PRELOOP_TOKEN='your-token-here'")
     print("   python test_approval_streaming.py")
     print("=" * 80)
     print()
 
     # Check if token is set
-    if os.getenv("SPACEBRIDGE_TOKEN"):
+    if os.getenv("PRELOOP_TOKEN"):
         asyncio.run(main())
     else:
         print(
-            "⚠️  SPACEBRIDGE_TOKEN not set. Please follow the setup instructions above."
+            "⚠️  PRELOOP_TOKEN not set. Please follow the setup instructions above."
         )

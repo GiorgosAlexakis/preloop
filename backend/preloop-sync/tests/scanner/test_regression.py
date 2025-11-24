@@ -4,14 +4,14 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
 from sqlalchemy.orm import Session
 
-from spacemodels.models import (
+from preloop_models.models import (
     Organization,
     Project,
     Tracker,
     Issue,
     Comment,
 )
-from spacesync.scanner.core import TrackerClient
+from preloop_sync.scanner.core import TrackerClient
 
 
 @pytest.fixture
@@ -49,9 +49,9 @@ def mock_project():
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_issue")
-@patch("spacesync.scanner.core.crud_comment")
-@patch("spacesync.scanner.core.crud_issue_embedding")
+@patch("preloop_sync.scanner.core.crud_issue")
+@patch("preloop_sync.scanner.core.crud_comment")
+@patch("preloop_sync.scanner.core.crud_issue_embedding")
 async def test_scan_issues_handles_string_casting_and_identifier(
     mock_crud_embedding,
     mock_crud_comment,
@@ -65,7 +65,7 @@ async def test_scan_issues_handles_string_casting_and_identifier(
     Regression test: Ensures that organization/project identifiers are correctly handled
     as strings and that the `identifier` field is present in transformed project data.
     """
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         mock_internal_client = AsyncMock()
         # Simulate API response with integer IDs
         mock_internal_client.get_organizations.return_value = [
@@ -119,8 +119,8 @@ async def test_scan_issues_handles_string_casting_and_identifier(
 
 
 @pytest.mark.asyncio
-@patch("spacesync.scanner.core.crud_comment")
-@patch("spacesync.scanner.core.crud_issue")
+@patch("preloop_sync.scanner.core.crud_comment")
+@patch("preloop_sync.scanner.core.crud_issue")
 async def test_scan_issues_handles_comments_correctly(
     mock_crud_issue,
     mock_crud_comment,
@@ -132,7 +132,7 @@ async def test_scan_issues_handles_comments_correctly(
     """
     Regression test: Ensures that comments are processed correctly without errors.
     """
-    with patch("spacesync.trackers.github.GitHubTracker"):
+    with patch("preloop_sync.trackers.github.GitHubTracker"):
         mock_internal_client = AsyncMock()
         mock_internal_client.get_issues.return_value = [
             {"id": "1", "updated_at": "2025-01-01T00:00:00Z"}

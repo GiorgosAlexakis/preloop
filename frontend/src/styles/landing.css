@@ -5,7 +5,9 @@
   color: #e6edf3;
 }
 
-p, ul, li {
+p,
+ul,
+li {
   line-height: 1.6;
 }
 
@@ -47,13 +49,11 @@ p.lead {
 .hero {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(
-    135deg,
-    hsl(25, 70%, 28%) 0%,
-    hsl(280, 50%, 25%) 33%,
-    hsl(200, 55%, 28%) 66%,
-    hsl(260, 60%, 30%) 100%
-  );
+  background: linear-gradient(135deg,
+      hsl(25, 70%, 28%) 0%,
+      hsl(280, 50%, 25%) 33%,
+      hsl(200, 55%, 28%) 66%,
+      hsl(260, 60%, 30%) 100%);
   background-size: 400% 400%;
   animation: moveGradient 30s ease infinite;
   padding: 8rem 0;
@@ -110,39 +110,32 @@ p.lead {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   text-fill-color: transparent;
-  display: inline-block; /* Ensures the gradient is applied correctly */
+  display: inline-block;
+  /* Ensures the gradient is applied correctly */
 }
 
 .gradient-faster {
-  background-image: linear-gradient(
-    45deg,
-    hsl(211, 100%, 50%),
-    hsl(195, 100%, 50%)
-  );
+  background-image: linear-gradient(45deg,
+      hsl(211, 100%, 50%),
+      hsl(195, 100%, 50%));
 }
 
 .gradient-safer {
-  background-image: linear-gradient(
-    45deg,
-    hsl(220, 80%, 60%),
-    hsl(260, 80%, 70%)
-  );
+  background-image: linear-gradient(45deg,
+      hsl(220, 80%, 60%),
+      hsl(260, 80%, 70%));
 }
 
 .gradient-product {
-  background-image: linear-gradient(
-    45deg,
-    hsl(190, 80%, 55%),
-    hsl(140, 70%, 50%)
-  );
+  background-image: linear-gradient(45deg,
+      hsl(190, 80%, 55%),
+      hsl(140, 70%, 50%));
 }
 
 .gradient-ai {
-  background-image: linear-gradient(
-    45deg,
-    hsl(260, 90%, 70%),
-    hsl(320, 85%, 65%)
-  );
+  background-image: linear-gradient(45deg,
+      hsl(260, 90%, 70%),
+      hsl(320, 85%, 65%));
 }
 
 /* Feature Section */
@@ -161,7 +154,8 @@ p.lead {
 }
 
 .carousel-navigation {
-  margin-top: auto; /* Pushes the navigation to the bottom of the flex container */
+  margin-top: auto;
+  /* Pushes the navigation to the bottom of the flex container */
   display: flex;
   justify-content: space-between;
   width: 100%;
@@ -171,7 +165,8 @@ p.lead {
 .slide-indicator {
   color: var(--sl-color-primary-500);
   font-variant-numeric: tabular-nums;
-  min-width: 4ch; /* Ensure space for 'X / Y' */
+  min-width: 4ch;
+  /* Ensure space for 'X / Y' */
 }
 
 .carousel-nav {
@@ -422,7 +417,8 @@ sl-carousel-item {
 
 .video-wrapper {
   position: relative;
-  padding-bottom: 56.25%; /* 16:9 aspect ratio */
+  padding-bottom: 56.25%;
+  /* 16:9 aspect ratio */
   height: 0;
   overflow: hidden;
 }
@@ -676,11 +672,13 @@ summary.faq-question {
   padding: 1.5rem 0;
   cursor: pointer;
   font-size: 1.2rem;
-  list-style: none; /* Remove default marker */
+  list-style: none;
+  /* Remove default marker */
 }
 
 summary.faq-question::-webkit-details-marker {
-  display: none; /* Chrome */
+  display: none;
+  /* Chrome */
 }
 
 summary.faq-question sl-icon {
@@ -810,9 +808,11 @@ summary.faq-question sl-icon {
   0% {
     background-position: 0% 50%;
   }
+
   50% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0% 50%;
   }

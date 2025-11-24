@@ -7,8 +7,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.user_invitation import CRUDUserInvitation
-from spacemodels.models.user_invitation import UserInvitation, UserInvitationStatus
+from preloop_models.crud.user_invitation import CRUDUserInvitation
+from preloop_models.models.user_invitation import UserInvitation, UserInvitationStatus
 
 
 @pytest.fixture

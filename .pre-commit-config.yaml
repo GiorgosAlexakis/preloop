@@ -1,8 +1,5 @@
 exclude: |
     (?x)^(
-        SpaceLit/.*|
-        SpaceModels/.*|
-        spacesync/.*|
         .*\.log\.json$
     )$
 

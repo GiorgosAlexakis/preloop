@@ -3,7 +3,7 @@ import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 import { brandPlugin } from './vite-plugin-brand';
 
 /**
- * Vite configuration for SpaceBridge brand
+ * Vite configuration for Preloop AI brand
  */
 export default defineConfig({
   base: '/',

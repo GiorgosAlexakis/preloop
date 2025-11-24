@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock
 from datetime import datetime
 
-from spacesync.trackers.base import BaseTracker
+from preloop_sync.trackers.base import BaseTracker
 
 
 class ConcreteTracker(BaseTracker):

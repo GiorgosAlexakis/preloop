@@ -1,11 +1,11 @@
-# Default values for the SpaceBridge Helm chart
+# Default values for the Preloop AI Helm chart
 
 # Replica count for the deployment
 replicaCount: 1
 
 # Image configuration
 image:
-  repository: registry.spacecode.ai/spacecode/spacebridge
+  repository: registry.spacecode.ai/spacecode/preloop_ai
   pullPolicy: Always
   tag: "latest"  # Overrides the image tag
 
@@ -29,7 +29,7 @@ spacelit:
 
 # Preloop configuration (separate brand deployment)
 preloop:
-  # Set to true to deploy Preloop brand alongside SpaceBridge
+  # Set to true to deploy Preloop brand alongside Preloop AI
   enabled: false
   repository: registry.spacecode.ai/spacecode/spacelit/preloop
   tag: "latest"
@@ -92,17 +92,17 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   hosts:
-    - host: spacebridge.io
+    - host: preloop_ai.io
       paths:
         - path: /
           pathType: ImplementationSpecific
   tls:
-    - secretName: spacebridge-tls
+    - secretName: preloop-tls
       hosts:
-        - spacebridge.io
-        - www.spacebridge.io
-        - api.spacebridge.io
-        - install.spacebridge.io
+        - preloop_ai.io
+        - www.preloop_ai.io
+        - api.preloop_ai.io
+        - install.preloop_ai.io
 
 # Resource requests and limits
 resources:
@@ -132,7 +132,7 @@ affinity: {}
 
 # Environment configuration
 environment:
-  spacebridgeUrl: "https://spacebridge.io"
+  preloopUrl: "https://preloop_ai.io"
   preloopUrl: "https://preloop.ai"
   debug: false
   # Database settings
@@ -177,10 +177,10 @@ database:
     auth:
       username: postgres
       password: postgres
-      database: spacebridge
+      database: preloop
     bootstrap:
       initdb:
-        database: spacebridge
+        database: preloop
         owner: postgres
         postInitApplicationSQL:
           - CREATE EXTENSION vector;
@@ -250,10 +250,10 @@ agentExecution:
   # Namespace for running agent containers
   namespace:
     # If true, creates a separate namespace for agent execution (recommended for production)
-    # If false, agents run in the same namespace as SpaceBridge (easier for testing/PoC)
+    # If false, agents run in the same namespace as Preloop AI (easier for testing/PoC)
     create: false
     # Name of the namespace for agent execution (only used if create: true)
-    # If create is false, agents run in the same namespace as SpaceBridge
+    # If create is false, agents run in the same namespace as Preloop AI
     name: "agent-executions"
 
   # RBAC configuration for agent execution
@@ -265,8 +265,8 @@ agentExecution:
   networkPolicy:
     # If true, creates NetworkPolicy for agent namespace
     enabled: true
-    # Allow agent pods to call SpaceBridge API for MCP tools
-    allowSpaceBridgeAPI: true
+    # Allow agent pods to call Preloop AI API for MCP tools
+    allowPreloopAPI: true
     # Allow agent pods to call external LLM APIs (Anthropic, OpenAI)
     allowExternalLLMAPIs: true
     # CIDR ranges to exclude from external egress (internal cluster networks)

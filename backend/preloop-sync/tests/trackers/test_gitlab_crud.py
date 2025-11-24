@@ -5,18 +5,18 @@ Tests for GitLab tracker CRUD methods.
 from unittest.mock import MagicMock, patch, AsyncMock
 from unittest import IsolatedAsyncioTestCase
 
-from spacesync.trackers.gitlab import GitLabTracker
-from spacesync.exceptions import TrackerResponseError
+from preloop_sync.trackers.gitlab import GitLabTracker
+from preloop_sync.exceptions import TrackerResponseError
 
 
 class TestGitLabTrackerCRUD(IsolatedAsyncioTestCase):
     """Test GitLab tracker's CRUD methods."""
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_create_issue_success(self, mock_gitlab_constructor):
         """Test successful issue creation."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueCreate
+        from preloop_ai.schemas.tracker_models import IssueCreate
 
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -74,11 +74,11 @@ class TestGitLabTrackerCRUD(IsolatedAsyncioTestCase):
         self.assertEqual(result.title, "New Issue")
         self.assertEqual(result.labels, ["bug"])
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_update_issue_success(self, mock_gitlab_constructor):
         """Test successful issue update."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueUpdate
+        from preloop_ai.schemas.tracker_models import IssueUpdate
 
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -134,7 +134,7 @@ class TestGitLabTrackerCRUD(IsolatedAsyncioTestCase):
         self.assertEqual(result.title, "Updated Issue")
         self.assertEqual(result.status.id, "closed")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_add_comment_success(self, mock_gitlab_constructor):
         """Test successful comment addition."""
         # Arrange
@@ -174,7 +174,7 @@ class TestGitLabTrackerCRUD(IsolatedAsyncioTestCase):
         self.assertEqual(result.body, "Test comment")
         self.assertEqual(result.author.name, "testuser")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_add_relation_success(self, mock_gitlab_constructor):
         """Test successful issue relation creation."""
         # Arrange
@@ -199,11 +199,11 @@ class TestGitLabTrackerCRUD(IsolatedAsyncioTestCase):
         # Assert
         self.assertTrue(result)
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_search_issues_success(self, mock_gitlab_constructor):
         """Test successful issue search."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueFilter
+        from preloop_ai.schemas.tracker_models import IssueFilter
 
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance
@@ -258,7 +258,7 @@ class TestGitLabTrackerCRUD(IsolatedAsyncioTestCase):
         # search_issues doesn't pass project to parser, so it uses project_id from connection_details
         self.assertEqual(issues[0].key, "proj-1#1")
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_project_metadata_success(self, mock_gitlab_constructor):
         """Test successful project metadata retrieval."""
         # Arrange
@@ -292,11 +292,11 @@ class TestGitLabTrackerCRUD(IsolatedAsyncioTestCase):
         self.assertEqual(result.description, "Test project description")
         self.assertGreater(len(result.statuses), 0)
 
-    @patch("spacesync.trackers.gitlab.gitlab.Gitlab")
+    @patch("preloop_sync.trackers.gitlab.gitlab.Gitlab")
     async def test_create_issue_project_not_found(self, mock_gitlab_constructor):
         """Test error when project doesn't exist."""
         # Arrange
-        from spacebridge.schemas.tracker_models import IssueCreate
+        from preloop_ai.schemas.tracker_models import IssueCreate
 
         mock_gl_instance = MagicMock()
         mock_gitlab_constructor.return_value = mock_gl_instance

@@ -48,17 +48,17 @@ Preloop is an event-driven automation platform with built-in human-in-the-loop s
 Preloop AI is designed with a modular architecture:
 
 1.  **Preloop AI** (this repository): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
-2.  **SpaceModels** (submodule `./SpaceModels`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
-3.  **SpaceSync** (submodule `./spacesync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
-4.  **SpaceLit** (submodule `./SpaceLit`): A web application built using Lit, Vite, TypeScript, and Shoelace Web Components.
+2.  **Preloop Models** (`./backend/preloop-models`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
+3.  **Preloop Sync** (`./backend/preloop-sync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
+4.  **Preloop Console** (`./frontend`): A web application built using Lit, Vite, TypeScript, and Shoelace Web Components.
 
 This structure allows:
 - Clear separation of concerns between the API layer, data models, and synchronization logic.
 - Independent development and versioning of the core components.
 
-## Frontend
+## Preloop Console
 
-The frontend is in the `SpaceLit` directory. It is built using modern web technologies to provide a fast, responsive, and feature-rich user experience.
+The Preloop Console is in the `frontend` directory. It is built using modern web technologies to provide a fast, responsive, and feature-rich user experience.
 
 - **Technology Stack**: Lit, Vite, TypeScript, and Material Web Components.
 
@@ -132,16 +132,16 @@ For more details about the Helm chart, see the [chart README](./helm/preloop-ai/
     ```bash
     ./start.sh
     ```
-    This script typically handles activating the virtual environment and running the server (e.g., `python -m spacebridge.server`).
+    This script typically handles activating the virtual environment and running the server (e.g., `python -m preloop_ai.server`).
 
-3.  **Start SpaceSync Service:**
+3.  **Start Preloop Sync Service:**
     In a separate terminal, start the synchronization service to begin indexing data from your configured trackers:
     ```bash
     # Activate the virtual environment if not already active
     # source .venv/bin/activate
-    spacesync scan all
+    preloop-sync scan all
     ```
-    This command tells SpaceSync to scan all configured trackers and update the database.
+    This command tells Preloop Sync to scan all configured trackers and update the database.
 
 ### API Documentation
 
@@ -318,13 +318,13 @@ python scripts/manage_superusers.py demote user@example.com
 python scripts/manage_superusers.py list
 ```
 
-**Admin Features:**
+**Admin Features: (not available in open source version)**
 - Real-time session monitoring from in-memory session manager (no N+1 queries)
   - **Note**: In multi-pod deployments, each pod maintains its own session registry. The `/admin/activity/sessions` endpoint only shows sessions connected to the current pod. For cross-pod monitoring, query the Event table or aggregate results from all pod endpoints.
 - User activity tracking and analytics
 - Account management with subscription status
 - Flow execution monitoring and debugging
-- Audit log viewing (see Impersonation Auditing below)
+- Audit log viewing
 
 ### Unified WebSocket
 
@@ -359,36 +359,6 @@ const unsubscribe = unifiedWebSocketManager.subscribe(
 // Clean up when done
 unsubscribe();
 ```
-
-### Impersonation Auditing
-
-Preloop AI tracks all user impersonation events for security and compliance. Administrators can audit impersonated sessions to trace actions back to the original operator.
-
-**Audit Events:**
-- `impersonation_started` - When an admin begins impersonating a user
-- `impersonation_ended` - When impersonation session ends
-- All actions during impersonation are logged with both impersonator and impersonated user IDs
-
-**Viewing Audit Logs:**
-```bash
-# View audit logs for a specific user
-curl -X GET "https://YOUR_SPACEBRIDGE_URL/api/v1/admin/audit-logs?user_id=USER_ID" \
-  -H "Authorization: Bearer YOUR_ADMIN_API_KEY"
-
-# Filter by event type
-curl -X GET "https://YOUR_SPACEBRIDGE_URL/api/v1/admin/audit-logs?event_type=impersonation_started" \
-  -H "Authorization: Bearer YOUR_ADMIN_API_KEY"
-```
-
-**Tracing Impersonated Sessions:**
-Each audit log entry includes:
-- `impersonator_id`: The admin who initiated impersonation
-- `impersonated_user_id`: The user being impersonated
-- `session_id`: Links to session tracking for full activity trail
-- `ip_address`, `user_agent`: Device and location information
-- `event_data`: Additional context (target user, reason, etc.)
-
-For more details, see [ARCHITECTURE.md](docs/ARCHITECTURE.md) section on audit logging and impersonation.
 
 ### Using MCP Tools via API
 

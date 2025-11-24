@@ -22,7 +22,7 @@ logging.basicConfig(
 
 # Attempt to import settings and the event bus service
 try:
-    from spacesync.services.event_bus import event_bus_service
+    from preloop_sync.services.event_bus import event_bus_service
 except ImportError:
     logging.error(
         "Could not import the event bus service. "

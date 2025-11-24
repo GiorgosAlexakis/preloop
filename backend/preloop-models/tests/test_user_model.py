@@ -1,6 +1,6 @@
 """Tests for User model and CRUD operations."""
 
-from spacemodels.crud import crud_user
+from preloop_models.crud import crud_user
 
 
 def test_create_user(db_session, create_user):

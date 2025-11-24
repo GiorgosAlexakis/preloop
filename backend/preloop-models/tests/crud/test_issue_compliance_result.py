@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.issue_compliance_result import issue_compliance_result
-from spacemodels.models.issue_compliance_result import IssueComplianceResult
+from preloop_models.crud.issue_compliance_result import issue_compliance_result
+from preloop_models.models.issue_compliance_result import IssueComplianceResult
 
 
 class TestIssueComplianceResultCRUD:

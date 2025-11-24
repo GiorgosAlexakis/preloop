@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy.orm import Session
 
-from spacemodels.db.session import get_db_session, get_engine, get_session_factory
-import spacemodels.db.session as session_module
+from preloop_models.db.session import get_db_session, get_engine, get_session_factory
+import preloop_models.db.session as session_module
 
 
 @pytest.fixture(autouse=True)  # Apply mock engine automatically to relevant tests
@@ -26,13 +26,13 @@ def mock_engine_dependencies(monkeypatch):
 
     mock_check_pgvector = MagicMock(return_value=True)
 
-    monkeypatch.setattr("spacemodels.db.session.create_engine", mock_create)
+    monkeypatch.setattr("preloop_models.db.session.create_engine", mock_create)
     monkeypatch.setattr(
-        "spacemodels.db.session.check_pgvector_extension", mock_check_pgvector
+        "preloop_models.db.session.check_pgvector_extension", mock_check_pgvector
     )
     # Prevent actual installation attempt if check returns False
     monkeypatch.setattr(
-        "spacemodels.db.session.install_pgvector_extension", MagicMock()
+        "preloop_models.db.session.install_pgvector_extension", MagicMock()
     )
 
     # Return the mocks for potential use in tests
@@ -166,7 +166,9 @@ def test_get_db_session():
     mock_session = MagicMock(spec=Session)
     mock_factory = MagicMock(return_value=mock_session)
 
-    with patch("spacemodels.db.session.get_session_factory", return_value=mock_factory):
+    with patch(
+        "preloop_models.db.session.get_session_factory", return_value=mock_factory
+    ):
         # Get the generator
         session_gen = get_db_session()
 

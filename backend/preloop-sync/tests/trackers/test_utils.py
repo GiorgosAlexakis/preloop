@@ -5,7 +5,7 @@ Tests for tracker utility functions.
 import pytest
 from unittest.mock import Mock, patch
 
-from spacesync.trackers.utils import (
+from preloop_sync.trackers.utils import (
     is_http_error,
     is_not_found_error,
     is_authentication_error,
@@ -235,7 +235,7 @@ class TestDependencyParsing:
     async def test_github_dependency_parsing(self):
         """Test GitHub dependency parsing."""
         # We'll need to import and test the GitHub tracker's _parse_dependencies method
-        from spacesync.trackers.github import GitHubTracker
+        from preloop_sync.trackers.github import GitHubTracker
 
         tracker = GitHubTracker("test-id", "test-key", {})
 
@@ -253,7 +253,7 @@ class TestDependencyParsing:
     @pytest.mark.asyncio
     async def test_github_dependency_parsing_related(self):
         """Test GitHub dependency parsing for related issues."""
-        from spacesync.trackers.github import GitHubTracker
+        from preloop_sync.trackers.github import GitHubTracker
 
         tracker = GitHubTracker("test-id", "test-key", {})
 
@@ -271,7 +271,7 @@ class TestDependencyParsing:
     @pytest.mark.asyncio
     async def test_gitlab_dependency_parsing(self):
         """Test GitLab dependency parsing."""
-        from spacesync.trackers.gitlab import GitLabTracker
+        from preloop_sync.trackers.gitlab import GitLabTracker
 
         # Mock the GitLab client and connection details
         connection_details = {"url": "https://gitlab.com"}

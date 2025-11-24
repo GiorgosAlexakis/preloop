@@ -1,5 +1,5 @@
 apiVersion: v2
-name: spacebridge
+name: preloop-ai
 description: A Helm chart for Preloop AI - An event-driven automation platform with built-in human-in-the-loop safety
 
 # A chart can be either an 'application' or a 'library' chart.

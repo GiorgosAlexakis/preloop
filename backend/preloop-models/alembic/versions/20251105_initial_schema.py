@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # Import custom types
-from spacemodels.db.vector_types import VectorType
+from preloop_models.db.vector_types import VectorType
 
 # revision identifiers, used by Alembic.
 revision: str = "20251105"

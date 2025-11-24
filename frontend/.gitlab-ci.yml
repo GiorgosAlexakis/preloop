@@ -42,7 +42,7 @@ build:preloop:
       --destination $CI_REGISTRY_IMAGE_PRELOOP:latest
       --destination $CI_REGISTRY_IMAGE_PRELOOP:$CI_COMMIT_REF_NAME
       --registry-mirror registry.spacecode.ai
-      --registry-mirror $CI_REGISTRY    
+      --registry-mirror $CI_REGISTRY
 
 format-check:
   stage: test
@@ -60,4 +60,3 @@ unit-tests:
     - npm install
   script:
     - npm run test
-

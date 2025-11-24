@@ -2,9 +2,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "spacebridge.fullname" . }}-seed-job
+  name: {{ include "preloop_ai.fullname" . }}-seed-job
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "5"
@@ -13,7 +13,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "spacebridge.selectorLabels" . | nindent 8 }}
+        {{- include "preloop_ai.selectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
       containers:
@@ -23,7 +23,7 @@ spec:
           command: ["python", "/app/scripts/seed_test_user.py"]
           env:
             - name: DATABASE_URL
-              value: {{ include "spacebridge.databaseUrl" . }}
+              value: {{ include "preloop_ai.databaseUrl" . }}
             - name: TEST_USER_EMAIL
               value: {{ .Values.seed.email | quote }}
             - name: TEST_USER_USERNAME

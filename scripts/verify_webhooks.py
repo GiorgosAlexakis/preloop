@@ -5,9 +5,9 @@ This script performs the following actions:
 1.  It goes over the webhooks in the db to see if they are properly registered with each tracker.
 2.  If they are not, it asks the user if we should delete them from the db or if we should try to create them in the tracker.
 3.  It then scans the trackers themselves to see if they have any webhooks registered on each org/project we have access to.
-4.  It displays all detected webhooks and should highlight the webhooks that correspond to this SpaceBridge instance
-    (check if the SPACEBRIDGE_URL env var is a prefix of the webhook URL).
-5.  For each detected webhook of the specified SpaceBridge instance check if it is properly registered in the database.
+4.  It displays all detected webhooks and should highlight the webhooks that correspond to this Preloop AI instance
+    (check if the PRELOOP_URL env var is a prefix of the webhook URL).
+5.  For each detected webhook of the specified Preloop AI instance check if it is properly registered in the database.
 6.  If not, then ask the user if it should be deleted from the tracker.
 7.  Provide command line options to always delete or never delete.
 """
@@ -19,19 +19,19 @@ from typing import List
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, aliased, joinedload
 
-from spacemodels.db.session import get_db_session
-from spacemodels.models import Organization, Project, Tracker, Webhook
-from spacesync.scanner.core import TrackerClient
-from spacesync.exceptions import TrackerAuthenticationError
+from preloop_models.db.session import get_db_session
+from preloop_models.models import Organization, Project, Tracker, Webhook
+from preloop_sync.scanner.core import TrackerClient
+from preloop_sync.exceptions import TrackerAuthenticationError
 
 
 def verify_webhooks(db: Session, auto_delete: bool = False, auto_create: bool = False):
     """
     Verifies webhooks for all active trackers.
     """
-    spacebridge_url = os.getenv("SPACEBRIDGE_URL")
-    if not spacebridge_url:
-        print("SPACEBRIDGE_URL environment variable not set. Cannot verify webhooks.")
+    preloop_url = os.getenv("PRELOOP_URL")
+    if not preloop_url:
+        print("PRELOOP_URL environment variable not set. Cannot verify webhooks.")
         return
 
     org_from_project = aliased(Organization)
@@ -128,8 +128,8 @@ def verify_webhooks(db: Session, auto_delete: bool = False, auto_create: bool = 
                 tracker_webhooks = client.client.get_webhooks()
             for tracker_webhook in tracker_webhooks:
                 webhook_url = tracker_webhook.get("url")
-                if webhook_url and webhook_url.startswith(spacebridge_url):
-                    print(f"  Found SpaceBridge webhook in tracker: {webhook_url}")
+                if webhook_url and webhook_url.startswith(preloop_url):
+                    print(f"  Found Preloop AI webhook in tracker: {webhook_url}")
                     db_webhook = (
                         db.query(Webhook)
                         .filter(Webhook.url == webhook_url)

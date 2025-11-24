@@ -9,7 +9,7 @@ metadata:
   name: agent-execution-isolation
   namespace: {{ $agentNamespace }}
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
     app.kubernetes.io/component: agent-execution
 spec:
   # Apply to all pods in the agent-execution namespace
@@ -36,15 +36,15 @@ spec:
         - protocol: TCP
           port: 53
 
-    {{- if .Values.agentExecution.networkPolicy.allowSpaceBridgeAPI }}
-    # Allow connections to SpaceBridge API (for MCP tool calls)
+    {{- if .Values.agentExecution.networkPolicy.allowPreloopAPI }}
+    # Allow connections to Preloop AI API (for MCP tool calls)
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Release.Namespace }}
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: {{ include "spacebridge.name" . }}
+              app.kubernetes.io/name: {{ include "preloop_ai.name" . }}
               app.kubernetes.io/component: api
       ports:
         - protocol: TCP
@@ -84,7 +84,7 @@ metadata:
   name: agent-execution-quota
   namespace: {{ $agentNamespace }}
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
     app.kubernetes.io/component: agent-execution
 spec:
   hard:
@@ -110,7 +110,7 @@ metadata:
   name: agent-execution-limits
   namespace: {{ $agentNamespace }}
   labels:
-    {{- include "spacebridge.labels" . | nindent 4 }}
+    {{- include "preloop_ai.labels" . | nindent 4 }}
     app.kubernetes.io/component: agent-execution
 spec:
   limits:

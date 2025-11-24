@@ -2,8 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
-from spacemodels.crud import crud_api_key
-from spacemodels.models import ApiKey
+from preloop_models.crud import crud_api_key
+from preloop_models.models import ApiKey
 
 
 def test_create_api_key(db_session, create_account, create_user):

@@ -18,7 +18,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/spacebridge__schemas__auth__UserCreate'
+              $ref: '#/components/schemas/preloop_ai__schemas__auth__UserCreate'
         required: true
       responses:
         '201':
@@ -26,7 +26,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/spacebridge__schemas__auth__UserResponse'
+                $ref: '#/components/schemas/preloop_ai__schemas__auth__UserResponse'
         '422':
           description: Validation Error
           content:
@@ -226,7 +226,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/spacebridge__schemas__auth__UserResponse'
+                $ref: '#/components/schemas/preloop_ai__schemas__auth__UserResponse'
       security:
       - OAuth2PasswordBearer: []
     put:
@@ -239,7 +239,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/spacebridge__schemas__auth__UserUpdate'
+              $ref: '#/components/schemas/preloop_ai__schemas__auth__UserUpdate'
         required: true
       responses:
         '200':
@@ -247,7 +247,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/spacebridge__schemas__auth__UserResponse'
+                $ref: '#/components/schemas/preloop_ai__schemas__auth__UserResponse'
         '422':
           description: Validation Error
           content:
@@ -4736,7 +4736,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/spacebridge__schemas__user__UserResponse'
+                $ref: '#/components/schemas/preloop_ai__schemas__user__UserResponse'
       security:
       - bearerAuth: []
     patch:
@@ -4751,7 +4751,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/spacebridge__schemas__user__UserUpdate'
+              $ref: '#/components/schemas/preloop_ai__schemas__user__UserUpdate'
         required: true
       responses:
         '200':
@@ -4759,7 +4759,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/spacebridge__schemas__user__UserResponse'
+                $ref: '#/components/schemas/preloop_ai__schemas__user__UserResponse'
         '422':
           description: Validation Error
           content:
@@ -4812,14 +4812,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/spacebridge__schemas__user__UserCreate'
+              $ref: '#/components/schemas/preloop_ai__schemas__user__UserCreate'
       responses:
         '201':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/spacebridge__schemas__user__UserResponse'
+                $ref: '#/components/schemas/preloop_ai__schemas__user__UserResponse'
         '422':
           description: Validation Error
           content:
@@ -4891,7 +4891,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/spacebridge__schemas__user__UserResponse'
+                $ref: '#/components/schemas/preloop_ai__schemas__user__UserResponse'
         '422':
           description: Validation Error
           content:
@@ -4923,14 +4923,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/spacebridge__schemas__user__UserUpdate'
+              $ref: '#/components/schemas/preloop_ai__schemas__user__UserUpdate'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/spacebridge__schemas__user__UserResponse'
+                $ref: '#/components/schemas/preloop_ai__schemas__user__UserResponse'
         '422':
           description: Validation Error
           content:
@@ -10552,7 +10552,7 @@ components:
       properties:
         users:
           items:
-            $ref: '#/components/schemas/spacebridge__schemas__user__UserResponse'
+            $ref: '#/components/schemas/preloop_ai__schemas__user__UserResponse'
           type: array
           title: Users
         total:
@@ -10670,7 +10670,7 @@ components:
       - webhook_secret
       title: WebhookConfig
       description: Configuration for webhook triggers.
-    spacebridge__schemas__auth__UserCreate:
+    preloop_ai__schemas__auth__UserCreate:
       properties:
         username:
           type: string
@@ -10697,7 +10697,7 @@ components:
       - password
       title: UserCreate
       description: User creation model.
-    spacebridge__schemas__auth__UserResponse:
+    preloop_ai__schemas__auth__UserResponse:
       properties:
         username:
           type: string
@@ -10721,7 +10721,7 @@ components:
       - email_verified
       title: UserResponse
       description: Response model for user data.
-    spacebridge__schemas__auth__UserUpdate:
+    preloop_ai__schemas__auth__UserUpdate:
       properties:
         full_name:
           anyOf:
@@ -10731,7 +10731,7 @@ components:
       type: object
       title: UserUpdate
       description: User update model.
-    spacebridge__schemas__user__UserCreate:
+    preloop_ai__schemas__user__UserCreate:
       properties:
         username:
           type: string
@@ -10782,7 +10782,7 @@ components:
       - password
       title: UserCreate
       description: Schema for creating a new user.
-    spacebridge__schemas__user__UserResponse:
+    preloop_ai__schemas__user__UserResponse:
       properties:
         id:
           type: string
@@ -10862,7 +10862,7 @@ components:
       - updated_at
       title: UserResponse
       description: Response schema for user data.
-    spacebridge__schemas__user__UserUpdate:
+    preloop_ai__schemas__user__UserUpdate:
       properties:
         email:
           anyOf:

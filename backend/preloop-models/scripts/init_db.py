@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Script to initialize the SpaceBridge database.
+Script to initialize the Preloop AI database.
 This creates all tables using Alembic migrations and sets up default models.
 """
 
@@ -13,11 +13,11 @@ import click
 from dotenv import load_dotenv
 from sqlalchemy import text
 
-from spacemodels.db.session import get_engine, get_db_session
-from spacemodels.crud import crud_embedding_model
-from spacemodels.crud import crud_ai_model
+from preloop_models.db.session import get_engine, get_db_session
+from preloop_models.crud import crud_embedding_model
+from preloop_models.crud import crud_ai_model
 
-from spacemodels.db.vector_types import TRUNCATED_VECTOR_SIZE
+from preloop_models.db.vector_types import TRUNCATED_VECTOR_SIZE
 
 # Configure logging
 logging.basicConfig(

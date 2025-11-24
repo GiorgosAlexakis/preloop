@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from spacemodels.crud.account import CRUDAccount
-from spacemodels.models.account import Account
+from preloop_models.crud.account import CRUDAccount
+from preloop_models.models.account import Account
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def test_create(crud_account, mock_db_session):
     obj_in = {"email": "test@example.com", "username": "testuser"}
 
     # Act
-    with patch("spacemodels.crud.base.CRUDBase.create") as mock_create:
+    with patch("preloop_models.crud.base.CRUDBase.create") as mock_create:
         crud_account.create(mock_db_session, obj_in=obj_in)
 
         # Assert
@@ -44,7 +44,7 @@ def test_update(crud_account, mock_db_session):
     obj_in = {"username": "newusername"}
 
     # Act
-    with patch("spacemodels.crud.base.CRUDBase.update") as mock_update:
+    with patch("preloop_models.crud.base.CRUDBase.update") as mock_update:
         crud_account.update(mock_db_session, db_obj=db_obj, obj_in=obj_in)
 
         # Assert
@@ -231,7 +231,7 @@ def test_update_with_pydantic_model(crud_account, mock_db_session):
     mock_pydantic_obj.model_dump.return_value = {"username": "newusername"}
 
     # Act
-    with patch("spacemodels.crud.base.CRUDBase.update") as mock_update:
+    with patch("preloop_models.crud.base.CRUDBase.update") as mock_update:
         crud_account.update(mock_db_session, db_obj=db_obj, obj_in=mock_pydantic_obj)
 
         # Assert
