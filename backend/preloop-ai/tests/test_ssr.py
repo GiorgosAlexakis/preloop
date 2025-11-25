@@ -6,10 +6,12 @@ from preloop_ai.api import ssr
 
 @patch("builtins.open")
 @patch("httpx.Client")
-def test_render_app_success(mock_client, mock_open):
+@patch("pathlib.Path.exists")
+def test_render_app_success(mock_exists, mock_client, mock_open):
     """
     Tests the render_app method for a successful render.
     """
+    mock_exists.return_value = True
     mock_open.return_value.__enter__.return_value.read.return_value = (
         '<div id="app"></div>'
     )
@@ -24,10 +26,12 @@ def test_render_app_success(mock_client, mock_open):
 
 @patch("builtins.open")
 @patch("httpx.Client")
-def test_render_app_request_error(mock_client, mock_open):
+@patch("pathlib.Path.exists")
+def test_render_app_request_error(mock_exists, mock_client, mock_open):
     """
     Tests the render_app method for a request error.
     """
+    mock_exists.return_value = True
     mock_open.return_value.__enter__.return_value.read.return_value = (
         '<div id="app"></div>'
     )

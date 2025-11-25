@@ -19,7 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-helm/spacebridge/charts
+helm/preloop-ai/charts
 
 # Virtual environment
 .env

@@ -22,9 +22,7 @@ def preloop_client():
         "Authorization": f"Bearer {PRELOOP_API_KEY}",
         "Content-Type": "application/json",
     }
-    with httpx.Client(
-        base_url=PRELOOP_URL, headers=headers, timeout=30.0
-    ) as client:
+    with httpx.Client(base_url=PRELOOP_URL, headers=headers, timeout=30.0) as client:
         yield client
 
 

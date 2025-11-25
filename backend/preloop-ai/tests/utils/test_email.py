@@ -1,6 +1,7 @@
 """Tests for email utility."""
 
 import pytest
+import logging
 from unittest.mock import MagicMock, patch
 from preloop_ai.utils.email import (
     EmailError,
@@ -64,6 +65,7 @@ class TestSendEmail:
     @patch("preloop_ai.utils.email.SMTP_PASSWORD", "")
     def test_send_email_no_credentials_does_not_send(self, mock_smtp, caplog):
         """Test that email logs warning and returns gracefully when credentials are missing."""
+        caplog.set_level(logging.WARNING)
 
         # Call should succeed without raising
         send_email(
@@ -126,7 +128,7 @@ class TestSendEmail:
     @patch("preloop_ai.utils.email.settings")
     def test_send_email_includes_portal_url_in_subject(self, mock_settings, mock_smtp):
         """Test that portal URL is included in subject."""
-        mock_settings.preloop_url = "https://app.preloop.ai"
+        mock_settings.preloop_url = "https://preloop.ai"
         mock_server = MagicMock()
         mock_smtp.return_value.__enter__.return_value = mock_server
 
@@ -138,7 +140,7 @@ class TestSendEmail:
 
         call_args = mock_server.sendmail.call_args
         message_str = call_args[0][2]
-        assert "app.preloop.ai" in message_str
+        assert "preloop.ai" in message_str
         assert "Test Subject" in message_str
 
 
@@ -503,6 +505,7 @@ class TestSendProductNotificationEmail:
         self, mock_settings, mock_send_email, caplog
     ):
         """Test that EmailError is logged but not raised when send_email fails."""
+        caplog.set_level(logging.WARNING)
         mock_settings.product_team_email = "team@example.com"
         mock_send_email.side_effect = EmailError("SMTP failed")
 
@@ -528,6 +531,7 @@ class TestSendProductNotificationEmail:
         self, mock_settings, mock_send_email, caplog
     ):
         """Test that unexpected errors are logged but not raised."""
+        caplog.set_level(logging.ERROR)
         mock_settings.product_team_email = "team@example.com"
         mock_send_email.side_effect = RuntimeError("Unexpected error")
 

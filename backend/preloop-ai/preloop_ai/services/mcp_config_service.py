@@ -36,9 +36,7 @@ class MCPConfigService:
             MCP configuration dict that can be mounted as JSON file
         """
         if preloop_url is None:
-            preloop_url = os.getenv(
-                "PRELOOP_URL", "http://host.docker.internal:8000"
-            )
+            preloop_url = os.getenv("PRELOOP_URL", "http://host.docker.internal:8000")
 
         config = {
             "mcpServers": {},

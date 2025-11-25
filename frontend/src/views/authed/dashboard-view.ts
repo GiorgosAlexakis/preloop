@@ -1178,6 +1178,52 @@ export class DashboardView extends AuthedElement {
 
         <!-- Side Column -->
         <div class="side-column">
+
+          <!-- Pending Approvals -->
+          ${this.pendingApprovals.length > 0
+        ? html`
+                <sl-card>
+                  <div slot="header" class="chart-header">
+                    <sl-icon name="hand-thumbs-up"></sl-icon>
+                    Pending Approvals
+                    <sl-badge variant="warning" pill
+                      >${this.pendingApprovals.length}</sl-badge
+                    >
+                  </div>
+
+                  <div class="item-list">
+                    ${this.pendingApprovals.slice(0, 3).map(
+          (approval) => html`
+                        <div class="item-card warning">
+                          <div class="item-info">
+                            <span class="item-name">${approval.tool_name}</span>
+                            <span class="item-secondary"
+                              >${this.formatDate(approval.requested_at)}</span
+                            >
+                          </div>
+                          <sl-button
+                            size="small"
+                            href="/console/approval/${approval.id}"
+                          >
+                            Review
+                          </sl-button>
+                        </div>
+                      `
+        )}
+                  </div>
+
+                  ${this.pendingApprovals.length > 3
+            ? html`<div style="margin-top: var(--sl-spacing-small);">
+                        <a href="/console/tools"
+                          >View all ${this.pendingApprovals.length}
+                          approvals...</a
+                        >
+                      </div>`
+            : ''}
+                </sl-card>
+              `
+        : ''}
+
           <!-- MCP Server & Tools Status -->
           <sl-card>
             <div slot="header" class="card-header-with-action">
@@ -1336,51 +1382,6 @@ export class DashboardView extends AuthedElement {
                       View all approval requests →
                     </a>
                   </div>
-                </sl-card>
-              `
-        : ''}
-
-          <!-- Pending Approvals -->
-          ${this.pendingApprovals.length > 0
-        ? html`
-                <sl-card>
-                  <div slot="header" class="chart-header">
-                    <sl-icon name="hand-thumbs-up"></sl-icon>
-                    Pending Approvals
-                    <sl-badge variant="warning" pill
-                      >${this.pendingApprovals.length}</sl-badge
-                    >
-                  </div>
-
-                  <div class="item-list">
-                    ${this.pendingApprovals.slice(0, 3).map(
-          (approval) => html`
-                        <div class="item-card warning">
-                          <div class="item-info">
-                            <span class="item-name">${approval.tool_name}</span>
-                            <span class="item-secondary"
-                              >${this.formatDate(approval.requested_at)}</span
-                            >
-                          </div>
-                          <sl-button
-                            size="small"
-                            href="/console/approval/${approval.id}"
-                          >
-                            Review
-                          </sl-button>
-                        </div>
-                      `
-        )}
-                  </div>
-
-                  ${this.pendingApprovals.length > 3
-            ? html`<div style="margin-top: var(--sl-spacing-small);">
-                        <a href="/console/tools"
-                          >View all ${this.pendingApprovals.length}
-                          approvals...</a
-                        >
-                      </div>`
-            : ''}
                 </sl-card>
               `
         : ''}

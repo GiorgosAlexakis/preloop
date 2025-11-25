@@ -1035,7 +1035,7 @@ class GitLabTracker(BaseTracker):
         results = {"unregistered": 0, "failed": 0, "not_found": 0}
         logger.info(f"Unregistering all webhooks for GitLab tracker {self.tracker_id}.")
 
-        # Get all organizations for this tracker from SpaceModels
+        # Get all organizations for this tracker from preloop_models
         from preloop_models.crud import crud_organization, crud_project
 
         orgs = crud_organization.get_for_tracker(db, tracker_id=self.tracker_id)

@@ -104,10 +104,12 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
 testpaths = [
     "backend/preloop-ai/tests",
     "backend/preloop-models/tests",
     "backend/preloop-sync/tests",
+    "backend/preloop-ai/preloop_ai/plugins/proprietary",
 ]
 python_files = "test_*.py"
 python_functions = "test_*"

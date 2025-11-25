@@ -31,7 +31,6 @@ from preloop_ai.api.endpoints import (
     comments,
     features,
     health,
-    invitations,
     issues,
     issue_compliance,
     issue_dependencies,
@@ -42,24 +41,20 @@ from preloop_ai.api.endpoints import (
     public_approval,
     roles,
     search as search_router,
-    teams,
     tools,
     trackers,
-    users,
     version,
     embedding as embedding_router,
     issue_duplicates,
     webhooks,
     flows,
     ai_models,
-    billing,
     websockets,
 )
 
 try:
-    from preloop_ai.api.endpoints import admin, impersonation
+    from preloop_ai.api.endpoints import impersonation
 except ModuleNotFoundError:
-    admin = None
     impersonation = None
 
 from preloop_ai.services.mcp_http import setup_mcp_routes
@@ -627,6 +622,16 @@ def create_app() -> FastAPI:
     # Setup MCP routes with DynamicMCPServer (MUST be before SPA mount)
     setup_mcp_routes(app)
     logger.info("MCP routes configured with DynamicMCPServer")
+
+    # Register plugin routes
+    # This allows plugins (both builtin and proprietary) to add their own endpoints
+    # We do this before adding standard routers to ensure plugins can override if needed
+    # or just be registered alongside
+    from preloop_ai.plugins import get_plugin_manager
+
+    plugin_manager = get_plugin_manager()
+    plugin_manager.register_routes(app)
+
     # Add routers
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
     app.include_router(
@@ -761,26 +766,17 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
-        billing.router,
+        ai_models.router,
         prefix="/api/v1",
-        tags=["Billing"],
-        # dependencies=[Depends(get_current_active_user)],
+        tags=["AI Models"],
+        dependencies=[Depends(get_current_active_user)],
     )
 
     # WebSocket router
     app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
 
-    if admin:
-        # Admin router (requires superuser permission)
-        app.include_router(
-            admin.router,
-            prefix="/api/v1",
-            tags=["Admin"],
-            dependencies=[Depends(get_current_active_user)],
-            include_in_schema=False,
-        )
-
-        # Impersonation router (requires superuser permission)
+    # Impersonation router (requires superuser permission)
+    if impersonation:
         app.include_router(
             impersonation.router,
             prefix="/api/v1",
@@ -789,31 +785,11 @@ def create_app() -> FastAPI:
             include_in_schema=False,
         )
 
-    # User, Team, Role, and Invitation management routers
-    app.include_router(
-        users.router,
-        prefix="/api/v1",
-        tags=["Users"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        teams.router,
-        prefix="/api/v1",
-        tags=["Teams"],
-        dependencies=[Depends(get_current_active_user)],
-    )
     app.include_router(
         roles.router,
         prefix="/api/v1",
         tags=["Roles"],
         dependencies=[Depends(get_current_active_user)],
-    )
-    # Note: invitations router has public endpoints for accepting invitations,
-    # so we don't add auth dependency at router level - auth is on individual endpoints
-    app.include_router(
-        invitations.router,
-        prefix="/api/v1",
-        tags=["Invitations"],
     )
 
     # --- Public Approval Page ---
