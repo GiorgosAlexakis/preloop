@@ -17,8 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements files first to leverage Docker cache
 COPY pyproject.toml .
 COPY backend/preloop-models/pyproject.toml backend/preloop-models/
-COPY backend/preloop-sync/setup.py backend/preloop-sync/
-COPY backend/preloop-sync/requirements.txt backend/preloop-sync/
+COPY backend/preloop-sync/pyproject.toml backend/preloop-sync/
 
 # Install build dependencies and Python packages in separate layers for better caching
 RUN pip install -U --no-cache-dir build setuptools pip wheel ipdb
@@ -31,7 +30,6 @@ RUN pip install --no-cache-dir -e backend/preloop-models && pip install --no-cac
 # Copy application code (this changes most frequently, so put it last)
 COPY backend/preloop-ai/ backend/preloop-ai/
 COPY scripts/ scripts/
-COPY plans.yaml .
 
 # Install the main application
 RUN pip install --no-cache-dir -e .

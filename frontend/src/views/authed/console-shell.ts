@@ -209,7 +209,7 @@ export class ConsoleShell extends LitElement {
               </sl-menu-item>
             </a>
             ${this.hasTrackers
-        ? html`<sl-details>
+              ? html`<sl-details>
                   <span slot="summary">
                     <sl-icon
                       name="kanban"
@@ -229,7 +229,7 @@ export class ConsoleShell extends LitElement {
                     </a>
                   </sl-menu>
                 </sl-details>`
-        : ''}
+              : ''}
 
             <sl-details>
               <span slot="summary">
@@ -238,23 +238,23 @@ export class ConsoleShell extends LitElement {
               </span>
               <sl-menu>
                 ${this.features.user_management
-        ? html`<a href="/console/settings/account">
+                  ? html`<a href="/console/settings/account">
                         <sl-menu-item>Account</sl-menu-item>
                       </a>
                       <a href="/console/settings/users">
                         <sl-menu-item>Users</sl-menu-item>
                       </a>`
-        : ''}
+                  : ''}
                 ${this.features.team_management
-        ? html`<a href="/console/settings/teams">
+                  ? html`<a href="/console/settings/teams">
                       <sl-menu-item>Teams</sl-menu-item>
                     </a>`
-        : ''}
+                  : ''}
                 ${this.features.user_management || this.features.team_management
-        ? html`<a href="/console/settings/invitations">
+                  ? html`<a href="/console/settings/invitations">
                       <sl-menu-item>Invitations</sl-menu-item>
                     </a>`
-        : ''}
+                  : ''}
                 <a href="/console/settings/api-keys">
                   <sl-menu-item>API Keys</sl-menu-item>
                 </a>

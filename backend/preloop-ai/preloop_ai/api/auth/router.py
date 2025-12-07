@@ -28,6 +28,7 @@ from preloop_ai.api.auth.jwt import (
     get_password_hash,
     verify_password,
 )
+from preloop_ai.config import settings
 from preloop_ai.schemas.auth import (
     ApiKeyCreate,
     ApiKeyResponse,
@@ -101,8 +102,19 @@ async def register(
         The created user.
 
     Raises:
-        HTTPException: If the username or email is already taken.
+        HTTPException: If the username or email is already taken, or if registration is disabled.
     """
+    # Check if registration is enabled
+    if not settings.registration_enabled:
+        logger.warning(
+            f"[REGISTER] Registration attempt blocked - registration is disabled. "
+            f"Username: {user_data.username}, Email: {user_data.email}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is disabled. Please contact an administrator for an invitation.",
+        )
+
     logger.info(f"[REGISTER] Starting registration for username: {user_data.username}")
 
     # Check if username or email already exists

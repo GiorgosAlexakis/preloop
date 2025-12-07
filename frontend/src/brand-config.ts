@@ -38,6 +38,7 @@ export interface BrandHero {
   title: string;
   lead: string;
   cta_primary: string;
+  cta_primary_url?: string; // Optional - if set, primary CTA links here instead of signup
   cta_secondary: string;
   cta_secondary_url: string;
 }
@@ -88,10 +89,25 @@ export interface BrandLanding {
   get_started: BrandGetStarted;
 }
 
+/**
+ * Edition type - determines UI behavior, NOT feature set
+ *
+ * - 'saas': Full marketing landing page, pricing page, signup CTAs
+ * - 'selfhosted': Minimal UI, redirects to login, no public pricing
+ *
+ * Enterprise features (RBAC, audit, etc.) are controlled by backend
+ * plugins and the /api/v1/features endpoint, not by edition.
+ *
+ * Enterprise self-hosted deployments use edition: 'selfhosted'
+ * with the enterprise Docker image for full plugin support.
+ */
+export type BrandEdition = 'saas' | 'selfhosted';
+
 // Runtime config - minimal metadata injected into window.BRAND_CONFIG
 export interface BrandRuntimeConfig {
   name: string;
   domain: string;
+  edition: BrandEdition; // 'saas' = full marketing site, 'selfhosted' = minimal login-focused
   company: BrandCompany;
   branding: BrandBranding;
   social: BrandSocial;
@@ -142,4 +158,28 @@ export function getBrandConfig(): BrandRuntimeConfig {
  */
 export function hasBrandConfig(): boolean {
   return typeof window !== 'undefined' && !!(window as any).BRAND_CONFIG;
+}
+
+/**
+ * Check if the current brand is self-hosted edition
+ * Self-hosted editions have minimal landing pages and no pricing
+ */
+export function isSelfHosted(): boolean {
+  try {
+    return getBrandConfig().edition === 'selfhosted';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if the current brand is SaaS edition
+ * SaaS editions have full marketing landing pages and pricing
+ */
+export function isSaaS(): boolean {
+  try {
+    return getBrandConfig().edition === 'saas';
+  } catch {
+    return true; // Default to SaaS behavior
+  }
 }

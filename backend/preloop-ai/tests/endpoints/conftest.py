@@ -13,7 +13,7 @@ def mock_has_permission(mocker: MockerFixture):
     needing to set up proper user roles and permissions.
     """
     try:
-        import preloop_ai.plugins.proprietary.rbac.permissions
+        import preloop_ai.plugins.proprietary.rbac.permissions  # NOQA: F401
 
         mocker.patch(
             "preloop_ai.plugins.proprietary.rbac.permissions.has_permission",

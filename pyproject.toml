@@ -37,6 +37,7 @@ dependencies = [
     "aiodocker>=0.21.0", # Added for agent container execution
     "kubernetes_asyncio>=30.5.0", # Added for Kubernetes agent execution
     "cel-python>=0.1.0", # Added for CEL expression evaluation in approval rules
+    "dotenv>=0.9.9",
 ]
 
 [tool.setuptools]
@@ -109,7 +110,13 @@ testpaths = [
     "backend/preloop-ai/tests",
     "backend/preloop-models/tests",
     "backend/preloop-sync/tests",
+]
+# Exclude proprietary plugin tests - they should be run from preloop-ee context
+# Exclude scripts directory - contains manual test scripts, not unit tests
+norecursedirs = [
     "backend/preloop-ai/preloop_ai/plugins/proprietary",
+    "plugins",
+    "scripts",
 ]
 python_files = "test_*.py"
 python_functions = "test_*"
@@ -122,6 +129,22 @@ markers = [
     "gitlab: GitLab-specific tests",
     "jira: Jira-specific tests",
 ]
+filterwarnings = [
+    # Ignore pytest asyncio marker on non-async functions (class-level pytestmark)
+    "ignore::pytest.PytestWarning",
+    # Ignore Pydantic V2 deprecation warnings (will fix in future migration)
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+    # Ignore passlib crypt deprecation
+    "ignore:'crypt' is deprecated:DeprecationWarning",
+    # Ignore pythonjsonlogger move warning
+    "ignore:pythonjsonlogger.jsonlogger has been moved:DeprecationWarning",
+    # Ignore datetime.utcnow() deprecation (will fix in future cleanup)
+    "ignore:datetime.datetime.utcnow:DeprecationWarning",
+    # Ignore FastAPI duplicate operation ID warnings (caused by permission decorators)
+    "ignore:Duplicate Operation ID:UserWarning",
+    # Ignore coroutine never awaited in tests (mock issue)
+    "ignore:coroutine .* was never awaited:RuntimeWarning",
+]
 
 [tool.coverage.run]
 source = [
@@ -129,9 +152,17 @@ source = [
     "preloop_models",
     "preloop_sync",
 ]
+relative_files = true
 
+[tool.coverage.paths]
+source = [
+    "backend/preloop-ai/preloop_ai",
+    "backend/preloop-models/preloop_models",
+    "backend/preloop-sync/preloop_sync",
+]
+
+[tool.coverage.report]
 omit = [
-    "backend/preloop-ai/tests/*",
-    "backend/preloop-models/tests/*",
-    "backend/preloop-sync/tests/*",
+    "*/tests/*",
+    "*/__pycache__/*",
 ]

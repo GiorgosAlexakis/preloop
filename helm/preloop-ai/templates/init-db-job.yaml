@@ -22,7 +22,7 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              cd /app/SpaceModels && \
+              cd /app/backend/preloop-models && \
               python scripts/init_db.py --force
           env:
             - name: DATABASE_URL

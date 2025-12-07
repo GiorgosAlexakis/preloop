@@ -1,7 +1,9 @@
 import { LitElement, html, css } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import { router } from '../router';
+import { Router } from '@vaadin/router';
 import { activityTracker } from '../services/activity-tracker';
+import { getFeatures } from '../api';
 import '../views/public/landing-view.ts';
 import './static-view-wrapper.ts';
 import '../views/public/login-view.ts';
@@ -72,7 +74,8 @@ export class LitApp extends LitElement {
 
     const outlet = this.renderRoot.querySelector('main');
     const ssrRoute = this.getAttribute('data-ssr-route');
-    const currentPath = window.location.pathname;
+    // Normalize path: remove .html suffix for comparison
+    const currentPath = window.location.pathname.replace(/\.html$/, '');
 
     // Check if SSR content matches current route
     const ssrContent = this.querySelector('landing-view, static-view-wrapper');
@@ -96,38 +99,61 @@ export class LitApp extends LitElement {
       {
         path: '/',
         action: (context, commands) => {
-          // Check if landing-view already exists (from SSR or previous navigation)
-          let existingLandingView = this.querySelector('landing-view');
-
-          // Also check if it's already in the outlet
-          if (!existingLandingView) {
-            const outlet = this.renderRoot.querySelector('main');
-            existingLandingView = outlet?.querySelector('landing-view') || null;
-          }
+          // Check if landing-view already exists in the outlet (from SSR moved in firstUpdated)
+          const routerOutlet = this.renderRoot.querySelector('main');
+          const existingLandingView =
+            routerOutlet?.querySelector('landing-view');
 
           if (existingLandingView) {
-            // Check if it has loaded content (either visible or hidden slots)
-            // Don't check children.length because _loadSlottedContent hides them
-            const hasLoadedContent =
-              (existingLandingView as any)._featureSlides?.length > 0 ||
-              (existingLandingView as any)._faqs?.length > 0;
-
-            if (hasLoadedContent) {
-              // Reuse existing component with its state intact
-              return existingLandingView;
-            }
+            // Reuse existing SSR landing-view - it will load its own content
+            return existingLandingView;
           }
 
-          // Fallback: create new landing-view (no SSR content available)
+          // No existing landing-view, create a new one
           return commands.component('landing-view');
         },
       },
       { path: '/login', component: 'login-view' },
-      { path: '/register', component: 'register-view' },
+      {
+        path: '/register',
+        action: async (context, commands) => {
+          // Check if registration is enabled
+          try {
+            const features = await getFeatures();
+            if (features.features['registration'] === false) {
+              // Registration disabled, redirect to login
+              return commands.redirect('/login');
+            }
+          } catch (error) {
+            // If we can't check, allow registration (fail open)
+          }
+          return commands.component('register-view');
+        },
+      },
       { path: '/forgot-password', component: 'forgot-password-view' },
       { path: '/reset-password', component: 'reset-password-view' },
       { path: '/verify-email', component: 'verify-email-view' },
       { path: '/request-demo', component: 'request-demo-view' },
+      {
+        path: '/about',
+        action: (context, commands) => {
+          // Check if we have SSR content for this EXACT route on first load
+          const outlet = this.renderRoot.querySelector('main');
+          const existingWrapper = outlet?.querySelector('static-view-wrapper');
+          const ssrRoute = this.getAttribute('data-ssr-route');
+
+          if (existingWrapper && ssrRoute === '/about' && !this.hasNavigated) {
+            // Reuse SSR content on first load only
+            this.hasNavigated = true;
+            return existingWrapper;
+          }
+
+          // Load markdown dynamically
+          const view = commands.component('static-view') as any;
+          view.src = '/content/about.md';
+          return view;
+        },
+      },
       {
         path: '/whatis-mcp',
         action: (context, commands) => {
@@ -204,7 +230,28 @@ export class LitApp extends LitElement {
           return view;
         },
       },
-      { path: '/pricing', component: 'public-pricing-view' },
+      {
+        path: '/pricing',
+        action: (context, commands) => {
+          // Check if we have SSR content for this EXACT route on first load
+          const outlet = this.renderRoot.querySelector('main');
+          const existingWrapper = outlet?.querySelector('static-view-wrapper');
+          const ssrRoute = this.getAttribute('data-ssr-route');
+
+          if (
+            existingWrapper &&
+            ssrRoute === '/pricing' &&
+            !this.hasNavigated
+          ) {
+            // Reuse SSR content on first load only
+            this.hasNavigated = true;
+            return existingWrapper;
+          }
+
+          // Load pricing view dynamically
+          return commands.component('public-pricing-view');
+        },
+      },
       { path: '/welcome', component: 'welcome-view' },
       {
         path: '/console',

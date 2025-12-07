@@ -3,9 +3,21 @@ Pytest configuration and fixtures for integration tests.
 """
 
 import os
+from pathlib import Path
 
 import httpx
 import pytest
+
+# Directory for screenshots on failure (for UI tests)
+SCREENSHOTS_DIR = Path(__file__).parent / "screenshots"
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Store test result on the item for fixtures to access."""
+    outcome = yield
+    rep = outcome.get_result()
+    setattr(item, f"rep_{rep.when}", rep)
 
 # Test configuration
 PRELOOP_URL = os.getenv("PRELOOP_TEST_URL", "").rstrip("/")

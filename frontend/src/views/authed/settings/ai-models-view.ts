@@ -200,21 +200,21 @@ export class AIModelsView extends LitElement {
       </sl-alert>
       <sl-card class="table-card">
         ${when(
-      this.models.length === 0,
-      () =>
-        html` <sl-alert variant="primary" open>
+          this.models.length === 0,
+          () =>
+            html` <sl-alert variant="primary" open>
               <sl-icon slot="icon" name="info-circle"></sl-icon>
               No Models configured yet.
               <a
                 href="#"
                 @click=${(e: Event) => {
-            e.preventDefault();
-            this.openAddModelModal();
-          }}
+                  e.preventDefault();
+                  this.openAddModelModal();
+                }}
                 >Add a Model</a
               >
             </sl-alert>`,
-      () => html`
+          () => html`
             <table class="styled-table">
               <thead>
                 <tr>
@@ -227,21 +227,21 @@ export class AIModelsView extends LitElement {
               </thead>
               <tbody>
                 ${repeat(
-        this.models,
-        (model) => model.id,
-        (model) => html`
+                  this.models,
+                  (model) => model.id,
+                  (model) => html`
                     <tr>
                       <td>${model.name}</td>
                       <td>${model.provider_name}</td>
                       <td>${model.model_identifier}</td>
                       <td>
                         ${when(
-          model.is_default,
-          () =>
-            html`<sl-badge variant="success" pill
+                          model.is_default,
+                          () =>
+                            html`<sl-badge variant="success" pill
                               >Default</sl-badge
                             >`,
-          () => html`
+                          () => html`
                             <sl-button
                               size="small"
                               @click=${() => this.handleSetDefault(model)}
@@ -249,7 +249,7 @@ export class AIModelsView extends LitElement {
                               Set as default
                             </sl-button>
                           `
-        )}
+                        )}
                       </td>
                       <td>
                         <div class="actions">
@@ -272,11 +272,11 @@ export class AIModelsView extends LitElement {
                       </td>
                     </tr>
                   `
-      )}
+                )}
               </tbody>
             </table>
           `
-    )}
+        )}
       </sl-card>
     `;
   }
@@ -288,21 +288,21 @@ export class AIModelsView extends LitElement {
         .open=${this.isModalOpen}
       >
         ${when(
-      this.formError,
-      () => html`
+          this.formError,
+          () => html`
             <sl-alert variant="danger" open>
               <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
               <strong>Error:</strong> ${this.formError}
             </sl-alert>
           `
-    )}
+        )}
         <div class="form-grid">
           <sl-input
             class="full-width"
             label="Friendly Name"
             .value=${this.currentModel.name || ''}
             @sl-input=${(e: Event) =>
-        (this.currentModel.name = (e.target as HTMLInputElement).value)}
+              (this.currentModel.name = (e.target as HTMLInputElement).value)}
             ?disabled=${this.isSubmitting}
           ></sl-input>
           <sl-select
@@ -324,9 +324,9 @@ export class AIModelsView extends LitElement {
             label="API URL"
             .value=${this.currentModel.api_url || ''}
             @sl-input=${(e: Event) =>
-      (this.currentModel.api_url = (
-        e.target as HTMLInputElement
-      ).value)}
+              (this.currentModel.api_url = (
+                e.target as HTMLInputElement
+              ).value)}
             ?disabled=${this.isSubmitting}
           ></sl-input>
           <sl-input
@@ -335,17 +335,17 @@ export class AIModelsView extends LitElement {
             label="API Key"
             .value=${this.currentModel.api_key || ''}
             @sl-input=${(e: Event) => {
-        this.currentModel.api_key = (e.target as HTMLInputElement).value;
-        this.requestUpdate();
-        console.log(this.currentModel.api_key);
-      }}
+              this.currentModel.api_key = (e.target as HTMLInputElement).value;
+              this.requestUpdate();
+              console.log(this.currentModel.api_key);
+            }}
             placeholder=${this.isEditing
-        ? 'Leave blank to keep existing key'
-        : ''}
+              ? 'Leave blank to keep existing key'
+              : ''}
             ?disabled=${this.isSubmitting}
             help-text=${this.isEditing
-        ? ''
-        : 'Enter your API key to fetch available models'}
+              ? ''
+              : 'Enter your API key to fetch available models'}
           ></sl-input>
 
           <div class="full-width">
@@ -356,42 +356,42 @@ export class AIModelsView extends LitElement {
               style="width: 100%;"
             >
               ${this.modelSuggestions.length > 0
-        ? 'Refresh Models'
-        : 'Fetch Available Models'}
+                ? 'Refresh Models'
+                : 'Fetch Available Models'}
             </sl-button>
             ${this.modelsFetchError
-        ? html`
+              ? html`
                   <div
                     style="color: var(--sl-color-danger-600); font-size: 0.875rem; margin-top: 0.5rem;"
                   >
                     ${this.modelsFetchError}
                   </div>
                 `
-        : ''}
+              : ''}
           </div>
 
           ${this.modelSuggestions.length > 0
-        ? html`
+            ? html`
                 <sl-select
                   class="full-width"
                   label="Model Name / ID"
                   .value=${this.isOtherModel
-            ? 'other'
-            : this.currentModel.model_identifier || ''}
+                    ? 'other'
+                    : this.currentModel.model_identifier || ''}
                   @sl-change=${this._handleModelNameChange}
                   ?disabled=${this.isSubmitting}
                 >
                   ${repeat(
-              this.modelSuggestions,
-              (s) => s,
-              (s) => html`<sl-option value="${s}">${s}</sl-option>`
-            )}
+                    this.modelSuggestions,
+                    (s) => s,
+                    (s) => html`<sl-option value="${s}">${s}</sl-option>`
+                  )}
                   <sl-option value="other">Other...</sl-option>
                 </sl-select>
 
                 ${when(
-              this.isOtherModel,
-              () => html`
+                  this.isOtherModel,
+                  () => html`
                     <sl-input
                       class="full-width"
                       label="Custom Model Name / ID"
@@ -401,9 +401,9 @@ export class AIModelsView extends LitElement {
                       ?disabled=${this.isSubmitting}
                     ></sl-input>
                   `
-            )}
+                )}
               `
-        : ''}
+            : ''}
         </div>
         <sl-button
           slot="footer"

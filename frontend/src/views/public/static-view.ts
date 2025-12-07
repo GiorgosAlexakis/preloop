@@ -29,40 +29,83 @@ export class StaticView extends LitElement {
         width: 100%;
       }
 
-      /* Ensure slotted content is visible and styled properly */
-      ::slotted(*) {
-        display: block;
-        line-height: 1.6;
-      }
-
-      ::slotted(h1) {
-        font-size: 2.5rem;
-        font-weight: bold;
+      /* Styles for dynamically rendered markdown content */
+      .text-section h1 {
+        font-size: 2.4rem;
+        font-weight: 300;
+        color: var(--sl-color-primary-500);
         margin-bottom: 1rem;
       }
-
-      ::slotted(h2) {
-        font-size: 2rem;
-        font-weight: bold;
+      .text-section h2 {
+        font-size: 1.8rem;
+        font-weight: 300;
+        color: var(--sl-color-primary-500);
         margin-top: 2rem;
         margin-bottom: 1rem;
       }
-
-      ::slotted(h3) {
-        font-size: 1.5rem;
-        font-weight: bold;
+      .text-section h3 {
+        font-size: 1.6rem;
+        font-weight: 300;
         margin-top: 1.5rem;
         margin-bottom: 0.75rem;
       }
-
-      ::slotted(p) {
-        margin-bottom: 1rem;
+      .text-section h4 {
+        font-size: 1.3rem;
+        font-weight: 500;
+        margin: 0.5rem 0 0.25rem;
+        color: var(--sl-color-neutral-0);
       }
-
-      ::slotted(ul),
-      ::slotted(ol) {
+      .text-section p {
+        margin-bottom: 1rem;
+        line-height: 1.6;
+      }
+      .text-section a {
+        color: var(--sl-color-primary-600);
+        text-decoration: underline;
+      }
+      .text-section a:hover {
+        color: var(--sl-color-primary-700);
+      }
+      .text-section ul,
+      .text-section ol {
         margin-bottom: 1rem;
         padding-left: 2rem;
+      }
+      .text-section strong {
+        color: var(--sl-color-primary-400);
+      }
+      .text-section hr {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        margin: 2rem 0;
+      }
+
+      /* Team section styles */
+      .team-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+        margin: 2rem 0;
+      }
+      .team-member {
+        text-align: center;
+        padding: 1.5rem;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .team-photo {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        object-fit: cover;
+        margin-bottom: 1rem;
+        border: 3px solid var(--sl-color-primary-500);
+      }
+      .team-member p {
+        font-size: 0.95rem;
+        line-height: 1.5;
+        text-align: left;
       }
     `,
   ];

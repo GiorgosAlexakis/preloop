@@ -5,10 +5,9 @@
   "main": "src/main.ts",
   "scripts": {
     "start": "npm run dev",
-    "dev": "vite --config vite.config.preloop.ts",
-    "build": "npm run build:preloop",
-    "build:preloop": "vite build --config vite.config.preloop.ts",
-    "preview": "vite preview --config vite.config.preloop.ts --outDir dist-preloop",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "web-test-runner \"src/**/*.test.{ts,js}\"",
     "test:coverage": "web-test-runner \"src/**/*.test.{ts,js}\" --coverage",
     "test:visual": "playwright test tests/visual/",

@@ -20,7 +20,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
           command: ["/bin/sh", "-c"]
-          args: ["cd /app/SpaceModels && alembic upgrade head"]
+          args: ["cd /app/backend/preloop-models && alembic upgrade head"]
           env:
             - name: DATABASE_URL
               value: {{ include "preloop_ai.databaseUrl" . }}

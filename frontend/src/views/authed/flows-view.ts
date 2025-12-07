@@ -150,6 +150,15 @@ export class FlowsView extends LitElement {
       font-size: 0.9rem;
       line-height: 1.5;
     }
+
+    .presets-collapsed {
+      text-align: center;
+      padding: 24px 16px;
+      color: var(--sl-color-neutral-500);
+      font-size: 0.95rem;
+      background: var(--sl-color-neutral-50);
+      border-radius: 4px;
+    }
   `;
 
   @state()
@@ -173,7 +182,11 @@ export class FlowsView extends LitElement {
   @state()
   private deletingFlowId: string | null = null;
 
+  @state()
+  private showPresets = true;
+
   private unsubscribe?: () => void;
+  private hasInitializedPresetVisibility = false;
 
   async connectedCallback() {
     super.connectedCallback();
@@ -193,11 +206,21 @@ export class FlowsView extends LitElement {
   async loadData() {
     this.isLoading = true;
     try {
-      [this.flows, this.presets, this.executions] = await Promise.all([
+      const [flows, presets, executions] = await Promise.all([
         getFlows(),
         getFlowPresets(),
         getFlowExecutions(),
       ]);
+      this.flows = flows;
+      this.presets = presets;
+      this.executions = executions;
+
+      if (this.flows.length === 0) {
+        this.showPresets = true;
+      } else if (!this.hasInitializedPresetVisibility) {
+        this.showPresets = false;
+      }
+      this.hasInitializedPresetVisibility = true;
     } finally {
       this.isLoading = false;
     }
@@ -336,10 +359,27 @@ export class FlowsView extends LitElement {
 
       <div class="section-header">
         <h2>Presets</h2>
+        ${this.flows.length > 0
+          ? html`
+              <sl-button size="small" @click=${this.togglePresets}>
+                <sl-icon
+                  slot="prefix"
+                  name=${this.showPresets ? 'chevron-up' : 'chevron-down'}
+                ></sl-icon>
+                ${this.showPresets ? 'Hide presets' : 'Show presets'}
+              </sl-button>
+            `
+          : ''}
       </div>
-      <div class="presets-grid">
-        ${this.presets.map((preset) => this.renderPresetCard(preset))}
-      </div>
+      ${this.showPresets
+        ? html`
+            <div class="presets-grid">
+              ${this.presets.map((preset) => this.renderPresetCard(preset))}
+            </div>
+          `
+        : html`<div class="presets-collapsed">
+            Presets are hidden. Use "Show presets" to explore starter workflows.
+          </div>`}
     `;
   }
 
@@ -536,5 +576,9 @@ export class FlowsView extends LitElement {
     } finally {
       this.deletingFlowId = null;
     }
+  }
+
+  private togglePresets() {
+    this.showPresets = !this.showPresets;
   }
 }

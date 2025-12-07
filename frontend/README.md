@@ -47,3 +47,56 @@ To run the test suite using Web Test Runner, use the following command:
 
 ```bash
 npm run test
+```
+
+## Architecture
+
+### SSR Content Slotting for SEO
+
+The frontend uses a slotting mechanism to provide SEO-friendly server-side rendered content while maintaining the benefits of a single-page application (SPA).
+
+#### How It Works
+
+1. **Build Time (`vite-plugin-brand.ts`)**:
+   - The Vite plugin generates static HTML pages (index.html, about.html, pricing.html, etc.)
+   - Each page includes pre-rendered content inside web component tags in the light DOM
+   - Content is wrapped in appropriate wrapper components:
+     - Landing page: `<landing-view>` with slotted content
+     - Static pages: `<static-view-wrapper>` with article content
+   - A `data-ssr-route` attribute on `<lit-app>` indicates which route the SSR content is for
+
+2. **Runtime Hydration (`lit-app.ts`)**:
+   - On page load, `firstUpdated()` checks if SSR content exists in the light DOM
+   - If the SSR route matches the current URL path, the content is moved to the router outlet
+   - The router then reuses this existing content instead of creating new components
+   - If routes don't match (e.g., SPA navigation), SSR content is removed
+
+3. **Component Consumption**:
+   - `landing-view` reads slotted content via named slots (e.g., `slot="hero-title"`)
+   - `static-view-wrapper` uses a default slot to display article content
+   - Components can also load content dynamically via JSON/markdown for client-side navigation
+
+#### File Structure
+
+```
+vite-plugin-brand.ts          # Generates SSR HTML at build time
+src/components/
+  lit-app.ts                  # Handles SSR content hydration
+  static-view-wrapper.ts      # Wrapper for static pages (privacy, about, etc.)
+  static-view.ts              # Dynamic markdown loader for client-side nav
+src/views/public/
+  landing-view.ts             # Landing page with slot consumption
+```
+
+#### Key Functions
+
+- `generateSlottedContentForRoute()` - Creates slotted HTML for landing page
+- `generateFullHtmlPage()` - Generates complete HTML pages for static routes
+- `loadMarkdownContent()` - Converts markdown to styled HTML articles
+
+#### Benefits
+
+- **SEO**: Search engines see fully rendered content on first load
+- **Performance**: No flash of unstyled content (FOUC) with critical CSS
+- **SPA Experience**: After hydration, navigation is instant client-side
+- **Maintainability**: Content defined in `brands.yaml` and markdown files

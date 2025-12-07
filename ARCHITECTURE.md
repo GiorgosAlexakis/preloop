@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Preloop AI is a responsible AI automation platform. It can proxy tools from MCP servers, optionally adding a human approval layer with fine grained policies. It provides event driver agentic flows to intelligently automate common tasks using any agent framework like Claude Code, Codex CLI, Aider or OpenHands. It integrates with issue & code tracking systems like Jira, GitHub, GitLab, both for listening to events and for ingesting issues, comments, documentation and code. By leveraging vector-based similarity search, Preloop AI detects duplicate and overlapping issues, detects unmapped dependencies, evaluates compliance metrics, and offers intelligent suggestions to streamline workflows. The architecture emphasizes flexibility, performance, and ease of integration, providing access via a REST API, a web UI, and an MCP server for various clients.
+Preloop AI is an open-source, responsible AI automation platform. It can proxy tools from MCP servers, optionally adding a human approval layer with configurable policies. It provides event-driven agentic flows to intelligently automate common tasks using any agent framework like Claude Code, Codex CLI, Aider or OpenHands. It integrates with issue & code tracking systems like Jira, GitHub, GitLab, both for listening to events and for ingesting issues, comments, documentation and code. By leveraging vector-based similarity search, Preloop AI detects duplicate and overlapping issues, detects unmapped dependencies, evaluates compliance metrics, and offers intelligent suggestions to streamline workflows. The architecture emphasizes flexibility, performance, and ease of integration, providing access via a REST API, a web UI, and an MCP server for various clients.
 
 ## High-Level Architecture
 
@@ -19,7 +19,7 @@ graph LR
         subgraph "Main Repository"
             direction LR
             API["Preloop AI REST API"]
-            subgraph "Submodules"
+            subgraph "Sub projects"
                 direction LR
                 PreloopModels["Preloop Models (Data Layer)"]
                 subgraph "Preloop Sync (Data Sync Service)"
@@ -281,7 +281,7 @@ The `Preloop Console` application is structured around a component-based archite
 
 ## Database Schema (Managed by PreloopModels)
 
-The detailed schema is defined using SQLAlchemy models within the `PreloopModels` submodule. Key tables include:
+The detailed schema is defined using SQLAlchemy models within the `PreloopModels` directory. Key tables include:
 
 *   **Organizations:** Stores organization metadata, settings, and potentially user associations.
 *   **Projects:** Contains project details, tracker configurations (type, API URL, credentials), and links to organizations.
@@ -448,7 +448,7 @@ PostgreSQL with the PGVector extension is used. The `preloop-models` package enc
 
 ### Authentication & Authorization
 
-Preloop AI implements a comprehensive multi-user authentication and authorization system:
+Preloop AI implements authentication and multi-tenancy:
 
 **Authentication:**
 - JWT-based authentication for REST API and MCP endpoints
@@ -457,39 +457,23 @@ Preloop AI implements a comprehensive multi-user authentication and authorizatio
 - Integration points for SSO and OAuth providers (future)
 
 **Multi-User Architecture:**
-- **Account Model:** Represents an organization/company (the billing entity)
+- **Account Model:** Represents an organization/company
 - **User Model:** Represents individual users within an account
-- **Team Model:** Groups of users within an account for collaboration
 - All data is scoped by `account_id` for multi-tenancy isolation
-
-**Authorization (RBAC Plugin):**
-Preloop AI includes a proprietary Role-Based Access Control (RBAC) plugin that provides enterprise-grade permission enforcement:
-
-- **7 System Roles:** Owner, Admin, Editor, Executor, Tracker Manager, Analyst, Viewer
-- **32 Permissions:** Granular permissions across 8 categories (Issues, Projects, Trackers, Teams, Users, AI Models, Flows, Webhooks)
-- **Plugin Architecture:** RBAC is implemented as a proprietary plugin in `preloop-ai/plugins/proprietary/rbac/`
-- **Permission Decorators:**
-  - `@require_permission(permission_name)` - Require specific permission
-  - `@require_any_permission(*permissions)` - Require any one of multiple permissions
-  - `@require_all_permissions(*permissions)` - Require all specified permissions
-- **Permission Checking:** `has_permission(user, permission_name, db)` function for programmatic checks
-- **Owner Role:** Automatically has all permissions
-- **Multi-Role Support:** Users can have multiple roles with combined permissions
-
-**Plugin System:**
-- Extensible plugin architecture in `preloop-ai/plugins/`
-- Plugins can provide services, API routes, middleware, and dependencies
-- Built-in plugins: Argument-based condition evaluator for approval workflows
-- Proprietary plugins: RBAC (permission enforcement)
-- Plugin discovery via module paths or file system paths
-- Lifecycle hooks: `on_startup()` and `on_shutdown()`
 
 **Security Features:**
 - Password hashing with industry-standard algorithms
-- Role assignment and permission checks on all protected endpoints
 - Account-level data isolation (all queries filtered by `account_id`)
 - User invitation system with secure token-based email verification
-- Audit logging for security-sensitive operations (future enhancement)
+
+**Plugin System:**
+- Extensible plugin architecture for adding custom functionality
+- Plugins can provide services, API routes, middleware, and dependencies
+- Built-in plugins: Argument-based condition evaluator for approval workflows
+- Plugin discovery via module paths or file system paths
+- Lifecycle hooks: `on_startup()` and `on_shutdown()`
+
+> **Enterprise Features**: Preloop Enterprise Edition adds RBAC with 7 system roles, 32 fine-grained permissions, team management, and comprehensive audit logging. Contact sales@spacecode.ai for more information.
 
 ### Deployment
 The system is designed to be containerized using Docker, enabling easy deployment in various environments including Kubernetes clusters. Stateless components enable horizontal scaling under load.
@@ -497,7 +481,6 @@ The system is designed to be containerized using Docker, enabling easy deploymen
 ## Security Considerations
 
 - [x] All API requests authenticated via JWT tokens
-- [x] Role-based authorization with fine-grained permissions (RBAC plugin)
 - [x] Multi-tenant data isolation (all queries scoped by account_id)
 - [x] User invitation system with secure token-based verification
 - [x] Password hashing with industry-standard algorithms
@@ -505,82 +488,16 @@ The system is designed to be containerized using Docker, enabling easy deploymen
 - [ ] Issue tracker credentials encrypted at rest (currently stored securely but not encrypted)
 - [ ] Sensitive data masked in logs
 - [ ] Rate limiting to prevent abuse (partial implementation exists)
-- [x] Audit logging for security-sensitive operations (proprietary plugin)
 - [ ] 2FA/MFA support for user accounts
 - [ ] Session management and token revocation
 - [ ] Regular security audits and dependency updates
 
+> **Enterprise Security**: Preloop Enterprise Edition adds RBAC, comprehensive audit logging, and impersonation tracking for compliance requirements. Contact sales@spacecode.ai for more information.
 
-## Session Management and Activity Tracking
 
-Preloop AI implements a comprehensive session management system for tracking WebSocket connections, user activity, and audit events.
+## Real-Time Communication
 
-### Session Manager
-
-The `SessionManager` class (`preloop-ai/services/session_manager.py`) maintains an in-memory registry of active WebSocket sessions:
-
-**Key Features:**
-- **In-Memory Session Store**: Fast O(1) lookups for active sessions
-- **Connection Lifecycle Management**: Tracks session creation, activity updates, and termination
-- **Database Persistence**: Session events (start/end) persisted to `Event` table for historical analysis
-- **Activity Tracking**: Updates last_activity timestamp on each WebSocket message
-- **Account-Based Filtering**: Quick lookup of all sessions for a given account
-
-**Data Structure:**
-```python
-@dataclass
-class WebSocketSession:
-    id: str
-    connection_id: str
-    websocket: WebSocket
-    user_id: Optional[UUID]
-    account_id: Optional[UUID]
-    fingerprint: Optional[str]
-    ip_address: str
-    user_agent: str
-    connected_at: datetime
-    last_activity: datetime
-    metadata: dict
-```
-
-**Usage:**
-- Admin dashboard queries `session_manager.sessions` directly for real-time session monitoring
-- No N+1 database queries needed for active session list
-- Session data enriched with user information only when needed
-
-**Multi-Pod Considerations:**
-- Each pod maintains its own in-memory session registry
-- The `/api/v1/admin/activity/sessions` endpoint only returns sessions from the current pod
-- In multi-pod Kubernetes deployments, sessions are distributed across pods based on load balancer routing
-- For comprehensive cross-pod monitoring, consider:
-  - Querying the `Event` table for `session_start` events (persistent across all pods)
-  - Aggregating results from all pod endpoints (requires service discovery)
-  - Using a centralized session store like Redis (future enhancement)
-
-### Activity Pipeline
-
-User activity flows through multiple layers:
-
-1. **WebSocket Events** → Session Manager updates `last_activity`
-2. **Page View Events** → Persisted to `Event` table with `event_type="page_view"`
-3. **Session Events** → `session_start` and `session_end` events for session lifecycle
-4. **Audit Events** → Security-sensitive operations logged with full context
-
-**Event Table Schema:**
-```python
-class Event(Base):
-    id: UUID
-    session_id: UUID
-    user_id: Optional[UUID]
-    account_id: Optional[UUID]
-    fingerprint: Optional[str]
-    event_type: str  # "session_start", "session_end", "page_view", "impersonation_started", etc.
-    timestamp: datetime
-    path: Optional[str]  # For page_view events
-    ip_address: str
-    user_agent: str
-    event_data: dict  # JSON field for event-specific metadata
-```
+Preloop AI uses WebSocket connections for real-time updates:
 
 ### Unified WebSocket Architecture
 
@@ -590,13 +507,7 @@ Single WebSocket connection per client with pub/sub message routing:
 - Routes messages to topic-based subscribers
 - Supports wildcard subscriptions (`'*'` topic)
 - Optional per-subscriber filter functions
-- Topics: `flow_executions`, `approvals`, `activity`, `system`
-
-**UnifiedWebSocketManager** (frontend):
-- Automatic reconnection with exponential backoff
-- Session establishment with handshake
-- Heartbeat/keepalive (ping/pong)
-- Topic-based subscription management
+- Topics: `flow_executions`, `approvals`, `system`
 
 **Benefits:**
 - Single WebSocket reduces connection overhead
@@ -604,70 +515,7 @@ Single WebSocket connection per client with pub/sub message routing:
 - Easy to add new message types/topics
 - Clear separation of concerns
 
-## User Impersonation
-
-Preloop AI supports admin impersonation of users for support and debugging purposes, with comprehensive audit logging.
-
-### Impersonation Flow
-
-1. **Initiation**: Admin calls `POST /api/v1/admin/impersonate/{user_id}`
-2. **Token Generation**: Special JWT token issued with both impersonator and impersonated user IDs
-3. **Audit Log**: `impersonation_started` event logged with:
-   - `impersonator_id`: Admin initiating impersonation
-   - `impersonated_user_id`: Target user
-   - `session_id`: Links to WebSocket session
-   - `ip_address`, `user_agent`: Device information
-   - `event_data`: Additional context (reason, etc.)
-4. **Session Tracking**: All actions during impersonation linked to both user IDs
-5. **Termination**: Explicit end or token expiration logs `impersonation_ended` event
-
-### Security Considerations
-
-- Only superusers can impersonate
-- All impersonated actions clearly marked in audit log
-- Impersonation sessions have shorter TTL
-- Original admin identity preserved throughout
-- Full audit trail for compliance
-
-### Audit Log Querying
-
-```bash
-# Find all impersonation events
-GET /api/v1/admin/audit-logs?event_type=impersonation_started
-
-# Trace all actions by an impersonated user
-GET /api/v1/admin/audit-logs?impersonated_user_id={user_id}
-
-# See who impersonated whom
-GET /api/v1/admin/audit-logs?impersonator_id={admin_id}
-```
-
-### Use Cases
-
-- **Customer Support**: Debug user-specific issues
-- **Data Migration**: Perform actions on behalf of users
-- **Testing**: Validate permissions and UI behavior
-- **Compliance Audits**: Full traceability of admin actions
-
-## Billing Integration
-
-(Note: Billing documentation is detailed in the "Usage, Billing, and Plans" section below)
-
-The billing system integrates with Stripe for subscription management:
-
-**Key Changes:**
-- Plans defined in `plans.yaml` as source of truth
-- Stripe products/prices sync via `scripts/sync_plans.py`
-- Usage tracking at account level (API requests, storage, etc.)
-- Proprietary features gate-checked against subscription tier
-- Automatic feature access based on plan capabilities
-
-**Architecture Highlights:**
-- Plan metadata stored in both `plans.yaml` and Stripe
-- Account.subscription_tier links to plan ID
-- Real-time usage metering for billing
-- Webhook handlers for subscription lifecycle events
-- Grace period handling for failed payments
+> **Enterprise Features**: Preloop Enterprise Edition adds session management, activity tracking, user impersonation with audit logging, and billing integration. Contact sales@spacecode.ai for more information.
 
 ## Event-Driven Agentic Flows
 
@@ -990,207 +838,13 @@ graph TD
 
 ### 9. Preset Use Case Examples
 
-## Usage, Billing, and Plans
+Example automated workflows that can be configured:
 
-This section outlines the architecture for tracking API/feature usage, managing subscription plans, and integrating with Stripe for billing.
+*   **Commit to `main` -> Doc/Test Check:** Evaluate if documentation or tests require updates and open issues or PRs with suggested changes.
+*   **New Issue Created -> Triage & Label:** Analyze new issue content, suggest priority, labels, and potentially assign based on keywords.
+*   **PR Merged -> Release Notes Draft:** Summarize changes and draft release notes.
+*   **Downtime Incident -> Initial Investigation:** Check deployed version, telemetry data, and suggest remediation actions.
+*   **New User Feedback -> Summarize & Categorize:** Parse feedback, categorize it, and create corresponding issues.
+*   **Scheduled Code Quality Scan -> Analyze & Report:** Run static analysis and create tasks for critical issues.
 
-### 1. Plan Management: Source of Truth
-
-The single source of truth for all subscription plans is a YAML file named `plans.yaml` located in the root of the repository. This approach ensures that plan definitions are version-controlled and can be easily reviewed and modified.
-
-A Python script, `scripts/sync_plans.py`, is responsible for synchronizing this YAML file with both the Stripe API and the Preloop AI database. This script is executed as part of the deployment pipeline to ensure all environments are consistent.
-
-### 2. Architecture Overview
-
-```mermaid
-graph TD
-    subgraph "Version Control (Git)"
-        PlansYAML["plans.yaml"]
-    end
-
-    subgraph "Deployment Pipeline"
-        SyncScript["scripts/sync_plans.py"]
-    end
-
-    subgraph "External Services"
-        StripeAPI["Stripe API"]
-    end
-
-    subgraph "Preloop AI Backend"
-        SpaceModelsDB["SpaceModels (PostgreSQL)"]
-        BillingService["BillingService"]
-        BillingAPI["Billing API Endpoints"]
-    end
-
-    subgraph "Frontend (SpaceLit)"
-        PricingPage["Pricing Page"]
-        SubscriptionManagement["Subscription Management"]
-    end
-
-    PlansYAML -- Read by --> SyncScript
-    SyncScript -- Creates/Updates --> StripeAPI["Products & Prices"]
-    SyncScript -- Creates/Updates --> SpaceModelsDB["'plan' Table"]
-
-    BillingService -- Interacts with --> StripeAPI
-    BillingService -- Interacts with --> SpaceModelsDB
-
-    BillingAPI -- Uses --> BillingService
-
-    PricingPage -- Calls --> BillingAPI
-    SubscriptionManagement -- Calls --> BillingAPI
-
-    StripeAPI -- Redirects to --> BillingAPI["/checkout-success"]
-```
-
-### 3. Database Schema (`SpaceModels`)
-
-Four tables are used to manage billing and subscriptions:
-
-*   **`Account`:** The existing `Account` model has been updated to include a `stripe_customer_id` field, which links a user to their customer record in Stripe.
-*   **`Plan`:** Stores the details of each subscription plan, mirroring the structure of `plans.yaml`. It includes a `stripe_product_id` to link to the corresponding product in Stripe, as well as fields to support custom, account-specific plans.
-*   **`Subscription`:** Links an `Account` to a `Plan`. It tracks the subscription's status, current billing period, and stores the `stripe_subscription_id`.
-*   **`MonthlyUsage`:** Records aggregated usage for each subscription on a monthly basis. A JSONB column `usage_counts` stores key-value pairs for different tracked metrics (e.g., `ai_calls`, `issues_ingested`).
-
-### 4. Core Logic and Data Flow
-
-*   **Usage Tracking:** The `BillingService` provides a `record_usage(account_id, metric)` method. This method is called from specific, high-value locations in the codebase (e.g., within `Preloop Sync` when an issue is ingested or an embedding is generated). It increments the appropriate counter in the `MonthlyUsage` table for the current billing cycle.
-*   **Limit Enforcement:** A `check_limit(account_id, metric)` method in the `BillingService` determines if an account has exceeded its usage for a given metric based on its current plan. If no active subscription is found, the limits of the "free" plan are applied. The API endpoints use this to return a `429 Too Many Requests` error when a limit is reached.
-*   **Checkout & Portal:** The `BillingService` integrates with the Stripe API to create Checkout sessions (for new subscriptions) and Customer Portal sessions (for managing existing subscriptions). The API endpoints expose these functions to the frontend.
-*   **Subscription Creation:** When a user successfully completes a checkout, Stripe redirects them to a `/checkout-success` endpoint in the Preloop AI API. This endpoint retrieves the session details from Stripe, creates the `Subscription` record in the local database, and then redirects the user to the subscription management page.
-
-### 5. Stripe Integration
-
-*   **Products and Prices:** The `sync_plans.py` script creates a "Product" in Stripe for each plan ID (e.g., "pro") and attaches monthly and annual "Prices" to it.
-*   **Customers:** A Stripe "Customer" is created for a Preloop AI `Account` the first time they initiate a checkout session. The `stripe_customer_id` is stored on the `Account` model.
-*   **Subscriptions:** When a user successfully completes a checkout, a Stripe "Subscription" is created. The `/checkout-success` handler then creates a corresponding `Subscription` record in the Preloop AI database.
-
-*   **Commit to `main` -> Doc/Test Check:** When a commit lands in the `main` branch, evaluate if documentation or tests require updates. If so, check if these updates have been applied. If not, open an issue detailing what needs to be done, and/or open a Pull Request with suggested changes.
-*   **New Issue Created -> Triage & Label:** Analyze new issue content, suggest priority, labels, and potentially assign to a default team/person based on keywords or project area.
-*   **PR Merged -> Release Notes Draft:** Summarize changes in the Pull Request (commit messages, linked issues) and draft a section for the project's release notes.
-*   **Downtime Incident (e.g., from PagerDuty/Opsgenie webhook) -> Initial Investigation:** When an incident is triggered, check the deployed version, deployment time, and relevant telemetry data. Attempt to determine the potential cause and suggest or perform initial remediation actions (e.g., rollback, restart service, scale resources) or escalate to a human with a summary.
-*   **New User Feedback (e.g., via a dedicated form or email integration) -> Summarize & Categorize:** Parse incoming user feedback, summarize key points, categorize it (e.g., bug report, feature request, question), and create a corresponding issue in the appropriate tracker.
-*   **Scheduled Code Quality Scan (e.g., triggered by an internal cron-like event) -> Analyze & Report:** Trigger a static analysis tool (or use an MCP tool that does this), have the agent review the results, summarize critical issues, and create tasks for them in the issue tracker.
-
-
-## Usage, Billing, and Plans
-
-To support different subscription tiers and enforce usage limits, a comprehensive usage tracking and billing system is integrated into Preloop AI. This system is designed to be scalable, accurate, and have minimal performance overhead.
-
-### 1. Plan Management: Source of Truth
-
-Subscription plans (e.g., Free, Pro) and their associated features/limits are defined in a version-controlled `plans.yaml` file at the root of the repository. This file serves as the single source of truth.
-
-A synchronization script (`scripts/sync_plans.py`) is responsible for:
-1.  Reading `plans.yaml`.
-2.  Creating or updating corresponding "Products" and "Prices" in the Stripe dashboard via the Stripe API.
-3.  Seeding or updating the `plans` table in the Preloop AI database.
-
-This approach ensures that plan definitions are tied to the application's version history.
-
-### 2. Architecture Overview
-
-The system introduces a new `Usage & Billing Service` that acts as the central authority for all plan-related logic. It interacts with new database models in `SpaceModels` and is integrated into the API layer via middleware and dependencies.
-
-```mermaid
-graph TD
-    subgraph "Preloop AI API"
-        direction TB
-        APIMiddleware["Usage Tracking Middleware"]
-        APIEndpoints["API Endpoints (e.g., /issues/search)"]
-        BillingEndpoints["New Billing API (/billing/...)"]
-        FeatureGatedEndpoint["Gated Endpoint (e.g., /ai_models)"]
-    end
-
-    subgraph "Core Services"
-        UsageService["Usage & Billing Service"]
-        AIModelService["Existing AI Model Service"]
-        PreloopSyncService["Existing Preloop Sync Service"]
-    end
-
-    subgraph "SpaceModels (Database)"
-        Plans["Plans Table"]
-        Subscriptions["Subscriptions Table"]
-        MonthlyUsage["MonthlyUsage Table"]
-        Account["Account/Organization Table"]
-    end
-
-    subgraph "External Services"
-        Stripe["Stripe API"]
-    end
-
-    %% Connections
-    APIMiddleware -- "Records API Call" --> UsageService
-    APIEndpoints -- "Calls" --> AIModelService
-    AIModelService -- "Records AI Call" --> UsageService
-    PreloopSyncService -- "Records Data Ingestion" --> UsageService
-
-    FeatureGatedEndpoint -- "Checks Feature Flag & Limits" --> UsageService
-    BillingEndpoints -- "Manages Subscriptions & Plans" --> UsageService
-
-    UsageService -- "Reads/Writes" --> Plans
-    UsageService -- "Reads/Writes" --> Subscriptions
-    UsageService -- "Reads/Writes" --> MonthlyUsage
-    UsageService -- "Links to" --> Account
-    UsageService -- "Interacts with" --> Stripe
-
-    %% Styling
-    style UsageService fill:#cfc,stroke:#333,stroke-width:2px
-    style BillingEndpoints fill:#cfc,stroke:#333,stroke-width:2px
-    style Plans fill:#eef,stroke:#666,stroke-width:1px
-    style Subscriptions fill:#eef,stroke:#666,stroke-width:1px
-    style MonthlyUsage fill:#eef,stroke:#666,stroke-width:1px
-```
-
-### 2. Database Schema (`SpaceModels`)
-
-Three new tables are added to manage billing and usage:
-
-*   **`Plans` Table**: Defines the available subscription plans (e.g., Free, Pro, Ultra).
-    *   `id`: Primary Key
-    *   `name`: String
-    *   `price_monthly`: Numeric
-    *   `is_active`: Boolean
-    *   `features`: JSONB. A flexible field to store all limits and feature flags for the plan.
-        *   *Example*: `{"api_calls_monthly": 10000, "ai_calls_monthly": 100, "issues_ingested_monthly": 1000, "custom_ai_models_enabled": false, "custom_compliance_metrics_enabled": false}`
-
-*   **`Subscriptions` Table**: Links an `Organization` to a `Plan` and tracks the billing cycle.
-    *   `id`: Primary Key
-    *   `organization_id`: Foreign Key to `Organizations.id`
-    *   `plan_id`: Foreign Key to `Plans.id`
-    *   `status`: String (e.g., "active", "trialing", "past_due", "canceled")
-    *   `current_period_start`: Timestamp
-    *   `current_period_end`: Timestamp
-    *   `stripe_subscription_id`: String (Links to the subscription in Stripe)
-
-*   **`MonthlyUsage` Table**: Stores aggregated usage data for each organization per billing cycle.
-    *   `id`: Primary Key
-    *   `subscription_id`: Foreign Key to `Subscriptions.id`
-    *   `billing_cycle_start`: Date
-    *   `billing_cycle_end`: Date
-    *   `usage_counts`: JSONB. Stores aggregated counts for each tracked metric.
-        *   *Example*: `{"api_calls": 8500, "ai_calls": 75, "issues_ingested": 450}`
-
-### 3. Core Logic and Data Flow
-
-*   **Usage Recording**:
-    1.  A **FastAPI Middleware** intercepts every API request and calls `UsageService.record_usage(org_id, "api_calls")`.
-    2.  Specific services, like the **AI Model Service** or **Preloop Sync**, call `UsageService.record_usage(...)` for more granular events (e.g., `"ai_calls"`, `"issues_ingested"`).
-    3.  The `UsageService` finds the current `MonthlyUsage` record for the organization and atomically increments the relevant counter in the `usage_counts` JSONB field.
-
-*   **Limit Enforcement**:
-    1.  Endpoints that consume a limited resource are protected by a FastAPI dependency.
-    2.  The dependency calls `UsageService.check_limit(org_id, "metric_name")`.
-    3.  The service compares the current value in `MonthlyUsage.usage_counts` against the limit defined in `Plans.features`.
-    4.  If the limit is exceeded, the API returns a `429 Too Many Requests` error, prompting the user to upgrade.
-
-*   **Feature Gating**:
-    1.  Endpoints for plan-specific features (e.g., creating a custom AI model) are protected by a dependency that calls `UsageService.has_feature(org_id, "feature_name")`.
-    2.  The service checks for the presence and value of the feature flag in the organization's `Plans.features` object.
-    3.  If the feature is not enabled, the API returns a `403 Forbidden` error.
-
-### 4. Stripe Integration
-
-The `Usage & Billing Service` will be responsible for all interactions with the Stripe API. This includes:
-*   Creating and managing Stripe Customers and Subscriptions.
-*   Handling webhooks from Stripe to update subscription statuses (e.g., `invoice.payment_succeeded`, `customer.subscription.deleted`).
-*   Initiating checkout sessions for new subscriptions or plan upgrades.
+> **Enterprise Features**: Preloop Enterprise Edition adds usage tracking, billing integration with Stripe, subscription management, and feature gating based on plan tiers. Contact sales@spacecode.ai for more information.

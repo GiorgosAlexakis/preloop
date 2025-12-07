@@ -35,6 +35,13 @@ else
   echo "Warning: $ENV_FILE not found. Skipping."
 fi
 echo "" # Add a blank line for separation
+
+# Activate virtual environment if not already active
+if [ -z "$VIRTUAL_ENV" ]; then
+  echo "Activating virtual environment..."
+  source "$(dirname "$0")/.venv/bin/activate" || source "$(dirname "$0")/../.venv/bin/activate"
+fi
+
 # Initialize database tables, embedding model, and AI model using Alembic
 echo "Initializing database schema, embedding model, and AI model..."
 python backend/preloop-models/scripts/init_db.py --force
@@ -109,6 +116,12 @@ echo " - API Documentation (Swagger): http://localhost:$API_PORT/docs/api"
 echo " - User Documentation: http://localhost:$API_PORT/docs"
 echo " - Debug mode: $DEBUG"
 echo " - Init test data: $INIT_TEST_DATA"
+
+# Activate virtual environment if not already active
+if [ -z "$VIRTUAL_ENV" ]; then
+  echo "Activating virtual environment..."
+  source "$(dirname "$0")/../.venv/bin/activate"
+fi
 
 # Start the API server in the foreground
 python -m preloop_ai.server --port "$API_PORT" $debug_flag $test_data_flag
