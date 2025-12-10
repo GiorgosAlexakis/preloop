@@ -1670,7 +1670,6 @@ export interface FeaturesResponse {
     name: string;
     version: string;
     description: string;
-    is_proprietary: boolean;
   }>;
   features: {
     [key: string]: boolean;

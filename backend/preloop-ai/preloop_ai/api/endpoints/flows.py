@@ -653,7 +653,7 @@ async def trigger_flow_via_webhook(
         "source": "webhook",
         "type": "webhook",
         "payload": payload,
-        "account_id": flow.account_id,
+        "account_id": str(flow.account_id),
     }
 
     # Process the event (will trigger flow execution)

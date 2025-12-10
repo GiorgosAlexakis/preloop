@@ -37,7 +37,7 @@ dependencies = [
     "aiodocker>=0.21.0", # Added for agent container execution
     "kubernetes_asyncio>=30.5.0", # Added for Kubernetes agent execution
     "cel-python>=0.1.0", # Added for CEL expression evaluation in approval rules
-    "dotenv>=0.9.9",
+    "python-dotenv>=1.2.1",
 ]
 
 [tool.setuptools]

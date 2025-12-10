@@ -97,12 +97,38 @@ helm uninstall preloop-ai
 
 ### Resource management parameters
 
-| Name                           | Description                                           | Value       |
-|--------------------------------|-------------------------------------------------------|-------------|
-| `resources.limits.cpu`         | CPU resource limits                                   | `500m`      |
-| `resources.limits.memory`      | Memory resource limits                                | `512Mi`     |
-| `resources.requests.cpu`       | CPU resource requests                                 | `100m`      |
-| `resources.requests.memory`    | Memory resource requests                              | `128Mi`     |
+Resources are configured per-component to allow fine-grained control:
+
+| Name                              | Description                        | Default Value |
+|-----------------------------------|------------------------------------|---------------|
+| `api.resources.requests.cpu`      | API server CPU request             | `200m`        |
+| `api.resources.requests.memory`   | API server memory request          | `256Mi`       |
+| `api.resources.limits.cpu`        | API server CPU limit               | `1`           |
+| `api.resources.limits.memory`     | API server memory limit            | `1Gi`         |
+| `spacelit.resources.requests.cpu` | Frontend (nginx) CPU request       | `50m`         |
+| `spacelit.resources.requests.memory` | Frontend memory request         | `64Mi`        |
+| `spacelit.resources.limits.cpu`   | Frontend CPU limit                 | `200m`        |
+| `spacelit.resources.limits.memory` | Frontend memory limit             | `256Mi`       |
+| `worker.resources.requests.cpu`   | Worker CPU request                 | `200m`        |
+| `worker.resources.requests.memory` | Worker memory request             | `256Mi`       |
+| `worker.resources.limits.cpu`     | Worker CPU limit                   | `1`           |
+| `worker.resources.limits.memory`  | Worker memory limit                | `1Gi`         |
+| `scheduler.resources.requests.cpu` | Scheduler CPU request             | `100m`        |
+| `scheduler.resources.requests.memory` | Scheduler memory request       | `128Mi`       |
+| `scheduler.resources.limits.cpu`  | Scheduler CPU limit                | `500m`        |
+| `scheduler.resources.limits.memory` | Scheduler memory limit           | `512Mi`       |
+| `monitor.resources.requests.cpu`  | Monitor CPU request                | `100m`        |
+| `monitor.resources.requests.memory` | Monitor memory request           | `128Mi`       |
+| `monitor.resources.limits.cpu`    | Monitor CPU limit                  | `500m`        |
+| `monitor.resources.limits.memory` | Monitor memory limit               | `512Mi`       |
+
+**Example: Override API resources**
+
+```bash
+helm install preloop-ai ./helm/preloop-ai \
+  --set api.resources.requests.cpu=500m \
+  --set api.resources.limits.memory=2Gi
+```
 
 ### Other parameters
 

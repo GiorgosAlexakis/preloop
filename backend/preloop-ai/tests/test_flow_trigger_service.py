@@ -1,7 +1,7 @@
 """Tests for FlowTriggerService."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -138,18 +138,14 @@ class TestFlowTriggerService:
             "account_id": test_flow.account_id,
         }
 
-        with patch(
-            "preloop_ai.services.flow_trigger_service.FlowExecutionOrchestrator"
-        ) as mock_orch:
-            mock_instance = MagicMock()
-            mock_instance.run = AsyncMock()
-            mock_orch.return_value = mock_instance
-
+        with patch.object(
+            service, "_run_orchestrator_with_session", new_callable=AsyncMock
+        ) as mock_run:
             await service.process_event(event_data)
 
-            # Verify orchestrator was created and run was called
-            mock_orch.assert_called_once()
-            assert mock_orch.call_args[1]["flow_id"] == test_flow.id
+            # Verify orchestrator was triggered
+            mock_run.assert_called_once()
+            assert mock_run.call_args[1]["flow"].id == test_flow.id
 
     @pytest.mark.asyncio
     @patch("preloop_ai.services.flow_trigger_service.get_nats_client")
@@ -168,13 +164,13 @@ class TestFlowTriggerService:
             "account_id": disabled_flow.account_id,
         }
 
-        with patch(
-            "preloop_ai.services.flow_trigger_service.FlowExecutionOrchestrator"
-        ) as mock_orch:
+        with patch.object(
+            service, "_run_orchestrator_with_session", new_callable=AsyncMock
+        ) as mock_run:
             await service.process_event(event_data)
 
-            # Verify orchestrator was NOT created
-            mock_orch.assert_not_called()
+            # Verify orchestrator was NOT triggered
+            mock_run.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_process_event_no_matching_flows(self, db_session: Session):
@@ -208,17 +204,13 @@ class TestFlowTriggerService:
             "account_id": conditional_flow.account_id,
         }
 
-        with patch(
-            "preloop_ai.services.flow_trigger_service.FlowExecutionOrchestrator"
-        ) as mock_orch:
-            mock_instance = MagicMock()
-            mock_instance.run = AsyncMock()
-            mock_orch.return_value = mock_instance
-
+        with patch.object(
+            service, "_run_orchestrator_with_session", new_callable=AsyncMock
+        ) as mock_run:
             await service.process_event(event_data)
 
-            # Verify orchestrator was created
-            mock_orch.assert_called_once()
+            # Verify orchestrator was triggered
+            mock_run.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("preloop_ai.services.flow_trigger_service.get_nats_client")
@@ -238,13 +230,13 @@ class TestFlowTriggerService:
             "account_id": conditional_flow.account_id,
         }
 
-        with patch(
-            "preloop_ai.services.flow_trigger_service.FlowExecutionOrchestrator"
-        ) as mock_orch:
+        with patch.object(
+            service, "_run_orchestrator_with_session", new_callable=AsyncMock
+        ) as mock_run:
             await service.process_event(event_data)
 
-            # Verify orchestrator was NOT created
-            mock_orch.assert_not_called()
+            # Verify orchestrator was NOT triggered
+            mock_run.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("preloop_ai.services.flow_trigger_service.get_nats_client")
@@ -280,17 +272,13 @@ class TestFlowTriggerService:
             "account_id": test_account.id,
         }
 
-        with patch(
-            "preloop_ai.services.flow_trigger_service.FlowExecutionOrchestrator"
-        ) as mock_orch:
-            mock_instance = MagicMock()
-            mock_instance.run = AsyncMock()
-            mock_orch.return_value = mock_instance
-
+        with patch.object(
+            service, "_run_orchestrator_with_session", new_callable=AsyncMock
+        ) as mock_run:
             await service.process_event(event_data)
 
-            # Verify orchestrator was created
-            mock_orch.assert_called_once()
+            # Verify orchestrator was triggered
+            mock_run.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("preloop_ai.services.flow_trigger_service.get_nats_client")
@@ -340,17 +328,13 @@ class TestFlowTriggerService:
             "account_id": test_account.id,
         }
 
-        with patch(
-            "preloop_ai.services.flow_trigger_service.FlowExecutionOrchestrator"
-        ) as mock_orch:
-            mock_instance = MagicMock()
-            mock_instance.run = AsyncMock()
-            mock_orch.return_value = mock_instance
-
+        with patch.object(
+            service, "_run_orchestrator_with_session", new_callable=AsyncMock
+        ) as mock_run:
             await service.process_event(event_data)
 
-            # Verify orchestrator was created twice (once for each flow)
-            assert mock_orch.call_count == 2
+            # Verify orchestrator was triggered twice (once for each flow)
+            assert mock_run.call_count == 2
 
     def test_matches_trigger_config_no_config(
         self, db_session: Session, test_flow: Flow

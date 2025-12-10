@@ -18,7 +18,6 @@ class TestArgumentEvaluator:
         metadata = evaluator.metadata
         assert metadata.name == "Argument Evaluator"
         assert metadata.version == "1.0.0"
-        assert metadata.is_proprietary is False
 
     def test_condition_type(self, evaluator):
         """Test condition type."""
@@ -245,7 +244,6 @@ class TestArgumentEvaluatorPlugin:
         metadata = plugin.metadata
 
         assert metadata.name == "builtin"
-        assert metadata.is_proprietary is False
 
     def test_builtin_plugin_provides_evaluator(self):
         """Test that BuiltinPlugin provides ArgumentEvaluator."""

@@ -12,6 +12,8 @@ from preloop_ai.schemas.ai_model import (
 )
 from preloop_models.models.account import Account
 
+from tests.conftest import maybe_await
+
 
 @pytest.fixture
 def mock_account(mocker: MockerFixture) -> Account:
@@ -44,10 +46,12 @@ async def test_create_ai_model(mock_account: Account, mocker: MockerFixture):
     )
 
     # Act
-    result = await ai_models.create_ai_model(
-        db=MagicMock(),
-        ai_model_in=ai_model_in,
-        current_user=mock_account,
+    result = await maybe_await(
+        ai_models.create_ai_model(
+            db=MagicMock(),
+            ai_model_in=ai_model_in,
+            current_user=mock_account,
+        )
     )
 
     # Assert
@@ -70,7 +74,9 @@ async def test_list_ai_models(mock_account: Account, mocker: MockerFixture):
     mock_crud_ai_model.get_by_account.return_value = []
 
     # Act
-    result = await ai_models.list_ai_models(db=MagicMock(), current_user=mock_account)
+    result = await maybe_await(
+        ai_models.list_ai_models(db=MagicMock(), current_user=mock_account)
+    )
 
     # Assert
     assert isinstance(result, list)
@@ -93,8 +99,10 @@ async def test_get_ai_model(mock_account: Account, mocker: MockerFixture):
     mock_crud_ai_model.get.return_value = mock_db_model
 
     # Act
-    result = await ai_models.get_ai_model(
-        db=MagicMock(), model_id=model_id, current_user=mock_account
+    result = await maybe_await(
+        ai_models.get_ai_model(
+            db=MagicMock(), model_id=model_id, current_user=mock_account
+        )
     )
 
     # Assert
@@ -125,11 +133,13 @@ async def test_update_ai_model(mock_account: Account, mocker: MockerFixture):
     )
 
     # Act
-    result = await ai_models.update_ai_model(
-        db=MagicMock(),
-        model_id=model_id,
-        ai_model_in=ai_model_update,
-        current_user=mock_account,
+    result = await maybe_await(
+        ai_models.update_ai_model(
+            db=MagicMock(),
+            model_id=model_id,
+            ai_model_in=ai_model_update,
+            current_user=mock_account,
+        )
     )
 
     # Assert
@@ -155,8 +165,10 @@ async def test_delete_ai_model(mock_account: Account, mocker: MockerFixture):
     mock_crud_ai_model.get.return_value = mock_ai_model
 
     # Act
-    await ai_models.delete_ai_model(
-        db=MagicMock(), model_id=model_id, current_user=mock_account
+    await maybe_await(
+        ai_models.delete_ai_model(
+            db=MagicMock(), model_id=model_id, current_user=mock_account
+        )
     )
 
     # Assert

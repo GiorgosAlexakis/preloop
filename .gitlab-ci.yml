@@ -267,10 +267,12 @@ test:unit:preloop-endpoints-tools:
   variables:
     TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_tools.py"
 
-test:unit:preloop-endpoints-issue-duplicate-stats:
-  extends: .test:unit:template
-  variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_duplicate_stats.py"
+# test:unit:preloop-endpoints-issue-duplicate-stats:
+#   NOTE: This test was moved to plugins/analytics/tests/test_issue_duplicate_stats.py
+#   and is now run as part of the plugin tests
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_duplicate_stats.py"
 
 # test:unit:preloop-endpoints-websockets:
 #   extends: .test:unit:template
@@ -318,7 +320,7 @@ test:coverage:
     - test:unit:preloop-endpoints-mcp
     - test:unit:preloop-endpoints-mcp-servers
     - test:unit:preloop-endpoints-tools
-    - test:unit:preloop-endpoints-issue-duplicate-stats
+    # - test:unit:preloop-endpoints-issue-duplicate-stats
     # - test:unit:preloop-endpoints-websockets
     - test:unit:preloop-agents
     - test:unit:preloop-api
@@ -459,6 +461,7 @@ test:coverage:
       --set ingress.tls[0].secretName=preloop-${ENV_NAME}-tls
       --set environment.preloopUrl=https://${TARGET_DOMAIN}
       --set database.cnpg.name=${DATABASE_NAME}
+      --set imagePullSecrets[0].name=registry-secret
 
     - echo "Helm deployment finished."
     - echo "Checking deployed environment..."
@@ -484,7 +487,22 @@ deploy:test:
     name: oss-test/$CI_COMMIT_REF_NAME
     url: https://oss-$CI_COMMIT_REF_NAME.test.preloop.ai
     on_stop: stop-test-env
-    auto_stop_in: 4 hours
+    auto_stop_in: 2 hours
+
+deploy:review:
+  extends: .deploy:template
+  needs:
+    - build:backend
+    - build:frontend
+  environment:
+    name: oss-review/$CI_COMMIT_REF_NAME
+    url: https://oss-$CI_COMMIT_REF_NAME.review.preloop.ai
+    on_stop: stop-review-env
+  variables:
+    NAMESPACE: preloop-review
+    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
+    SEED_ENABLED: "true"
+    TARGET_DOMAIN: "oss-$CI_COMMIT_REF_NAME.review.preloop.ai"
 
 # =============================================================================
 # INTEGRATION STAGE - End-to-End Tests on Deployed Environment
@@ -550,8 +568,6 @@ test:integration:api:jira:
   allow_failure: true
   environment:
     action: stop
-  only:
-    - branches
   script:
     - helm delete ${ENV_NAME} --namespace $NAMESPACE || true
     - kubectl delete job --namespace $NAMESPACE ${ENV_NAME}-preloop-migration-job ${ENV_NAME}-preloop-init-db-job ${ENV_NAME}-preloop-webhook-cleanup-job || true
@@ -563,6 +579,16 @@ stop-test-env:
     ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
   environment:
     name: oss-test/$CI_COMMIT_REF_NAME
+
+stop-review-env:
+  extends: .stop-env:template
+  needs: []
+  when: manual
+  variables:
+    NAMESPACE: "preloop-review"
+    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
+  environment:
+    name: oss-review/$CI_COMMIT_REF_NAME
 
 smoke:
   stage: integration

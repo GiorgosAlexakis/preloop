@@ -43,12 +43,7 @@ spec:
             - name: nginx-config
               mountPath: /etc/nginx/templates
           resources:
-            requests:
-              cpu: "500m"
-              memory: "512Mi"
-            limits:
-              cpu: "1"
-              memory: "1Gi"
+            {{- toYaml .Values.spacelit.resources | nindent 12 }}
       volumes:
         - name: nginx-config
           configMap:

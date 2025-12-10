@@ -19,6 +19,7 @@ def pytest_runtest_makereport(item, call):
     rep = outcome.get_result()
     setattr(item, f"rep_{rep.when}", rep)
 
+
 # Test configuration
 PRELOOP_URL = os.getenv("PRELOOP_TEST_URL", "").rstrip("/")
 PRELOOP_API_KEY = os.getenv("PRELOOP_TEST_API_KEY", "")

@@ -23,7 +23,27 @@ class PluginMetadata:
     version: str
     author: str
     description: str
-    is_proprietary: bool = False
+
+
+@dataclass
+class RouterConfig:
+    """Configuration for a plugin router.
+
+    Attributes:
+        router: The FastAPI APIRouter instance
+        prefix: URL prefix (e.g., "/api/v1")
+        tags: OpenAPI tags for the router
+        dependencies: FastAPI dependencies to apply to all routes
+        include_in_schema: Whether to include in OpenAPI schema
+        require_auth: If True, adds get_current_active_user dependency
+    """
+
+    router: APIRouter
+    prefix: str = "/api/v1"
+    tags: Optional[List[str]] = None
+    dependencies: Optional[List[Any]] = None
+    include_in_schema: bool = True
+    require_auth: bool = True  # Most plugin routes require authentication
 
 
 class Plugin(ABC):
@@ -43,12 +63,46 @@ class Plugin(ABC):
         """Return plugin metadata."""
         pass
 
-    def get_routers(self) -> List[tuple[APIRouter, str]]:
-        """Return list of (router, prefix) tuples to register."""
+    def get_routers(self) -> List[RouterConfig]:
+        """Return list of RouterConfig objects to register.
+
+        Plugins should override this to provide their API routes.
+        Each RouterConfig specifies the router, prefix, tags, and dependencies.
+
+        For backward compatibility, can also return List[tuple[APIRouter, str]]
+        which will be converted to RouterConfig with default settings.
+
+        Example:
+            return [
+                RouterConfig(
+                    router=my_router,
+                    prefix="/api/v1",
+                    tags=["MyPlugin"],
+                    require_auth=True,
+                ),
+            ]
+        """
         return []
 
     def get_services(self) -> Dict[str, Any]:
         """Return services to register (name -> instance)."""
+        return {}
+
+    def get_features(self) -> Dict[str, bool]:
+        """Return feature flags this plugin enables.
+
+        Plugins should override this to declare which features they provide.
+        These are exposed via the /api/v1/features endpoint for frontend use.
+
+        Returns:
+            Dictionary of feature_name -> enabled (True)
+
+        Example:
+            return {
+                "audit_logs": True,
+                "advanced_reporting": True,
+            }
+        """
         return {}
 
     def get_tasks(self) -> List[Dict[str, Any]]:
@@ -206,8 +260,7 @@ class PluginManager:
             self._workflow_orchestrators[orchestrator.workflow_type] = orchestrator
 
         logger.info(
-            f"Registered plugin: {plugin.metadata.name} v{plugin.metadata.version} "
-            f"(proprietary: {plugin.metadata.is_proprietary})"
+            f"Registered plugin: {plugin.metadata.name} v{plugin.metadata.version}"
         )
 
     def get_service(self, name: str) -> Any:
@@ -244,19 +297,14 @@ class PluginManager:
                     "name": plugin.metadata.name,
                     "version": plugin.metadata.version,
                     "description": plugin.metadata.description,
-                    "is_proprietary": plugin.metadata.is_proprietary,
                 }
             )
 
-            # Add specific feature flags based on plugin name
-            if plugin.metadata.name == "rbac":
-                features["features"]["rbac"] = True
-                features["features"]["user_management"] = True
-                features["features"]["team_management"] = True
-                features["features"]["role_management"] = True
-                features["features"]["billing"] = True
-            elif plugin.metadata.name == "audit":
-                features["features"]["audit_logs"] = True
+            # Let each plugin declare its own features
+            plugin_features = plugin.get_features()
+            for feature_name, enabled in plugin_features.items():
+                if enabled:
+                    features["features"][feature_name] = True
 
         return features
 
@@ -284,11 +332,39 @@ class PluginManager:
 
     def register_routes(self, app):
         """Register all plugin routes with FastAPI app."""
+        from fastapi import Depends
+        from preloop_ai.api.auth import get_current_active_user
+
         for plugin in self._plugins.values():
-            for router, prefix in plugin.get_routers():
-                app.include_router(router, prefix=prefix)
+            for item in plugin.get_routers():
+                # Support both old tuple format and new RouterConfig
+                if isinstance(item, RouterConfig):
+                    config = item
+                elif isinstance(item, tuple) and len(item) == 2:
+                    # Backward compatibility: (router, prefix) tuple
+                    router, prefix = item
+                    config = RouterConfig(router=router, prefix=prefix)
+                else:
+                    logger.warning(
+                        f"Invalid router config from plugin '{plugin.metadata.name}': {item}"
+                    )
+                    continue
+
+                # Build dependencies list
+                dependencies = list(config.dependencies or [])
+                if config.require_auth:
+                    dependencies.append(Depends(get_current_active_user))
+
+                # Register the router
+                app.include_router(
+                    config.router,
+                    prefix=config.prefix,
+                    tags=config.tags or [],
+                    dependencies=dependencies if dependencies else None,
+                    include_in_schema=config.include_in_schema,
+                )
                 logger.info(
-                    f"Registered routes from plugin '{plugin.metadata.name}' at {prefix}"
+                    f"Registered routes from plugin '{plugin.metadata.name}' at {config.prefix}"
                 )
 
     def discover_plugins(self, plugin_module: str = "plugins"):

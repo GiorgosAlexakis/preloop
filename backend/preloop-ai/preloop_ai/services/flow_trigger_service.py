@@ -3,13 +3,14 @@ import asyncio
 import uuid
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from preloop_models.crud import crud_flow, crud_flow_execution
 from preloop_models.models import Flow
 from preloop_models.schemas.flow_execution import FlowExecutionCreate
 from .flow_orchestrator import FlowExecutionOrchestrator
 from preloop_sync.services.event_bus import get_nats_client
+from preloop_models.db.session import get_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,30 @@ class FlowTriggerService:
     initiates the corresponding Flow Executions if needed.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, session_factory: sessionmaker | None = None):
         self.db = db
+        self.session_factory = session_factory or get_session_factory()
+
+    def _create_orchestrator_session(self) -> Session:
+        return self.session_factory()
+
+    async def _run_orchestrator_with_session(
+        self,
+        flow: Flow,
+        event_data: Dict[str, Any],
+        nats_client,
+    ) -> None:
+        orchestrator_db = self._create_orchestrator_session()
+        try:
+            orchestrator = FlowExecutionOrchestrator(
+                orchestrator_db,
+                flow_id=flow.id,
+                trigger_event_data=event_data,
+                nats_client=nats_client,
+            )
+            await orchestrator.run()
+        finally:
+            orchestrator_db.close()
 
     def _matches_trigger_config(self, flow: Flow, event_data: Dict[str, Any]) -> bool:
         """
@@ -188,14 +211,17 @@ class FlowTriggerService:
                     logger.info(
                         f"Triggering flow '{flow.name}' ({flow.id}) for event {event_type}"
                     )
-                    orchestrator = FlowExecutionOrchestrator(
-                        self.db,
-                        flow_id=flow.id,
-                        trigger_event_data=event_data,
-                        nats_client=nats_client,
+                    # Launch orchestrator using a fresh DB session so it isn't tied
+                    # to the request lifecycle (webhooks close the request session
+                    # immediately after returning a response).
+                    event_copy = dict(event_data)
+                    asyncio.create_task(
+                        self._run_orchestrator_with_session(
+                            flow=flow,
+                            event_data=event_copy,
+                            nats_client=nats_client,
+                        )
                     )
-                    # Create async task to run orchestrator without blocking
-                    asyncio.create_task(orchestrator.run())
                     logger.info(f"Flow '{flow.name}' ({flow.id}) execution initiated")
                 except Exception as e:
                     logger.error(

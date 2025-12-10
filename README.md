@@ -1,6 +1,6 @@
 # Preloop AI
 
-![Preloop Logo](assets/logo.webp)
+![Preloop Logo](frontend/public/assets/preloop-badge.png)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)

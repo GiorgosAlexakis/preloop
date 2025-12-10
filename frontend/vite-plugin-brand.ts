@@ -33,8 +33,8 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
 
   // Resolve paths - use options or defaults
   const configPath = options.configPath || path.resolve(__dirname, 'brands.yaml');
-  const contentPath = options.contentPath || path.resolve(__dirname, 'content');
-  const outDirName = options.outDir || 'dist';
+  const contentBasePath = options.contentPath || path.resolve(__dirname, 'content');
+  const outDirPath = options.outDir || path.resolve(__dirname, 'dist');
 
   return {
     name: 'vite-plugin-brand',
@@ -94,7 +94,7 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       });
 
       // Generate static HTML fragments for dynamic loading
-      const privacyHTML = await loadMarkdownContent(brandKey, 'privacy');
+      const privacyHTML = await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
 
       this.emitFile({
         type: 'asset',
@@ -118,7 +118,7 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       const contentFiles = ['privacy.md', 'terms.md', 'whatis-mcp.md'];
 
       for (const file of contentFiles) {
-        const contentFilePath = path.resolve(contentPath, `${brandKey}/${file}`);
+        const contentFilePath = path.resolve(contentBasePath, `${brandKey}/${file}`);
         if (fs.existsSync(contentFilePath)) {
           const markdown = fs.readFileSync(contentFilePath, 'utf-8');
           this.emitFile({
@@ -133,8 +133,8 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
     async closeBundle() {
       // After all files are written, generate full HTML pages for static content
       // Read the generated index.html as a template
-      // Use the configured output directory or default to 'dist'
-      const indexHtmlPath = path.resolve(__dirname, outDirName, 'index.html');
+      // Use the configured output directory
+      const indexHtmlPath = path.resolve(outDirPath, 'index.html');
 
       if (!fs.existsSync(indexHtmlPath)) {
         console.warn(`index.html not found at ${indexHtmlPath}, cannot generate standalone HTML pages`);
@@ -145,21 +145,21 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
 
       // Generate static markdown content HTML
       // Use brandKey for content folder lookup
-      const privacyHTML = await loadMarkdownContent(brandKey, 'privacy');
-      const termsHTML = await loadMarkdownContent(brandKey, 'terms');
-      const whatisMcpHTML = await loadMarkdownContent(brandKey, 'whatis-mcp');
+      const privacyHTML = await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
+      const termsHTML = await loadMarkdownContent(contentBasePath, brandKey, 'terms');
+      const whatisMcpHTML = await loadMarkdownContent(contentBasePath, brandKey, 'whatis-mcp');
 
       // Generate privacy.html with proper meta tags and content
       const privacyPage = generateFullHtmlPage(indexHtml, '/privacy', brandConfig, privacyHTML);
-      fs.writeFileSync(path.resolve(__dirname, outDirName, 'privacy.html'), privacyPage);
+      fs.writeFileSync(path.resolve(outDirPath, 'privacy.html'), privacyPage);
 
       // Generate terms.html
       const termsPage = generateFullHtmlPage(indexHtml, '/terms', brandConfig, termsHTML);
-      fs.writeFileSync(path.resolve(__dirname, outDirName, 'terms.html'), termsPage);
+      fs.writeFileSync(path.resolve(outDirPath, 'terms.html'), termsPage);
 
       // Generate whatis-mcp.html
       const whatisMcpPage = generateFullHtmlPage(indexHtml, '/whatis-mcp', brandConfig, whatisMcpHTML);
-      fs.writeFileSync(path.resolve(__dirname, outDirName, 'whatis-mcp.html'), whatisMcpPage);
+      fs.writeFileSync(path.resolve(outDirPath, 'whatis-mcp.html'), whatisMcpPage);
 
       // Generate additional pages for SaaS editions
       const edition = (brandConfig as any).edition || 'saas';
@@ -169,20 +169,20 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
         // Generate pricing.html
         const pricingHTML = generatePricingContent(brandConfig);
         const pricingPage = generateFullHtmlPage(indexHtml, '/pricing', brandConfig, pricingHTML);
-        fs.writeFileSync(path.resolve(__dirname, outDirName, 'pricing.html'), pricingPage);
+        fs.writeFileSync(path.resolve(outDirPath, 'pricing.html'), pricingPage);
         generatedPages.push('pricing.html');
 
         // Generate about.html
-        const aboutHTML = await loadMarkdownContent(brandKey, 'about');
+        const aboutHTML = await loadMarkdownContent(contentBasePath, brandKey, 'about');
         if (aboutHTML) {
           const aboutPage = generateFullHtmlPage(indexHtml, '/about', brandConfig, aboutHTML);
-          fs.writeFileSync(path.resolve(__dirname, outDirName, 'about.html'), aboutPage);
+          fs.writeFileSync(path.resolve(outDirPath, 'about.html'), aboutPage);
           generatedPages.push('about.html');
 
           // Also copy about.md to content folder for client-side navigation
-          const aboutMdPath = path.resolve(__dirname, 'content', brandKey, 'about.md');
+          const aboutMdPath = path.resolve(contentBasePath, brandKey, 'about.md');
           if (fs.existsSync(aboutMdPath)) {
-            const contentDir = path.resolve(__dirname, outDirName, 'content');
+            const contentDir = path.resolve(outDirPath, 'content');
             fs.copyFileSync(aboutMdPath, path.resolve(contentDir, 'about.md'));
           }
         }
@@ -296,7 +296,7 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       html = html.replace('</head>', `${brandScript}\n</head>`);
 
       // Inject route-specific content for SSR
-      const slottedContent = await generateSlottedContentForRoute(route, brandConfig, brandKey);
+      const slottedContent = await generateSlottedContentForRoute(route, brandConfig, brandKey, contentBasePath);
       if (slottedContent) {
         if (route === '/') {
           // Landing page: inject landing-view with slots
@@ -405,7 +405,7 @@ function getMetaForRoute(route: string, config: BrandConfig) {
  * Generate route-specific slotted HTML content for SEO
  * Content uses named slots that web components can consume
  */
-async function generateSlottedContentForRoute(route: string, config: BrandConfig, brandKey: string): Promise<string> {
+async function generateSlottedContentForRoute(route: string, config: BrandConfig, brandKey: string, contentBasePath: string): Promise<string> {
   // Safe accessors with defaults
   const hero = config.landing?.hero || {};
   const meta = config.landing?.meta || {};
@@ -495,7 +495,7 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
 
     case '/privacy':
       // Privacy page - will load markdown content
-      return await loadMarkdownContent(brandKey, 'privacy');
+      return await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
 
     case '/pricing':
       // Pricing page - will load markdown content
@@ -592,8 +592,8 @@ function generateFullHtmlPage(
 /**
  * Load and convert markdown file to HTML using marked
  */
-async function loadMarkdownContent(brandName: string, filename: string): Promise<string> {
-  const contentPath = path.resolve(__dirname, `content/${brandName}/${filename}.md`);
+async function loadMarkdownContent(contentBasePath: string, brandName: string, filename: string): Promise<string> {
+  const contentPath = path.resolve(contentBasePath, `${brandName}/${filename}.md`);
 
   if (!fs.existsSync(contentPath)) {
     console.warn(`Warning: Markdown file not found at ${contentPath}`);

@@ -21,47 +21,30 @@ worker:
     # - name: polling
     #   replicaCount: 2
     #   tasks: "poll_tracker"
+  # Worker resources (background tasks)
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
 
 spacelit:
   repository: registry.spacecode.ai/spacecode/spacelit
   tag: "latest"
   pullPolicy: Always
-
-# Preloop configuration (separate brand deployment)
-preloop:
-  # Set to true to deploy Preloop brand alongside Preloop AI
-  enabled: false
-  repository: registry.spacecode.ai/spacecode/spacelit/preloop
-  tag: "latest"
-  pullPolicy: Always
-  ingress:
-    enabled: true
-    className: "nginx"
-    annotations:
-      cert-manager.io/cluster-issuer: "letsencrypt-prod"
-      # Required for MCP StreamableHTTP (SSE) support
-      nginx.ingress.kubernetes.io/proxy-buffering: "off"
-      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-      nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
-      nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
-      nginx.ingress.kubernetes.io/connection-proxy-header: "keep-alive"
-      nginx.ingress.kubernetes.io/chunked-transfer-encoding: "true"
-    host: preloop.ai
-    hosts:
-      - host: preloop.ai
-        paths:
-          - path: /
-            pathType: ImplementationSpecific
-    tls:
-      - secretName: preloop-tls
-        hosts:
-          - preloop.ai
-          - www.preloop.ai
+  # SpaceLit frontend resources (nginx - lightweight)
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
 
 # Image pull secrets
-imagePullSecrets:
-  - name: registry-secret
+imagePullSecrets: []
 
 # Service account configuration
 serviceAccount:
@@ -104,14 +87,35 @@ ingress:
         - api.preloop.ai
         - install.preloop.ai
 
-# Resource requests and limits
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
+# API server resources
+api:
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+# Scheduler resources
+scheduler:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Monitor resources
+monitor:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
 
 # Autoscaling configuration
 autoscaling:

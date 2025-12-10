@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 import { brandPlugin } from './vite-plugin-brand';
 
+// Get brand from environment variable, default to 'preloop'
+const brand = process.env.VITE_BRAND || 'preloop';
+
 /**
  * Default Vite configuration for Preloop Open Source / Self-Hosted edition
  *
@@ -10,7 +13,7 @@ import { brandPlugin } from './vite-plugin-brand';
  * - Removes pricing page
  * - Uses minimal branding configuration
  *
- * For SaaS builds, use the configuration in preloop-ee/frontend/
+ * For SaaS builds, set VITE_BRAND environment variable
  */
 export default defineConfig({
   base: '/',
@@ -29,7 +32,7 @@ export default defineConfig({
         return /main/.test(chunk.fileName);
       },
     }),
-    brandPlugin('preloop'),
+    brandPlugin(brand),
   ],
   resolve: {
     alias: {

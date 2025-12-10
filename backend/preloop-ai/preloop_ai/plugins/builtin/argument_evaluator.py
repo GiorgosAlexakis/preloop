@@ -41,7 +41,6 @@ class ArgumentEvaluator(ConditionEvaluatorPlugin):
             version="1.0.0",
             author="Preloop AI Team",
             description="Evaluate conditions based on tool arguments using CEL",
-            is_proprietary=False,
         )
 
     @property
@@ -210,7 +209,6 @@ class BuiltinPlugin(Plugin):
             version="1.0.0",
             author="Preloop AI Team",
             description="Built-in evaluators and features",
-            is_proprietary=False,
         )
 
     def get_condition_evaluators(self) -> List[ConditionEvaluatorPlugin]:

@@ -418,7 +418,7 @@ export class DashboardView extends AuthedElement {
           new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
       );
       this.recentFlowExecutions = sortedExecutions.slice(0, 5);
-      this.failedFlowExecutions = sortedExecutions.filter(
+      this.failedFlowExecutions = this.recentFlowExecutions.filter(
         (exec) => exec.status === 'FAILED'
       );
 

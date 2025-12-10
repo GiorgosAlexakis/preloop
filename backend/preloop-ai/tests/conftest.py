@@ -1,6 +1,7 @@
 """Pytest configuration file for Preloop AI tests."""
 
 from typing import Generator
+import inspect
 
 import pytest
 import os
@@ -18,6 +19,18 @@ from preloop_ai.api.auth import get_current_active_user
 from preloop_models.db.session import get_db_session as get_db
 from preloop_models.models.user import User
 from preloop_models.crud import crud_account, crud_user
+
+
+async def maybe_await(result):
+    """Await the result if it's a coroutine, otherwise return it directly.
+
+    This helper allows tests to work with both sync and async endpoint functions.
+    In EE builds, the RBAC decorator wraps sync functions in async wrappers.
+    In OSS builds, sync functions remain sync.
+    """
+    if inspect.iscoroutine(result):
+        return await result
+    return result
 
 
 @pytest.fixture(autouse=True)
@@ -38,6 +51,11 @@ def pytest_configure(config):
     """
     # Set TESTING mode to skip external service connections (NATS, MCP, etc.)
     os.environ["TESTING"] = "true"
+
+    # Disable RBAC permission checks during unit tests
+    # This ensures tests work consistently regardless of whether the EE RBAC
+    # plugin is available (which wraps endpoints in async wrappers)
+    os.environ["DISABLE_RBAC"] = "true"
 
     # Construct the path to the .env file relative to the conftest.py file
     # Assuming .env is in the project root, and conftest.py is in tests/

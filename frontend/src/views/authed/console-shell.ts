@@ -156,6 +156,18 @@ export class ConsoleShell extends LitElement {
     }
   }
 
+  /**
+   * Check if any analytics features are enabled (enterprise plugin).
+   * Used to gate the Issues menu in OSS builds.
+   */
+  private _hasAnyAnalyticsFeature(): boolean {
+    return !!(
+      this.features.issue_compliance ||
+      this.features.issue_duplicates ||
+      this.features.issue_dependencies
+    );
+  }
+
   disconnectedCallback() {
     window.removeEventListener('show-upgrade-modal', () => {
       (this._upgradeModal as any).show();
@@ -208,7 +220,7 @@ export class ConsoleShell extends LitElement {
                 Trackers
               </sl-menu-item>
             </a>
-            ${this.hasTrackers
+            ${this.hasTrackers && this._hasAnyAnalyticsFeature()
               ? html`<sl-details>
                   <span slot="summary">
                     <sl-icon
@@ -218,15 +230,21 @@ export class ConsoleShell extends LitElement {
                     Issues
                   </span>
                   <sl-menu>
-                    <a href="/console/issues">
-                      <sl-menu-item>Similarity</sl-menu-item>
-                    </a>
-                    <a href="/console/issues/compliance">
-                      <sl-menu-item>Compliance</sl-menu-item>
-                    </a>
-                    <a href="/console/issues/dependencies">
-                      <sl-menu-item>Dependencies</sl-menu-item>
-                    </a>
+                    ${this.features.issue_duplicates
+                      ? html`<a href="/console/issues">
+                          <sl-menu-item>Similarity</sl-menu-item>
+                        </a>`
+                      : ''}
+                    ${this.features.issue_compliance
+                      ? html`<a href="/console/issues/compliance">
+                          <sl-menu-item>Compliance</sl-menu-item>
+                        </a>`
+                      : ''}
+                    ${this.features.issue_dependencies
+                      ? html`<a href="/console/issues/dependencies">
+                          <sl-menu-item>Dependencies</sl-menu-item>
+                        </a>`
+                      : ''}
                   </sl-menu>
                 </sl-details>`
               : ''}

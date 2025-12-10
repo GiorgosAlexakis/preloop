@@ -21,7 +21,6 @@ class DummyPlugin(Plugin):
             version="1.0.0",
             author="Test",
             description="Test plugin",
-            is_proprietary=False,
         )
 
     def get_services(self):
@@ -38,7 +37,6 @@ class DummyEvaluator(ConditionEvaluatorPlugin):
             version="1.0.0",
             author="Test",
             description="Test evaluator",
-            is_proprietary=False,
         )
 
     @property
@@ -64,7 +62,6 @@ class DummyPluginWithEvaluator(Plugin):
             version="1.0.0",
             author="Test",
             description="Test plugin with evaluator",
-            is_proprietary=False,
         )
 
     def get_condition_evaluators(self):

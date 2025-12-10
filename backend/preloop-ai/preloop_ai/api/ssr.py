@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class SSRService:
     def __init__(self, base_dir: Path):
         self.base_dir = base_dir
-        self.index_template_path = self.base_dir / "SpaceLit" / "dist" / "index.html"
+        self.index_template_path = self.base_dir / "frontend" / "dist" / "index.html"
         self.render_server_url = os.getenv(
             "SSR_RENDER_SERVER_URL", "http://localhost:3001/render"
         )
@@ -20,10 +20,10 @@ class SSRService:
         """
         if not self.index_template_path.exists():
             logger.error(
-                f"Index template not found at {self.index_template_path}. Please run `npm run build` in the SpaceLit directory."
+                f"Index template not found at {self.index_template_path}. Please run `npm run build` in the frontend directory."
             )
             # Fallback to a very basic HTML structure if the template is missing.
-            return "<html><head><title>Error</title></head><body><h1>Application not built</h1><p>Please run 'npm run build' in the SpaceLit directory.</p></body></html>"
+            return "<html><head><title>Error</title></head><body><h1>Application not built</h1><p>Please run 'npm run build' in the frontend directory.</p></body></html>"
 
         with open(self.index_template_path, "r") as f:
             template = f.read()

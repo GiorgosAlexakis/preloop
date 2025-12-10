@@ -130,10 +130,9 @@ class Settings(BaseSettings):
 
         prompts_file = os.getenv("PROMPTS_PATH", "preloop-ai/prompts.yaml")
 
-        stripe_secret_key = os.getenv(
-            "STRIPE_SECRET_KEY",
-            "sk_test_51RtX2jQPfvWObTQzIaGtQkankjs5cg1aG23Xy3KnU3cnhrBcspt9AonXBFtEBROuHp5ITHptXsxOllNgm7gUJA9u00igI2abav",
-        )
+        # Stripe configuration - no default keys for security
+        # Self-hosted deployments must supply their own keys if billing is enabled
+        stripe_secret_key = os.getenv("STRIPE_SECRET_KEY", "")
         stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
         # Feature flags

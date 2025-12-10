@@ -102,12 +102,7 @@ spec:
                   key: sentry-dsn
             {{- end }}
           resources:
-            requests:
-              cpu: "500m"
-              memory: "512Mi"
-            limits:
-              cpu: "1"
-              memory: "1Gi"
+            {{- toYaml .Values.monitor.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
