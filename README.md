@@ -1,6 +1,5 @@
-# Preloop AI
+# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 1.2em; margin-bottom: -.3em" /> Preloop AI - The MCP Governance Layer
 
-![Preloop Logo](frontend/public/assets/preloop-badge.png)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -42,7 +41,7 @@ Preloop is an open-source, event-driven automation platform with built-in human-
 
 Preloop AI is designed with a modular architecture:
 
-1.  **Preloop AI** (this repository): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
+1.  **Preloop AI** (`./backend/preloop-ai`): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
 2.  **Preloop Models** (`./backend/preloop-models`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
 3.  **Preloop Sync** (`./backend/preloop-sync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
 4.  **Preloop Console** (`./frontend`): A web application built using Lit, Vite, TypeScript, and Shoelace Web Components.
@@ -326,8 +325,6 @@ Preloop AI provides a RESTful API with the following key endpoints:
 - `PUT /api/v1/issues/{issue_id}` - Update issue
 - `DELETE /api/v1/issues/{issue_id}` - Delete issue
 - `POST /api/v1/issues/{issue_id}/comments` - Add comment to issue
-
-
 
 ### Unified WebSocket
 

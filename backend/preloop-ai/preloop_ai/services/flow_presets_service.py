@@ -1,4 +1,9 @@
-"""Service for creating and managing flow presets."""
+"""Service for creating and managing flow presets.
+
+Flow presets are global templates (account_id=None) that are available to all accounts.
+They are NOT copied to individual accounts - instead, users clone them when they want
+to use them, which creates an account-specific flow based on the preset.
+"""
 
 import logging
 from typing import List, Optional
@@ -14,19 +19,13 @@ from preloop_ai.flow_presets import FLOW_PRESETS
 logger = logging.getLogger(__name__)
 
 
-def create_default_presets_for_account(
-    db: Session,
-    account_id: UUID,
-    tracker_id: Optional[UUID] = None,
-) -> List[schemas.FlowResponse]:
+def ensure_global_presets_exist(db: Session) -> List[schemas.FlowResponse]:
     """
-    Create default flow presets for a new account.
+    Ensure global flow presets exist in the database.
 
-    Args:
-        db: Database session
-        account_id: ID of the account to create presets for
-        tracker_id: Optional tracker ID to associate with tracker-based flows
-                   If provided, presets will be enabled by default
+    Global presets have account_id=None and are available to all accounts.
+    This function creates any missing presets but does not update existing ones.
+    Use the sync_flow_presets.py script for updates.
 
     Returns:
         List of created flow preset responses
@@ -34,52 +33,71 @@ def create_default_presets_for_account(
     created_flows = []
 
     for preset_config in FLOW_PRESETS:
+        preset_name = preset_config["name"]
+
+        # Check if global preset already exists
+        existing = crud_flow.get_global_preset_by_name(db, name=preset_name)
+        if existing:
+            logger.debug(f"Global preset '{preset_name}' already exists")
+            continue
+
         try:
             # Create a copy of the preset config
             flow_data = preset_config.copy()
 
-            # Set account_id
-            flow_data["account_id"] = str(account_id)
+            # Global presets have no account_id
+            flow_data.pop("account_id", None)
 
-            # If trigger requires a tracker, set it if provided
-            # Otherwise, leave the flow disabled until user configures it
-            if flow_data.get("trigger_event_type") and tracker_id:
-                flow_data["trigger_event_source"] = str(tracker_id)
-                flow_data["is_enabled"] = True
-            else:
-                # Disable flows that require tracker configuration
-                flow_data["is_enabled"] = False
+            # Presets are disabled by default - user enables after cloning
+            flow_data["is_enabled"] = False
+            flow_data["is_preset"] = True
 
-            # Configure git clone repositories if needed
-            if flow_data.get("git_clone_config") and tracker_id:
-                git_config = flow_data["git_clone_config"].copy()
-                # Set up default repository configuration
-                if not git_config.get("repositories"):
-                    git_config["repositories"] = [
-                        {
-                            "tracker_id": str(tracker_id),
-                            "clone_path": "workspace",
-                        }
-                    ]
-                flow_data["git_clone_config"] = git_config
-
-            # Create the flow using Pydantic schema
+            # Create the flow using Pydantic schema (account_id=None for global)
             flow_in = schemas.FlowCreate(**flow_data)
-            flow = crud_flow.create(db=db, flow_in=flow_in, account_id=account_id)
+            flow = crud_flow.create(db=db, flow_in=flow_in, account_id=None)
 
             created_flows.append(flow)
-            logger.info(f"Created preset flow '{flow.name}' for account {account_id}")
+            logger.info(f"Created global preset flow '{flow.name}'")
 
         except Exception as e:
             logger.error(
-                f"Failed to create preset '{preset_config.get('name')}' for account {account_id}: {e}",
+                f"Failed to create global preset '{preset_name}': {e}",
                 exc_info=True,
             )
             # Continue with other presets even if one fails
             continue
 
-    logger.info(f"Created {len(created_flows)} preset flows for account {account_id}")
+    if created_flows:
+        logger.info(f"Created {len(created_flows)} global preset flows")
     return created_flows
+
+
+# Keep the old function name as an alias for backwards compatibility
+# but it now just ensures global presets exist (doesn't create per-account copies)
+def create_default_presets_for_account(
+    db: Session,
+    account_id: UUID,
+    tracker_id: Optional[UUID] = None,
+) -> List[schemas.FlowResponse]:
+    """
+    DEPRECATED: Presets are now global and not copied per-account.
+
+    This function now just ensures global presets exist.
+    Users should clone presets when they want to use them.
+
+    Args:
+        db: Database session
+        account_id: Ignored (kept for backwards compatibility)
+        tracker_id: Ignored (kept for backwards compatibility)
+
+    Returns:
+        List of created global preset flows (if any were missing)
+    """
+    logger.warning(
+        "create_default_presets_for_account is deprecated. "
+        "Presets are now global. Use ensure_global_presets_exist() instead."
+    )
+    return ensure_global_presets_exist(db)
 
 
 def get_preset_names() -> List[str]:
@@ -95,35 +113,41 @@ def get_preset_by_name(name: str) -> Optional[dict]:
     return None
 
 
-def create_default_presets_for_account_background(
-    account_id: UUID,
-    tracker_id: Optional[UUID] = None,
-) -> None:
+def ensure_global_presets_exist_background() -> None:
     """
-    Background task-safe wrapper for creating default flow presets.
+    Background task-safe wrapper for ensuring global presets exist.
 
     Creates its own database session to avoid issues with request-scoped sessions
     being closed before the background task runs.
-
-    Args:
-        account_id: ID of the account to create presets for
-        tracker_id: Optional tracker ID to associate with tracker-based flows
     """
     session_factory = get_session_factory()
     db = session_factory()
     try:
-        create_default_presets_for_account(
-            db=db, account_id=account_id, tracker_id=tracker_id
-        )
+        ensure_global_presets_exist(db=db)
         db.commit()
-        logger.info(
-            f"Background task: Successfully created default presets for account {account_id}"
-        )
+        logger.info("Background task: Successfully ensured global presets exist")
     except Exception as e:
         logger.error(
-            f"Background task: Failed to create presets for account {account_id}: {e}",
+            f"Background task: Failed to ensure global presets: {e}",
             exc_info=True,
         )
         db.rollback()
     finally:
         db.close()
+
+
+# Keep old function for backwards compatibility
+def create_default_presets_for_account_background(
+    account_id: UUID,
+    tracker_id: Optional[UUID] = None,
+) -> None:
+    """
+    DEPRECATED: Use ensure_global_presets_exist_background() instead.
+
+    This now just ensures global presets exist (ignores account_id and tracker_id).
+    """
+    logger.warning(
+        "create_default_presets_for_account_background is deprecated. "
+        "Presets are now global. Use ensure_global_presets_exist_background() instead."
+    )
+    ensure_global_presets_exist_background()

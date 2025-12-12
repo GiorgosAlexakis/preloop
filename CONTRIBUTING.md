@@ -12,7 +12,7 @@ All new features and bug fixes must be accompanied by tests. We use `pytest` for
 
 ### Coverage
 
-We strive to maintain a high level of test coverage. The 50% coverage target is enforced in the CI/CD pipeline:
+We strive to maintain a high level of test coverage. The 60% coverage target is enforced in the CI/CD pipeline:
 
 ## Submitting Changes
 

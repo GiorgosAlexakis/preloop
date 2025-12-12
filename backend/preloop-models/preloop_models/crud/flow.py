@@ -61,6 +61,92 @@ class CRUDFlow(CRUDBase[models.Flow]):
         )
         return query.offset(skip).limit(limit).all()
 
+    def get_global_presets(
+        self,
+        db: Session,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[models.Flow]:
+        """
+        Retrieve global flow presets (presets with no account_id).
+
+        Global presets are system-wide templates that are available to all accounts.
+        """
+        query = db.query(self.model).filter(
+            self.model.is_preset,
+            self.model.account_id.is_(None),
+        )
+        return query.offset(skip).limit(limit).all()
+
+    def get_presets_for_account(
+        self,
+        db: Session,
+        account_id: Union[str, UUID],
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[models.Flow]:
+        """
+        Retrieve flow presets available to an account.
+
+        Returns global presets (account_id=None) plus account-specific presets.
+        """
+        from sqlalchemy import or_
+
+        account_id_str = str(account_id) if isinstance(account_id, UUID) else account_id
+        query = db.query(self.model).filter(
+            self.model.is_preset,
+            or_(
+                self.model.account_id.is_(None),
+                cast(self.model.account_id, String) == account_id_str,
+            ),
+        )
+        return query.offset(skip).limit(limit).all()
+
+    def get_by_name_and_account(
+        self,
+        db: Session,
+        name: str,
+        account_id: Optional[Union[str, UUID]] = None,
+    ) -> Optional[models.Flow]:
+        """
+        Retrieve a flow by name within an account scope.
+
+        Args:
+            db: Database session
+            name: Flow name to search for
+            account_id: Account ID (None for global presets)
+
+        Returns:
+            Flow if found, None otherwise
+        """
+        query = db.query(self.model).filter(self.model.name == name)
+        if account_id is None:
+            query = query.filter(self.model.account_id.is_(None))
+        else:
+            account_id_str = (
+                str(account_id) if isinstance(account_id, UUID) else account_id
+            )
+            query = query.filter(cast(self.model.account_id, String) == account_id_str)
+        return query.first()
+
+    def get_global_preset_by_name(
+        self,
+        db: Session,
+        name: str,
+    ) -> Optional[models.Flow]:
+        """
+        Retrieve a global preset by name.
+        """
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.name == name,
+                self.model.is_preset,
+                self.model.account_id.is_(None),
+            )
+            .first()
+        )
+
     def get_by_trigger(
         self,
         db: Session,

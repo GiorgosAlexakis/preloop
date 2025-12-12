@@ -147,7 +147,7 @@ The `Preloop Console` application is structured around a component-based archite
 
 **Purpose:** TrackerScopeRule provides fine-grained control over which organizations and projects within a tracker are synchronized and accessible. This allows users to focus on relevant data and reduce noise.
 
-**Data Model:** Defined in `backend/preloop-models/spacemodels/models/tracker_scope_rule.py`
+**Data Model:** Defined in `backend/preloop-models/preloop_models/models/tracker_scope_rule.py`
 
 *   **Fields:**
     *   `tracker_id`: Foreign key to the Tracker
@@ -239,7 +239,7 @@ The `Preloop Console` application is structured around a component-based archite
 
 ### Database (PostgreSQL + PGVector)
 *   **Role:** Central data store for metadata and vector embeddings.
-*   **Managed by:** `SpaceModels` submodule.
+*   **Managed by:** `preloop-models` subproject.
 *   **Key Features:** Relational data storage, efficient vector similarity search via PGVector.
 
 ## Data Flow
@@ -549,7 +549,7 @@ graph TD
         WebhookEndpoint["Webhook Endpoint (/api/v1/private/webhooks/...)"]
         TaskQueue["Internal Task Queue (NATS)"]
         APIExt["Preloop AI API (Flow/AIModel CRUD, Logs)"]
-        SpaceModelsDB["SpaceModels (PostgreSQL - Flows, AIModels, Executions)"]
+        PreloopModelsDB["PreloopModels (PostgreSQL - Flows, AIModels, Executions)"]
     end
 
     subgraph "Flows Subsystem"
@@ -572,28 +572,28 @@ graph TD
     Trackers -- Webhook Event --> WebhookEndpoint
     WebhookEndpoint -- Publishes Task --> TaskQueue
     TaskQueue -- Delivers Task --> FlowTriggerService
-    FlowTriggerService -- Reads Flow Defs --> SpaceModelsDB
+    FlowTriggerService -- Reads Flow Defs --> PrelooModelsDB
     FlowTriggerService -- Initiates Execution --> FlowExecOrchestrator
-    FlowExecOrchestrator -- Reads Flow/AIModel --> SpaceModelsDB
-    FlowExecOrchestrator -- Resolves Prompt Data --> SpaceModelsDB
+    FlowExecOrchestrator -- Reads Flow/AIModel --> PrelooModelsDB
+    FlowExecOrchestrator -- Resolves Prompt Data --> PrelooModelsDB
     FlowExecOrchestrator -- Manages --> AgentInfra
     AgentInfra -- Runs --> Agent
     Agent -- Uses --> AIModelClient
     AIModelClient -- Calls --> AIModelAPIs
     Agent -- Uses --> MCPClient
     MCPClient -- Calls --> MCPServers
-    FlowExecOrchestrator -- Writes Logs --> SpaceModelsDB
-    APIExt -- Manages --> SpaceModelsDB
+    FlowExecOrchestrator -- Writes Logs --> PrelooModelsDB
+    APIExt -- Manages --> PrelooModelsDB
     APIExt -- Serves Logs --> UserClient["User Client (UI/CLI)"]
 
 ```
 
 *   **Flow Definition (`Flows`):**
-    *   Stored in the `SpaceModels` database.
+    *   Stored in `preloop-models`.
     *   Details the triggering event, prompt template, selected `AIModel` ID, agent type (e.g., "openhands", "claude-code", "aider"), agent configuration (e.g., specific agent parameters), and a list of allowed MCP servers and specific tools.
     *   Presets are implemented as special, non-editable (or cloneable) records in this table.
 *   **AI Model (`AIModel`):**
-    *   Stored in `SpaceModels`.
+    *   Stored in `preloop-models`.
     *   Reusable definitions for AI models, including their identifiers (e.g., `openai/gpt-4`), API endpoints, and credentials.
     *   For initial implementation, API keys will be stored unencrypted directly in the database. A future enhancement will integrate a secrets management solution like OpenBAO.
     *   Models are linked to an `Account`.
@@ -611,7 +611,7 @@ graph TD
 *   **Flow Execution Orchestrator:**
     *   Responsible for managing the lifecycle of a single Flow execution.
     *   Retrieves the `Flow` definition and its associated `AIModel` (including the encrypted API key) from the database.
-    *   **Dynamic Prompt Resolution:** Parses the `prompt_template` and resolves any placeholders (e.g., `{{project_docs_summary}}`, `{{relevant_code_files}}`) by querying `SpaceModels` or other Preloop AI services for the necessary context data.
+    *   **Dynamic Prompt Resolution:** Parses the `prompt_template` and resolves any placeholders (e.g., `{{project_docs_summary}}`, `{{relevant_code_files}}`) by querying `preloop-models` or other Preloop AI services for the necessary context data.
     *   Decrypts the API key and prepares the complete execution context for the agent, including the fully resolved prompt, AI model details (model name, API endpoint, decrypted API key), and the specific list of allowed MCP servers/tools.
     *   Initiates and manages an agent session via the Agent Execution Infrastructure based on the configured `agent_type`.
     *   Monitors the execution and records results/logs.
@@ -636,7 +636,7 @@ graph TD
     *   Manages the interaction with the configured AI model.
     *   **Direct MCP Calls:** The agent can directly call the allowed MCP tools on the specified MCP servers, with necessary network access and authentication provided by the execution infrastructure.
 *   **Flow Execution Log (`FlowExecutions`):**
-    *   A database table in `SpaceModels` to record the history and outcome of each Flow run.
+    *   A database table in `preloop-models` to record the history and outcome of each Flow run.
     *   Includes details like the triggering event, start/end times, status (pending, running, succeeded, failed), the resolved input prompt, a summary of actions taken by the agent, logs of MCP tool usage, and a reference to more detailed logs from the agent session (e.g., container logs, session ID, or process output).
 *   **Preloop AI API Extensions:**
     *   New API endpoints will be added to the `Preloop AI API` for:
@@ -646,7 +646,7 @@ graph TD
 
 ### 3. Database Schema Considerations
 
-The following Pydantic schemas and corresponding SQLAlchemy models have been defined within `SpaceModels`:
+The following Pydantic schemas and corresponding SQLAlchemy models have been defined within `preloop-models`:
 
 *   **`Flow`**
 *   **`AIModel`**
@@ -664,7 +664,7 @@ sequenceDiagram
     participant WebhookEP as Preloop AI Webhook Endpoint
     participant TaskQueue as Internal Task Queue (NATS)
     participant Worker as Preloop Sync Worker (Flow Trigger)
-    participant FlowsDB as Flows Database (SpaceModels)
+    participant FlowsDB as Flows Database (preloop-models)
     participant FlowExecOrch as Flow Execution Orchestrator
 
     ExtSrc->>+WebhookEP: Sends Webhook (e.g., push event)
@@ -683,7 +683,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant FlowExecOrch as Flow Execution Orchestrator
-    participant ModelsDB as SpaceModels (Flows, AIModels, Context Data)
+    participant ModelsDB as preloop-models (Flows, AIModels, Context Data)
     participant AgentInfra as Agent Execution Infrastructure
     participant Agent as Agent (Container or Process)
     participant AIModel_API as AI Model API
@@ -766,7 +766,7 @@ graph TD
     *   `log`: For streaming text output from the agent.
     *   `tool_call`: For structured information about tools being used.
 *   **Future Extensibility:** This design allows for the seamless addition of new message types to support interactivity (`user_input_request`, `user_input_response`) or advanced capabilities (`ui_control_command`) without requiring architectural changes.
-    *   CRUD operations for these new entities will be added to `SpaceModels`.
+    *   CRUD operations for these new entities will be added to `preloop-models`.
     *   Will be queried by the Flow Execution Orchestrator to resolve dynamic prompt content.
 *   **`Preloop Sync` / Webhook Infrastructure:**
     *   The existing webhook ingestion mechanism within the main `Preloop AI API` will publish a `process_webhook_event` task to the NATS task queue.
@@ -829,7 +829,7 @@ graph TD
     *   Leveraging containers (Docker or Kubernetes jobs) for all agent types is key to scalability and security. Each Flow execution runs in an isolated container.
     *   The system can be configured to run these containers on a Docker host (via socket) or a Kubernetes cluster, allowing for dynamic scaling of agent execution capacity based on demand.
     *   The orchestrator manages the lifecycle of these containerized jobs.
-*   **Database:** `SpaceModels` (PostgreSQL) should be monitored for performance. Read replicas can be used for read-heavy operations like fetching Flow definitions or execution logs.
+*   **Database:** `preloop-models` (PostgreSQL) should be monitored for performance. Read replicas can be used for read-heavy operations like fetching Flow definitions or execution logs.
 *   **Extensibility:**
     *   **New Event Sources:** Add new parsers/adapters to publish `process_webhook_event` tasks. The Flow Trigger Service can then match these new event types.
     *   **New AI Models:** Add new `AIModel` records. The Flow Execution Orchestrator and agents need to be compatible with the new model's API.

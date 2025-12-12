@@ -1,6 +1,6 @@
 # Preloop AI Development Guide
 
-Only use the DB models defined in SpaceModels package `from preloop_models import models`
+Only use the DB models defined in preloop-models package `from preloop_models import models`
 
 Use the Lit.dev framework for frontend code. If you create new web components ensure that the landing page content is not hidden in their shadow DOM.
 

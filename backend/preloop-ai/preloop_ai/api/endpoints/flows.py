@@ -27,6 +27,25 @@ def create_flow(
     current_user: User = Depends(get_current_active_user),
 ):
     """Create new flow."""
+    # Check for name uniqueness within account
+    existing_in_account = crud_flow.get_by_name_and_account(
+        db, name=flow_in.name, account_id=current_user.account_id
+    )
+    if existing_in_account:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A flow with name '{flow_in.name}' already exists in your account",
+        )
+
+    # Check if name conflicts with a global preset (unless creating a preset)
+    if not flow_in.is_preset:
+        global_preset = crud_flow.get_global_preset_by_name(db, name=flow_in.name)
+        if global_preset:
+            raise HTTPException(
+                status_code=400,
+                detail=f"A global preset with name '{flow_in.name}' already exists. Please choose a different name.",
+            )
+
     # Security check: Only superusers can configure custom commands
     if flow_in.custom_commands and flow_in.custom_commands.enabled:
         if not current_user.is_superuser:
@@ -70,12 +89,11 @@ def read_presets(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Retrieve flow presets for the account."""
-    global_presets = crud_flow.get_multi(db, is_preset=True)
-    account_presets = crud_flow.get_multi(
-        db, account_id=current_user.account_id, is_preset=False
-    )
-    return global_presets + account_presets
+    """Retrieve flow presets available to the account.
+
+    Returns global presets (account_id=None) plus any account-specific presets.
+    """
+    return crud_flow.get_presets_for_account(db, account_id=current_user.account_id)
 
 
 @router.post("/flows/presets/{flow_id}/clone", response_model=schemas.FlowResponse)
@@ -107,9 +125,20 @@ def clone_preset(
         ]
     }
 
+    # Generate a unique name for the cloned flow
+    base_name = f"Copy of {preset.name}"
+    final_name = base_name
+    suffix = 1
+
+    while crud_flow.get_by_name_and_account(
+        db, name=final_name, account_id=current_user.account_id
+    ):
+        suffix += 1
+        final_name = f"{base_name} ({suffix})"
+
     cloned_flow_in = schemas.FlowCreate(
         **preset_dict,
-        name=f"Copy of {preset.name}",
+        name=final_name,
         is_preset=False,
         account_id=str(current_user.account_id),
     )
@@ -541,6 +570,26 @@ def update_flow(
     flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
+
+    # Check for name uniqueness if name is being changed
+    if flow_in.name and flow_in.name != flow.name:
+        existing_in_account = crud_flow.get_by_name_and_account(
+            db, name=flow_in.name, account_id=current_user.account_id
+        )
+        if existing_in_account and str(existing_in_account.id) != str(flow_id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"A flow with name '{flow_in.name}' already exists in your account",
+            )
+
+        # Check if name conflicts with a global preset (unless this is a preset)
+        if not flow.is_preset:
+            global_preset = crud_flow.get_global_preset_by_name(db, name=flow_in.name)
+            if global_preset:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"A global preset with name '{flow_in.name}' already exists. Please choose a different name.",
+                )
 
     # Security check: Only superusers can configure custom commands
     if flow_in.custom_commands and flow_in.custom_commands.enabled:

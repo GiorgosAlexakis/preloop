@@ -45,6 +45,10 @@ async def test_create_flow(mock_account: Account, mocker: MockerFixture):
         "preloop_ai.api.endpoints.flows.crud_flow",
         new_callable=MagicMock,
     )
+    # Mock validation methods to return None (no conflicts)
+    mock_crud_flow.get_by_name_and_account.return_value = None
+    mock_crud_flow.get_global_preset_by_name.return_value = None
+
     flow_in.account_id = mock_account.id
     mock_crud_flow.create.return_value = schemas.FlowResponse(
         **flow_in.model_dump(),
@@ -132,7 +136,13 @@ async def test_update_flow(mock_account: Account, mocker: MockerFixture):
         new_callable=MagicMock,
     )
     mock_flow = MagicMock()
+    mock_flow.name = "Original Name"  # Different from update name
+    mock_flow.is_preset = False
     mock_crud_flow.get.return_value = mock_flow
+    # Mock validation methods to return None (no conflicts)
+    mock_crud_flow.get_by_name_and_account.return_value = None
+    mock_crud_flow.get_global_preset_by_name.return_value = None
+
     mock_crud_flow.update.return_value = schemas.FlowResponse(
         id=flow_id,
         name=flow_update.name,
@@ -276,10 +286,16 @@ async def test_read_presets(mock_account: Account, mocker: MockerFixture):
     )
     global_preset = MagicMock()
     global_preset.is_preset = True
+    global_preset.account_id = None
     account_preset = MagicMock()
-    account_preset.is_preset = False
+    account_preset.is_preset = True
+    account_preset.account_id = mock_account.account_id
 
-    mock_crud_flow.get_multi.side_effect = [[global_preset], [account_preset]]
+    # The endpoint now uses get_presets_for_account which returns both
+    mock_crud_flow.get_presets_for_account.return_value = [
+        global_preset,
+        account_preset,
+    ]
 
     # Act
     result = await maybe_await(
@@ -290,6 +306,9 @@ async def test_read_presets(mock_account: Account, mocker: MockerFixture):
     assert len(result) == 2
     assert result[0] == global_preset
     assert result[1] == account_preset
+    mock_crud_flow.get_presets_for_account.assert_called_once_with(
+        mocker.ANY, account_id=mock_account.account_id
+    )
 
 
 @pytest.mark.asyncio
@@ -321,6 +340,8 @@ async def test_clone_preset(mock_account: Account, mocker: MockerFixture):
     preset.allowed_mcp_tools = []
 
     mock_crud_flow.get.return_value = preset
+    # Mock get_by_name_and_account to return None (no existing flow with that name)
+    mock_crud_flow.get_by_name_and_account.return_value = None
 
     # Convert mock_account.id to string for validation
     mock_account.id = str(mock_account.id)
