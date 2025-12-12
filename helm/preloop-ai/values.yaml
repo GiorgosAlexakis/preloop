@@ -249,6 +249,9 @@ seed:
   password: ""
   apiKey: ""
 
+cleanup:
+  enabled: false
+
 # Agent execution configuration
 agentExecution:
   # Namespace for running agent containers

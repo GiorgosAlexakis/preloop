@@ -1213,7 +1213,7 @@ export class DashboardView extends AuthedElement {
 
                   ${this.pendingApprovals.length > 3
                     ? html`<div style="margin-top: var(--sl-spacing-small);">
-                        <a href="/console/tools"
+                        <a href="/console/approvals"
                           >View all ${this.pendingApprovals.length}
                           approvals...</a
                         >
@@ -1358,6 +1358,19 @@ export class DashboardView extends AuthedElement {
                       </div>
                       <div class="analytics-label">Declined</div>
                     </div>
+                    ${this.approvalStats.expired > 0
+                      ? html`
+                          <div class="analytics-stat">
+                            <div
+                              class="analytics-value"
+                              style="color: var(--sl-color-neutral-500);"
+                            >
+                              ${this.approvalStats.expired}
+                            </div>
+                            <div class="analytics-label">Timed Out</div>
+                          </div>
+                        `
+                      : ''}
                     ${this.approvalStats.avgApprovalTime > 0
                       ? html`
                           <div class="analytics-stat">
@@ -1375,7 +1388,7 @@ export class DashboardView extends AuthedElement {
 
                   <div style="margin-top: var(--sl-spacing-medium);">
                     <a
-                      href="/console/tools"
+                      href="/console/approvals"
                       style="font-size: var(--sl-font-size-small);"
                     >
                       View all approval requests →

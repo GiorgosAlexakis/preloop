@@ -429,6 +429,10 @@ export class ApprovalView extends AuthedElement {
       'expired',
       'cancelled',
     ].includes(this.approvalRequest.status);
+    const displayStatus =
+      this.approvalRequest.status === 'expired'
+        ? 'TIMED OUT'
+        : this.approvalRequest.status.toUpperCase();
 
     return html`
       <div class="header">
@@ -439,7 +443,7 @@ export class ApprovalView extends AuthedElement {
             variant=${this.getStatusVariant(this.approvalRequest.status)}
             class="status-badge"
           >
-            ${this.approvalRequest.status.toUpperCase()}
+            ${displayStatus}
           </sl-badge>
         </h1>
         <p>Review and approve or decline this tool execution request</p>
@@ -522,7 +526,7 @@ export class ApprovalView extends AuthedElement {
         <div class="content-section">
           <h2>Tool Arguments</h2>
           <div class="code-block">
-            ${this.formatToolArgs(this.approvalRequest.tool_args.trimStart())}
+            ${this.formatToolArgs(this.approvalRequest.tool_args)}
           </div>
         </div>
 
@@ -532,7 +536,11 @@ export class ApprovalView extends AuthedElement {
                 <h3>
                   ${this.approvalRequest.status === 'approved'
                     ? '✅ Approved'
-                    : '❌ Declined'}
+                    : this.approvalRequest.status === 'expired'
+                      ? '⏱️ Timed Out'
+                      : this.approvalRequest.status === 'cancelled'
+                        ? '🚫 Cancelled'
+                        : '❌ Declined'}
                 </h3>
                 ${this.approvalRequest.resolved_at
                   ? html`<p>

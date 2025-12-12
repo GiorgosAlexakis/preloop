@@ -1,3 +1,4 @@
+{{- if .Values.cleanup.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -29,3 +30,4 @@ spec:
               value: "INFO"
       # Set a reasonable timeout for the job
       activeDeadlineSeconds: 300
+{{- end }}
