@@ -56,9 +56,7 @@ def start_server(
         logger.info("Test data initialization enabled")
 
     # Start the Uvicorn server with FastAPI
-    logger.info(
-        f"Starting Preloop AI REST API server on {host}:{port} (debug={debug})"
-    )
+    logger.info(f"Starting Preloop AI REST API server on {host}:{port} (debug={debug})")
 
     uvicorn.run(
         "preloop_ai.api.app:create_app",
@@ -71,9 +69,7 @@ def start_server(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Start the Preloop AI REST API server"
-    )
+    parser = argparse.ArgumentParser(description="Start the Preloop AI REST API server")
     parser.add_argument("--host", help="Host to bind to (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, help="Port to bind to (default: 8000)")
     parser.add_argument("--debug", action="store_true", help="Run in debug mode")

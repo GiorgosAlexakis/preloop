@@ -54,6 +54,7 @@ from preloop_models.db.session import get_db_session as get_db
 from preloop_models.models.issue import Issue
 from preloop_models.models.organization import Organization
 from preloop_models.models.project import Project
+from preloop_models.models.tracker import TrackerType
 from preloop_models.models.issue_compliance_result import IssueComplianceResult
 from preloop_ai.api.auth.jwt import get_user_from_token_if_valid
 from fastmcp.server.dependencies import get_http_request
@@ -1142,8 +1143,8 @@ async def get_pull_request(pull_request: str) -> "PullRequestResponse":
         # Just a number - try to find first GitHub project
         from preloop_models.crud import crud_tracker
 
-        trackers = crud_tracker.get_multi_by_type(
-            db, tracker_type="github", account_id=current_user.account_id
+        trackers = crud_tracker.get_by_type(
+            db, tracker_type=TrackerType.GITHUB, account_id=str(current_user.account_id)
         )
         if not trackers:
             raise HTTPException(
@@ -1262,8 +1263,8 @@ async def get_merge_request(merge_request: str) -> "MergeRequestResponse":
         # Just a number - try to find first GitLab project
         from preloop_models.crud import crud_tracker
 
-        trackers = crud_tracker.get_multi_by_type(
-            db, tracker_type="gitlab", account_id=current_user.account_id
+        trackers = crud_tracker.get_by_type(
+            db, tracker_type=TrackerType.GITLAB, account_id=str(current_user.account_id)
         )
         if not trackers:
             raise HTTPException(
@@ -1401,8 +1402,8 @@ async def update_pull_request(
         # Just a number - try to find first GitHub project
         from preloop_models.crud import crud_tracker
 
-        trackers = crud_tracker.get_multi_by_type(
-            db, tracker_type="github", account_id=current_user.account_id
+        trackers = crud_tracker.get_by_type(
+            db, tracker_type=TrackerType.GITHUB, account_id=str(current_user.account_id)
         )
         if not trackers:
             raise HTTPException(
@@ -1549,8 +1550,8 @@ async def update_merge_request(
         # Just a number - try to find first GitLab project
         from preloop_models.crud import crud_tracker
 
-        trackers = crud_tracker.get_multi_by_type(
-            db, tracker_type="gitlab", account_id=current_user.account_id
+        trackers = crud_tracker.get_by_type(
+            db, tracker_type=TrackerType.GITLAB, account_id=str(current_user.account_id)
         )
         if not trackers:
             raise HTTPException(

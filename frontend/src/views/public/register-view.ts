@@ -54,8 +54,8 @@ export class RegisterView extends LitElement {
         <div class="form-container">
           <h2>Create a ${getBrandConfig().name} account</h2>
           ${this.error
-        ? html`<div class="error-message">${this.error}</div>`
-        : ''}
+            ? html`<div class="error-message">${this.error}</div>`
+            : ''}
           <form @submit=${this.handleRegister}>
             <div class="form-group">
               <sl-input

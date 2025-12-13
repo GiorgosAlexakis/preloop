@@ -1,12 +1,20 @@
+# Preloop AI - Open Source Edition
+# Minimal brand configuration for self-hosted deployments.
+#
+# edition: Controls UI behavior, not feature set
+#   - "saas": Full marketing landing page, pricing page, signup CTAs
+#   - "selfhosted": Minimal UI, redirects to login, no pricing page
+#
+# For enterprise self-hosted deployments, use the enterprise Docker image
+# but keep edition: "selfhosted" for the minimal UI experience.
+#
+# For SaaS deployment configuration, see preloop-ee/frontend/brands.yaml
+
 brands:
   preloop:
     name: "Preloop AI"
-    domain: "preloop.ai"
-
-    company:
-      legal_name: "Spacecode.AI, Inc."
-      address: "166 Geary Street, Suite 1500"
-      city: "San Francisco, CA 94108"
+    domain: "localhost"
+    edition: "selfhosted"
 
     branding:
       logo_light: "/images/logos/preloop_logo_light.svg"
@@ -16,131 +24,12 @@ brands:
       gradient_product: "linear-gradient(90deg, hsl(270, 70%, 55%), hsl(290, 75%, 50%))"
       gradient_ai: "linear-gradient(90deg, hsl(200, 80%, 55%), hsl(180, 85%, 50%))"
 
-    social:
-      twitter: "@preloop_ai"
-      linkedin: "https://www.linkedin.com/company/spacecode-ai/"
-      instagram: "https://www.instagram.com/spacecode.ai"
-
     landing:
       meta:
-        title: "Preloop AI - Responsible AI automation"
-        description: "Let agents do the work, humans make the critical decisions."
-        extended_description: "Preloop is an event-driven automation platform with built-in human-in-the-loop safety. AI agents respond to events across your tools automatically. When agents call sensitive operations, Preloop intercepts the request and routes it for human approval—no infrastructure changes required."
-        keywords: "Preloop AI, AI, Human Approval, Code Review, Development, Automation, DevOps, CI/CD"
-        og_image: "/images/preloop/diagram.png"
-
-      features_layout: "grid"  # "carousel" or "grid"
-
+        title: "Preloop AI"
+        description: "Responsible AI automation with human-in-the-loop approval"
       hero:
-        title: "Responsible <span class=\"gradient-product\">AI Automation</span>"
-        lead: "Let agents do the work, humans make the critical decisions."
-        cta_primary: "Start Free Trial"
-        cta_secondary: "Request Demo"
-        cta_secondary_url: "https://calendar.app.google/FV95tXZtfGpPk7398"
-
-      features:
-        - title: "Granular approval policies"
-          text: "Preloop AI provides an MCP proxy that can put humans in the loop before agents take critical action. Execution is paused while appropriate people are notified over any available channel."
-          videoUrl: ""
-          placeholderImg: ""
-
-        - title: "Event driven agentic flows"
-          text: "Automate agentic processes to run in response to events. Select from a library of prebuilt templates or create your own."
-          videoUrl: ""
-          placeholderImg: ""
-
-        - title: "Compliance & Security Checks"
-          text: "Ensure your code and processes meet industry standards. Discover unmapped dependencies, reduce overlap and boost Definition of Ready compliance on every issue."
-          videoUrl: ""
-          placeholderImg: ""
-
-      faqs:
-        - q: "What is Preloop?"
-          a: "Preloop is an AI-powered platform that automates critical aspects of your development workflow. It provides intelligent code reviews, dependency management, and compliance checks, helping your team ship faster with confidence."
-
-        - q: "Which development platforms does Preloop support?"
-          a: "Preloop integrates with GitHub, GitLab, Bitbucket, and major CI/CD platforms. We support all popular programming languages and frameworks."
-
-        - q: "Do I need to change my existing workflow?"
-          a: "No. Preloop integrates seamlessly with your existing tools and processes. It works alongside your current CI/CD pipeline and version control system without requiring changes to your workflow."
-
-        - q: "How does AI-powered code review work?"
-          a: "Preloop analyzes your code using advanced machine learning models trained on millions of code samples. It checks for bugs, security vulnerabilities, performance issues, and adherence to best practices, providing actionable feedback instantly."
-
-        - q: "Is my code secure with Preloop?"
-          a: "Absolutely. We use enterprise-grade encryption for all data in transit and at rest. Your code is analyzed securely and never used to train models or shared with third parties. We're SOC 2 compliant and offer self-hosted options."
-
-        - q: "How does Preloop handle dependencies?"
-          a: "Preloop automatically scans your project dependencies, checks for security vulnerabilities, outdated packages, and license issues. It provides upgrade recommendations and impact analysis before you make changes."
-
-        - q: "Can Preloop integrate with my CI/CD pipeline?"
-          a: "Yes. Preloop provides native integrations with popular CI/CD platforms including GitHub Actions, GitLab CI, Jenkins, CircleCI, and more. Setup takes just a few minutes."
-
-      get_started:
-        title: "How to automate responsibly"
-        link_text: ""
-        link_url: ""
-        features:
-          - icon: "currency-dollar"
-            title: "Gate high-value transactions"
-            text: "Pause transactions over $10k for CFO approval—protect your budget without slowing operations."
-          - icon: "arrow-up-circle"
-            title: "Escalate critical operations"
-            text: "Require two SRE sign-offs for automated rollbacks, or escalate to CTO if no response in 2 minutes."
-          - icon: "clipboard-check"
-            title: "Keep leaders in the loop"
-            text: "Route feature requests to Product Managers for approval-keep your roadmap on track."
-
-        mcp_setup_title: "Get Started with Preloop MCP"
-        mcp_configs:
-          - ide: "claude-code"
-            ide_name: "Claude Code"
-            logo_path: "/images/Claude_AI_logo.png"
-            logo_width: "130"
-            prerequisites:
-              - "Preloop AI API key (start your free trial above)"
-            setup_instructions: "Run the following command in your terminal:"
-            code: |
-              claude mcp add --transport http preloop https://preloop.ai/mcp/v1
-                --header "Authorization: Bearer YOUR_PRELOOP_AI_API_KEY"
-
-          - ide: "cursor"
-            ide_name: "Cursor"
-            logo_path: "/images/cursor_logo.png"
-            logo_width: "130"
-            prerequisites:
-              - "Preloop AI API key (start your free trial above)"
-            setup_instructions: "Create or edit <code>~/.cursor/mcp.json</code>:"
-            code: |
-              # Create or edit ~/.cursor/mcp.json
-              {
-                "mcpServers": {
-                  "preloop": {
-                    "transport": "http",
-                    "url": "https://preloop.ai/mcp/v1",
-                    "headers": {
-                      "Authorization": "Bearer YOUR_PRELOOP_AI_API_KEY"
-                    }
-                  }
-                }
-              }
-
-          - ide: "windsurf"
-            ide_name: "Windsurf"
-            logo_path: "/images/windsurf_logo.png"
-            logo_width: "130"
-            prerequisites:
-              - "Preloop AI API key (start your free trial above)"
-            setup_instructions: "Create or edit your MCP configuration file:"
-            code: |
-              {
-                "mcpServers": {
-                  "preloop": {
-                      "transport": "http",
-                      "url": "https://preloop.ai/mcp/v1",
-                      "headers": {
-                          "Authorization": "Bearer YOUR_PRELOOP_AI_API_KEY"
-                      }
-                  }
-                }
-              }
+        title: "Welcome to <span class=\"gradient-product\">Preloop AI</span>"
+        lead: "Sign in to get started with responsible AI automation."
+        cta_primary: "Sign In"
+        cta_primary_url: "/login"

@@ -13,15 +13,15 @@ Code coverage is measured for all components and is enforced in the CI/CD pipeli
 ### Current Status & Progress
 
 Significant progress has been made in increasing unit test coverage for the backend.
-- **`SpaceModels/spacemodels/crud`**: Coverage has been substantially improved for key modules, with `issue.py`, `issue_duplicate.py`, `organization.py`, `project.py`, and `account.py` now meeting or exceeding the 80% coverage target.
-- **`spacesync/spacesync/scanner`**: Coverage has been substantially improved for the core scanning logic, with `core.py` now exceeding the 80% coverage target.
-- **`spacesync/spacesync/services`**: Coverage has been substantially improved for key modules, with `event_bus.py`, `base.py`, and `manager.py` now meeting or exceeding the 80% coverage target.
-- **`spacesync/spacesync/trackers`**: Work has begun on improving coverage for the core tracker logic, with initial tests added for `base.py`, `github.py`, `gitlab.py`, and `jira.py`.
-- **`spacebridge/api/endpoints`**: Comprehensive unit tests have been added for the new `/api/v1/mcp/` endpoints in `tests/endpoints/test_mcp.py`, covering all new MCP tools.
+- **`backend/preloop-models/preloop_models/crud`**: Coverage has been substantially improved for key modules, with `issue.py`, `issue_duplicate.py`, `organization.py`, `project.py`, and `account.py` now meeting or exceeding the 80% coverage target.
+- **`backend/preloop-sync/preloop_sync/scanner`**: Coverage has been substantially improved for the core scanning logic, with `core.py` now exceeding the 80% coverage target.
+- **`backend/preloop-sync/preloop_sync/services`**: Coverage has been substantially improved for key modules, with `event_bus.py`, `base.py`, and `manager.py` now meeting or exceeding the 80% coverage target.
+- **`backend/preloop-sync/preloop_sync/trackers`**: Work has begun on improving coverage for the core tracker logic, with initial tests added for `base.py`, `github.py`, `gitlab.py`, and `jira.py`.
+- **`backend/preloop-ai/preloop_ai/api/endpoints`**: Comprehensive unit tests have been added for the new `/api/v1/mcp/` endpoints in `tests/endpoints/test_mcp.py`, covering all new MCP tools.
 
 ### CI/CD Integration
 
-All backend unit tests are organized into separate jobs in the `.gitlab-ci.yml` pipeline. This allows for parallel execution and clear reporting on the test status of each component, such as `test:unit:spacemodels`, `test:unit:spacesync`, and individual endpoint tests like `test:unit:spacebridge-endpoints-mcp`.
+All backend unit tests are organized into separate jobs in the `.gitlab-ci.yml` pipeline. This allows for parallel execution and clear reporting on the test status of each component, such as `test:unit:spacemodels`, `test:unit:preloop-sync`, and individual endpoint tests like `test:unit:preloop-ai-endpoints-mcp`.
 
 ### Mutation Testing
 

@@ -61,6 +61,12 @@ class Settings(BaseSettings):
         "preloop-ai/prompts.yaml", description="Path to the prompts YAML file"
     )
 
+    # Feature flags for self-hosted deployments
+    registration_enabled: bool = Field(
+        True,
+        description="Enable self-registration. Set to False to require admin invitation.",
+    )
+
     database: DatabaseSettings
     security: SecuritySettings
     server: ServerSettings
@@ -124,11 +130,18 @@ class Settings(BaseSettings):
 
         prompts_file = os.getenv("PROMPTS_PATH", "preloop-ai/prompts.yaml")
 
-        stripe_secret_key = os.getenv(
-            "STRIPE_SECRET_KEY",
-            "sk_test_51RtX2jQPfvWObTQzIaGtQkankjs5cg1aG23Xy3KnU3cnhrBcspt9AonXBFtEBROuHp5ITHptXsxOllNgm7gUJA9u00igI2abav",
-        )
+        # Stripe configuration - no default keys for security
+        # Self-hosted deployments must supply their own keys if billing is enabled
+        stripe_secret_key = os.getenv("STRIPE_SECRET_KEY", "")
         stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+        # Feature flags
+        registration_enabled = os.getenv("REGISTRATION_ENABLED", "true").lower() in (
+            "true",
+            "1",
+            "t",
+            "yes",
+        )
 
         return cls(
             app_name=os.getenv("APP_NAME", "Preloop AI"),
@@ -137,6 +150,7 @@ class Settings(BaseSettings):
             product_team_email=os.getenv("PRODUCT_TEAM_EMAIL", "product@spacecode.ai"),
             nats_url=os.getenv("NATS_URL", "nats://localhost:4222"),
             PROMPTS_FILE=prompts_file,
+            registration_enabled=registration_enabled,
             database=database,
             security=security,
             server=server,

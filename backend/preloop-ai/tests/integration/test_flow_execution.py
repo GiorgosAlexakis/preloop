@@ -26,21 +26,21 @@ async def docker_client():
 
 
 @pytest.fixture
-def test_account(db: Session) -> Account:
+def test_account(db_session: Session) -> Account:
     """Create a test account."""
     account = Account(
         id=str(uuid4()),
         email="test@example.com",
         name="Test Account",
     )
-    db.add(account)
-    db.commit()
-    db.refresh(account)
+    db_session.add(account)
+    db_session.commit()
+    db_session.refresh(account)
     return account
 
 
 @pytest.fixture
-def test_ai_model(db: Session, test_account: Account) -> AIModel:
+def test_ai_model(db_session: Session, test_account: Account) -> AIModel:
     """Create a test AI model configuration."""
     ai_model = AIModel(
         name="Test GPT-4",
@@ -49,14 +49,16 @@ def test_ai_model(db: Session, test_account: Account) -> AIModel:
         api_key=os.getenv("OPENAI_API_KEY", "test-key"),
         account_id=test_account.id,
     )
-    db.add(ai_model)
-    db.commit()
-    db.refresh(ai_model)
+    db_session.add(ai_model)
+    db_session.commit()
+    db_session.refresh(ai_model)
     return ai_model
 
 
 @pytest.fixture
-def test_flow(db: Session, test_account: Account, test_ai_model: AIModel) -> Flow:
+def test_flow(
+    db_session: Session, test_account: Account, test_ai_model: AIModel
+) -> Flow:
     """Create a test flow."""
     flow = Flow(
         name="Test Flow",
@@ -75,9 +77,9 @@ def test_flow(db: Session, test_account: Account, test_ai_model: AIModel) -> Flo
         is_enabled=True,
         account_id=test_account.id,
     )
-    db.add(flow)
-    db.commit()
-    db.refresh(flow)
+    db_session.add(flow)
+    db_session.commit()
+    db_session.refresh(flow)
     return flow
 
 
@@ -86,7 +88,7 @@ class TestFlowExecution:
 
     @pytest.mark.asyncio
     async def test_flow_trigger_from_event(
-        self, db: Session, test_flow: Flow, test_account: Account
+        self, db_session: Session, test_flow: Flow, test_account: Account
     ):
         """Test that a flow is triggered from an incoming event."""
         # Create a test event
@@ -105,7 +107,7 @@ class TestFlowExecution:
         }
 
         # Create trigger service
-        trigger_service = FlowTriggerService(db)
+        trigger_service = FlowTriggerService(db_session)
 
         # Process the event
         await trigger_service.process_event(event_data)
@@ -115,7 +117,7 @@ class TestFlowExecution:
 
         # Check that a flow execution was created
         execution = (
-            db.query(FlowExecution)
+            db_session.query(FlowExecution)
             .filter(FlowExecution.flow_id == test_flow.id)
             .first()
         )
@@ -125,7 +127,7 @@ class TestFlowExecution:
 
     @pytest.mark.asyncio
     async def test_flow_execution_orchestrator(
-        self, db: Session, test_flow: Flow, test_account: Account
+        self, db_session: Session, test_flow: Flow, test_account: Account
     ):
         """Test the flow execution orchestrator end-to-end."""
         # Create trigger event data
@@ -145,7 +147,7 @@ class TestFlowExecution:
 
         # Create orchestrator
         orchestrator = FlowExecutionOrchestrator(
-            db=db,
+            db=db_session,
             flow_id=test_flow.id,
             trigger_event_data=trigger_event_data,
             nats_client=nats_client,
@@ -169,7 +171,7 @@ class TestFlowExecution:
         # In production, we'd wait and check the final status
 
     @pytest.mark.asyncio
-    async def test_container_inspection(self, db: Session, docker_client):
+    async def test_container_inspection(self, db_session: Session, docker_client):
         """Test that we can inspect running agent containers."""
         # List all containers with preloop labels
         containers = await docker_client.containers.list(
@@ -203,7 +205,7 @@ class TestFlowExecution:
             logger.info(f"  Last 50 log lines: {len(logs)} lines")
 
     @pytest.mark.asyncio
-    async def test_prompt_resolution(self, db: Session, test_flow: Flow):
+    async def test_prompt_resolution(self, db_session: Session, test_flow: Flow):
         """Test that prompt placeholders are resolved correctly."""
         trigger_event_data = {
             "source": "github",
@@ -220,7 +222,7 @@ class TestFlowExecution:
         nats_client = await get_nats_client()
 
         orchestrator = FlowExecutionOrchestrator(
-            db=db,
+            db=db_session,
             flow_id=test_flow.id,
             trigger_event_data=trigger_event_data,
             nats_client=nats_client,

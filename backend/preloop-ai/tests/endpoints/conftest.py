@@ -12,7 +12,12 @@ def mock_has_permission(mocker: MockerFixture):
     This allows unit tests to call endpoint functions directly without
     needing to set up proper user roles and permissions.
     """
-    mocker.patch(
-        "preloop_ai.plugins.proprietary.rbac.permissions.has_permission",
-        return_value=True,
-    )
+    try:
+        import preloop_ai.plugins.proprietary.rbac.permissions  # NOQA: F401
+
+        mocker.patch(
+            "preloop_ai.plugins.proprietary.rbac.permissions.has_permission",
+            return_value=True,
+        )
+    except ImportError:
+        pass

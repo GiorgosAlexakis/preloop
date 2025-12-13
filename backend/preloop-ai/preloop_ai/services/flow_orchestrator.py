@@ -32,6 +32,19 @@ from preloop_ai.services.flow_execution_logger import FlowExecutionLogger
 logger = logging.getLogger(__name__)
 
 
+def _make_json_serializable(obj: Any) -> Any:
+    """Recursively convert non-JSON-serializable types to serializable ones."""
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: _make_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_make_json_serializable(item) for item in obj]
+    return obj
+
+
 class FlowExecutionOrchestrator:
     """Manages the end-to-end lifecycle of a single Flow invocation."""
 
@@ -1094,10 +1107,13 @@ class FlowExecutionOrchestrator:
         """Create an initial record in FlowExecutions."""
         logger.info("Creating initial execution log")
 
+        # Ensure trigger_event_data is JSON serializable (convert UUIDs, datetimes, etc.)
+        serializable_event_data = _make_json_serializable(self.trigger_event_data)
+
         execution_create = schemas.FlowExecutionCreate(
             flow_id=self.flow_id,
             status="PENDING",
-            trigger_event_details=self.trigger_event_data,
+            trigger_event_details=serializable_event_data,
             trigger_event_id=self.trigger_event_data.get("event_id"),
         )
 

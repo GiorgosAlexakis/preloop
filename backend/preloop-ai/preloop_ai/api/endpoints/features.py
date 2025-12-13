@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter
 
+from preloop_ai.config import settings
 from preloop_ai.plugins.base import get_plugin_manager
 
 router = APIRouter()
@@ -20,7 +21,12 @@ def get_features() -> Dict[str, Any]:
     Returns:
         Dictionary with:
         - plugins: List of enabled plugin metadata
-        - features: Dict of feature flags (e.g., rbac, user_management, etc.)
+        - features: Dict of feature flags (e.g., rbac, user_management, registration, etc.)
     """
     plugin_manager = get_plugin_manager()
-    return plugin_manager.get_enabled_features()
+    result = plugin_manager.get_enabled_features()
+
+    # Add config-based feature flags
+    result["features"]["registration"] = settings.registration_enabled
+
+    return result

@@ -15,7 +15,7 @@ class TestGetFeatures:
         mock_plugin_manager = MagicMock()
         mock_plugin_manager.get_enabled_features.return_value = {
             "plugins": ["rbac", "audit"],
-            "features": {"rbac": True, "audit_logging": True},
+            "features": {"rbac": True, "audit_logging": True, "registration": True},
         }
         mock_get_plugin_manager.return_value = mock_plugin_manager
 
@@ -23,7 +23,7 @@ class TestGetFeatures:
 
         assert result == {
             "plugins": ["rbac", "audit"],
-            "features": {"rbac": True, "audit_logging": True},
+            "features": {"rbac": True, "audit_logging": True, "registration": True},
         }
         mock_get_plugin_manager.assert_called_once()
         mock_plugin_manager.get_enabled_features.assert_called_once()
@@ -36,13 +36,13 @@ class TestGetFeatures:
         mock_plugin_manager = MagicMock()
         mock_plugin_manager.get_enabled_features.return_value = {
             "plugins": [],
-            "features": {},
+            "features": {"registration": True},
         }
         mock_get_plugin_manager.return_value = mock_plugin_manager
 
         result = get_features()
 
-        assert result == {"plugins": [], "features": {}}
+        assert result == {"plugins": [], "features": {"registration": True}}
 
     @patch("preloop_ai.api.endpoints.features.get_plugin_manager")
     def test_get_features_with_multiple_plugins(self, mock_get_plugin_manager):
@@ -57,6 +57,7 @@ class TestGetFeatures:
                 "audit_logging": True,
                 "compliance_metrics": True,
                 "custom_workflows": False,
+                "registration": True,
             },
         }
         mock_get_plugin_manager.return_value = mock_plugin_manager
@@ -66,4 +67,4 @@ class TestGetFeatures:
         assert "plugins" in result
         assert "features" in result
         assert len(result["plugins"]) == 3
-        assert len(result["features"]) == 4
+        assert len(result["features"]) == 5

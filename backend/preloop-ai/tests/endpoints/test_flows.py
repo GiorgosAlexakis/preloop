@@ -11,6 +11,8 @@ from preloop_ai.api.endpoints import flows
 from preloop_models import schemas
 from preloop_models.models.account import Account
 
+from tests.conftest import maybe_await
+
 
 @pytest.fixture
 def mock_account(mocker: MockerFixture) -> Account:
@@ -43,6 +45,10 @@ async def test_create_flow(mock_account: Account, mocker: MockerFixture):
         "preloop_ai.api.endpoints.flows.crud_flow",
         new_callable=MagicMock,
     )
+    # Mock validation methods to return None (no conflicts)
+    mock_crud_flow.get_by_name_and_account.return_value = None
+    mock_crud_flow.get_global_preset_by_name.return_value = None
+
     flow_in.account_id = mock_account.id
     mock_crud_flow.create.return_value = schemas.FlowResponse(
         **flow_in.model_dump(),
@@ -52,8 +58,8 @@ async def test_create_flow(mock_account: Account, mocker: MockerFixture):
     )
 
     # Act
-    result = await flows.create_flow(
-        db=MagicMock(), flow_in=flow_in, current_user=mock_account
+    result = await maybe_await(
+        flows.create_flow(db=MagicMock(), flow_in=flow_in, current_user=mock_account)
     )
 
     # Assert
@@ -74,7 +80,9 @@ async def test_read_flows(mock_account: Account, mocker: MockerFixture):
     mock_crud_flow.get_multi.return_value = []
 
     # Act
-    result = await flows.read_flows(db=MagicMock(), current_user=mock_account)
+    result = await maybe_await(
+        flows.read_flows(db=MagicMock(), current_user=mock_account)
+    )
 
     # Assert
     assert isinstance(result, list)
@@ -106,8 +114,8 @@ async def test_read_flow(mock_account: Account, mocker: MockerFixture):
     )
 
     # Act
-    result = await flows.read_flow(
-        db=MagicMock(), flow_id=flow_id, current_user=mock_account
+    result = await maybe_await(
+        flows.read_flow(db=MagicMock(), flow_id=flow_id, current_user=mock_account)
     )
 
     # Assert
@@ -128,7 +136,13 @@ async def test_update_flow(mock_account: Account, mocker: MockerFixture):
         new_callable=MagicMock,
     )
     mock_flow = MagicMock()
+    mock_flow.name = "Original Name"  # Different from update name
+    mock_flow.is_preset = False
     mock_crud_flow.get.return_value = mock_flow
+    # Mock validation methods to return None (no conflicts)
+    mock_crud_flow.get_by_name_and_account.return_value = None
+    mock_crud_flow.get_global_preset_by_name.return_value = None
+
     mock_crud_flow.update.return_value = schemas.FlowResponse(
         id=flow_id,
         name=flow_update.name,
@@ -143,11 +157,13 @@ async def test_update_flow(mock_account: Account, mocker: MockerFixture):
     )
 
     # Act
-    result = await flows.update_flow(
-        db=MagicMock(),
-        flow_id=flow_id,
-        flow_in=flow_update,
-        current_user=mock_account,
+    result = await maybe_await(
+        flows.update_flow(
+            db=MagicMock(),
+            flow_id=flow_id,
+            flow_in=flow_update,
+            current_user=mock_account,
+        )
     )
 
     # Assert
@@ -176,7 +192,9 @@ async def test_delete_flow(mock_account: Account, mocker: MockerFixture):
     mock_crud_flow.get.return_value = mock_flow
 
     # Act
-    await flows.delete_flow(db=MagicMock(), flow_id=flow_id, current_user=mock_account)
+    await maybe_await(
+        flows.delete_flow(db=MagicMock(), flow_id=flow_id, current_user=mock_account)
+    )
 
     # Assert
     mock_crud_flow.get.assert_called_once_with(
@@ -200,8 +218,8 @@ async def test_read_flow_not_found(mock_account: Account, mocker: MockerFixture)
 
     # Act & Assert
     with pytest.raises(HTTPException) as exc_info:
-        await flows.read_flow(
-            db=MagicMock(), flow_id=flow_id, current_user=mock_account
+        await maybe_await(
+            flows.read_flow(db=MagicMock(), flow_id=flow_id, current_user=mock_account)
         )
 
     assert exc_info.value.status_code == 404
@@ -222,11 +240,13 @@ async def test_update_flow_not_found(mock_account: Account, mocker: MockerFixtur
 
     # Act & Assert
     with pytest.raises(HTTPException) as exc_info:
-        await flows.update_flow(
-            db=MagicMock(),
-            flow_id=flow_id,
-            flow_in=flow_update,
-            current_user=mock_account,
+        await maybe_await(
+            flows.update_flow(
+                db=MagicMock(),
+                flow_id=flow_id,
+                flow_in=flow_update,
+                current_user=mock_account,
+            )
         )
 
     assert exc_info.value.status_code == 404
@@ -246,8 +266,10 @@ async def test_delete_flow_not_found(mock_account: Account, mocker: MockerFixtur
 
     # Act & Assert
     with pytest.raises(HTTPException) as exc_info:
-        await flows.delete_flow(
-            db=MagicMock(), flow_id=flow_id, current_user=mock_account
+        await maybe_await(
+            flows.delete_flow(
+                db=MagicMock(), flow_id=flow_id, current_user=mock_account
+            )
         )
 
     assert exc_info.value.status_code == 404
@@ -264,18 +286,29 @@ async def test_read_presets(mock_account: Account, mocker: MockerFixture):
     )
     global_preset = MagicMock()
     global_preset.is_preset = True
+    global_preset.account_id = None
     account_preset = MagicMock()
-    account_preset.is_preset = False
+    account_preset.is_preset = True
+    account_preset.account_id = mock_account.account_id
 
-    mock_crud_flow.get_multi.side_effect = [[global_preset], [account_preset]]
+    # The endpoint now uses get_presets_for_account which returns both
+    mock_crud_flow.get_presets_for_account.return_value = [
+        global_preset,
+        account_preset,
+    ]
 
     # Act
-    result = await flows.read_presets(db=MagicMock(), current_user=mock_account)
+    result = await maybe_await(
+        flows.read_presets(db=MagicMock(), current_user=mock_account)
+    )
 
     # Assert
     assert len(result) == 2
     assert result[0] == global_preset
     assert result[1] == account_preset
+    mock_crud_flow.get_presets_for_account.assert_called_once_with(
+        mocker.ANY, account_id=mock_account.account_id
+    )
 
 
 @pytest.mark.asyncio
@@ -307,6 +340,8 @@ async def test_clone_preset(mock_account: Account, mocker: MockerFixture):
     preset.allowed_mcp_tools = []
 
     mock_crud_flow.get.return_value = preset
+    # Mock get_by_name_and_account to return None (no existing flow with that name)
+    mock_crud_flow.get_by_name_and_account.return_value = None
 
     # Convert mock_account.id to string for validation
     mock_account.id = str(mock_account.id)
@@ -316,8 +351,8 @@ async def test_clone_preset(mock_account: Account, mocker: MockerFixture):
     mock_crud_flow.create.return_value = cloned_flow
 
     # Act
-    result = await flows.clone_preset(
-        db=MagicMock(), flow_id=flow_id, current_user=mock_account
+    result = await maybe_await(
+        flows.clone_preset(db=MagicMock(), flow_id=flow_id, current_user=mock_account)
     )
 
     # Assert
@@ -338,8 +373,10 @@ async def test_clone_preset_not_found(mock_account: Account, mocker: MockerFixtu
 
     # Act & Assert
     with pytest.raises(HTTPException) as exc_info:
-        await flows.clone_preset(
-            db=MagicMock(), flow_id=flow_id, current_user=mock_account
+        await maybe_await(
+            flows.clone_preset(
+                db=MagicMock(), flow_id=flow_id, current_user=mock_account
+            )
         )
 
     assert exc_info.value.status_code == 404
@@ -362,8 +399,10 @@ async def test_clone_preset_not_a_preset(mock_account: Account, mocker: MockerFi
 
     # Act & Assert
     with pytest.raises(HTTPException) as exc_info:
-        await flows.clone_preset(
-            db=MagicMock(), flow_id=flow_id, current_user=mock_account
+        await maybe_await(
+            flows.clone_preset(
+                db=MagicMock(), flow_id=flow_id, current_user=mock_account
+            )
         )
 
     assert exc_info.value.status_code == 404
@@ -381,7 +420,9 @@ async def test_read_flow_executions(mock_account: Account, mocker: MockerFixture
     mock_crud_flow_execution.get_multi.return_value = []
 
     # Act
-    result = await flows.read_flow_executions(db=MagicMock(), current_user=mock_account)
+    result = await maybe_await(
+        flows.read_flow_executions(db=MagicMock(), current_user=mock_account)
+    )
 
     # Assert
     assert isinstance(result, list)
@@ -405,8 +446,10 @@ async def test_read_flow_execution(mock_account: Account, mocker: MockerFixture)
     mock_crud_flow_execution.get.return_value = execution
 
     # Act
-    result = await flows.read_flow_execution(
-        db=MagicMock(), execution_id=execution_id, current_user=mock_account
+    result = await maybe_await(
+        flows.read_flow_execution(
+            db=MagicMock(), execution_id=execution_id, current_user=mock_account
+        )
     )
 
     # Assert
@@ -431,8 +474,10 @@ async def test_read_flow_execution_not_found(
 
     # Act & Assert
     with pytest.raises(HTTPException) as exc_info:
-        await flows.read_flow_execution(
-            db=MagicMock(), execution_id=execution_id, current_user=mock_account
+        await maybe_await(
+            flows.read_flow_execution(
+                db=MagicMock(), execution_id=execution_id, current_user=mock_account
+            )
         )
 
     assert exc_info.value.status_code == 404
@@ -465,11 +510,13 @@ async def test_send_execution_command_execution_not_found(
 
     # Act & Assert
     with pytest.raises(HTTPException) as exc_info:
-        await flows.send_execution_command(
-            db=MagicMock(),
-            execution_id=execution_id,
-            command_data=command_data,
-            current_user=mock_account,
+        await maybe_await(
+            flows.send_execution_command(
+                db=MagicMock(),
+                execution_id=execution_id,
+                command_data=command_data,
+                current_user=mock_account,
+            )
         )
 
     assert exc_info.value.status_code == 404
@@ -535,11 +582,13 @@ async def test_send_execution_command_stop_success(
     )
 
     # Act
-    result = await flows.send_execution_command(
-        db=MagicMock(),
-        execution_id=execution_id,
-        command_data=command_data,
-        current_user=mock_account,
+    result = await maybe_await(
+        flows.send_execution_command(
+            db=MagicMock(),
+            execution_id=execution_id,
+            command_data=command_data,
+            current_user=mock_account,
+        )
     )
 
     # Assert
@@ -599,11 +648,13 @@ async def test_send_execution_command_other_command_success(
     )
 
     # Act
-    result = await flows.send_execution_command(
-        db=MagicMock(),
-        execution_id=execution_id,
-        command_data=command_data,
-        current_user=mock_account,
+    result = await maybe_await(
+        flows.send_execution_command(
+            db=MagicMock(),
+            execution_id=execution_id,
+            command_data=command_data,
+            current_user=mock_account,
+        )
     )
 
     # Assert
@@ -655,11 +706,13 @@ async def test_send_execution_command_nats_failure(
 
     # Act & Assert
     with pytest.raises(HTTPException) as exc_info:
-        await flows.send_execution_command(
-            db=MagicMock(),
-            execution_id=execution_id,
-            command_data=command_data,
-            current_user=mock_account,
+        await maybe_await(
+            flows.send_execution_command(
+                db=MagicMock(),
+                execution_id=execution_id,
+                command_data=command_data,
+                current_user=mock_account,
+            )
         )
 
     assert exc_info.value.status_code == 500

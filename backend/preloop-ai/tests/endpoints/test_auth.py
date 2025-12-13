@@ -110,6 +110,31 @@ def test_register_user_email_exists(db_session_mock):
     assert response.json()["detail"] == "Email already registered"
 
 
+def test_register_disabled(db_session_mock):
+    """Test that registration is blocked when REGISTRATION_ENABLED is false."""
+    with patch("preloop_ai.api.auth.router.settings") as mock_settings:
+        # Disable registration
+        mock_settings.registration_enabled = False
+
+        response = client.post(
+            "/auth/register",
+            json={
+                "username": "testuser",
+                "email": "test@example.com",
+                "password": "password",
+                "full_name": "Test User",
+            },
+        )
+
+        # Should return 403 Forbidden
+        assert response.status_code == 403
+        assert "Registration is disabled" in response.json()["detail"]
+
+        # Verify that no database operations were performed
+        # (the endpoint should reject before checking username/email)
+        db_session_mock.query.assert_not_called()
+
+
 def test_login_success():
     with patch(
         "preloop_ai.api.auth.router.authenticate_user"

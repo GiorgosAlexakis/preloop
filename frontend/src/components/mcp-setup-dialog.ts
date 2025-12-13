@@ -115,32 +115,32 @@ export class MCPSetupDialog extends LitElement {
         <div class="ide-tabs">
           <div
             class="ide-logo-container ${this.activeTab === 'claude-code'
-        ? 'active'
-        : ''}"
+              ? 'active'
+              : ''}"
             @click=${() => this._handleTabClick('claude-code')}
           >
             <img src="/images/Claude_AI_logo.png" alt="Claude Code" />
           </div>
           <div
             class="ide-logo-container ${this.activeTab === 'cursor'
-        ? 'active'
-        : ''}"
+              ? 'active'
+              : ''}"
             @click=${() => this._handleTabClick('cursor')}
           >
             <img src="/images/cursor_logo.png" alt="Cursor" />
           </div>
           <div
             class="ide-logo-container ${this.activeTab === 'windsurf'
-        ? 'active'
-        : ''}"
+              ? 'active'
+              : ''}"
             @click=${() => this._handleTabClick('windsurf')}
           >
             <img src="/images/windsurf_logo.png" alt="Windsurf" />
           </div>
           <div
             class="ide-logo-container ${this.activeTab === 'aider'
-        ? 'active'
-        : ''}"
+              ? 'active'
+              : ''}"
             @click=${() => this._handleTabClick('aider')}
           >
             <img src="/images/aider_logo.svg" alt="Aider CE" />
@@ -149,7 +149,7 @@ export class MCPSetupDialog extends LitElement {
 
         <div class="tab-content">
           ${this.activeTab === 'claude-code'
-        ? html`
+            ? html`
                 <div>
                   <h5>Prerequisites</h5>
                   <ul>
@@ -170,9 +170,9 @@ export class MCPSetupDialog extends LitElement {
                   </p>
                 </div>
               `
-        : ''}
+            : ''}
           ${this.activeTab === 'cursor'
-        ? html`
+            ? html`
                 <div>
                   <h5>Prerequisites</h5>
                   <ul>
@@ -196,9 +196,9 @@ export class MCPSetupDialog extends LitElement {
 }</code></pre>
                 </div>
               `
-        : ''}
+            : ''}
           ${this.activeTab === 'windsurf'
-        ? html`
+            ? html`
                 <div>
                   <h5>Prerequisites</h5>
                   <ul>
@@ -222,9 +222,9 @@ export class MCPSetupDialog extends LitElement {
 }</code></pre>
                 </div>
               `
-        : ''}
+            : ''}
           ${this.activeTab === 'aider'
-        ? html`
+            ? html`
                 <div>
                   <h5>Prerequisites</h5>
                   <ul>
@@ -265,7 +265,7 @@ export class MCPSetupDialog extends LitElement {
                   </p>
                 </div>
               `
-        : ''}
+            : ''}
         </div>
 
         <p class="help-text" style="margin-top: var(--sl-spacing-medium);">

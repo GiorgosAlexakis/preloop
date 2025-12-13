@@ -1,22 +1,13 @@
 """API endpoints for Preloop AI."""
 
-# Removed potentially problematic self-import:
-# from preloop_ai.api.endpoints import comments, health, issues, organizations, projects
-
-# Define __all__ to explicitly list all endpoint modules in this package
+# Open source core endpoints
 __all__ = [
     "account",
-    "admin",
     "approval_requests",
     "comments",
     "features",
     "health",
-    "impersonation",
-    "invitations",
     "issues",
-    "issue_compliance",
-    "issue_dependencies",
-    "issue_duplicates",
     "mcp_servers",
     "notification_preferences",
     "organizations",
@@ -24,14 +15,11 @@ __all__ = [
     "public_approval",
     "roles",
     "search",
-    "teams",
     "tools",
     "trackers",
-    "users",
     "version",
     "webhooks",
     "flows",
     "ai_models",
-    "billing",
     "websockets",
 ]

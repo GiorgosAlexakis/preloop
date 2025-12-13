@@ -1,19 +1,13 @@
+# Preloop AI Open Source CI/CD
+# This pipeline builds and tests the open-source core.
+# For enterprise builds and production deployments, see preloop-ee/.gitlab-ci.yml
+
 image: alpine:3.22
 
 variables:
   CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/preloop-ai
-  GIT_SUBMODULE_STRATEGY: "recursive"
+  CI_REGISTRY_IMAGE_FRONTEND: $CI_REGISTRY/spacecode/preloop-ai/frontend
   GITLAB_TOKEN: $GITLAB_TOKEN
-  PROD_DOMAIN: "preloop.ai"
-  STAGING_DOMAIN: "staging.preloop.ai"
-  STRIPE_SECRET_KEY_PROD: $STRIPE_SECRET_KEY_PROD
-  STRIPE_WEBHOOK_SECRET_PROD: $STRIPE_WEBHOOK_SECRET_PROD
-  STRIPE_SECRET_KEY_STAGING: $STRIPE_SECRET_KEY_STAGING
-  STRIPE_WEBHOOK_SECRET_STAGING: $STRIPE_WEBHOOK_SECRET_STAGING
-  STRIPE_SECRET_KEY_TEST: $STRIPE_SECRET_KEY_TEST
-  STRIPE_WEBHOOK_SECRET_TEST: $STRIPE_WEBHOOK_SECRET_TEST
-  STRIPE_SECRET_KEY_REVIEW: $STRIPE_SECRET_KEY_REVIEW
-  STRIPE_WEBHOOK_SECRET_REVIEW: $STRIPE_WEBHOOK_SECRET_REVIEW
   PRELOOP_TEST_PASSWORD: $PRELOOP_TEST_PASSWORD
   PRELOOP_TEST_USERNAME: $PRELOOP_TEST_USERNAME
   PRELOOP_TEST_EMAIL: $PRELOOP_TEST_EMAIL
@@ -24,19 +18,29 @@ cache:
   paths:
     - .pip-cache/
 
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
 stages:
   - build
+  - test
   - deploy
-  - qa
+  - integration
   - cleanup
 
-build:
+# =============================================================================
+# BUILD STAGE
+# =============================================================================
+
+build:backend:
   stage: build
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
-  variables:
-    SENTRY_DSN:
   script:
     - mkdir -p /kaniko/.docker
     - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64 -w 0)\"}}}" > /kaniko/.docker/config.json
@@ -45,16 +49,42 @@ build:
       --dockerfile $CI_PROJECT_DIR/Dockerfile
       --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
       --destination $CI_REGISTRY_IMAGE:latest
-      --registry-mirror registry.spacecode.ai
-      --registry-mirror $CI_REGISTRY
       --cache=true
       --cache-repo $CI_REGISTRY_IMAGE/cache
       --cache-ttl 168h
       --build-arg GITLAB_TOKEN=$GITLAB_TOKEN
 
+build:frontend:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64 -w 0)\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR/frontend
+      --dockerfile $CI_PROJECT_DIR/frontend/Dockerfile
+      --build-arg BRAND=preloop
+      --destination $CI_REGISTRY_IMAGE_FRONTEND:$CI_COMMIT_SHA
+      --destination $CI_REGISTRY_IMAGE_FRONTEND:latest
+      --cache=true
+      --cache-repo $CI_REGISTRY_IMAGE_FRONTEND/cache
+      --cache-ttl 168h
+  rules:
+    - changes:
+        - frontend/**/*
+      when: always
+    - when: always  # Always build on first run, cache handles efficiency
+
+# =============================================================================
+# TEST STAGE - Unit Tests & Static Analysis
+# =============================================================================
+
 pre-commit:
-  stage: qa
-  needs: [build]
+  stage: test
+  needs:
+    - build:backend
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
     - apt-get update && apt-get install -y git
@@ -67,9 +97,34 @@ pre-commit:
     - pre-commit run --all-files --show-diff
     - ruff check
 
+frontend:format-check:
+  stage: test
+  needs: []
+  image: node:22-alpine
+  before_script:
+    - cd frontend && npm install
+  script:
+    - npm run format:check
+  rules:
+    - changes:
+        - frontend/**/*
+
+frontend:unit-tests:
+  stage: test
+  needs: []
+  image: mcr.microsoft.com/playwright:v1.56.1-noble
+  before_script:
+    - cd frontend && npm install
+  script:
+    - npm run test
+  rules:
+    - changes:
+        - frontend/**/*
+
 .test:unit:template:
-  stage: qa
-  needs: [build]
+  stage: test
+  needs:
+    - build:backend
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   services:
     - name: pgvector/pgvector:pg13
@@ -90,7 +145,7 @@ pre-commit:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
     - export COVERAGE_FILE=".coverage.${CI_JOB_NAME}"
-    - pytest -v --cov preloop-models --cov=preloop-sync --cov-report= --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
+    - pytest -v --cov --cov-report= --cov-context=test --junitxml="report-${CI_JOB_NAME}.xml" $TEST_PATHS
   artifacts:
     paths:
       - ".coverage.*"
@@ -127,11 +182,6 @@ test:unit:preloop-endpoints-auth:
   variables:
     TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_auth.py"
 
-test:unit:preloop-endpoints-billing:
-  extends: .test:unit:template
-  variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_billing.py"
-
 test:unit:preloop-endpoints-comments:
   extends: .test:unit:template
   variables:
@@ -141,11 +191,6 @@ test:unit:preloop-endpoints-embedding:
   extends: .test:unit:template
   variables:
     TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_embedding.py"
-
-test:unit:preloop-endpoints-features:
-  extends: .test:unit:template
-  variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_features.py"
 
 test:unit:preloop-endpoints-flows:
   extends: .test:unit:template
@@ -217,40 +262,22 @@ test:unit:preloop-endpoints-mcp-servers:
   variables:
     TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_mcp_servers.py"
 
-test:unit:preloop-endpoints-invitations:
-  extends: .test:unit:template
-  variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_invitations.py"
-
-test:unit:preloop-endpoints-teams:
-  extends: .test:unit:template
-  variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_teams.py"
-
-test:unit:preloop-endpoints-users:
-  extends: .test:unit:template
-  variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_users.py"
-
 test:unit:preloop-endpoints-tools:
   extends: .test:unit:template
   variables:
     TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_tools.py"
 
-test:unit:preloop-endpoints-issue-duplicate-stats:
-  extends: .test:unit:template
-  variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_duplicate_stats.py"
+# test:unit:preloop-endpoints-issue-duplicate-stats:
+#   NOTE: This test was moved to plugins/analytics/tests/test_issue_duplicate_stats.py
+#   and is now run as part of the plugin tests
+#   extends: .test:unit:template
+#   variables:
+#     TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_duplicate_stats.py"
 
 # test:unit:preloop-endpoints-websockets:
 #   extends: .test:unit:template
 #   variables:
 #     TEST_PATHS: "tests/endpoints/test_websockets.py"
-
-test:unit:preloop-plugins:
-  extends: .test:unit:template
-  variables:
-    TEST_PATHS: "backend/preloop-ai/tests/plugins"
 
 test:unit:preloop-agents:
   extends: .test:unit:template
@@ -268,7 +295,7 @@ test:unit:preloop-scripts:
     TEST_PATHS: "backend/preloop-ai/tests/scripts"
 
 test:coverage:
-  stage: qa
+  stage: test
   needs:
     - test:unit:preloop-models
     # - test:unit:mcp
@@ -276,10 +303,8 @@ test:coverage:
     - test:unit:preloop-other
     - test:unit:preloop-endpoints-ai-models
     - test:unit:preloop-endpoints-auth
-    - test:unit:preloop-endpoints-billing
     - test:unit:preloop-endpoints-comments
     - test:unit:preloop-endpoints-embedding
-    - test:unit:preloop-endpoints-features
     - test:unit:preloop-endpoints-flows
     - test:unit:preloop-endpoints-health
     # - test:unit:preloop-endpoints-issue-compliance
@@ -294,13 +319,9 @@ test:coverage:
     - test:unit:preloop-endpoints-webhooks
     - test:unit:preloop-endpoints-mcp
     - test:unit:preloop-endpoints-mcp-servers
-    - test:unit:preloop-endpoints-invitations
-    - test:unit:preloop-endpoints-teams
-    - test:unit:preloop-endpoints-users
     - test:unit:preloop-endpoints-tools
-    - test:unit:preloop-endpoints-issue-duplicate-stats
+    # - test:unit:preloop-endpoints-issue-duplicate-stats
     # - test:unit:preloop-endpoints-websockets
-    - test:unit:preloop-plugins
     - test:unit:preloop-agents
     - test:unit:preloop-api
     - test:unit:preloop-scripts
@@ -347,7 +368,32 @@ test:coverage:
       print(f'Skipped: {total_skipped}')
       print('==============================================')
       "
+    - echo "Checking coverage files before combine..."
+    - ls -lh .coverage.* || echo "No coverage files found"
+    - |
+      python -c "
+      import sqlite3
+      import sys
+      print('Checking first coverage file...')
+      try:
+          conn = sqlite3.connect('.coverage.test:unit:preloop-agents')
+          cursor = conn.cursor()
+          cursor.execute('SELECT count(*) FROM file')
+          file_count = cursor.fetchone()[0]
+          print(f'Files tracked in coverage: {file_count}')
+          if file_count > 0:
+              cursor.execute('SELECT path FROM file LIMIT 5')
+              print('Sample files:', cursor.fetchall())
+          cursor.execute('SELECT count(*) FROM line_bits')
+          line_count = cursor.fetchone()[0]
+          print(f'Line entries: {line_count}')
+          conn.close()
+      except Exception as e:
+          print(f'Error reading coverage file: {e}')
+          sys.exit(0)
+      "
     - coverage combine
+    - echo "After combine, checking combined coverage..."
     - coverage report --fail-under=60
     - coverage xml -o coverage.xml
 
@@ -357,27 +403,29 @@ test:coverage:
         coverage_format: cobertura
         path: coverage.xml
 
+# =============================================================================
+# DEPLOY STAGE - Test Environments for Integration Testing
+# =============================================================================
+
 .deploy:template:
   stage: deploy
   image: dtzar/helm-kubectl:3.13.2
   when: manual
   environment:
     action: start
-  only:
-    - branches
   variables:
     DATABASE_NAME: ""
     SEED_ENABLED: "false"
     ENV_NAME: ""
   script:
-    - export SPACELIT_COMMIT_SHA=$(cd SpaceLit && git rev-parse HEAD)
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
-    - helm dependency update ./helm/preloop
-    - helm dependency build ./helm/preloop
-    - helm upgrade --install ${ENV_NAME} ./helm/preloop
+    - helm dependency update ./helm/preloop-ai
+    - helm dependency build ./helm/preloop-ai
+    - helm upgrade --install ${ENV_NAME} ./helm/preloop-ai
       --namespace ${NAMESPACE}
       --set image.tag=${CI_COMMIT_SHA}
-      --set spacelit.tag=${SPACELIT_COMMIT_SHA}
+      --set spacelit.tag=${CI_COMMIT_SHA}
+      --set spacelit.repository=${CI_REGISTRY_IMAGE_FRONTEND}
       --set config.openai.apiKey=${OPENAI_API_KEY}
       --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
       --set config.smtp.host=${SMTP_HOST}
@@ -386,12 +434,9 @@ test:coverage:
       --set config.smtp.password=${SMTP_PASSWORD}
       --set config.smtp.from=${SMTP_FROM}
       --set config.smtp.fromName=${SMTP_FROM_NAME}
-      --set sentry.enabled=true
-      --set sentry.dsn=${SENTRY_DSN}
+      --set sentry.enabled=false
       --set profiling.enabled=false
-      --set stripe.enabled=true
-      --set stripe.secretKey=${STRIPE_SECRET_KEY}
-      --set stripe.webhookSecret=${STRIPE_WEBHOOK_SECRET}
+      --set stripe.enabled=false
       --set worker.pools[0].name=polling
       --set worker.pools[0].replicaCount=1
       --set worker.pools[0].tasks=poll_tracker
@@ -413,10 +458,10 @@ test:coverage:
       --set ingress.hosts[0].paths[0].path=/
       --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
       --set ingress.tls[0].hosts[0]=${TARGET_DOMAIN}
-      --set ingress.tls[0].hosts[1]=www.${TARGET_DOMAIN}
       --set ingress.tls[0].secretName=preloop-${ENV_NAME}-tls
       --set environment.preloopUrl=https://${TARGET_DOMAIN}
       --set database.cnpg.name=${DATABASE_NAME}
+      --set imagePullSecrets[0].name=registry-secret
 
     - echo "Helm deployment finished."
     - echo "Checking deployed environment..."
@@ -426,178 +471,127 @@ test:coverage:
       done
     - if [ $? -eq 0 ]; then echo "Deployed environment is ready."; else echo "Deployed environment is not ready."; fi
 
-test:
+deploy:test:
   extends: .deploy:template
-  when: always
+  needs:
+    - build:backend
+    - build:frontend
+  when: on_success
   stage: deploy
   variables:
-    NAMESPACE: preloop-test
+    NAMESPACE: preloop-oss-test
     SEED_ENABLED: "true"
-    ENV_NAME: "$CI_COMMIT_REF_NAME"
-    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.test.preloop.ai"
-    STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_TEST
-    STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_TEST
+    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
+    TARGET_DOMAIN: "oss-$CI_COMMIT_REF_NAME.test.preloop.ai"
   environment:
-    name: test/$CI_COMMIT_REF_NAME
-    url: https://$CI_COMMIT_REF_NAME.test.preloop.ai
+    name: oss-test/$CI_COMMIT_REF_NAME
+    url: https://oss-$CI_COMMIT_REF_NAME.test.preloop.ai
     on_stop: stop-test-env
-    auto_stop_in: 4 hours
+    auto_stop_in: 2 hours
 
-review:
+deploy:review:
   extends: .deploy:template
+  needs:
+    - build:backend
+    - build:frontend
   environment:
-    name: review/$CI_COMMIT_REF_NAME
-    url: https://$CI_COMMIT_REF_NAME.review.preloop.ai
+    name: oss-review/$CI_COMMIT_REF_NAME
+    url: https://oss-$CI_COMMIT_REF_NAME.review.preloop.ai
     on_stop: stop-review-env
   variables:
     NAMESPACE: preloop-review
-    ENV_NAME: "$CI_COMMIT_REF_NAME"
+    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
     SEED_ENABLED: "true"
-    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.review.preloop.ai"
-    STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_REVIEW
-    STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_REVIEW
-  only:
-    - branches
+    TARGET_DOMAIN: "oss-$CI_COMMIT_REF_NAME.review.preloop.ai"
 
-
-staging:
-  environment:
-    name: staging
-    url: https://staging.preloop.ai
-  extends:
-    - .deploy:template
-  variables:
-    ENV_NAME: "preloop"
-    SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
-    NAMESPACE: preloop-staging
-    STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_STAGING
-    STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_STAGING
-    DATABASE_NAME: preloop-db
-    SEED_ENABLED: false
-    TARGET_DOMAIN: $STAGING_DOMAIN
-
-prod:
-  extends: .deploy:template
-  environment:
-    name: production
-    url: https://preloop.ai
-  when: manual
-  variables:
-    ENV_NAME: "preloop"
-    SENTRY_DSN: "https://8dc458f94e034fe891dc480fc4eeefd3@glitch.ina.sh/1"
-    NAMESPACE: preloop-prod
-    STRIPE_SECRET_KEY: $STRIPE_SECRET_KEY_PROD
-    STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET_PROD
-    DATABASE_NAME: preloop-db
-    SEED_ENABLED: false
-    TARGET_DOMAIN: $PROD_DOMAIN
-  before_script:
-    - set -e
-    - export POD_BACKUP_PATH="/run/tmp/db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
-    - export LOCAL_BACKUP_FILENAME="db_backup_$(date +%Y%m%d_%H%M%S).sql" # Changed extension
-    - echo "Starting database backup inside pod $DB_POD_NAME to $POD_BACKUP_PATH..."
-    - kubectl exec -n preloop-prod preloop-db-1 -- bash -c "pg_dump -U postgres -d preloop -F c -b -v -f $POD_BACKUP_PATH" # Removed --xz
-    - echo "Backup created inside pod. Copying to runner..."
-    - kubectl cp -n preloop-prod preloop-db-1:$POD_BACKUP_PATH "$LOCAL_BACKUP_FILENAME"
-    - echo "Compressing backup file on runner..."
-    - apk add --no-cache xz # Ensure xz is available
-    - xz "$LOCAL_BACKUP_FILENAME" # Compress the file locally
-    - export LOCAL_COMPRESSED_FILENAME="$LOCAL_BACKUP_FILENAME.xz" # Define compressed filename variable
-    - echo "Cleaning up backup file inside pod..."
-    - kubectl exec -n preloop-prod preloop-db-1 -- rm "$POD_BACKUP_PATH"
-    - if [ -n "$S3_BUCKET" ] && [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_DEFAULT_REGION" ]; then
-        apk add --no-cache aws-cli;
-        echo "Uploading backup to S3 bucket $S3_BUCKET...";
-        aws s3 cp "$LOCAL_COMPRESSED_FILENAME" "s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME";
-        echo "Backup successfully uploaded to s3://$S3_BUCKET/db/$LOCAL_COMPRESSED_FILENAME";
-      else
-        echo "S3 credentials not fully configured (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION). Skipping S3 upload.";
-      fi
-  artifacts:
-    paths:
-      - "db_backup_*.sql.xz"
-    when: on_success
-    expire_in: 70 days
+# =============================================================================
+# INTEGRATION STAGE - End-to-End Tests on Deployed Environment
+# =============================================================================
 
 .test:integration:template:
-  stage: qa
-  needs: [test]
+  stage: integration
+  needs:
+    - deploy:test
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   variables:
-    PRELOOP_TEST_URL: "https://$CI_COMMIT_REF_NAME.test.preloop.ai"
+    PRELOOP_TEST_URL: "https://oss-$CI_COMMIT_REF_NAME.test.preloop.ai"
   before_script:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
     - playwright install
+    - cd backend/preloop-ai
 
 test:integration:ui:
   extends: .test:integration:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_ui.py
+  artifacts:
+    when: on_failure
+    paths:
+      - backend/preloop-ai/tests/integration/screenshots/
+    expire_in: 7 days
 
-.test:integration:mcp:template:
+.test:integration:api:template:
   extends: .test:integration:template
   image: python:3.12-alpine
   before_script:
     - pip install pytest httpx dotenv mcp
-    # - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
-    # - source ~/.bashrc
-    # - export NVM_DIR="$HOME/.nvm"
-    # - source "$NVM_DIR/nvm.sh"
-    # - nvm install node
-    # - npm install -g @anthropic-ai/claude-code
+    - cd backend/preloop-ai
 
 test:integration:api:github:
-  extends: .test:integration:mcp:template
+  extends: .test:integration:api:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_github.py -v -s
 
 test:integration:api:gitlab:
-  extends: .test:integration:mcp:template
+  extends: .test:integration:api:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_gitlab.py -v -s
 
 test:integration:api:jira:
-  extends: .test:integration:mcp:template
+  extends: .test:integration:api:template
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_jira.py -v -s
 
+# =============================================================================
+# CLEANUP STAGE
+# =============================================================================
+
 .stop-env:template:
   stage: cleanup
-  needs: [
-    "test:integration:ui",
-    "test:integration:api:github",
-    "test:integration:api:gitlab",
-    "test:integration:api:jira"
-  ]
+  needs:
+    - test:integration:ui
+    - test:integration:api:github
+    - test:integration:api:gitlab
+    - test:integration:api:jira
   image: dtzar/helm-kubectl:3.13.2
-  when: manual
+  when: on_success
   allow_failure: true
   environment:
     action: stop
-  only:
-    - branches
   script:
-    - helm delete $CI_COMMIT_REF_NAME --namespace $NAMESPACE
-    - kubectl delete job --namespace $NAMESPACE $CI_COMMIT_REF_NAME-preloop-migration-job $CI_COMMIT_REF_NAME-preloop-init-db-job $CI_COMMIT_REF_NAME-preloop-webhook-cleanup-job || true
+    - helm delete ${ENV_NAME} --namespace $NAMESPACE || true
+    - kubectl delete job --namespace $NAMESPACE ${ENV_NAME}-preloop-migration-job ${ENV_NAME}-preloop-init-db-job ${ENV_NAME}-preloop-webhook-cleanup-job || true
 
 stop-test-env:
   extends: .stop-env:template
-  when: on_success
   variables:
-    NAMESPACE: "preloop-test"
+    NAMESPACE: "preloop-oss-test"
+    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
   environment:
-    name: test/$CI_COMMIT_REF_NAME
+    name: oss-test/$CI_COMMIT_REF_NAME
 
 stop-review-env:
   extends: .stop-env:template
+  needs: []
   when: manual
   variables:
     NAMESPACE: "preloop-review"
+    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
   environment:
-    name: review/$CI_COMMIT_REF_NAME
+    name: oss-review/$CI_COMMIT_REF_NAME
 
 smoke:
-  stage: qa
+  stage: integration
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   script:
     - pip install -e ".[dev]"
@@ -605,75 +599,3 @@ smoke:
     - pytest tests/smoke
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
-
-# Example MCP Server Jobs
-build-example-mcp-server:
-  stage: build
-  image:
-    name: gcr.io/kaniko-project/executor:debug
-    entrypoint: [""]
-  script:
-    - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD} | base64 -w 0)\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor
-      --context $CI_PROJECT_DIR/scripts/examples
-      --dockerfile $CI_PROJECT_DIR/scripts/examples/Dockerfile
-      --destination $CI_REGISTRY_IMAGE/example-mcp-server:$CI_COMMIT_SHA
-      --destination $CI_REGISTRY_IMAGE/example-mcp-server:latest
-      --cache=true
-      --cache-repo $CI_REGISTRY_IMAGE/cache
-  when: manual
-  only:
-    - branches
-
-deploy-example-mcp-server:
-  stage: deploy
-  needs: [build-example-mcp-server]
-  image: dtzar/helm-kubectl:3.13.2
-  when: manual
-  environment:
-    name: example-mcp/$CI_COMMIT_REF_NAME
-    url: https://$CI_COMMIT_REF_NAME.example-mcp.preloop.ai
-    on_stop: stop-example-mcp-server
-    auto_stop_in: 4 hours
-  variables:
-    NAMESPACE: example-mcp-servers
-    ENV_NAME: "$CI_COMMIT_REF_NAME"
-    TARGET_DOMAIN: "$CI_COMMIT_REF_NAME.example-mcp.preloop.ai"
-  script:
-    - kubectl create namespace ${NAMESPACE} || true
-    - helm upgrade --install ${ENV_NAME}-example-mcp ./scripts/examples/helm/example-mcp-server
-      --namespace ${NAMESPACE}
-      --set image.tag=${CI_COMMIT_SHA}
-      --set image.repository=${CI_REGISTRY_IMAGE}/example-mcp-server
-      --set ingress.hosts[0].host=${TARGET_DOMAIN}
-      --set ingress.hosts[0].paths[0].path=/
-      --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific
-      --set ingress.tls[0].hosts[0]=${TARGET_DOMAIN}
-      --set ingress.tls[0].secretName=${ENV_NAME}-example-mcp-tls
-      --set env[0].name=BEARER_TOKEN
-      --set env[0].value=${EXAMPLE_MCP_BEARER_TOKEN:-test-token-12345}
-    - echo "Example MCP Server deployed to https://${TARGET_DOMAIN}"
-    - echo "Waiting for deployment to be ready..."
-    - for i in $(seq 1 12); do
-        curl -f https://${TARGET_DOMAIN}/health && break;
-        sleep 5;
-      done
-  only:
-    - branches
-
-stop-example-mcp-server:
-  stage: cleanup
-  needs: [deploy-example-mcp-server]
-  image: dtzar/helm-kubectl:3.13.2
-  when: manual
-  allow_failure: true
-  environment:
-    name: example-mcp/$CI_COMMIT_REF_NAME
-    action: stop
-  variables:
-    NAMESPACE: example-mcp-servers
-  script:
-    - helm delete $CI_COMMIT_REF_NAME-example-mcp --namespace $NAMESPACE || true
-  only:
-    - branches

@@ -156,6 +156,18 @@ export class ConsoleShell extends LitElement {
     }
   }
 
+  /**
+   * Check if any analytics features are enabled (enterprise plugin).
+   * Used to gate the Issues menu in OSS builds.
+   */
+  private _hasAnyAnalyticsFeature(): boolean {
+    return !!(
+      this.features.issue_compliance ||
+      this.features.issue_duplicates ||
+      this.features.issue_dependencies
+    );
+  }
+
   disconnectedCallback() {
     window.removeEventListener('show-upgrade-modal', () => {
       (this._upgradeModal as any).show();
@@ -202,14 +214,20 @@ export class ConsoleShell extends LitElement {
                 Flows
               </sl-menu-item>
             </a>
+            <a href="/console/approvals">
+              <sl-menu-item>
+                <sl-icon name="shield-check" slot="prefix"></sl-icon>
+                Approvals
+              </sl-menu-item>
+            </a>
             <a href="/console/trackers">
               <sl-menu-item>
                 <sl-icon src="/images/git.svg" slot="prefix"></sl-icon>
                 Trackers
               </sl-menu-item>
             </a>
-            ${this.hasTrackers
-        ? html`<sl-details>
+            ${this.hasTrackers && this._hasAnyAnalyticsFeature()
+              ? html`<sl-details>
                   <span slot="summary">
                     <sl-icon
                       name="kanban"
@@ -218,18 +236,24 @@ export class ConsoleShell extends LitElement {
                     Issues
                   </span>
                   <sl-menu>
-                    <a href="/console/issues">
-                      <sl-menu-item>Similarity</sl-menu-item>
-                    </a>
-                    <a href="/console/issues/compliance">
-                      <sl-menu-item>Compliance</sl-menu-item>
-                    </a>
-                    <a href="/console/issues/dependencies">
-                      <sl-menu-item>Dependencies</sl-menu-item>
-                    </a>
+                    ${this.features.issue_duplicates
+                      ? html`<a href="/console/issues">
+                          <sl-menu-item>Similarity</sl-menu-item>
+                        </a>`
+                      : ''}
+                    ${this.features.issue_compliance
+                      ? html`<a href="/console/issues/compliance">
+                          <sl-menu-item>Compliance</sl-menu-item>
+                        </a>`
+                      : ''}
+                    ${this.features.issue_dependencies
+                      ? html`<a href="/console/issues/dependencies">
+                          <sl-menu-item>Dependencies</sl-menu-item>
+                        </a>`
+                      : ''}
                   </sl-menu>
                 </sl-details>`
-        : ''}
+              : ''}
 
             <sl-details>
               <span slot="summary">
@@ -238,23 +262,23 @@ export class ConsoleShell extends LitElement {
               </span>
               <sl-menu>
                 ${this.features.user_management
-        ? html`<a href="/console/settings/account">
+                  ? html`<a href="/console/settings/account">
                         <sl-menu-item>Account</sl-menu-item>
                       </a>
                       <a href="/console/settings/users">
                         <sl-menu-item>Users</sl-menu-item>
                       </a>`
-        : ''}
+                  : ''}
                 ${this.features.team_management
-        ? html`<a href="/console/settings/teams">
+                  ? html`<a href="/console/settings/teams">
                       <sl-menu-item>Teams</sl-menu-item>
                     </a>`
-        : ''}
+                  : ''}
                 ${this.features.user_management || this.features.team_management
-        ? html`<a href="/console/settings/invitations">
+                  ? html`<a href="/console/settings/invitations">
                       <sl-menu-item>Invitations</sl-menu-item>
                     </a>`
-        : ''}
+                  : ''}
                 <a href="/console/settings/api-keys">
                   <sl-menu-item>API Keys</sl-menu-item>
                 </a>

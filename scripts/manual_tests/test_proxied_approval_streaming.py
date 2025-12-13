@@ -166,6 +166,4 @@ if __name__ == "__main__":
     if os.getenv("PRELOOP_TOKEN"):
         asyncio.run(main())
     else:
-        print(
-            "⚠️  PRELOOP_TOKEN not set. Please follow the setup instructions above."
-        )
+        print("⚠️  PRELOOP_TOKEN not set. Please follow the setup instructions above.")

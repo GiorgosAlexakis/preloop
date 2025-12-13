@@ -440,19 +440,19 @@ export class IssuesView extends LitElement {
       <div class="active-filters">
         <span>Filtered by:</span>
         ${selectedProjects.map(
-      (project) => html`
+          (project) => html`
             <sl-tag
               size="medium"
               removable
               @sl-remove=${() =>
-          this._removeProjectFilter(project.id.toString())}
+                this._removeProjectFilter(project.id.toString())}
             >
               ${project.name}
             </sl-tag>
           `
-    )}
+        )}
         ${this._selectedStatus !== 'opened'
-        ? html`
+          ? html`
               <sl-tag
                 size="medium"
                 removable
@@ -461,20 +461,20 @@ export class IssuesView extends LitElement {
                 ${this._selectedStatus === 'closed' ? 'Closed' : 'All'}
               </sl-tag>
             `
-        : ''}
+          : ''}
         ${this._selectedResolutionStatus !== 'all'
-        ? html`
+          ? html`
               <sl-tag
                 size="medium"
                 removable
                 @sl-remove=${() => this._clearResolutionFilter()}
               >
                 ${this._selectedResolutionStatus === 'resolved'
-            ? 'Resolved'
-            : 'Unresolved'}
+                  ? 'Resolved'
+                  : 'Unresolved'}
               </sl-tag>
             `
-        : ''}
+          : ''}
         <sl-button size="small" pill @click=${this._clearAllFilters}
           >Clear all</sl-button
         >
@@ -536,14 +536,14 @@ export class IssuesView extends LitElement {
             </sl-alert>
 
             ${when(
-      this._initialLoadComplete && this._hasProjects,
-      () => html`
+              this._initialLoadComplete && this._hasProjects,
+              () => html`
                 <sl-card class="embedding-card">
                   <div slot="header" class="chart-header">
                     Similar Issues per Project
                     <sl-tooltip
                       content="Showing issues with a similarity score of ${this
-          ._similarityThresholdCharts * 100}% or higher."
+                        ._similarityThresholdCharts * 100}% or higher."
                     >
                       <sl-icon name="question-circle"></sl-icon>
                     </sl-tooltip>
@@ -559,10 +559,10 @@ export class IssuesView extends LitElement {
                   ></duplicate-stats-chart>
                 </sl-card>
               `
-    )}
+            )}
             ${when(
-      this._resolutionSummary,
-      () => html`
+              this._resolutionSummary,
+              () => html`
                 <sl-alert
                   variant="success"
                   open
@@ -573,23 +573,23 @@ export class IssuesView extends LitElement {
                   ${this._resolutionSummary}
                 </sl-alert>
               `
-    )}
+            )}
             ${this._renderActiveFilters()}
             ${when(
-      this._loading,
-      () =>
-        html`<div class="loading-overlay">
+              this._loading,
+              () =>
+                html`<div class="loading-overlay">
                   <sl-spinner></sl-spinner>
                   <span>Loading issues...</span>
                 </div>`
-    )}
+            )}
             ${when(
-      this._error,
-      () => html`<div class="error">Error: ${this._error}</div>`
-    )}
+              this._error,
+              () => html`<div class="error">Error: ${this._error}</div>`
+            )}
             ${when(!this._loading && !this._error, () =>
-      this._duplicates.length > 0
-        ? html`
+              this._duplicates.length > 0
+                ? html`
                     <sl-card class="table-card">
                       <table class="styled-table">
                         <thead>
@@ -603,22 +603,22 @@ export class IssuesView extends LitElement {
                         </thead>
                         <tbody>
                           ${this._duplicates.map((pair) => {
-          const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
-          const verdict = this._aiVerdicts[pairKey];
-          const isFaint = this._loadingVerdicts[pairKey];
-          const isExpanded = this._expandedRowKey === pairKey;
+                            const pairKey = `${pair.issue1.id}-${pair.issue2.id}`;
+                            const verdict = this._aiVerdicts[pairKey];
+                            const isFaint = this._loadingVerdicts[pairKey];
+                            const isExpanded = this._expandedRowKey === pairKey;
 
-          return html`
+                            return html`
                               <tr
                                 class="clickable-row ${isFaint
-              ? 'faint-row'
-              : ''} ${isExpanded ? 'row-expanded' : ''}"
+                                  ? 'faint-row'
+                                  : ''} ${isExpanded ? 'row-expanded' : ''}"
                                 @click=${() => this._toggleRow(pairKey)}
                               >
                                 <td>
                                   <a
                                     href="${pair.issue1.meta_data?.url ||
-            pair.issue1.url}"
+                                    pair.issue1.url}"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     class="issue-id-link"
@@ -630,8 +630,8 @@ export class IssuesView extends LitElement {
                                     <sl-badge
                                       pill
                                       variant=${getStatusVariant(
-              pair.issue1.status
-            )}
+                                        pair.issue1.status
+                                      )}
                                       >${pair.issue1.status}</sl-badge
                                     >
                                   </a>
@@ -642,7 +642,7 @@ export class IssuesView extends LitElement {
                                 <td>
                                   <a
                                     href="${pair.issue2.meta_data?.url ||
-            pair.issue2.url}"
+                                    pair.issue2.url}"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     class="issue-id-link"
@@ -654,8 +654,8 @@ export class IssuesView extends LitElement {
                                     <sl-badge
                                       pill
                                       variant=${getStatusVariant(
-              pair.issue2.status
-            )}
+                                        pair.issue2.status
+                                      )}
                                       >${pair.issue2.status}</sl-badge
                                     >
                                   </a>
@@ -669,28 +669,28 @@ export class IssuesView extends LitElement {
                                 <td
                                   class="text-right"
                                   id="verdict-${pair.issue1.id}-${pair.issue2
-              .id}"
+                                    .id}"
                                 >
                                   ${pair.similarity >= 0.999
-              ? html`<sl-badge
+                                    ? html`<sl-badge
                                         variant="warning"
                                         style="--sl-color-warning-text: var(--sl-color-orange-50); --sl-color-warning-600: var(--sl-color-orange-700);"
                                         >Identical</sl-badge
                                       >`
-              : renderVerdict(verdict)}
+                                    : renderVerdict(verdict)}
                                 </td>
                                 <td>
                                   <div class="actions-container">
                                     ${when(
-                !verdict?.resolution,
-                () => html`
+                                      !verdict?.resolution,
+                                      () => html`
                                         <sl-button
                                           size="small"
                                           variant="primary"
                                           @click=${(e: Event) => {
-                    e.stopPropagation();
-                    this._openResolveModal(pair);
-                  }}
+                                            e.stopPropagation();
+                                            this._openResolveModal(pair);
+                                          }}
                                           >Resolve</sl-button
                                         >
                                         <sl-tooltip
@@ -700,28 +700,28 @@ export class IssuesView extends LitElement {
                                             name="x-circle"
                                             label="Dismiss"
                                             @click=${(e: Event) => {
-                    e.stopPropagation();
-                    this._handleDismiss(pair);
-                  }}
+                                              e.stopPropagation();
+                                              this._handleDismiss(pair);
+                                            }}
                                           ></sl-icon-button>
                                         </sl-tooltip>
                                       `
-              )}
+                                    )}
                                   </div>
                                 </td>
                               </tr>
                               ${when(
-                isExpanded,
-                () => html`
+                                isExpanded,
+                                () => html`
                                   <tr class="inline-detail-row">
                                     <td colspan="5">
                                       ${this.renderDetailRow(pair)}
                                     </td>
                                   </tr>
                                 `
-              )}
+                              )}
                             `;
-        })}
+                          })}
                         </tbody>
                       </table>
                     </sl-card>
@@ -733,28 +733,28 @@ export class IssuesView extends LitElement {
                       @next-page=${this._goToNextPage}
                     ></pagination-controls>
                   `
-        : html`
+                : html`
                     <sl-alert variant="primary" open>
                       <sl-icon slot="icon" name="info-circle"></sl-icon>
                       ${this._hasProjects
-            ? 'No duplicate issues found for the current filters.'
-            : unsafeHTML(
-              'No projects found. Did you <a href="/console/trackers">add a tracker</a>?'
-            )}
+                        ? 'No duplicate issues found for the current filters.'
+                        : unsafeHTML(
+                            'No projects found. Did you <a href="/console/trackers">add a tracker</a>?'
+                          )}
                     </sl-alert>
                   `
-    )}
+            )}
           </div>
         </div>
         <div class="side-column">
           ${when(
-      this._expandedRowKey,
-      () => {
-        const expandedPair = this._duplicates.find(
-          (p) => `${p.issue1.id}-${p.issue2.id}` === this._expandedRowKey
-        );
-        return expandedPair
-          ? html`
+            this._expandedRowKey,
+            () => {
+              const expandedPair = this._duplicates.find(
+                (p) => `${p.issue1.id}-${p.issue2.id}` === this._expandedRowKey
+              );
+              return expandedPair
+                ? html`
                     <div class="side-column-detail">
                       <sl-card>
                         <div slot="header">Issue Pair Details</div>
@@ -762,9 +762,9 @@ export class IssuesView extends LitElement {
                       </sl-card>
                     </div>
                   `
-          : '';
-      },
-      () => html`
+                : '';
+            },
+            () => html`
               <div class="side-column-detail">
                 <sl-card class="full-width">
                   <div slot="header">Issue Pair Details</div>
@@ -775,7 +775,7 @@ export class IssuesView extends LitElement {
                 </sl-card>
               </div>
             `
-    )}
+          )}
         </div>
       </div>
       <project-filter-modal

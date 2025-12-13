@@ -1,40 +1,34 @@
-# Preloop AI
+# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 1.2em; margin-bottom: -.3em" /> Preloop AI - The MCP Governance Layer
 
-![Preloop Logo](assets/logo.webp)
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 ## Overview
 
-Preloop is an event-driven automation platform with built-in human-in-the-loop safety. AI agents respond to events across your tools automatically. When agents call sensitive operations, Preloop intercepts the request and routes it for human approval—no infrastructure changes required.
+Preloop is an open-source, event-driven automation platform with built-in human-in-the-loop safety. AI agents respond to events across your tools automatically. When agents call sensitive operations, Preloop intercepts the request and routes it for human approval—no infrastructure changes required.
+
+> **Looking for Enterprise features?** Preloop Enterprise Edition adds RBAC, team-based approvals, advanced audit logging, and more. See [Enterprise Features](#enterprise-features) below.
 
 ## Key Features
 
+### Core Platform (Open Source)
+
 - **Event-Driven Automation**: AI agents respond to events across your tools automatically
-- **Human-in-the-Loop Safety**: When agents call sensitive operations, Preloop intercepts the request and routes it for human approval—no infrastructure changes required
-- **MCP Server**: Standards-based Model Context Protocol (MCP) server with dynamic tool filtering
+- **Human-in-the-Loop Safety**: Intercept sensitive operations and route for human approval
+- **MCP Server**: Standards-based Model Context Protocol (MCP) server
   - 6 built-in tools: get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance
   - JWT authentication with per-user tool visibility
   - StreamableHTTP transport for Claude Code and other MCP clients
-- **Advanced Tool Management**: Configure and manage tool access with granular control
-  - **Conditional Approval Policies**: Use CEL (Common Expression Language) to define conditional rules for tool execution
-  - **Multi-tier Approval System**: Open-core edition with basic approvals; proprietary edition with advanced policies, quorum, escalation, and team-based approvals
+- **Tool Management**: Configure and manage tool access
   - Support for external MCP servers and tool proxying
-  - Human-in-the-loop approval workflows for sensitive operations
-- **Mobile Push Notifications**: Stay informed of approval requests and system events
-  - **QR Code Registration**: Easy mobile device setup via Universal Links (iOS) and App Links (Android)
-  - Firebase Cloud Messaging (FCM) for Android
-  - Apple Push Notification Service (APNS) for iOS
-  - Email notifications with one-click approve/decline
-  - Deep linking support for seamless app-to-web transitions
-- **Multi-User Accounts**: Team-based collaboration with role-based access control (RBAC)
-  - User and team management
-  - Custom roles and permissions
-  - Invitation system with email verification
-- **Agentic Flows**: Event-driven workflows triggered by issue tracker events with real-time monitoring
-- **Issue Tracker Integration**: Continuous ingestion of issues, comments, projects, and organizations from Jira, GitHub, GitLab, and more
-- **Vector Search**: Intelligent similarity search across issue trackers and projects using embeddings
+  - Basic approval workflows with email notifications
+- **Agentic Flows**: Event-driven workflows triggered by issue tracker events
+- **Issue Tracker Integration**: Jira, GitHub, GitLab support with continuous sync
+- **Vector Search**: Intelligent similarity search using embeddings
 - **Duplicate Detection**: Automated detection of duplicate and overlapping issues
-- **Compliance Metrics**: Evaluate issue compliance and receive actionable improvement recommendations
-- **Web UI**: Comprehensive interface built with Lit, Vite, and Material Web Components
+- **Compliance Metrics**: Evaluate issue compliance and get improvement recommendations
+- **Web UI**: Modern interface built with Lit, Vite, and Shoelace Web Components
 
 ## Supported Issue Trackers
 
@@ -47,7 +41,7 @@ Preloop is an event-driven automation platform with built-in human-in-the-loop s
 
 Preloop AI is designed with a modular architecture:
 
-1.  **Preloop AI** (this repository): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
+1.  **Preloop AI** (`./backend/preloop-ai`): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
 2.  **Preloop Models** (`./backend/preloop-models`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
 3.  **Preloop Sync** (`./backend/preloop-sync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
 4.  **Preloop Console** (`./frontend`): A web application built using Lit, Vite, TypeScript, and Shoelace Web Components.
@@ -90,6 +84,46 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your settings
 ```
+
+## Configuration
+
+### Environment Variables
+
+Preloop AI is configured via environment variables. Copy `.env.example` to `.env` and customize as needed.
+
+#### Core Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost/preloop` | PostgreSQL connection string |
+| `SECRET_KEY` | (required) | Secret key for JWT tokens |
+| `ENVIRONMENT` | `development` | Environment (development, production) |
+| `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
+
+#### Feature Flags
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REGISTRATION_ENABLED` | `true` | Enable self-registration. Set to `false` to disable public signups and require admin invitation. |
+
+#### Disabling Self-Registration
+
+For private deployments where you want to control who can access the system:
+
+```bash
+# In your .env file or Docker environment
+REGISTRATION_ENABLED=false
+```
+
+When registration is disabled:
+- The "Sign Up" button is hidden from the UI
+- The `/register` page redirects to `/login`
+- **The `/api/v1/auth/register` API endpoint returns 403 Forbidden** - preventing direct API registration attempts
+- New users must be invited by an administrator
+
+**Security Note**: With `REGISTRATION_ENABLED=false`, the backend API enforces the restriction at the endpoint level. Any attempt to register via the API (including scripts or direct HTTP requests) will be rejected with a 403 status code.
+
+To invite users when registration is disabled, use the admin API or CLI (Enterprise Edition includes a full admin dashboard for user management).
 
 ### Docker Setup
 
@@ -292,40 +326,6 @@ Preloop AI provides a RESTful API with the following key endpoints:
 - `DELETE /api/v1/issues/{issue_id}` - Delete issue
 - `POST /api/v1/issues/{issue_id}/comments` - Add comment to issue
 
-
-### Admin Dashboard and API (not available in open source version)
-
-Preloop AI includes a comprehensive admin dashboard for superusers to monitor system activity, manage users, and track resource usage.
-
-**Admin Endpoints** (require superuser permissions):
-- `GET /api/v1/admin/activity/sessions` - Get active WebSocket sessions with real-time activity
-- `GET /api/v1/admin/accounts` - List all accounts with stats and filtering
-- `GET /api/v1/admin/accounts/{id}` - Get detailed account information
-- `GET /api/v1/admin/activity/stats` - Get system-wide activity statistics
-
-**Managing Superusers:**
-
-Use the provided management script to promote or demote superuser permissions:
-
-```bash
-# Promote a user to superuser
-python scripts/manage_superusers.py promote user@example.com
-
-# Demote a user from superuser
-python scripts/manage_superusers.py demote user@example.com
-
-# List all superusers
-python scripts/manage_superusers.py list
-```
-
-**Admin Features: (not available in open source version)**
-- Real-time session monitoring from in-memory session manager (no N+1 queries)
-  - **Note**: In multi-pod deployments, each pod maintains its own session registry. The `/admin/activity/sessions` endpoint only shows sessions connected to the current pod. For cross-pod monitoring, query the Event table or aggregate results from all pod endpoints.
-- User activity tracking and analytics
-- Account management with subscription status
-- Flow execution monitoring and debugging
-- Audit log viewing
-
 ### Unified WebSocket
 
 Preloop AI uses a unified WebSocket connection for real-time updates across the application:
@@ -406,92 +406,47 @@ If you are not using an MCP client and want to interact with the tool endpoints 
 
 ### Tool Approval Workflows
 
-Preloop AI provides sophisticated approval workflows for tool execution with conditional policies and multi-channel notifications. Control which operations require approval and define conditional rules based on tool arguments, user context, and more.
+Preloop AI provides approval workflows for tool execution. Control which operations require approval before execution.
 
 **Key Concepts:**
 - **Tool Configuration**: Enable/disable tools and assign approval policies
-- **Approval Policies** (Open-Core + Proprietary): Define approval requirements, approvers, timeouts, and notification channels
-- **Conditional Approval** (Proprietary): Use CEL expressions to require approval only when specific conditions are met
-- **Multi-Channel Notifications**: Email (open-core), mobile push, Slack, Mattermost, webhooks (proprietary)
-- **Team-Based Approvals** (Proprietary): Assign approval rights to teams and require quorum
-- **Escalation** (Proprietary): Automatically escalate to managers when approval times out
+- **Approval Policies**: Define approval requirements, approvers, timeouts, and notification channels
+- **Email Notifications**: Receive approval requests via email with one-click approve/decline
 
-**Example: Conditional approval for high-value operations**
+**Example: Create an Approval Policy**
 
-1. **Create an Approval Policy:**
-   ```bash
-   curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/approval-policies" \
-   -H "Authorization: Bearer YOUR_API_KEY" \
-   -H "Content-Type: application/json" \
-   -d '{
-     "name": "Critical Operations",
-     "description": "Require approval for critical issue operations",
-     "is_default": false,
-     "approver_user_ids": ["user-id-1", "user-id-2"],
-     "approver_team_ids": ["team-id-1"],
-     "approvals_required": 1,
-     "timeout_seconds": 600,
-     "notification_channels": ["email", "mobile_push", "slack"],
-     "channel_configs": {
-       "slack_webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
-     }
-   }'
-   ```
-
-2. **Configure tool with conditional approval:**
-   ```bash
-   curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/tool-configurations" \
-   -H "Authorization: Bearer YOUR_API_KEY" \
-   -H "Content-Type: application/json" \
-   -d '{
-     "tool_name": "update_issue",
-     "tool_source": "preloop_ai_builtin",
-     "is_enabled": true,
-     "approval_policy_id": "<policy_id_from_step_1>",
-     "conditions": [
-       {
-         "condition_type": "argument",
-         "condition_expression": "args.priority == \"critical\" || args.status == \"closed\"",
-         "is_enabled": true
-       }
-     ]
-   }'
-   ```
-
-   This configuration requires approval only when:
-   - Setting an issue's priority to "critical", OR
-   - Changing an issue's status to "closed"
-
-3. **Mobile Device Registration:**
-   - Users can register mobile devices via QR code from notification preferences
-   - QR codes use Universal Links (iOS) and App Links (Android) for seamless setup
-   - Mobile apps receive push notifications for approval requests
-   - One-tap approve/decline directly from notifications
-
-4. **When a tool call requires approval:**
-   - Tool arguments are evaluated against CEL conditions
-   - If conditions match, an approval request is created
-   - Notifications sent to configured channels (email, mobile push, Slack, etc.)
-   - Request waits for approval (up to timeout, with optional escalation)
-   - If approved, tool executes; if declined/timed out, error is returned
-
-**CEL Expression Examples:**
-```cel
-# Require approval for amounts over $1000
-args.amount > 1000
-
-# Require approval for production environments
-args.environment == "production" || args.environment == "prod"
-
-# Require approval for specific projects
-args.project_id in ["proj-123", "proj-456"]
-
-# Complex conditions
-(args.priority == "critical" && args.assignee == null) || args.delete_data == true
+```bash
+curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/approval-policies" \
+-H "Authorization: Bearer YOUR_API_KEY" \
+-H "Content-Type: application/json" \
+-d '{
+  "name": "Critical Operations",
+  "description": "Require approval for critical issue operations",
+  "is_default": false,
+  "approver_user_ids": ["user-id-1", "user-id-2"],
+  "approvals_required": 1,
+  "timeout_seconds": 600,
+  "notification_channels": ["email"]
+}'
 ```
 
-For detailed setup instructions, see:
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and approval flow
+**Configure a tool to require approval:**
+
+```bash
+curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/tool-configurations" \
+-H "Authorization: Bearer YOUR_API_KEY" \
+-H "Content-Type: application/json" \
+-d '{
+  "tool_name": "update_issue",
+  "tool_source": "preloop_ai_builtin",
+  "is_enabled": true,
+  "approval_policy_id": "<policy_id_from_above>"
+}'
+```
+
+> **Enterprise Features**: Preloop Enterprise Edition adds CEL-based conditional approvals, team-based approvals with quorum, escalation policies, and multi-channel notifications (Slack, Mattermost, mobile push). Contact sales@spacecode.ai for more information.
+
+For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Testing
 
@@ -533,6 +488,32 @@ The webhook endpoint tests (`tests/endpoints/test_webhooks.py`) validate:
 
 These tests use mocking to isolate the webhook handling logic from external dependencies.
 
+## Enterprise Features
+
+Preloop Enterprise Edition extends the open-source core with additional features for teams and organizations:
+
+| Feature | Open Source | Enterprise |
+|---------|:-----------:|:----------:|
+| MCP Server with 6 built-in tools | ✅ | ✅ |
+| Basic approval workflows | ✅ | ✅ |
+| Email notifications | ✅ | ✅ |
+| Issue tracker integration | ✅ | ✅ |
+| Vector search & duplicate detection | ✅ | ✅ |
+| Agentic flows | ✅ | ✅ |
+| Web UI | ✅ | ✅ |
+| **Role-Based Access Control (RBAC)** | ❌ | ✅ |
+| **Team management** | ❌ | ✅ |
+| **CEL conditional approval policies** | ❌ | ✅ |
+| **Team-based approvals with quorum** | ❌ | ✅ |
+| **Approval escalation** | ❌ | ✅ |
+| **Multi-channel notifications** (Slack, Mattermost, mobile push) | ❌ | ✅ |
+| **Admin dashboard** | ❌ | ✅ |
+| **Audit logging & impersonation tracking** | ❌ | ✅ |
+| **Billing & subscription management** | ❌ | ✅ |
+| **Priority support** | ❌ | ✅ |
+
+Contact sales@spacecode.ai for Enterprise Edition licensing.
+
 ## Contributing
 
 Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on how to get started.
@@ -545,6 +526,6 @@ Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING
 
 ## License
 
-The core of Preloop AI is open source software licensed under the [Apache License 2.0](LICENSE).
+Preloop AI is open source software licensed under the [Apache License 2.0](LICENSE).
 
-The proprietary plugins of Preloop AI are Copyright (c) 2025 Spacecode AI Inc. All rights reserved.
+Copyright (c) 2025 Spacecode AI Inc.

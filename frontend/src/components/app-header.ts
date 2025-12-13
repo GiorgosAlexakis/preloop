@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import { getAccountDetails, getFeatures } from '../api';
-import { getBrandConfig } from '../brand-config';
+import { getBrandConfig, isSaaS } from '../brand-config';
 
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
@@ -30,6 +30,9 @@ export class AppHeader extends LitElement {
 
   @state()
   private billingEnabled = false;
+
+  @state()
+  private registrationEnabled = true;
 
   static styles = css`
     :host {
@@ -116,9 +119,12 @@ export class AppHeader extends LitElement {
     try {
       const features = await getFeatures();
       this.billingEnabled = features.features['billing'] === true;
+      // Registration is enabled by default, unless explicitly disabled
+      this.registrationEnabled = features.features['registration'] !== false;
     } catch (error) {
       console.error('Failed to check billing feature:', error);
       this.billingEnabled = false;
+      this.registrationEnabled = true;
     }
   }
 
@@ -224,8 +230,18 @@ export class AppHeader extends LitElement {
                 </div>`}
           </div>
           <nav class="${this.isMenuOpen ? 'mobile-menu-open' : ''}">
-            <!-- <sl-button href="/docs" variant="text">Docs</sl-button> -->
-            <sl-button href="/pricing" variant="text">Pricing</sl-button>
+            <sl-button
+              href="https://docs.preloop.ai"
+              target="_blank"
+              variant="text"
+              >Docs</sl-button
+            >
+            ${isSaaS()
+              ? html`
+                  <sl-button href="/about" variant="text">About</sl-button>
+                  <sl-button href="/pricing" variant="text">Pricing</sl-button>
+                `
+              : ''}
             ${this.isAuthenticated && this.user
               ? html`
                   ${window.location.pathname.startsWith('/console')
@@ -234,9 +250,13 @@ export class AppHeader extends LitElement {
                 `
               : html`
                   <sl-button href="/login" variant="text">Sign in</sl-button>
-                  <sl-button variant="primary" @click=${this.handleSignup}
-                    >Sign Up</sl-button
-                  >
+                  ${this.registrationEnabled
+                    ? html`
+                        <sl-button variant="primary" @click=${this.handleSignup}
+                          >Sign Up</sl-button
+                        >
+                      `
+                    : ''}
                 `}
           </nav>
           <div class="mobile-menu-button">

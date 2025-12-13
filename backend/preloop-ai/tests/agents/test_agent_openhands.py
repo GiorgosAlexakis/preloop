@@ -37,7 +37,7 @@ class TestOpenHandsAgent:
 
         assert agent.agent_type == "openhands"
         assert agent.config == openhands_config
-        assert agent.image == "preloop-ai/openhands:latest-tmux"
+        assert agent.image == "spacebridge/openhands:latest-tmux"
         assert agent.use_kubernetes is False
 
     def test_init_custom_image(self, openhands_config):

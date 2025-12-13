@@ -418,7 +418,7 @@ export class DashboardView extends AuthedElement {
           new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
       );
       this.recentFlowExecutions = sortedExecutions.slice(0, 5);
-      this.failedFlowExecutions = sortedExecutions.filter(
+      this.failedFlowExecutions = this.recentFlowExecutions.filter(
         (exec) => exec.status === 'FAILED'
       );
 
@@ -794,7 +794,7 @@ export class DashboardView extends AuthedElement {
       return '';
     }
 
-    const hasMCPServers = this.mcpServers.length > 0 || this.tools.length > 0;
+    const hasMCPServers = this.mcpServers.length > 0;
     const hasFlows = this.hasFlows;
     const hasTrackersAndModels = this.trackers.length > 0 && this.hasAIModels;
 
@@ -833,11 +833,11 @@ export class DashboardView extends AuthedElement {
           <div class="step-item ${hasMCPServers ? 'completed' : ''}">
             <div class="step-icon">
               ${hasMCPServers
-        ? html`<sl-icon
+                ? html`<sl-icon
                     name="check-circle-fill"
                     style="color: var(--sl-color-success-600);"
                   ></sl-icon>`
-        : html`<sl-icon
+                : html`<sl-icon
                     name="1-circle"
                     style="color: var(--sl-color-primary-600);"
                   ></sl-icon>`}
@@ -852,7 +852,7 @@ export class DashboardView extends AuthedElement {
                 tools that need human oversight.
               </div>
               ${!hasMCPServers
-        ? html`<sl-button
+                ? html`<sl-button
                     size="small"
                     href="/console/tools"
                     class="step-action"
@@ -860,7 +860,7 @@ export class DashboardView extends AuthedElement {
                     <sl-icon slot="prefix" name="tools"></sl-icon>
                     Configure Tools
                   </sl-button>`
-        : html`<sl-badge variant="success">Completed</sl-badge>`}
+                : html`<sl-badge variant="success">Completed</sl-badge>`}
             </div>
           </div>
 
@@ -868,11 +868,11 @@ export class DashboardView extends AuthedElement {
           <div class="step-item ${hasFlows ? 'completed' : ''}">
             <div class="step-icon">
               ${hasFlows
-        ? html`<sl-icon
+                ? html`<sl-icon
                     name="check-circle-fill"
                     style="color: var(--sl-color-success-600);"
                   ></sl-icon>`
-        : html`<sl-icon
+                : html`<sl-icon
                     name="2-circle"
                     style="color: var(--sl-color-primary-600);"
                   ></sl-icon>`}
@@ -885,7 +885,7 @@ export class DashboardView extends AuthedElement {
                 build from scratch.
               </div>
               ${!hasFlows
-        ? html`<sl-button
+                ? html`<sl-button
                     size="small"
                     href="/console/flows"
                     class="step-action"
@@ -893,7 +893,7 @@ export class DashboardView extends AuthedElement {
                     <sl-icon slot="prefix" name="diagram-3"></sl-icon>
                     Create Flow
                   </sl-button>`
-        : html`<sl-badge variant="success">Completed</sl-badge>`}
+                : html`<sl-badge variant="success">Completed</sl-badge>`}
             </div>
           </div>
 
@@ -901,11 +901,11 @@ export class DashboardView extends AuthedElement {
           <div class="step-item ${hasTrackersAndModels ? 'completed' : ''}">
             <div class="step-icon">
               ${hasTrackersAndModels
-        ? html`<sl-icon
+                ? html`<sl-icon
                     name="check-circle-fill"
                     style="color: var(--sl-color-success-600);"
                   ></sl-icon>`
-        : html`<sl-icon
+                : html`<sl-icon
                     name="3-circle"
                     style="color: var(--sl-color-primary-600);"
                   ></sl-icon>`}
@@ -918,10 +918,10 @@ export class DashboardView extends AuthedElement {
                 and identify unmapped dependencies.
               </div>
               ${!hasTrackersAndModels
-        ? html`
+                ? html`
                     <div style="display: flex; gap: var(--sl-spacing-small);">
                       ${!this.trackers.length
-            ? html`<sl-button
+                        ? html`<sl-button
                             size="small"
                             href="/console/trackers"
                             class="step-action"
@@ -929,9 +929,9 @@ export class DashboardView extends AuthedElement {
                             <sl-icon slot="prefix" name="link-45deg"></sl-icon>
                             Add Tracker
                           </sl-button>`
-            : ''}
+                        : ''}
                       ${!this.hasAIModels
-            ? html`<sl-button
+                        ? html`<sl-button
                             size="small"
                             href="/console/settings/ai-models"
                             class="step-action"
@@ -939,10 +939,10 @@ export class DashboardView extends AuthedElement {
                             <sl-icon slot="prefix" name="cpu"></sl-icon>
                             Add AI Model
                           </sl-button>`
-            : ''}
+                        : ''}
                     </div>
                   `
-        : html`<sl-badge variant="success">Completed</sl-badge>`}
+                : html`<sl-badge variant="success">Completed</sl-badge>`}
             </div>
           </div>
         </div>
@@ -988,19 +988,19 @@ export class DashboardView extends AuthedElement {
 
           <!-- Flow Executions - Only show if flows exist -->
           ${this.hasFlows
-        ? html`<sl-card>
+            ? html`<sl-card>
                 <div slot="header" class="chart-header">
                   <sl-icon name="diagram-3"></sl-icon>
                   Recent Flow Executions
                   ${this.failedFlowExecutions.length > 0
-            ? html`<sl-badge variant="danger" pulse
+                    ? html`<sl-badge variant="danger" pulse
                         >${this.failedFlowExecutions.length} failed</sl-badge
                       >`
-            : ''}
+                    : ''}
                 </div>
 
                 ${this.recentFlowExecutions.length === 0
-            ? html`
+                  ? html`
                       <div class="empty-state">
                         <sl-icon name="inbox"></sl-icon>
                         <p>
@@ -1009,29 +1009,29 @@ export class DashboardView extends AuthedElement {
                         </p>
                       </div>
                     `
-            : html`
+                  : html`
                       <div class="item-list">
                         ${this.recentFlowExecutions
-                .filter(
-                  (exec) => !this.dismissedExecutions.has(exec.id)
-                )
-                .slice(0, 5)
-                .map(
-                  (exec) => html`
+                          .filter(
+                            (exec) => !this.dismissedExecutions.has(exec.id)
+                          )
+                          .slice(0, 5)
+                          .map(
+                            (exec) => html`
                               <div
                                 class="item-card ${exec.status === 'FAILED'
-                      ? 'danger'
-                      : ''}"
+                                  ? 'danger'
+                                  : ''}"
                               >
                                 <div class="item-info">
                                   <span class="item-name"
                                     >${exec.flow_name || 'Unnamed Flow'}</span
                                   >
                                   ${exec.error_message
-                      ? html`<span class="item-error"
+                                    ? html`<span class="item-error"
                                         >${exec.error_message}</span
                                       >`
-                      : ''}
+                                    : ''}
                                   <span class="item-secondary"
                                     >${this.formatDate(exec.start_time)}</span
                                   >
@@ -1042,8 +1042,8 @@ export class DashboardView extends AuthedElement {
                                   <sl-tag
                                     size="small"
                                     variant="${this.getStatusColor(
-                        exec.status
-                      )}"
+                                      exec.status
+                                    )}"
                                   >
                                     ${exec.status}
                                   </sl-tag>
@@ -1057,14 +1057,14 @@ export class DashboardView extends AuthedElement {
                                     name="x-lg"
                                     label="Dismiss"
                                     @click=${(e: Event) => {
-                      e.preventDefault();
-                      this.dismissExecution(exec.id);
-                    }}
+                                      e.preventDefault();
+                                      this.dismissExecution(exec.id);
+                                    }}
                                   ></sl-icon-button>
                                 </div>
                               </div>
                             `
-                )}
+                          )}
                       </div>
 
                       <div class="quick-actions">
@@ -1082,11 +1082,11 @@ export class DashboardView extends AuthedElement {
                       </div>
                     `}
               </sl-card>`
-        : ''}
+            : ''}
 
           <!-- Compliance Metrics - Only show if issues exist -->
           ${this.hasIssues && this.complianceMetrics
-        ? html`
+            ? html`
                 <sl-card>
                   <div slot="header" class="chart-header">
                     <sl-icon name="clipboard-check"></sl-icon>
@@ -1106,8 +1106,8 @@ export class DashboardView extends AuthedElement {
                       >
                       <span
                         >${Math.round(
-          this.complianceMetrics.compliance_rate * 100
-        )}%</span
+                          this.complianceMetrics.compliance_rate * 100
+                        )}%</span
                       >
                     </div>
                     <sl-progress-bar
@@ -1116,7 +1116,7 @@ export class DashboardView extends AuthedElement {
                     ></sl-progress-bar>
 
                     ${this.complianceMetrics.non_compliant_issues > 0
-            ? html`
+                      ? html`
                           <sl-alert
                             variant="warning"
                             open
@@ -1128,13 +1128,13 @@ export class DashboardView extends AuthedElement {
                             ></sl-icon>
                             ${this.complianceMetrics.non_compliant_issues}
                             issue${this.complianceMetrics.non_compliant_issues >
-                1
-                ? 's'
-                : ''}
+                            1
+                              ? 's'
+                              : ''}
                             need attention
                           </sl-alert>
                         `
-            : ''}
+                      : ''}
                   </div>
 
                   <div class="quick-actions">
@@ -1145,18 +1145,18 @@ export class DashboardView extends AuthedElement {
                   </div>
                 </sl-card>
               `
-        : ''}
+            : ''}
 
           <!-- Similar Issues (existing widget) -->
           ${this.trackers.length > 0
-        ? html`
+            ? html`
                 <similar-issues-widget></similar-issues-widget>
                 <sl-card>
                   <div slot="header" class="chart-header">
                     Similar Issues per Project
                     <sl-tooltip
                       content="Showing issues with a similarity score of ${DEFAULT_SIMILARITY_THRESHOLD_CHARTS *
-          100}% or higher."
+                      100}% or higher."
                     >
                       <sl-icon name="question-circle"></sl-icon>
                     </sl-tooltip>
@@ -1166,18 +1166,63 @@ export class DashboardView extends AuthedElement {
                   ></duplicate-stats-chart>
                 </sl-card>
               `
-        : html`
+            : html`
                 <sl-alert variant="primary" open>
                   <sl-icon slot="icon" name="info-circle"></sl-icon>
                   ${unsafeHTML(
-          'No projects found. <a href="/console/trackers">Add a tracker</a> to see project-specific widgets.'
-        )}
+                    'No projects found. <a href="/console/trackers">Add a tracker</a> to see project-specific widgets.'
+                  )}
                 </sl-alert>
               `}
         </div>
 
         <!-- Side Column -->
         <div class="side-column">
+          <!-- Pending Approvals -->
+          ${this.pendingApprovals.length > 0
+            ? html`
+                <sl-card>
+                  <div slot="header" class="chart-header">
+                    <sl-icon name="hand-thumbs-up"></sl-icon>
+                    Pending Approvals
+                    <sl-badge variant="warning" pill
+                      >${this.pendingApprovals.length}</sl-badge
+                    >
+                  </div>
+
+                  <div class="item-list">
+                    ${this.pendingApprovals.slice(0, 3).map(
+                      (approval) => html`
+                        <div class="item-card warning">
+                          <div class="item-info">
+                            <span class="item-name">${approval.tool_name}</span>
+                            <span class="item-secondary"
+                              >${this.formatDate(approval.requested_at)}</span
+                            >
+                          </div>
+                          <sl-button
+                            size="small"
+                            href="/console/approval/${approval.id}"
+                          >
+                            Review
+                          </sl-button>
+                        </div>
+                      `
+                    )}
+                  </div>
+
+                  ${this.pendingApprovals.length > 3
+                    ? html`<div style="margin-top: var(--sl-spacing-small);">
+                        <a href="/console/approvals"
+                          >View all ${this.pendingApprovals.length}
+                          approvals...</a
+                        >
+                      </div>`
+                    : ''}
+                </sl-card>
+              `
+            : ''}
+
           <!-- MCP Server & Tools Status -->
           <sl-card>
             <div slot="header" class="card-header-with-action">
@@ -1201,9 +1246,9 @@ export class DashboardView extends AuthedElement {
                   href="#"
                   class="header-action-link"
                   @click=${(e: Event) => {
-        e.preventDefault();
-        this.showSetupDialog = true;
-      }}
+                    e.preventDefault();
+                    this.showSetupDialog = true;
+                  }}
                   >Setup</a
                 >
                 <a href="/console/tools" class="header-action-link">Manage</a>
@@ -1211,7 +1256,7 @@ export class DashboardView extends AuthedElement {
             </div>
 
             ${this.mcpServers.length === 0 && this.tools.length === 0
-        ? html`
+              ? html`
                   <div class="empty-state">
                     <sl-icon name="inbox"></sl-icon>
                     <p>
@@ -1220,14 +1265,14 @@ export class DashboardView extends AuthedElement {
                     </p>
                   </div>
                 `
-        : html`
+              : html`
                   <!-- Built-in Tools Summary -->
                   <div class="tool-counts">
                     <div class="tool-count">
                       <sl-icon name="tools"></sl-icon>
                       <div class="tool-count-value">
                         ${this.tools.filter((t) => t.source === 'builtin')
-            .length}
+                          .length}
                       </div>
                       <div class="tool-count-label">built-in tools</div>
                     </div>
@@ -1271,7 +1316,7 @@ export class DashboardView extends AuthedElement {
 
           <!-- Approval Analytics -->
           ${this.approvalStats.total > 0
-        ? html`
+            ? html`
                 <sl-card>
                   <div slot="header" class="chart-header">
                     <sl-icon name="bar-chart"></sl-icon>
@@ -1295,12 +1340,12 @@ export class DashboardView extends AuthedElement {
                       <div class="analytics-label">Approved</div>
                       <div class="analytics-subtext">
                         ${this.approvalStats.total > 0
-            ? Math.round(
-              (this.approvalStats.approved /
-                this.approvalStats.total) *
-              100
-            )
-            : 0}%
+                          ? Math.round(
+                              (this.approvalStats.approved /
+                                this.approvalStats.total) *
+                                100
+                            )
+                          : 0}%
                         approval rate
                       </div>
                     </div>
@@ -1313,8 +1358,21 @@ export class DashboardView extends AuthedElement {
                       </div>
                       <div class="analytics-label">Declined</div>
                     </div>
+                    ${this.approvalStats.expired > 0
+                      ? html`
+                          <div class="analytics-stat">
+                            <div
+                              class="analytics-value"
+                              style="color: var(--sl-color-neutral-500);"
+                            >
+                              ${this.approvalStats.expired}
+                            </div>
+                            <div class="analytics-label">Timed Out</div>
+                          </div>
+                        `
+                      : ''}
                     ${this.approvalStats.avgApprovalTime > 0
-            ? html`
+                      ? html`
                           <div class="analytics-stat">
                             <div class="analytics-value">
                               ${this.approvalStats.avgApprovalTime}
@@ -1325,12 +1383,12 @@ export class DashboardView extends AuthedElement {
                             <div class="analytics-subtext">minutes</div>
                           </div>
                         `
-            : ''}
+                      : ''}
                   </div>
 
                   <div style="margin-top: var(--sl-spacing-medium);">
                     <a
-                      href="/console/tools"
+                      href="/console/approvals"
                       style="font-size: var(--sl-font-size-small);"
                     >
                       View all approval requests →
@@ -1338,52 +1396,7 @@ export class DashboardView extends AuthedElement {
                   </div>
                 </sl-card>
               `
-        : ''}
-
-          <!-- Pending Approvals -->
-          ${this.pendingApprovals.length > 0
-        ? html`
-                <sl-card>
-                  <div slot="header" class="chart-header">
-                    <sl-icon name="hand-thumbs-up"></sl-icon>
-                    Pending Approvals
-                    <sl-badge variant="warning" pill
-                      >${this.pendingApprovals.length}</sl-badge
-                    >
-                  </div>
-
-                  <div class="item-list">
-                    ${this.pendingApprovals.slice(0, 3).map(
-          (approval) => html`
-                        <div class="item-card warning">
-                          <div class="item-info">
-                            <span class="item-name">${approval.tool_name}</span>
-                            <span class="item-secondary"
-                              >${this.formatDate(approval.requested_at)}</span
-                            >
-                          </div>
-                          <sl-button
-                            size="small"
-                            href="/console/approval/${approval.id}"
-                          >
-                            Review
-                          </sl-button>
-                        </div>
-                      `
-        )}
-                  </div>
-
-                  ${this.pendingApprovals.length > 3
-            ? html`<div style="margin-top: var(--sl-spacing-small);">
-                        <a href="/console/tools"
-                          >View all ${this.pendingApprovals.length}
-                          approvals...</a
-                        >
-                      </div>`
             : ''}
-                </sl-card>
-              `
-        : ''}
 
           <!-- Key Metrics -->
           <sl-card>
@@ -1393,26 +1406,26 @@ export class DashboardView extends AuthedElement {
                 <a href="/console/trackers">Connected Trackers</a>
                 <div class="tracker-pills">
                   ${this.trackers.slice(0, 2).map(
-          (tracker) => html`
+                    (tracker) => html`
                       <sl-tooltip content="${tracker.name}">
                         <tracker-pill .tracker=${tracker}></tracker-pill>
                       </sl-tooltip>
                     `
-        )}
+                  )}
                   ${this.trackers.length > 2
-        ? html`
+                    ? html`
                         <sl-tooltip
                           content="${this.trackers
-            .slice(2)
-            .map((t) => t.name)
-            .join(', ')}"
+                            .slice(2)
+                            .map((t) => t.name)
+                            .join(', ')}"
                         >
                           <sl-tag size="small" pill
                             >+${this.trackers.length - 2}</sl-tag
                           >
                         </sl-tooltip>
                       `
-        : ''}
+                    : ''}
                   ${this.trackers.length === 0 ? html`<strong>0</strong>` : ''}
                 </div>
               </li>
@@ -1430,8 +1443,8 @@ export class DashboardView extends AuthedElement {
                 <a href="/console/flows">Active Flows</a>
                 <strong
                   >${this.recentFlowExecutions.filter((e) =>
-          ['RUNNING', 'PENDING'].includes(e.status)
-        ).length}</strong
+                    ['RUNNING', 'PENDING'].includes(e.status)
+                  ).length}</strong
                 >
               </li>
               <li class="summary-item">
@@ -1439,17 +1452,17 @@ export class DashboardView extends AuthedElement {
                 <strong>${this.apiUsage?.total_requests || 0}</strong>
               </li>
               ${this.trackers.length > 0
-        ? html`<li class="summary-item">
+                ? html`<li class="summary-item">
                     <span>Total Issues Processed</span>
                     <strong>${this.totalIssues}</strong>
                   </li>`
-        : ''}
+                : ''}
             </ul>
           </sl-card>
 
           <!-- Dependencies Overview - Only show if issues exist -->
           ${this.hasIssues
-        ? html`
+            ? html`
                 <sl-card>
                   <div slot="header" class="chart-header">
                     <sl-icon name="diagram-2"></sl-icon>
@@ -1466,7 +1479,7 @@ export class DashboardView extends AuthedElement {
                   </div>
                 </sl-card>
               `
-        : ''}
+            : ''}
         </div>
       </div>
     `;

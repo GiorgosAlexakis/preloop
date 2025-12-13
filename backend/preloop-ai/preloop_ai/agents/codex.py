@@ -379,7 +379,7 @@ echo "MCP Server: $PRELOOP_MCP_URL"
 echo "=========================="
 
 # Run codex in non-interactive mode with the prompt
-echo "{escaped_prompt}" | codex exec --model "{model}" --sandbox workspace-write --yolo
+echo "{escaped_prompt}" | codex exec --skip-git-repo-check --model "{model}" --sandbox workspace-write --yolo
 CODEX_EXIT_CODE=$?
 {post_exec_block}
 # Exit with codex's exit code

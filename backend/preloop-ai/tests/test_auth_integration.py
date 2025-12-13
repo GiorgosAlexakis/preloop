@@ -194,16 +194,14 @@ class TestEndpointsWithUserDependency:
             f"get_account_for_user should accept User model, not {param_type.__name__}"
         )
 
-    def test_account_features_endpoint_with_user(
-        self, client: TestClient, test_user: User
-    ):
-        """Test /account/features endpoint works with User authentication."""
-        response = client.get("/api/v1/account/features")
+    def test_features_endpoint(self, client: TestClient, test_user: User):
+        """Test /features endpoint returns plugin features."""
+        response = client.get("/api/v1/features")
 
         assert response.status_code == 200, f"Failed: {response.json()}"
         data = response.json()
         assert "features" in data
-        assert "details" in data
+        assert "plugins" in data
 
 
 class TestAuthContextWithUser:

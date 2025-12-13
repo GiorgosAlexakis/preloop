@@ -19,7 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-helm/spacebridge/charts
+helm/preloop-ai/charts
 
 # Virtual environment
 .env
@@ -55,3 +55,4 @@ repomix-output-mcp.xml
 coverage.xml
 .coverage
 notes
+proprietary

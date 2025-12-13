@@ -1,10 +1,30 @@
 import { LitElement, html, css } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import { router } from '../router';
+import { getBrandConfig, isSaaS } from '../brand-config';
+import { getFeatures } from '../api';
 import './logo-component';
 
 @customElement('app-footer')
 export class AppFooter extends LitElement {
+  @state() private _registrationEnabled = true;
+
+  async connectedCallback() {
+    super.connectedCallback();
+    await this._checkRegistrationEnabled();
+  }
+
+  private async _checkRegistrationEnabled() {
+    try {
+      const features = await getFeatures();
+      // Registration is enabled by default, unless explicitly disabled
+      this._registrationEnabled = features.features['registration'] !== false;
+    } catch (error) {
+      // Default to enabled if we can't fetch features
+      this._registrationEnabled = true;
+    }
+  }
+
   static styles = [
     css`
       :host {
@@ -100,21 +120,36 @@ export class AppFooter extends LitElement {
   }
 
   render() {
+    const config = getBrandConfig();
+    const company = config.company;
+    const social = config.social;
+    const hasCompanyInfo = company?.legal_name || company?.address;
+    const hasSocialLinks =
+      social?.linkedin || social?.instagram || social?.twitter;
+
     return html`
       <div class="footer-container">
         <div class="divider"></div>
         <div class="footer-main">
           <div>
             <logo-component override-theme="dark"></logo-component>
-            <p style="margin-top: 1rem;">
-              Spacecode.AI, Inc.<br />
-              166 Geary Street, Suite 1500<br />
-              San Francisco, CA 94108
-            </p>
+            ${hasCompanyInfo
+              ? html`
+                  <p style="margin-top: 1rem;">
+                    ${company.legal_name
+                      ? html`${company.legal_name}<br />`
+                      : ''}
+                    ${company.address ? html`${company.address}<br />` : ''}
+                    ${company.city ? html`${company.city}` : ''}
+                  </p>
+                `
+              : ''}
           </div>
           <nav class="footer-nav">
             <ul>
-              <li><a href="/register">Register</a></li>
+              ${this._registrationEnabled
+                ? html`<li><a href="/register">Register</a></li>`
+                : ''}
               <li><a href="/login">Sign in</a></li>
               <li><a href="/privacy">Privacy Policy</a></li>
               <li><a href="/terms">Terms of Service</a></li>
@@ -124,24 +159,60 @@ export class AppFooter extends LitElement {
         </div>
         <div class="divider"></div>
         <div class="footer-bottom">
-          <span class="copyright-text"
-            >&copy; 2025 <a href="https://spacecode.ai">Spacecode.AI</a>. All
-            rights reserved.</span
-          >
-          <div class="social-links">
-            <sl-icon-button
-              name="linkedin"
-              label="LinkedIn"
-              href="https://www.linkedin.com/company/spacecode-ai/"
-              target="_blank"
-            ></sl-icon-button>
-            <sl-icon-button
-              name="instagram"
-              label="Instagram"
-              href="https://www.instagram.com/preloop_ai.io"
-              target="_blank"
-            ></sl-icon-button>
-          </div>
+          ${hasCompanyInfo
+            ? html`
+                <span class="copyright-text">
+                  &copy; ${new Date().getFullYear()}
+                  ${company.legal_name
+                    ? html`<a href="/">${company.legal_name}</a>`
+                    : config.name}.
+                  All rights reserved.
+                </span>
+              `
+            : html`
+                <span class="copyright-text">
+                  &copy; ${new Date().getFullYear()} ${config.name}
+                </span>
+              `}
+          ${hasSocialLinks
+            ? html`
+                <div class="social-links">
+                  ${social.linkedin
+                    ? html`
+                        <sl-icon-button
+                          name="linkedin"
+                          label="LinkedIn"
+                          href="${social.linkedin}"
+                          target="_blank"
+                        ></sl-icon-button>
+                      `
+                    : ''}
+                  ${social.instagram
+                    ? html`
+                        <sl-icon-button
+                          name="instagram"
+                          label="Instagram"
+                          href="${social.instagram}"
+                          target="_blank"
+                        ></sl-icon-button>
+                      `
+                    : ''}
+                  ${social.twitter
+                    ? html`
+                        <sl-icon-button
+                          name="twitter-x"
+                          label="Twitter/X"
+                          href="https://twitter.com/${social.twitter.replace(
+                            '@',
+                            ''
+                          )}"
+                          target="_blank"
+                        ></sl-icon-button>
+                      `
+                    : ''}
+                </div>
+              `
+            : ''}
         </div>
       </div>
     `;

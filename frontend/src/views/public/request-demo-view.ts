@@ -197,8 +197,8 @@ export class RequestDemoView extends LitElement {
             ></sl-textarea>
 
             ${this._error
-        ? html`<sl-alert variant="danger" open>${this._error}</sl-alert>`
-        : ''}
+              ? html`<sl-alert variant="danger" open>${this._error}</sl-alert>`
+              : ''}
 
             <sl-button
               type="submit"

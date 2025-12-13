@@ -17,7 +17,6 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pyinstrument import Profiler
 from pyinstrument.renderers import SpeedscopeRenderer
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -31,10 +30,7 @@ from preloop_ai.api.endpoints import (
     comments,
     features,
     health,
-    invitations,
     issues,
-    issue_compliance,
-    issue_dependencies,
     mcp_servers,
     notification_preferences,
     organizations,
@@ -42,25 +38,18 @@ from preloop_ai.api.endpoints import (
     public_approval,
     roles,
     search as search_router,
-    teams,
     tools,
     trackers,
-    users,
     version,
     embedding as embedding_router,
-    issue_duplicates,
     webhooks,
     flows,
     ai_models,
-    billing,
     websockets,
 )
 
-try:
-    from preloop_ai.api.endpoints import admin, impersonation
-except ModuleNotFoundError:
-    admin = None
-    impersonation = None
+# Enterprise endpoints (impersonation, issue_compliance, issue_duplicates, issue_dependencies)
+# are now loaded exclusively via the plugin system - see plugins/admin and plugins/analytics
 
 from preloop_ai.services.mcp_http import setup_mcp_routes
 from preloop_models.sentry import init_sentry
@@ -531,21 +520,6 @@ def create_app() -> FastAPI:
     ):
         app.add_middleware(ApiUsageMiddleware)
 
-    # Mount general static files (CSS, JS for landing/auth pages)
-    try:
-        app.mount(
-            "/assets",
-            StaticFiles(directory=str(base_dir / "SpaceLit" / "dist" / "assets")),
-            name="spacelit_assets",
-        )
-        app.mount(
-            "/images",
-            StaticFiles(directory=str(base_dir / "SpaceLit" / "public" / "images")),
-            name="spacelit_images",
-        )
-    except Exception as e:
-        logger.error(f"Failed to mount SpaceLit static files: {e}")
-
     # --- Custom API Docs Routes (Moved to /docs/api and /docs/redoc) ---
     @app.get("/docs/api", include_in_schema=False)  # Changed path
     async def custom_swagger_ui_html():
@@ -593,6 +567,7 @@ def create_app() -> FastAPI:
             "/approval",  # Public approval endpoints (token-based, no login required)
             "/api/v1/billing/plans",
             "/api/v1/billing/create-checkout-session",
+            "/api/v1/webhooks/flows",
             "/",
             "/static",
             "/register",
@@ -627,6 +602,16 @@ def create_app() -> FastAPI:
     # Setup MCP routes with DynamicMCPServer (MUST be before SPA mount)
     setup_mcp_routes(app)
     logger.info("MCP routes configured with DynamicMCPServer")
+
+    # Register plugin routes
+    # This allows plugins (both builtin and proprietary) to add their own endpoints
+    # We do this before adding standard routers to ensure plugins can override if needed
+    # or just be registered alongside
+    from preloop_ai.plugins import get_plugin_manager
+
+    plugin_manager = get_plugin_manager()
+    plugin_manager.register_routes(app)
+
     # Add routers
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
     app.include_router(
@@ -678,12 +663,7 @@ def create_app() -> FastAPI:
         # No router-level auth - individual endpoints handle their own auth
         # /register-device and /register-via-token are public (token-based)
     )
-    app.include_router(
-        issue_dependencies.router,
-        prefix="/api/v1",
-        tags=["Issues"],
-        dependencies=[Depends(get_current_active_user)],
-    )
+    # Note: Issue dependencies endpoint is now loaded via plugins/analytics
     app.include_router(
         organizations.router,
         prefix="/api/v1",
@@ -702,12 +682,7 @@ def create_app() -> FastAPI:
         tags=["Issues"],
         dependencies=[Depends(get_current_active_user)],
     )
-    app.include_router(
-        issue_compliance.router,
-        prefix="/api/v1",
-        tags=["Issues"],
-        dependencies=[Depends(get_current_active_user)],
-    )
+    # Note: Issue compliance endpoint is now loaded via plugins/analytics
     app.include_router(
         comments.router,
         prefix="/api/v1",
@@ -738,12 +713,7 @@ def create_app() -> FastAPI:
         prefix="/api/v1",
         tags=["AI Models"],
     )
-    app.include_router(
-        issue_duplicates.router,
-        prefix="/api/v1",
-        tags=["Issue Duplicates"],
-        dependencies=[Depends(get_current_active_user)],
-    )
+    # Note: Issue duplicates endpoint is now loaded via plugins/analytics
     app.include_router(
         version.router, prefix="/api/v1", tags=["Version"]
     )  # No auth dependency for version check
@@ -752,68 +722,20 @@ def create_app() -> FastAPI:
         flows.router,
         prefix="/api/v1",
         tags=["Flows"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        ai_models.router,
-        prefix="/api/v1",
-        tags=["AI Models"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        billing.router,
-        prefix="/api/v1",
-        tags=["Billing"],
         # dependencies=[Depends(get_current_active_user)],
     )
 
     # WebSocket router
     app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
 
-    if admin:
-        # Admin router (requires superuser permission)
-        app.include_router(
-            admin.router,
-            prefix="/api/v1",
-            tags=["Admin"],
-            dependencies=[Depends(get_current_active_user)],
-            include_in_schema=False,
-        )
+    # Impersonation router - Enterprise feature (loaded via admin plugin)
+    # No longer loaded from core - handled by plugins/admin
 
-        # Impersonation router (requires superuser permission)
-        app.include_router(
-            impersonation.router,
-            prefix="/api/v1",
-            tags=["Admin", "Impersonation"],
-            dependencies=[Depends(get_current_active_user)],
-            include_in_schema=False,
-        )
-
-    # User, Team, Role, and Invitation management routers
-    app.include_router(
-        users.router,
-        prefix="/api/v1",
-        tags=["Users"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        teams.router,
-        prefix="/api/v1",
-        tags=["Teams"],
-        dependencies=[Depends(get_current_active_user)],
-    )
     app.include_router(
         roles.router,
         prefix="/api/v1",
         tags=["Roles"],
         dependencies=[Depends(get_current_active_user)],
-    )
-    # Note: invitations router has public endpoints for accepting invitations,
-    # so we don't add auth dependency at router level - auth is on individual endpoints
-    app.include_router(
-        invitations.router,
-        prefix="/api/v1",
-        tags=["Invitations"],
     )
 
     # --- Public Approval Page ---
@@ -831,30 +753,5 @@ def create_app() -> FastAPI:
             base_dir / "preloop_ai" / "templates" / "invitation-accept.html"
         )
         return FileResponse(str(invitation_html_path), media_type="text/html")
-
-    # --- SPA Static Files (Production) ---
-    # NOTE: In production, the SPA is served by nginx, not by the FastAPI app.
-    # This avoids issues with StaticFiles html=True intercepting API routes.
-    # The backend only serves API endpoints and specific HTML pages (like invitation accept).
-    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-    testing_mode = os.getenv("TESTING") == "true"
-
-    if dev_mode and not testing_mode:
-        # In dev mode (but not testing), mount the SPA for convenience
-        logger.info(
-            "DEV_MODE is true, serving SPA from 'SpaceLit/dist' for development"
-        )
-        try:
-            app.mount(
-                "/",
-                StaticFiles(directory=str(base_dir / "SpaceLit" / "dist"), html=True),
-                name="spa",
-            )
-        except Exception as e:
-            logger.error(f"Failed to mount SPA static files: {e}")
-    elif testing_mode:
-        logger.info("TESTING mode - skipping SPA mount to avoid route conflicts")
-    else:
-        logger.info("DEV_MODE is false, SPA is served by nginx (not by FastAPI)")
 
     return app

@@ -163,7 +163,10 @@ def main():
 
         # Get the SpaceModels directory path
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        spacemodels_dir = os.path.join(os.path.dirname(script_dir), "SpaceModels")
+        spacemodels_dir = os.getenv(
+            "PRELOOP_MODELS_PATH",
+            os.path.join(repo_root, "backend", "preloop-models"),
+        )
 
         logger.info(
             "Running Alembic migrations to ensure database schema is up to date..."

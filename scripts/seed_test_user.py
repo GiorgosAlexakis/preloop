@@ -14,6 +14,52 @@ from preloop_ai.api.auth.jwt import get_password_hash
 from preloop_ai.schemas.auth import ApiKeyCreate
 
 
+def assign_owner_role_if_available(db_session, user):
+    """Assign owner role to user if RBAC system is available.
+
+    This is a no-op in open-source builds without RBAC.
+    In Enterprise builds, assigns the 'owner' role to give full access.
+    """
+    try:
+        from preloop_models.crud.permission import crud_user_role
+        from preloop_models.models.permission import Role
+
+        # Check if user already has owner role
+        user_roles = crud_user_role.get_user_roles(db_session, user_id=user.id)
+        if any(r.name == "owner" for r in user_roles):
+            click.echo("User already has owner role.")
+            return True
+
+        # Find the owner role
+        owner_role = (
+            db_session.query(Role)
+            .filter(Role.name == "owner", Role.is_system_role.is_(True))
+            .first()
+        )
+
+        if owner_role:
+            crud_user_role.assign_role(
+                db_session,
+                user_id=user.id,
+                role_id=owner_role.id,
+                granted_by=None,  # System-assigned
+            )
+            db_session.commit()
+            click.echo("Assigned 'owner' role to user.")
+            return True
+        else:
+            click.echo("Owner role not found - RBAC may not be initialized.")
+            return False
+
+    except ImportError:
+        # RBAC not available (open-source build)
+        click.echo("RBAC not available - skipping role assignment.")
+        return False
+    except Exception as e:
+        click.echo(f"Warning: Could not assign owner role: {e}")
+        return False
+
+
 @click.command()
 @click.option(
     "--email", envvar="TEST_USER_EMAIL", required=True, help="Email for the test user."
@@ -73,6 +119,10 @@ def seed_test_user(email: str, password: str, api_key: str):
         db_session.commit()
 
         click.echo("Test user and account created successfully.")
+
+    # Assign owner role if RBAC is available (Enterprise Edition)
+    click.echo("Checking for RBAC role assignment...")
+    assign_owner_role_if_available(db_session, user)
 
     click.echo("Checking for test user API key...")
     # A simple check to see if any key exists for the user.

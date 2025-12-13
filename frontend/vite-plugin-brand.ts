@@ -5,6 +5,18 @@ import * as path from 'path';
 import { BrandConfig } from './src/brand-config';
 
 /**
+ * Options for the brand plugin
+ */
+export interface BrandPluginOptions {
+  /** Path to brands.yaml file (default: ./brands.yaml relative to this plugin) */
+  configPath?: string;
+  /** Path to content directory (default: ./content relative to this plugin) */
+  contentPath?: string;
+  /** Output directory name (default: 'dist') */
+  outDir?: string;
+}
+
+/**
  * Vite plugin to inject brand-specific content and configuration
  *
  * This plugin:
@@ -12,48 +24,66 @@ import { BrandConfig } from './src/brand-config';
  * 2. Injects brand config as window.BRAND_CONFIG
  * 3. Transforms index.html with route-specific slotted content for SEO
  * 4. Updates meta tags with brand-specific values per route
+ *
+ * @param brandKey - The brand key to use from brands.yaml (e.g., 'preloop')
+ * @param options - Optional configuration for custom paths
  */
-export function brandPlugin(brandName: string): Plugin {
+export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}): Plugin {
   let brandConfig: BrandConfig;
+
+  // Resolve paths - use options or defaults
+  const configPath = options.configPath || path.resolve(__dirname, 'brands.yaml');
+  const contentBasePath = options.contentPath || path.resolve(__dirname, 'content');
+  const outDirPath = options.outDir || path.resolve(__dirname, 'dist');
 
   return {
     name: 'vite-plugin-brand',
 
     configResolved() {
       // Load brand configuration at build time
-      const brandsYamlPath = path.resolve(__dirname, 'brands.yaml');
-
-      if (!fs.existsSync(brandsYamlPath)) {
-        throw new Error(`brands.yaml not found at ${brandsYamlPath}`);
+      if (!fs.existsSync(configPath)) {
+        throw new Error(`brands.yaml not found at ${configPath}`);
       }
 
-      const brandsYaml = fs.readFileSync(brandsYamlPath, 'utf-8');
+      const brandsYaml = fs.readFileSync(configPath, 'utf-8');
       const brands = yaml.load(brandsYaml) as any;
 
       if (!brands || !brands.brands) {
         throw new Error('Invalid brands.yaml structure: brands.brands not found');
       }
 
-      brandConfig = brands.brands[brandName];
+      brandConfig = brands.brands[brandKey];
 
       if (!brandConfig) {
         throw new Error(
-          `Brand "${brandName}" not found in brands.yaml. Available brands: ${Object.keys(brands.brands).join(', ')}`
+          `Brand "${brandKey}" not found in brands.yaml. Available brands: ${Object.keys(brands.brands).join(', ')}`
         );
       }
+
+      // Apply defaults for missing optional fields
+      brandConfig.company = brandConfig.company || {};
+      brandConfig.social = brandConfig.social || {};
+      brandConfig.landing = brandConfig.landing || {} as any;
+      brandConfig.landing.meta = brandConfig.landing.meta || {} as any;
+      brandConfig.landing.hero = brandConfig.landing.hero || {} as any;
+      brandConfig.landing.features = brandConfig.landing.features || [];
+      brandConfig.landing.faqs = brandConfig.landing.faqs || [];
+      brandConfig.landing.get_started = brandConfig.landing.get_started || {} as any;
+      brandConfig.landing.get_started.features = brandConfig.landing.get_started.features || [];
+      brandConfig.landing.get_started.mcp_configs = brandConfig.landing.get_started.mcp_configs || [];
 
       console.log(`\n🎨 Building for brand: ${brandConfig.name} (${brandConfig.domain})\n`);
     },
 
     async generateBundle(options, bundle) {
-      // Generate landing content JSON file
+      // Generate landing content JSON file with safe defaults
       const landingContent = {
-        hero: brandConfig.landing.hero,
-        extended_description: brandConfig.landing.meta.extended_description || '',
+        hero: brandConfig.landing.hero || {},
+        extended_description: brandConfig.landing.meta?.extended_description || '',
         features_layout: brandConfig.landing.features_layout || 'grid',
-        features: brandConfig.landing.features,
-        faqs: brandConfig.landing.faqs,
-        get_started: brandConfig.landing.get_started,
+        features: brandConfig.landing.features || [],
+        faqs: brandConfig.landing.faqs || [],
+        get_started: brandConfig.landing.get_started || {},
       };
 
       // Add JSON file to bundle
@@ -64,8 +94,7 @@ export function brandPlugin(brandName: string): Plugin {
       });
 
       // Generate static HTML fragments for dynamic loading
-      const privacyHTML = await generatePrivacyContent(brandConfig);
-      const pricingHTML = generatePricingContent(brandConfig);
+      const privacyHTML = await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
 
       this.emitFile({
         type: 'asset',
@@ -73,20 +102,25 @@ export function brandPlugin(brandName: string): Plugin {
         source: privacyHTML,
       });
 
-      this.emitFile({
-        type: 'asset',
-        fileName: 'content/pricing.html',
-        source: pricingHTML,
-      });
+      // Only generate pricing content for SaaS editions
+      const edition = (brandConfig as any).edition || 'saas';
+      if (edition === 'saas') {
+        const pricingHTML = generatePricingContent(brandConfig);
+        this.emitFile({
+          type: 'asset',
+          fileName: 'content/pricing.html',
+          source: pricingHTML,
+        });
+      }
 
       // Copy brand-specific markdown files to dist/content/ for dynamic loading
-      const brandName = brandConfig.domain.split('.')[0];
+      // Use the brand key (e.g., 'preloop') to find content folder
       const contentFiles = ['privacy.md', 'terms.md', 'whatis-mcp.md'];
 
       for (const file of contentFiles) {
-        const contentPath = path.resolve(__dirname, `content/${brandName}/${file}`);
-        if (fs.existsSync(contentPath)) {
-          const markdown = fs.readFileSync(contentPath, 'utf-8');
+        const contentFilePath = path.resolve(contentBasePath, `${brandKey}/${file}`);
+        if (fs.existsSync(contentFilePath)) {
+          const markdown = fs.readFileSync(contentFilePath, 'utf-8');
           this.emitFile({
             type: 'asset',
             fileName: `content/${file}`,
@@ -99,8 +133,8 @@ export function brandPlugin(brandName: string): Plugin {
     async closeBundle() {
       // After all files are written, generate full HTML pages for static content
       // Read the generated index.html as a template
-      const outDir = brandConfig.domain.includes('preloop') ? 'dist-preloop' : 'dist-spacebridge';
-      const indexHtmlPath = path.resolve(__dirname, outDir, 'index.html');
+      // Use the configured output directory
+      const indexHtmlPath = path.resolve(outDirPath, 'index.html');
 
       if (!fs.existsSync(indexHtmlPath)) {
         console.warn(`index.html not found at ${indexHtmlPath}, cannot generate standalone HTML pages`);
@@ -110,24 +144,51 @@ export function brandPlugin(brandName: string): Plugin {
       const indexHtml = fs.readFileSync(indexHtmlPath, 'utf-8');
 
       // Generate static markdown content HTML
-      const brandName = brandConfig.domain.split('.')[0];
-      const privacyHTML = await generatePrivacyContent(brandConfig);
-      const termsHTML = await loadMarkdownContent(brandName, 'terms');
-      const whatisMcpHTML = await loadMarkdownContent(brandName, 'whatis-mcp');
+      // Use brandKey for content folder lookup
+      const privacyHTML = await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
+      const termsHTML = await loadMarkdownContent(contentBasePath, brandKey, 'terms');
+      const whatisMcpHTML = await loadMarkdownContent(contentBasePath, brandKey, 'whatis-mcp');
 
       // Generate privacy.html with proper meta tags and content
       const privacyPage = generateFullHtmlPage(indexHtml, '/privacy', brandConfig, privacyHTML);
-      fs.writeFileSync(path.resolve(__dirname, outDir, 'privacy.html'), privacyPage);
+      fs.writeFileSync(path.resolve(outDirPath, 'privacy.html'), privacyPage);
 
       // Generate terms.html
       const termsPage = generateFullHtmlPage(indexHtml, '/terms', brandConfig, termsHTML);
-      fs.writeFileSync(path.resolve(__dirname, outDir, 'terms.html'), termsPage);
+      fs.writeFileSync(path.resolve(outDirPath, 'terms.html'), termsPage);
 
       // Generate whatis-mcp.html
       const whatisMcpPage = generateFullHtmlPage(indexHtml, '/whatis-mcp', brandConfig, whatisMcpHTML);
-      fs.writeFileSync(path.resolve(__dirname, outDir, 'whatis-mcp.html'), whatisMcpPage);
+      fs.writeFileSync(path.resolve(outDirPath, 'whatis-mcp.html'), whatisMcpPage);
 
-      console.log(`✓ Generated standalone HTML pages: privacy.html, terms.html, whatis-mcp.html`);
+      // Generate additional pages for SaaS editions
+      const edition = (brandConfig as any).edition || 'saas';
+      const generatedPages = ['privacy.html', 'terms.html', 'whatis-mcp.html'];
+
+      if (edition === 'saas') {
+        // Generate pricing.html
+        const pricingHTML = generatePricingContent(brandConfig);
+        const pricingPage = generateFullHtmlPage(indexHtml, '/pricing', brandConfig, pricingHTML);
+        fs.writeFileSync(path.resolve(outDirPath, 'pricing.html'), pricingPage);
+        generatedPages.push('pricing.html');
+
+        // Generate about.html
+        const aboutHTML = await loadMarkdownContent(contentBasePath, brandKey, 'about');
+        if (aboutHTML) {
+          const aboutPage = generateFullHtmlPage(indexHtml, '/about', brandConfig, aboutHTML);
+          fs.writeFileSync(path.resolve(outDirPath, 'about.html'), aboutPage);
+          generatedPages.push('about.html');
+
+          // Also copy about.md to content folder for client-side navigation
+          const aboutMdPath = path.resolve(contentBasePath, brandKey, 'about.md');
+          if (fs.existsSync(aboutMdPath)) {
+            const contentDir = path.resolve(outDirPath, 'content');
+            fs.copyFileSync(aboutMdPath, path.resolve(contentDir, 'about.md'));
+          }
+        }
+      }
+
+      console.log(`✓ Generated standalone HTML pages: ${generatedPages.join(', ')}`);
     },
 
     async transformIndexHtml(html, ctx) {
@@ -221,6 +282,7 @@ export function brandPlugin(brandName: string): Plugin {
       const runtimeConfig = {
         name: brandConfig.name,
         domain: brandConfig.domain,
+        edition: (brandConfig as any).edition || 'saas',  // Default to 'saas' for backwards compatibility
         branding: brandConfig.branding,
         social: brandConfig.social,
         company: brandConfig.company,
@@ -234,7 +296,7 @@ export function brandPlugin(brandName: string): Plugin {
       html = html.replace('</head>', `${brandScript}\n</head>`);
 
       // Inject route-specific content for SSR
-      const slottedContent = await generateSlottedContentForRoute(route, brandConfig);
+      const slottedContent = await generateSlottedContentForRoute(route, brandConfig, brandKey, contentBasePath);
       if (slottedContent) {
         if (route === '/') {
           // Landing page: inject landing-view with slots
@@ -280,48 +342,61 @@ function getRouteFromFilename(filename: string): string {
  * Get route-specific metadata
  */
 function getMetaForRoute(route: string, config: BrandConfig) {
+  const meta = config.landing?.meta || {};
+  const defaultTitle = meta.title || config.name || 'Preloop AI';
+  const defaultDescription = meta.description || '';
+  const defaultKeywords = meta.keywords || '';
+  const defaultOgImage = meta.og_image || '';
+
   switch (route) {
     case '/':
       return {
-        title: config.landing.meta.title,
-        description: config.landing.meta.description,
-        keywords: config.landing.meta.keywords,
-        og_image: config.landing.meta.og_image,
+        title: defaultTitle,
+        description: defaultDescription,
+        keywords: defaultKeywords,
+        og_image: defaultOgImage,
       };
     case '/privacy':
       return {
         title: `Privacy Policy - ${config.name}`,
         description: `${config.name} Privacy Policy - Learn how we protect your data.`,
         keywords: `${config.name}, Privacy Policy, Data Protection`,
-        og_image: config.landing.meta.og_image,
+        og_image: defaultOgImage,
       };
     case '/pricing':
       return {
         title: `Pricing - ${config.name}`,
         description: `${config.name} Pricing - Choose the plan that fits your team.`,
         keywords: `${config.name}, Pricing, Plans, Subscription`,
-        og_image: config.landing.meta.og_image,
+        og_image: defaultOgImage,
       };
     case '/terms':
       return {
         title: `Terms of Service - ${config.name}`,
         description: `${config.name} Terms of Service - Read our terms and conditions.`,
         keywords: `${config.name}, Terms of Service, Legal`,
-        og_image: config.landing.meta.og_image,
+        og_image: defaultOgImage,
       };
     case '/whatis-mcp':
       return {
         title: `What is MCP? - ${config.name}`,
         description: `Learn about the Model Context Protocol (MCP) and how ${config.name} leverages it.`,
         keywords: `${config.name}, MCP, Model Context Protocol, AI`,
-        og_image: config.landing.meta.og_image,
+        og_image: defaultOgImage,
+      };
+    case '/about':
+      return {
+        title: `About - ${config.name}`,
+        description: `Learn about ${config.name} and our mission to make AI automation responsible and human-centered.`,
+        keywords: `${config.name}, About, Company, Team, Mission`,
+        og_image: defaultOgImage,
       };
     default:
       return {
-        title: config.landing.meta.title,
-        description: config.landing.meta.description,
-        keywords: config.landing.meta.keywords,
-        og_image: config.landing.meta.og_image,
+        title: defaultTitle,
+        description: defaultDescription,
+        keywords: defaultKeywords,
+        og_image: defaultOgImage,
       };
   }
 }
@@ -330,7 +405,16 @@ function getMetaForRoute(route: string, config: BrandConfig) {
  * Generate route-specific slotted HTML content for SEO
  * Content uses named slots that web components can consume
  */
-async function generateSlottedContentForRoute(route: string, config: BrandConfig): Promise<string> {
+async function generateSlottedContentForRoute(route: string, config: BrandConfig, brandKey: string, contentBasePath: string): Promise<string> {
+  // Safe accessors with defaults
+  const hero = config.landing?.hero || {};
+  const meta = config.landing?.meta || {};
+  const features = config.landing?.features || [];
+  const faqs = config.landing?.faqs || [];
+  const getStarted = config.landing?.get_started || {};
+  const getStartedFeatures = getStarted.features || [];
+  const mcpConfigs = getStarted.mcp_configs || [];
+
   switch (route) {
     case '/':
       // Landing page - generate slotted content for landing-view component
@@ -339,71 +423,71 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
     <!-- Landing-view component will read and display this content -->
 
     <!-- Hero content slots -->
-    <h1 slot="hero-title">${config.landing.hero.title}</h1>
-    <p slot="hero-lead">${config.landing.hero.lead}</p>
-    <span slot="cta-primary">${config.landing.hero.cta_primary}</span>
-    <span slot="cta-secondary">${config.landing.hero.cta_secondary}</span>
-    <span slot="cta-secondary-url">${config.landing.hero.cta_secondary_url}</span>
+    <h1 slot="hero-title">${hero.title || ''}</h1>
+    <p slot="hero-lead">${hero.lead || ''}</p>
+    <span slot="cta-primary">${hero.cta_primary || ''}</span>
+    <span slot="cta-secondary">${hero.cta_secondary || ''}</span>
+    <span slot="cta-secondary-url">${hero.cta_secondary_url || ''}</span>
 
     <!-- Extended description slot (only if exists) -->
-    ${config.landing.meta.extended_description ? `<p slot="extended-description">${config.landing.meta.extended_description}</p>` : ''}
+    ${meta.extended_description ? `<p slot="extended-description">${meta.extended_description}</p>` : ''}
 
     <!-- Features layout slot -->
-    <span slot="features-layout">${config.landing.features_layout || 'grid'}</span>
+    <span slot="features-layout">${config.landing?.features_layout || 'grid'}</span>
 
     <!-- Feature slots -->
-    ${config.landing.features
+    ${features
       .map(
         (feature, idx) => `
-    <div slot="feature-${idx}" data-title="${feature.title}" data-text="${feature.text}" data-video="${feature.videoUrl}" data-img="${feature.placeholderImg}">
-      <h3>${feature.title}</h3>
-      <p>${feature.text}</p>
+    <div slot="feature-${idx}" data-title="${feature.title || ''}" data-text="${feature.text || ''}" data-video="${feature.videoUrl || ''}" data-img="${feature.placeholderImg || ''}">
+      <h3>${feature.title || ''}</h3>
+      <p>${feature.text || ''}</p>
     </div>`
       )
       .join('\n')}
 
     <!-- FAQ slots -->
-    ${config.landing.faqs
+    ${faqs
       .map(
         (faq, idx) => `
-    <div slot="faq-${idx}" data-q="${faq.q}" data-a="${faq.a}">
-      <h3>${faq.q}</h3>
-      <p>${faq.a}</p>
+    <div slot="faq-${idx}" data-q="${faq.q || ''}" data-a="${faq.a || ''}">
+      <h3>${faq.q || ''}</h3>
+      <p>${faq.a || ''}</p>
     </div>`
       )
       .join('\n')}
 
     <!-- Get Started section slots -->
-    <span slot="get-started-title">${config.landing.get_started.title}</span>
-    <span slot="get-started-link-text">${config.landing.get_started.link_text}</span>
-    <span slot="get-started-link-url">${config.landing.get_started.link_url}</span>
+    <span slot="get-started-title">${getStarted.title || ''}</span>
+    <span slot="get-started-link-text">${getStarted.link_text || ''}</span>
+    <span slot="get-started-link-url">${getStarted.link_url || ''}</span>
 
     <!-- Get Started feature slots -->
-    ${config.landing.get_started.features
+    ${getStartedFeatures
       .map(
         (feature, idx) => `
-    <div slot="get-started-feature-${idx}" data-icon="${feature.icon}" data-title="${feature.title}" data-text="${feature.text}">
-      <h3>${feature.title}</h3>
-      <p>${feature.text}</p>
+    <div slot="get-started-feature-${idx}" data-icon="${feature.icon || ''}" data-title="${feature.title || ''}" data-text="${feature.text || ''}">
+      <h3>${feature.title || ''}</h3>
+      <p>${feature.text || ''}</p>
     </div>`
       )
       .join('\n')}
 
     <!-- MCP Setup slots -->
-    <span slot="mcp-setup-title">${config.landing.get_started.mcp_setup_title}</span>
+    <span slot="mcp-setup-title">${getStarted.mcp_setup_title || ''}</span>
 
     <!-- MCP Config slots -->
-    ${config.landing.get_started.mcp_configs
+    ${mcpConfigs
       .map(
         (mcpConfig, idx) => `
     <div slot="mcp-config-${idx}"
-         data-ide="${mcpConfig.ide}"
-         data-ide-name="${mcpConfig.ide_name}"
-         data-logo-path="${mcpConfig.logo_path}"
-         data-logo-width="${mcpConfig.logo_width}"
-         data-prerequisites='${JSON.stringify(mcpConfig.prerequisites)}'
-         data-setup-instructions="${mcpConfig.setup_instructions.replace(/"/g, '&quot;')}">
-      <pre><code>${mcpConfig.code}</code></pre>
+         data-ide="${mcpConfig.ide || ''}"
+         data-ide-name="${mcpConfig.ide_name || ''}"
+         data-logo-path="${mcpConfig.logo_path || ''}"
+         data-logo-width="${mcpConfig.logo_width || ''}"
+         data-prerequisites='${JSON.stringify(mcpConfig.prerequisites || [])}'
+         data-setup-instructions="${(mcpConfig.setup_instructions || '').replace(/"/g, '&quot;')}">
+      <pre><code>${mcpConfig.code || ''}</code></pre>
     </div>`
       )
       .join('\n')}
@@ -411,7 +495,7 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
 
     case '/privacy':
       // Privacy page - will load markdown content
-      return await generatePrivacyContent(config);
+      return await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
 
     case '/pricing':
       // Pricing page - will load markdown content
@@ -508,8 +592,8 @@ function generateFullHtmlPage(
 /**
  * Load and convert markdown file to HTML using marked
  */
-async function loadMarkdownContent(brandName: string, filename: string): Promise<string> {
-  const contentPath = path.resolve(__dirname, `content/${brandName}/${filename}.md`);
+async function loadMarkdownContent(contentBasePath: string, brandName: string, filename: string): Promise<string> {
+  const contentPath = path.resolve(contentBasePath, `${brandName}/${filename}.md`);
 
   if (!fs.existsSync(contentPath)) {
     console.warn(`Warning: Markdown file not found at ${contentPath}`);
@@ -560,6 +644,42 @@ async function loadMarkdownContent(brandName: string, filename: string): Promise
         margin-bottom: 1rem;
         padding-left: 2rem;
       }
+      /* Team section styles */
+      .team-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+        margin: 2rem 0;
+      }
+      .team-member {
+        text-align: center;
+        padding: 1.5rem;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .team-photo {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        object-fit: cover;
+        margin-bottom: 1rem;
+        border: 3px solid var(--sl-color-primary-500);
+      }
+      .team-member h4 {
+        font-size: 1.3rem;
+        font-weight: 500;
+        margin: 0.5rem 0 0.25rem;
+        color: var(--sl-color-neutral-0);
+      }
+      .team-member p {
+        font-size: 0.95rem;
+        line-height: 1.5;
+        text-align: left;
+      }
+      .team-member p strong {
+        color: var(--sl-color-primary-400);
+      }
     </style>
     ${html}
   </article>`;
@@ -567,101 +687,59 @@ async function loadMarkdownContent(brandName: string, filename: string): Promise
   return styledArticle;
 }
 
-/**
- * Generate privacy policy content
- */
-async function generatePrivacyContent(config: BrandConfig): Promise<string> {
-  return await loadMarkdownContent(config.domain.split('.')[0], 'privacy');
-}
+// generatePrivacyContent removed - use loadMarkdownContent(brandKey, 'privacy') directly
 
 /**
- * Generate pricing content
- * TODO: Load from markdown file for production
+ * Generate pricing content for SEO
+ * This content is rendered in the main DOM for search engine indexing.
+ * The actual interactive pricing UI is handled by the public-pricing-view component.
  */
 function generatePricingContent(config: BrandConfig): string {
   return `
-    <article class="container py-5">
-      <h1 class="text-center mb-5">Pricing</h1>
-      <p class="lead text-center mb-5">Choose the plan that fits your team</p>
+    <article class="pricing-content">
+      <h1>Pricing - ${config.name}</h1>
+      <p class="lead">Choose the plan that fits your team</p>
 
-      <div class="row g-4 mb-5">
-        <div class="col-md-4">
-          <div class="card h-100">
-            <div class="card-header bg-primary text-white">
-              <h3 class="h5 mb-0">Starter</h3>
-            </div>
-            <div class="card-body">
-              <div class="display-4 mb-3">$49<small class="text-muted fs-6">/mo</small></div>
-              <ul class="list-unstyled">
-                <li>✓ Up to 5 users</li>
-                <li>✓ 1 issue tracker integration</li>
-                <li>✓ Basic AI features</li>
-                <li>✓ Email support</li>
-              </ul>
-              <a href="/register" class="btn btn-primary w-100">Get Started</a>
-            </div>
-          </div>
+      <section class="pricing-plans">
+        <div class="plan">
+          <h2>Teams</h2>
+          <p class="price">$29/month or $290/year</p>
+          <ul>
+            <li>30-day free trial</li>
+            <li>No credit card required</li>
+            <li>Email support</li>
+          </ul>
+          <a href="/register">Start Free Trial</a>
         </div>
 
-        <div class="col-md-4">
-          <div class="card h-100 border-primary">
-            <div class="card-header bg-primary text-white">
-              <h3 class="h5 mb-0">Professional</h3>
-              <small>Most Popular</small>
-            </div>
-            <div class="card-body">
-              <div class="display-4 mb-3">$149<small class="text-muted fs-6">/mo</small></div>
-              <ul class="list-unstyled">
-                <li>✓ Up to 25 users</li>
-                <li>✓ Unlimited integrations</li>
-                <li>✓ Advanced AI features</li>
-                <li>✓ Priority support</li>
-                <li>✓ Custom workflows</li>
-              </ul>
-              <a href="/register" class="btn btn-primary w-100">Get Started</a>
-            </div>
-          </div>
+        <div class="plan">
+          <h2>Enterprise</h2>
+          <p class="price">Custom pricing</p>
+          <ul>
+            <li>Model/provider limits &amp; controls</li>
+            <li>Comprehensive audit logs</li>
+            <li>SSO, OIDC, SCIM support</li>
+            <li>SLA commitments</li>
+            <li>Dedicated support channels</li>
+            <li>Custom integrations &amp; flow presets</li>
+            <li>On-premise deployment options</li>
+            <li>Priority feature requests</li>
+          </ul>
+          <a href="/request-demo">Contact Sales</a>
         </div>
+      </section>
 
-        <div class="col-md-4">
-          <div class="card h-100">
-            <div class="card-header bg-secondary text-white">
-              <h3 class="h5 mb-0">Enterprise</h3>
-            </div>
-            <div class="card-body">
-              <div class="display-4 mb-3">Custom</div>
-              <ul class="list-unstyled">
-                <li>✓ Unlimited users</li>
-                <li>✓ Unlimited integrations</li>
-                <li>✓ All AI features</li>
-                <li>✓ Dedicated support</li>
-                <li>✓ Custom deployment</li>
-                <li>✓ SLA guarantee</li>
-              </ul>
-              <a href="/request-demo" class="btn btn-secondary w-100">Contact Sales</a>
-            </div>
-          </div>
-        </div>
-      </div>
+      <section class="pricing-faq">
+        <h2>Frequently Asked Questions</h2>
 
-      <section class="mt-5">
-        <h2 class="text-center mb-4">Frequently Asked Questions</h2>
-        <div class="row">
-          <div class="col-lg-8 mx-auto">
-            <div class="mb-4">
-              <h3 class="h5 fw-bold">Can I change plans later?</h3>
-              <p>Yes, you can upgrade or downgrade your plan at any time. Changes take effect immediately.</p>
-            </div>
-            <div class="mb-4">
-              <h3 class="h5 fw-bold">What payment methods do you accept?</h3>
-              <p>We accept all major credit cards and can invoice for annual plans.</p>
-            </div>
-            <div class="mb-4">
-              <h3 class="h5 fw-bold">Is there a free trial?</h3>
-              <p>Yes, all plans come with a 14-day free trial. No credit card required.</p>
-            </div>
-          </div>
-        </div>
+        <h3>Can I change plans later?</h3>
+        <p>Yes, you can upgrade or downgrade your plan at any time. Changes take effect immediately.</p>
+
+        <h3>What payment methods do you accept?</h3>
+        <p>We accept all major credit cards and can invoice for annual plans.</p>
+
+        <h3>Is there a free trial?</h3>
+        <p>Yes, the Teams plan comes with a 30-day free trial. No credit card required.</p>
       </section>
     </article>
   `;

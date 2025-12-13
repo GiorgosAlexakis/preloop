@@ -3,9 +3,22 @@ Pytest configuration and fixtures for integration tests.
 """
 
 import os
+from pathlib import Path
 
 import httpx
 import pytest
+
+# Directory for screenshots on failure (for UI tests)
+SCREENSHOTS_DIR = Path(__file__).parent / "screenshots"
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Store test result on the item for fixtures to access."""
+    outcome = yield
+    rep = outcome.get_result()
+    setattr(item, f"rep_{rep.when}", rep)
+
 
 # Test configuration
 PRELOOP_URL = os.getenv("PRELOOP_TEST_URL", "").rstrip("/")
@@ -22,9 +35,7 @@ def preloop_client():
         "Authorization": f"Bearer {PRELOOP_API_KEY}",
         "Content-Type": "application/json",
     }
-    with httpx.Client(
-        base_url=PRELOOP_URL, headers=headers, timeout=30.0
-    ) as client:
+    with httpx.Client(base_url=PRELOOP_URL, headers=headers, timeout=30.0) as client:
         yield client
 
 

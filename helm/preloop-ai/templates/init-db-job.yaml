@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "preloop_ai.fullname" . }}-init-db-job
+  labels:
+    {{- include "preloop_ai.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "preloop_ai.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init-db-runner
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              cd /app/backend/preloop-models && \
+              python scripts/init_db.py --force
+          env:
+            - name: DATABASE_URL
+              value: {{ include "preloop_ai.databaseUrl" . }}
+            - name: OPENAI_API_KEY
+              value: {{ .Values.config.openai.apiKey }}

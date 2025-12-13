@@ -9,6 +9,7 @@ from .base import (
     Plugin,
     PluginManager,
     PluginMetadata,
+    RouterConfig,
     WorkflowOrchestratorPlugin,
     get_plugin_manager,
     reset_plugin_manager,
@@ -17,6 +18,7 @@ from .base import (
 __all__ = [
     "Plugin",
     "PluginMetadata",
+    "RouterConfig",
     "ConditionEvaluatorPlugin",
     "WorkflowOrchestratorPlugin",
     "PluginManager",
