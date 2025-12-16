@@ -220,13 +220,13 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       // Replace Open Graph title
       html = html.replace(
         /<meta property="og:title" content=".*?">/,
-        `<meta property="og:title" content="${meta.title}">`
+        `<meta property="og:title" content="${meta.og_title}">`
       );
 
       // Replace Open Graph description
       html = html.replace(
         /<meta property="og:description" content=".*?">/,
-        `<meta property="og:description" content="${meta.description}">`
+        `<meta property="og:description" content="${meta.og_description}">`
       );
 
       // Replace Open Graph image
@@ -341,12 +341,23 @@ function getRouteFromFilename(filename: string): string {
 /**
  * Get route-specific metadata
  */
-function getMetaForRoute(route: string, config: BrandConfig) {
+type RouteMeta = {
+  title: string;
+  description: string;
+  keywords: string;
+  og_image: string;
+  og_title: string;
+  og_description: string;
+};
+
+function getMetaForRoute(route: string, config: BrandConfig): RouteMeta {
   const meta = config.landing?.meta || {};
   const defaultTitle = meta.title || config.name || 'Preloop AI';
   const defaultDescription = meta.description || '';
   const defaultKeywords = meta.keywords || '';
   const defaultOgImage = meta.og_image || '';
+  const defaultOgTitle = (meta as any).og_title || defaultTitle;
+  const defaultOgDescription = (meta as any).og_description || defaultDescription;
 
   switch (route) {
     case '/':
@@ -355,6 +366,8 @@ function getMetaForRoute(route: string, config: BrandConfig) {
         description: defaultDescription,
         keywords: defaultKeywords,
         og_image: defaultOgImage,
+        og_title: defaultOgTitle,
+        og_description: defaultOgDescription,
       };
     case '/privacy':
       return {
@@ -362,6 +375,8 @@ function getMetaForRoute(route: string, config: BrandConfig) {
         description: `${config.name} Privacy Policy - Learn how we protect your data.`,
         keywords: `${config.name}, Privacy Policy, Data Protection`,
         og_image: defaultOgImage,
+        og_title: `Privacy Policy - ${config.name}`,
+        og_description: `${config.name} Privacy Policy - Learn how we protect your data.`,
       };
     case '/pricing':
       return {
@@ -369,6 +384,8 @@ function getMetaForRoute(route: string, config: BrandConfig) {
         description: `${config.name} Pricing - Choose the plan that fits your team.`,
         keywords: `${config.name}, Pricing, Plans, Subscription`,
         og_image: defaultOgImage,
+        og_title: `Pricing - ${config.name}`,
+        og_description: `${config.name} Pricing - Choose the plan that fits your team.`,
       };
     case '/terms':
       return {
@@ -376,6 +393,8 @@ function getMetaForRoute(route: string, config: BrandConfig) {
         description: `${config.name} Terms of Service - Read our terms and conditions.`,
         keywords: `${config.name}, Terms of Service, Legal`,
         og_image: defaultOgImage,
+        og_title: `Terms of Service - ${config.name}`,
+        og_description: `${config.name} Terms of Service - Read our terms and conditions.`,
       };
     case '/whatis-mcp':
       return {
@@ -383,6 +402,8 @@ function getMetaForRoute(route: string, config: BrandConfig) {
         description: `Learn about the Model Context Protocol (MCP) and how ${config.name} leverages it.`,
         keywords: `${config.name}, MCP, Model Context Protocol, AI`,
         og_image: defaultOgImage,
+        og_title: `What is MCP? - ${config.name}`,
+        og_description: `Learn about the Model Context Protocol (MCP) and how ${config.name} leverages it.`,
       };
     case '/about':
       return {
@@ -390,6 +411,8 @@ function getMetaForRoute(route: string, config: BrandConfig) {
         description: `Learn about ${config.name} and our mission to make AI automation responsible and human-centered.`,
         keywords: `${config.name}, About, Company, Team, Mission`,
         og_image: defaultOgImage,
+        og_title: `About - ${config.name}`,
+        og_description: `Learn about ${config.name} and our mission to make AI automation responsible and human-centered.`,
       };
     default:
       return {
@@ -397,6 +420,8 @@ function getMetaForRoute(route: string, config: BrandConfig) {
         description: defaultDescription,
         keywords: defaultKeywords,
         og_image: defaultOgImage,
+        og_title: defaultOgTitle,
+        og_description: defaultOgDescription,
       };
   }
 }
@@ -540,13 +565,13 @@ function generateFullHtmlPage(
   // Replace Open Graph title
   html = html.replace(
     /<meta property="og:title" content=".*?">/,
-    `<meta property="og:title" content="${meta.title}">`
+    `<meta property="og:title" content="${meta.og_title}">`
   );
 
   // Replace Open Graph description
   html = html.replace(
     /<meta property="og:description" content=".*?">/,
-    `<meta property="og:description" content="${meta.description}">`
+    `<meta property="og:description" content="${meta.og_description}">`
   );
 
   // Replace Open Graph image

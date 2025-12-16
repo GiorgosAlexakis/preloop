@@ -13,6 +13,7 @@ import {
   getApprovalPolicies,
   createApprovalPolicy,
   updateApprovalPolicy,
+  getFeatures,
 } from '../../api';
 import '../../components/mcp-server-form';
 import '../../components/mcp-server-card';
@@ -60,6 +61,9 @@ export class ToolsView extends LitElement {
 
   @state()
   private showSetupDialog = false;
+
+  @state()
+  private features: { [key: string]: boolean } = {};
 
   static styles = [
     unsafeCSS(consoleStyles),
@@ -257,11 +261,15 @@ export class ToolsView extends LitElement {
     this.error = null;
 
     try {
-      const [tools, servers, policies] = await Promise.all([
+      const [tools, servers, policies, featuresResponse] = await Promise.all([
         getTools(),
         getMCPServers(),
         getApprovalPolicies(),
+        getFeatures(),
       ]);
+
+      // Store features for passing to child components
+      this.features = featuresResponse.features || {};
 
       // Count enabled tools per server
       const toolCounts = new Map<string, number>();
@@ -806,6 +814,7 @@ export class ToolsView extends LitElement {
                             html`<tool-card
                               .tool=${tool}
                               .policies=${this.approvalPolicies}
+                              .features=${this.features}
                               @toggle-enabled=${this.handleToggleEnabled}
                               @toggle-approval=${this.handleToggleApproval}
                               @policy-selected=${this.handlePolicySelected}

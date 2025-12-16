@@ -69,6 +69,9 @@ export class ToolCard extends LitElement {
   @property({ type: Array })
   policies: ApprovalPolicy[] = [];
 
+  @property({ type: Object })
+  features: { [key: string]: boolean } = {};
+
   @state()
   private showPreloopDialog = false;
 
@@ -150,21 +153,60 @@ export class ToolCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.loadUsersAndTeams();
+    this.loadCurrentUser();
+  }
+
+  /**
+   * Check if a specific feature is enabled.
+   * Enterprise features like RBAC, advanced_approvals are controlled by backend plugins.
+   */
+  private hasFeature(featureName: string): boolean {
+    return this.features[featureName] === true;
+  }
+
+  /**
+   * Check if advanced approval features are available (enterprise feature).
+   * This enables:
+   * - User/team approver selection
+   * - Quorum (multiple approvals required)
+   * - Escalation policies
+   * - Slack/Mattermost notification channels
+   */
+  private hasAdvancedApprovals(): boolean {
+    return this.hasFeature('advanced_approvals');
+  }
+
+  private async loadCurrentUser() {
+    try {
+      const currentUser = await getAccountDetails();
+      this.currentUserId = currentUser?.id || '';
+    } catch (error) {
+      console.error('Failed to load current user:', error);
+    }
   }
 
   private async loadUsersAndTeams() {
+    // Only load users and teams if advanced approvals feature is enabled (enterprise)
+    if (!this.hasAdvancedApprovals()) {
+      return;
+    }
     try {
-      const [usersResponse, teamsResponse, currentUser] = await Promise.all([
+      const [usersResponse, teamsResponse] = await Promise.all([
         getUsers(),
         getTeams(),
-        getAccountDetails(),
       ]);
       this.availableUsers = usersResponse.users || [];
       this.availableTeams = teamsResponse.teams || [];
-      this.currentUserId = currentUser?.id || '';
     } catch (error) {
       console.error('Failed to load users and teams:', error);
+    }
+  }
+
+  updated(changedProperties: Map<string, unknown>) {
+    super.updated(changedProperties);
+    // Load users/teams when features change (in case enterprise features become available)
+    if (changedProperties.has('features') && this.hasAdvancedApprovals()) {
+      this.loadUsersAndTeams();
     }
   }
 
@@ -664,17 +706,14 @@ export class ToolCard extends LitElement {
         return;
       }
 
-      // For Standard type, at least one approver is required
+      // Enterprise only: validate approvers and quorum
       const totalApprovers =
         this.newPolicyApproverUserIds.length +
         this.newPolicyApproverTeamIds.length;
-      if (this.newPolicyType === 'standard' && totalApprovers === 0) {
-        alert('At least one approver is required for Standard approval type');
-        return;
-      }
 
-      // Validate approvals_required doesn't exceed total potential approvers
+      // Validate approvals_required doesn't exceed total potential approvers (enterprise only)
       if (
+        this.hasAdvancedApprovals() &&
         totalApprovers > 0 &&
         this.newPolicyApprovalsRequired > totalApprovers
       ) {
@@ -833,83 +872,95 @@ export class ToolCard extends LitElement {
             ></sl-switch>
           </div>
 
-          <div class="approval-section">
-            <div class="control-row">
-              <span class="control-label">
-                Require Approval
-                <span class="preloop-icon">
-                  ${unsafeHTML(preloopBadgeSvg)}
-                </span>
-              </span>
-              <sl-switch
-                ?checked=${this.tool.approval_policy_id || this.pendingApproval}
-                ?disabled=${!this.tool.is_enabled}
-                @sl-change=${this.handleApprovalToggle}
-              ></sl-switch>
-            </div>
-            ${this.tool.approval_policy_id && this.tool.is_enabled
-              ? html`
-                  <div class="policy-selector">
-                    <sl-select
-                      size="small"
-                      placeholder="Select a policy..."
-                      value=${this.tool.approval_policy_id || ''}
-                      @sl-change=${this.handlePolicySelect}
-                    >
-                      ${this.policies.map(
-                        (policy) => html`
-                          <sl-option value=${policy.id}
-                            >${policy.name}</sl-option
-                          >
+          ${
+            // Hide approval section for the request_approval tool since it doesn't
+            // make sense to require approval for a tool that requests approval
+            this.tool.name === 'request_approval'
+              ? ''
+              : html`
+                  <div class="approval-section">
+                    <div class="control-row">
+                      <span class="control-label">
+                        Require Approval
+                        <span class="preloop-icon">
+                          ${unsafeHTML(preloopBadgeSvg)}
+                        </span>
+                      </span>
+                      <sl-switch
+                        ?checked=${this.tool.approval_policy_id ||
+                        this.pendingApproval}
+                        ?disabled=${!this.tool.is_enabled}
+                        @sl-change=${this.handleApprovalToggle}
+                      ></sl-switch>
+                    </div>
+                    ${this.tool.approval_policy_id && this.tool.is_enabled
+                      ? html`
+                          <div class="policy-selector">
+                            <sl-select
+                              size="small"
+                              placeholder="Select a policy..."
+                              value=${this.tool.approval_policy_id || ''}
+                              @sl-change=${this.handlePolicySelect}
+                            >
+                              ${this.policies.map(
+                                (policy) => html`
+                                  <sl-option value=${policy.id}
+                                    >${policy.name}</sl-option
+                                  >
+                                `
+                              )}
+                            </sl-select>
+                            <sl-icon-button
+                              name="gear"
+                              label="Manage policies"
+                              @click=${this.handleManagePolicies}
+                            ></sl-icon-button>
+                          </div>
+                          <div class="policy-selector">
+                            <sl-button
+                              size="small"
+                              @click=${this.handleConfigureCondition}
+                              style="width: 100%;"
+                            >
+                              <sl-icon
+                                slot="prefix"
+                                name="code-square"
+                              ></sl-icon>
+                              ${this.tool.has_approval_condition
+                                ? 'Edit Condition'
+                                : 'Add Condition'}
+                            </sl-button>
+                          </div>
                         `
-                      )}
-                    </sl-select>
-                    <sl-icon-button
-                      name="gear"
-                      label="Manage policies"
-                      @click=${this.handleManagePolicies}
-                    ></sl-icon-button>
-                  </div>
-                  <div class="policy-selector">
-                    <sl-button
-                      size="small"
-                      @click=${this.handleConfigureCondition}
-                      style="width: 100%;"
-                    >
-                      <sl-icon slot="prefix" name="code-square"></sl-icon>
-                      ${this.tool.has_approval_condition
-                        ? 'Edit Condition'
-                        : 'Add Condition'}
-                    </sl-button>
+                      : ''}
+                    ${this.pendingApproval && this.tool.is_enabled
+                      ? html`
+                          <div class="policy-selector">
+                            <sl-select
+                              size="small"
+                              placeholder="Select a policy..."
+                              value=""
+                              @sl-change=${this.handlePolicySelect}
+                            >
+                              ${this.policies.map(
+                                (policy) => html`
+                                  <sl-option value=${policy.id}
+                                    >${policy.name}</sl-option
+                                  >
+                                `
+                              )}
+                            </sl-select>
+                            <sl-icon-button
+                              name="gear"
+                              label="Manage policies"
+                              @click=${this.handleManagePolicies}
+                            ></sl-icon-button>
+                          </div>
+                        `
+                      : ''}
                   </div>
                 `
-              : ''}
-            ${this.pendingApproval && this.tool.is_enabled
-              ? html`
-                  <div class="policy-selector">
-                    <sl-select
-                      size="small"
-                      placeholder="Select a policy..."
-                      value=""
-                      @sl-change=${this.handlePolicySelect}
-                    >
-                      ${this.policies.map(
-                        (policy) => html`
-                          <sl-option value=${policy.id}
-                            >${policy.name}</sl-option
-                          >
-                        `
-                      )}
-                    </sl-select>
-                    <sl-icon-button
-                      name="gear"
-                      label="Manage policies"
-                      @click=${this.handleManagePolicies}
-                    ></sl-icon-button>
-                  </div>
-                `
-              : ''}
-          </div>
+          }
         </div>
       </sl-card>
 
@@ -1093,8 +1144,12 @@ export class ToolCard extends LitElement {
                       }}
                     >
                       <sl-option value="standard">Standard</sl-option>
-                      <sl-option value="slack">Slack</sl-option>
-                      <sl-option value="mattermost">Mattermost</sl-option>
+                      ${this.hasAdvancedApprovals()
+                        ? html`
+                            <sl-option value="slack">Slack</sl-option>
+                            <sl-option value="mattermost">Mattermost</sl-option>
+                          `
+                        : ''}
                       <sl-option value="webhook">Webhook</sl-option>
                     </sl-select>
                   </div>
@@ -1121,16 +1176,14 @@ export class ToolCard extends LitElement {
                       `
                     : ''}
 
-                  <!-- Proprietary Features: Advanced Approval Configuration -->
-                  ${this.availableUsers.length > 0 ||
-                  this.availableTeams.length > 0
+                  <!-- Enterprise Features: Advanced Approval Configuration -->
+                  ${this.hasAdvancedApprovals() &&
+                  (this.availableUsers.length > 0 ||
+                    this.availableTeams.length > 0)
                     ? html`
                         <div class="form-field">
                           <label class="form-label">
-                            Approvers
-                            ${this.newPolicyType === 'standard'
-                              ? '*'
-                              : '(Optional)'}
+                            Approvers (Optional)
                           </label>
                           <sl-select
                             multiple
@@ -1154,9 +1207,7 @@ export class ToolCard extends LitElement {
                                 .filter((v: string) => v.startsWith('team:'))
                                 .map((v: string) => v.substring(5));
                             }}
-                            help-text="${this.newPolicyType === 'standard'
-                              ? 'At least one user or team is required for Standard approval'
-                              : 'Select users and teams who can provide approval'}"
+                            help-text="Select users and teams who can provide approval"
                           >
                             ${this.availableUsers.length > 0
                               ? html`
@@ -1457,12 +1508,24 @@ export class ToolCard extends LitElement {
                         ></sl-input>
                       </div>
 
-                      <div
-                        style="margin-top: var(--sl-spacing-medium); padding: var(--sl-spacing-small); background: var(--sl-color-neutral-100); border-radius: 4px; font-family: monospace; font-size: var(--sl-font-size-small);"
-                      >
-                        <strong>CEL Expression:</strong><br />
-                        ${this.buildConditionExpression() || '(incomplete)'}
-                      </div>
+                      ${this.hasAdvancedApprovals()
+                        ? html`
+                            <div
+                              style="margin-top: var(--sl-spacing-medium); padding: var(--sl-spacing-small); background: var(--sl-color-neutral-100); border-radius: 4px; font-family: monospace; font-size: var(--sl-font-size-small);"
+                            >
+                              <strong>CEL Expression:</strong><br />
+                              ${this.buildConditionExpression() ||
+                              '(incomplete)'}
+                            </div>
+                            <p
+                              style="font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-600); margin-top: var(--sl-spacing-small);"
+                            >
+                              Enterprise: You can create more complex conditions
+                              using CEL (Common Expression Language) syntax
+                              directly in the backend configuration.
+                            </p>
+                          `
+                        : ''}
                     `
                   : ''}
               `
