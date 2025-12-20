@@ -49,6 +49,8 @@ BUILTIN_TOOLS = [
         "name": "request_approval",
         "description": "Request approval for an operation before executing it",
         "source": "builtin",
+        "requires_tracker": False,
+        "required_tracker_types": [],
         "schema": {
             "type": "object",
             "properties": {
@@ -80,6 +82,8 @@ BUILTIN_TOOLS = [
         "name": "get_issue",
         "description": "Get detailed information about an issue by its identifier (URL, key, or ID)",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": [],
         "schema": {
             "type": "object",
             "properties": {
@@ -95,6 +99,8 @@ BUILTIN_TOOLS = [
         "name": "create_issue",
         "description": "Create a new issue in a project",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": [],
         "schema": {
             "type": "object",
             "properties": {
@@ -117,6 +123,8 @@ BUILTIN_TOOLS = [
         "name": "update_issue",
         "description": "Update an existing issue",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": [],
         "schema": {
             "type": "object",
             "properties": {
@@ -135,6 +143,8 @@ BUILTIN_TOOLS = [
         "name": "search",
         "description": "Search for issues and comments using similarity or fulltext search",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": [],
         "schema": {
             "type": "object",
             "properties": {
@@ -153,6 +163,8 @@ BUILTIN_TOOLS = [
         "name": "estimate_compliance",
         "description": "Estimate compliance for a list of issues provided as URLs or issue keys",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": [],
         "schema": {
             "type": "object",
             "properties": {
@@ -166,6 +178,8 @@ BUILTIN_TOOLS = [
         "name": "improve_compliance",
         "description": "Get suggestions to improve compliance for a list of issues",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": [],
         "schema": {
             "type": "object",
             "properties": {
@@ -179,6 +193,8 @@ BUILTIN_TOOLS = [
         "name": "add_comment",
         "description": "Add a comment to an issue, pull request, or merge request",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": [],
         "schema": {
             "type": "object",
             "properties": {
@@ -195,6 +211,8 @@ BUILTIN_TOOLS = [
         "name": "get_pull_request",
         "description": "Get details of a GitHub pull request",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": ["github"],
         "schema": {
             "type": "object",
             "properties": {
@@ -210,6 +228,8 @@ BUILTIN_TOOLS = [
         "name": "get_merge_request",
         "description": "Get details of a GitLab merge request",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": ["gitlab"],
         "schema": {
             "type": "object",
             "properties": {
@@ -225,6 +245,8 @@ BUILTIN_TOOLS = [
         "name": "update_pull_request",
         "description": "Update a GitHub pull request",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": ["github"],
         "schema": {
             "type": "object",
             "properties": {
@@ -259,6 +281,8 @@ BUILTIN_TOOLS = [
         "name": "update_merge_request",
         "description": "Update a GitLab merge request",
         "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": ["gitlab"],
         "schema": {
             "type": "object",
             "properties": {
@@ -348,12 +372,34 @@ async def list_all_tools(
         if cond.condition_expression
     }
 
+    from preloop_models.crud import crud_tracker
+
+    trackers = crud_tracker.get_for_account(db, account_id=str(account.id))
+    tracker_types = list(set(tracker.tracker_type for tracker in trackers))
+    has_tracker = len(tracker_types) > 0
+
     tools = []
 
     # Add builtin tools
     for builtin_tool in BUILTIN_TOOLS:
         config = config_map.get((builtin_tool["name"], "builtin", None))
         config_id = str(config.id) if config else None
+
+        requires_tracker = builtin_tool.get("requires_tracker", False)
+        required_tracker_types = builtin_tool.get("required_tracker_types") or []
+
+        is_supported = True
+        unsupported_reason = None
+        if requires_tracker and not has_tracker:
+            is_supported = False
+            unsupported_reason = "Add a tracker to enable this tool"
+        elif required_tracker_types and not any(
+            t in tracker_types for t in required_tracker_types
+        ):
+            is_supported = False
+            required_str = ", ".join(required_tracker_types)
+            unsupported_reason = f"Add a {required_str} tracker to enable this tool"
+
         tools.append(
             {
                 "name": builtin_tool["name"],
@@ -363,6 +409,10 @@ async def list_all_tools(
                 "source_name": "Built-in",
                 "schema": builtin_tool["schema"],
                 "is_enabled": config.is_enabled if config else True,
+                "requires_tracker": requires_tracker,
+                "required_tracker_types": required_tracker_types,
+                "is_supported": is_supported,
+                "unsupported_reason": unsupported_reason,
                 "approval_policy_id": str(config.approval_policy_id)
                 if config and config.approval_policy_id
                 else None,
@@ -391,6 +441,10 @@ async def list_all_tools(
                     "source_name": server.name,
                     "schema": mcp_tool.input_schema,
                     "is_enabled": config.is_enabled if config else True,
+                    "requires_tracker": False,
+                    "required_tracker_types": [],
+                    "is_supported": True,
+                    "unsupported_reason": None,
                     "approval_policy_id": str(config.approval_policy_id)
                     if config and config.approval_policy_id
                     else None,

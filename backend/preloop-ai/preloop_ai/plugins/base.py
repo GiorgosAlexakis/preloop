@@ -288,10 +288,20 @@ class PluginManager:
         return list(self._workflow_orchestrators.keys())
 
     def get_enabled_features(self) -> Dict[str, Any]:
-        """Get list of enabled features/plugins for frontend consumption."""
+        """Get list of enabled features/plugins for frontend consumption.
+
+        Note: The 'builtin' plugin is excluded from the plugins list since it
+        only provides internal functionality (argument evaluator) and is not
+        a user-facing enterprise plugin.
+        """
         features = {"plugins": [], "features": {}}
 
         for _plugin_name, plugin in self._plugins.items():
+            # Skip builtin plugin from the list - it's not an enterprise plugin
+            # and only provides internal functionality (argument evaluator)
+            if plugin.metadata.name == "builtin":
+                continue
+
             features["plugins"].append(
                 {
                     "name": plugin.metadata.name,
@@ -432,11 +442,26 @@ def get_plugin_manager() -> PluginManager:
 
         # Only load proprietary plugins if not explicitly disabled
         # Check both DISABLE_RBAC (for permission checks) and DISABLE_PROPRIETARY_PLUGINS (for plugin loading)
-        if (
-            os.getenv("DISABLE_RBAC", "false").lower() != "true"
-            and os.getenv("DISABLE_PROPRIETARY_PLUGINS", "false").lower() != "true"
-        ):
+        disable_rbac = os.getenv("DISABLE_RBAC", "false").lower() == "true"
+        disable_proprietary = (
+            os.getenv("DISABLE_PROPRIETARY_PLUGINS", "false").lower() == "true"
+        )
+
+        if disable_rbac:
+            logger.info("DISABLE_RBAC is set - skipping proprietary plugins")
+        elif disable_proprietary:
+            logger.info(
+                "DISABLE_PROPRIETARY_PLUGINS is set - skipping proprietary plugins"
+            )
+        else:
+            logger.info(
+                "Loading proprietary plugins from preloop_ai.plugins.proprietary"
+            )
             _plugin_manager.discover_plugins("preloop_ai.plugins.proprietary")
+
+        # Log loaded plugins summary
+        plugin_names = list(_plugin_manager._plugins.keys())
+        logger.info(f"Plugin manager initialized with plugins: {plugin_names}")
     return _plugin_manager
 
 

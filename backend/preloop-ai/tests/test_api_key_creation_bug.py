@@ -58,6 +58,7 @@ def test_api_key_creation_with_user_id(db_session: Session):
         api_key = ApiKey(
             name="Test API Key",
             key=f"test_key_{uuid.uuid4().hex}",  # Use unique key to avoid duplicates
+            account_id=test_user.account_id,
             user_id=test_user.id,  # This is the correct field
             scopes=["read", "write"],
             is_active=True,
@@ -125,6 +126,7 @@ def test_api_key_creation_fails_with_created_by(db_session: Session):
         api_key = ApiKey(
             name="Test API Key",
             key=f"test_key_{uuid.uuid4().hex}",  # Use unique key to avoid duplicates
+            account_id=test_user.account_id,
             created_by=test_user.username,  # This should fail!
             scopes=["read", "write"],
             is_active=True,

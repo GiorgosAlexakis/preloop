@@ -39,6 +39,7 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         db_obj = ApiKey(
             name=obj_in_data.get("name", "API Key"),
             key=key_value,
+            account_id=user.account_id,
             user_id=user.id,
             expires_at=expires_at,
             scopes=obj_in_data.get("scopes", []),

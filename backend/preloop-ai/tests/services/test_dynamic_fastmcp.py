@@ -129,6 +129,7 @@ class TestListTools:
             has_tracker=False,
             enabled_default_tools=[],
             enabled_proxied_tools=[],
+            tracker_types=[],
         )
         dynamic_mcp._user_context_provider = lambda: user_context
 
@@ -144,44 +145,86 @@ class TestListTools:
             ):
                 result = await dynamic_mcp._list_tools()
 
-        # User without tracker gets no default tools, only proxied
+        # User without tracker still may get builtin tools that don't require a tracker
         assert isinstance(result, list)
 
     async def test_list_tools_user_with_tracker(self, dynamic_mcp, user_context):
         """Test listing tools for user with tracker."""
         dynamic_mcp._user_context_provider = lambda: user_context
 
+        # Ensure tracker types exist
+        user_context.tracker_types = ["github"]
+
         # Mock super()._list_tools() to return default tools
         default_tools = [
-            Tool(name="tool1", description="Tool 1", parameters={}),
-            Tool(name="tool2", description="Tool 2", parameters={}),
+            Tool(name="get_issue", description="Get issue", parameters={}),
+            Tool(name="get_pull_request", description="Get PR", parameters={}),
+            Tool(name="get_merge_request", description="Get MR", parameters={}),
         ]
 
-        with patch.object(
-            DynamicFastMCP, "_list_tools", return_value=default_tools
-        ) as mock_super:
-            # Call the actual method (not the mock)
-            mock_super.side_effect = None
+        with patch("preloop_ai.services.dynamic_fastmcp.get_db") as mock_get_db:
+            mock_db = MagicMock()
+            mock_db.close = MagicMock()
+            mock_get_db.return_value = iter([mock_db])
 
-            with patch("preloop_ai.services.dynamic_fastmcp.get_db") as mock_get_db:
-                mock_db = MagicMock()
-                mock_db.close = MagicMock()
-                mock_get_db.return_value = iter([mock_db])
-
-                with patch(
-                    "preloop_ai.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
-                    return_value=[],
+            with patch(
+                "preloop_ai.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                return_value=[],
+            ):
+                with patch.object(
+                    dynamic_mcp.__class__.__bases__[0],
+                    "_list_tools",
+                    new=AsyncMock(return_value=default_tools),
+                    create=True,
                 ):
-                    with patch.object(
-                        dynamic_mcp.__class__.__bases__[0],
-                        "_list_tools",
-                        new=AsyncMock(return_value=default_tools),
-                        create=True,  # Allow creating the method if it doesn't exist
-                    ):
-                        result = await dynamic_mcp._list_tools()
+                    result = await dynamic_mcp._list_tools()
 
-        # Should include default tools
-        assert len(result) == 2
+        # Should include tools compatible with tracker types (github)
+        assert any(t.name == "get_issue" for t in result)
+        assert any(t.name == "get_pull_request" for t in result)
+        assert not any(t.name == "get_merge_request" for t in result)
+
+    async def test_list_tools_includes_request_approval_without_tracker(
+        self, dynamic_mcp
+    ):
+        """Tools that do not require a tracker (e.g. request_approval) should still be visible."""
+        user_context = UserContext(
+            user_id="1",
+            account_id="1",
+            username="test",
+            has_tracker=False,
+            enabled_default_tools=[],
+            enabled_proxied_tools=[],
+            tracker_types=[],
+        )
+        dynamic_mcp._user_context_provider = lambda: user_context
+
+        default_tools = [
+            Tool(
+                name="request_approval", description="Request approval", parameters={}
+            ),
+            Tool(name="get_issue", description="Get issue", parameters={}),
+        ]
+
+        with patch("preloop_ai.services.dynamic_fastmcp.get_db") as mock_get_db:
+            mock_db = MagicMock()
+            mock_db.close = MagicMock()
+            mock_get_db.return_value = iter([mock_db])
+
+            with patch(
+                "preloop_ai.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                return_value=[],
+            ):
+                with patch.object(
+                    dynamic_mcp.__class__.__bases__[0],
+                    "_list_tools",
+                    new=AsyncMock(return_value=default_tools),
+                    create=True,
+                ):
+                    result = await dynamic_mcp._list_tools()
+
+        assert any(t.name == "request_approval" for t in result)
+        assert not any(t.name == "get_issue" for t in result)
 
     async def test_list_tools_filters_internal_names(self, dynamic_mcp, user_context):
         """Test that internal tool names (account_*) are filtered out."""

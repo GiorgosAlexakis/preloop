@@ -24,7 +24,9 @@ from preloop_models.models import ai_model  # noqa: F401
 from preloop_models.models import issue_duplicate  # noqa: F401
 
 # Load .env file from the parent directory (project root)
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+load_dotenv(
+    dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")
+)
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
