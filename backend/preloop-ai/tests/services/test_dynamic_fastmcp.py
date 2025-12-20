@@ -261,6 +261,52 @@ class TestListTools:
         assert len(result) == 1
         assert result[0].name == "public_tool"
 
+    async def test_list_tools_flow_execution_allows_zero_tools(self, dynamic_mcp):
+        """Empty allowed_flow_tools list should restrict to zero tools.
+
+        This is a security behavior: an explicit empty allow-list should NOT be
+        treated as "no restriction".
+        """
+
+        user_context = UserContext(
+            user_id="1",
+            account_id="1",
+            username="test",
+            has_tracker=True,
+            enabled_default_tools=[],
+            enabled_proxied_tools=[],
+            tracker_types=["github"],
+            flow_execution_id="flow-exec-1",
+            allowed_flow_tools=[],
+        )
+        dynamic_mcp._user_context_provider = lambda: user_context
+
+        default_tools = [
+            Tool(
+                name="request_approval", description="Request approval", parameters={}
+            ),
+            Tool(name="get_issue", description="Get issue", parameters={}),
+        ]
+
+        with patch("preloop_ai.services.dynamic_fastmcp.get_db") as mock_get_db:
+            mock_db = MagicMock()
+            mock_db.close = MagicMock()
+            mock_get_db.return_value = iter([mock_db])
+
+            with patch(
+                "preloop_ai.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                return_value=[],
+            ):
+                with patch.object(
+                    dynamic_mcp.__class__.__bases__[0],
+                    "_list_tools",
+                    new=AsyncMock(return_value=default_tools),
+                    create=True,
+                ):
+                    result = await dynamic_mcp._list_tools()
+
+        assert result == []
+
     async def test_list_tools_includes_proxied_tools(self, dynamic_mcp, user_context):
         """Test that proxied tools are included in tool list."""
         dynamic_mcp._user_context_provider = lambda: user_context
@@ -566,3 +612,47 @@ class TestHelperFunctions:
         assert result is not None
         assert result.username == "testuser"
         assert result.has_tracker is True
+
+    def test_create_user_context_flow_execution_allows_zero_tools(self):
+        """Empty allowed_mcp_tools should translate to an explicit empty allow-list."""
+        from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+
+        # Create mock account
+        mock_account = MagicMock()
+        mock_account.id = str(uuid4())
+
+        # Create mock user object (what would be in access_token.user)
+        mock_db_user = MagicMock()
+        mock_db_user.id = str(uuid4())
+        mock_db_user.username = "testuser"
+        mock_db_user.account_id = mock_account.id
+        mock_db_user.account = mock_account
+
+        mock_api_key = MagicMock()
+        mock_api_key.context_data = {
+            "flow_execution_id": "flow-exec-1",
+            "allowed_mcp_tools": [],
+        }
+
+        # Use spec to make isinstance() work
+        mock_user = MagicMock(spec=AuthenticatedUser)
+        mock_user.access_token = MagicMock()
+        mock_user.access_token.user = mock_db_user
+        mock_user.access_token.api_key = mock_api_key
+
+        scope = {"user": mock_user}
+
+        with patch("preloop_ai.services.dynamic_fastmcp.get_db") as mock_get_db:
+            mock_db = MagicMock()
+            mock_db.close = MagicMock()
+            mock_get_db.return_value = iter([mock_db])
+
+            with patch(
+                "preloop_ai.services.dynamic_fastmcp.has_tracker",
+                return_value=True,
+            ):
+                result = create_user_context_from_scope(scope)
+
+        assert result is not None
+        assert result.flow_execution_id == "flow-exec-1"
+        assert result.allowed_flow_tools == []

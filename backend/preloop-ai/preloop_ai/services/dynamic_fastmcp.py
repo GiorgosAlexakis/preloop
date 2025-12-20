@@ -581,8 +581,8 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
         if api_key and api_key.context_data:
             flow_execution_id = api_key.context_data.get("flow_execution_id")
             # Combine allowed_mcp_tools with tool names from allowed_mcp_servers
-            allowed_mcp_tools = api_key.context_data.get("allowed_mcp_tools", [])
-            if allowed_mcp_tools:
+            allowed_mcp_tools = api_key.context_data.get("allowed_mcp_tools")
+            if allowed_mcp_tools is not None:
                 # Extract tool names from the allowed_mcp_tools list
                 # This could be a list of strings or a list of dicts with "name" or "tool_name" key
                 allowed_flow_tools = []
