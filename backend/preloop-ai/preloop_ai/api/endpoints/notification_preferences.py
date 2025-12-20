@@ -224,6 +224,7 @@ async def register_device_via_token(
         name=device_name,
         key=api_key_value,
         scopes=[],  # Full access for mobile app
+        account_id=user.account_id,
         user_id=user_id,
         expires_at=expires_at,
     )

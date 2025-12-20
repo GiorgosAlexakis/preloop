@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from preloop_models.crud import crud_registration_token
+from preloop_models.models.api_key import ApiKey
 from preloop_models.models.user import User
 
 
@@ -82,6 +83,10 @@ def test_register_via_token_success(
     # Verify API key was created
     assert data["api_key"] is not None
     assert len(data["api_key"]) == 40  # API keys are 40 characters
+
+    created_api_key = db_session.get(ApiKey, data["api_key_id"])
+    assert created_api_key is not None
+    assert created_api_key.account_id == test_user.account_id
 
     # Verify token was consumed in database
     token_obj = crud_registration_token.get_by_token(db_session, token=token)
