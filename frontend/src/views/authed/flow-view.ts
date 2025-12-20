@@ -106,6 +106,8 @@ export class FlowView extends LitElement {
       :host {
         display: block;
         padding: var(--sl-spacing-large);
+        max-width: 80rem;
+        margin: 0 auto;
       }
       /* Flow-specific styles */
       .form-grid {
@@ -354,9 +356,9 @@ export class FlowView extends LitElement {
       this.availableTools = await getAllTools();
       this.mcpServers = await getMCPServers();
 
-      // Initialize with preloop-mcp server and all enabled tools selected
+      // Initialize with preloop-mcp server but no tools selected by default
       this.flow.allowed_mcp_servers = ['preloop-mcp'];
-      this.flow.allowed_mcp_tools = this.getDefaultSelectedTools();
+      this.flow.allowed_mcp_tools = [];
       this.creationMode = 'scratch';
     }
   }
@@ -1675,13 +1677,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   getDefaultSelectedTools(): { server_name: string; tool_name: string }[] {
-    // Select all enabled built-in tools by default
-    return this.availableTools
-      .filter((tool) => tool.source === 'builtin' && tool.is_enabled)
-      .map((tool) => ({
-        server_name: 'preloop-mcp',
-        tool_name: tool.name,
-      }));
+    return [];
   }
 
   renderToolSelection() {
@@ -1729,9 +1725,14 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                             tool.name,
                             e.target.checked
                           )}
-                        ?disabled=${!tool.is_enabled}
+                        ?disabled=${!tool.is_enabled || tool.is_supported === false}
                       >
                         ${tool.name}
+                        ${tool.is_supported === false
+                          ? html`<sl-badge variant="warning" size="small"
+                              >Needs tracker</sl-badge
+                            >`
+                          : ''}
                         ${!tool.is_enabled
                           ? html`<sl-badge variant="neutral" size="small"
                               >Disabled</sl-badge
@@ -1768,12 +1769,17 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                             tool.name,
                             e.target.checked
                           )}
-                        ?disabled=${!tool.is_enabled}
+                        ?disabled=${!tool.is_enabled || tool.is_supported === false}
                       >
                         ${tool.name}
                         <sl-badge variant="primary" size="small"
                           >${tool.source_name}</sl-badge
                         >
+                        ${tool.is_supported === false
+                          ? html`<sl-badge variant="warning" size="small"
+                              >Unsupported</sl-badge
+                            >`
+                          : ''}
                         ${!tool.is_enabled
                           ? html`<sl-badge variant="neutral" size="small"
                               >Disabled</sl-badge

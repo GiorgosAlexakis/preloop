@@ -170,7 +170,7 @@ export class AIModelsView extends LitElement {
     };
 
     return html`
-      <view-header headerText="Models">
+      <view-header headerText="AI Models">
         <div slot="main-column">
           <sl-button variant="primary" @click=${this.openAddModelModal}>
             <sl-icon slot="prefix" name="plus-lg"></sl-icon> Add Model
@@ -187,24 +187,13 @@ export class AIModelsView extends LitElement {
 
   renderModelsList() {
     return html`
-      <sl-alert
-        class="info-header"
-        variant="primary"
-        ?open=${this._isInfoAlertOpen}
-        closable
-        @sl-hide=${this.handleInfoAlertHide}
-      >
-        <sl-icon slot="icon" name="info-circle"></sl-icon>
-        Models enable advanced AI features such as improved duplicate issue
-        detection accuracy.
-      </sl-alert>
       <sl-card class="table-card">
         ${when(
           this.models.length === 0,
           () =>
             html` <sl-alert variant="primary" open>
               <sl-icon slot="icon" name="info-circle"></sl-icon>
-              No Models configured yet.
+              No AI Models configured yet.
               <a
                 href="#"
                 @click=${(e: Event) => {

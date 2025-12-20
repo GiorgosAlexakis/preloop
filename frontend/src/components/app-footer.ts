@@ -154,6 +154,11 @@ export class AppFooter extends LitElement {
               <li><a href="/privacy">Privacy Policy</a></li>
               <li><a href="/terms">Terms of Service</a></li>
               <li><a href="/whatis-mcp">What is MCP?</a></li>
+              <li><a href="https://docs.preloop.ai">Docs</a></li>
+              ${isSaaS()
+                ? html` <li><a href="/pricing">Pricing</a></li>
+                    <li><a href="/about">About</a></li>`
+                : ''}
             </ul>
           </nav>
         </div>

@@ -13,9 +13,9 @@ a:hover {
 }
 
 @media (min-width: 992px) {
-    .column-layout {
+    /* .column-layout {
         grid-template-columns: 2fr 1fr;
-    }
+    } */
 }
 
 .main-column,

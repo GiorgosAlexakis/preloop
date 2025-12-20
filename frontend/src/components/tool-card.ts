@@ -6,6 +6,7 @@ import {
   getTeams,
   getAccountDetails,
   getToolApprovalCondition,
+  fetchWithAuth,
 } from '../api';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -18,6 +19,9 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
+import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
+import '@shoelace-style/shoelace/dist/components/radio-button/radio-button.js';
+import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
 // Preloop badge SVG
 const preloopBadgeSvg = `<svg width="20px" height="18px" viewBox="0 0 1024 914" version="1.1" xmlns="http://www.w3.org/2000/svg">
@@ -35,6 +39,10 @@ export interface Tool {
   source_name: string;
   schema: any;
   is_enabled: boolean;
+  requires_tracker?: boolean;
+  required_tracker_types?: string[];
+  is_supported?: boolean;
+  unsupported_reason?: string | null;
   approval_policy_id: string | null;
   has_approval_condition: boolean;
   config_id: string | null;
@@ -151,6 +159,29 @@ export class ToolCard extends LitElement {
   @state()
   private conditionValue: string = '';
 
+  // Enterprise: Multiple conditions support
+  @state()
+  private conditions: Array<{
+    field: string;
+    operator: string;
+    value: string;
+  }> = [];
+
+  @state()
+  private conditionCombiner: 'AND' | 'OR' = 'AND';
+
+  @state()
+  private rawCelMode = false;
+
+  @state()
+  private rawCelExpression = '';
+
+  @state()
+  private celTestResult: { matches: boolean; error?: string } | null = null;
+
+  @state()
+  private isCelTesting = false;
+
   connectedCallback() {
     super.connectedCallback();
     this.loadCurrentUser();
@@ -245,10 +276,31 @@ export class ToolCard extends LitElement {
       ];
     }
 
+    // For strings, add additional operators in enterprise mode
+    if (this.hasAdvancedApprovals() && type === 'string') {
+      return [
+        ...baseOperators,
+        { value: 'contains', label: 'Contains' },
+        { value: 'starts_with', label: 'Starts With' },
+        { value: 'ends_with', label: 'Ends With' },
+      ];
+    }
+
     return baseOperators;
   }
 
   private buildConditionExpression(): string {
+    // For enterprise with raw CEL mode, return the raw expression
+    if (this.hasAdvancedApprovals() && this.rawCelMode) {
+      return this.rawCelExpression.trim();
+    }
+
+    // For enterprise with multiple conditions, build combined expression
+    if (this.hasAdvancedApprovals() && this.conditions.length > 0) {
+      return this.buildMultiConditionExpression();
+    }
+
+    // Simple mode (open source or single condition)
     if (
       !this.conditionField ||
       !this.conditionOperator ||
@@ -257,6 +309,18 @@ export class ToolCard extends LitElement {
       return '';
     }
 
+    return this.buildSingleConditionExpression(
+      this.conditionField,
+      this.conditionOperator,
+      this.conditionValue
+    );
+  }
+
+  private buildSingleConditionExpression(
+    field: string,
+    operator: string,
+    value: string
+  ): string {
     // Build CEL expression based on operator
     const operatorMap: Record<string, string> = {
       equals: '==',
@@ -265,21 +329,148 @@ export class ToolCard extends LitElement {
       less_than_or_equal: '<=',
       greater_than: '>',
       greater_than_or_equal: '>=',
+      contains: '',
+      starts_with: '',
+      ends_with: '',
     };
 
-    const celOperator = operatorMap[this.conditionOperator] || '==';
+    const celOperator = operatorMap[operator];
 
     // Check if value should be a number
-    const arg = this.getToolArguments().find(
-      (a) => a.name === this.conditionField
-    );
+    const arg = this.getToolArguments().find((a) => a.name === field);
     const isNumber = arg?.type === 'number' || arg?.type === 'integer';
-    const value = isNumber ? this.conditionValue : `"${this.conditionValue}"`;
 
-    return `args.${this.conditionField} ${celOperator} ${value}`;
+    // Handle special string operators
+    if (operator === 'contains') {
+      return `args.${field}.contains("${value}")`;
+    }
+    if (operator === 'starts_with') {
+      return `args.${field}.startsWith("${value}")`;
+    }
+    if (operator === 'ends_with') {
+      return `args.${field}.endsWith("${value}")`;
+    }
+
+    const formattedValue = isNumber ? value : `"${value}"`;
+    return `args.${field} ${celOperator} ${formattedValue}`;
+  }
+
+  private buildMultiConditionExpression(): string {
+    const expressions = this.conditions
+      .filter((c) => c.field && c.operator && c.value)
+      .map((c) => this.buildSingleConditionExpression(c.field, c.operator, c.value));
+
+    if (expressions.length === 0) {
+      return '';
+    }
+
+    if (expressions.length === 1) {
+      return expressions[0];
+    }
+
+    const combiner = this.conditionCombiner === 'AND' ? ' && ' : ' || ';
+    return expressions.join(combiner);
+  }
+
+  private addCondition() {
+    this.conditions = [
+      ...this.conditions,
+      { field: '', operator: 'equals', value: '' },
+    ];
+  }
+
+  private removeCondition(index: number) {
+    this.conditions = this.conditions.filter((_, i) => i !== index);
+  }
+
+  private updateCondition(
+    index: number,
+    field: 'field' | 'operator' | 'value',
+    value: string
+  ) {
+    const updated = [...this.conditions];
+    updated[index] = { ...updated[index], [field]: value };
+    this.conditions = updated;
+  }
+
+  private async testCelExpression() {
+    if (!this.tool?.config_id) return;
+
+    const expression = this.buildConditionExpression();
+    if (!expression) {
+      this.celTestResult = { matches: false, error: 'Expression is empty' };
+      return;
+    }
+
+    try {
+      this.isCelTesting = true;
+      this.celTestResult = null;
+
+      // Create sample args from tool schema
+      const sampleArgs: Record<string, any> = {};
+      for (const arg of this.getToolArguments()) {
+        if (arg.type === 'number' || arg.type === 'integer') {
+          sampleArgs[arg.name] = 0;
+        } else if (arg.type === 'boolean') {
+          sampleArgs[arg.name] = false;
+        } else if (arg.type === 'array') {
+          sampleArgs[arg.name] = [];
+        } else {
+          sampleArgs[arg.name] = '';
+        }
+      }
+
+      const response = await fetchWithAuth(
+        `/api/v1/tool-configurations/${this.tool.config_id}/approval-condition/test`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expression: expression,
+            sample_args: sampleArgs,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        this.celTestResult = {
+          matches: result.matches,
+          error: result.error,
+        };
+      } else {
+        const error = await response.json();
+        this.celTestResult = {
+          matches: false,
+          error: error.detail || 'Validation failed',
+        };
+      }
+    } catch (error: any) {
+      this.celTestResult = {
+        matches: false,
+        error: error.message || 'Test request failed',
+      };
+    } finally {
+      this.isCelTesting = false;
+    }
   }
 
   static styles = css`
+    sl-card.tool-card.unsupported .card-content,
+    sl-card.tool-card.unsupported div[slot='footer'] {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .unsupported-hint {
+      display: flex;
+      align-items: center;
+      gap: var(--sl-spacing-2x-small);
+      color: var(--sl-color-neutral-600);
+      font-size: var(--sl-font-size-x-small);
+      line-height: 1.3;
+    }
+
     .tool-card {
       width: 280px;
       display: flex;
@@ -503,15 +694,58 @@ export class ToolCard extends LitElement {
             composed: true,
           })
         );
-      } else {
-        // No policy: Open dialog to create/select one
+      } else if (this.hasAdvancedApprovals()) {
+        // Enterprise: Open dialog to create/select a policy
         this.pendingApproval = true;
         this.showPreloopDialog = true;
+      } else {
+        // Open Source: Use default policy automatically
+        const defaultPolicy = this.policies.find((p) => p.is_default);
+        if (defaultPolicy) {
+          // Use the default policy
+          this.dispatchEvent(
+            new CustomEvent('policy-selected', {
+              detail: { tool: this.tool, policyId: defaultPolicy.id },
+              bubbles: true,
+              composed: true,
+            })
+          );
+        } else if (this.policies.length > 0) {
+          // Fallback to first available policy
+          this.dispatchEvent(
+            new CustomEvent('policy-selected', {
+              detail: { tool: this.tool, policyId: this.policies[0].id },
+              bubbles: true,
+              composed: true,
+            })
+          );
+        } else {
+          // No policies exist, dispatch event to create default policy
+          this.dispatchEvent(
+            new CustomEvent('use-default-policy', {
+              detail: { tool: this.tool },
+              bubbles: true,
+              composed: true,
+            })
+          );
+        }
       }
     }
   }
 
   private async handleConfigureCondition() {
+    if (!this.tool) return;
+
+    // Reset state
+    this.rawCelMode = false;
+    this.rawCelExpression = '';
+    this.conditions = [];
+    this.conditionCombiner = 'AND';
+    this.celTestResult = null;
+    this.conditionField = '';
+    this.conditionOperator = 'equals';
+    this.conditionValue = '';
+
     // Load existing condition if it exists
     if (this.tool.config_id) {
       try {
@@ -528,16 +762,93 @@ export class ToolCard extends LitElement {
   }
 
   private parseCelExpression(expression: string) {
-    // Parse expressions like: args.field_name operator value
-    // Examples: "args.n > 10", "args.status == 'active'"
-    const match = expression.match(/^args\.(\w+)\s*(==|!=|>|>=|<|<=)\s*(.+)$/);
-    if (!match) {
-      console.warn('Unable to parse CEL expression:', expression);
+    // For enterprise, try to parse complex expressions
+    if (this.hasAdvancedApprovals()) {
+      // Check if it's a compound expression (AND/OR)
+      if (expression.includes(' && ') || expression.includes(' || ')) {
+        const combiner = expression.includes(' && ') ? 'AND' : 'OR';
+        const separator = combiner === 'AND' ? ' && ' : ' || ';
+        const parts = expression.split(separator);
+
+        const parsedConditions: Array<{
+          field: string;
+          operator: string;
+          value: string;
+        }> = [];
+
+        for (const part of parts) {
+          const parsed = this.parseSingleExpression(part.trim());
+          if (parsed) {
+            parsedConditions.push(parsed);
+          } else {
+            // Can't parse, switch to raw mode
+            this.rawCelMode = true;
+            this.rawCelExpression = expression;
+            return;
+          }
+        }
+
+        if (parsedConditions.length > 0) {
+          this.conditions = parsedConditions;
+          this.conditionCombiner = combiner;
+          return;
+        }
+      }
+
+      // Try to parse as single expression
+      const parsed = this.parseSingleExpression(expression);
+      if (parsed) {
+        this.conditions = [parsed];
+        return;
+      }
+
+      // Can't parse, use raw mode
+      this.rawCelMode = true;
+      this.rawCelExpression = expression;
       return;
     }
 
+    // Simple mode: parse single expression
+    const parsed = this.parseSingleExpression(expression);
+    if (parsed) {
+      this.conditionField = parsed.field;
+      this.conditionOperator = parsed.operator;
+      this.conditionValue = parsed.value;
+    }
+  }
+
+  private parseSingleExpression(
+    expression: string
+  ): { field: string; operator: string; value: string } | null {
+    // Parse expressions like: args.field_name operator value
+    // Examples: "args.n > 10", "args.status == 'active'"
+    // Or method calls: "args.path.contains('admin')"
+
+    // Try method calls first (contains, startsWith, endsWith)
+    const methodMatch = expression.match(
+      /^args\.(\w+)\.(contains|startsWith|endsWith)\(["'](.+?)["']\)$/
+    );
+    if (methodMatch) {
+      const [, field, method, value] = methodMatch;
+      const operatorMap: { [key: string]: string } = {
+        contains: 'contains',
+        startsWith: 'starts_with',
+        endsWith: 'ends_with',
+      };
+      return {
+        field,
+        operator: operatorMap[method] || 'contains',
+        value,
+      };
+    }
+
+    // Try standard operators
+    const match = expression.match(/^args\.(\w+)\s*(==|!=|>|>=|<|<=)\s*(.+)$/);
+    if (!match) {
+      return null;
+    }
+
     const [, field, operator, rawValue] = match;
-    this.conditionField = field;
 
     // Map CEL operators to our form operators
     const operatorMap: { [key: string]: string } = {
@@ -548,7 +859,6 @@ export class ToolCard extends LitElement {
       '<': 'less_than',
       '<=': 'less_than_or_equal',
     };
-    this.conditionOperator = operatorMap[operator] || 'equals';
 
     // Remove quotes if it's a string value
     let value = rawValue.trim();
@@ -558,7 +868,12 @@ export class ToolCard extends LitElement {
     ) {
       value = value.slice(1, -1);
     }
-    this.conditionValue = value;
+
+    return {
+      field,
+      operator: operatorMap[operator] || 'equals',
+      value,
+    };
   }
 
   private handleCloseConditionDialog() {
@@ -566,6 +881,12 @@ export class ToolCard extends LitElement {
     this.conditionField = '';
     this.conditionOperator = 'equals';
     this.conditionValue = '';
+    // Reset enterprise state
+    this.conditions = [];
+    this.conditionCombiner = 'AND';
+    this.rawCelMode = false;
+    this.rawCelExpression = '';
+    this.celTestResult = null;
   }
 
   private handleSaveCondition() {
@@ -838,21 +1159,381 @@ export class ToolCard extends LitElement {
     }, 10);
   }
 
+  private renderSimpleConditionUI() {
+    if (this.getToolArguments().length === 0) {
+      return html`
+        <div class="empty-state">
+          <p>This tool has no arguments to create conditions with.</p>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="form-field">
+        <label class="form-label">Tool Argument</label>
+        <sl-select
+          placeholder="Select argument..."
+          value=${this.conditionField}
+          @sl-change=${(e: any) => {
+            this.conditionField = e.target.value;
+            // Reset operator when field changes
+            const arg = this.getToolArguments().find(
+              (a) => a.name === e.target.value
+            );
+            const operators = this.getOperatorsForType(arg?.type || 'string');
+            if (!operators.find((op) => op.value === this.conditionOperator)) {
+              this.conditionOperator = operators[0]?.value || 'equals';
+            }
+          }}
+        >
+          ${this.getToolArguments().map(
+            (arg) => html`
+              <sl-option value=${arg.name}> ${arg.name} (${arg.type}) </sl-option>
+            `
+          )}
+        </sl-select>
+      </div>
+
+      ${this.conditionField
+        ? html`
+            <div class="form-field">
+              <label class="form-label">Operator</label>
+              <sl-select
+                value=${this.conditionOperator}
+                @sl-change=${(e: any) => {
+                  this.conditionOperator = e.target.value;
+                }}
+              >
+                ${this.getOperatorsForType(
+                  this.getToolArguments().find(
+                    (a) => a.name === this.conditionField
+                  )?.type || 'string'
+                ).map(
+                  (op) => html`
+                    <sl-option value=${op.value}>${op.label}</sl-option>
+                  `
+                )}
+              </sl-select>
+            </div>
+
+            <div class="form-field">
+              <label class="form-label">Value</label>
+              <sl-input
+                placeholder="Enter value..."
+                value=${this.conditionValue}
+                @sl-input=${(e: any) => {
+                  this.conditionValue = e.target.value;
+                }}
+              ></sl-input>
+            </div>
+          `
+        : ''}
+    `;
+  }
+
+  private renderEnterpriseConditionUI() {
+    if (this.getToolArguments().length === 0 && !this.rawCelMode) {
+      return html`
+        <div class="empty-state">
+          <p>This tool has no arguments to create conditions with.</p>
+          <sl-button
+            size="small"
+            @click=${() => {
+              this.rawCelMode = true;
+            }}
+          >
+            <sl-icon slot="prefix" name="code-square"></sl-icon>
+            Use Raw CEL Expression
+          </sl-button>
+        </div>
+      `;
+    }
+
+    return html`
+      <!-- Mode Toggle -->
+      <div
+        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sl-spacing-medium); padding: var(--sl-spacing-small); background: var(--sl-color-neutral-100); border-radius: var(--sl-border-radius-medium);"
+      >
+        <span style="font-size: var(--sl-font-size-small); font-weight: 500;">
+          ${this.rawCelMode ? 'Raw CEL Expression Mode' : 'Condition Builder'}
+        </span>
+        <sl-switch
+          ?checked=${this.rawCelMode}
+          @sl-change=${(e: any) => {
+            this.rawCelMode = e.target.checked;
+            if (!this.rawCelMode && this.rawCelExpression) {
+              // Try to parse the raw expression when switching back
+              this.parseCelExpression(this.rawCelExpression);
+            } else if (this.rawCelMode) {
+              // Copy current expression to raw mode
+              this.rawCelExpression = this.buildConditionExpression();
+            }
+          }}
+        >
+          Raw CEL
+        </sl-switch>
+      </div>
+
+      ${this.rawCelMode
+        ? this.renderRawCelUI()
+        : this.renderConditionBuilderUI()}
+
+      <!-- CEL Expression Preview -->
+      <div
+        style="margin-top: var(--sl-spacing-medium); padding: var(--sl-spacing-medium); border-radius: var(--sl-border-radius-medium); font-family: var(--sl-font-mono); font-size: var(--sl-font-size-small);"
+      >
+        <div
+          style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sl-spacing-small);"
+        >
+          <strong style="color: var(--sl-color-primary-400);"
+            >CEL Expression:</strong
+          >
+          <sl-button
+            size="small"
+            variant="text"
+            @click=${this.testCelExpression}
+            ?loading=${this.isCelTesting}
+            ?disabled=${!this.buildConditionExpression()}
+            style="--sl-color-neutral-700: var(--sl-color-neutral-300);"
+          >
+            <sl-icon slot="prefix" name="play-circle"></sl-icon>
+            Validate
+          </sl-button>
+        </div>
+        <code style="word-break: break-all;">
+          ${this.buildConditionExpression() || '(empty)'}
+        </code>
+      </div>
+
+      <!-- Validation Result -->
+      ${this.celTestResult
+        ? html`
+            <div
+              style="margin-top: var(--sl-spacing-small); padding: var(--sl-spacing-small); border-radius: var(--sl-border-radius-medium); ${this
+                .celTestResult.error
+                ? 'background: var(--sl-color-danger-50); border: 1px solid var(--sl-color-danger-200); color: var(--sl-color-danger-700);'
+                : 'background: var(--sl-color-success-50); border: 1px solid var(--sl-color-success-200); color: var(--sl-color-success-700);'}"
+            >
+              <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
+                <sl-icon
+                  name=${this.celTestResult.error
+                    ? 'x-circle-fill'
+                    : 'check-circle-fill'}
+                ></sl-icon>
+                ${this.celTestResult.error
+                  ? html`<span>Invalid: ${this.celTestResult.error}</span>`
+                  : html`<span>Valid CEL expression</span>`}
+              </div>
+            </div>
+          `
+        : ''}
+    `;
+  }
+
+  private renderRawCelUI() {
+    return html`
+      <div class="form-field">
+        <label class="form-label">CEL Expression</label>
+        <sl-textarea
+          placeholder="args.amount > 100 && args.currency == 'USD'"
+          value=${this.rawCelExpression}
+          @sl-input=${(e: any) => {
+            this.rawCelExpression = e.target.value;
+            this.celTestResult = null;
+          }}
+          rows="4"
+          style="font-family: var(--sl-font-mono);"
+        ></sl-textarea>
+        <div
+          style="font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-600); margin-top: var(--sl-spacing-2x-small);"
+        >
+          Use <code>args.field_name</code> to access tool arguments. Combine
+          conditions with <code>&&</code> (AND) or <code>||</code> (OR).
+        </div>
+      </div>
+
+      <!-- CEL Examples -->
+      <div
+        style="padding: var(--sl-spacing-medium); background: var(--sl-color-primary-50); border: 1px solid var(--sl-color-primary-200); border-radius: var(--sl-border-radius-medium);"
+      >
+        <div
+          style="font-weight: 500; font-size: var(--sl-font-size-small); color: var(--sl-color-primary-700); margin-bottom: var(--sl-spacing-small);"
+        >
+          <sl-icon name="lightbulb" style="vertical-align: middle;"></sl-icon>
+          CEL Expression Examples
+        </div>
+        <div
+          style="font-size: var(--sl-font-size-x-small); font-family: var(--sl-font-mono); color: var(--sl-color-primary-700); display: flex; flex-direction: column; gap: var(--sl-spacing-2x-small);"
+        >
+          <div>args.amount &gt; 1000</div>
+          <div>args.environment == "production"</div>
+          <div>args.path.startsWith("/admin")</div>
+          <div>args.amount &gt; 100 && args.priority == "high"</div>
+          <div>"admin" in args.roles || args.is_superuser == true</div>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderConditionBuilderUI() {
+    // If no conditions yet, add the first one
+    if (this.conditions.length === 0) {
+      this.conditions = [{ field: '', operator: 'equals', value: '' }];
+    }
+
+    return html`
+      <!-- Combiner selection (only show if multiple conditions) -->
+      ${this.conditions.length > 1
+        ? html`
+            <div
+              style="display: flex; align-items: center; gap: var(--sl-spacing-medium); margin-bottom: var(--sl-spacing-medium);"
+            >
+              <span
+                style="font-size: var(--sl-font-size-small); font-weight: 500;"
+                >Combine conditions with:</span
+              >
+              <sl-radio-group
+                value=${this.conditionCombiner}
+                @sl-change=${(e: any) => {
+                  this.conditionCombiner = e.target.value;
+                }}
+              >
+                <sl-radio-button value="AND">AND (all must match)</sl-radio-button>
+                <sl-radio-button value="OR">OR (any must match)</sl-radio-button>
+              </sl-radio-group>
+            </div>
+          `
+        : ''}
+
+      <!-- Condition rows -->
+      <div style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);">
+        ${this.conditions.map(
+          (condition, index) => html`
+            <div
+              style="display: flex; gap: var(--sl-spacing-small); align-items: flex-end; padding: var(--sl-spacing-medium); background: var(--sl-color-neutral-50); border-radius: var(--sl-border-radius-medium); border: 1px solid var(--sl-color-neutral-200);"
+            >
+              <!-- Show combiner label between conditions -->
+              ${index > 0
+                ? html`
+                    <div
+                      style="position: absolute; margin-top: calc(-1 * var(--sl-spacing-medium) - 12px); background: var(--sl-color-neutral-0); padding: 0 var(--sl-spacing-small); font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-600); font-weight: 500;"
+                    >
+                      ${this.conditionCombiner}
+                    </div>
+                  `
+                : ''}
+
+              <div class="form-field" style="flex: 1;">
+                <label class="form-label">Argument</label>
+                <sl-select
+                  placeholder="Select..."
+                  size="small"
+                  value=${condition.field}
+                  @sl-change=${(e: any) => {
+                    this.updateCondition(index, 'field', e.target.value);
+                    // Reset operator when field changes
+                    const arg = this.getToolArguments().find(
+                      (a) => a.name === e.target.value
+                    );
+                    const operators = this.getOperatorsForType(
+                      arg?.type || 'string'
+                    );
+                    if (
+                      !operators.find((op) => op.value === condition.operator)
+                    ) {
+                      this.updateCondition(
+                        index,
+                        'operator',
+                        operators[0]?.value || 'equals'
+                      );
+                    }
+                  }}
+                >
+                  ${this.getToolArguments().map(
+                    (arg) => html`
+                      <sl-option value=${arg.name}>
+                        ${arg.name} (${arg.type})
+                      </sl-option>
+                    `
+                  )}
+                </sl-select>
+              </div>
+
+              <div class="form-field" style="flex: 1;">
+                <label class="form-label">Operator</label>
+                <sl-select
+                  size="small"
+                  value=${condition.operator}
+                  @sl-change=${(e: any) => {
+                    this.updateCondition(index, 'operator', e.target.value);
+                  }}
+                >
+                  ${this.getOperatorsForType(
+                    this.getToolArguments().find(
+                      (a) => a.name === condition.field
+                    )?.type || 'string'
+                  ).map(
+                    (op) => html`
+                      <sl-option value=${op.value}>${op.label}</sl-option>
+                    `
+                  )}
+                </sl-select>
+              </div>
+
+              <div class="form-field" style="flex: 1;">
+                <label class="form-label">Value</label>
+                <sl-input
+                  size="small"
+                  placeholder="Enter value..."
+                  value=${condition.value}
+                  @sl-input=${(e: any) => {
+                    this.updateCondition(index, 'value', e.target.value);
+                  }}
+                ></sl-input>
+              </div>
+
+              ${this.conditions.length > 1
+                ? html`
+                    <sl-icon-button
+                      name="trash"
+                      label="Remove condition"
+                      @click=${() => this.removeCondition(index)}
+                      style="margin-bottom: 4px;"
+                    ></sl-icon-button>
+                  `
+                : ''}
+            </div>
+          `
+        )}
+      </div>
+
+      <!-- Add condition button -->
+      <sl-button
+        size="small"
+        variant="text"
+        @click=${this.addCondition}
+        style="margin-top: var(--sl-spacing-small);"
+      >
+        <sl-icon slot="prefix" name="plus-circle"></sl-icon>
+        Add Another Condition
+      </sl-button>
+    `;
+  }
+
   render() {
     if (!this.tool) {
       return html``;
     }
 
+    const isSupported = this.tool.is_supported !== false;
     return html`
-      <sl-card class="tool-card">
+      <sl-card class="tool-card ${isSupported ? '' : 'unsupported'}">
         <div class="card-content">
           <div class="tool-header">
             <h3 class="tool-name" title=${this.tool.name}>${this.tool.name}</h3>
             <p class="tool-source">
               <sl-badge
-                variant=${this.tool.source === 'builtin'
-                  ? 'primary'
-                  : 'neutral'}
+                variant=${this.tool.source === 'builtin' ? 'primary' : 'neutral'}
                 size="small"
               >
                 ${this.tool.source_name}
@@ -863,11 +1544,23 @@ export class ToolCard extends LitElement {
             ${this.tool.description}
           </p>
         </div>
+
         <div slot="footer">
+          ${!isSupported && this.tool.unsupported_reason
+            ? html`
+                <div class="unsupported-hint">
+                  <span>Unavailable</span>
+                  <sl-tooltip content=${this.tool.unsupported_reason}>
+                    <sl-icon name="info-circle"></sl-icon>
+                  </sl-tooltip>
+                </div>
+              `
+            : ''}
           <div class="control-row">
             <span class="control-label">Enabled</span>
             <sl-switch
               ?checked=${this.tool.is_enabled}
+              ?disabled=${!isSupported}
               @sl-change=${this.handleEnabledToggle}
             ></sl-switch>
           </div>
@@ -887,77 +1580,97 @@ export class ToolCard extends LitElement {
                         </span>
                       </span>
                       <sl-switch
-                        ?checked=${this.tool.approval_policy_id ||
-                        this.pendingApproval}
+                        ?checked=${this.tool.approval_policy_id || this.pendingApproval}
                         ?disabled=${!this.tool.is_enabled}
                         @sl-change=${this.handleApprovalToggle}
                       ></sl-switch>
                     </div>
-                    ${this.tool.approval_policy_id && this.tool.is_enabled
+                    ${this.hasAdvancedApprovals()
                       ? html`
-                          <div class="policy-selector">
-                            <sl-select
-                              size="small"
-                              placeholder="Select a policy..."
-                              value=${this.tool.approval_policy_id || ''}
-                              @sl-change=${this.handlePolicySelect}
-                            >
-                              ${this.policies.map(
-                                (policy) => html`
-                                  <sl-option value=${policy.id}
-                                    >${policy.name}</sl-option
+                          <!-- Enterprise: Full policy selection and management -->
+                          ${this.tool.approval_policy_id && this.tool.is_enabled
+                            ? html`
+                                <div class="policy-selector">
+                                  <sl-select
+                                    size="small"
+                                    placeholder="Select a policy..."
+                                    value=${this.tool.approval_policy_id || ''}
+                                    @sl-change=${this.handlePolicySelect}
                                   >
-                                `
-                              )}
-                            </sl-select>
-                            <sl-icon-button
-                              name="gear"
-                              label="Manage policies"
-                              @click=${this.handleManagePolicies}
-                            ></sl-icon-button>
-                          </div>
-                          <div class="policy-selector">
-                            <sl-button
-                              size="small"
-                              @click=${this.handleConfigureCondition}
-                              style="width: 100%;"
-                            >
-                              <sl-icon
-                                slot="prefix"
-                                name="code-square"
-                              ></sl-icon>
-                              ${this.tool.has_approval_condition
-                                ? 'Edit Condition'
-                                : 'Add Condition'}
-                            </sl-button>
-                          </div>
-                        `
-                      : ''}
-                    ${this.pendingApproval && this.tool.is_enabled
-                      ? html`
-                          <div class="policy-selector">
-                            <sl-select
-                              size="small"
-                              placeholder="Select a policy..."
-                              value=""
-                              @sl-change=${this.handlePolicySelect}
-                            >
-                              ${this.policies.map(
-                                (policy) => html`
-                                  <sl-option value=${policy.id}
-                                    >${policy.name}</sl-option
+                                    ${this.policies.map(
+                                      (policy) => html`
+                                        <sl-option value=${policy.id}
+                                          >${policy.name}</sl-option
+                                        >
+                                      `
+                                    )}
+                                  </sl-select>
+                                  <sl-icon-button
+                                    name="gear"
+                                    label="Manage policies"
+                                    @click=${this.handleManagePolicies}
+                                  ></sl-icon-button>
+                                </div>
+                                <div class="policy-selector">
+                                  <sl-button
+                                    size="small"
+                                    @click=${this.handleConfigureCondition}
+                                    style="width: 100%;"
                                   >
-                                `
-                              )}
-                            </sl-select>
-                            <sl-icon-button
-                              name="gear"
-                              label="Manage policies"
-                              @click=${this.handleManagePolicies}
-                            ></sl-icon-button>
-                          </div>
+                                    <sl-icon slot="prefix" name="code-square"></sl-icon>
+                                    ${this.tool.has_approval_condition
+                                      ? 'Edit Condition'
+                                      : 'Add Condition'}
+                                  </sl-button>
+                                </div>
+                              `
+                            : ''}
+                          ${this.pendingApproval && this.tool.is_enabled
+                            ? html`
+                                <div class="policy-selector">
+                                  <sl-select
+                                    size="small"
+                                    placeholder="Select a policy..."
+                                    value=""
+                                    @sl-change=${this.handlePolicySelect}
+                                  >
+                                    ${this.policies.map(
+                                      (policy) => html`
+                                        <sl-option value=${policy.id}
+                                          >${policy.name}</sl-option
+                                        >
+                                      `
+                                    )}
+                                  </sl-select>
+                                  <sl-icon-button
+                                    name="gear"
+                                    label="Manage policies"
+                                    @click=${this.handleManagePolicies}
+                                  ></sl-icon-button>
+                                </div>
+                              `
+                            : ''}
                         `
-                      : ''}
+                      : html`
+                          <!-- Open Source: Simple approval with default policy -->
+                          ${(this.tool.approval_policy_id || this.pendingApproval) &&
+                          this.tool.is_enabled
+                            ? html`
+                                <div class="policy-selector">
+                                  <sl-button
+                                    size="small"
+                                    @click=${this.handleConfigureCondition}
+                                    style="width: 100%;"
+                                  >
+                                    <sl-icon slot="prefix" name="funnel"></sl-icon>
+                                    ${this.tool.has_approval_condition
+                                      ? 'Edit Condition'
+                                      : 'Add Condition'}
+                                  </sl-button>
+                                </div>
+                              `
+                            : ''}
+                        `}
                   </div>
                 `
           }
@@ -965,11 +1678,9 @@ export class ToolCard extends LitElement {
       </sl-card>
 
       <sl-dialog
-        label="Configure Approval Policy"
+        label="Configure approval policy"
         ?open=${this.showPreloopDialog}
-        no-header=${false}
         @sl-request-close=${(e: any) => {
-          // Only allow closing via cancel/confirm buttons
           if (e.detail.source === 'overlay' || e.detail.source === 'keyboard') {
             e.preventDefault();
           }
@@ -1131,30 +1842,30 @@ export class ToolCard extends LitElement {
                     ></sl-textarea>
                   </div>
 
-                  <div class="form-field">
-                    <label class="form-label">Approval Type</label>
-                    <sl-select
-                      value=${this.newPolicyType}
-                      @sl-change=${(e: any) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.stopImmediatePropagation();
-                        this.newPolicyType = e.target.value;
-                        this.requestUpdate();
-                      }}
-                    >
-                      <sl-option value="standard">Standard</sl-option>
-                      ${this.hasAdvancedApprovals()
-                        ? html`
+                  ${this.hasAdvancedApprovals()
+                    ? html`
+                        <div class="form-field">
+                          <label class="form-label">Approval Type</label>
+                          <sl-select
+                            value=${this.newPolicyType}
+                            @sl-change=${(e: any) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.stopImmediatePropagation();
+                              this.newPolicyType = e.target.value;
+                              this.requestUpdate();
+                            }}
+                          >
+                            <sl-option value="standard">Standard</sl-option>
                             <sl-option value="slack">Slack</sl-option>
                             <sl-option value="mattermost">Mattermost</sl-option>
-                          `
-                        : ''}
-                      <sl-option value="webhook">Webhook</sl-option>
-                    </sl-select>
-                  </div>
-
-                  ${this.newPolicyType !== 'standard'
+                            <sl-option value="webhook">Webhook</sl-option>
+                          </sl-select>
+                        </div>
+                      `
+                    : ''}
+                  ${this.hasAdvancedApprovals() &&
+                  this.newPolicyType !== 'standard'
                     ? html`
                         <div class="form-field">
                           <label class="form-label">Webhook URL *</label>
@@ -1429,7 +2140,7 @@ export class ToolCard extends LitElement {
         label="Configure Approval Condition"
         ?open=${this.showConditionConfig}
         @sl-request-close=${this.handleCloseConditionDialog}
-        style="--width: 600px;"
+        style="--width: ${this.hasAdvancedApprovals() ? '750px' : '600px'};"
       >
         <div class="dialog-content">
           <p>
@@ -1437,103 +2148,9 @@ export class ToolCard extends LitElement {
             the condition is not met, the tool will execute without approval.
           </p>
 
-          ${this.getToolArguments().length > 0
-            ? html`
-                <div class="form-field">
-                  <label class="form-label">Tool Argument</label>
-                  <sl-select
-                    placeholder="Select argument..."
-                    value=${this.conditionField}
-                    @sl-change=${(e: any) => {
-                      this.conditionField = e.target.value;
-                      // Reset operator when field changes
-                      const arg = this.getToolArguments().find(
-                        (a) => a.name === e.target.value
-                      );
-                      const operators = this.getOperatorsForType(
-                        arg?.type || 'string'
-                      );
-                      if (
-                        !operators.find(
-                          (op) => op.value === this.conditionOperator
-                        )
-                      ) {
-                        this.conditionOperator =
-                          operators[0]?.value || 'equals';
-                      }
-                    }}
-                  >
-                    ${this.getToolArguments().map(
-                      (arg) => html`
-                        <sl-option value=${arg.name}>
-                          ${arg.name} (${arg.type})
-                        </sl-option>
-                      `
-                    )}
-                  </sl-select>
-                </div>
-
-                ${this.conditionField
-                  ? html`
-                      <div class="form-field">
-                        <label class="form-label">Operator</label>
-                        <sl-select
-                          value=${this.conditionOperator}
-                          @sl-change=${(e: any) => {
-                            this.conditionOperator = e.target.value;
-                          }}
-                        >
-                          ${this.getOperatorsForType(
-                            this.getToolArguments().find(
-                              (a) => a.name === this.conditionField
-                            )?.type || 'string'
-                          ).map(
-                            (op) => html`
-                              <sl-option value=${op.value}
-                                >${op.label}</sl-option
-                              >
-                            `
-                          )}
-                        </sl-select>
-                      </div>
-
-                      <div class="form-field">
-                        <label class="form-label">Value</label>
-                        <sl-input
-                          placeholder="Enter value..."
-                          value=${this.conditionValue}
-                          @sl-input=${(e: any) => {
-                            this.conditionValue = e.target.value;
-                          }}
-                        ></sl-input>
-                      </div>
-
-                      ${this.hasAdvancedApprovals()
-                        ? html`
-                            <div
-                              style="margin-top: var(--sl-spacing-medium); padding: var(--sl-spacing-small); background: var(--sl-color-neutral-100); border-radius: 4px; font-family: monospace; font-size: var(--sl-font-size-small);"
-                            >
-                              <strong>CEL Expression:</strong><br />
-                              ${this.buildConditionExpression() ||
-                              '(incomplete)'}
-                            </div>
-                            <p
-                              style="font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-600); margin-top: var(--sl-spacing-small);"
-                            >
-                              Enterprise: You can create more complex conditions
-                              using CEL (Common Expression Language) syntax
-                              directly in the backend configuration.
-                            </p>
-                          `
-                        : ''}
-                    `
-                  : ''}
-              `
-            : html`
-                <div class="empty-state">
-                  <p>This tool has no arguments to create conditions with.</p>
-                </div>
-              `}
+          ${this.hasAdvancedApprovals()
+            ? this.renderEnterpriseConditionUI()
+            : this.renderSimpleConditionUI()}
         </div>
 
         <sl-button slot="footer" @click=${this.handleCloseConditionDialog}>

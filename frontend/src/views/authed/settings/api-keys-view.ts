@@ -49,6 +49,9 @@ export class ApiKeysView extends LitElement {
   @state()
   private isSelectOpen = false;
 
+  @state()
+  private createError: string | null = null;
+
   async connectedCallback() {
     super.connectedCallback();
     await this.fetchApiKeys();
@@ -72,6 +75,21 @@ export class ApiKeysView extends LitElement {
       return;
     }
 
+    this.createError = null;
+    const trimmedName = this.newKeyName.trim();
+    if (!trimmedName) {
+      this.createError = 'Please enter a name for your key.';
+      return;
+    }
+
+    const existingNames = new Set(
+      this.apiKeys.map((k) => k.name.trim().toLowerCase())
+    );
+    if (existingNames.has(trimmedName.toLowerCase())) {
+      this.createError = 'API key with this name already exists.';
+      return;
+    }
+
     let expires_at: string | null = null;
     if (this.newKeyExpiry !== 'never') {
       const now = new Date();
@@ -81,7 +99,7 @@ export class ApiKeysView extends LitElement {
     }
 
     try {
-      const newKey = await createApiKey(this.newKeyName, expires_at);
+      const newKey = await createApiKey(trimmedName, expires_at);
       this.newlyCreatedKey = newKey;
       this.isCreateModalOpen = false;
       this.isShowKeyModalOpen = true;
@@ -90,7 +108,10 @@ export class ApiKeysView extends LitElement {
       this.newKeyExpiryLabel = 'Never'; // Reset for next time
       await this.fetchApiKeys();
     } catch (error) {
-      console.error('Failed to create API key:', error);
+      this.createError =
+        error instanceof Error
+          ? error.message
+          : 'Failed to create API key';
     }
   }
 
@@ -229,6 +250,12 @@ export class ApiKeysView extends LitElement {
       </div>
 
       <sl-dialog label="Create API Key" .open=${this.isCreateModalOpen}>
+        ${this.createError
+          ? html`<sl-alert variant="danger" open style="margin-bottom: 1rem;">
+              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+              <strong>Error:</strong> ${this.createError}
+            </sl-alert>`
+          : null}
         <sl-input
           autofocus
           style="margin-bottom: 1rem;"
@@ -257,6 +284,7 @@ export class ApiKeysView extends LitElement {
           slot="footer"
           @click=${() => {
             this.isCreateModalOpen = false;
+            this.createError = null;
           }}
           >Cancel</sl-button
         >
