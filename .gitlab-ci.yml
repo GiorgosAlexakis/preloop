@@ -433,7 +433,7 @@ test:coverage:
       --set config.smtp.username=${SMTP_USERNAME}
       --set config.smtp.password=${SMTP_PASSWORD}
       --set config.smtp.from=${SMTP_FROM}
-      --set config.smtp.fromName=${SMTP_FROM_NAME}
+      --set config.smtp.fromName="${SMTP_FROM_NAME}"
       --set sentry.enabled=false
       --set profiling.enabled=false
       --set stripe.enabled=false
