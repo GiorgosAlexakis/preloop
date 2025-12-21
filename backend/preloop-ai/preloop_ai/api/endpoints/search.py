@@ -281,8 +281,7 @@ async def perform_search(
                 organization=organization_name,
                 project=project_name,
                 project_identifier=project_identifier,
-                url=external_url
-                or f"https://{settings.preloop_url}/issues/{db_obj.id}",
+                url=external_url or f"{settings.preloop_url}/issues/{db_obj.id}",
                 created_at=db_obj.created_at,
                 updated_at=db_obj.updated_at,
                 meta_data=metadata_dict,

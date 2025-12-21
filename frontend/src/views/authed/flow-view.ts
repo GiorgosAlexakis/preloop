@@ -1143,8 +1143,8 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
           </div>
 
           <p style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);">
-            Select which tools the agent can use during flow execution. All
-            enabled tools are selected by default.
+            Select which tools the agent can use during flow execution. No tools
+            are selected by default.
           </p>
 
           ${this.renderToolSelection()}
