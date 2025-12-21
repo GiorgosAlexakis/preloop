@@ -358,7 +358,9 @@ export class ToolCard extends LitElement {
   private buildMultiConditionExpression(): string {
     const expressions = this.conditions
       .filter((c) => c.field && c.operator && c.value)
-      .map((c) => this.buildSingleConditionExpression(c.field, c.operator, c.value));
+      .map((c) =>
+        this.buildSingleConditionExpression(c.field, c.operator, c.value)
+      );
 
     if (expressions.length === 0) {
       return '';
@@ -1188,7 +1190,9 @@ export class ToolCard extends LitElement {
         >
           ${this.getToolArguments().map(
             (arg) => html`
-              <sl-option value=${arg.name}> ${arg.name} (${arg.type}) </sl-option>
+              <sl-option value=${arg.name}>
+                ${arg.name} (${arg.type})
+              </sl-option>
             `
           )}
         </sl-select>
@@ -1314,7 +1318,9 @@ export class ToolCard extends LitElement {
                 ? 'background: var(--sl-color-danger-50); border: 1px solid var(--sl-color-danger-200); color: var(--sl-color-danger-700);'
                 : 'background: var(--sl-color-success-50); border: 1px solid var(--sl-color-success-200); color: var(--sl-color-success-700);'}"
             >
-              <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
+              <div
+                style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
+              >
                 <sl-icon
                   name=${this.celTestResult.error
                     ? 'x-circle-fill'
@@ -1398,15 +1404,21 @@ export class ToolCard extends LitElement {
                   this.conditionCombiner = e.target.value;
                 }}
               >
-                <sl-radio-button value="AND">AND (all must match)</sl-radio-button>
-                <sl-radio-button value="OR">OR (any must match)</sl-radio-button>
+                <sl-radio-button value="AND"
+                  >AND (all must match)</sl-radio-button
+                >
+                <sl-radio-button value="OR"
+                  >OR (any must match)</sl-radio-button
+                >
               </sl-radio-group>
             </div>
           `
         : ''}
 
       <!-- Condition rows -->
-      <div style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);">
+      <div
+        style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
+      >
         ${this.conditions.map(
           (condition, index) => html`
             <div
@@ -1533,7 +1545,9 @@ export class ToolCard extends LitElement {
             <h3 class="tool-name" title=${this.tool.name}>${this.tool.name}</h3>
             <p class="tool-source">
               <sl-badge
-                variant=${this.tool.source === 'builtin' ? 'primary' : 'neutral'}
+                variant=${this.tool.source === 'builtin'
+                  ? 'primary'
+                  : 'neutral'}
                 size="small"
               >
                 ${this.tool.source_name}
@@ -1580,7 +1594,8 @@ export class ToolCard extends LitElement {
                         </span>
                       </span>
                       <sl-switch
-                        ?checked=${this.tool.approval_policy_id || this.pendingApproval}
+                        ?checked=${this.tool.approval_policy_id ||
+                        this.pendingApproval}
                         ?disabled=${!this.tool.is_enabled}
                         @sl-change=${this.handleApprovalToggle}
                       ></sl-switch>
@@ -1617,7 +1632,10 @@ export class ToolCard extends LitElement {
                                     @click=${this.handleConfigureCondition}
                                     style="width: 100%;"
                                   >
-                                    <sl-icon slot="prefix" name="code-square"></sl-icon>
+                                    <sl-icon
+                                      slot="prefix"
+                                      name="code-square"
+                                    ></sl-icon>
                                     ${this.tool.has_approval_condition
                                       ? 'Edit Condition'
                                       : 'Add Condition'}
@@ -1653,7 +1671,8 @@ export class ToolCard extends LitElement {
                         `
                       : html`
                           <!-- Open Source: Simple approval with default policy -->
-                          ${(this.tool.approval_policy_id || this.pendingApproval) &&
+                          ${(this.tool.approval_policy_id ||
+                            this.pendingApproval) &&
                           this.tool.is_enabled
                             ? html`
                                 <div class="policy-selector">
@@ -1662,7 +1681,10 @@ export class ToolCard extends LitElement {
                                     @click=${this.handleConfigureCondition}
                                     style="width: 100%;"
                                   >
-                                    <sl-icon slot="prefix" name="funnel"></sl-icon>
+                                    <sl-icon
+                                      slot="prefix"
+                                      name="funnel"
+                                    ></sl-icon>
                                     ${this.tool.has_approval_condition
                                       ? 'Edit Condition'
                                       : 'Add Condition'}

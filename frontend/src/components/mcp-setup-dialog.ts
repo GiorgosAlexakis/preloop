@@ -79,7 +79,9 @@ export class MCPSetupDialog extends LitElement {
     .client-tab.active {
       border-color: var(--sl-color-primary-600);
       background: var(--sl-color-primary-50);
-      box-shadow: 0 0 0 1px var(--sl-color-primary-600), 0 2px 4px rgba(var(--sl-color-primary-600-rgb), 0.1);
+      box-shadow:
+        0 0 0 1px var(--sl-color-primary-600),
+        0 2px 4px rgba(var(--sl-color-primary-600-rgb), 0.1);
     }
 
     .client-icon {
@@ -230,16 +232,17 @@ export class MCPSetupDialog extends LitElement {
         style="--width: 50rem;"
       >
         <div class="intro">
-          Connect your IDE or CLI to the <strong>Preloop MCP server</strong> to use your enabled tools.
-          <div style="margin-top: 0.5rem;">
-            MCP URL: <code>${mcpUrl}</code>
-          </div>
+          Connect your IDE or CLI to the <strong>Preloop MCP server</strong> to
+          use your enabled tools.
+          <div style="margin-top: 0.5rem;">MCP URL: <code>${mcpUrl}</code></div>
         </div>
 
         <div class="prereq">
           <div class="prereq-title">
             <h5>Prerequisite: Create an API key</h5>
-            <a class="prereq-link" href="/console/settings/api-keys">Settings → API Keys</a>
+            <a class="prereq-link" href="/console/settings/api-keys"
+              >Settings → API Keys</a
+            >
           </div>
           <p class="help-text">
             You’ll use this key as a bearer token when connecting MCP clients.
@@ -248,7 +251,9 @@ export class MCPSetupDialog extends LitElement {
 
         <div class="client-tabs">
           <div
-            class="client-tab ${this.activeTab === 'claude-code' ? 'active' : ''}"
+            class="client-tab ${this.activeTab === 'claude-code'
+              ? 'active'
+              : ''}"
             @click=${() => this._handleTabClick('claude-code')}
           >
             <span class="client-icon">
@@ -268,7 +273,9 @@ export class MCPSetupDialog extends LitElement {
           </div>
 
           <div
-            class="client-tab ${this.activeTab === 'gemini-cli' ? 'active' : ''}"
+            class="client-tab ${this.activeTab === 'gemini-cli'
+              ? 'active'
+              : ''}"
             @click=${() => this._handleTabClick('gemini-cli')}
           >
             <span class="client-icon">
@@ -284,20 +291,25 @@ export class MCPSetupDialog extends LitElement {
             <span class="client-icon">
               <img src="/images/logos/vscode.svg" alt="VSCode" />
             </span>
-            <span class="client-label">VSCode <br /><small>Cursor / Windsurf / Antigravity / etc.</small></span>
+            <span class="client-label"
+              >VSCode <br /><small
+                >Cursor / Windsurf / Antigravity / etc.</small
+              ></span
+            >
           </div>
         </div>
 
         <div class="tab-content">
           ${this.activeTab === 'claude-code'
-        ? html`
+            ? html`
                 <div>
                   <div class="step">
                     <div class="step-title">
                       <h5>Setup</h5>
                     </div>
                     <p class="help-text">
-                      Export your API key as an environment variable, then add the MCP server.
+                      Export your API key as an environment variable, then add
+                      the MCP server.
                     </p>
                     <div class="code-block">
                       <pre><code>export ${envVarName}="YOUR_API_KEY_HERE"
@@ -307,23 +319,26 @@ claude mcp add --transport http preloop ${mcpUrl} --header "Authorization: Beare
                         <sl-button
                           size="small"
                           @click=${() =>
-            this._copy(
-              `export ${envVarName}="YOUR_API_KEY_HERE"\n\nclaude mcp add --transport http preloop ${mcpUrl} --header "Authorization: Bearer $${envVarName}"`,
-              'claude'
-            )}
-                          >${this.copiedKey === 'claude' ? 'Copied' : 'Copy'}</sl-button
+                            this._copy(
+                              `export ${envVarName}="YOUR_API_KEY_HERE"\n\nclaude mcp add --transport http preloop ${mcpUrl} --header "Authorization: Bearer $${envVarName}"`,
+                              'claude'
+                            )}
+                          >${this.copiedKey === 'claude'
+                            ? 'Copied'
+                            : 'Copy'}</sl-button
                         >
                       </div>
                     </div>
                     <p class="help-text">
-                      Replace <code>YOUR_API_KEY_HERE</code> with your actual Preloop API key.
+                      Replace <code>YOUR_API_KEY_HERE</code> with your actual
+                      Preloop API key.
                     </p>
                   </div>
                 </div>
               `
-        : ''}
+            : ''}
           ${this.activeTab === 'gemini-cli'
-        ? html`
+            ? html`
                 <div>
                   <div class="step">
                     <div class="step-title">
@@ -340,31 +355,35 @@ gemini mcp add preloop ${mcpUrl} --header "Authorization: Bearer $${envVarName}"
                         <sl-button
                           size="small"
                           @click=${() =>
-            this._copy(
-              `export ${envVarName}="YOUR_API_KEY_HERE"\n\ngemini mcp add preloop ${mcpUrl} --header "Authorization: Bearer $${envVarName}"`,
-              'gemini'
-            )}
-                          >${this.copiedKey === 'gemini' ? 'Copied' : 'Copy'}</sl-button
+                            this._copy(
+                              `export ${envVarName}="YOUR_API_KEY_HERE"\n\ngemini mcp add preloop ${mcpUrl} --header "Authorization: Bearer $${envVarName}"`,
+                              'gemini'
+                            )}
+                          >${this.copiedKey === 'gemini'
+                            ? 'Copied'
+                            : 'Copy'}</sl-button
                         >
                       </div>
                     </div>
                     <p class="help-text">
-                      Replace <code>YOUR_API_KEY_HERE</code> with your actual Preloop API key.
+                      Replace <code>YOUR_API_KEY_HERE</code> with your actual
+                      Preloop API key.
                     </p>
                   </div>
                 </div>
               `
-        : ''}
+            : ''}
           ${this.activeTab === 'codex-cli'
-        ? html`
+            ? html`
                 <div>
                   <div class="step">
                     <div class="step-title">
                       <h5>Setup</h5>
                     </div>
                     <p class="help-text">
-                      Codex supports Streamable HTTP MCP servers via <code>url</code>.
-                      Use <code>bearer_token_env_var</code> so you don’t have to store secrets in the file.
+                      Codex supports Streamable HTTP MCP servers via
+                      <code>url</code>. Use <code>bearer_token_env_var</code> so
+                      you don’t have to store secrets in the file.
                     </p>
                     <div class="code-block">
                       <pre><code>[mcp_servers.preloop]
@@ -375,11 +394,13 @@ bearer_token_env_var = "${envVarName}"
                         <sl-button
                           size="small"
                           @click=${() =>
-            this._copy(
-              `[mcp_servers.preloop]\nurl = "${mcpUrl}"\nbearer_token_env_var = "${envVarName}"\n`,
-              'codex-toml'
-            )}
-                          >${this.copiedKey === 'codex-toml' ? 'Copied' : 'Copy'}</sl-button
+                            this._copy(
+                              `[mcp_servers.preloop]\nurl = "${mcpUrl}"\nbearer_token_env_var = "${envVarName}"\n`,
+                              'codex-toml'
+                            )}
+                          >${this.copiedKey === 'codex-toml'
+                            ? 'Copied'
+                            : 'Copy'}</sl-button
                         >
                       </div>
                     </div>
@@ -390,24 +411,27 @@ bearer_token_env_var = "${envVarName}"
                         <sl-button
                           size="small"
                           @click=${() =>
-            this._copy(
-              `export ${envVarName}="YOUR_API_KEY_HERE"`,
-              'codex-env'
-            )}
-                          >${this.copiedKey === 'codex-env' ? 'Copied' : 'Copy'}</sl-button
+                            this._copy(
+                              `export ${envVarName}="YOUR_API_KEY_HERE"`,
+                              'codex-env'
+                            )}
+                          >${this.copiedKey === 'codex-env'
+                            ? 'Copied'
+                            : 'Copy'}</sl-button
                         >
                       </div>
                     </div>
 
                     <p class="help-text">
-                      Then run <code>codex</code> and use <code>/mcp</code> in the TUI to verify the server is connected.
+                      Then run <code>codex</code> and use <code>/mcp</code> in
+                      the TUI to verify the server is connected.
                     </p>
                   </div>
                 </div>
               `
-        : ''}
+            : ''}
           ${this.activeTab === 'ide-json'
-        ? html`
+            ? html`
                 <div>
                   <div class="step">
                     <div class="step-title">
@@ -440,8 +464,8 @@ bearer_token_env_var = "${envVarName}"
                         <sl-button
                           size="small"
                           @click=${() =>
-            this._copy(
-              `{
+                            this._copy(
+                              `{
   "mcpServers": {
     "preloop": {
       "url": "${mcpUrl}",
@@ -452,19 +476,22 @@ bearer_token_env_var = "${envVarName}"
     }
   }
 }`,
-              'ide-json'
-            )}
-                          >${this.copiedKey === 'ide-json' ? 'Copied' : 'Copy'}</sl-button
+                              'ide-json'
+                            )}
+                          >${this.copiedKey === 'ide-json'
+                            ? 'Copied'
+                            : 'Copy'}</sl-button
                         >
                       </div>
                     </div>
                     <p class="help-text">
-                      Replace <code>YOUR_API_KEY_HERE</code> with your actual Preloop API key.
+                      Replace <code>YOUR_API_KEY_HERE</code> with your actual
+                      Preloop API key.
                     </p>
                   </div>
                 </div>
               `
-        : ''}
+            : ''}
         </div>
 
         <p class="help-text" style="margin-top: var(--sl-spacing-medium);">

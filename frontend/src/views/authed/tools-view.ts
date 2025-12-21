@@ -808,8 +808,12 @@ export class ToolsView extends LitElement {
     const filteredTools = this.getFilteredTools();
     const builtinTools = this.tools.filter((t) => t.source === 'builtin');
 
-    const availableTools = filteredTools.filter((t) => t.is_supported !== false);
-    const unavailableTools = filteredTools.filter((t) => t.is_supported === false);
+    const availableTools = filteredTools.filter(
+      (t) => t.is_supported !== false
+    );
+    const unavailableTools = filteredTools.filter(
+      (t) => t.is_supported === false
+    );
 
     const sortAvailable = (tools: Tool[]) =>
       [...tools].sort((a, b) => {
@@ -950,18 +954,27 @@ export class ToolsView extends LitElement {
 
                       ${sortedUnavailableTools.length > 0
                         ? html`
-                            <div
-                              style="margin-top: var(--sl-spacing-large);"
-                            >
+                            <div style="margin-top: var(--sl-spacing-large);">
                               <sl-divider></sl-divider>
                               <sl-alert variant="neutral" open>
-                                <sl-icon slot="icon" name="info-circle"></sl-icon>
-                                <strong>${sortedUnavailableTools.length}</strong>
-                                tool${sortedUnavailableTools.length === 1 ? '' : 's'}
-                                unavailable until you add the required tracker(s).
+                                <sl-icon
+                                  slot="icon"
+                                  name="info-circle"
+                                ></sl-icon>
+                                <strong
+                                  >${sortedUnavailableTools.length}</strong
+                                >
+                                tool${sortedUnavailableTools.length === 1
+                                  ? ''
+                                  : 's'}
+                                unavailable until you add the required
+                                tracker(s).
                                 <a href="/console/trackers">Manage trackers</a>
                               </sl-alert>
-                              <div class="tools-grid" style="margin-top: var(--sl-spacing-medium);">
+                              <div
+                                class="tools-grid"
+                                style="margin-top: var(--sl-spacing-medium);"
+                              >
                                 ${repeat(
                                   sortedUnavailableTools,
                                   (tool) =>
@@ -971,13 +984,18 @@ export class ToolsView extends LitElement {
                                       .tool=${tool}
                                       .policies=${this.approvalPolicies}
                                       .features=${this.features}
-                                      @toggle-enabled=${this.handleToggleEnabled}
-                                      @toggle-approval=${this.handleToggleApproval}
-                                      @policy-selected=${this.handlePolicySelected}
+                                      @toggle-enabled=${this
+                                        .handleToggleEnabled}
+                                      @toggle-approval=${this
+                                        .handleToggleApproval}
+                                      @policy-selected=${this
+                                        .handlePolicySelected}
                                       @create-policy=${this.handleCreatePolicy}
                                       @update-policy=${this.handleUpdatePolicy}
-                                      @save-condition=${this.handleSaveCondition}
-                                      @use-default-policy=${this.handleUseDefaultPolicy}
+                                      @save-condition=${this
+                                        .handleSaveCondition}
+                                      @use-default-policy=${this
+                                        .handleUseDefaultPolicy}
                                     ></tool-card>`
                                 )}
                               </div>

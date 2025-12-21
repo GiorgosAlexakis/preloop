@@ -1725,7 +1725,8 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                             tool.name,
                             e.target.checked
                           )}
-                        ?disabled=${!tool.is_enabled || tool.is_supported === false}
+                        ?disabled=${!tool.is_enabled ||
+                        tool.is_supported === false}
                       >
                         ${tool.name}
                         ${tool.is_supported === false
@@ -1769,7 +1770,8 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                             tool.name,
                             e.target.checked
                           )}
-                        ?disabled=${!tool.is_enabled || tool.is_supported === false}
+                        ?disabled=${!tool.is_enabled ||
+                        tool.is_supported === false}
                       >
                         ${tool.name}
                         <sl-badge variant="primary" size="small"

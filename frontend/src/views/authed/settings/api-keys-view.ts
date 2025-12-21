@@ -109,9 +109,7 @@ export class ApiKeysView extends LitElement {
       await this.fetchApiKeys();
     } catch (error) {
       this.createError =
-        error instanceof Error
-          ? error.message
-          : 'Failed to create API key';
+        error instanceof Error ? error.message : 'Failed to create API key';
     }
   }
 
