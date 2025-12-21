@@ -569,13 +569,28 @@ export class ToolsView extends LitElement {
           approval_policy_id: policyToUse.id,
         });
       } else {
-        await createToolConfiguration({
+        const newConfig = await createToolConfiguration({
           tool_name: tool.name,
           tool_source: tool.source,
           mcp_server_id: tool.source_id,
           approval_policy_id: policyToUse.id,
           account_id: '',
         });
+
+        tool.config_id = newConfig.id;
+
+        // Update local tool with new config_id so conditions can be added immediately
+        const updatedToolsWithConfig = this.tools.map((t) => {
+          if (
+            t.name === tool.name &&
+            t.source === tool.source &&
+            t.source_id === tool.source_id
+          ) {
+            return { ...t, config_id: newConfig.id };
+          }
+          return t;
+        });
+        this.tools = updatedToolsWithConfig;
       }
 
       // Restore scroll position
