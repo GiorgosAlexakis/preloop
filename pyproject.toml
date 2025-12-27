@@ -24,6 +24,8 @@ dependencies = [
     "bcrypt<4.1.0",
     "python-multipart>=0.0.6",
     "httpx>=0.24.1",
+    "pyjwt[crypto]>=2.8.0",  # For APNs JWT authentication with ES256
+    "cryptography>=41.0.0",  # Required by pyjwt for ES256 algorithm
     "tenacity>=8.2.3",
     "python-json-logger>=2.0.0",
     "jinja2>=3.1.2",
