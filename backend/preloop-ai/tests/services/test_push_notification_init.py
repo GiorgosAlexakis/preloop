@@ -29,7 +29,9 @@ class TestGetAPNsService:
             "APNS_USE_SANDBOX": "true",
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             with patch("builtins.open", mock_open(read_data="fake_key")):
                 service = get_apns_service()
 
@@ -48,7 +50,9 @@ class TestGetAPNsService:
             "APNS_USE_SANDBOX": "true",
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             with patch("builtins.open", mock_open(read_data="fake_key")):
                 service1 = get_apns_service()
                 service2 = get_apns_service()
@@ -64,7 +68,9 @@ class TestGetAPNsService:
             "APNS_BUNDLE_ID": "com.test.app",
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             service = get_apns_service()
             assert service is None
 
@@ -76,7 +82,9 @@ class TestGetAPNsService:
             "APNS_BUNDLE_ID": "com.test.app",
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             service = get_apns_service()
             assert service is None
 
@@ -88,7 +96,9 @@ class TestGetAPNsService:
             "APNS_BUNDLE_ID": "com.test.app",
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             service = get_apns_service()
             assert service is None
 
@@ -101,7 +111,9 @@ class TestGetAPNsService:
             "APNS_BUNDLE_ID": "com.test.app",
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             # open() will raise FileNotFoundError
             service = get_apns_service()
             assert service is None
@@ -116,7 +128,9 @@ class TestGetAPNsService:
             "APNS_USE_SANDBOX": "true",
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             with patch("builtins.open", mock_open(read_data="fake_key")):
                 service = get_apns_service()
 
@@ -133,7 +147,9 @@ class TestGetAPNsService:
             "APNS_USE_SANDBOX": "false",
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             with patch("builtins.open", mock_open(read_data="fake_key")):
                 service = get_apns_service()
 
@@ -149,7 +165,9 @@ class TestGetAPNsService:
             # APNS_BUNDLE_ID not specified
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             with patch("builtins.open", mock_open(read_data="fake_key")):
                 service = get_apns_service()
 
@@ -165,7 +183,9 @@ class TestGetAPNsService:
             # APNS_USE_SANDBOX not specified
         }
 
-        with patch("os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)):
+        with patch(
+            "os.getenv", side_effect=lambda k, default=None: env_vars.get(k, default)
+        ):
             with patch("builtins.open", mock_open(read_data="fake_key")):
                 service = get_apns_service()
 

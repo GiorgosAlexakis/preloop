@@ -1,6 +1,5 @@
 """Tests for APNs service."""
 
-import time
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
@@ -170,10 +169,8 @@ class TestSendNotification:
                 return_value=mock_response
             )
 
-            success, status_code, error_reason = (
-                await apns_service.send_notification(
-                    device_token="a" * 64, payload={"aps": {"alert": "Test"}}
-                )
+            success, status_code, error_reason = await apns_service.send_notification(
+                device_token="a" * 64, payload={"aps": {"alert": "Test"}}
             )
 
             assert success is True
@@ -191,10 +188,8 @@ class TestSendNotification:
                 return_value=mock_response
             )
 
-            success, status_code, error_reason = (
-                await apns_service.send_notification(
-                    device_token="a" * 64, payload={"aps": {"alert": "Test"}}
-                )
+            success, status_code, error_reason = await apns_service.send_notification(
+                device_token="a" * 64, payload={"aps": {"alert": "Test"}}
             )
 
             assert success is False
@@ -212,10 +207,8 @@ class TestSendNotification:
                 return_value=mock_response
             )
 
-            success, status_code, error_reason = (
-                await apns_service.send_notification(
-                    device_token="invalid_token", payload={"aps": {"alert": "Test"}}
-                )
+            success, status_code, error_reason = await apns_service.send_notification(
+                device_token="invalid_token", payload={"aps": {"alert": "Test"}}
             )
 
             assert success is False
@@ -233,17 +226,17 @@ class TestSendNotification:
                 return_value=mock_response
             )
 
-            success, status_code, error_reason = (
-                await apns_service.send_notification(
-                    device_token="a" * 64, payload={"aps": {"alert": "Test"}}
-                )
+            success, status_code, error_reason = await apns_service.send_notification(
+                device_token="a" * 64, payload={"aps": {"alert": "Test"}}
             )
 
             assert success is False
             assert status_code == 403
             assert error_reason == "InvalidProviderToken"
 
-    async def test_send_notification_payload_too_large_413(self, apns_service, mock_jwt):
+    async def test_send_notification_payload_too_large_413(
+        self, apns_service, mock_jwt
+    ):
         """Test notification with payload too large (413 response)."""
         mock_response = MagicMock()
         mock_response.status_code = 413
@@ -255,10 +248,8 @@ class TestSendNotification:
             )
 
             large_payload = {"aps": {"alert": "X" * 5000}}
-            success, status_code, error_reason = (
-                await apns_service.send_notification(
-                    device_token="a" * 64, payload=large_payload
-                )
+            success, status_code, error_reason = await apns_service.send_notification(
+                device_token="a" * 64, payload=large_payload
             )
 
             assert success is False
@@ -276,10 +267,8 @@ class TestSendNotification:
                 return_value=mock_response
             )
 
-            success, status_code, error_reason = (
-                await apns_service.send_notification(
-                    device_token="a" * 64, payload={"aps": {"alert": "Test"}}
-                )
+            success, status_code, error_reason = await apns_service.send_notification(
+                device_token="a" * 64, payload={"aps": {"alert": "Test"}}
             )
 
             assert success is False
@@ -297,10 +286,8 @@ class TestSendNotification:
                 return_value=mock_response
             )
 
-            success, status_code, error_reason = (
-                await apns_service.send_notification(
-                    device_token="a" * 64, payload={"aps": {"alert": "Test"}}
-                )
+            success, status_code, error_reason = await apns_service.send_notification(
+                device_token="a" * 64, payload={"aps": {"alert": "Test"}}
             )
 
             assert success is False
@@ -355,10 +342,8 @@ class TestSendNotification:
                 side_effect=Exception("Network error")
             )
 
-            success, status_code, error_reason = (
-                await apns_service.send_notification(
-                    device_token="a" * 64, payload={"aps": {"alert": "Test"}}
-                )
+            success, status_code, error_reason = await apns_service.send_notification(
+                device_token="a" * 64, payload={"aps": {"alert": "Test"}}
             )
 
             assert success is False

@@ -641,10 +641,12 @@ class ApprovalService:
                 # Send to each device
                 for token in ios_tokens:
                     try:
-                        success, status_code, error_reason = (
-                            await apns_service.send_notification(
-                                device_token=token, payload=payload, priority=apns_priority
-                            )
+                        (
+                            success,
+                            status_code,
+                            error_reason,
+                        ) = await apns_service.send_notification(
+                            device_token=token, payload=payload, priority=apns_priority
                         )
 
                         if success:

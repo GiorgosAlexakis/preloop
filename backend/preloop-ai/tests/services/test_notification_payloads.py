@@ -213,9 +213,9 @@ class TestRequestResolvedPayload:
 
         assert payload["aps"]["alert"]["title"] == "Request Resolved"
         assert "Create Issue" in payload["aps"]["alert"]["subtitle"]
-        assert "john@example.com approved this request" in payload["aps"]["alert"][
-            "body"
-        ]
+        assert (
+            "john@example.com approved this request" in payload["aps"]["alert"]["body"]
+        )
         assert payload["aps"]["sound"] == "default"
         assert payload["aps"]["badge"] == 0
 
@@ -234,9 +234,9 @@ class TestRequestResolvedPayload:
             decision="declined",
         )
 
-        assert "admin@example.com declined this request" in payload["aps"]["alert"][
-            "body"
-        ]
+        assert (
+            "admin@example.com declined this request" in payload["aps"]["alert"]["body"]
+        )
         assert payload["decision"] == "declined"
 
     def test_badge_cleared_on_resolution(self):

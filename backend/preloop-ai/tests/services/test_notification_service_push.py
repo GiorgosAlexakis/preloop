@@ -97,7 +97,11 @@ class TestSendPushNotifications:
     """Test _send_push_notifications method."""
 
     async def test_send_to_single_user_with_ios_token(
-        self, db_session, test_user_with_ios_token, test_approval_request, mock_apns_service
+        self,
+        db_session,
+        test_user_with_ios_token,
+        test_approval_request,
+        mock_apns_service,
     ):
         """Test sending push notification to single user with iOS token."""
         notification_service = NotificationService(db_session)
@@ -201,7 +205,11 @@ class TestSendPushNotifications:
             assert result["sent"] >= 1
 
     async def test_skip_user_without_mobile_push_enabled(
-        self, db_session, test_user_without_push, test_approval_request, mock_apns_service
+        self,
+        db_session,
+        test_user_without_push,
+        test_approval_request,
+        mock_apns_service,
     ):
         """Test that users without mobile push enabled are skipped."""
         notification_service = NotificationService(db_session)
@@ -252,7 +260,11 @@ class TestSendPushNotifications:
             mock_apns_service.send_notification.assert_not_called()
 
     async def test_invalid_token_removal_410(
-        self, db_session, test_user_with_ios_token, test_approval_request, mock_apns_service
+        self,
+        db_session,
+        test_user_with_ios_token,
+        test_approval_request,
+        mock_apns_service,
     ):
         """Test that invalid tokens (410 response) are removed from database."""
         # Mock 410 response (invalid token)
@@ -281,7 +293,11 @@ class TestSendPushNotifications:
             assert len(prefs.get_device_tokens(platform="ios")) == 0
 
     async def test_escalation_notification(
-        self, db_session, test_user_with_ios_token, test_approval_request, mock_apns_service
+        self,
+        db_session,
+        test_user_with_ios_token,
+        test_approval_request,
+        mock_apns_service,
     ):
         """Test that escalation notifications have correct title prefix."""
         notification_service = NotificationService(db_session)
@@ -305,7 +321,11 @@ class TestSendPushNotifications:
             assert "ESCALATION:" in payload["aps"]["alert"]["title"]
 
     async def test_priority_mapping(
-        self, db_session, test_user_with_ios_token, test_approval_request, mock_apns_service
+        self,
+        db_session,
+        test_user_with_ios_token,
+        test_approval_request,
+        mock_apns_service,
     ):
         """Test that escalation flag maps to APNs priority correctly."""
         notification_service = NotificationService(db_session)
@@ -342,7 +362,11 @@ class TestSendPushNotifications:
             assert result["failed"] == 0
 
     async def test_send_failure_handling(
-        self, db_session, test_user_with_ios_token, test_approval_request, mock_apns_service
+        self,
+        db_session,
+        test_user_with_ios_token,
+        test_approval_request,
+        mock_apns_service,
     ):
         """Test handling of send failures (non-410 errors)."""
         # Mock 500 response (server error)
@@ -372,7 +396,11 @@ class TestSendPushNotifications:
             assert len(prefs.get_device_tokens(platform="ios")) == 1
 
     async def test_network_exception_handling(
-        self, db_session, test_user_with_ios_token, test_approval_request, mock_apns_service
+        self,
+        db_session,
+        test_user_with_ios_token,
+        test_approval_request,
+        mock_apns_service,
     ):
         """Test handling of network exceptions."""
         # Mock exception
