@@ -459,7 +459,7 @@ export class ToolCard extends LitElement {
 
   static styles = css`
     sl-card.tool-card.unsupported .card-content,
-    sl-card.tool-card.unsupported div[slot='footer'] {
+    sl-card.tool-card.unsupported .tool-controls {
       opacity: 0.5;
       pointer-events: none;
     }
@@ -471,6 +471,16 @@ export class ToolCard extends LitElement {
       color: var(--sl-color-neutral-600);
       font-size: var(--sl-font-size-x-small);
       line-height: 1.3;
+    }
+
+    .unsupported-link {
+      color: var(--sl-color-primary-600);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .unsupported-link:hover {
+      text-decoration: underline;
     }
 
     .tool-card {
@@ -1545,9 +1555,9 @@ export class ToolCard extends LitElement {
             <h3 class="tool-name" title=${this.tool.name}>${this.tool.name}</h3>
             <p class="tool-source">
               <sl-badge
-                variant=${this.tool.source === 'builtin'
-                  ? 'primary'
-                  : 'neutral'}
+                variant=${
+                  this.tool.source === 'builtin' ? 'primary' : 'neutral'
+                }
                 size="small"
               >
                 ${this.tool.source_name}
@@ -1560,142 +1570,147 @@ export class ToolCard extends LitElement {
         </div>
 
         <div slot="footer">
-          ${!isSupported && this.tool.unsupported_reason
-            ? html`
-                <div class="unsupported-hint">
-                  <span>Unavailable</span>
-                  <sl-tooltip content=${this.tool.unsupported_reason}>
-                    <sl-icon name="info-circle"></sl-icon>
-                  </sl-tooltip>
-                </div>
-              `
-            : ''}
-          <div class="control-row">
-            <span class="control-label">Enabled</span>
-            <sl-switch
-              ?checked=${this.tool.is_enabled}
-              ?disabled=${!isSupported}
-              @sl-change=${this.handleEnabledToggle}
-            ></sl-switch>
-          </div>
-
           ${
-            // Hide approval section for the request_approval tool since it doesn't
-            // make sense to require approval for a tool that requests approval
-            this.tool.name === 'request_approval'
-              ? ''
-              : html`
-                  <div class="approval-section">
-                    <div class="control-row">
-                      <span class="control-label">
-                        Require Approval
-                        <span class="preloop-icon">
-                          ${unsafeHTML(preloopBadgeSvg)}
-                        </span>
-                      </span>
-                      <sl-switch
-                        ?checked=${this.tool.approval_policy_id ||
-                        this.pendingApproval}
-                        ?disabled=${!this.tool.is_enabled}
-                        @sl-change=${this.handleApprovalToggle}
-                      ></sl-switch>
-                    </div>
-                    ${this.hasAdvancedApprovals()
-                      ? html`
-                          <!-- Enterprise: Full policy selection and management -->
-                          ${this.tool.approval_policy_id && this.tool.is_enabled
-                            ? html`
-                                <div class="policy-selector">
-                                  <sl-select
-                                    size="small"
-                                    placeholder="Select a policy..."
-                                    value=${this.tool.approval_policy_id || ''}
-                                    @sl-change=${this.handlePolicySelect}
-                                  >
-                                    ${this.policies.map(
-                                      (policy) => html`
-                                        <sl-option value=${policy.id}
-                                          >${policy.name}</sl-option
-                                        >
-                                      `
-                                    )}
-                                  </sl-select>
-                                  <sl-icon-button
-                                    name="gear"
-                                    label="Manage policies"
-                                    @click=${this.handleManagePolicies}
-                                  ></sl-icon-button>
-                                </div>
-                                <div class="policy-selector">
-                                  <sl-button
-                                    size="small"
-                                    @click=${this.handleConfigureCondition}
-                                    style="width: 100%;"
-                                  >
-                                    <sl-icon
-                                      slot="prefix"
-                                      name="code-square"
-                                    ></sl-icon>
-                                    ${this.tool.has_approval_condition
-                                      ? 'Edit Condition'
-                                      : 'Add Condition'}
-                                  </sl-button>
-                                </div>
-                              `
-                            : ''}
-                          ${this.pendingApproval && this.tool.is_enabled
-                            ? html`
-                                <div class="policy-selector">
-                                  <sl-select
-                                    size="small"
-                                    placeholder="Select a policy..."
-                                    value=""
-                                    @sl-change=${this.handlePolicySelect}
-                                  >
-                                    ${this.policies.map(
-                                      (policy) => html`
-                                        <sl-option value=${policy.id}
-                                          >${policy.name}</sl-option
-                                        >
-                                      `
-                                    )}
-                                  </sl-select>
-                                  <sl-icon-button
-                                    name="gear"
-                                    label="Manage policies"
-                                    @click=${this.handleManagePolicies}
-                                  ></sl-icon-button>
-                                </div>
-                              `
-                            : ''}
-                        `
-                      : html`
-                          <!-- Open Source: Simple approval with default policy -->
-                          ${(this.tool.approval_policy_id ||
-                            this.pendingApproval) &&
-                          this.tool.is_enabled
-                            ? html`
-                                <div class="policy-selector">
-                                  <sl-button
-                                    size="small"
-                                    @click=${this.handleConfigureCondition}
-                                    style="width: 100%;"
-                                  >
-                                    <sl-icon
-                                      slot="prefix"
-                                      name="funnel"
-                                    ></sl-icon>
-                                    ${this.tool.has_approval_condition
-                                      ? 'Edit Condition'
-                                      : 'Add Condition'}
-                                  </sl-button>
-                                </div>
-                              `
-                            : ''}
-                        `}
+            !isSupported && this.tool.unsupported_reason
+              ? html`
+                  <div class="unsupported-hint">
+                    <span>Unavailable</span>
+                    <sl-tooltip content=${this.tool.unsupported_reason}>
+                      <sl-icon name="info-circle"></sl-icon>
+                    </sl-tooltip>
+                    <a href="/console/trackers" class="unsupported-link">
+                      Manage trackers
+                    </a>
                   </div>
                 `
+              : ''
           }
+          <div class="tool-controls">
+            <div class="control-row">
+              <span class="control-label">Enabled</span>
+              <sl-switch
+                ?checked=${this.tool.is_enabled}
+                ?disabled=${!isSupported}
+                @sl-change=${this.handleEnabledToggle}
+              ></sl-switch>
+            </div>
+
+            ${
+              this.tool.name === 'request_approval'
+                ? ''
+                : html`
+                    <div class="approval-section">
+                      <div class="control-row">
+                        <span class="control-label">
+                          Require Approval
+                          <span class="preloop-icon">
+                            ${unsafeHTML(preloopBadgeSvg)}
+                          </span>
+                        </span>
+                        <sl-switch
+                          ?checked=${this.tool.approval_policy_id ||
+                          this.pendingApproval}
+                          ?disabled=${!this.tool.is_enabled}
+                          @sl-change=${this.handleApprovalToggle}
+                        ></sl-switch>
+                      </div>
+                      ${this.hasAdvancedApprovals()
+                        ? html`
+                            ${this.tool.approval_policy_id &&
+                            this.tool.is_enabled
+                              ? html`
+                                  <div class="policy-selector">
+                                    <sl-select
+                                      size="small"
+                                      placeholder="Select a policy..."
+                                      value=${this.tool.approval_policy_id ||
+                                      ''}
+                                      @sl-change=${this.handlePolicySelect}
+                                    >
+                                      ${this.policies.map(
+                                        (policy) => html`
+                                          <sl-option value=${policy.id}
+                                            >${policy.name}</sl-option
+                                          >
+                                        `
+                                      )}
+                                    </sl-select>
+                                    <sl-icon-button
+                                      name="gear"
+                                      label="Manage policies"
+                                      @click=${this.handleManagePolicies}
+                                    ></sl-icon-button>
+                                  </div>
+                                  <div class="policy-selector">
+                                    <sl-button
+                                      size="small"
+                                      @click=${this.handleConfigureCondition}
+                                      style="width: 100%;"
+                                    >
+                                      <sl-icon
+                                        slot="prefix"
+                                        name="code-square"
+                                      ></sl-icon>
+                                      ${this.tool.has_approval_condition
+                                        ? 'Edit Condition'
+                                        : 'Add Condition'}
+                                    </sl-button>
+                                  </div>
+                                `
+                              : ''}
+                            ${this.pendingApproval && this.tool.is_enabled
+                              ? html`
+                                  <div class="policy-selector">
+                                    <sl-select
+                                      size="small"
+                                      placeholder="Select a policy..."
+                                      value=""
+                                      @sl-change=${this.handlePolicySelect}
+                                    >
+                                      ${this.policies.map(
+                                        (policy) => html`
+                                          <sl-option value=${policy.id}
+                                            >${policy.name}</sl-option
+                                          >
+                                        `
+                                      )}
+                                    </sl-select>
+                                    <sl-icon-button
+                                      name="gear"
+                                      label="Manage policies"
+                                      @click=${this.handleManagePolicies}
+                                    ></sl-icon-button>
+                                  </div>
+                                `
+                              : ''}
+                          `
+                        : html`
+                            <!-- Open Source: Simple approval with default policy -->
+                            ${(this.tool.approval_policy_id ||
+                              this.pendingApproval) &&
+                            this.tool.is_enabled
+                              ? html`
+                                  <div class="policy-selector">
+                                    <sl-button
+                                      size="small"
+                                      @click=${this.handleConfigureCondition}
+                                      style="width: 100%;"
+                                    >
+                                      <sl-icon
+                                        slot="prefix"
+                                        name="funnel"
+                                      ></sl-icon>
+                                      ${this.tool.has_approval_condition
+                                        ? 'Edit Condition'
+                                        : 'Add Condition'}
+                                    </sl-button>
+                                  </div>
+                                `
+                              : ''}
+                          `}
+                    </div>
+                  `
+            }
         </div>
       </sl-card>
 
@@ -1719,422 +1734,432 @@ export class ToolCard extends LitElement {
           >
             Preloop allows you to review and approve tool executions before they
             run.
-            ${this.pendingApproval
-              ? 'Select an existing policy or create a new one to enable approval for this tool.'
-              : 'Manage approval policies for this tool.'}
+            ${
+              this.pendingApproval
+                ? 'Select an existing policy or create a new one to enable approval for this tool.'
+                : 'Manage approval policies for this tool.'
+            }
           </p>
 
-          ${!this.isCreatingPolicy
-            ? html`
-                <!-- Existing Policies List -->
-                <div>
-                  <div
-                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sl-spacing-small);"
-                  >
-                    <h4
-                      style="margin: 0; font-size: var(--sl-font-size-medium);"
+          ${
+            !this.isCreatingPolicy
+              ? html`
+                  <!-- Existing Policies List -->
+                  <div>
+                    <div
+                      style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sl-spacing-small);"
                     >
-                      Select Existing Policy
-                    </h4>
-                    <sl-button
-                      size="small"
-                      @click=${this.handleToggleCreatePolicy}
-                    >
-                      <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                      Create New
-                    </sl-button>
-                  </div>
-                  ${this.policies.length > 0
-                    ? html`
-                        <div class="policy-list">
-                          ${this.policies.map(
-                            (policy) => html`
-                              <div
-                                class="policy-item ${this.selectedPolicyId ===
-                                policy.id
-                                  ? 'selected'
-                                  : ''}"
-                                @click=${() =>
-                                  this.handlePolicyItemClick(policy.id)}
-                              >
-                                <div class="policy-info">
-                                  <h5 class="policy-name">
-                                    ${policy.name}
-                                    ${policy.is_default
-                                      ? html`<span class="default-badge">
-                                          <sl-icon name="star-fill"></sl-icon>
-                                          Default
-                                        </span>`
-                                      : ''}
-                                  </h5>
-                                  <div class="policy-meta">
-                                    ${policy.description || 'No description'}
-                                    <br />
-                                    Type: ${policy.approval_type}
-                                    ${policy.approval_config?.webhook_url
-                                      ? ` • Webhook configured`
-                                      : ' • No webhook'}
-                                    ${policy.channel
-                                      ? ` • Channel: ${policy.channel}`
-                                      : ''}
-                                    ${policy.user
-                                      ? ` • User: ${policy.user}`
+                      <h4
+                        style="margin: 0; font-size: var(--sl-font-size-medium);"
+                      >
+                        Select Existing Policy
+                      </h4>
+                      <sl-button
+                        size="small"
+                        @click=${this.handleToggleCreatePolicy}
+                      >
+                        <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                        Create New
+                      </sl-button>
+                    </div>
+                    ${this.policies.length > 0
+                      ? html`
+                          <div class="policy-list">
+                            ${this.policies.map(
+                              (policy) => html`
+                                <div
+                                  class="policy-item ${this.selectedPolicyId ===
+                                  policy.id
+                                    ? 'selected'
+                                    : ''}"
+                                  @click=${() =>
+                                    this.handlePolicyItemClick(policy.id)}
+                                >
+                                  <div class="policy-info">
+                                    <h5 class="policy-name">
+                                      ${policy.name}
+                                      ${policy.is_default
+                                        ? html`<span class="default-badge">
+                                            <sl-icon name="star-fill"></sl-icon>
+                                            Default
+                                          </span>`
+                                        : ''}
+                                    </h5>
+                                    <div class="policy-meta">
+                                      ${policy.description || 'No description'}
+                                      <br />
+                                      Type: ${policy.approval_type}
+                                      ${policy.approval_config?.webhook_url
+                                        ? ` • Webhook configured`
+                                        : ' • No webhook'}
+                                      ${policy.channel
+                                        ? ` • Channel: ${policy.channel}`
+                                        : ''}
+                                      ${policy.user
+                                        ? ` • User: ${policy.user}`
+                                        : ''}
+                                    </div>
+                                  </div>
+                                  <div class="policy-actions">
+                                    <sl-icon-button
+                                      name="pencil"
+                                      label="Edit policy"
+                                      @click=${(e: Event) => {
+                                        e.stopPropagation();
+                                        this.handleEditPolicy(policy);
+                                      }}
+                                    ></sl-icon-button>
+                                    ${this.selectedPolicyId === policy.id
+                                      ? html`<sl-icon
+                                          name="check-circle-fill"
+                                          style="color: var(--sl-color-primary-600);"
+                                        ></sl-icon>`
                                       : ''}
                                   </div>
                                 </div>
-                                <div class="policy-actions">
-                                  <sl-icon-button
-                                    name="pencil"
-                                    label="Edit policy"
-                                    @click=${(e: Event) => {
-                                      e.stopPropagation();
-                                      this.handleEditPolicy(policy);
-                                    }}
-                                  ></sl-icon-button>
-                                  ${this.selectedPolicyId === policy.id
-                                    ? html`<sl-icon
-                                        name="check-circle-fill"
-                                        style="color: var(--sl-color-primary-600);"
-                                      ></sl-icon>`
-                                    : ''}
-                                </div>
-                              </div>
-                            `
-                          )}
-                        </div>
-                      `
-                    : html`
-                        <div class="empty-state">
-                          <sl-icon
-                            name="inbox"
-                            style="font-size: 2rem; margin-bottom: var(--sl-spacing-small);"
-                          ></sl-icon>
-                          <p>
-                            No policies found. Create your first policy to get
-                            started.
-                          </p>
-                        </div>
-                      `}
-                </div>
-              `
-            : html`
-                <!-- Create New Policy Form -->
-                <div class="dialog-section">
-                  <div
-                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sl-spacing-medium);"
-                  >
-                    <h4
-                      style="margin: 0; font-size: var(--sl-font-size-medium);"
-                    >
-                      ${this.editingPolicyId
-                        ? 'Edit Policy'
-                        : 'Create New Policy'}
-                    </h4>
-                    <sl-button
-                      size="small"
-                      @click=${this.handleToggleCreatePolicy}
-                    >
-                      <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-                      Back to List
-                    </sl-button>
-                  </div>
-
-                  <div class="form-field">
-                    <label class="form-label">Policy Name *</label>
-                    <sl-input
-                      placeholder="e.g., Default Approval Policy"
-                      value=${this.newPolicyName}
-                      @sl-input=${(e: any) => {
-                        e.stopPropagation();
-                        this.newPolicyName = e.target.value;
-                      }}
-                    ></sl-input>
-                  </div>
-
-                  <div class="form-field">
-                    <label class="form-label">Description</label>
-                    <sl-textarea
-                      placeholder="Optional description"
-                      value=${this.newPolicyDescription}
-                      @sl-input=${(e: any) => {
-                        e.stopPropagation();
-                        this.newPolicyDescription = e.target.value;
-                      }}
-                      rows="2"
-                    ></sl-textarea>
-                  </div>
-
-                  ${this.hasAdvancedApprovals()
-                    ? html`
-                        <div class="form-field">
-                          <label class="form-label">Approval Type</label>
-                          <sl-select
-                            value=${this.newPolicyType}
-                            @sl-change=${(e: any) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              e.stopImmediatePropagation();
-                              this.newPolicyType = e.target.value;
-                              this.requestUpdate();
-                            }}
-                          >
-                            <sl-option value="standard">Standard</sl-option>
-                            <sl-option value="slack">Slack</sl-option>
-                            <sl-option value="mattermost">Mattermost</sl-option>
-                            <sl-option value="webhook">Webhook</sl-option>
-                          </sl-select>
-                        </div>
-                      `
-                    : ''}
-                  ${this.hasAdvancedApprovals() &&
-                  this.newPolicyType !== 'standard'
-                    ? html`
-                        <div class="form-field">
-                          <label class="form-label">Webhook URL *</label>
-                          <sl-input
-                            type="url"
-                            placeholder="${this.newPolicyType === 'slack'
-                              ? 'https://hooks.slack.com/services/...'
-                              : this.newPolicyType === 'mattermost'
-                                ? 'https://your-mattermost.com/hooks/...'
-                                : 'https://your-webhook-endpoint.com/approval-request'}"
-                            value=${this.newPolicyWebhookUrl}
-                            @sl-input=${(e: any) => {
-                              e.stopPropagation();
-                              this.newPolicyWebhookUrl = e.target.value;
-                            }}
-                            help-text="The webhook URL where approval requests will be sent"
-                          ></sl-input>
-                        </div>
-                      `
-                    : ''}
-
-                  <!-- Enterprise Features: Advanced Approval Configuration -->
-                  ${this.hasAdvancedApprovals() &&
-                  (this.availableUsers.length > 0 ||
-                    this.availableTeams.length > 0)
-                    ? html`
-                        <div class="form-field">
-                          <label class="form-label">
-                            Approvers (Optional)
-                          </label>
-                          <sl-select
-                            multiple
-                            clearable
-                            placeholder="Select users and teams who can approve..."
-                            .value=${[
-                              ...this.newPolicyApproverUserIds.map(
-                                (id) => `user:${id}`
-                              ),
-                              ...this.newPolicyApproverTeamIds.map(
-                                (id) => `team:${id}`
-                              ),
-                            ]}
-                            @sl-change=${(e: any) => {
-                              e.stopPropagation();
-                              const selected = e.target.value || [];
-                              this.newPolicyApproverUserIds = selected
-                                .filter((v: string) => v.startsWith('user:'))
-                                .map((v: string) => v.substring(5));
-                              this.newPolicyApproverTeamIds = selected
-                                .filter((v: string) => v.startsWith('team:'))
-                                .map((v: string) => v.substring(5));
-                            }}
-                            help-text="Select users and teams who can provide approval"
-                          >
-                            ${this.availableUsers.length > 0
-                              ? html`
-                                  <sl-option-group label="Users">
-                                    ${this.availableUsers.map(
-                                      (user) => html`
-                                        <sl-option value=${'user:' + user.id}
-                                          >${user.username}
-                                          (${user.email})</sl-option
-                                        >
-                                      `
-                                    )}
-                                  </sl-option-group>
-                                `
-                              : ''}
-                            ${this.availableTeams.length > 0
-                              ? html`
-                                  <sl-option-group label="Teams">
-                                    ${this.availableTeams.map(
-                                      (team) => html`
-                                        <sl-option value=${'team:' + team.id}
-                                          >${team.name}</sl-option
-                                        >
-                                      `
-                                    )}
-                                  </sl-option-group>
-                                `
-                              : ''}
-                          </sl-select>
-                        </div>
-
-                        <div class="form-field">
-                          <label class="form-label"
-                            >Number of Approvals Required</label
-                          >
-                          <sl-input
-                            type="number"
-                            min="1"
-                            value=${this.newPolicyApprovalsRequired}
-                            @sl-input=${(e: any) => {
-                              e.stopPropagation();
-                              this.newPolicyApprovalsRequired =
-                                parseInt(e.target.value) || 1;
-                            }}
-                            help-text="How many approvals are needed before execution (quorum)"
-                          ></sl-input>
-                        </div>
-
-                        <div class="form-field">
-                          <label class="form-label"
-                            >Approval Timeout (seconds)</label
-                          >
-                          <sl-input
-                            type="number"
-                            min="30"
-                            value=${this.newPolicyTimeoutSeconds}
-                            @sl-input=${(e: any) => {
-                              e.stopPropagation();
-                              this.newPolicyTimeoutSeconds =
-                                parseInt(e.target.value) || 300;
-                            }}
-                            help-text="Time to wait for approvals before timing out"
-                          ></sl-input>
-                        </div>
-
-                        ${
-                          // Only show escalation if there are additional users/teams not selected as approvers
-                          this.availableUsers.length +
-                            this.availableTeams.length >
-                          this.newPolicyApproverUserIds.length +
-                            this.newPolicyApproverTeamIds.length
-                            ? html`
-                                <div class="form-field">
-                                  <label class="form-label"
-                                    >Escalation (Optional)</label
-                                  >
-                                  <sl-select
-                                    multiple
-                                    clearable
-                                    placeholder="Select users and teams for escalation..."
-                                    .value=${[
-                                      ...this.newPolicyEscalationUserIds.map(
-                                        (id) => `user:${id}`
-                                      ),
-                                      ...this.newPolicyEscalationTeamIds.map(
-                                        (id) => `team:${id}`
-                                      ),
-                                    ]}
-                                    @sl-change=${(e: any) => {
-                                      e.stopPropagation();
-                                      const selected = e.target.value || [];
-                                      this.newPolicyEscalationUserIds = selected
-                                        .filter((v: string) =>
-                                          v.startsWith('user:')
-                                        )
-                                        .map((v: string) => v.substring(5));
-                                      this.newPolicyEscalationTeamIds = selected
-                                        .filter((v: string) =>
-                                          v.startsWith('team:')
-                                        )
-                                        .map((v: string) => v.substring(5));
-                                    }}
-                                    help-text="Contact these users/teams if timeout is exceeded without required approvals"
-                                  >
-                                    ${this.availableUsers.length > 0
-                                      ? html`
-                                          <sl-option-group label="Users">
-                                            ${this.availableUsers.map(
-                                              (user) => html`
-                                                <sl-option
-                                                  value=${'user:' + user.id}
-                                                  >${user.username}
-                                                  (${user.email})</sl-option
-                                                >
-                                              `
-                                            )}
-                                          </sl-option-group>
-                                        `
-                                      : ''}
-                                    ${this.availableTeams.length > 0
-                                      ? html`
-                                          <sl-option-group label="Teams">
-                                            ${this.availableTeams.map(
-                                              (team) => html`
-                                                <sl-option
-                                                  value=${'team:' + team.id}
-                                                  >${team.name}</sl-option
-                                                >
-                                              `
-                                            )}
-                                          </sl-option-group>
-                                        `
-                                      : ''}
-                                  </sl-select>
-                                </div>
                               `
-                            : ''
-                        }
-                      `
-                    : ''}
-
-                  <div class="form-field">
-                    <div class="control-row">
-                      <div>
-                        <label class="form-label">Set as Default Policy</label>
-                        <div
-                          style="font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-600); margin-top: var(--sl-spacing-2x-small);"
-                        >
-                          The default policy will be used when no specific
-                          policy is selected
-                        </div>
-                      </div>
-                      <sl-switch
-                        ?checked=${this.newPolicyIsDefault}
-                        @sl-change=${(e: any) => {
-                          e.stopPropagation();
-                          this.newPolicyIsDefault = e.target.checked;
-                        }}
-                      ></sl-switch>
-                    </div>
+                            )}
+                          </div>
+                        `
+                      : html`
+                          <div class="empty-state">
+                            <sl-icon
+                              name="inbox"
+                              style="font-size: 2rem; margin-bottom: var(--sl-spacing-small);"
+                            ></sl-icon>
+                            <p>
+                              No policies found. Create your first policy to get
+                              started.
+                            </p>
+                          </div>
+                        `}
                   </div>
+                `
+              : html`
+                  <!-- Create New Policy Form -->
+                  <div class="dialog-section">
+                    <div
+                      style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sl-spacing-medium);"
+                    >
+                      <h4
+                        style="margin: 0; font-size: var(--sl-font-size-medium);"
+                      >
+                        ${this.editingPolicyId
+                          ? 'Edit Policy'
+                          : 'Create New Policy'}
+                      </h4>
+                      <sl-button
+                        size="small"
+                        @click=${this.handleToggleCreatePolicy}
+                      >
+                        <sl-icon slot="prefix" name="arrow-left"></sl-icon>
+                        Back to List
+                      </sl-button>
+                    </div>
 
-                  ${this.newPolicyType === 'slack' ||
-                  this.newPolicyType === 'mattermost'
-                    ? html`
-                        <div class="form-field">
-                          <label class="form-label">Channel (Optional)</label>
-                          <sl-input
-                            placeholder="#approvals"
-                            value=${this.newPolicyChannel}
-                            @sl-input=${(e: any) => {
-                              e.stopPropagation();
-                              this.newPolicyChannel = e.target.value;
-                            }}
-                            help-text="Default channel for approval notifications"
-                          ></sl-input>
-                        </div>
+                    <div class="form-field">
+                      <label class="form-label">Policy Name *</label>
+                      <sl-input
+                        placeholder="e.g., Default Approval Policy"
+                        value=${this.newPolicyName}
+                        @sl-input=${(e: any) => {
+                          e.stopPropagation();
+                          this.newPolicyName = e.target.value;
+                        }}
+                      ></sl-input>
+                    </div>
 
-                        <div class="form-field">
-                          <label class="form-label">User (Optional)</label>
-                          <sl-input
-                            placeholder="@username"
-                            value=${this.newPolicyUser}
-                            @sl-input=${(e: any) => {
-                              e.stopPropagation();
-                              this.newPolicyUser = e.target.value;
-                            }}
-                            help-text="Specific user to notify for approvals"
-                          ></sl-input>
+                    <div class="form-field">
+                      <label class="form-label">Description</label>
+                      <sl-textarea
+                        placeholder="Optional description"
+                        value=${this.newPolicyDescription}
+                        @sl-input=${(e: any) => {
+                          e.stopPropagation();
+                          this.newPolicyDescription = e.target.value;
+                        }}
+                        rows="2"
+                      ></sl-textarea>
+                    </div>
+
+                    ${this.hasAdvancedApprovals()
+                      ? html`
+                          <div class="form-field">
+                            <label class="form-label">Approval Type</label>
+                            <sl-select
+                              value=${this.newPolicyType}
+                              @sl-change=${(e: any) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                e.stopImmediatePropagation();
+                                this.newPolicyType = e.target.value;
+                                this.requestUpdate();
+                              }}
+                            >
+                              <sl-option value="standard">Standard</sl-option>
+                              <sl-option value="slack">Slack</sl-option>
+                              <sl-option value="mattermost"
+                                >Mattermost</sl-option
+                              >
+                              <sl-option value="webhook">Webhook</sl-option>
+                            </sl-select>
+                          </div>
+                        `
+                      : ''}
+                    ${this.hasAdvancedApprovals() &&
+                    this.newPolicyType !== 'standard'
+                      ? html`
+                          <div class="form-field">
+                            <label class="form-label">Webhook URL *</label>
+                            <sl-input
+                              type="url"
+                              placeholder="${this.newPolicyType === 'slack'
+                                ? 'https://hooks.slack.com/services/...'
+                                : this.newPolicyType === 'mattermost'
+                                  ? 'https://your-mattermost.com/hooks/...'
+                                  : 'https://your-webhook-endpoint.com/approval-request'}"
+                              value=${this.newPolicyWebhookUrl}
+                              @sl-input=${(e: any) => {
+                                e.stopPropagation();
+                                this.newPolicyWebhookUrl = e.target.value;
+                              }}
+                              help-text="The webhook URL where approval requests will be sent"
+                            ></sl-input>
+                          </div>
+                        `
+                      : ''}
+
+                    <!-- Enterprise Features: Advanced Approval Configuration -->
+                    ${this.hasAdvancedApprovals() &&
+                    (this.availableUsers.length > 0 ||
+                      this.availableTeams.length > 0)
+                      ? html`
+                          <div class="form-field">
+                            <label class="form-label">
+                              Approvers (Optional)
+                            </label>
+                            <sl-select
+                              multiple
+                              clearable
+                              placeholder="Select users and teams who can approve..."
+                              .value=${[
+                                ...this.newPolicyApproverUserIds.map(
+                                  (id) => `user:${id}`
+                                ),
+                                ...this.newPolicyApproverTeamIds.map(
+                                  (id) => `team:${id}`
+                                ),
+                              ]}
+                              @sl-change=${(e: any) => {
+                                e.stopPropagation();
+                                const selected = e.target.value || [];
+                                this.newPolicyApproverUserIds = selected
+                                  .filter((v: string) => v.startsWith('user:'))
+                                  .map((v: string) => v.substring(5));
+                                this.newPolicyApproverTeamIds = selected
+                                  .filter((v: string) => v.startsWith('team:'))
+                                  .map((v: string) => v.substring(5));
+                              }}
+                              help-text="Select users and teams who can provide approval"
+                            >
+                              ${this.availableUsers.length > 0
+                                ? html`
+                                    <sl-option-group label="Users">
+                                      ${this.availableUsers.map(
+                                        (user) => html`
+                                          <sl-option value=${'user:' + user.id}
+                                            >${user.username}
+                                            (${user.email})</sl-option
+                                          >
+                                        `
+                                      )}
+                                    </sl-option-group>
+                                  `
+                                : ''}
+                              ${this.availableTeams.length > 0
+                                ? html`
+                                    <sl-option-group label="Teams">
+                                      ${this.availableTeams.map(
+                                        (team) => html`
+                                          <sl-option value=${'team:' + team.id}
+                                            >${team.name}</sl-option
+                                          >
+                                        `
+                                      )}
+                                    </sl-option-group>
+                                  `
+                                : ''}
+                            </sl-select>
+                          </div>
+
+                          <div class="form-field">
+                            <label class="form-label"
+                              >Number of Approvals Required</label
+                            >
+                            <sl-input
+                              type="number"
+                              min="1"
+                              value=${this.newPolicyApprovalsRequired}
+                              @sl-input=${(e: any) => {
+                                e.stopPropagation();
+                                this.newPolicyApprovalsRequired =
+                                  parseInt(e.target.value) || 1;
+                              }}
+                              help-text="How many approvals are needed before execution (quorum)"
+                            ></sl-input>
+                          </div>
+
+                          <div class="form-field">
+                            <label class="form-label"
+                              >Approval Timeout (seconds)</label
+                            >
+                            <sl-input
+                              type="number"
+                              min="30"
+                              value=${this.newPolicyTimeoutSeconds}
+                              @sl-input=${(e: any) => {
+                                e.stopPropagation();
+                                this.newPolicyTimeoutSeconds =
+                                  parseInt(e.target.value) || 300;
+                              }}
+                              help-text="Time to wait for approvals before timing out"
+                            ></sl-input>
+                          </div>
+
+                          ${
+                            // Only show escalation if there are additional users/teams not selected as approvers
+                            this.availableUsers.length +
+                              this.availableTeams.length >
+                            this.newPolicyApproverUserIds.length +
+                              this.newPolicyApproverTeamIds.length
+                              ? html`
+                                  <div class="form-field">
+                                    <label class="form-label"
+                                      >Escalation (Optional)</label
+                                    >
+                                    <sl-select
+                                      multiple
+                                      clearable
+                                      placeholder="Select users and teams for escalation..."
+                                      .value=${[
+                                        ...this.newPolicyEscalationUserIds.map(
+                                          (id) => `user:${id}`
+                                        ),
+                                        ...this.newPolicyEscalationTeamIds.map(
+                                          (id) => `team:${id}`
+                                        ),
+                                      ]}
+                                      @sl-change=${(e: any) => {
+                                        e.stopPropagation();
+                                        const selected = e.target.value || [];
+                                        this.newPolicyEscalationUserIds =
+                                          selected
+                                            .filter((v: string) =>
+                                              v.startsWith('user:')
+                                            )
+                                            .map((v: string) => v.substring(5));
+                                        this.newPolicyEscalationTeamIds =
+                                          selected
+                                            .filter((v: string) =>
+                                              v.startsWith('team:')
+                                            )
+                                            .map((v: string) => v.substring(5));
+                                      }}
+                                      help-text="Contact these users/teams if timeout is exceeded without required approvals"
+                                    >
+                                      ${this.availableUsers.length > 0
+                                        ? html`
+                                            <sl-option-group label="Users">
+                                              ${this.availableUsers.map(
+                                                (user) => html`
+                                                  <sl-option
+                                                    value=${'user:' + user.id}
+                                                    >${user.username}
+                                                    (${user.email})</sl-option
+                                                  >
+                                                `
+                                              )}
+                                            </sl-option-group>
+                                          `
+                                        : ''}
+                                      ${this.availableTeams.length > 0
+                                        ? html`
+                                            <sl-option-group label="Teams">
+                                              ${this.availableTeams.map(
+                                                (team) => html`
+                                                  <sl-option
+                                                    value=${'team:' + team.id}
+                                                    >${team.name}</sl-option
+                                                  >
+                                                `
+                                              )}
+                                            </sl-option-group>
+                                          `
+                                        : ''}
+                                    </sl-select>
+                                  </div>
+                                `
+                              : ''
+                          }
+                        `
+                      : ''}
+
+                    <div class="form-field">
+                      <div class="control-row">
+                        <div>
+                          <label class="form-label"
+                            >Set as Default Policy</label
+                          >
+                          <div
+                            style="font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-600); margin-top: var(--sl-spacing-2x-small);"
+                          >
+                            The default policy will be used when no specific
+                            policy is selected
+                          </div>
                         </div>
-                      `
-                    : ''}
-                </div>
-              `}
+                        <sl-switch
+                          ?checked=${this.newPolicyIsDefault}
+                          @sl-change=${(e: any) => {
+                            e.stopPropagation();
+                            this.newPolicyIsDefault = e.target.checked;
+                          }}
+                        ></sl-switch>
+                      </div>
+                    </div>
+
+                    ${this.newPolicyType === 'slack' ||
+                    this.newPolicyType === 'mattermost'
+                      ? html`
+                          <div class="form-field">
+                            <label class="form-label">Channel (Optional)</label>
+                            <sl-input
+                              placeholder="#approvals"
+                              value=${this.newPolicyChannel}
+                              @sl-input=${(e: any) => {
+                                e.stopPropagation();
+                                this.newPolicyChannel = e.target.value;
+                              }}
+                              help-text="Default channel for approval notifications"
+                            ></sl-input>
+                          </div>
+
+                          <div class="form-field">
+                            <label class="form-label">User (Optional)</label>
+                            <sl-input
+                              placeholder="@username"
+                              value=${this.newPolicyUser}
+                              @sl-input=${(e: any) => {
+                                e.stopPropagation();
+                                this.newPolicyUser = e.target.value;
+                              }}
+                              help-text="Specific user to notify for approvals"
+                            ></sl-input>
+                          </div>
+                        `
+                      : ''}
+                  </div>
+                `
+          }
         </div>
 
         <sl-button slot="footer" @click=${this.handleCancelDialog}>
@@ -2144,17 +2169,21 @@ export class ToolCard extends LitElement {
           slot="footer"
           variant="primary"
           @click=${this.handleConfirmPolicy}
-          ?disabled=${this.isCreatingPolicy
-            ? !this.newPolicyName.trim() ||
-              (this.newPolicyType !== 'standard' &&
-                !this.newPolicyWebhookUrl.trim())
-            : !this.selectedPolicyId}
+          ?disabled=${
+            this.isCreatingPolicy
+              ? !this.newPolicyName.trim() ||
+                (this.newPolicyType !== 'standard' &&
+                  !this.newPolicyWebhookUrl.trim())
+              : !this.selectedPolicyId
+          }
         >
-          ${this.isCreatingPolicy
-            ? this.editingPolicyId
-              ? 'Update Policy'
-              : 'Create & Apply'
-            : 'Apply Policy'}
+          ${
+            this.isCreatingPolicy
+              ? this.editingPolicyId
+                ? 'Update Policy'
+                : 'Create & Apply'
+              : 'Apply Policy'
+          }
         </sl-button>
       </sl-dialog>
 
@@ -2170,9 +2199,11 @@ export class ToolCard extends LitElement {
             the condition is not met, the tool will execute without approval.
           </p>
 
-          ${this.hasAdvancedApprovals()
-            ? this.renderEnterpriseConditionUI()
-            : this.renderSimpleConditionUI()}
+          ${
+            this.hasAdvancedApprovals()
+              ? this.renderEnterpriseConditionUI()
+              : this.renderSimpleConditionUI()
+          }
         </div>
 
         <sl-button slot="footer" @click=${this.handleCloseConditionDialog}>

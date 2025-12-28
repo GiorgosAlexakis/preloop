@@ -1142,10 +1142,11 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             Tools
           </div>
 
-          <p style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);">
-            Select which tools the agent can use during flow execution. No tools
-            are selected by default.
-          </p>
+          <span
+            style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);"
+          >
+            Select which tools the agent can use during flow execution.
+          </span>
 
           ${this.renderToolSelection()}
         </sl-card>
@@ -1695,6 +1696,12 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     const builtinTools = this.availableTools.filter(
       (tool) => tool.source === 'builtin'
     );
+    const supportedBuiltinTools = builtinTools.filter(
+      (tool) => tool.is_supported !== false
+    );
+    const unsupportedBuiltinTools = builtinTools.filter(
+      (tool) => tool.is_supported === false
+    );
     const mcpTools = this.availableTools.filter(
       (tool) => tool.source === 'mcp'
     );
@@ -1712,7 +1719,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                 <div
                   style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem;"
                 >
-                  ${builtinTools.map(
+                  ${supportedBuiltinTools.map(
                     (tool) => html`
                       <sl-checkbox
                         .checked=${this.isToolSelected(
@@ -1729,11 +1736,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                         tool.is_supported === false}
                       >
                         ${tool.name}
-                        ${tool.is_supported === false
-                          ? html`<sl-badge variant="warning" size="small"
-                              >Needs tracker</sl-badge
-                            >`
-                          : ''}
                         ${!tool.is_enabled
                           ? html`<sl-badge variant="neutral" size="small"
                               >Disabled</sl-badge
