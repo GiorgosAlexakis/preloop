@@ -12,11 +12,6 @@ variables:
   PRELOOP_TEST_USERNAME: $PRELOOP_TEST_USERNAME
   PRELOOP_TEST_EMAIL: $PRELOOP_TEST_EMAIL
   PRELOOP_TEST_API_KEY: $PRELOOP_TEST_API_KEY
-  # APNS (Apple Push Notification Service) for iOS push notifications
-  APNS_TEAM_ID: $APNS_TEAM_ID
-  APNS_KEY_ID: $APNS_KEY_ID
-  APNS_AUTH_KEY: $APNS_AUTH_KEY
-  APNS_BUNDLE_ID: $APNS_BUNDLE_ID
   FF_TIMESTAMPS: "true"
 
 cache:
@@ -467,11 +462,11 @@ test:coverage:
       --set environment.preloopUrl=https://${TARGET_DOMAIN}
       --set database.cnpg.name=${DATABASE_NAME}
       --set imagePullSecrets[0].name=registry-secret
-      --set apns.enabled=${APNS_ENABLED:-false}
-      --set apns.teamId=${APNS_TEAM_ID}
-      --set apns.keyId=${APNS_KEY_ID}
-      --set apns.authKey=${APNS_AUTH_KEY}
-      --set apns.bundleId=${APNS_BUNDLE_ID}
+      --set apns.enabled=${APNS_ENABLED:-true}
+      --set apns.teamId="${APNS_TEAM_ID}"
+      --set apns.keyId="${APNS_KEY_ID}"
+      --set-string apns.authKey="${APNS_AUTH_KEY}"
+      --set apns.bundleId="${APNS_BUNDLE_ID}"
       --set apns.useSandbox=${APNS_USE_SANDBOX:-false}
 
     - echo "Helm deployment finished."

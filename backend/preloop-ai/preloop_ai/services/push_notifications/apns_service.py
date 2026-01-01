@@ -1,5 +1,6 @@
 """Apple Push Notification Service (APNS) for iOS push notifications."""
 
+import base64
 import time
 import logging
 from typing import Dict, Any, Optional, Tuple
@@ -21,18 +22,23 @@ class APNsService:
         self,
         team_id: str,
         key_id: str,
-        auth_key_path: str,
         bundle_id: str,
         use_sandbox: bool = False,
+        auth_key: Optional[str] = None,
+        auth_key_path: Optional[str] = None,
     ):
         """Initialize APNs service.
 
         Args:
             team_id: Apple Developer Team ID (10 characters).
             key_id: APNs Auth Key ID (10 characters).
-            auth_key_path: Path to .p8 auth key file.
             bundle_id: App bundle identifier.
             use_sandbox: If True, use sandbox environment.
+            auth_key: The .p8 auth key content directly (takes precedence).
+            auth_key_path: Path to .p8 auth key file (fallback).
+
+        Raises:
+            ValueError: If neither auth_key nor auth_key_path is provided.
         """
         self.team_id = team_id
         self.key_id = key_id
@@ -43,9 +49,26 @@ class APNsService:
             else "https://api.push.apple.com"
         )
 
-        # Load and cache the private key
-        with open(auth_key_path, "r") as f:
-            self.auth_key = f.read()
+        # Load the private key from content or file
+        if auth_key:
+            # Key provided directly - check if it's base64 encoded
+            try:
+                # Try to decode as base64 first
+                decoded = base64.b64decode(auth_key).decode("utf-8")
+                if "-----BEGIN PRIVATE KEY-----" in decoded:
+                    self.auth_key = decoded
+                else:
+                    # Not base64 encoded, use as-is
+                    self.auth_key = auth_key
+            except Exception:
+                # Not base64 encoded, use as-is
+                self.auth_key = auth_key
+        elif auth_key_path:
+            # Load from file
+            with open(auth_key_path, "r") as f:
+                self.auth_key = f.read()
+        else:
+            raise ValueError("Either auth_key or auth_key_path must be provided")
 
         # JWT token cache (valid for 1 hour)
         self._jwt_token: Optional[str] = None
