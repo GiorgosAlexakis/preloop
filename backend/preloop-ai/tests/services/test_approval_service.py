@@ -58,12 +58,8 @@ def sample_approval_request():
 class TestCreateApprovalRequest:
     """Test create_approval_request method."""
 
-    async def test_create_approval_request_success(
-        self, approval_service, mock_db, sample_approval_policy
-    ):
-        """Test creating a new approval request."""
-        account_id = "test_account"
-        tool_config_id = uuid.uuid4()
+    def _setup_mock_db_for_create(self, mock_db, sample_approval_policy):
+        """Set up mock_db to handle the execute call for approval policy lookup."""
 
         # Mock db.refresh to set created fields
         def mock_refresh(obj):
@@ -71,6 +67,20 @@ class TestCreateApprovalRequest:
             obj.updated_at = datetime.utcnow()
 
         mock_db.refresh.side_effect = mock_refresh
+
+        # Mock the execute call that queries ApprovalPolicy
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = sample_approval_policy
+        mock_db.execute.return_value = mock_result
+
+    async def test_create_approval_request_success(
+        self, approval_service, mock_db, sample_approval_policy
+    ):
+        """Test creating a new approval request."""
+        account_id = "test_account"
+        tool_config_id = uuid.uuid4()
+
+        self._setup_mock_db_for_create(mock_db, sample_approval_policy)
 
         result = await approval_service.create_approval_request(
             account_id=account_id,
@@ -91,6 +101,8 @@ class TestCreateApprovalRequest:
         """Test creating approval request with execution ID."""
         execution_id = "exec_123"
 
+        self._setup_mock_db_for_create(mock_db, sample_approval_policy)
+
         result = await approval_service.create_approval_request(
             account_id="test_account",
             tool_configuration_id=uuid.uuid4(),
@@ -106,6 +118,8 @@ class TestCreateApprovalRequest:
         self, approval_service, mock_db, sample_approval_policy
     ):
         """Test creating approval request with custom timeout."""
+        self._setup_mock_db_for_create(mock_db, sample_approval_policy)
+
         result = await approval_service.create_approval_request(
             account_id="test_account",
             tool_configuration_id=uuid.uuid4(),
@@ -121,6 +135,8 @@ class TestCreateApprovalRequest:
         self, approval_service, mock_db, sample_approval_policy
     ):
         """Test creating approval request with default timeout."""
+        self._setup_mock_db_for_create(mock_db, sample_approval_policy)
+
         result = await approval_service.create_approval_request(
             account_id="test_account",
             tool_configuration_id=uuid.uuid4(),
